@@ -78,10 +78,13 @@ class ProtoModelsTest {
         )
         val encoded = ProtoBuf.encodeToByteArray(AppSettingsProto.serializer(), value)
         assertEquals(value, ProtoBuf.decodeFromByteArray(AppSettingsProto.serializer(), encoded))
-        // Nothing is stored when both are empty: the encoding of older settings stays identical.
-        assertContentEquals(
-            settingsBytes,
-            ProtoBuf.encodeToByteArray(AppSettingsProto.serializer(), AppSettingsProto()),
+        // Both empty encode to nothing, so settings written before these fields existed are unchanged.
+        assertEquals(
+            0,
+            ProtoBuf.encodeToByteArray(
+                AppSettingsProto.serializer(),
+                AppSettingsProto(lastConfirmedPackages = emptyList(), restoreSuspects = emptyList()),
+            ).size,
         )
     }
 
