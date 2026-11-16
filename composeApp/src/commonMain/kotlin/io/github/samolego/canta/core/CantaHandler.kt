@@ -121,6 +121,19 @@ interface CantaHandler {
     suspend fun loadApps(): List<AppInfo>
 
     /**
+     * Whether the last [loadApps] looks gutted because the ROM hides the package list from the
+     * app (HyperOS/MIUI ship such a permission, off by default, that cannot be requested at
+     * runtime). The list screen then tells the user which switch to flip.
+     */
+    val appListRestricted: Boolean get() = false
+
+    /**
+     * Opens the system screen where the package-list access of the ROM can be granted.
+     * Returns false when the platform has no such screen (desktop, web).
+     */
+    fun openPackageListSettings(): Boolean = false
+
+    /**
      * Icons for the apps from the last [loadApps], as (package name, icon)
      * pairs streamed in display order, so the list can show before they are
      * all rendered: in-process on Android, by the on-device helper over ADB.

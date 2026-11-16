@@ -139,6 +139,10 @@
     <string name="community_verdict_breaks">会破坏功能</string>
     <string name="community_verdict_unclear">不确定</string>
     <string name="community_bootloop_warning">社区报告显示，这些应用里至少有一个可能导致开机卡死。</string>
+    <string name="app_list_restricted_title">系统没有把应用列表交给本应用</string>
+    <string name="app_list_restricted_description">HyperOS / MIUI 用「获取应用列表」这个权限挡着，默认是关闭的，应用也没法自己申请，只能手动打开；没开之前你只能看到很少几个应用。</string>
+    <string name="app_list_restricted_open_settings">去打开</string>
+    <string name="app_list_restricted_dismiss">知道了</string>
     <string name="uninstall_large_batch_warning">一次卸这么多太多：建议分小批卸载，中间重启一次，出问题时才知道是哪个包。</string>
     <string name="uninstall_recovery_hint">先留好退路：保持 USB 调试开启，记下包名，并备份重要数据。卸错包可能让手机开不了机。</string>
     <string name="uninstall_new_packages">这些包不在你上次确认的批次里，确认你认识它们：%1$s</string>

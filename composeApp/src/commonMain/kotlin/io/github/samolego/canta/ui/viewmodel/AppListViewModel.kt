@@ -124,6 +124,22 @@ class AppListViewModel(
     var onlySystem by mutableStateOf(true)
     var isLoading by mutableStateOf(false)
         private set
+
+    /**
+     * The ROM hides the package list until its own permission is granted (HyperOS/MIUI). The list
+     * screen shows a banner with the way to that switch; dismissed for this run only.
+     */
+    var appListRestricted by mutableStateOf(false)
+        private set
+
+    /** Opens the ROM's package-list permission screen, if this platform has one. */
+    fun openPackageListSettings() {
+        cantaHandler.openPackageListSettings()
+    }
+
+    fun dismissAppListNotice() {
+        appListRestricted = false
+    }
     var isLoadingBadges by mutableStateOf(false)
         private set
 
@@ -194,6 +210,7 @@ class AppListViewModel(
         } finally {
             isLoading = false
             isLoadingBadges = false
+            appListRestricted = cantaHandler.appListRestricted && _apps.isNotEmpty()
         }
     }
 

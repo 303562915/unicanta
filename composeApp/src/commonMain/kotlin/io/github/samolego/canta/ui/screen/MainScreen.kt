@@ -40,6 +40,7 @@ import io.github.samolego.canta.generated.resources.reinstall
 import io.github.samolego.canta.generated.resources.uninstall
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.component.AppList
+import io.github.samolego.canta.ui.component.AppListPermissionBanner
 import io.github.samolego.canta.ui.component.CantaTopBar
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
 import io.github.samolego.canta.ui.dialog.DeviceChooserDialog
@@ -106,6 +107,12 @@ fun MainScreen(
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             AppsTabs(pagerState)
+            if (appListViewModel.appListRestricted) {
+                AppListPermissionBanner(
+                    onOpenSettings = appListViewModel::openPackageListSettings,
+                    onDismiss = appListViewModel::dismissAppListNotice,
+                )
+            }
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),

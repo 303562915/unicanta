@@ -4,7 +4,10 @@ import io.github.samolego.canta.util.BOOT_COUNT_PREFIX
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import io.github.samolego.canta.core.shizuku.ShizukuPermission
@@ -46,6 +49,51 @@ class AndroidCantaHandler(
 
     private companion object {
         const val TAG = "AndroidCantaHandler"
+
+        /**
+         * Every Android device has more packages than this; fewer means the ROM is hiding them
+         * (or something is very wrong), so the privileged list is asked for as well.
+         */
+        const val MIN_PLAUSIBLE_PACKAGES = 20
+
+        /** Intent MIUI/HyperOS use for their per-app permission editor. */
+        const val MIUI_PERMISSION_EDITOR = "miui.intent.action.APP_PERM_EDITOR"
+    }
+
+    /**
+     * [local] plus whatever only the privileged identity can see. The extras carry no label when
+     * the ROM hides app resources too; the list falls back to the package name.
+     */
+    private fun restrictedFallback(local: List<PackageInfo>): List<PackageInfo> {
+        if (!isAuthorized) return local
+        val privileged = operations.privilegedInstalledPackages()
+        if (privileged.isEmpty()) return local
+        val known = local.mapTo(HashSet()) { it.packageName }
+        val extra = privileged.filterNot { it.packageName in known }
+        if (extra.isNotEmpty()) {
+            LogUtils.w(TAG, "Package list from the ROM had ${local.size} entries; added ${extra.size} from the privileged one")
+        }
+        return local + extra
+    }
+
+    /**
+     * Opens the ROM's permission screen. HyperOS/MIUI put "get installed apps" under the app's
+     * other permissions; the editor is reachable with their own intent, and the standard app
+     * details page is the fallback.
+     */
+    override fun openPackageListSettings(): Boolean {
+        val detail = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(Uri.fromParts("package", context.packageName, null))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val editor = Intent(MIUI_PERMISSION_EDITOR)
+            .putExtra("extra_pkgname", context.packageName)
+            .putExtra("packageName", context.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        for (intent in listOf(editor, detail)) {
+            val error = runCatching { context.startActivity(intent) }.exceptionOrNull() ?: return true
+            LogUtils.w(TAG, "Cannot open $intent: $error")
+        }
+        return false
     }
 
     private val packageManager: PackageManager get() = context.packageManager
@@ -63,6 +111,15 @@ class AndroidCantaHandler(
     private val iconSizePx: Int
         get() = (APP_ICON_SIZE.value * context.resources.displayMetrics.density).roundToInt()
 
+    /**
+     * Set when the ROM handed us a gutted package list: HyperOS/MIUI keep their own "get installed
+     * apps" permission, off by default and not requestable at runtime.
+     */
+    @Volatile
+    private var restrictedList = false
+
+    override val appListRestricted: Boolean get() = restrictedList
+
     /** The packages from the last [loadApps], whose icons [loadIcons] renders. */
     @Volatile
     private var packages: List<Pair<PackageDetails, ApplicationInfo?>> = emptyList()
@@ -76,7 +133,10 @@ class AndroidCantaHandler(
     override suspend fun loadApps(): List<AppInfo> = withContext(packageDispatcher) {
         // Reading labels loads each app's resources, which is slow on a cold
         // start; read packages in parallel, like the ADB helper does.
-        packages = packageManager.getAllPackages()
+        val local = packageManager.getAllPackages()
+        val all = if (local.size < MIN_PLAUSIBLE_PACKAGES) restrictedFallback(local) else local
+        restrictedList = all.size > local.size && local.size < MIN_PLAUSIBLE_PACKAGES
+        packages = all
             .map { info -> async { readSafely(info) { info.toPackageDetails(packageManager) to info.applicationInfo } } }
             .awaitAll()
             .filterNotNull()
