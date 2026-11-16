@@ -79,3 +79,56 @@ jobs:
           name: app-debug
           path: androidApp/build/outputs/apk/debug/
           retention-days: 14
+
+  release:
+    name: 📦 Minified release APK
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: 🔐 Write the keystore (stable, so builds upgrade each other)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CANTA_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/release.jks"
+
+      - name: 📝 Write key.properties
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          {
+            echo "storeFile=$GITHUB_WORKSPACE/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > "$GITHUB_WORKSPACE/key.properties"
+
+      - name: 🔧 Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: 🏗️ Assemble release (R8 + resource shrinking)
+        run: ./gradlew :androidApp:assembleRelease --stacktrace --no-daemon
+
+      - name: 📝 Checksums and sizes
+        run: |
+          cd androidApp/build/outputs/apk/release
+          sha256sum *.apk | tee SHA256SUMS.txt
+          ls -l --block-size=K *.apk
+
+      - name: 📦 Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: androidApp/build/outputs/apk/release/
+          retention-days: 14

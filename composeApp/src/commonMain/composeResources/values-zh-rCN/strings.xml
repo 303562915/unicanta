@@ -134,4 +134,17 @@
     <string name="device_no_longer_available">The selected device is no longer available. Please pick it again.</string>
     <string name="device_busy">The device is already in use by another program or browser tab. Close anything else using it, unplug the device and plug it back in, then pick it again.</string>
     <string name="device_busy_linux">The device is busy: another program on this computer has claimed it. On Linux this is often ModemManager, an adb server, or a file-transfer (MTP) monitor. Stop them (e.g. sudo systemctl stop ModemManager), unplug the phone and plug it back in, then pick it again.</string>
+    <string name="community_verdict_safe">基本安全</string>
+    <string name="community_verdict_bootloop">可能卡在开机</string>
+    <string name="community_verdict_breaks">会破坏功能</string>
+    <string name="community_verdict_unclear">不确定</string>
+    <string name="community_bootloop_warning">社区报告显示，这些应用里至少有一个可能导致开机卡死。</string>
+    <string name="uninstall_large_batch_warning">一次卸这么多太多：建议分小批卸载，中间重启一次，出问题时才知道是哪个包。</string>
+    <string name="uninstall_recovery_hint">先留好退路：保持 USB 调试开启，记下包名，并备份重要数据。卸错包可能让手机开不了机。</string>
+    <string name="uninstall_new_packages">这些包不在你上次确认的批次里，确认你认识它们：%1$s</string>
+    <string name="uninstall_new_packages_more">另有 %1$d 个</string>
+    <string name="restore_suspects_title">有包被手动装回来了</string>
+    <string name="restore_suspects_description">系统版本没变，这些包却又装回来了，说明上次卸载出问题后有人手动恢复了它们：%1$s</string>
+    <string name="restore_suspects_revert">把整批装回去</string>
+    <string name="restore_suspects_dismiss">知道了</string>
 </resources>
