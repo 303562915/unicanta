@@ -73,6 +73,8 @@ import io.github.samolego.canta.generated.resources.hide_success_dialog_descript
 import io.github.samolego.canta.generated.resources.require_auth_setting
 import io.github.samolego.canta.generated.resources.require_auth_setting_desc
 import io.github.samolego.canta.generated.resources.analytics_section
+import io.github.samolego.canta.generated.resources.app_list_restricted_description
+import io.github.samolego.canta.generated.resources.app_list_restricted_open_settings
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.generated.resources.share_package_data
 import io.github.samolego.canta.generated.resources.share_package_data_description
