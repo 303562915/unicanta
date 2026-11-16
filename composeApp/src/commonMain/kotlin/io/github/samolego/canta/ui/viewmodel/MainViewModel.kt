@@ -30,8 +30,13 @@ sealed interface MainDialog {
         val canResetToFactory: Boolean,
         /** The community reports that at least one of the apps can cause a bootloop. */
         val bootloopRisk: Boolean = false,
+        /** Selected packages that were not in the last confirmed batch: a list pasted from elsewhere. */
+        val newPackages: List<String> = emptyList(),
     ) : MainDialog
     data class Success(val count: Int, val isReinstall: Boolean) : MainDialog
+
+    /** Packages that came back although the build did not change: a rescue of the last batch. */
+    data class RestoreSuspects(val packages: List<String>) : MainDialog
     data object ShizukuSetup : MainDialog
     data object ExplainBadges : MainDialog
     data class DeviceChooser(val devices: List<CantaDevice> = emptyList(), val isLoading: Boolean = false) : MainDialog
@@ -60,6 +65,35 @@ class MainViewModel(
             openDeviceChooser { appList.loadApps() }
         } else {
             appList.loadApps()
+        }
+        viewModelScope.launch { showRestoreSuspects() }
+    }
+
+    /** Tells the user once per start that the last batch had to be put back by hand. */
+    private suspend fun showRestoreSuspects() {
+        val suspects = settings.restoreSuspectsFlow.first()
+        if (suspects.isEmpty() || dialog != null) return
+        dialog = MainDialog.RestoreSuspects(suspects)
+    }
+
+    /** [MainDialog.RestoreSuspects] dismissed: keep believing it (the batch is already uninstalled). */
+    fun onRestoreSuspectsDismissed() {
+        dialog = null
+        viewModelScope.launch { settings.setRestoreSuspects(emptyList()) }
+    }
+
+    /** [MainDialog.RestoreSuspects] confirmed: put those packages back. */
+    fun onRestoreSuspectsReverted() {
+        val suspects = (dialog as? MainDialog.RestoreSuspects)?.packages ?: return
+        dialog = null
+        viewModelScope.launch {
+            settings.setRestoreSuspects(emptyList())
+            val reverted = appList.reinstallPackages(suspects)
+            if (reverted > 0 && !settings.hideSuccessDialogFlow.first()) {
+                dialog = MainDialog.Success(count = reverted, isReinstall = true)
+            } else {
+                appList.loadApps()
+            }
         }
     }
 
@@ -109,10 +143,13 @@ class MainViewModel(
         if (type == AppsType.INSTALLED && settings.confirmBeforeUninstallFlow.first()) {
             val selected = appList.selectedApps.toList()
             if (selected.isEmpty()) return
+            val known = settings.lastConfirmedPackagesFlow.first().toSet()
             dialog = MainDialog.ConfirmUninstall(
                 appCount = selected.size,
                 canResetToFactory = selected.any { handler.canResetToFactory(it) },
                 bootloopRisk = selected.any { appList.scores.value[it]?.verdict == Verdict.BOOTLOOP },
+                // With no batch confirmed yet everything is new, which would flag every first run.
+                newPackages = if (known.isEmpty()) emptyList() else selected.filterNot { it in known },
             )
         } else {
             authenticateAndApply(type, resetToFactory = false)
@@ -136,7 +173,10 @@ class MainViewModel(
     }
 
     private suspend fun apply(type: AppsType, resetToFactory: Boolean) {
+        // Remembered before applying: the selection is cleared as every app succeeds.
+        val attempted = if (type == AppsType.INSTALLED) appList.selectedApps.toList() else emptyList()
         val count = appList.applyToSelected(type, resetToFactory)
+        if (attempted.isNotEmpty()) settings.setLastConfirmedPackages(attempted)
         if (count > 0 && !settings.hideSuccessDialogFlow.first()) {
             dialog = MainDialog.Success(count = count, isReinstall = type == AppsType.UNINSTALLED)
         }

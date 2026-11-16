@@ -276,6 +276,27 @@ class AppListViewModel(
         return succeeded
     }
 
+    /**
+     * Reinstalls [packageNames] without touching the current selection (the rescue prompt of a
+     * previous batch). Returns how many succeeded.
+     */
+    suspend fun reinstallPackages(packageNames: List<String>): Int {
+        if (packageNames.isEmpty()) return 0
+        var succeeded = 0
+        val succeededApps = mutableListOf<AppInfo>()
+        cantaHandler.reinstallApps(packageNames).collect { result ->
+            if (result.success) {
+                succeeded++
+                _apps.firstOrNull { it.packageName == result.packageName }?.let(succeededApps::add)
+                if (_apps.any { it.packageName == result.packageName && it.isUninstalled }) toggleUninstalled(result.packageName)
+            } else {
+                LogUtils.w(TAG, "reinstall '${result.packageName}' failed: ${result.message} (${result.status})")
+            }
+        }
+        if (succeededApps.isNotEmpty()) telemetry?.recordReinstalls(succeededApps)
+        return succeeded
+    }
+
     private fun toggleUninstalled(packageName: String) {
         val index = _apps.indexOfFirst { it.packageName == packageName }
         if (index >= 0) {

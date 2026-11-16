@@ -15,22 +15,29 @@ import io.github.samolego.canta.generated.resources.community_bootloop_warning
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.generated.resources.reset_to_factory_version
 import io.github.samolego.canta.generated.resources.uninstall_large_batch_warning
+import io.github.samolego.canta.generated.resources.uninstall_new_packages
+import io.github.samolego.canta.generated.resources.uninstall_new_packages_more
 import io.github.samolego.canta.generated.resources.uninstall_recovery_hint
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
 import io.github.samolego.canta.util.isLargeBatch
 import org.jetbrains.compose.resources.stringResource
 
+/** Most newly added package names listed in the dialog; the rest is summarised. */
+private const val MAX_SHOWN_NEW = 8
+
 @Composable
 fun UninstallAppsDialog(
     appCount: Int,
     canResetToFactory: Boolean = false,
     bootloopRisk: Boolean = false,
+    newPackages: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onAgree: (resetToFactory: Boolean) -> Unit,
 ) {
     var resetToFactory by rememberSaveable { mutableStateOf(false) }
     val largeBatch = isLargeBatch(appCount)
+    val shownNew = newPackages.take(MAX_SHOWN_NEW)
 
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -45,6 +52,16 @@ fun UninstallAppsDialog(
                 text = stringResource(Res.string.community_bootloop_warning),
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+        if (newPackages.isNotEmpty()) {
+            // A batch pasted from a shared list looks like any other: name what was just added.
+            Text(
+                text = stringResource(Res.string.uninstall_new_packages, shownNew.joinToString(", ")),
+                color = MaterialTheme.colorScheme.error,
+            )
+            if (newPackages.size > shownNew.size) {
+                Text(stringResource(Res.string.uninstall_new_packages_more, newPackages.size - shownNew.size))
+            }
         }
         if (largeBatch) {
             Text(stringResource(Res.string.uninstall_large_batch_warning))

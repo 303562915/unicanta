@@ -71,6 +71,21 @@ class ProtoModelsTest {
     }
 
     @Test
+    fun localBatchFieldsRoundTripAndStayOffTheWire() {
+        val value = AppSettingsProto(
+            lastConfirmedPackages = listOf("com.a", "com.b"),
+            restoreSuspects = listOf("com.c"),
+        )
+        val encoded = ProtoBuf.encodeToByteArray(AppSettingsProto.serializer(), value)
+        assertEquals(value, ProtoBuf.decodeFromByteArray(AppSettingsProto.serializer(), encoded))
+        // Nothing is stored when both are empty: the encoding of older settings stays identical.
+        assertContentEquals(
+            settingsBytes,
+            ProtoBuf.encodeToByteArray(AppSettingsProto.serializer(), AppSettingsProto()),
+        )
+    }
+
+    @Test
     fun pendingEntryWithoutNewFieldsDecodesWithDefaults() {
         // pkg (1) = "p", boot_id (2) = "b": an entry written before survived/fingerprint existed
         val old = bytes(0x0A, 0x01, 0x70, 0x12, 0x01, 0x62)

@@ -11,7 +11,7 @@ import java.io.File
  * Reports what became of the pending uninstalls once the phone has booted, without
  * needing Shizuku (it isn't running yet). Uses the package states [BootReceiver] captured
  * when the boot completed, as this may run much later (it waits for a network).
- * Does nothing while analytics is off.
+ * Also runs with analytics off: the "was this batch rescued by hand" check is local.
  */
 class BootCheckWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 

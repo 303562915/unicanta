@@ -124,7 +124,11 @@ fun PendingUninstallProto.device() = DeviceContext(brand.ifBlank { "unknown" }, 
 /**
  * Ties [Telemetry] to what happens in the app: reports uninstalls and
  * reinstalls done through Canta and, once per start, which uninstalls survived
- * a reboot. Does nothing while analytics is off.
+ * a reboot.
+ *
+ * The pending uninstalls and the "this one came back by hand" suspects are kept
+ * locally even while analytics is off: they drive a warning the user sees, and
+ * only the events are gated behind analytics.
  */
 @OptIn(ExperimentalTime::class)
 class PackageTelemetry(
@@ -144,15 +148,16 @@ class PackageTelemetry(
     suspend fun fetchScores() =
         if (settings.analyticsEnabledFlow.first()) telemetry.fetchScores(handler.deviceContext()) else null
 
-    /** Forgets everything queued and pending (analytics turned off). */
+    /**
+     * Forgets everything queued for sending (analytics turned off). The pending uninstalls stay:
+     * they are local only and still tell the user that a batch had to be rescued.
+     */
     suspend fun clearPending() {
         telemetry.clear()
-        pendingLock.withLock { settings.setPendingReboot(emptyList()) }
     }
 
     /** Records that [apps] were uninstalled as part of one user action on [batchSize] apps. */
     suspend fun recordUninstalls(apps: List<AppInfo>, batchSize: Int) {
-        if (!settings.analyticsEnabledFlow.first()) return
         val systemApps = apps.filter { it.isSystemApp }
         if (systemApps.isEmpty()) return
         val bootId = handler.bootId() ?: return
@@ -162,7 +167,9 @@ class PackageTelemetry(
         val device = handler.deviceContext() ?: DeviceContext.UNKNOWN
         val fingerprint = handler.buildFingerprint().orEmpty()
         val deviceKey = handler.deviceKey().orEmpty()
-        telemetry.queue(TelemetryEvent.allOf(systemApps, TelemetryEventType.UNINSTALLED, week, bucket, device))
+        if (settings.analyticsEnabledFlow.first()) {
+            telemetry.queue(TelemetryEvent.allOf(systemApps, TelemetryEventType.UNINSTALLED, week, bucket, device))
+        }
         pendingLock.withLock {
             val replaced = systemApps.map { it.packageName }.toSet()
             val keep = settings.pendingRebootFlow.first().filter { e -> replaced.none { e.isFor(it, deviceKey) } }
@@ -179,7 +186,6 @@ class PackageTelemetry(
 
     /** Records that [apps] were reinstalled; only those with a pending uninstall (known cohort) are reported. */
     suspend fun recordReinstalls(apps: List<AppInfo>) {
-        if (!settings.analyticsEnabledFlow.first()) return
         pendingLock.withLock {
             val pending = settings.pendingRebootFlow.first()
             if (pending.isEmpty()) return
@@ -188,15 +194,25 @@ class PackageTelemetry(
                 val entry = pending.firstOrNull { it.isFor(app.packageName, deviceKey) } ?: return@mapNotNull null
                 TelemetryEvent.of(app, TelemetryEventType.REINSTALLED, entry.cohortWeek, entry.batchBucket, entry.device())
             }
-            telemetry.queue(events)
+            if (settings.analyticsEnabledFlow.first()) telemetry.queue(events)
             val reinstalled = apps.map { it.packageName }
             settings.setPendingReboot(pending.filter { e -> reinstalled.none { e.isFor(it, deviceKey) } })
         }
     }
 
+    /**
+     * Remembers the packages that came back although the build had not changed: someone put them
+     * back by hand, which is the only trace of a rescue (see [TelemetryEventType.RESTORED]). Kept
+     * locally so the user is told at the next start, whether or not analytics is on.
+     */
+    private suspend fun recordRestores(events: List<TelemetryEvent>) {
+        val restored = events.filter { it.event == TelemetryEventType.RESTORED }.map { it.pkg }
+        if (restored.isNotEmpty()) settings.addRestoreSuspects(restored)
+    }
+
     /** Reports what became of the pending uninstalls, given the freshly loaded [apps] (Canta start). */
     suspend fun resolveSurvivors(apps: List<AppInfo>) {
-        if (!settings.analyticsEnabledFlow.first()) return
+        val analytics = settings.analyticsEnabledFlow.first()
         val bootId = handler.bootId() ?: return
         val fingerprint = handler.buildFingerprint()
         val deviceKey = handler.deviceKey()
@@ -209,7 +225,8 @@ class PackageTelemetry(
                 entry.pkg to PackageState(app.isUninstalled, if (app.isUninstalled) null else handler.installedSinceBoot(entry.pkg))
             }.toMap()
             val (events, remaining) = resolvePending(pending, ResolveMode.START, bootId, fingerprint, states, clock.now(), deviceKey)
-            if (!telemetry.sendAndWait(events)) return
+            recordRestores(events)
+            if (analytics && !telemetry.sendAndWait(events)) return
             if (remaining != pending) settings.setPendingReboot(remaining)
         }
     }
@@ -217,15 +234,14 @@ class PackageTelemetry(
     /**
      * Called when the device finished booting (no privileged access then, so the caller reads
      * the package states): the states of the pending packages, read at that moment so that a later
-     * reinstall outside Canta isn't mistaken for a restore at boot; null if there is nothing to
-     * check or analytics is off.
+     * reinstall outside Canta isn't mistaken for a restore at boot; null if there is nothing to check.
      */
     suspend fun snapshotAtBoot(
         bootId: String?,
         fingerprint: String?,
         stateOf: (String) -> PackageState?,
     ): BootSnapshotProto? {
-        if (bootId == null || !settings.analyticsEnabledFlow.first()) return null
+        if (bootId == null) return null
         val pending = pendingLock.withLock { settings.pendingRebootFlow.first() }
         if (pending.isEmpty()) return null
         val states = pending.mapNotNull { e -> stateOf(e.pkg)?.let { e.pkg to it } }.toMap()
@@ -239,12 +255,12 @@ class PackageTelemetry(
     /**
      * The check after the device finished booting, using the [snapshot] taken at that moment.
      * A snapshot of another boot is stale and ignored (the next start's check handles it).
-     * Waits for the reports to be delivered and only then updates the pending uninstalls;
-     * returns false if sending failed and the check should be retried, true when the snapshot
-     * is done with.
+     * With analytics on, waits for the reports to be delivered and only then updates the pending
+     * uninstalls, returning false if sending failed and the check should be retried; with analytics
+     * off nothing is sent and it returns true once the snapshot is done with.
      */
     suspend fun resolveAfterBoot(snapshot: BootSnapshotProto, currentBootId: String?): Boolean {
-        if (!settings.analyticsEnabledFlow.first()) return true
+        val analytics = settings.analyticsEnabledFlow.first()
         if (currentBootId == null || snapshot.bootId != currentBootId) return true
         val deviceKey = handler.deviceKey()
         val states = snapshot.uninstalled.associateWith { PackageState(uninstalled = true) } +
@@ -255,7 +271,8 @@ class PackageTelemetry(
             val (events, remaining) = resolvePending(
                 pending, ResolveMode.BOOT, currentBootId, snapshot.buildFingerprint.ifEmpty { null }, states, clock.now(), deviceKey,
             )
-            if (!telemetry.sendAndWait(events)) return false
+            recordRestores(events)
+            if (analytics && !telemetry.sendAndWait(events)) return false
             if (remaining != pending) settings.setPendingReboot(remaining)
             return true
         }

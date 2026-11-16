@@ -109,6 +109,12 @@
     <string name="community_bootloop_warning">Community reports say at least one of these apps can cause a bootloop.</string>
     <string name="uninstall_large_batch_warning">That is a large batch. Uninstall a few apps at a time and reboot in between, so you can tell which package caused a problem.</string>
     <string name="uninstall_recovery_hint">Make sure you can recover first: keep USB debugging enabled, write down the package names, and back up what matters. A wrong package can stop the phone from booting.</string>
+    <string name="uninstall_new_packages">Not in your last confirmed batch — make sure you know these: %1$s</string>
+    <string name="uninstall_new_packages_more">and %1$d more</string>
+    <string name="restore_suspects_title">Packages came back by themselves</string>
+    <string name="restore_suspects_description">These packages are installed again although the system build did not change, so they were most likely put back by hand after the last uninstall went wrong: %1$s</string>
+    <string name="restore_suspects_revert">Put that batch back</string>
+    <string name="restore_suspects_dismiss">Got it</string>
     <string name="show_whats_sent">Show what's sent</string>
     <string name="whats_sent_title">What's sent</string>
     <string name="whats_sent_description">This is an example of the data Canta sends. Nothing else leaves your device.</string>

@@ -34,6 +34,16 @@ data class AppSettingsProto(
     @ProtoNumber(11) val analyticsEnabled: Boolean = false,
     @ProtoNumber(12) val onboardingVersion: Int = 0,
     @ProtoNumber(13) val pendingReboot: List<PendingUninstallProto> = emptyList(),
+    /**
+     * Packages of the last batch the user confirmed in the uninstall dialog; the next dialog
+     * highlights whatever is after them, so a list pasted from somewhere else stands out.
+     */
+    @ProtoNumber(14) val lastConfirmedPackages: List<String> = emptyList(),
+    /**
+     * Packages that came back although the build had not changed, i.e. were most likely put back
+     * by hand to rescue the device. Local only, never part of any request; shown once at start.
+     */
+    @ProtoNumber(15) val restoreSuspects: List<String> = emptyList(),
 )
 
 /**

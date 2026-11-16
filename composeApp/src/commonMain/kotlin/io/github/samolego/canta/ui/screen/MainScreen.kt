@@ -44,6 +44,7 @@ import io.github.samolego.canta.ui.component.CantaTopBar
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
 import io.github.samolego.canta.ui.dialog.DeviceChooserDialog
 import io.github.samolego.canta.ui.dialog.ExplainBadgesDialog
+import io.github.samolego.canta.ui.dialog.RestoreSuspectsDialog
 import io.github.samolego.canta.ui.dialog.ShizukuRequirementDialog
 import io.github.samolego.canta.ui.dialog.SuccessDialog
 import io.github.samolego.canta.ui.dialog.UninstallAppsDialog
@@ -195,8 +196,14 @@ private fun MainDialogs(
             appCount = dialog.appCount,
             canResetToFactory = dialog.canResetToFactory,
             bootloopRisk = dialog.bootloopRisk,
+            newPackages = dialog.newPackages,
             onDismiss = mainViewModel::dismissDialog,
             onAgree = mainViewModel::onUninstallConfirmed,
+        )
+        is MainDialog.RestoreSuspects -> RestoreSuspectsDialog(
+            packages = dialog.packages,
+            onRevert = mainViewModel::onRestoreSuspectsReverted,
+            onDismiss = mainViewModel::onRestoreSuspectsDismissed,
         )
         is MainDialog.Success -> SuccessDialog(
             platform = platform,

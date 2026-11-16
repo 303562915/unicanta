@@ -8,6 +8,9 @@ import io.github.samolego.canta.data.proto.ProtoBlobStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
+/** Most restore suspects kept in the settings. */
+private const val MAX_RESTORE_SUSPECTS = 20
+
 /** Settings used when nothing has been stored yet. */
 private val DEFAULT_SETTINGS = AppSettingsProto(
     autoUpdateBloatList = true,
@@ -41,6 +44,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val analyticsEnabledFlow = field { it.analyticsEnabled }
     val onboardingVersionFlow = field { it.onboardingVersion }
     val pendingRebootFlow: Flow<List<PendingUninstallProto>> = field { it.pendingReboot }
+    val lastConfirmedPackagesFlow: Flow<List<String>> = field { it.lastConfirmedPackages }
+    val restoreSuspectsFlow: Flow<List<String>> = field { it.restoreSuspects }
 
     suspend fun setAutoUpdateBloatList(autoUpdate: Boolean) = update { it.copy(autoUpdateBloatList = autoUpdate) }
     suspend fun setConfirmBeforeUninstall(needsConfirm: Boolean) = update { it.copy(confirmBeforeUninstall = needsConfirm) }
@@ -53,4 +58,11 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setAnalyticsEnabled(enabled: Boolean) = update { it.copy(analyticsEnabled = enabled) }
     suspend fun setOnboardingVersion(version: Int) = update { it.copy(onboardingVersion = version) }
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
+    suspend fun setLastConfirmedPackages(packages: List<String>) = update { it.copy(lastConfirmedPackages = packages) }
+    suspend fun setRestoreSuspects(packages: List<String>) = update { it.copy(restoreSuspects = packages) }
+
+    /** Adds [packages] to the restore suspects, keeping the list short and ordered. */
+    suspend fun addRestoreSuspects(packages: List<String>) = update {
+        it.copy(restoreSuspects = (it.restoreSuspects + packages).distinct().takeLast(MAX_RESTORE_SUSPECTS))
+    }
 }
