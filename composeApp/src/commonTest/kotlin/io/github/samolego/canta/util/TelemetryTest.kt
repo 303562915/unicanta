@@ -85,11 +85,24 @@ class TelemetryTest {
     }
 
     @Test
+    fun restoredIsSentWithItsWireName() {
+        val t = Telemetry(client(), "android", CoroutineScope(Job()), { true })
+        val e = TelemetryEvent.of(app("com.example.bloat", true), TelemetryEventType.RESTORED, "2026-10-26", "1", device)!!
+        assertEquals("restored", TelemetryEventType.RESTORED.wire)
+        assertTrue(t.buildPayload(device, listOf(e)).contains("\"e\":\"restored\""))
+    }
+
+    @Test
     fun bucketsAndWeeks() {
         assertEquals("1", batchBucketOf(1))
         assertEquals("2-10", batchBucketOf(2))
         assertEquals("2-10", batchBucketOf(10))
         assertEquals("11+", batchBucketOf(11))
+        assertEquals("11+", batchBucketOf(LARGE_BATCH_THRESHOLD))
+        assertFalse(isLargeBatch(1))
+        assertFalse(isLargeBatch(10))
+        assertTrue(isLargeBatch(LARGE_BATCH_THRESHOLD))
+        assertTrue(isLargeBatch(50))
         // 2026-10-25 is a Sunday, 2026-10-26 a Monday.
         assertEquals("2026-10-19", cohortWeekOf(Instant.parse("2026-10-25T23:59:59Z")))
         assertEquals("2026-10-26", cohortWeekOf(Instant.parse("2026-10-26T00:00:00Z")))

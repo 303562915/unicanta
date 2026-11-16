@@ -108,9 +108,30 @@ class PackageTelemetryTest {
     }
 
     @Test
-    fun bootCheckBackAtBootCompletedIsVoided() {
+    fun bootCheckSameBuildBackAtBootCompletedIsRestored() {
+        // Nothing but a person can have put the package back (the build did not change), so this is
+        // the "someone had to rescue the device" signal instead of a silent voided event.
         val e = entry("com.a").copy(buildFingerprint = "fp")
-        assertResult(resolve(e, installed(), ResolveMode.BOOT, fingerprint = "fp"), listOf(ev("com.a", TelemetryEventType.VOIDED)), gone)
+        assertResult(resolve(e, installed(), ResolveMode.BOOT, fingerprint = "fp"), listOf(ev("com.a", TelemetryEventType.RESTORED)), gone)
+        assertResult(resolve(e, installed(true), ResolveMode.BOOT, fingerprint = "fp"), listOf(ev("com.a", TelemetryEventType.RESTORED)), gone)
+    }
+
+    @Test
+    fun restoreIsNotClaimedWithoutBothBuilds() {
+        // An unknown build could be an OS update as well, so it stays voided.
+        assertResult(resolve(entry("com.a").copy(buildFingerprint = "fp"), installed(), ResolveMode.BOOT, fingerprint = null), listOf(ev("com.a", TelemetryEventType.VOIDED)), gone)
+        assertResult(resolve(entry("com.a"), installed(), ResolveMode.BOOT, fingerprint = "fp"), listOf(ev("com.a", TelemetryEventType.VOIDED)), gone)
+    }
+
+    @Test
+    fun startModeNeverReportsARestore() {
+        // At start time the entry may just be a normal reinstall after the boot; only the boot-time
+        // check can tell a restore from it.
+        val e = entry("com.a").copy(buildFingerprint = "fp")
+        assertEquals(
+            listOf(TelemetryEventType.SURVIVED_REBOOT, TelemetryEventType.REINSTALLED),
+            resolve(e, installed(true), ResolveMode.START, fingerprint = "fp").first.map { it.event },
+        )
     }
 
     @Test
@@ -127,6 +148,7 @@ class PackageTelemetryTest {
 
     @Test
     fun bootCheckIgnoresTheReinstallSignal() {
+        // The build is unknown here, so a restore can't be claimed and the signal stays unused.
         assertResult(resolve(entry("com.a"), installed(true), ResolveMode.BOOT, fingerprint = "fp"), listOf(ev("com.a", TelemetryEventType.VOIDED)), gone)
     }
 

@@ -14,8 +14,11 @@ import io.github.samolego.canta.generated.resources.cancel
 import io.github.samolego.canta.generated.resources.community_bootloop_warning
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.generated.resources.reset_to_factory_version
+import io.github.samolego.canta.generated.resources.uninstall_large_batch_warning
+import io.github.samolego.canta.generated.resources.uninstall_recovery_hint
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
+import io.github.samolego.canta.util.isLargeBatch
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -27,6 +30,7 @@ fun UninstallAppsDialog(
     onAgree: (resetToFactory: Boolean) -> Unit,
 ) {
     var resetToFactory by rememberSaveable { mutableStateOf(false) }
+    val largeBatch = isLargeBatch(appCount)
 
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -40,6 +44,17 @@ fun UninstallAppsDialog(
             Text(
                 text = stringResource(Res.string.community_bootloop_warning),
                 color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (largeBatch) {
+            Text(stringResource(Res.string.uninstall_large_batch_warning))
+        }
+        // A single app from the list is routine, so the reminder stays out of the way; the moment a
+        // batch is large or a bootloop is already on record, it is the most useful thing on screen.
+        if (largeBatch || bootloopRisk) {
+            Text(
+                text = stringResource(Res.string.uninstall_recovery_hint),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (canResetToFactory) {

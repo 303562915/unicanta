@@ -43,6 +43,14 @@ enum class TelemetryEventType(val wire: String) {
 
     /** The uninstall is void as survival evidence: the package came back by itself (system update, restore). */
     VOIDED("voided"),
+
+    /**
+     * The package was back although the build had not changed, so nothing but a person can have
+     * put it there: the most likely reason is a rescue of a device that would not boot or lost its
+     * launcher after the uninstall. Never survival evidence, but it is the only signal Canta has
+     * for "this uninstall had to be undone by hand" (see [PackageTelemetry]).
+     */
+    RESTORED("restored"),
 }
 
 /**
@@ -104,12 +112,18 @@ fun cohortWeekOf(instant: Instant): String {
     return date.minus(date.dayOfWeek.ordinal, DateTimeUnit.DAY).toString()
 }
 
+/** Above this many apps in one go, a batch counts as large (see [batchBucketOf] and the confirm dialog). */
+const val LARGE_BATCH_THRESHOLD = 11
+
 /** Coarse uninstall batch size, so exact counts are never sent. */
 fun batchBucketOf(count: Int): String = when {
     count <= 1 -> "1"
-    count <= 10 -> "2-10"
+    count < LARGE_BATCH_THRESHOLD -> "2-10"
     else -> "11+"
 }
+
+/** Whether [count] apps in one go is a batch large enough to be worth a warning. */
+fun isLargeBatch(count: Int): Boolean = count >= LARGE_BATCH_THRESHOLD
 
 enum class Verdict {
     INSUFFICIENT, BOOTLOOP, BREAKS, SAFE, UNCLEAR,

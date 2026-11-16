@@ -34,6 +34,9 @@ class PackageState(val uninstalled: Boolean, val installedSinceBoot: Boolean? = 
 /** Both builds known and different: the OS was updated since the uninstall. */
 private fun fingerprintChanged(then: String, now: String?) = then.isNotEmpty() && !now.isNullOrEmpty() && then != now
 
+/** Both builds known and equal: the OS was not updated since the uninstall. */
+private fun buildUnchanged(then: String, now: String?) = then.isNotEmpty() && !now.isNullOrEmpty() && then == now
+
 /**
  * Decides what to do with the uninstalls waiting for their "did it survive a
  * reboot" report. Returns the events to send and the entries that stay pending.
@@ -52,8 +55,9 @@ private fun fingerprintChanged(then: String, now: String?) = then.isNotEmpty() &
  *    build changed: an OS update restored it)
  *  - rebooted, not reported yet, installed again:
  *    - build changed ([currentFingerprint] differs): `voided` (an OS update restored it), dropped
- *    - [ResolveMode.BOOT]: `voided`, dropped (an OS restore at boot can't be told apart from a
- *      bootloop rescue, so it leaves the survival count)
+ *    - [ResolveMode.BOOT], build unchanged: `restored`, dropped (someone put the package back, so
+ *      it leaves the survival count, but it is worth reporting as a probable rescue)
+ *    - [ResolveMode.BOOT], build unknown: `voided`, dropped (nothing can be claimed either way)
  *    - [ResolveMode.START]: `survived_reboot` + `reinstalled` if it was reinstalled after the boot
  *      started, else `voided` (can't tell), dropped
  */
@@ -93,6 +97,11 @@ fun resolvePending(
                 remaining += entry.copy(survived = true)
             }
             fingerprintChanged(entry.buildFingerprint, currentFingerprint) -> report(TelemetryEventType.VOIDED)
+            // Installed again although the build did not change: nothing but a person can have put it
+            // back, so this most likely was a rescue of a device that would not boot. Still not
+            // survival evidence (the entry is dropped), but reported, unlike before.
+            mode == ResolveMode.BOOT && buildUnchanged(entry.buildFingerprint, currentFingerprint) ->
+                report(TelemetryEventType.RESTORED)
             // installedSinceBoot is ignored here: it can't be told apart from a bootloop rescue.
             mode == ResolveMode.BOOT -> report(TelemetryEventType.VOIDED)
             state.installedSinceBoot == true -> {

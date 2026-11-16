@@ -1,0 +1,81 @@
+name: 🔧 Fork CI — tests + debug APK
+
+# Runs on every branch of the fork, so the fork can validate changes without
+# waiting for upstream (upstream's PR check only triggers on PRs against master).
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 🧪 Common tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: 🔧 Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: 🧪 Tests for the changed utilities first
+        run: |
+          ./gradlew :composeApp:desktopTest \
+            --tests "io.github.samolego.canta.util.*" \
+            --stacktrace --no-daemon
+
+      - name: 🧪 Full desktop test suite
+        run: ./gradlew :composeApp:desktopTest --stacktrace --no-daemon
+
+      - name: 📤 Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          retention-days: 7
+
+  apk:
+    name: 🤖 Debug APK
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: 🔧 Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: 🏗️ Assemble debug
+        run: ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon
+
+      - name: 📝 Checksums
+        run: |
+          cd androidApp/build/outputs/apk/debug
+          sha256sum *.apk | tee SHA256SUMS.txt
+
+      - name: 📦 Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: androidApp/build/outputs/apk/debug/
+          retention-days: 14
