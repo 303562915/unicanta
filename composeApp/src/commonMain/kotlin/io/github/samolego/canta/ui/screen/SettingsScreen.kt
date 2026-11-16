@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Analytics
@@ -98,6 +99,7 @@ fun SettingsScreen(
     onUserSelected: (Int) -> Unit = {},
     fakeScores: Boolean = false,
     onFakeScoresChange: (Boolean) -> Unit = {},
+    onOpenAppListPermission: (() -> Unit)? = null,
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -170,6 +172,18 @@ fun SettingsScreen(
                     }
                 },
             )
+            HorizontalDivider(modifier = Modifier.padding(16.dp))
+
+            if (onOpenAppListPermission != null) {
+                // HyperOS/MIUI keep their own switch for this and cannot be asked at runtime, so
+                // there is always a way to reach it, whatever the list looks like.
+                SettingsItem(
+                    title = stringResource(Res.string.app_list_restricted_open_settings),
+                    description = stringResource(Res.string.app_list_restricted_description),
+                    icon = Icons.Default.Warning,
+                    onClick = onOpenAppListPermission,
+                )
+            }
             HorizontalDivider(modifier = Modifier.padding(16.dp))
 
             Text(

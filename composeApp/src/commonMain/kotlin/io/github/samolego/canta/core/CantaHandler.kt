@@ -133,6 +133,9 @@ interface CantaHandler {
      */
     fun openPackageListSettings(): Boolean = false
 
+    /** Whether [openPackageListSettings] can lead anywhere on this platform. */
+    val supportsPackageListSettings: Boolean get() = false
+
     /**
      * Icons for the apps from the last [loadApps], as (package name, icon)
      * pairs streamed in display order, so the list can show before they are

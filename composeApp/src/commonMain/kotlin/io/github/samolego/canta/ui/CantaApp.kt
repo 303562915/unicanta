@@ -172,6 +172,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     selectedUserId = selectedUserId,
                     fakeScores = fakeScores,
                     onFakeScoresChange = appListViewModel::setFakeScores,
+                    onOpenAppListPermission = if (handler.supportsPackageListSettings)
+                        ({ handler.openPackageListSettings() }) else null,
                     onUserSelected = { id ->
                         coroutineScope.launch {
                             handler.selectUser(id)

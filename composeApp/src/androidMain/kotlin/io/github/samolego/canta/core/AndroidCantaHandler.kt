@@ -120,6 +120,8 @@ class AndroidCantaHandler(
 
     override val appListRestricted: Boolean get() = restrictedList
 
+    override val supportsPackageListSettings: Boolean get() = true
+
     /** The packages from the last [loadApps], whose icons [loadIcons] renders. */
     @Volatile
     private var packages: List<Pair<PackageDetails, ApplicationInfo?>> = emptyList()
@@ -136,6 +138,8 @@ class AndroidCantaHandler(
         val local = packageManager.getAllPackages()
         val all = if (local.size < MIN_PLAUSIBLE_PACKAGES) restrictedFallback(local) else local
         restrictedList = all.size > local.size && local.size < MIN_PLAUSIBLE_PACKAGES
+        // Logged so a report can tell "the ROM hid the list" from "the list really is short".
+        LogUtils.i(TAG, "Packages: ${local.size} from PackageManager, ${all.size} after the privileged fallback")
         packages = all
             .map { info -> async { readSafely(info) { info.toPackageDetails(packageManager) to info.applicationInfo } } }
             .awaitAll()
