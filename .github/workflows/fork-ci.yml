@@ -120,11 +120,13 @@ jobs:
       - name: 🏗️ Assemble release (R8 + resource shrinking)
         run: ./gradlew :androidApp:assembleRelease --stacktrace --no-daemon
 
-      - name: 📝 Checksums and sizes
+      - name: 📝 Checksums, sizes and the package name the APK really has
         run: |
           cd androidApp/build/outputs/apk/release
           sha256sum *.apk | tee SHA256SUMS.txt
           ls -l --block-size=K *.apk
+          AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          "$AAPT2" dump badging *.apk | head -1
 
       - name: 📦 Upload release APK
         uses: actions/upload-artifact@v4

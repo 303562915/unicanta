@@ -1,4 +1,4 @@
-package io.github.samolego.canta
+package io.github.a303562915.uninstallhelper
 
 import android.content.BroadcastReceiver
 import android.content.Context

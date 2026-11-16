@@ -12,7 +12,7 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "io.github.samolego.canta"
+    namespace = "io.github.a303562915.uninstallhelper"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     // Reproducible builds (F-Droid): no dependency metadata blobs.
@@ -22,7 +22,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.samolego.canta"
+        applicationId = "io.github.a303562915.uninstallhelper"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = providers.gradleProperty("version_code").get().toInt()
