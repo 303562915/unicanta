@@ -3,7 +3,9 @@ package io.github.a303562915.unicanta
 import android.app.Application
 import io.github.samolego.canta.core.AndroidCantaPlatform
 import android.os.Build
+import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaAppDependencies
+import io.github.samolego.canta.provideAndroidDependencies
 import io.github.samolego.canta.util.FileCrashReportStore
 import java.io.File
 
