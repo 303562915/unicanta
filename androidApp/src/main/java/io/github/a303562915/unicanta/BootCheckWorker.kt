@@ -1,4 +1,4 @@
-package io.github.a303562915.uninstallhelper
+package io.github.a303562915.unicanta
 
 import android.content.Context
 import androidx.work.CoroutineWorker

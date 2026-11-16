@@ -1,4 +1,4 @@
-package io.github.a303562915.uninstallhelper
+package io.github.a303562915.unicanta
 
 import android.os.Build
 import android.os.Bundle

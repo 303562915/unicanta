@@ -1,4 +1,4 @@
-package io.github.a303562915.uninstallhelper
+package io.github.a303562915.unicanta
 
 import android.app.Application
 import io.github.samolego.canta.core.AndroidCantaPlatform
