@@ -65,8 +65,11 @@ jobs:
       - name: 🔧 Make gradlew executable
         run: chmod +x gradlew
 
-      - name: 🏗️ Assemble debug
-        run: ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon
+      - name: 🏗️ Assemble debug (pointed at an on-device backend)
+        run: |
+          ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon \
+            -Pcanta.telemetry.baseUrl="http://127.0.0.1:8787/rest/v1/rpc/" \
+            -Pcanta.telemetry.apiKey="local-dev-key"
 
       - name: 📝 Checksums
         run: |

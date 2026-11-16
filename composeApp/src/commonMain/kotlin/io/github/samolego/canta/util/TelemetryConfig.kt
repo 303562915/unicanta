@@ -1,14 +1,17 @@
 package io.github.samolego.canta.util
 
+import io.github.samolego.canta.TelemetryEndpoints
+
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
 
 /** Constants for the opt-in package-safety telemetry (see [Telemetry]). */
 object TelemetryConfig {
-    const val BASE_URL = "https://aahwoixjjlopftjqnner.supabase.co/rest/v1/rpc/"
+    /** Generated from the build: `-Pcanta.telemetry.baseUrl=...` points a build at another backend. */
+    val BASE_URL: String = TelemetryEndpoints.BASE_URL
 
-    /** Supabase publishable key; meant to be public. */
-    const val PUBLISHABLE_KEY = "sb_publishable_2gyUfMGAKMro9MtNgVXxjg_uv8vxGy-"
+    /** Publishable/anon key of that backend; meant to be public. */
+    val PUBLISHABLE_KEY: String = TelemetryEndpoints.API_KEY
 
     /** Proof-of-work difficulty: about this many hashes per event. */
     const val POW_K = 10_000L
