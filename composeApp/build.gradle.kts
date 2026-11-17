@@ -156,14 +156,15 @@ val generateBuildInfo = tasks.register<GenerateBuildInfo>("generateBuildInfo") {
 // debug variant, a desktop dev run (`run`, hot reload) or a wasm development build; release
 // and plain `build` / `test` invocations are not.
 val generateBuildFlags = tasks.register<GenerateBuildFlags>("generateBuildFlags") {
-    // Defaults are upstream's backend, so a plain build keeps working as before.
+    // Defaults are our own Supabase project; the publishable key is meant to be embedded in
+    // clients, so it can stay here. Override with -Pcanta.telemetry.baseUrl / .apiKey.
     telemetryBaseUrl.set(
         providers.gradleProperty("canta.telemetry.baseUrl")
-            .orElse("https://aahwoixjjlopftjqnner.supabase.co/rest/v1/rpc/")
+            .orElse("https://axuhfogeovtsbxokqccf.supabase.co/rest/v1/rpc/")
     )
     telemetryApiKey.set(
         providers.gradleProperty("canta.telemetry.apiKey")
-            .orElse("sb_publishable_2gyUfMGAKMro9MtNgVXxjg_uv8vxGy-")
+            .orElse("sb_publishable_YipHHrFaw1E2q5qTUVPl0A_plD7Q5yS")
     )
     val requestedTasks = gradle.startParameter.taskNames
     debug.set(

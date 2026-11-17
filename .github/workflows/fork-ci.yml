@@ -65,16 +65,15 @@ jobs:
       - name: 🔧 Make gradlew executable
         run: chmod +x gradlew
 
-      - name: 🏗️ Assemble debug (pointed at an on-device backend)
-        run: |
-          ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon \
-            -Pcanta.telemetry.baseUrl="http://127.0.0.1:8787/rest/v1/rpc/" \
-            -Pcanta.telemetry.apiKey="local-dev-key"
+      - name: 🏗️ Assemble debug
+        run: ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon
 
       - name: 📝 Checksums
         run: |
           cd androidApp/build/outputs/apk/debug
           sha256sum *.apk | tee SHA256SUMS.txt
+          # The telemetry endpoint is a constant inside the APK: show what this build really calls.
+          unzip -p *.apk classes.dex | grep -a -o "https://axuhfogeovtsbxokqccf.supabase.co[a-zA-Z0-9/._-]*" | head -1
 
       - name: 📦 Upload APK
         uses: actions/upload-artifact@v4
@@ -130,6 +129,7 @@ jobs:
           ls -l --block-size=K *.apk
           AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
           "$AAPT2" dump badging *.apk | head -1
+          unzip -p *.apk classes.dex | grep -a -o "https://axuhfogeovtsbxokqccf.supabase.co[a-zA-Z0-9/._-]*" | head -1
 
       - name: 📦 Upload release APK
         uses: actions/upload-artifact@v4
