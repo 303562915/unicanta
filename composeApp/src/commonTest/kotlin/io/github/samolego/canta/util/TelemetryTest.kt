@@ -137,7 +137,8 @@ class TelemetryTest {
         assertEquals(challenge, first["challenge"]!!.jsonPrimitive.content)
         assertEquals("abcd", first["sig"]!!.jsonPrimitive.content)
         assertTrue(first["x"]!!.jsonPrimitive.int >= 0)
-        assertEquals("sb_publishable_2gyUfMGAKMro9MtNgVXxjg_uv8vxGy-", records[0].headers["apikey"])
+        // The key is build-generated (see TelemetryEndpoints), so assert against it, not a literal.
+        assertEquals(TelemetryConfig.PUBLISHABLE_KEY, records[0].headers["apikey"])
     }
 
     @Test
