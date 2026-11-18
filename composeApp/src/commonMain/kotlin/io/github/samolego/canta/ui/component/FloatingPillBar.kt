@@ -61,12 +61,7 @@ fun FloatingPillBar(
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .fillMaxWidth()
-            .shadow(
-                elevation = 18.dp,
-                shape = shape,
-                ambientColor = MaterialTheme.colorScheme.shadow.copy(alpha = 0.28f),
-                spotColor = MaterialTheme.colorScheme.shadow.copy(alpha = 0.34f),
-            )
+            .shadow(elevation = 18.dp, shape = shape)
             .background(containerColor, shape)
             .padding(horizontal = 6.dp, vertical = 6.dp)
             .selectableGroup(),

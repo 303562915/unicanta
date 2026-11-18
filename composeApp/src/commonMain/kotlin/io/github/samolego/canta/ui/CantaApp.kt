@@ -255,8 +255,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         }
 
         // Floating capsule bar, above the content like the dashboard capsule in FlClash.
-        val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
-        if (currentRoute in BOTTOM_BAR_ROUTES) {
+        if (currentRoute != null && currentRoute in BOTTOM_BAR_ROUTES) {
             FloatingPillBar(
                 items = bottomBarItems(
                     route = currentRoute,
