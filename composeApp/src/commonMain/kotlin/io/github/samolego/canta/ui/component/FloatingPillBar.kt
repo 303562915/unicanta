@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.toPx
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.exp
