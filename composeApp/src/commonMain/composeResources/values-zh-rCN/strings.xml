@@ -145,6 +145,8 @@
     <string name="rules_device_title">本机</string>
     <string name="rules_scope_note">%2$d 条规则里有 %1$d 条适用于这台手机，其余属于别的机型或系统版本。</string>
     <string name="rules_empty">本机还没有对应规则。</string>
+    <string name="tab_apps">应用</string>
+    <string name="tab_tweaks">系统技巧</string>
     <string name="tab_rules">安全</string>
     <string name="tab_presets">预设</string>
     <string name="unsafe_device_prefix">本机规则：%1$s</string>

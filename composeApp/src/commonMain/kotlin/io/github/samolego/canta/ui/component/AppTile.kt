@@ -28,6 +28,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontFamily
 import io.github.samolego.canta.CANTA_PACKAGE_NAME
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.util.CommunityScore
@@ -73,13 +76,32 @@ fun AppTile(
                     Modifier.clickable(
                         onClick = onShowDialog,
                     ),
-            headlineContent = { Text(appInfo.name) },
+            // One line each: long app and package names shrink and ellipsise instead of
+            // wrapping into a second line and inflating every row.
+            headlineContent = {
+                Text(
+                    text = appInfo.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
             supportingContent = {
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                    ) { Text(appInfo.packageName, modifier = Modifier.weight(9f)) }
+                    ) {
+                        Text(
+                            text = appInfo.packageName,
+                            modifier = Modifier.weight(9f),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
 
                     FlowRow {
                         if (appInfo.badgeInfo != null) {

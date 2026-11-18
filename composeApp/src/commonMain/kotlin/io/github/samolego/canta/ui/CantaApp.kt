@@ -8,6 +8,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -42,7 +43,9 @@ import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.select_all_enabled
 import io.github.samolego.canta.generated.resources.select_all_tip
 import io.github.samolego.canta.generated.resources.settings
+import io.github.samolego.canta.generated.resources.tab_apps
 import io.github.samolego.canta.generated.resources.tab_rules
+import io.github.samolego.canta.generated.resources.tab_tweaks
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
 import io.github.samolego.canta.ui.component.BottomBarItem
@@ -292,11 +295,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         // Floating capsule bar, above the content like the dashboard capsule in FlClash.
         if (currentRoute != null && currentRoute in BOTTOM_BAR_ROUTES) {
             FloatingPillBar(
-                items = bottomBarItems(
-                    route = currentRoute,
-                    page = pagerState.currentPage,
-                ),
-                onSelect = { key -> onBottomBarSelect(key, navController, pagerState, coroutineScope) },
+                items = bottomBarItems(route = currentRoute),
+                onSelect = { key -> onBottomBarSelect(key, navController) },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -313,35 +313,32 @@ private val BOTTOM_BAR_ROUTES = setOf(Screen.Main.route, Screen.Rules.route, Scr
 
 /** Stable keys of the bar entries. */
 private object BarKey {
-    const val INSTALLED = "installed"
-    const val UNINSTALLED = "uninstalled"
+    const val APPS = "apps"
     const val RULES = "rules"
+    const val TWEAKS = "tweaks"
     const val SETTINGS = "settings"
 }
 
+/**
+ * Four entries: the app list (installed/uninstalled are an in-page switch), the device safety
+ * page, the ROM tweaks, and the settings.
+ */
 @Composable
-private fun bottomBarItems(route: String?, page: Int): List<BottomBarItem> = listOf(
-    BottomBarItem(BarKey.INSTALLED, AppsType.INSTALLED.icon, stringResource(AppsType.INSTALLED.label), route == Screen.Main.route && page == 0),
-    BottomBarItem(BarKey.UNINSTALLED, AppsType.UNINSTALLED.icon, stringResource(AppsType.UNINSTALLED.label), route == Screen.Main.route && page == 1),
+private fun bottomBarItems(route: String?): List<BottomBarItem> = listOf(
+    BottomBarItem(BarKey.APPS, AppsType.INSTALLED.icon, stringResource(Res.string.tab_apps), route == Screen.Main.route),
     BottomBarItem(BarKey.RULES, Icons.Default.Shield, stringResource(Res.string.tab_rules), route == Screen.Rules.route),
+    BottomBarItem(BarKey.TWEAKS, Icons.Default.Build, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route),
     BottomBarItem(BarKey.SETTINGS, Icons.Default.Settings, stringResource(Res.string.settings), route == Screen.Settings.route),
 )
 
 private fun onBottomBarSelect(
     key: String,
     navController: NavHostController,
-    pagerState: PagerState,
-    scope: CoroutineScope,
 ) {
     when (key) {
-        BarKey.INSTALLED, BarKey.UNINSTALLED -> {
-            val target = if (key == BarKey.INSTALLED) 0 else 1
-            if (navController.currentDestination?.route != Screen.Main.route) {
-                navController.navigate(Screen.Main.route) { launchSingleTop = true }
-            }
-            scope.launch { pagerState.animateScrollToPage(target) }
-        }
+        BarKey.APPS -> navController.navigateSingleTop(Screen.Main.route)
         BarKey.RULES -> navController.navigateSingleTop(Screen.Rules.route)
+        BarKey.TWEAKS -> navController.navigateSingleTop(Screen.Tweaks.route)
         BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Settings.route)
     }
 }

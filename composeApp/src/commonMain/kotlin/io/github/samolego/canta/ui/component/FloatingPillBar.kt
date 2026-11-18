@@ -2,9 +2,9 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,12 +23,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /** One destination of the floating bottom bar. */
@@ -50,18 +50,15 @@ fun FloatingPillBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(28.dp),
-    containerColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f),
+    containerColor: Color = Color.Transparent,
 ) {
     Row(
         modifier = modifier
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .fillMaxWidth()
-            .shadow(elevation = 18.dp, shape = shape)
             .background(containerColor, shape)
-            // A hairline keeps the bar legible on a busy background at this transparency.
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), shape)
-            .padding(horizontal = 4.dp, vertical = 5.dp)
+            .padding(horizontal = 2.dp, vertical = 2.dp)
             .selectableGroup(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -80,10 +77,10 @@ private fun BottomBarEntry(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val alpha by animateFloatAsState(if (item.selected) 1f else 0.72f, label = "barItemAlpha")
-    Row(
+    Column(
         modifier = Modifier
-            // The selected pill is a soft tonal block, not an underline: same idea as the
-            // floating capsules in FlClash's dashboard.
+            // Only the selected entry gets a soft pill; the bar itself stays invisible so the
+            // content scrolls underneath it.
             .background(
                 color = if (item.selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
                 shape = shape,
@@ -95,8 +92,8 @@ private fun BottomBarEntry(
                 role = Role.Tab,
                 onClick = onClick,
             )
-            .padding(horizontal = if (item.selected) 12.dp else 10.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = if (item.selected) 14.dp else 10.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             imageVector = item.icon,
@@ -105,6 +102,7 @@ private fun BottomBarEntry(
             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
             modifier = Modifier.size(20.dp),
         )
+
         // Every label stays visible: an icon alone makes people guess which tab they are on.
         Text(
             text = item.label,
@@ -114,7 +112,8 @@ private fun BottomBarEntry(
             fontWeight = if (item.selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.padding(start = 5.dp).widthIn(max = 84.dp),
+            modifier = Modifier.padding(top = 2.dp).widthIn(max = 78.dp),
+            textAlign = TextAlign.Center,
         )
     }
 }

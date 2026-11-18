@@ -115,6 +115,8 @@
     <string name="rules_device_title">This device</string>
     <string name="rules_scope_note">%1$d of %2$d rules apply to this phone; the rest belong to other models or ROM versions.</string>
     <string name="rules_empty">No rules for this device yet.</string>
+    <string name="tab_apps">Apps</string>
+    <string name="tab_tweaks">Tweaks</string>
     <string name="tab_rules">Safety</string>
     <string name="tab_presets">Presets</string>
     <string name="unsafe_device_prefix">Rules for this device: %1$s</string>
