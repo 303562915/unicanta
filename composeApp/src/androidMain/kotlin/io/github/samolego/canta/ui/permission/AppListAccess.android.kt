@@ -33,7 +33,7 @@ private fun Context.findActivity(): Activity? {
 }
 
 private fun Context.hasInstalledAppsPermission(): Boolean =
-    checkPermission(GET_INSTALLED_APPS, packageName) == PackageManager.PERMISSION_GRANTED
+    packageManager.checkPermission(GET_INSTALLED_APPS, packageName) == PackageManager.PERMISSION_GRANTED
 
 private fun Context.supportsInstalledAppsPermission(): Boolean =
     runCatching { packageManager.getPermissionInfo(GET_INSTALLED_APPS, 0) }.isSuccess
