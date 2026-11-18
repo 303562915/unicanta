@@ -1,12 +1,8 @@
 package io.github.samolego.canta.ui.component
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -54,7 +50,7 @@ fun FloatingPillBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(28.dp),
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+    containerColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f),
 ) {
     Row(
         modifier = modifier
@@ -63,9 +59,11 @@ fun FloatingPillBar(
             .fillMaxWidth()
             .shadow(elevation = 18.dp, shape = shape)
             .background(containerColor, shape)
-            .padding(horizontal = 6.dp, vertical = 6.dp)
+            // A hairline keeps the bar legible on a busy background at this transparency.
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), shape)
+            .padding(horizontal = 4.dp, vertical = 5.dp)
             .selectableGroup(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         items.forEach { item ->
@@ -97,7 +95,7 @@ private fun BottomBarEntry(
                 role = Role.Tab,
                 onClick = onClick,
             )
-            .padding(horizontal = if (item.selected) 16.dp else 14.dp, vertical = 10.dp),
+            .padding(horizontal = if (item.selected) 12.dp else 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -105,21 +103,18 @@ private fun BottomBarEntry(
             contentDescription = item.label,
             tint = if (item.selected) MaterialTheme.colorScheme.onSecondaryContainer
             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(20.dp),
         )
-        AnimatedVisibility(
-            visible = item.selected,
-            enter = fadeIn() + expandHorizontally(),
-            exit = fadeOut() + shrinkHorizontally(),
-        ) {
-            Text(
-                text = item.label,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                modifier = Modifier.padding(start = 8.dp).widthIn(max = 120.dp),
-            )
-        }
+        // Every label stays visible: an icon alone makes people guess which tab they are on.
+        Text(
+            text = item.label,
+            color = if (item.selected) MaterialTheme.colorScheme.onSecondaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (item.selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(start = 5.dp).widthIn(max = 84.dp),
+        )
     }
 }
