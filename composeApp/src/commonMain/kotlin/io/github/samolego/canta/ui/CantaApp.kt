@@ -68,6 +68,7 @@ import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import io.github.samolego.canta.util.CrashReportStore
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.SafetyRules
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -268,10 +269,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 // Comments are posted under this install's own code: no account, no login.
                 var planAuthor by remember { mutableStateOf("") }
+                // The plan's packages are shown with their icons and their device rules, the same
+                // way the app list shows them.
+                var planRules by remember { mutableStateOf<SafetyRules?>(null) }
                 LaunchedEffect(Unit) {
                     planProfile = handler.deviceProfile()
                     // "#10000" once the number is known; the token head before that.
                     planAuthor = DeviceIdentity.current(deps.settings).code
+                    planRules = SafetyRules.bundled()
                 }
                 PlanDetailScreen(
                     planId = planId,
@@ -279,6 +284,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     profile = planProfile,
                     onNavigateBack = { navController.navigateUp() },
                     author = planAuthor,
+                    apps = appListViewModel.apps,
+                    rules = planRules,
                 )
             }
         }

@@ -273,6 +273,7 @@
     <string name="plan_upload_password_optional">测试密码可选；填对了就不用等重启验证。</string>
     <string name="plan_upload_reboot_ok">这一批已经过重启验证，可以直接上传。</string>
     <string name="tweaks_title">系统技巧</string>
+    <string name="tweaks_your_rom">你的系统</string>
     <string name="tweaks_copy_command">复制命令</string>
     <string name="tweaks_copied">已复制</string>
     <string name="tweaks_restore_button">恢复所有已卸载的应用</string>

@@ -334,6 +334,7 @@
     <string name="plan_upload_password_optional">The test password is optional; it skips the reboot requirement.</string>
     <string name="plan_upload_reboot_ok">This batch survived a reboot and can be uploaded directly.</string>
     <string name="tweaks_title">System tweaks</string>
+    <string name="tweaks_your_rom">Your system</string>
     <string name="tweaks_copy_command">Copy command</string>
     <string name="tweaks_copied">Copied</string>
     <string name="tweaks_restore_button">Restore all uninstalled apps</string>

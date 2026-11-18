@@ -115,9 +115,10 @@ may delete a plan; test uploads are flagged and kept out of the ranking. Backend
 - `FloatingPillBar`: frosted, rounded, icon-over-label, four entries with permanent Chinese labels;
 - the first tab is now an uninstall ranking driven by likes;
 - denser list rows, wider selected pill;
-- a **system tweaks page** (`TweaksScreen` + `util/RomTweaks.kt`) with one tappable thing: restore every
-  uninstalled app — it asks how many will come back first, then restores them one by one, with the
-  equivalent `pm install-existing` command shown alongside;
+- a **system tweaks page** (`TweaksScreen` + `util/RomTweaks.kt`) grouped as 小米 / OPPO / vivo / 华为 / 三星,
+  this phone's own group first and marked, with no "other" and no "general" group; each card is a tappable
+  feature — restore every uninstalled app, which asks how many will come back first, then restores them one
+  by one, with the equivalent `pm install-existing` command shown alongside;
 - plan detail screen, upload dialog, comment list.
 
 ### 6. ROM and permission handling

@@ -53,11 +53,15 @@ import io.github.samolego.canta.generated.resources.tweaks_restore_nothing
 import io.github.samolego.canta.generated.resources.tweaks_restore_running
 import io.github.samolego.canta.generated.resources.tweaks_restore_start
 import io.github.samolego.canta.generated.resources.tweaks_title
+import io.github.samolego.canta.generated.resources.tweaks_your_rom
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.RomTweak
 import io.github.samolego.canta.util.RomTweaks
+import io.github.samolego.canta.util.familyKeyOf
+import io.github.samolego.canta.util.familyLabel
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -78,23 +82,31 @@ private sealed interface RestoreStep {
 }
 
 /**
- * The system tweaks page: a flat list of cards, one per tweak. There is no per-vendor grouping —
- * what a phone's ROM is called does not change what the card does — and a card whose action Canta
- * knows gets a button instead of instructions, so restoring the apps a user uninstalled is one tap
- * plus a confirmation instead of a copied shell command.
+ * The system tweaks page: one card per vendor group, the group matching this phone's ROM first and
+ * marked as such, in the order 小米 → OPPO → vivo → 华为 → 三星. There is no "other" group and no
+ * "general" group: a tweak either belongs to a vendor's ROM or is not shown. A card whose action
+ * Canta knows gets a button instead of instructions, so restoring the apps a user uninstalled is
+ * one tap plus a confirmation rather than a copied shell command.
  */
 @Composable
 fun TweaksScreen(
     handler: CantaHandler,
     onNavigateBack: () -> Unit,
 ) {
-    var tweaks by remember { mutableStateOf<List<RomTweak>>(emptyList()) }
+    var profile by remember { mutableStateOf<DeviceProfile?>(null) }
+    var tweaks by remember { mutableStateOf<RomTweaks?>(null) }
     var step by remember { mutableStateOf<RestoreStep?>(null) }
     var copied by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { tweaks = RomTweaks.bundled().all }
+    LaunchedEffect(Unit) {
+        profile = handler.deviceProfile()
+        tweaks = RomTweaks.bundled()
+    }
+
+    val groups = remember(tweaks, profile) { tweaks?.groupedFor(profile).orEmpty() }
+    val mine = profile?.let { familyKeyOf(it.rom) }
 
     /** Reads which apps are uninstalled for this user and asks before touching any of them. */
     fun askToRestoreAll() {
@@ -135,20 +147,41 @@ fun TweaksScreen(
         },
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-            items(tweaks, key = { it.id }) { tweak ->
-                TweakCard(
-                    tweak = tweak,
-                    copied = copied == tweak.id,
-                    onCopy = {
-                        clipboard.setText(AnnotatedString(tweak.command))
-                        copied = tweak.id
-                    },
-                    action = when (tweak.action) {
-                        RomTweaks.ACTION_RESTORE_ALL ->
-                            stringResource(Res.string.tweaks_restore_button) to { askToRestoreAll() }
-                        else -> null
-                    },
-                )
+            groups.forEach { (family, list) ->
+                item(key = "head-$family") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp),
+                    ) {
+                        Text(
+                            text = familyLabel(family),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (family == mine) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (family == mine) {
+                            Text(
+                                text = stringResource(Res.string.tweaks_your_rom),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+                items(list, key = { it.id }) { tweak ->
+                    TweakCard(
+                        tweak = tweak,
+                        copied = copied == tweak.id,
+                        onCopy = {
+                            clipboard.setText(AnnotatedString(tweak.command))
+                            copied = tweak.id
+                        },
+                        action = when (tweak.action) {
+                            RomTweaks.ACTION_RESTORE_ALL ->
+                                stringResource(Res.string.tweaks_restore_button) to { askToRestoreAll() }
+                            else -> null
+                        },
+                    )
+                }
             }
         }
     }

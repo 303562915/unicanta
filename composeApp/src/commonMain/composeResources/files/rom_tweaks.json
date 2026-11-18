@@ -1,11 +1,44 @@
 {
- "version": 2,
+ "version": 3,
  "updated": "2026-11-18",
  "tweaks": [
   {
-   "id": "restore-uninstalled-apps",
+   "id": "restore-uninstalled-xiaomi",
+   "rom": "hyperos",
    "title": "恢复所有已卸载的应用",
-   "why": "澎湃OS 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把你这台手机上卸载过的应用一次全装回去；不装 Canta 时跑一遍下面那条命令，效果一样。",
+   "why": "澎湃OS / MIUI 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。澎湃OS 默认藏着「已安装应用列表」权限，恢复前先把那个开关打开，否则列表会少一截。",
+   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
+   "action": "restore-uninstalled"
+  },
+  {
+   "id": "restore-uninstalled-oppo",
+   "rom": "coloros",
+   "title": "恢复所有已卸载的应用",
+   "why": "ColorOS / realme UI 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
+   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
+   "action": "restore-uninstalled"
+  },
+  {
+   "id": "restore-uninstalled-vivo",
+   "rom": "originos",
+   "title": "恢复所有已卸载的应用",
+   "why": "OriginOS / Funtouch 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
+   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
+   "action": "restore-uninstalled"
+  },
+  {
+   "id": "restore-uninstalled-huawei",
+   "rom": "emui",
+   "title": "恢复所有已卸载的应用",
+   "why": "EMUI / MagicOS 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
+   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
+   "action": "restore-uninstalled"
+  },
+  {
+   "id": "restore-uninstalled-samsung",
+   "rom": "oneui",
+   "title": "恢复所有已卸载的应用",
+   "why": "One UI 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
    "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
    "action": "restore-uninstalled"
   }
