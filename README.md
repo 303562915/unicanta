@@ -52,13 +52,10 @@
 - **单文件自托管**：`server/node/server.mjs`，内置 SQLite（`node:sqlite`，不编译原生模块），
   `node server.mjs` 就能起，环境变量 `PORT` / `DB_PATH` / `RETENTION_DAYS` / `POW_K`。
 
-客户端默认指向自建项目，构建时可覆盖：
-
-```bash
-./gradlew :androidApp:assembleDebug \
-  -Pcanta.telemetry.baseUrl=https://PROJECT.supabase.co/rest/v1/rpc/ \
-  -Pcanta.telemetry.apiKey=PUBLISHABLE_KEY
-```
+客户端默认指向自建项目。构建只在 **GitHub Actions** 里进行，每次 push 自动触发
+（测试 → Debug APK → Release APK，见 `.github/workflows/build.yml`）；**本地不编译**，
+需要切换遥测后端时在 Actions 里通过 `-Pcanta.telemetry.baseUrl` /
+`-Pcanta.telemetry.apiKey` 传入即可。
 
 **Proof of Work 与客户端 `util/Pow.kt` 一致**，服务端不需要信任客户端上报：
 
@@ -127,6 +124,8 @@ survived >= 50% 且上面 <= 2%                -> SAFE
 
 - 自有 `applicationId`，release 开 R8 压缩并补齐缺失的 keep 规则；
 - Gradle wrapper 下载加超时，避免 CI 卡死在拉 distribution；
+- **不在本地编译**：`build.yml` 在**每次 push** 时自动构建——测试 → Debug APK →
+  Release APK（配置了签名密钥才跑），产物与测试报告以 artifact 保留；
 - `fork-ci.yml` 在**每个分支**上跑通用测试并产出 debug APK，支持 `workflow_dispatch`
   时覆盖遥测端点与 key（`telemetry_base_url` / `telemetry_api_key`）。
 
@@ -146,12 +145,19 @@ survived >= 50% 且上面 <= 2%                -> SAFE
 
 ## 构建
 
-```bash
-./gradlew :androidApp:assembleDebug     # 调试包
-./gradlew :androidApp:assembleRelease   # 需签名配置
-```
+**不在本地编译**：所有编译都发生在 GitHub Actions 里，**每次 push 自动触发**
+（`push` 到任何分支，含 `workflow_dispatch` 手动触发）。
 
-要求 JDK 21。多平台模块：`androidApp` / `desktopApp` / `webApp` / `composeApp`。
+见 [`.github/workflows/build.yml`](.github/workflows/build.yml)，一次完整构建包含：
+
+1. **测试**：`:composeApp:desktopTest`，失败即阻断后面的构建；
+2. **Debug APK**：`:androidApp:assembleDebug`，产物与 SHA-256 上传为 artifact；
+3. **Release APK**：`:androidApp:assembleRelease`（R8 压缩），仅当仓库配置了签名密钥
+   `CANTA_KEYSTORE_BASE64`（另需 `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`）时执行，
+   未配置则该任务自动跳过，测试与 Debug APK 照常产出。
+
+遥测端点等构建参数同样在 Actions 里通过 `-Pcanta.telemetry.*` 传入，本地不需要准备
+JDK 或 Gradle 缓存。
 
 ## 本地回归
 
@@ -193,7 +199,8 @@ cd server/node && node test/e2e.test.mjs
   `SUPABASE_PROJECT_ID` 仍是 `aahwoixjjlopftjqnner`，与本项目 `axuhfogeovtsbxokqccf` 不一致，
   推 master 时会把迁移打到错误的库；
 - 用 CLI 推迁移需要在仓库 secrets 里放 `SUPABASE_ACCESS_TOKEN`；
-- 本 fork 未做 release 签名与分发，CI 只产出 debug APK。
+- 本 fork 未做 release 签名与分发；`build.yml` 已支持配置 `CANTA_KEYSTORE_BASE64` 等
+  secrets 后产出 Release APK，未配置时自动跳过该任务。
 
 ## 致谢
 
