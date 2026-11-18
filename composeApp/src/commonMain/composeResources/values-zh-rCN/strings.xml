@@ -313,4 +313,10 @@
     <string name="tweaks_empty">这台机型暂时没有专属工具。</string>
     <string name="tweaks_splash_needs_service">智能服务（com.miui.systemAdSolution）不在手机上：去小米浏览器搜「小米智能服务」装上，再点一次这个按钮，否则开屏还是会多等 3 秒。</string>
     <string name="tweaks_restore_tool_why">把当前用户下卸载过的应用一次全装回来，所有机型都能用。</string>
+    <string name="recommend_details">查看 %1$s 的详情</string>
+    <string name="recommend_close">关闭</string>
+    <string name="recommend_open_browser">在浏览器打开</string>
+    <string name="recommend_detail_hint">这个按钮会在浏览器里打开项目主页。Canta 只存链接，不会从这里装任何东西。</string>
+    <string name="recommend_switch_grid">切换成网格排列</string>
+    <string name="recommend_switch_list">切换成列表排列</string>
 </resources>

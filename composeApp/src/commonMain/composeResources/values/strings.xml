@@ -374,4 +374,10 @@
     <string name="tweaks_empty">No tool for this ROM yet.</string>
     <string name="tweaks_splash_needs_service">智能服务 (com.miui.systemAdSolution) is not on this phone: search for 小米智能服务 in the Xiaomi browser, install it, then tap this button again — the splash screen still waits 3 seconds without it.</string>
     <string name="tweaks_restore_tool_why">Reinstalls every app uninstalled for this user; works on every ROM.</string>
+    <string name="recommend_details">Details for %1$s</string>
+    <string name="recommend_close">Close</string>
+    <string name="recommend_open_browser">Open in browser</string>
+    <string name="recommend_detail_hint">The button opens the project page in your browser. Canta only keeps the link and installs nothing from here.</string>
+    <string name="recommend_switch_grid">Switch to grid layout</string>
+    <string name="recommend_switch_list">Switch to list layout</string>
 </resources>
