@@ -43,8 +43,8 @@ class RomTweaks(private val set: RomTweakSet) {
         return groups.entries
             .sortedWith(
                 compareBy(
-                    { key -> if (key.key == "all") 2 else if (key == mine) 0 else 1 },
-                    { it.key },
+                    { entry -> if (entry.key == "all") 2 else if (entry.key == mine) 0 else 1 },
+                    { entry -> entry.key },
                 )
             )
             .map { it.key to it.value }
