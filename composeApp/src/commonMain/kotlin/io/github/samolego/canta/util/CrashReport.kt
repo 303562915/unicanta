@@ -14,7 +14,7 @@ object CrashReport {
     /** Longest allowed issue URL; browsers and GitHub reject much more than this. */
     const val MAX_URL_LENGTH = 7000
 
-    private const val NEW_ISSUE_URL = "https://github.com/samolego/Canta/issues/new"
+    private const val NEW_ISSUE_URL = "https://github.com/303562915/Canta/issues/new"
     private const val TRUNCATED_MARKER = "\n... (truncated)"
 
     /** Builds the report text, cutting the stack trace so the result fits in [MAX_LENGTH]. */

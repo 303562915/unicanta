@@ -88,7 +88,7 @@ import io.github.samolego.canta.ui.component.ExpandIcon
 import io.github.samolego.canta.ui.component.SettingsTextItem
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 
-private const val CANTA_WEBSITE = "https://samolego.github.io/Canta"
+private const val CANTA_WEBSITE = "https://303562915.github.io/Canta"
 
 @Composable
 fun SettingsScreen(

@@ -21,7 +21,7 @@ export default defineConfig({
   base: "/Canta/",
   description: "Uninstall any app without root!",
   head: [
-    ["meta", { name: "author", content: "samo_lego" }],
+    ["meta", { name: "author", content: "unicanta" }],
     [
       "meta",
       {

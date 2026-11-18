@@ -3,7 +3,7 @@ name: XYZ doesn't work
 about: Create a report to help us improve
 title: "[BUG]"
 labels: bug
-assignees: samolego
+assignees: ""
 
 ---
 

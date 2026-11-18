@@ -43,8 +43,8 @@ features:
 
   - icon: 🌍
     title: Translations
-    details: 本分支已含完整中文翻译；其余语言来自 Crowdin 社区。<br><br><a href="https://crowdin.com/project/canta"><img src="https://badges.crowdin.net/canta/localized.svg" alt="Crowdin translation status"></a>
-    link: https://crowdin.com/project/canta
+    details: 完整中文翻译已内置（`values-zh-rCN`）；其余语言来自上游翻译项目。多语言文案随源码一起维护。
+    link: https://github.com/303562915/Canta
 
   - icon: 🪙
     title: 自建后端

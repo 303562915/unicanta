@@ -8,8 +8,8 @@ class ParseUsersTest {
 
     @Test
     fun parsesUsers() {
-        val output = "Users:\n\tUserInfo{0:samo_lego:4c13} running\n\tUserInfo{10:Delovni profil:1030} running\n"
-        assertEquals(listOf(DeviceUser(0, "samo_lego"), DeviceUser(10, "Delovni profil")), parseUsers(output))
+        val output = "Users:\n\tUserInfo{0:tester:4c13} running\n\tUserInfo{10:Delovni profil:1030} running\n"
+        assertEquals(listOf(DeviceUser(0, "tester"), DeviceUser(10, "Delovni profil")), parseUsers(output))
     }
 
     @Test

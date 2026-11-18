@@ -39,7 +39,7 @@ Aggregated community scores (per package: a verdict, the number of reports round
 
 You can disable package analytics at any time in Settings. Disabling it also deletes any locally queued data that has not been sent yet.
 
-The server source code, including the exact database logic, is in this repository under [`server/supabase/migrations/`](https://github.com/samolego/Canta/tree/master/server/supabase/migrations).
+The server source code, including the exact database logic, is in this repository under [`server/supabase/migrations/`](server/supabase/migrations).
 
 ### Crash reports
 If Canta crashes (Android and desktop), it saves a short report on your device: app version, platform, OS version, time and the stack trace.
@@ -73,4 +73,4 @@ Thus, you are advised to review this page periodically for any changes.
 We will notify you of any changes by posting the new Privacy Policy on this page.
 
 ## Contact Us
-If you have any questions or suggestions about this Privacy Policy, do not hesitate to contact us through our GitHub repository at [https://github.com/samolego/Canta](https://github.com/samolego/Canta).
+If you have any questions or suggestions about this Privacy Policy, do not hesitate to contact us through our GitHub repository at [https://github.com/303562915/Canta](https://github.com/303562915/Canta).
