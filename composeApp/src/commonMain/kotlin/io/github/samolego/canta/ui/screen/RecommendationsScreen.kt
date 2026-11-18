@@ -208,7 +208,11 @@ fun RecommendationsScreen(
 
                 if (featured.isNotEmpty()) {
                     item(key = "featured-head") {
-                        SectionHeader(label = stringResource(Res.string.recommend_featured), count = featured.size)
+                        SectionHeader(
+                            label = stringResource(Res.string.recommend_featured),
+                            count = featured.size,
+                            inset = 16.dp,
+                        )
                     }
                     items(featured, key = { "featured-${it.id}" }) { app ->
                         RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
@@ -216,13 +220,15 @@ fun RecommendationsScreen(
                 }
 
                 groups.forEach { (category, apps) ->
-                    item(key = "head-$category") { SectionHeader(label = categoryLabel(category), count = apps.size) }
+                    item(key = "head-$category") {
+                        SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
+                    }
                     items(apps, key = { it.id }) { app ->
                         RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
                     }
                 }
 
-                item(key = "footer") { FooterNote(loaded.apps.size) }
+                item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
             }
         }
     }
@@ -239,11 +245,11 @@ fun RecommendationsScreen(
     }
 }
 
-/** A category heading, with how many apps are filed under it. */
+/** A category heading, with how many apps are filed under it; [inset] lines it up with the row below. */
 @Composable
-private fun SectionHeader(label: String, count: Int) {
+private fun SectionHeader(label: String, count: Int, inset: Dp = 6.dp) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 14.dp, bottom = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 14.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -527,13 +533,13 @@ private fun EmptyNote() {
 
 /** Closes the page: where the list comes from, and how many entries it holds. */
 @Composable
-private fun FooterNote(count: Int) {
+private fun FooterNote(count: Int, inset: Dp = 6.dp) {
     if (count == 0) return
     Text(
         text = stringResource(Res.string.recommend_footer),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 14.dp, bottom = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 14.dp, bottom = 8.dp),
     )
 }
 
