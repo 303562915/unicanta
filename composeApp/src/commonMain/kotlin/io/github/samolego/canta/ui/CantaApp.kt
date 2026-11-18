@@ -1,8 +1,14 @@
 package io.github.samolego.canta.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -17,10 +23,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -31,12 +39,18 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.select_all_enabled
 import io.github.samolego.canta.generated.resources.select_all_tip
+import io.github.samolego.canta.generated.resources.settings
+import io.github.samolego.canta.generated.resources.tab_rules
+import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
+import io.github.samolego.canta.ui.component.BottomBarItem
+import io.github.samolego.canta.ui.component.FloatingPillBar
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PresetsScreen
+import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
 import io.github.samolego.canta.ui.theme.CantaTheme
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
@@ -45,8 +59,10 @@ import io.github.samolego.canta.ui.viewmodel.MainViewModel
 import io.github.samolego.canta.ui.viewmodel.PresetsViewModel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import io.github.samolego.canta.util.CrashReportStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
 
 /** Taps on the version in settings that unlock "select all" for recommended apps. */
 private const val SECRET_TAPS = 6
@@ -148,6 +164,9 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     enableSelectAll = versionTapCounter >= SECRET_TAPS,
                 )
             }
+            composable(route = Screen.Rules.route) {
+                SafetyRulesScreen(handler = handler, onNavigateBack = { navController.navigateUp() })
+            }
             composable(route = Screen.Logs.route) {
                 LogsScreen(
                     platform = platform,
@@ -235,9 +254,66 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
             }
         }
 
+        // Floating capsule bar, above the content like the dashboard capsule in FlClash.
+        val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+        if (currentRoute in BOTTOM_BAR_ROUTES) {
+            FloatingPillBar(
+                items = bottomBarItems(
+                    route = currentRoute,
+                    page = pagerState.currentPage,
+                ),
+                onSelect = { key -> onBottomBarSelect(key, navController, pagerState, coroutineScope) },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp),
         )
     }
+}
+
+/** Routes that show the floating bar. Onboarding deliberately has none. */
+private val BOTTOM_BAR_ROUTES = setOf(Screen.Main.route, Screen.Rules.route, Screen.Settings.route, Screen.Presets.route)
+
+/** Stable keys of the bar entries. */
+private object BarKey {
+    const val INSTALLED = "installed"
+    const val UNINSTALLED = "uninstalled"
+    const val RULES = "rules"
+    const val SETTINGS = "settings"
+}
+
+@Composable
+private fun bottomBarItems(route: String?, page: Int): List<BottomBarItem> = listOf(
+    BottomBarItem(BarKey.INSTALLED, AppsType.INSTALLED.icon, stringResource(AppsType.INSTALLED.label), route == Screen.Main.route && page == 0),
+    BottomBarItem(BarKey.UNINSTALLED, AppsType.UNINSTALLED.icon, stringResource(AppsType.UNINSTALLED.label), route == Screen.Main.route && page == 1),
+    BottomBarItem(BarKey.RULES, Icons.Default.Shield, stringResource(Res.string.tab_rules), route == Screen.Rules.route),
+    BottomBarItem(BarKey.SETTINGS, Icons.Default.Settings, stringResource(Res.string.settings), route == Screen.Settings.route),
+)
+
+private fun onBottomBarSelect(
+    key: String,
+    navController: NavHostController,
+    pagerState: PagerState,
+    scope: CoroutineScope,
+) {
+    when (key) {
+        BarKey.INSTALLED, BarKey.UNINSTALLED -> {
+            val target = if (key == BarKey.INSTALLED) 0 else 1
+            if (navController.currentDestination?.route != Screen.Main.route) {
+                navController.navigate(Screen.Main.route) { launchSingleTop = true }
+            }
+            scope.launch { pagerState.animateScrollToPage(target) }
+        }
+        BarKey.RULES -> navController.navigateSingleTop(Screen.Rules.route)
+        BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Settings.route)
+    }
+}
+
+/** Navigating to the route already shown would stack a second copy. */
+private fun NavHostController.navigateSingleTop(route: String) {
+    if (currentDestination?.route == route) return
+    navigate(route) { launchSingleTop = true }
 }

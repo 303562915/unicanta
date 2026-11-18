@@ -117,7 +117,8 @@ fun MainScreen(
             }
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                // Leaves room for the floating bar that is drawn over the screen.
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 76.dp),
             ) { page ->
                 PullToRefreshBox(
                     isRefreshing = appListViewModel.isLoading,

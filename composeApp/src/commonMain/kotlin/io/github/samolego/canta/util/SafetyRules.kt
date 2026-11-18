@@ -92,6 +92,9 @@ class SafetyRules(private val set: SafetyRuleSet) {
 
     constructor(json: String) : this(Json { ignoreUnknownKeys = true }.decodeFromString(SafetyRuleSet.serializer(), json))
 
+    /** Every shipped rule, unfiltered: the screen shows which ones apply here. */
+    val all: List<SafetyRule> get() = set.rules
+
     val size: Int get() = set.rules.size
     val updated: String get() = set.updated
 

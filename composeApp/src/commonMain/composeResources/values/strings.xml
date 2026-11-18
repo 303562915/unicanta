@@ -109,6 +109,12 @@
     <string name="community_bootloop_warning">Community reports say at least one of these apps can cause a bootloop.</string>
     <string name="uninstall_large_batch_warning">That is a large batch. Uninstall a few apps at a time and reboot in between, so you can tell which package caused a problem.</string>
     <string name="uninstall_recovery_hint">Make sure you can recover first: keep USB debugging enabled, write down the package names, and back up what matters. A wrong package can stop the phone from booting.</string>
+    <string name="rules_title">Device safety</string>
+    <string name="rules_device_title">This device</string>
+    <string name="rules_scope_note">%1$d of %2$d rules apply to this phone; the rest belong to other models or ROM versions.</string>
+    <string name="rules_empty">No rules for this device yet.</string>
+    <string name="tab_rules">Safety</string>
+    <string name="tab_presets">Presets</string>
     <string name="unsafe_device_prefix">Rules for this device: %1$s</string>
     <string name="unsafe_blocked_title">These would strand this phone — held back:</string>
     <string name="unsafe_risky_title">These are known to break something here:</string>
