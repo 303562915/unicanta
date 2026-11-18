@@ -109,6 +109,11 @@
     <string name="community_bootloop_warning">Community reports say at least one of these apps can cause a bootloop.</string>
     <string name="uninstall_large_batch_warning">That is a large batch. Uninstall a few apps at a time and reboot in between, so you can tell which package caused a problem.</string>
     <string name="uninstall_recovery_hint">Make sure you can recover first: keep USB debugging enabled, write down the package names, and back up what matters. A wrong package can stop the phone from booting.</string>
+    <string name="unsafe_device_prefix">Rules for this device: %1$s</string>
+    <string name="unsafe_blocked_title">These would strand this phone — held back:</string>
+    <string name="unsafe_risky_title">These are known to break something here:</string>
+    <string name="unsafe_unknown_note">%1$d package(s) have no rule for this device; they are treated as unknown, not safe.</string>
+    <string name="unsafe_continue_safe_only">Remove the rest</string>
     <string name="app_list_restricted_title">The system hides the app list from Canta</string>
     <string name="app_list_restricted_description">HyperOS and MIUI keep a "get installed apps" permission for this. It is off by default, cannot be requested by the app, and has to be switched on by hand; until then only a handful of apps are listed.</string>
     <string name="app_list_restricted_open_settings">Open the setting</string>

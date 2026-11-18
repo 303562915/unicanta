@@ -25,6 +25,7 @@ import io.github.samolego.canta.packages.readSafely
 import io.github.samolego.canta.packages.toPackageDetails
 import io.github.samolego.canta.ui.component.APP_ICON_SIZE
 import io.github.samolego.canta.util.DeviceContext
+import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.deviceContextOf
 import io.github.samolego.canta.util.parseGetprop
@@ -201,6 +202,24 @@ class AndroidCantaHandler(
             ?: runCatching {
                 BOOT_COUNT_PREFIX + android.provider.Settings.Global.getInt(context.contentResolver, "boot_count")
             }.getOrNull()
+    }
+
+    @Volatile
+    private var profile: DeviceProfile? = null
+
+    /** Build.* plus the ROM fields of [deviceContext]; never leaves the device. */
+    override suspend fun deviceProfile(): DeviceProfile? = profile ?: withContext(Dispatchers.IO) {
+        val ctx = deviceContext()
+        DeviceProfile(
+            brand = Build.MANUFACTURER.orEmpty().ifBlank { "unknown" }.replaceFirstChar { it.uppercase() },
+            model = Build.MODEL.orEmpty().ifBlank { "unknown" },
+            device = Build.DEVICE.orEmpty().ifBlank { "unknown" },
+            sdk = Build.VERSION.SDK_INT,
+            release = Build.VERSION.RELEASE.orEmpty(),
+            rom = ctx?.rom ?: "unknown",
+            romVersion = ctx?.romVersion ?: 0,
+            fingerprint = Build.FINGERPRINT.orEmpty(),
+        ).also { profile = it }
     }
 
     override suspend fun buildFingerprint(): String? = android.os.Build.FINGERPRINT.takeIf { it.isNotEmpty() }

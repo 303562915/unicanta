@@ -139,6 +139,11 @@
     <string name="community_verdict_breaks">会破坏功能</string>
     <string name="community_verdict_unclear">不确定</string>
     <string name="community_bootloop_warning">社区报告显示，这些应用里至少有一个可能导致开机卡死。</string>
+    <string name="unsafe_device_prefix">本机规则：%1$s</string>
+    <string name="unsafe_blocked_title">这些在你的机型上会导致开不了机，已拦下：</string>
+    <string name="unsafe_risky_title">这些在你的机型上已知会破坏功能：</string>
+    <string name="unsafe_unknown_note">另有 %1$d 个包在本机没有规则，按「未知」处理，不等于安全。</string>
+    <string name="unsafe_continue_safe_only">卸载其余的</string>
     <string name="app_list_restricted_title">系统没有把应用列表交给本应用</string>
     <string name="app_list_restricted_description">HyperOS / MIUI 用「获取应用列表」这个权限挡着，默认是关闭的，应用也没法自己申请，只能手动打开；没开之前你只能看到很少几个应用。</string>
     <string name="app_list_restricted_open_settings">去打开</string>

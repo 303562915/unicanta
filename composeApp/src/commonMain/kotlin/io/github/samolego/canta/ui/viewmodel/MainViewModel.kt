@@ -18,6 +18,9 @@ import io.github.samolego.canta.generated.resources.cannot_uninstall_canta
 import io.github.samolego.canta.generated.resources.device_unreachable
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.message
+import io.github.samolego.canta.util.SafetyRules
+import io.github.samolego.canta.util.SafetyStatus
+import io.github.samolego.canta.util.SafetyVerdict
 import io.github.samolego.canta.util.Verdict
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -37,6 +40,17 @@ sealed interface MainDialog {
 
     /** Packages that came back although the build did not change: a rescue of the last batch. */
     data class RestoreSuspects(val packages: List<String>) : MainDialog
+
+    /**
+     * Removing these is known to strand *this* device (model/ROM specific rules), so they are
+     * held back unless unsafe removals are allowed in the settings.
+     */
+    data class UnsafeSelection(
+        val blocked: List<SafetyVerdict>,
+        val risky: List<SafetyVerdict>,
+        val deviceLabel: String,
+        val unknownCount: Int,
+    ) : MainDialog
     data object ShizukuSetup : MainDialog
     data object ExplainBadges : MainDialog
     data class DeviceChooser(val devices: List<CantaDevice> = emptyList(), val isLoading: Boolean = false) : MainDialog
@@ -56,6 +70,11 @@ class MainViewModel(
 
     var dialog by mutableStateOf<MainDialog?>(null)
         private set
+
+    /** Shipped device-aware rules; loaded once. */
+    private var rules: SafetyRules? = null
+
+    private suspend fun safetyRules(): SafetyRules = rules ?: SafetyRules.bundled().also { rules = it }
 
     /** What to do once the pending connection/authorization succeeds. */
     private var afterConnect: (suspend () -> Unit)? = null
@@ -143,6 +162,20 @@ class MainViewModel(
         if (type == AppsType.INSTALLED && settings.confirmBeforeUninstallFlow.first()) {
             val selected = appList.selectedApps.toList()
             if (selected.isEmpty()) return
+            // Device-specific safety first: a package that strands *this* model/ROM never reaches
+            // the normal confirmation, whatever the generic badge says.
+            val verdicts = safetyRules().verdicts(selected, handler.deviceProfile())
+            val blocked = verdicts.values.filter { it.status == SafetyStatus.CRITICAL }
+            val risky = verdicts.values.filter { it.status == SafetyStatus.RISKY }
+            if (blocked.isNotEmpty() || risky.isNotEmpty()) {
+                dialog = MainDialog.UnsafeSelection(
+                    blocked = blocked,
+                    risky = risky,
+                    deviceLabel = handler.deviceProfile()?.label().orEmpty(),
+                    unknownCount = selected.count { it !in verdicts },
+                )
+                return
+            }
             val known = settings.lastConfirmedPackagesFlow.first().toSet()
             dialog = MainDialog.ConfirmUninstall(
                 appCount = selected.size,
@@ -153,6 +186,18 @@ class MainViewModel(
             )
         } else {
             authenticateAndApply(type, resetToFactory = false)
+        }
+    }
+
+    /** [MainDialog.UnsafeSelection] accepted: drop the blocked ones and continue with the rest. */
+    fun onUnsafeSelectionAccepted() {
+        val unsafe = dialog as? MainDialog.UnsafeSelection ?: return
+        val blocked = unsafe.blocked.map { it.pkg }.toSet()
+        viewModelScope.launch {
+            blocked.forEach { appList.selectedApps.remove(it) }
+            dialog = null
+            if (appList.selectedApps.isEmpty()) return@launch
+            authenticateAndApply(AppsType.INSTALLED, resetToFactory = false)
         }
     }
 

@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.util.DeviceContext
+import io.github.samolego.canta.util.DeviceProfile
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -186,6 +187,12 @@ interface CantaHandler {
      * version, Android API level), or null when it can't be read.
      */
     suspend fun deviceContext(): DeviceContext? = null
+
+    /**
+     * Model, ROM and build of the device, used to pick the safety rules for it. Stays on the
+     * device: unlike [deviceContext] nothing here is ever sent anywhere.
+     */
+    suspend fun deviceProfile(): DeviceProfile? = null
 
     /** Whether the given package is on the device (installed or uninstalled for the user). */
     suspend fun packageExists(packageName: String): Boolean

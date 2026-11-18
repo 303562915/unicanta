@@ -1,0 +1,168 @@
+{
+ "version": 1,
+ "updated": "2026-11-18",
+ "rules": [
+  {
+   "pkg": "com.miui.home",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "桌面/启动器。卸掉后无桌面可用，直接卡在开机或黑屏"
+  },
+  {
+   "pkg": "com.android.systemui",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "状态栏、通知、导航栏、锁屏都归它。卸掉必卡开机"
+  },
+  {
+   "pkg": "com.android.settings",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "系统设置。卸掉后无法再进入设置恢复"
+  },
+  {
+   "pkg": "com.android.phone",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "电话服务（通话、短信、数据的基础）"
+  },
+  {
+   "pkg": "com.android.providers.telephony",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "短信与通话记录存储"
+  },
+  {
+   "pkg": "com.android.providers.settings",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "系统设置存储，卸掉会导致设置读写崩溃"
+  },
+  {
+   "pkg": "com.miui.securitycenter",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "安全中心/权限管理，卸载后权限体系与部分系统服务失效"
+  },
+  {
+   "pkg": "com.android.permissioncontroller",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "权限控制器，卸载后所有运行时权限失效"
+  },
+  {
+   "pkg": "com.android.packageinstaller",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "应用安装器，卸载后无法安装/升级应用"
+  },
+  {
+   "pkg": "com.android.shell",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "adb/shell 框架的一部分，卸载可能使调试与恢复通道失效"
+  },
+  {
+   "pkg": "com.qualcomm.qti.qms.service.telemetry",
+   "status": "CRITICAL",
+   "scope": "ALL",
+   "why": "部分机型为基带服务依赖，谨慎"
+  },
+  {
+   "pkg": "com.miui.powerkeeper",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "省电策略。卸掉通常能用，但部分机型出现异常耗电或无法休眠"
+  },
+  {
+   "pkg": "com.miui.daemon",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "MIUI 统计/守护进程，部分机型卸载后出现异常重启"
+  },
+  {
+   "pkg": "com.miui.analytics",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "统计上报，通常可卸"
+  },
+  {
+   "pkg": "com.android.vending",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "Google Play 商店。卸掉后无法用 Play 更新依赖它的应用"
+  },
+  {
+   "pkg": "com.google.android.gms",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "Google 服务框架。卸掉后依赖 GMS 的应用全部失效"
+  },
+  {
+   "pkg": "com.android.bluetooth",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "蓝牙。卸掉后蓝牙与部分外设不可用"
+  },
+  {
+   "pkg": "com.android.nfc",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "NFC 刷卡/门禁。不需要可以卸"
+  },
+  {
+   "pkg": "com.miui.cloudservice",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "小米云服务。卸载会退出云同步"
+  },
+  {
+   "pkg": "com.xiaomi.finddevice",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "查找手机。卸载后丢失无法定位"
+  },
+  {
+   "pkg": "com.android.contacts",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "通讯录"
+  },
+  {
+   "pkg": "com.android.mms",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "短信应用"
+  },
+  {
+   "pkg": "com.miui.voiceassist",
+   "status": "RISKY",
+   "scope": "ALL",
+   "why": "小爱同学入口，可卸"
+  },
+  {
+   "pkg": "com.miui.systemui.overlay",
+   "status": "CRITICAL",
+   "scope": "ROM:hyperos",
+   "why": "HyperOS 状态栏资源覆盖，卸载后状态栏异常"
+  },
+  {
+   "pkg": "com.miui.home.overlay",
+   "status": "CRITICAL",
+   "scope": "ROM:hyperos",
+   "why": "HyperOS 桌面资源覆盖"
+  },
+  {
+   "pkg": "com.miui.permcenter",
+   "status": "CRITICAL",
+   "scope": "ROM:miui",
+   "why": "MIUI 权限中心"
+  },
+  {
+   "pkg": "com.miui.securitycore",
+   "status": "CRITICAL",
+   "scope": "ROM:miui",
+   "why": "MIUI 安全框架"
+  }
+ ]
+}
