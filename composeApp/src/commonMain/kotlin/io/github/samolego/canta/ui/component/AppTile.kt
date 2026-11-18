@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
@@ -165,10 +166,12 @@ val APP_ICON_SIZE = 48.dp
 @Composable
 fun AppIconImage(
     appInfo: AppInfo,
+    size: Dp = APP_ICON_SIZE,
 ) {
     AppIconImage(
         appIconImage = appInfo.icon,
         contentDescription = appInfo.name,
+        size = size,
     )
 }
 
@@ -176,19 +179,20 @@ fun AppIconImage(
 fun AppIconImage(
     appIconImage: ImageBitmap?,
     contentDescription: String,
+    size: Dp = APP_ICON_SIZE,
 ) {
     if (appIconImage != null) {
         Image(
             bitmap = appIconImage,
             contentDescription = contentDescription,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.padding(4.dp).size(APP_ICON_SIZE)
+            modifier = Modifier.padding(2.dp).size(size)
         )
     } else {
         Icon(
             imageVector = Icons.Default.Android,
             contentDescription = contentDescription,
-            modifier = Modifier.padding(4.dp).size(APP_ICON_SIZE)
+            modifier = Modifier.padding(2.dp).size(size)
         )
     }
 }

@@ -66,6 +66,7 @@ import io.github.samolego.canta.ui.viewmodel.MainViewModel
 import io.github.samolego.canta.ui.viewmodel.PresetsViewModel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import io.github.samolego.canta.util.CrashReportStore
+import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
@@ -266,12 +267,18 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                         }.getOrNull()
                     } ?: 0L
                 var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
-                LaunchedEffect(Unit) { planProfile = handler.deviceProfile() }
+                // Comments are posted under this install's own code: no account, no login.
+                var planAuthor by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) {
+                    planProfile = handler.deviceProfile()
+                    planAuthor = DeviceIdentity.codeOf(DeviceIdentity.ensure(deps.settings))
+                }
                 PlanDetailScreen(
                     planId = planId,
                     repository = remember { PlanRepository(HttpClient()) },
                     profile = planProfile,
                     onNavigateBack = { navController.navigateUp() },
+                    author = planAuthor,
                 )
             }
         }

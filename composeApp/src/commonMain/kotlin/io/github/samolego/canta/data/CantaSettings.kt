@@ -47,6 +47,9 @@ class CantaSettings(storage: AppBlobStorage) {
     val lastConfirmedPackagesFlow: Flow<List<String>> = field { it.lastConfirmedPackages }
     val restoreSuspectsFlow: Flow<List<String>> = field { it.restoreSuspects }
 
+    /** This install's identity code; empty until the plans page has created one. */
+    val identityTokenFlow: Flow<String> = field { it.identityToken }
+
     suspend fun setAutoUpdateBloatList(autoUpdate: Boolean) = update { it.copy(autoUpdateBloatList = autoUpdate) }
     suspend fun setConfirmBeforeUninstall(needsConfirm: Boolean) = update { it.copy(confirmBeforeUninstall = needsConfirm) }
     suspend fun setLatestCommitHash(hash: String) = update { it.copy(latestBloatCommitHash = hash) }
@@ -60,6 +63,7 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
     suspend fun setLastConfirmedPackages(packages: List<String>) = update { it.copy(lastConfirmedPackages = packages) }
     suspend fun setRestoreSuspects(packages: List<String>) = update { it.copy(restoreSuspects = packages) }
+    suspend fun setIdentityToken(token: String) = update { it.copy(identityToken = token) }
 
     /** Adds [packages] to the restore suspects, keeping the list short and ordered. */
     suspend fun addRestoreSuspects(packages: List<String>) = update {

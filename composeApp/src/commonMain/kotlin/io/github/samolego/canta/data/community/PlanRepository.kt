@@ -14,6 +14,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -35,7 +36,14 @@ data class CommunityPlan(
     val comments: Int,
     val createdAt: String,
     val rebootedAt: String,
+    /** Identity of the uploader; only that identity may delete the plan. */
+    val owner: String = "",
+    /** True for a plan uploaded with the test password: no reboot proof behind it. */
+    val isTest: Boolean = false,
 )
+
+/** Id of the local "test upload" row: never a server id, so it can be told apart. */
+const val TEST_PLAN_ID: Long = -1L
 
 /** A comment under a plan. */
 data class PlanComment(val author: String, val body: String, val createdAt: String)
@@ -85,12 +93,20 @@ class PlanRepository(
                     comments = o["comments"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                     createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     rebootedAt = o["rebooted_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    isTest = o["is_test"]?.jsonPrimitive?.booleanOrNull ?: false,
                 )
             }
         }.getOrDefault(emptyList())
     }
 
-    /** Uploads [packages] as a plan. Only ever called with a verified reboot. */
+    /**
+     * Uploads [packages] as a plan.
+     *
+     * A normal upload is only ever called with a verified reboot. A [test] upload comes from the
+     * test password: it still sends a reboot time (the server rejects anything else) but is
+     * stored flagged as a test, so the list can label it for what it is.
+     */
     suspend fun submit(
         profile: DeviceProfile,
         title: String,
@@ -98,6 +114,8 @@ class PlanRepository(
         packages: List<String>,
         rebootedAt: String,
         reporter: String,
+        owner: String = "",
+        test: Boolean = false,
     ): Long? {
         if (packages.isEmpty()) return null
         val body = buildJsonObject {
@@ -113,9 +131,25 @@ class PlanRepository(
             put("reboot_verified", true)
             put("rebooted_at", rebootedAt)
             put("reporter", reporter)
+            put("owner", owner)
+            put("test", test)
         }.toString()
         return rpc("plan_submit", buildJsonObject { put("p_plan", Json.parseToJsonElement(body)) }.toString())
             ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.longOrNull }.getOrNull() }
+    }
+
+    /**
+     * Deletes a plan uploaded by [owner]. The server only deletes when the owner matches, so
+     * this returns false for somebody else's plan instead of doing anything.
+     */
+    suspend fun delete(planId: Long, owner: String): Boolean {
+        if (owner.isEmpty() || planId <= 0) return false
+        val body = buildJsonObject {
+            put("p_id", planId)
+            put("p_owner", owner)
+        }.toString()
+        return rpc("plan_delete", body)
+            ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.booleanOrNull }.getOrNull() } == true
     }
 
     suspend fun vote(planId: Long, voter: String): Int? {

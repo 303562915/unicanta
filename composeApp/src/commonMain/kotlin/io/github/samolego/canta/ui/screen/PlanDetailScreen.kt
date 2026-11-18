@@ -1,5 +1,6 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,7 +56,6 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.util.DeviceProfile
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import kotlin.random.Random
 
 /**
  * One community plan, opened from the plans list.
@@ -73,6 +74,7 @@ fun PlanDetailScreen(
     repository: PlanRepository,
     profile: DeviceProfile?,
     onNavigateBack: () -> Unit,
+    author: String = "",
 ) {
     val scope = rememberCoroutineScope()
 
@@ -83,8 +85,8 @@ fun PlanDetailScreen(
     var sending by remember { mutableStateOf(false) }
     var submitFailed by remember { mutableStateOf(false) }
 
-    // Stable for the lifetime of the screen, unlike the plan: comments need an author.
-    val author = remember { "u-" + Random.nextLong().toString(16) }
+    // The install's own code (see DeviceIdentity): one stable name per phone, no account.
+    val commentAuthor = author.ifEmpty { "u-anon" }
 
     LaunchedEffect(planId, profile) {
         // Keep the already loaded plan on screen while a late profile reloads it.
@@ -99,7 +101,7 @@ fun PlanDetailScreen(
         if (body.isNotEmpty() && !sending) {
             scope.launch {
                 sending = true
-                submitFailed = !repository.comment(planId, body, author)
+                submitFailed = !repository.comment(planId, body, commentAuthor)
                 if (!submitFailed) {
                     draft = ""
                     comments = repository.comments(planId)
@@ -211,11 +213,29 @@ private fun PlanHeaderCard(plan: CommunityPlan) {
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = plan.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = plan.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (plan.isTest) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // Same mark as in the list: this plan was uploaded without a reboot proof.
+                    Text(
+                        text = "测试",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f),
+                                RoundedCornerShape(4.dp),
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
             if (plan.note.isNotEmpty()) {
                 Text(
                     text = plan.note,

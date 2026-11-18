@@ -4,10 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,7 +27,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,20 +53,21 @@ import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.generated.resources.Res
-import io.github.samolego.canta.generated.resources.plan_upload_button
 import io.github.samolego.canta.generated.resources.rules_device_title
-import io.github.samolego.canta.generated.resources.rules_empty
 import io.github.samolego.canta.generated.resources.rules_title
 import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
+import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
 import io.github.samolego.canta.util.SafetyVerdict
+import io.github.samolego.canta.util.TEST_UPLOAD_PASSWORD
 import io.github.samolego.canta.util.romName
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.launch
@@ -70,6 +76,12 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import org.jetbrains.compose.resources.stringResource
 
+/** Icon size of a ranking row: smaller than a tile, so more of them fit. */
+private val ROW_ICON = 32.dp
+
+/** Icon size inside a row's action buttons. */
+private val ACTION_ICON = 15.dp
+
 /**
  * Two views of the same question.
  *
@@ -77,7 +89,8 @@ import org.jetbrains.compose.resources.stringResource
  * a compact row with its icon — system packages marked, so a shared list can be checked against
  * reality.
  * *Plans*: sets of packages other owners of the *same model and ROM version* removed and verified
- * by a reboot, most liked first.
+ * by a reboot, most liked first. A test plan needs no reboot: the test password unlocks it, and
+ * the plan is labelled as a test. Plans this install uploaded can be deleted again.
  */
 @Composable
 fun SafetyRulesScreen(
@@ -101,16 +114,16 @@ fun SafetyRulesScreen(
         topBar = {
             Column {
                 ScreenTopBar(onNavigateBack = onNavigateBack, title = { Text(stringResource(Res.string.rules_title)) })
-                TabRow(selectedTabIndex = tab) {
+                TabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.surface) {
                     Tab(
                         selected = tab == 0,
                         onClick = { tab = 0 },
-                        text = { Text(stringResource(Res.string.safety_tab_apps)) },
+                        text = { Text(stringResource(Res.string.safety_tab_apps), fontSize = 13.sp) },
                     )
                     Tab(
                         selected = tab == 1,
                         onClick = { tab = 1 },
-                        text = { Text(stringResource(Res.string.safety_tab_plans)) },
+                        text = { Text(stringResource(Res.string.safety_tab_plans), fontSize = 13.sp) },
                     )
                 }
             }
@@ -121,21 +134,37 @@ fun SafetyRulesScreen(
             HorizontalDivider()
             when (tab) {
                 0 -> RankingTab(apps = appListViewModel.apps, rules = rules, profile = profile)
-                else -> PlansTab(profile = profile, settings = settings, onOpenPlan = onOpenPlan)
+                else -> PlansTab(
+                    profile = profile,
+                    settings = settings,
+                    selectedPackages = appListViewModel.selectedApps.toList(),
+                    onOpenPlan = onOpenPlan,
+                )
             }
         }
     }
 }
 
+/** One thin line: what phone these rules are being matched against. */
 @Composable
 private fun DeviceHeader(profile: DeviceProfile?) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
             text = stringResource(Res.string.rules_device_title),
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
         )
-        Text(profile?.label() ?: "-", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = profile?.label() ?: "-",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -170,11 +199,11 @@ private fun RankingTab(apps: List<AppInfo>, rules: SafetyRules?, profile: Device
     }
 
     when {
-        loading -> Text("…", modifier = Modifier.padding(16.dp))
+        loading -> Text("…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
         rows.isEmpty() -> Text(
             text = "这台机器还没有人上传方案，所以没有排行。",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp),
         )
         else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
             itemsIndexed(rows, key = { _, row -> row.pkg }) { index, row ->
@@ -187,44 +216,46 @@ private fun RankingTab(apps: List<AppInfo>, rules: SafetyRules?, profile: Device
 @Composable
 private fun RankRowView(rank: Int, row: RankRow, verdict: SafetyVerdict?) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "$rank",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(22.dp),
+            modifier = Modifier.width(18.dp),
         )
-        if (row.app != null) AppIconImage(row.app) else Spacer(Modifier.width(40.dp))
-        Spacer(Modifier.width(12.dp))
+        if (row.app != null) AppIconImage(row.app, size = ROW_ICON) else Spacer(Modifier.width(ROW_ICON))
+        Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = row.app?.name ?: row.pkg,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = row.pkg,
-                style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text("${row.votes} 赞", style = MaterialTheme.typography.labelMedium)
+            Text("${row.votes} 赞", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
             Text(
-                text = "${row.plans} 个方案" + if (row.app?.isSystemApp == true) " · system" else "",
-                style = MaterialTheme.typography.labelSmall,
+                text = "${row.plans} 方案" + if (row.app?.isSystemApp == true) " · system" else "",
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
         StatusChip(verdict)
     }
 }
@@ -239,82 +270,136 @@ private fun StatusChip(verdict: SafetyVerdict?) {
     }
     Text(
         text = label,
-        style = MaterialTheme.typography.labelSmall,
+        fontSize = 9.sp,
+        lineHeight = 11.sp,
         color = color,
         modifier = Modifier
-            .background(color.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
     )
 }
+
+/** One upload the dialog is about: which packages, and whether they are reboot-proven. */
+private data class UploadRequest(
+    val packages: List<String>,
+    val canUpload: Boolean,
+    val testMode: Boolean,
+)
 
 @OptIn(ExperimentalTime::class)
 @Composable
 private fun PlansTab(
     profile: DeviceProfile?,
     settings: CantaSettings,
+    selectedPackages: List<String>,
     onOpenPlan: (Long) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val repository = remember { PlanRepository(HttpClient()) }
     var plans by remember { mutableStateOf<List<CommunityPlan>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf(false) }
-    var showUpload by remember { mutableStateOf(false) }
-    // Per-install random id: the backend counts one vote per id, and a shared model name would
-    // let one owner's vote stand in for everybody with the same phone.
-    val voter = remember { "u-" + Random.nextLong().toString(16) }
-    // Stable for this screen instance so the backend can tell reporters apart.
-    val reporter = remember { "r-" + Random.nextLong().toString(16) }
+    var upload by remember { mutableStateOf<UploadRequest?>(null) }
+    var pendingDelete by remember { mutableStateOf<CommunityPlan?>(null) }
+    var notice by remember { mutableStateOf("") }
+    // The install's own code: created once, then it is who we are — no account, no login, and it
+    // is what marks a plan as ours, so it can be deleted again.
+    var identity by remember { mutableStateOf("") }
 
     val pending by settings.pendingRebootFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     // Only a batch whose removal survived a reboot proves anything, so it is the only uploadable set.
     val verified = pending.filter { it.survived }.mapNotNull { it.pkg }.distinct()
-    // No device profile means nothing to match the plan against, so uploading is pointless.
-    // An unverified batch still opens the dialog: it explains why it cannot be uploaded.
-    val canUpload = profile != null && verified.isNotEmpty()
+    // What a test upload could carry: the whole pending batch (survived or not) plus whatever is
+    // ticked in the app list right now.
+    val testPackages = (pending.mapNotNull { it.pkg } + selectedPackages).distinct()
+    val owner = remember(identity) { DeviceIdentity.ownerOf(identity) }
+    val code = remember(identity) { DeviceIdentity.codeOf(identity) }
 
-    LaunchedEffect(profile) {
+    LaunchedEffect(Unit) { identity = DeviceIdentity.ensure(settings) }
+
+    LaunchedEffect(profile, identity) {
         loading = true
-        val loaded = repository.plansFor(profile)
-        error = loaded.isEmpty()
-        plans = loaded
+        plans = repository.plansFor(profile)
         loading = false
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Button(onClick = { showUpload = true }, enabled = profile != null) {
-                Text(stringResource(Res.string.plan_upload_button))
+            Button(
+                onClick = {
+                    upload = UploadRequest(verified, canUpload = verified.isNotEmpty(), testMode = false)
+                },
+                enabled = profile != null,
+                modifier = Modifier.height(30.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                colors = ButtonDefaults.buttonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
+            ) {
+                Text("上传", fontSize = 12.sp)
             }
+            Spacer(Modifier.width(8.dp))
+            // Short, always visible: it is the whole login story of this page.
+            Text(
+                text = "身份码 $code · 免登录",
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        when {
-            loading -> Text("…", modifier = Modifier.padding(16.dp))
-            plans.isEmpty() -> Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = if (error) "暂时读不到社区方案（网络或后端没通）" else "这台机器（${profile?.model ?: "?"} / ${romName(profile?.rom ?: "")} ${profile?.romVersion ?: 0}）还没有人上传方案",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = "只有同一机型 + 同一系统版本、并且上传者确认过「卸载后手机正常重启」的方案才会出现在这里。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            else -> LazyColumn(modifier = Modifier.weight(1f)) {
+        if (notice.isNotEmpty()) {
+            Text(
+                text = notice,
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+            )
+        }
+        if (loading) {
+            Text("…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                item(key = "test") {
+                    TestPlanRow(
+                        packageCount = testPackages.size,
+                        onOpen = {
+                            notice = ""
+                            if (profile == null) {
+                                notice = "还没有读到机型信息，稍等一下再试。"
+                            } else if (testPackages.isEmpty()) {
+                                notice = "先卸载一批（不用重启）或在应用列表勾选几个包，再回来测试上传。"
+                            } else {
+                                upload = UploadRequest(testPackages, canUpload = false, testMode = true)
+                            }
+                        },
+                    )
+                    HorizontalDivider()
+                }
+                if (plans.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            text = "这台机器（${profile?.model ?: "?"} / ${romName(profile?.rom ?: "")} ${profile?.romVersion ?: 0}）还没有人上传正式方案；网不通时这里也会是空的。",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                }
                 items(plans, key = { it.id }) { plan ->
                     PlanRow(
                         plan = plan,
+                        mine = owner.isNotEmpty() && plan.owner == owner,
                         onOpen = { onOpenPlan(plan.id) },
                         onVote = {
                             scope.launch {
-                                val votes = repository.vote(plan.id, voter) ?: return@launch
+                                val votes = repository.vote(plan.id, owner.ifEmpty { "u-" + Random.nextLong().toString(16) })
+                                    ?: return@launch
                                 plans = plans.map { if (it.id == plan.id) it.copy(votes = votes) else it }
-                                    .sortedByDescending { it.votes }
                             }
                         },
+                        onDelete = { pendingDelete = plan },
                     )
                     HorizontalDivider()
                 }
@@ -322,53 +407,190 @@ private fun PlansTab(
         }
     }
 
-    if (showUpload) {
+    upload?.let { request ->
         UploadPlanDialog(
-            packages = verified,
-            canUpload = canUpload,
-            onDismiss = { showUpload = false },
-            onSubmit = { title, note ->
-                showUpload = false
+            packages = request.packages,
+            canUpload = request.canUpload,
+            testMode = request.testMode,
+            onDismiss = { upload = null },
+            onSubmit = { title, note, test ->
+                upload = null
                 val target = profile
                 if (target != null) {
                     scope.launch {
-                        repository.submit(target, title, note, verified, Clock.System.now().toString(), reporter)
+                        repository.submit(
+                            profile = target,
+                            title = title,
+                            note = note,
+                            packages = request.packages,
+                            rebootedAt = Clock.System.now().toString(),
+                            reporter = owner,
+                            owner = owner,
+                            test = test,
+                        )
                         // Re-read either way: a failed upload simply leaves the list as it was.
-                        val loaded = repository.plansFor(target)
-                        error = loaded.isEmpty()
-                        plans = loaded
+                        plans = repository.plansFor(target)
                     }
                 }
             },
         )
     }
+
+    pendingDelete?.let { plan ->
+        CantaDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = "删除方案",
+            buttons = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                Button(
+                    onClick = {
+                        pendingDelete = null
+                        val target = profile
+                        scope.launch {
+                            val ok = repository.delete(plan.id, owner)
+                            notice = if (ok) "" else "删除失败：这个方案不是本机上传的，或者后端没通。"
+                            if (target != null) plans = repository.plansFor(target)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) { Text("删除") }
+            },
+        ) {
+            Text(
+                text = "「${plan.title}」会被永久删除，别人的点赞和评论一起消失。",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+/**
+ * The test entry of the plans list: always there, even before the first upload.
+ *
+ * It uploads without a reboot check, which is what the test password is for; the resulting plan
+ * is stored as a test and can be deleted like any other plan of this install.
+ */
+@Composable
+private fun TestPlanRow(packageCount: Int, onOpen: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 12.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "测试方案 · 免重启",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.width(6.dp))
+                TestChip()
+            }
+            Text(
+                text = "填测试密码 $TEST_UPLOAD_PASSWORD 就能上传，不用卸载后重启",
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "$packageCount 个包待测试 · 点这里开始",
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.ThumbUp,
+            contentDescription = null,
+            modifier = Modifier.size(ACTION_ICON),
+            tint = MaterialTheme.colorScheme.outline,
+        )
+    }
+}
+
+/** The "test" mark: small, monospace-free, unmistakably not a verified plan. */
+@Composable
+private fun TestChip() {
+    Text(
+        text = "测试",
+        fontSize = 9.sp,
+        lineHeight = 11.sp,
+        color = MaterialTheme.colorScheme.tertiary,
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 @Composable
-private fun PlanRow(plan: CommunityPlan, onOpen: () -> Unit, onVote: () -> Unit) {
+private fun PlanRow(
+    plan: CommunityPlan,
+    mine: Boolean,
+    onOpen: () -> Unit,
+    onVote: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f).clickable(onClick = onOpen)) {
-            Text(plan.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = plan.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (plan.isTest) {
+                    Spacer(Modifier.width(6.dp))
+                    TestChip()
+                }
+                if (mine) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("我的", fontSize = 9.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            }
             if (plan.note.isNotEmpty()) {
                 Text(
                     plan.note,
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Text(
-                text = "${plan.packages.size} 个包 · 重启确认于 ${plan.rebootedAt.take(10)} · ${plan.comments} 条评论",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "${plan.packages.size} 个包 · ${plan.rebootedAt.take(10)} · ${plan.comments} 评论",
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 1,
             )
         }
-        IconButton(onClick = onVote) {
-            Icon(Icons.Default.ThumbUp, contentDescription = "vote", modifier = Modifier.size(18.dp))
+        IconButton(onClick = onVote, modifier = Modifier.size(28.dp)) {
+            Icon(Icons.Default.ThumbUp, contentDescription = "vote", modifier = Modifier.size(ACTION_ICON))
         }
-        Text(plan.votes.toString(), style = MaterialTheme.typography.labelLarge)
+        Text(plan.votes.toString(), fontSize = 10.sp)
+        if (mine) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "delete",
+                    modifier = Modifier.size(ACTION_ICON),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 }
