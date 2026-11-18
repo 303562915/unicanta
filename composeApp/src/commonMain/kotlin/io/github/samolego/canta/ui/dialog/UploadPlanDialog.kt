@@ -44,6 +44,8 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun UploadPlanDialog(
     packages: List<String>,
+    /** Everything still waiting for its post-boot check, whether verified or not. */
+    pendingCount: Int,
     canUpload: Boolean,
     onDismiss: () -> Unit,
     onSubmit: (title: String, note: String, test: Boolean) -> Unit,
@@ -70,9 +72,14 @@ fun UploadPlanDialog(
             }
         },
     ) {
-        // No string key carries the count, and the number is the only variable part.
+        // Two different numbers, so the reader can tell "not written yet" from "nothing removed":
+        // everything that is waiting for its reboot check, and how much of it already survived one.
         Text(
-            text = "${packages.size} 个包",
+            text = if (pendingCount == 0) {
+                "本机还没有已卸载、等待重启确认的包"
+            } else {
+                "$pendingCount 个包已卸载，${packages.size} 个已确认重启"
+            },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )

@@ -212,7 +212,6 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     onFakeScoresChange = appListViewModel::setFakeScores,
                     onOpenAppListPermission = if (handler.supportsPackageListSettings)
                         ({ handler.openPackageListSettings() }) else null,
-                    onOpenTweaks = { navController.navigateSingleTop(Screen.Tweaks.route) },
                     onUserSelected = { id ->
                         coroutineScope.launch {
                             handler.selectUser(id)
@@ -316,7 +315,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
 }
 
 /** Routes that show the floating bar. Onboarding deliberately has none. */
-private val BOTTOM_BAR_ROUTES = setOf(Screen.Main.route, Screen.Rules.route, Screen.Settings.route, Screen.Presets.route)
+// Every destination the bar itself leads to, so tapping an entry never lands on a page without it.
+private val BOTTOM_BAR_ROUTES = setOf(
+    Screen.Main.route,
+    Screen.Rules.route,
+    Screen.Tweaks.route,
+    Screen.Settings.route,
+    Screen.Presets.route,
+)
 
 /** Stable keys of the bar entries. */
 private object BarKey {

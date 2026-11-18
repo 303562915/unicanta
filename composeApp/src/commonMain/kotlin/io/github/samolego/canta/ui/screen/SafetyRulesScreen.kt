@@ -410,6 +410,7 @@ private fun PlansTab(
     upload?.let { request ->
         UploadPlanDialog(
             packages = request.packages,
+            pendingCount = pending.size,
             canUpload = request.canUpload,
             testMode = request.testMode,
             onDismiss = { upload = null },
