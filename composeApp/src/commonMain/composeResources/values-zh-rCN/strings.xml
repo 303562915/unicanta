@@ -209,4 +209,17 @@
     <string name="show_whats_sent">看看会发什么</string>
     <string name="whats_sent_description">这是发送内容的一个例子，除此之外不会有任何东西离开你的设备。</string>
     <string name="whats_sent_title">会发送什么</string>
+    <string name="plan_upload_button">上传本机方案</string>
+    <string name="plan_upload_title">上传方案</string>
+    <string name="plan_upload_name_hint">起个名字（例如「fuxi 轻度精简」）</string>
+    <string name="plan_upload_note_hint">删了哪些、有什么要注意的</string>
+    <string name="plan_upload_need_reboot">只有「重启后确认正常开机」的批次才能上传，这是它可信的前提。</string>
+    <string name="plan_upload_submit">上传</string>
+    <string name="plan_upload_done">已上传</string>
+    <string name="plan_upload_failed">上传失败</string>
+    <string name="plan_detail_title">方案详情</string>
+    <string name="plan_packages_title">包含的包</string>
+    <string name="plan_comments_title">评论</string>
+    <string name="plan_comment_hint">写点评论</string>
+    <string name="plan_comment_send">发送</string>
 </resources>

@@ -35,6 +35,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.github.samolego.canta.core.CantaAppDependencies
 import io.github.samolego.canta.core.DeviceUser
+import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.select_all_enabled
@@ -49,6 +50,7 @@ import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
+import io.github.samolego.canta.ui.screen.PlanDetailScreen
 import io.github.samolego.canta.ui.screen.PresetsScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
@@ -59,6 +61,8 @@ import io.github.samolego.canta.ui.viewmodel.MainViewModel
 import io.github.samolego.canta.ui.viewmodel.PresetsViewModel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import io.github.samolego.canta.util.CrashReportStore
+import io.github.samolego.canta.util.DeviceProfile
+import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
@@ -168,6 +172,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 SafetyRulesScreen(
                     handler = handler,
                     appListViewModel = appListViewModel,
+                    settings = deps.settings,
+                    onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -238,6 +244,18 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                         navController.navigateUp()
                     },
                     appListViewModel = appListViewModel,
+                )
+            }
+            composable(route = Screen.PlanDetail.route) { entry ->
+                // The id is an undeclared path argument, so it arrives as a plain string.
+                val planId = entry.arguments?.getString("planId")?.toLongOrNull() ?: 0L
+                var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
+                LaunchedEffect(Unit) { planProfile = handler.deviceProfile() }
+                PlanDetailScreen(
+                    planId = planId,
+                    repository = remember { PlanRepository(HttpClient()) },
+                    profile = planProfile,
+                    onNavigateBack = { navController.navigateUp() },
                 )
             }
         }

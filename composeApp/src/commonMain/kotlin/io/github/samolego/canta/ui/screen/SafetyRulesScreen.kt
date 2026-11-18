@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,11 +38,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaHandler
+import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.plan_upload_button
 import io.github.samolego.canta.generated.resources.rules_device_title
 import io.github.samolego.canta.generated.resources.rules_empty
 import io.github.samolego.canta.generated.resources.rules_title
@@ -48,6 +53,7 @@ import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
@@ -56,6 +62,9 @@ import io.github.samolego.canta.util.SafetyVerdict
 import io.github.samolego.canta.util.romName
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.launch
+import kotlin.random.Random
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -71,6 +80,8 @@ import org.jetbrains.compose.resources.stringResource
 fun SafetyRulesScreen(
     handler: CantaHandler,
     appListViewModel: AppListViewModel,
+    settings: CantaSettings,
+    onOpenPlan: (Long) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -107,7 +118,7 @@ fun SafetyRulesScreen(
             HorizontalDivider()
             when (tab) {
                 0 -> AppsTab(apps = appListViewModel.apps, rules = rules, profile = profile)
-                else -> PlansTab(profile = profile)
+                else -> PlansTab(profile = profile, settings = settings, onOpenPlan = onOpenPlan)
             }
         }
     }
@@ -195,14 +206,31 @@ private fun StatusChip(verdict: SafetyVerdict?) {
     )
 }
 
+@OptIn(ExperimentalTime::class)
 @Composable
-private fun PlansTab(profile: DeviceProfile?) {
+private fun PlansTab(
+    profile: DeviceProfile?,
+    settings: CantaSettings,
+    onOpenPlan: (Long) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val repository = remember { PlanRepository(HttpClient()) }
     var plans by remember { mutableStateOf<List<CommunityPlan>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
-    val voter = remember { "u-" + (profile?.device ?: "unknown") }
+    var showUpload by remember { mutableStateOf(false) }
+    // Per-install random id: the backend counts one vote per id, and a shared model name would
+    // let one owner's vote stand in for everybody with the same phone.
+    val voter = remember { "u-" + Random.nextLong().toString(16) }
+    // Stable for this screen instance so the backend can tell reporters apart.
+    val reporter = remember { "r-" + Random.nextLong().toString(16) }
+
+    val pending by settings.pendingRebootFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Only a batch whose removal survived a reboot proves anything, so it is the only uploadable set.
+    val verified = pending.filter { it.survived }.mapNotNull { it.pkg }.distinct()
+    // No device profile means nothing to match the plan against, so uploading is pointless.
+    // An unverified batch still opens the dialog: it explains why it cannot be uploaded.
+    val canUpload = profile != null && verified.isNotEmpty()
 
     LaunchedEffect(profile) {
         loading = true
@@ -212,44 +240,76 @@ private fun PlansTab(profile: DeviceProfile?) {
         loading = false
     }
 
-    when {
-        loading -> Text("…", modifier = Modifier.padding(16.dp))
-        plans.isEmpty() -> Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = if (error) "暂时读不到社区方案（网络或后端没通）" else "这台机器（${profile?.model ?: "?"} / ${romName(profile?.rom ?: "")} ${profile?.romVersion ?: 0}）还没有人上传方案",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "只有同一机型 + 同一系统版本、并且上传者确认过「卸载后手机正常重启」的方案才会出现在这里。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(plans, key = { it.id }) { plan ->
-                PlanRow(
-                    plan = plan,
-                    onVote = {
-                        scope.launch {
-                            val votes = repository.vote(plan.id, voter) ?: return@launch
-                            plans = plans.map { if (it.id == plan.id) it.copy(votes = votes) else it }
-                                .sortedByDescending { it.votes }
-                        }
-                    },
-                )
-                HorizontalDivider()
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(onClick = { showUpload = true }, enabled = profile != null) {
+                Text(stringResource(Res.string.plan_upload_button))
             }
         }
+        when {
+            loading -> Text("…", modifier = Modifier.padding(16.dp))
+            plans.isEmpty() -> Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = if (error) "暂时读不到社区方案（网络或后端没通）" else "这台机器（${profile?.model ?: "?"} / ${romName(profile?.rom ?: "")} ${profile?.romVersion ?: 0}）还没有人上传方案",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = "只有同一机型 + 同一系统版本、并且上传者确认过「卸载后手机正常重启」的方案才会出现在这里。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> LazyColumn(modifier = Modifier.weight(1f)) {
+                items(plans, key = { it.id }) { plan ->
+                    PlanRow(
+                        plan = plan,
+                        onOpen = { onOpenPlan(plan.id) },
+                        onVote = {
+                            scope.launch {
+                                val votes = repository.vote(plan.id, voter) ?: return@launch
+                                plans = plans.map { if (it.id == plan.id) it.copy(votes = votes) else it }
+                                    .sortedByDescending { it.votes }
+                            }
+                        },
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+
+    if (showUpload) {
+        UploadPlanDialog(
+            packages = verified,
+            canUpload = canUpload,
+            onDismiss = { showUpload = false },
+            onSubmit = { title, note ->
+                showUpload = false
+                val target = profile
+                if (target != null) {
+                    scope.launch {
+                        repository.submit(target, title, note, verified, Clock.System.now().toString(), reporter)
+                        // Re-read either way: a failed upload simply leaves the list as it was.
+                        val loaded = repository.plansFor(target)
+                        error = loaded.isEmpty()
+                        plans = loaded
+                    }
+                }
+            },
+        )
     }
 }
 
 @Composable
-private fun PlanRow(plan: CommunityPlan, onVote: () -> Unit) {
+private fun PlanRow(plan: CommunityPlan, onOpen: () -> Unit, onVote: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f).clickable(onClick = onOpen)) {
             Text(plan.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
             if (plan.note.isNotEmpty()) {
                 Text(

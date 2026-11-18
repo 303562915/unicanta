@@ -270,4 +270,17 @@
     <string name="crash_report_open_issue">Open GitHub issue</string>
     <string name="crash_report_copy">Copy</string>
     <string name="crash_report_dismiss">Dismiss</string>
+    <string name="plan_upload_button">Upload this phone's plan</string>
+    <string name="plan_upload_title">Upload plan</string>
+    <string name="plan_upload_name_hint">Name (e.g. "fuxi light debloat")</string>
+    <string name="plan_upload_note_hint">What it removes / what to watch out for</string>
+    <string name="plan_upload_need_reboot">Only a batch that survived a reboot can be uploaded — that is what makes it trustworthy.</string>
+    <string name="plan_upload_submit">Upload</string>
+    <string name="plan_upload_done">Uploaded</string>
+    <string name="plan_upload_failed">Upload failed</string>
+    <string name="plan_detail_title">Plan detail</string>
+    <string name="plan_packages_title">Packages</string>
+    <string name="plan_comments_title">Comments</string>
+    <string name="plan_comment_hint">Write a comment</string>
+    <string name="plan_comment_send">Send</string>
 </resources>
