@@ -71,7 +71,7 @@ fun AppTile(
         // Flat cards on the page's own surface, with selection carried by the fill and the
         // checkbox: the rest of the app draws its cards this way, so the list matches.
         shape = MaterialTheme.shapes.small,
-        elevation = null,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = if (showBorder) BorderStroke(1.dp, checkedColor) else null,
         colors =
                 CardDefaults.cardColors(
