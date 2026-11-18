@@ -5,6 +5,15 @@ name: 🔧 Fork CI — tests + debug APK
 on:
   push:
   workflow_dispatch:
+    inputs:
+      telemetry_base_url:
+        description: "Telemetry endpoint for the debug APK (empty = the checked-in default)"
+        default: ""
+        required: false
+      telemetry_api_key:
+        description: "API key for that endpoint (empty = the checked-in default)"
+        default: ""
+        required: false
 
 concurrency:
   group: fork-ci-${{ github.ref }}
@@ -66,7 +75,15 @@ jobs:
         run: chmod +x gradlew
 
       - name: 🏗️ Assemble debug
-        run: ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon
+        env:
+          BASE_URL: ${{ inputs.telemetry_base_url }}
+          API_KEY: ${{ inputs.telemetry_api_key }}
+        run: |
+          ARGS=""
+          if [ -n "$BASE_URL" ]; then ARGS="$ARGS -Pcanta.telemetry.baseUrl=$BASE_URL"; fi
+          if [ -n "$API_KEY" ]; then ARGS="$ARGS -Pcanta.telemetry.apiKey=$API_KEY"; fi
+          echo "extra gradle args:$ARGS"
+          ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon $ARGS
 
       - name: 📝 Checksums
         run: |
