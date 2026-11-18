@@ -66,7 +66,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.toPx
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.exp
@@ -190,7 +189,10 @@ fun FloatingPillBar(
     // One surface step above the content, and one more for the lens.
     val barColor = if (dark) colors.surfaceContainerHigh else colors.surfaceBright
     val lensColor = if (dark) colors.surfaceContainerHighest else colors.surfaceContainer
-    val shadowColor = colors.shadow
+    // Modifier.shadow takes the colours explicitly: a black-tinted drop in light
+    // mode, a solid black in dark mode (this Compose version's ColorScheme no
+    // longer carries a `shadow` member).
+    val shadowColor = if (dark) Color.Black else Color(0x33000000)
 
     val density = LocalDensity.current
     val bottomMargin = maxOf(
@@ -263,9 +265,9 @@ fun FloatingPillBar(
                 .background(barColor),
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val pad = BarPadding.toPx()
+                val pad = BarPadding.value * density.density
                 val span = constraints.maxWidth.toFloat() - pad * 2
-                val minLens = MinLensWidth.dp.toPx()
+                val minLens = MinLensWidth.value * density.density
                 val layout = remember(span, items.size, pad, minLens) {
                     dockLayout(span, items.size, pad, minLens)
                 }
@@ -275,7 +277,7 @@ fun FloatingPillBar(
                     modifier = Modifier
                         .fillMaxSize()
                         .pointerInput(layout, items.size) {
-                            val inner = BarPadding.toPx()
+                            val inner = BarPadding.value * density.density
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 var index = dockIndexAt(
@@ -376,8 +378,8 @@ private fun DockContents(
         fontSize = LabelSize,
         lineHeight = LabelLine,
     )
-    val labelInset = with(density) { LabelInset.toPx() }
-    val growth = with(density) { (LensGrowth * 2f).dp.toPx() }
+    val labelInset = LabelInset.value * density.density
+    val growth = (LensGrowth * 2f).dp.value * density.density
     // A label wider than its slot shrinks, down to the smallest size FlClash
     // allows, instead of being cut off.
     val widest = remember(items.map { it.label }, labelStyle, measurer) {
