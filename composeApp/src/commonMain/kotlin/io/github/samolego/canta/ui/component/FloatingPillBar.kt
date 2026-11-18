@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.component
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -155,7 +156,7 @@ private fun rubberBand(overshoot: Float, limit: Float): Float {
 private fun saturate(value: Float): Float = 1f - 2f / (exp(2f * value) + 1f)
 
 /** How far the lens stretches at its current speed, in fractions of its width. */
-private fun lensStretch(lens: Animatable<Float>, pitch: Float): Float {
+private fun lensStretch(lens: Animatable<Float, AnimationVector1D>, pitch: Float): Float {
     if (pitch <= 0f) {
         return 0f
     }
@@ -362,8 +363,8 @@ private fun DockContents(
     selectedIndex: Int,
     tintedIndex: Int,
     layout: DockLayout,
-    lens: Animatable<Float>,
-    lift: Animatable<Float>,
+    lens: Animatable<Float, AnimationVector1D>,
+    lift: Animatable<Float, AnimationVector1D>,
     lensColor: Color,
     onSelect: (Int) -> Unit,
 ) {
