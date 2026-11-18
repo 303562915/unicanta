@@ -44,6 +44,12 @@ data class AppSettingsProto(
      * by hand to rescue the device. Local only, never part of any request; shown once at start.
      */
     @ProtoNumber(15) val restoreSuspects: List<String> = emptyList(),
+    /**
+     * Random identity of this install (see `DeviceIdentity`), created on first use and kept
+     * forever: it owns the uploaded plans, casts the vote and signs the comments, so the plans
+     * page needs no account. Never leaves the device except inside those requests.
+     */
+    @ProtoNumber(16) val identityToken: String = "",
 )
 
 /**

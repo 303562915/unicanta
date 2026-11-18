@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -50,15 +53,25 @@ fun FloatingPillBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(28.dp),
-    containerColor: Color = Color.Transparent,
+    containerColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
 ) {
     Row(
         modifier = modifier
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .fillMaxWidth()
+            // Frosted capsule: a soft drop shadow lifts it off the content, a translucent fill lets
+            // the content show through, and a vertical highlight along the edge reads as glass.
+            .shadow(elevation = 16.dp, shape = shape, clip = false)
             .background(containerColor, shape)
-            .padding(horizontal = 2.dp, vertical = 2.dp)
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.38f), Color.White.copy(alpha = 0.06f)),
+                ),
+                shape = shape,
+            )
+            .padding(horizontal = 2.dp, vertical = 3.dp)
             .selectableGroup(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
