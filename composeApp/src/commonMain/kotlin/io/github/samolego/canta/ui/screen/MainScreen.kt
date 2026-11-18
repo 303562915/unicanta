@@ -27,12 +27,14 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.app.Filter
@@ -41,12 +43,17 @@ import io.github.samolego.canta.generated.resources.reinstall
 import io.github.samolego.canta.generated.resources.uninstall
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.component.AppList
+import io.github.samolego.canta.ui.component.AppListPermissionBanner
+import io.github.samolego.canta.ui.permission.needsRequest
+import io.github.samolego.canta.ui.permission.rememberAppListAccess
 import io.github.samolego.canta.ui.component.CantaTopBar
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
+import io.github.samolego.canta.ui.dialog.AppListPermissionDialog
 import io.github.samolego.canta.ui.dialog.DeviceChooserDialog
 import io.github.samolego.canta.ui.dialog.ExplainBadgesDialog
-import io.github.samolego.canta.ui.dialog.NoWarrantyDialog
+import io.github.samolego.canta.ui.dialog.RestoreSuspectsDialog
 import io.github.samolego.canta.ui.dialog.ShizukuRequirementDialog
+import io.github.samolego.canta.ui.dialog.UnsafeSelectionDialog
 import io.github.samolego.canta.ui.dialog.SuccessDialog
 import io.github.samolego.canta.ui.dialog.UninstallAppsDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
@@ -107,9 +114,16 @@ fun MainScreen(
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             AppsTabs(pagerState)
+            if (appListViewModel.appListRestricted) {
+                AppListPermissionBanner(
+                    onOpenSettings = appListViewModel::openPackageListSettings,
+                    onDismiss = appListViewModel::dismissAppListNotice,
+                )
+            }
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                // Leaves room for the floating bar that is drawn over the screen.
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 76.dp),
             ) { page ->
                 PullToRefreshBox(
                     isRefreshing = appListViewModel.isLoading,
@@ -128,7 +142,33 @@ fun MainScreen(
         }
     }
 
-    MainDialogs(handler, platform, mainViewModel, settingsViewModel, closeApp)
+    // On ROMs that expose com.android.permission.GET_INSTALLED_APPS this pops the system dialog,
+    // exactly like FlClash does; everywhere else it falls back to the ROM's settings page.
+    val appListAccess = rememberAppListAccess()
+    var askedThisRun by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(appListAccess.supported, appListAccess.granted) {
+        if (appListAccess.needsRequest && !askedThisRun) {
+            askedThisRun = true
+            appListAccess.request()
+        }
+    }
+
+    if (appListViewModel.askForAppListPermission) {
+        AppListPermissionDialog(
+            canRequest = appListAccess.supported && !appListAccess.granted,
+            onRequest = {
+                appListViewModel.onAppListPermissionPrompted()
+                appListAccess.request()
+            },
+            onOpenSettings = {
+                appListViewModel.onAppListPermissionPrompted()
+                appListViewModel.openPackageListSettings()
+            },
+            onDismiss = appListViewModel::onAppListPermissionPrompted,
+        )
+    }
+
+    MainDialogs(handler, platform, mainViewModel)
 }
 
 @Composable
@@ -184,28 +224,35 @@ private fun AppsTabs(pagerState: PagerState) {
     }
 }
 
-/** Renders [MainViewModel.dialog] (once, outside the pager) and the startup disclaimer. */
+/** Renders [MainViewModel.dialog] (once, outside the pager) */
 @Composable
 private fun MainDialogs(
     handler: CantaHandler,
     platform: CantaPlatform,
     mainViewModel: MainViewModel,
-    settingsViewModel: SettingsViewModel,
-    closeApp: () -> Unit,
 ) {
-    val showRiskDialog by settingsViewModel.showRiskDialog.collectAsStateWithLifecycle()
-
-    if (showRiskDialog) {
-        NoWarrantyDialog(onProceed = settingsViewModel::acceptRiskDialog, onCancel = closeApp)
-    }
-
     when (val dialog = mainViewModel.dialog) {
         null -> {}
         is MainDialog.ConfirmUninstall -> UninstallAppsDialog(
             appCount = dialog.appCount,
             canResetToFactory = dialog.canResetToFactory,
+            bootloopRisk = dialog.bootloopRisk,
+            newPackages = dialog.newPackages,
             onDismiss = mainViewModel::dismissDialog,
             onAgree = mainViewModel::onUninstallConfirmed,
+        )
+        is MainDialog.UnsafeSelection -> UnsafeSelectionDialog(
+            blocked = dialog.blocked,
+            risky = dialog.risky,
+            deviceLabel = dialog.deviceLabel,
+            unknownCount = dialog.unknownCount,
+            onDismiss = mainViewModel::dismissDialog,
+            onContinue = mainViewModel::onUnsafeSelectionAccepted,
+        )
+        is MainDialog.RestoreSuspects -> RestoreSuspectsDialog(
+            packages = dialog.packages,
+            onRevert = mainViewModel::onRestoreSuspectsReverted,
+            onDismiss = mainViewModel::onRestoreSuspectsDismissed,
         )
         is MainDialog.Success -> SuccessDialog(
             platform = platform,

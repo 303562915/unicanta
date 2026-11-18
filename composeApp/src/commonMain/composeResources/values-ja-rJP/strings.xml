@@ -15,11 +15,11 @@
     <string name="collapse">Collapse</string>
     <string name="badge_disabled">DISABLED</string>
     <string name="helper_notice">Canta places a small helper in /data/local/tmp on the device to read and manage apps. It runs only while Canta uses it.</string>
-    <string name="device_android_too_old">This device runs an Android version older than 9, which Canta doesn\'t support.</string>
-    <string name="helper_unavailable">Couldn\'t set up Canta\'s helper on the device. Check that it is connected and authorized, then try again.</string>
+    <string name="device_android_too_old">This device runs an Android version older than 9, which Canta doesn't support.</string>
+    <string name="helper_unavailable">Couldn't set up Canta's helper on the device. Check that it is connected and authorized, then try again.</string>
     <string name="tab_installed">Installed apps</string>
     <string name="tab_uninstalled">Uninstalled apps</string>
-    <string name="cannot_uninstall_canta">Can\'ta ouch this!</string>
+    <string name="cannot_uninstall_canta">Can'ta ouch this!</string>
     <string name="device_unreachable">Failed to reach the device. Check that it is connected and authorized.</string>
     <string name="app_size">Size: %1$s</string>
     <string name="uninstall">アンインストール</string>
@@ -57,8 +57,6 @@
     <string name="no_warranty_content">このアプリは、サードパーティーの情報に基づいてアプリの削除を推奨します。これらの推奨はあくまで参考情報であり、特定のデバイスにおける安全性や互換性を保証するものではありません。システムアプリをアンインストールすると機能の喪失、システムの不安定化、デバイスのブートループ、データの損失などの予期しない問題が発生する可能性があります。このアプリの開発者は、提供された推奨に従った結果やデバイスに損害が発生した場合でも責任を一切負いません。</string>
     <string name="disclaimer">免責事項 - 自己責任</string>
     <string name="proceed_at_own_risk">「続行」をタップすることでこのアプリを自己責任での利用に同意するものとします。</string>
-    <string name="never_show_again">このメッセージを再度表示しない</string>
-    <string name="proceed">続行</string>
     <string name="confirm_uninstall_description">アンインストールの操作を確認するためのダイアログを表示するかどうかを設定します。</string>
     <string name="select_all">すべて選択</string>
     <string name="select_all_tip">あと %1$d 回タップするとすべての機能が有効になります。</string>
@@ -131,9 +129,9 @@
     <string name="pick_device_description">Connect your Android device over USB, then pick it in the browser prompt. Enable USB debugging on the device and accept the authorization prompt on its screen.</string>
     <string name="webusb_not_supported_title">WebUSB is not supported</string>
     <string name="webusb_not_supported_description">This browser cannot access USB devices. Open Canta in Chromium based browser (e.g. Chrome, Brave, Edge, Vivaldi) on a computer to connect your phone.</string>
-    <string name="device_access_denied">Access to the USB device was denied. Unplug it and plug it back in, grant access again with \"Pick device\", and make sure no other program (such as adb) is using the device.</string>
+    <string name="device_access_denied">Access to the USB device was denied. Unplug it and plug it back in, grant access again with "Pick device", and make sure no other program (such as adb) is using the device.</string>
     <string name="device_access_denied_linux">Access to the USB device was denied. On Linux, browsers need permission to open USB devices: install udev rules for your phone (e.g. the android-udev-rules package), then unplug it and plug it back in.</string>
-    <string name="device_access_denied_windows">Access to the USB device was denied. On Windows, the phone\'s ADB interface needs a WinUSB driver: install it with Zadig, then unplug the phone and plug it back in.</string>
+    <string name="device_access_denied_windows">Access to the USB device was denied. On Windows, the phone's ADB interface needs a WinUSB driver: install it with Zadig, then unplug the phone and plug it back in.</string>
     <string name="device_connection_failed">Could not connect to the device: %1$s</string>
     <string name="device_no_longer_available">The selected device is no longer available. Please pick it again.</string>
     <string name="device_busy">The device is already in use by another program or browser tab. Close anything else using it, unplug the device and plug it back in, then pick it again.</string>

@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.samolego.canta.CANTA_PACKAGE_NAME
+import io.github.samolego.canta.BuildFlags
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.app.Filter
@@ -19,9 +20,16 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.canta_description
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.util.LogUtils
+import io.github.samolego.canta.util.CommunityScore
+import io.github.samolego.canta.util.DeviceContext
+import io.github.samolego.canta.util.fakeScores
+import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 
@@ -29,6 +37,8 @@ import org.jetbrains.compose.resources.getString
 class AppListViewModel(
     private val cantaHandler: CantaHandler,
     private val bloatRepository: BloatRepository,
+    /** Opt-in analytics; null when there is none (tests). */
+    private val telemetry: PackageTelemetry? = null,
 ) : ViewModel() {
 
     companion object {
@@ -43,6 +53,68 @@ class AppListViewModel(
 
     private val _apps = mutableStateListOf<AppInfo>()
 
+    private val _scores = MutableStateFlow<Map<String, CommunityScore>>(emptyMap())
+
+    /** Community scores by package name; empty while analytics is off. Shown next to, never instead of, the bloat info. */
+    val scores: StateFlow<Map<String, CommunityScore>> = _scores
+
+    /** What the server said last (or nothing, with analytics off); shown whenever fake scores are off. */
+    private var realScores: Map<String, CommunityScore> = emptyMap()
+
+    private val _fakeScores = MutableStateFlow(false)
+
+    /** Debug only, never persisted: show made-up scores instead of fetching any. */
+    val fakeScoresEnabled: StateFlow<Boolean> = _fakeScores
+
+    fun setFakeScores(enabled: Boolean) {
+        // Fake scores only exist in debug builds.
+        _fakeScores.value = enabled && BuildFlags.IS_DEBUG
+        viewModelScope.launch { applyScores() }
+    }
+
+    private var analyticsOn = false
+
+    /** The device the [realScores] were fetched for; they are fetched again once a different one is known. */
+    private var scoresFor: DeviceContext? = null
+
+    private suspend fun fetchRealScores(telemetry: PackageTelemetry) {
+        scoresFor = telemetry.deviceContext()
+        realScores = telemetry.fetchScores().orEmpty()
+        applyScores()
+    }
+
+    /** A device may only become known after the start (ADB targets connect later): then per-ROM scores are due. */
+    private fun refreshScoresForDevice() {
+        val telemetry = telemetry ?: return
+        viewModelScope.launch {
+            val device = telemetry.deviceContext()
+            if (analyticsOn && device != null && device != scoresFor) fetchRealScores(telemetry)
+        }
+    }
+
+    private suspend fun applyScores() {
+        _scores.value = if (_fakeScores.value) fakeScores(_apps.toList(), telemetry?.deviceContext()) else realScores
+    }
+
+    /** Whether the pending-reboot check has run since the app started. */
+    private var survivorsChecked = false
+
+    init {
+        telemetry?.let { telemetry ->
+            // Fetched when analytics is on at start (or gets turned on), cleared when it is turned off.
+            viewModelScope.launch {
+                telemetry.analyticsEnabled.collectLatest { enabled ->
+                    analyticsOn = enabled
+                    if (enabled) fetchRealScores(telemetry) else {
+                        realScores = emptyMap()
+                        scoresFor = null
+                        applyScores()
+                    }
+                }
+            }
+        }
+    }
+
     /** All apps, regardless of search and filters. */
     val apps: List<AppInfo> get() = _apps
 
@@ -52,6 +124,34 @@ class AppListViewModel(
     var onlySystem by mutableStateOf(true)
     var isLoading by mutableStateOf(false)
         private set
+
+    /**
+     * The ROM hides the package list until its own permission is granted (HyperOS/MIUI). The list
+     * screen shows a banner with the way to that switch; dismissed for this run only.
+     */
+    var appListRestricted by mutableStateOf(false)
+        private set
+
+    /** Whether the "the system hides the app list" dialog was already shown in this run. */
+    private var noticeShown = false
+
+    /** True the first time a restricted list is loaded: the screen then asks for the permission. */
+    var askForAppListPermission by mutableStateOf(false)
+        private set
+
+    fun onAppListPermissionPrompted() {
+        askForAppListPermission = false
+        noticeShown = true
+    }
+
+    /** Opens the ROM's package-list permission screen, if this platform has one. */
+    fun openPackageListSettings() {
+        cantaHandler.openPackageListSettings()
+    }
+
+    fun dismissAppListNotice() {
+        appListRestricted = false
+    }
     var isLoadingBadges by mutableStateOf(false)
         private set
 
@@ -110,6 +210,9 @@ class AppListViewModel(
                 }
             )
             isLoading = false
+            if (_fakeScores.value) applyScores()
+            refreshScoresForDevice()
+            checkSurvivors(all)
 
             // Icons and badges load in parallel.
             if (all.any { it.icon == null && it.packageName !in iconCache }) launch { streamIcons() }
@@ -119,7 +222,16 @@ class AppListViewModel(
         } finally {
             isLoading = false
             isLoadingBadges = false
+            appListRestricted = cantaHandler.appListRestricted && _apps.isNotEmpty()
+            if (appListRestricted && !noticeShown) askForAppListPermission = true
         }
+    }
+
+    /** Once per app start, after the first successful load, reports uninstalls that survived a reboot. */
+    private fun checkSurvivors(loaded: List<AppInfo>) {
+        if (survivorsChecked || telemetry == null || loaded.isEmpty()) return
+        survivorsChecked = true
+        viewModelScope.launch { telemetry.resolveSurvivors(loaded) }
     }
 
     private suspend fun applyBloatData(bloat: Map<String, BloatData>) {
@@ -172,16 +284,46 @@ class AppListViewModel(
             AppsType.INSTALLED -> cantaHandler.uninstallApps(packageNames, resetToFactory)
             AppsType.UNINSTALLED -> cantaHandler.reinstallApps(packageNames)
         }
+        val before = _apps.associateBy { it.packageName }
+        val succeededApps = mutableListOf<AppInfo>()
         var succeeded = 0
         results.collect { result ->
             if (result.success) {
                 succeeded++
+                before[result.packageName]?.let(succeededApps::add)
                 toggleUninstalled(result.packageName)
                 selectedApps.remove(result.packageName)
             } else {
                 LogUtils.w(TAG, "${type.name.lowercase()} '${result.packageName}' failed: ${result.message} (${result.status})")
             }
         }
+        if (telemetry != null && succeededApps.isNotEmpty()) {
+            when (type) {
+                AppsType.INSTALLED -> telemetry.recordUninstalls(succeededApps, batchSize = packageNames.size)
+                AppsType.UNINSTALLED -> telemetry.recordReinstalls(succeededApps)
+            }
+        }
+        return succeeded
+    }
+
+    /**
+     * Reinstalls [packageNames] without touching the current selection (the rescue prompt of a
+     * previous batch). Returns how many succeeded.
+     */
+    suspend fun reinstallPackages(packageNames: List<String>): Int {
+        if (packageNames.isEmpty()) return 0
+        var succeeded = 0
+        val succeededApps = mutableListOf<AppInfo>()
+        cantaHandler.reinstallApps(packageNames).collect { result ->
+            if (result.success) {
+                succeeded++
+                _apps.firstOrNull { it.packageName == result.packageName }?.let(succeededApps::add)
+                if (_apps.any { it.packageName == result.packageName && it.isUninstalled }) toggleUninstalled(result.packageName)
+            } else {
+                LogUtils.w(TAG, "reinstall '${result.packageName}' failed: ${result.message} (${result.status})")
+            }
+        }
+        if (succeededApps.isNotEmpty()) telemetry?.recordReinstalls(succeededApps)
         return succeeded
     }
 

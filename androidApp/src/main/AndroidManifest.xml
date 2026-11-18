@@ -14,9 +14,15 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- The switch HyperOS/MIUI/ColorOS put on top of QUERY_ALL_PACKAGES. Unlike their other
+         switches this one is a real runtime permission and can be requested (same approach as
+         FlClash); ROMs without it simply never grant or ask for it. -->
+    <uses-permission android:name="com.android.permission.GET_INSTALLED_APPS" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Lets analytics (if enabled) report, after a reboot, whether uninstalled packages stayed gone. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.software.leanback"
         android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen"
@@ -35,7 +41,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Canta"
         android:name=".CantaApplication"
-        tools:targetApi="35">
+        tools:targetApi="37">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -47,6 +53,13 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.IntentSender
 import android.content.pm.IPackageInstaller
 import android.content.pm.IPackageManager
+import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
@@ -44,6 +45,32 @@ class PackageOperations(
 
     private fun privilegedInstaller(): IPackageInstaller =
         IPackageInstaller.Stub.asInterface(services.wrap(privilegedPackageManager.packageInstaller.asBinder()))
+
+    /**
+     * Packages as the privileged identity sees them, or an empty list when the hidden call is
+     * unavailable. Some ROMs (HyperOS/MIUI) hand a gutted list to the app's own PackageManager
+     * until the user grants the "get installed apps" permission, which cannot be requested at
+     * runtime; asking the package service directly gets past that.
+     */
+    fun privilegedInstalledPackages(): List<PackageInfo> = try {
+        allowHiddenApis()
+        val flags = PackageManager.MATCH_UNINSTALLED_PACKAGES.toLong()
+        val slice = try {
+            IPackageManager::class.java
+                .getMethod("getInstalledPackages", Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                .invoke(privilegedPackageManager, flags, services.userId)
+        } catch (_: NoSuchMethodException) {
+            IPackageManager::class.java
+                .getMethod("getInstalledPackages", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                .invoke(privilegedPackageManager, PackageManager.MATCH_UNINSTALLED_PACKAGES, services.userId)
+        }
+        // ParceledListSlice is hidden: read its list reflectively.
+        @Suppress("UNCHECKED_CAST")
+        (slice?.javaClass?.getMethod("getList")?.invoke(slice) as? List<PackageInfo>).orEmpty()
+    } catch (e: Exception) {
+        Log.w(TAG, "Privileged package listing failed: $e")
+        emptyList()
+    }
 
     /**
      * Uninstalls [packageName] for the user. With [resetToFactory], an updated

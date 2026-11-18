@@ -1,0 +1,40 @@
+{
+ "version": 1,
+ "updated": "2026-11-18",
+ "tweaks": [
+  {
+   "id": "xiaomi-ad-splash-3s",
+   "rom": "xiaomi",
+   "title": "去掉开机后「广告启动屏」硬控 3 秒",
+   "why": "小米系统广告组件会在启动时强行停留约 3 秒。删掉它的缓存目录、再补一个同名空文件占位，就能跳过等待；部分刷机包缺少「智能服务」会导致仍然卡 3 秒，装上它并重置一次悬浮窗权限即可。",
+   "steps": [
+    "打开文件管理器，进入 /storage/emulated/0/Android/data/com.miui.systemAdSolution/files/",
+    "删除里面的 miad 文件夹",
+    "在同一目录新建一个名为 miad 的空文件（不是文件夹）",
+    "确认已安装「智能服务」（小米应用商店或小米浏览器里搜「小米智能服务」），很多第三方刷机包没有预装",
+    "打开 手机管家 → 隐私保护 → 其他权限 → 特殊权限设置 → 显示在其他应用的上层，找到「智能服务」，把权限打开再关闭一次"
+   ],
+   "paths": [
+    "/storage/emulated/0/Android/data/com.miui.systemAdSolution/files/"
+   ],
+   "packages": [
+    "com.miui.systemAdSolution",
+    "com.miui.systemadvisor"
+   ]
+  },
+  {
+   "id": "generic-first-boot",
+   "rom": "all",
+   "title": "卸载系统应用后的通用自救顺序",
+   "why": "任何机型上，卸载系统包后出现异常时按这个顺序处理，绝大多数情况不用刷机。",
+   "steps": [
+    "先长按电源键重启一次，很多问题是一次重启就能恢复的",
+    "仍然异常时，用另一台设备通过 USB 执行 adb shell pm install-existing <包名> 把包装回来",
+    "不知道是哪个包导致的：在 Canta 里看「机型安全 → 推荐方案」，用别人验证过的清单对照",
+    "开不了机、也连不上 adb 时，进 Recovery 清除数据是最后手段，之前务必先备份"
+   ],
+   "paths": [],
+   "packages": []
+  }
+ ]
+}

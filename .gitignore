@@ -21,3 +21,5 @@ icon.html
 
 # Legacy app module build artifacts (module is not part of the build anymore)
 app/release/
+server/node/telemetry.db
+server/node/telemetry.db-journal

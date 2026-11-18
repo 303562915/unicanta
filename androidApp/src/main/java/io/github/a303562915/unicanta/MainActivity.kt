@@ -1,4 +1,4 @@
-package io.github.samolego.canta
+package io.github.a303562915.unicanta
 
 import android.os.Build
 import android.os.Bundle
@@ -21,7 +21,11 @@ class MainActivity : FragmentActivity() {
         app.platform.attachActivity(this)
 
         setContent {
-            CantaApp(deps = app.dependencies, closeApp = { finishAndRemoveTask() })
+            CantaApp(
+                deps = app.dependencies,
+                closeApp = { finishAndRemoveTask() },
+                crashReports = app.crashReports,
+            )
         }
     }
 

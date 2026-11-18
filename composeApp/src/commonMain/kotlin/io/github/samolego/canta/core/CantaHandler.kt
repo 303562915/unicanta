@@ -3,6 +3,8 @@ package io.github.samolego.canta.core
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.packages.OperationResult
+import io.github.samolego.canta.util.DeviceContext
+import io.github.samolego.canta.util.DeviceProfile
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -120,6 +122,22 @@ interface CantaHandler {
     suspend fun loadApps(): List<AppInfo>
 
     /**
+     * Whether the last [loadApps] looks gutted because the ROM hides the package list from the
+     * app (HyperOS/MIUI ship such a permission, off by default, that cannot be requested at
+     * runtime). The list screen then tells the user which switch to flip.
+     */
+    val appListRestricted: Boolean get() = false
+
+    /**
+     * Opens the system screen where the package-list access of the ROM can be granted.
+     * Returns false when the platform has no such screen (desktop, web).
+     */
+    fun openPackageListSettings(): Boolean = false
+
+    /** Whether [openPackageListSettings] can lead anywhere on this platform. */
+    val supportsPackageListSettings: Boolean get() = false
+
+    /**
      * Icons for the apps from the last [loadApps], as (package name, icon)
      * pairs streamed in display order, so the list can show before they are
      * all rendered: in-process on Android, by the on-device helper over ADB.
@@ -138,6 +156,43 @@ interface CantaHandler {
 
     /** Reinstalls apps previously uninstalled for the user; one result per package. */
     fun reinstallApps(packageNames: List<String>): Flow<OperationResult>
+
+    /**
+     * The device's boot id (changes on every boot), or null when it can't be
+     * read. Used to tell whether a reboot happened since an uninstall.
+     */
+    suspend fun bootId(): String? = null
+
+    /**
+     * The device's build fingerprint, or null when it can't be read. Only compared
+     * locally to tell an OS update from anything else; never sent.
+     */
+    suspend fun buildFingerprint(): String? = null
+
+    /**
+     * Identifies the connected device (a hash, never sent) so pending uninstalls are only
+     * resolved against the device they happened on; null when the handler always talks to
+     * the same device or it can't be read.
+     */
+    suspend fun deviceKey(): String? = null
+
+    /**
+     * Whether [packageName] was (re)installed for the current user after the
+     * current boot started, or null when the platform can't tell.
+     */
+    suspend fun installedSinceBoot(packageName: String): Boolean? = null
+
+    /**
+     * Coarse description of the connected device (brand, ROM family and
+     * version, Android API level), or null when it can't be read.
+     */
+    suspend fun deviceContext(): DeviceContext? = null
+
+    /**
+     * Model, ROM and build of the device, used to pick the safety rules for it. Stays on the
+     * device: unlike [deviceContext] nothing here is ever sent anywhere.
+     */
+    suspend fun deviceProfile(): DeviceProfile? = null
 
     /** Whether the given package is on the device (installed or uninstalled for the user). */
     suspend fun packageExists(packageName: String): Boolean

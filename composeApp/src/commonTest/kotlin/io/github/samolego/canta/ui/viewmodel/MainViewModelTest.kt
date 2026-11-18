@@ -16,6 +16,7 @@ import io.github.samolego.canta.testing.MemoryStorage
 import io.github.samolego.canta.testing.offlineBloatRepository
 import io.github.samolego.canta.ui.AppsType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.test.TestScope
@@ -93,6 +94,45 @@ class MainViewModelTest {
         main.onUninstallConfirmed(resetToFactory = true)
         assertEquals(listOf(listOf("com.a") to true), handler.uninstallCalls)
         assertEquals(MainDialog.Success(count = 1, isReinstall = false), main.dialog)
+    }
+
+    @Test
+    fun packagesNewerThanTheLastConfirmedBatchAreFlagged() = runVmTest {
+        handler.resettable += "com.a"
+        settings.setLastConfirmedPackages(listOf("com.other"))
+        val (main, appList) = mainViewModel()
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+
+        assertEquals(
+            MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true, newPackages = listOf("com.a")),
+            main.dialog,
+        )
+    }
+
+    @Test
+    fun packagesFromTheLastConfirmedBatchAreNotFlaggedAsNew() = runVmTest {
+        handler.resettable += "com.a"
+        settings.setLastConfirmedPackages(listOf("com.a"))
+        val (main, appList) = mainViewModel()
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+
+        assertEquals(MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true), main.dialog)
+    }
+
+    @Test
+    fun restoreSuspectsAreShownOnceThenForgotten() = runVmTest {
+        settings.addRestoreSuspects(listOf("com.a", "com.b"))
+        val (main, _) = mainViewModel()
+
+        assertEquals(MainDialog.RestoreSuspects(listOf("com.a", "com.b")), main.dialog)
+
+        main.onRestoreSuspectsDismissed()
+        assertNull(main.dialog)
+        assertEquals(emptyList(), settings.restoreSuspectsFlow.first())
     }
 
     @Test
