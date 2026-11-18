@@ -1,18 +1,18 @@
 package io.github.samolego.canta.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import io.github.samolego.canta.ui.fl.FlTheme
 
+/**
+ * Canta's theme. The palette, type scale and shapes are FlClash's, seeded with its
+ * default accent `#007AFF`: the app looks the same on every phone rather than tinting
+ * itself after the wallpaper.
+ */
 @Composable
 fun CantaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    MaterialTheme(
-        // Material You colors where the platform has them (Android 12+).
-        colorScheme = dynamicColorScheme(darkTheme = darkTheme),
-        typography = Typography,
-        content = content
-    )
+    FlTheme(darkTheme = darkTheme, content = content)
 }

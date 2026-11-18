@@ -229,7 +229,7 @@ fun SafetyRulesScreen(
             Column {
                 ScreenTopBar(
                     onNavigateBack = onNavigateBack,
-                    title = { Text(stringResource(Res.string.rules_title)) },
+                    title = stringResource(Res.string.rules_title),
                 )
                 TabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.surface) {
                     Tab(

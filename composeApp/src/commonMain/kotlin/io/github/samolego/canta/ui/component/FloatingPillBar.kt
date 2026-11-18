@@ -19,11 +19,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,8 +43,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -66,6 +62,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.ui.fl.FlGlyph
+import io.github.samolego.canta.ui.fl.FlGlyphIcon
+import io.github.samolego.canta.ui.fl.FlSurfaceLevel
+import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.ui.fl.isDark
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.exp
@@ -75,7 +76,7 @@ import kotlin.math.sign
 /** One destination of the floating bottom bar. */
 data class BottomBarItem(
     val key: String,
-    val icon: ImageVector,
+    val glyph: FlGlyph,
     val label: String,
     val selected: Boolean,
 )
@@ -185,10 +186,11 @@ fun FloatingPillBar(
     }
 
     val colors = MaterialTheme.colorScheme
-    val dark = colors.surface.luminance() < 0.5f
-    // One surface step above the content, and one more for the lens.
-    val barColor = if (dark) colors.surfaceContainerHigh else colors.surfaceBright
-    val lensColor = if (dark) colors.surfaceContainerHighest else colors.surfaceContainer
+    val dark = colors.isDark
+    // The dock stands one surface level above the page, its lens one above that, as
+    // FlClash's NavigationDock does.
+    val barColor = FlSurfaceLevel.floatingOf(colors).colorOf(colors)
+    val lensColor = FlSurfaceLevel.floatingOf(colors).raised.colorOf(colors)
     // Modifier.shadow takes the colours explicitly: a black-tinted drop in light
     // mode, a solid black in dark mode (this Compose version's ColorScheme no
     // longer carries a `shadow` member).
@@ -461,11 +463,12 @@ private fun BarEntry(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = item.icon,
-            contentDescription = null,
+        FlGlyphIcon(
+            glyph = item.glyph,
+            size = IconSize,
             tint = color,
-            modifier = Modifier.size(IconSize),
+            // FlClash fills every dock glyph and lets the lens tint the one it covers.
+            fill = 1f,
         )
         Spacer(modifier = Modifier.height(LabelGap))
         // Every label stays visible: an icon alone makes people guess which tab

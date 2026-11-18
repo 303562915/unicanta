@@ -29,7 +29,7 @@ data class RomTweak(
 data class RomTweakSet(val version: Int = 1, val updated: String = "", val tweaks: List<RomTweak> = emptyList())
 
 /**
- * The shipped tweaks, grouped by vendor so a Xiaomi owner is not made to read OPPO advice first.
+ * The shipped tools, filed by the vendor whose ROM each one is about.
  *
  * There are exactly the five vendor groups in [FAMILIES] and nothing else: no "other" bucket and no
  * "general" group. A tweak filed under a ROM that maps to none of them is dropped rather than shown
@@ -40,14 +40,20 @@ class RomTweaks(private val set: RomTweakSet) {
     constructor(json: String) : this(Json { ignoreUnknownKeys = true }.decodeFromString(RomTweakSet.serializer(), json))
 
     /**
-     * The tweaks grouped by vendor, the group of [profile]'s ROM first and the rest in [FAMILIES]
-     * order. The key of each pair is a family key for [familyLabel].
+     * The tools to show for [profile], grouped by vendor.
+     *
+     * A tool is written for one vendor's ROM, so a phone whose ROM is recognised only gets its own
+     * group: a Xiaomi owner is not offered a ColorOS script, and a vendor without tools is simply
+     * absent instead of appearing as an empty section. An unrecognised ROM keeps every group,
+     * because nothing can be ruled out for it; the group of the phone's own ROM, when there is
+     * one, comes first.
      */
     fun groupedFor(profile: DeviceProfile?): List<Pair<String, List<RomTweak>>> {
         val mine = profile?.let { familyKeyOf(it.rom) }
         val groups = set.tweaks.groupBy { familyKeyOf(it.rom) }
         return FAMILIES
             .mapNotNull { family -> groups[family]?.let { family to it } }
+            .filter { (family, _) -> mine == null || family == mine }
             .sortedBy { (family, _) -> if (family == mine) 0 else 1 }
     }
 
@@ -56,6 +62,9 @@ class RomTweaks(private val set: RomTweakSet) {
 
         /** Puts back every app uninstalled for the current user, one by one. */
         const val ACTION_RESTORE_ALL = "restore-uninstalled"
+
+        /** Runs the card's [RomTweak.command] as one `sh` script through the privileged shell. */
+        const val ACTION_SHELL = "shell"
 
         /** The vendor groups, in display order. */
         val FAMILIES = listOf("xiaomi", "oppo", "vivo", "honor", "samsung")

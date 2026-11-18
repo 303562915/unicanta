@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material3.Card
@@ -18,24 +19,36 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.font.FontFamily
 import io.github.samolego.canta.CANTA_PACKAGE_NAME
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.util.CommunityScore
 
+/** Vertical air around the text inside a tile; the row itself is as tall as its icon. */
+private val TILE_VERTICAL_PADDING = 5.dp
+
+/** Space between the icon, the text block and the checkbox. */
+private val TILE_GAP = 10.dp
+
+/**
+ * One app in the list: icon, name, package with its badges, selection checkbox.
+ *
+ * Two lines of text and one 36dp icon, so a phone fits ~11 rows instead of the ~6 a three-line
+ * `ListItem` allowed; the badges share the package line and only move onto their own line when
+ * the package name left no room.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppTile(
@@ -54,88 +67,85 @@ fun AppTile(
 ) {
     Card(
         modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
         elevation =
-                CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 1.dp),
+                CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 0.dp),
         border =
                 if (showBorder) {
-                    BorderStroke(2.dp, checkedColor)
-                } else null
+                    BorderStroke(1.5.dp, checkedColor)
+                } else null,
+        colors =
+                CardDefaults.cardColors(
+                    containerColor =
+                            if (isSelected) {
+                                checkedBackgroundColor
+                            } else {
+                                MaterialTheme.colorScheme
+                                    .surface
+                                    .copy(alpha = if (enabled) 1f else 0.5f)
+                            }
+                ),
     ) {
-        ListItem(
-            colors =
-                    ListItemDefaults.colors(
-                        containerColor =
-                                if (isSelected) {
-                                    checkedBackgroundColor
-                                } else {
-                                    MaterialTheme.colorScheme
-                                        .surface
-                                        .copy(alpha = if (enabled) 1f else 0.5f)
-                                }
-                    ),
+        Row(
             modifier =
-                    Modifier.clickable(
-                        onClick = onShowDialog,
-                    ),
-            // One line each: long app and package names shrink and ellipsise instead of
-            // wrapping into a second line and inflating every row.
-            headlineContent = {
+                    Modifier.fillMaxWidth()
+                            .clickable(onClick = onShowDialog)
+                            .padding(
+                                    start = 10.dp,
+                                    end = 2.dp,
+                                    top = TILE_VERTICAL_PADDING,
+                                    bottom = TILE_VERTICAL_PADDING,
+                            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(TILE_GAP),
+        ) {
+            AppIconImage(appInfo, size = APP_TILE_ICON_SIZE)
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = appInfo.name,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            },
-            supportingContent = {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = appInfo.packageName,
-                            modifier = Modifier.weight(9f),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = appInfo.packageName,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (appInfo.badgeInfo != null) {
+                        AppBadge(type = appInfo.badgeInfo!!)
                     }
-
-                    FlowRow {
-                        if (appInfo.badgeInfo != null) {
-                            AppBadge(type = appInfo.badgeInfo!!)
-                        }
-                        score?.let { CommunityBadge(it.verdict) }
-                        if (appInfo.isSystemApp) {
-                            SystemBadge()
-                        }
-                        if (appInfo.isDisabled) {
-                            DisabledBadge()
-                        }
-                        if (appInfo.packageName == CANTA_PACKAGE_NAME) {
-                            CantaBadge()
-                        }
+                    score?.let { CommunityBadge(it.verdict) }
+                    if (appInfo.isSystemApp) {
+                        SystemBadge()
+                    }
+                    if (appInfo.isDisabled) {
+                        DisabledBadge()
+                    }
+                    if (appInfo.packageName == CANTA_PACKAGE_NAME) {
+                        CantaBadge()
                     }
                 }
-            },
-            leadingContent = { AppIconImage(appInfo) },
-            trailingContent = {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = onCheckChanged,
-                    enabled = enabled,
-                    colors =
-                            CheckboxDefaults.colors(
-                                checkedColor = checkedColor,
-                                uncheckedColor =
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                )
             }
-        )
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = onCheckChanged,
+                enabled = enabled,
+                modifier = Modifier.size(40.dp),
+                colors =
+                        CheckboxDefaults.colors(
+                            checkedColor = checkedColor,
+                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+            )
+        }
     }
 }
 
@@ -160,8 +170,14 @@ fun SelectedAppTile(
     )
 }
 
-/** Size app icons are shown at; Android renders them at exactly this size. */
+/** Size app icons are rendered at, both here and by the platform handlers. */
 val APP_ICON_SIZE = 48.dp
+
+/**
+ * Size the list draws them at. Smaller than [APP_ICON_SIZE] because the row is now one icon
+ * tall; the bitmap is only downscaled, so nothing has to be re-rendered.
+ */
+val APP_TILE_ICON_SIZE = 36.dp
 
 @Composable
 fun AppIconImage(

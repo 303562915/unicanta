@@ -166,7 +166,7 @@ fun PlanDetailScreen(
         topBar = {
             ScreenTopBar(
                 onNavigateBack = onNavigateBack,
-                title = { Text(stringResource(Res.string.plan_detail_title)) },
+                title = stringResource(Res.string.plan_detail_title),
             )
         },
         bottomBar = {

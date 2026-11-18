@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import io.github.samolego.canta.core.shizuku.ShizukuPermission
 import io.github.samolego.canta.core.shizuku.ShizukuServices
+import io.github.samolego.canta.core.shizuku.ShizukuShell
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.packages.PackageDetails
@@ -183,6 +184,13 @@ class AndroidCantaHandler(
 
     override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> =
         flow { packageNames.forEach { emit(operations.reinstall(it)) } }.flowOn(Dispatchers.IO)
+
+    /** The tools page's scripts need a shell; Shizuku's user service is the only one Canta has. */
+    private val shell by lazy { ShizukuShell(context) }
+
+    override val supportsTweakCommands: Boolean get() = true
+
+    override suspend fun runTweakCommand(script: String): TweakRun = shell.run(script)
 
     override suspend fun requestAuthorization() {
         val deferred = CompletableDeferred<Boolean>()

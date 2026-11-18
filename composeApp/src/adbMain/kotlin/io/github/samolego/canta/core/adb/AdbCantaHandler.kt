@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.DeviceConnectionFailure
 import io.github.samolego.canta.core.DeviceUser
+import io.github.samolego.canta.core.TweakFailure
+import io.github.samolego.canta.core.TweakRun
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.packages.PackageDetails
@@ -109,6 +111,24 @@ abstract class AdbCantaHandler(private val transport: AdbTransport) : CantaHandl
 
     override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> =
         if (isConnected) helper.reinstall(packageNames) else emptyFlow()
+
+    /** The device shell is already at hand, so the tools page's scripts can run there too. */
+    override val supportsTweakCommands: Boolean get() = true
+
+    override suspend fun runTweakCommand(script: String): TweakRun {
+        if (!isConnected) return TweakRun(ok = false, failure = TweakFailure.NoPrivilege)
+        return try {
+            // The transports hand the string to the device shell, which runs it with `sh -c`, so
+            // a multi-line script needs no extra quoting here.
+            val result = transport.shell(script)
+            TweakRun(ok = result.exitCode == 0, output = listOf(result.stdout, result.stderr).filter { it.isNotBlank() }.joinToString("\n").trim())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogUtils.w(TAG, "Could not run a tweak command: $e")
+            TweakRun(ok = false, failure = TweakFailure.Broken, output = e.message.orEmpty())
+        }
+    }
 
     /** Trimmed output of [cmd]'s output, or null if disconnected, it failed or printed nothing. */
     private suspend fun shellLine(cmd: String, what: String): String? {

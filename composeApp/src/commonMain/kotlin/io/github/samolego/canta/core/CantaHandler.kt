@@ -158,6 +158,20 @@ interface CantaHandler {
     fun reinstallApps(packageNames: List<String>): Flow<OperationResult>
 
     /**
+     * Whether [runTweakCommand] can do anything here. The Android app has Shizuku's shell, the
+     * ADB targets have the device's own; a desktop with no phone connected has neither.
+     */
+    val supportsTweakCommands: Boolean get() = false
+
+    /**
+     * Runs [script] with `sh -c` as the privileged user (shell, or root when Shizuku/Sui runs as
+     * root) and returns what it printed. Only the tools page calls it, with the fixed scripts
+     * shipped in `rom_tweaks.json`; nothing typed by the user ever reaches it.
+     */
+    suspend fun runTweakCommand(script: String): TweakRun =
+        TweakRun(ok = false, failure = TweakFailure.Unsupported)
+
+    /**
      * The device's boot id (changes on every boot), or null when it can't be
      * read. Used to tell whether a reboot happened since an uninstall.
      */

@@ -67,29 +67,31 @@ internal fun AppBadgeContent(
     color: Color,
 ) {
     val contrastColor = color.getContrastColor()
+    // Kept as small as the 8sp label allows: a badge sits on the same line as the package name,
+    // so every dp of padding here is a dp the app row grows by.
     Row(
         modifier = Modifier
-            .padding(all = 4.dp)
+            .padding(all = 2.dp)
             .background(
                 color,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(12.dp)
             )
     ) {
         Icon(
             icon,
             tint = contrastColor,
             modifier = Modifier
-                .padding(start = 4.dp)
-                .padding(vertical = 2.dp)
-                .size(16.dp)
+                .padding(start = 3.dp)
+                .padding(vertical = 1.dp)
+                .size(12.dp)
                 .align(alignment = Alignment.CenterVertically),
             contentDescription = label,
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(3.dp))
         Text(
             text = label,
             modifier = Modifier
-                .padding(end = 8.dp)
+                .padding(end = 6.dp)
                 .align(alignment = Alignment.CenterVertically),
             style = TextStyle(
                 fontSize = 8.sp,

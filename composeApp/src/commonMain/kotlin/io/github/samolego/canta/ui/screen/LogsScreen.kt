@@ -45,7 +45,7 @@ fun LogsScreen(
 
     Scaffold(
         topBar = {
-            ScreenTopBar(onNavigateBack = onNavigateBack, title = { Text(stringResource(Res.string.logs)) })
+            ScreenTopBar(onNavigateBack = onNavigateBack, title = stringResource(Res.string.logs))
         },
         floatingActionButton = {
             FloatingActionButton(

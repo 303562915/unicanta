@@ -120,7 +120,7 @@ fun PresetsScreen(
         topBar = {
             ScreenTopBar(
                 onNavigateBack = { onNavigateBack(null) },
-                title = { Text(stringResource(Res.string.presets)) },
+                title = stringResource(Res.string.presets),
             )
         },
         floatingActionButton = {

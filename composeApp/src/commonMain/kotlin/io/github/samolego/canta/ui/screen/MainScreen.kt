@@ -21,9 +21,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,6 +45,8 @@ import io.github.samolego.canta.ui.component.AppListPermissionBanner
 import io.github.samolego.canta.ui.permission.needsRequest
 import io.github.samolego.canta.ui.permission.rememberAppListAccess
 import io.github.samolego.canta.ui.component.CantaTopBar
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
 import io.github.samolego.canta.ui.dialog.AppListPermissionDialog
 import io.github.samolego.canta.ui.dialog.DeviceChooserDialog
@@ -190,8 +190,12 @@ private fun MainFab(
         }
         FloatingActionButton(
             containerColor = when (appsType) {
-                AppsType.INSTALLED -> MaterialTheme.colorScheme.errorContainer
-                AppsType.UNINSTALLED -> MaterialTheme.colorScheme.tertiaryContainer
+                AppsType.INSTALLED -> MaterialTheme.colorScheme.error
+                AppsType.UNINSTALLED -> MaterialTheme.colorScheme.primary
+            },
+            contentColor = when (appsType) {
+                AppsType.INSTALLED -> MaterialTheme.colorScheme.onError
+                AppsType.UNINSTALLED -> MaterialTheme.colorScheme.onPrimary
             },
             shape = RoundedCornerShape(32.dp),
             modifier = Modifier.padding(16.dp).navigationBarsPadding(),
@@ -205,23 +209,22 @@ private fun MainFab(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppsTabs(pagerState: PagerState) {
     val coroutineScope = rememberCoroutineScope()
-    PrimaryTabRow(
-        selectedTabIndex = pagerState.currentPage,
-        contentColor = MaterialTheme.colorScheme.primary,
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        AppsType.entries.forEach { tab ->
-            Tab(
-                selected = pagerState.currentPage == tab.ordinal,
-                onClick = { coroutineScope.launch { pagerState.animateScrollToPage(tab.ordinal) } },
-                icon = { Icon(tab.icon, contentDescription = stringResource(tab.label)) },
+    // A segmented control rather than a tab strip: FlClash switches between two lists
+    // this way, and an underline under a filled title reads as Material, not as the app.
+    FlSegmentedControl(
+        segments = AppsType.entries.map { tab ->
+            FlSegment(
+                key = tab.name,
+                label = stringResource(tab.label),
+                glyph = tab.glyph,
             )
-        }
-    }
+        },
+        selectedIndex = pagerState.currentPage,
+        onSelect = { index -> coroutineScope.launch { pagerState.animateScrollToPage(index) } },
+    )
 }
 
 /** Renders [MainViewModel.dialog] (once, outside the pager) */

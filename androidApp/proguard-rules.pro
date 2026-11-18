@@ -6,3 +6,9 @@
 # a member spec, so R8 full mode strips WorkDatabase_Impl's no-arg constructor,
 # which Room instantiates reflectively -> crash in InitializationProvider.
 -keep class * extends androidx.room.RoomDatabase { <init>(); }
+
+# Shizuku starts the tools page's shell service in a process of its own and loads
+# the class by name from the APK, so renaming it would leave every tool unable to
+# run its script.
+-keep class io.github.samolego.canta.core.shizuku.ShellUserService { *; }
+

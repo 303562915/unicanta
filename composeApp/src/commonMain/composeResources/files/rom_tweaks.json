@@ -1,46 +1,14 @@
 {
- "version": 3,
+ "version": 4,
  "updated": "2026-11-18",
  "tweaks": [
   {
-   "id": "restore-uninstalled-xiaomi",
+   "id": "xiaomi-splash-hardcontrol",
    "rom": "hyperos",
-   "title": "恢复所有已卸载的应用",
-   "why": "澎湃OS / MIUI 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。澎湃OS 默认藏着「已安装应用列表」权限，恢复前先把那个开关打开，否则列表会少一截。",
-   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
-   "action": "restore-uninstalled"
-  },
-  {
-   "id": "restore-uninstalled-oppo",
-   "rom": "coloros",
-   "title": "恢复所有已卸载的应用",
-   "why": "ColorOS / realme UI 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
-   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
-   "action": "restore-uninstalled"
-  },
-  {
-   "id": "restore-uninstalled-vivo",
-   "rom": "originos",
-   "title": "恢复所有已卸载的应用",
-   "why": "OriginOS / Funtouch 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
-   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
-   "action": "restore-uninstalled"
-  },
-  {
-   "id": "restore-uninstalled-huawei",
-   "rom": "emui",
-   "title": "恢复所有已卸载的应用",
-   "why": "EMUI / MagicOS 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
-   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
-   "action": "restore-uninstalled"
-  },
-  {
-   "id": "restore-uninstalled-samsung",
-   "rom": "oneui",
-   "title": "恢复所有已卸载的应用",
-   "why": "One UI 卸载系统应用只是把它从你的用户下摘掉，APK 还在分区里，一条 pm install-existing 就能装回来。点下面的按钮，Canta 会把本机卸载过的应用一次全装回去。",
-   "command": "adb shell 'pm list packages -u | cut -d: -f2 | while read p; do pm install-existing --user 0 \"$p\"; done'",
-   "action": "restore-uninstalled"
+   "title": "解开开屏硬控 3 秒",
+   "why": "澎湃OS / MIUI 上官方应用启动时，systemAdSolution 的 miad 广告位会把开屏卡满 3 秒。把 files 目录里的 miad 目录换成同名空文件即可封死广告位；再把智能服务的「显示在其他应用的上层」权限开关一次，缺失智能服务时还会有 3 秒空等，这一步会顺手试装回去。",
+   "command": "SD=/storage/emulated/0/Android/data/com.miui.systemAdSolution/files\nP=com.miui.systemAdSolution\nmkdir -p \"$SD\"\nrm -rf \"$SD/miad\"\ntouch \"$SD/miad\"\nif pm path $P >/dev/null 2>&1; then echo \"智能服务：已安装\"; else pm install-existing --user 0 $P >/dev/null 2>&1; if pm path $P >/dev/null 2>&1; then echo \"智能服务：已装回\"; else echo \"智能服务：缺失 SVC_MISSING\"; fi; fi\ncmd appops set $P SYSTEM_ALERT_WINDOW allow\ncmd appops set $P SYSTEM_ALERT_WINDOW deny\nif [ -f \"$SD/miad\" ]; then echo \"miad：已替换成文件\"; else echo \"miad：写入失败 MIAD_FAIL\"; exit 1; fi",
+   "action": "shell"
   }
  ]
 }

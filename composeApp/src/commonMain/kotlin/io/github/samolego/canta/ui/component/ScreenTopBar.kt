@@ -1,37 +1,23 @@
 package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import org.jetbrains.compose.resources.stringResource
-import io.github.samolego.canta.generated.resources.Res
-import io.github.samolego.canta.generated.resources.back
+import io.github.samolego.canta.ui.fl.FlTopBar
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The bar of a page opened on top of another: FlClash's compact toolbar — the title
+ * centred between a chevron that goes back and whatever the page puts at the end.
+ */
 @Composable
 fun ScreenTopBar(
-        onNavigateBack: () -> Unit,
-        title: @Composable () -> Unit,
-        actions: @Composable RowScope.() -> Unit = {},
+    onNavigateBack: () -> Unit,
+    title: String,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
-    TopAppBar(
-            colors =
-                    TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-            title = title,
-            navigationIcon = {
-                IconClickButton(
-                        onClick = onNavigateBack,
-                        icon = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(Res.string.back),
-                )
-            },
-            actions = actions,
+    FlTopBar(
+        title = title,
+        centered = true,
+        onBack = onNavigateBack,
+        actions = actions,
     )
 }

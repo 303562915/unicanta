@@ -6,11 +6,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -52,6 +47,7 @@ import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
 import io.github.samolego.canta.ui.component.BottomBarItem
 import io.github.samolego.canta.ui.component.FloatingPillBar
+import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
@@ -357,11 +353,13 @@ private object BarKey {
  */
 @Composable
 private fun bottomBarItems(route: String?): List<BottomBarItem> = listOf(
-    BottomBarItem(BarKey.APPS, AppsType.INSTALLED.icon, stringResource(Res.string.tab_apps), route == Screen.Main.route),
-    BottomBarItem(BarKey.RULES, Icons.Default.Shield, stringResource(Res.string.tab_rules), route == Screen.Rules.route),
-    BottomBarItem(BarKey.TWEAKS, Icons.Default.Build, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route),
-    BottomBarItem(BarKey.RECOMMEND, Icons.Default.Explore, stringResource(Res.string.tab_recommend), route == Screen.Recommendations.route),
-    BottomBarItem(BarKey.SETTINGS, Icons.Default.Settings, stringResource(Res.string.settings), route == Screen.Settings.route),
+    // The same glyphs FlClash's own bar leads with — the grid of apps, the rules list,
+    // the toolbox, the gear — plus one for the recommendations page.
+    BottomBarItem(BarKey.APPS, FlGlyphs.dashboard, stringResource(Res.string.tab_apps), route == Screen.Main.route),
+    BottomBarItem(BarKey.RULES, FlGlyphs.rules, stringResource(Res.string.tab_rules), route == Screen.Rules.route),
+    BottomBarItem(BarKey.TWEAKS, FlGlyphs.tools, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route),
+    BottomBarItem(BarKey.RECOMMEND, FlGlyphs.appsList, stringResource(Res.string.tab_recommend), route == Screen.Recommendations.route),
+    BottomBarItem(BarKey.SETTINGS, FlGlyphs.settings, stringResource(Res.string.settings), route == Screen.Settings.route),
 )
 
 private fun onBottomBarSelect(

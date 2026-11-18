@@ -100,7 +100,7 @@ fun RecommendationsScreen(
 
     Scaffold(
         topBar = {
-            ScreenTopBar(onNavigateBack = onNavigateBack, title = { Text(stringResource(Res.string.recommend_title)) })
+            ScreenTopBar(onNavigateBack = onNavigateBack, title = stringResource(Res.string.recommend_title))
         },
     ) { padding ->
         if (loaded == null) {

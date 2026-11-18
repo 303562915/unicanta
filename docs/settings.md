@@ -37,7 +37,9 @@ Enable this setting to ensure you have the most accurate information about which
 We recommend keeping this enabled to avoid accidentally uninstalling important apps.
 :::
 
-### Package analytics
+## Package analytics
+
+The choice is made once, on the last onboarding page ("Contribute" / "Don't share"), not on this page: the settings screen only keeps the switches that change how Canta behaves.
 
 **Description:** Lets Canta anonymously report what happens to the **system packages** you uninstall, so everyone can get community safety scores for packages.
 
@@ -46,7 +48,7 @@ We recommend keeping this enabled to avoid accidentally uninstalling important a
 
 Community scores are shown for all devices and, once at least 30 reports exist for your ROM version, for your own ROM version too (the latter is used for warnings and badges).
 
-Turning the switch off deletes any queued data that was not sent yet. See the [privacy policy](https://github.com/303562915/Canta/blob/master/privacy_policy.md) for details.
+Choosing not to contribute leaves any queued data unsent and deletes it. See the [privacy policy](https://github.com/303562915/Canta/blob/master/privacy_policy.md) for details.
 
 ## Advanced Settings
 
