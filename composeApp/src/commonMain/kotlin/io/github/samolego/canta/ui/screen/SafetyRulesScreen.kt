@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -36,8 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.data.CantaSettings
@@ -117,7 +120,7 @@ fun SafetyRulesScreen(
             DeviceHeader(profile)
             HorizontalDivider()
             when (tab) {
-                0 -> AppsTab(apps = appListViewModel.apps, rules = rules, profile = profile)
+                0 -> RankingTab(apps = appListViewModel.apps, rules = rules, profile = profile)
                 else -> PlansTab(profile = profile, settings = settings, onOpenPlan = onOpenPlan)
             }
         }
@@ -136,55 +139,93 @@ private fun DeviceHeader(profile: DeviceProfile?) {
     }
 }
 
+/** One package of the ranking: how much the community likes removing it on this device. */
+private data class RankRow(val pkg: String, val votes: Int, val plans: Int, val app: AppInfo?)
+
+/**
+ * Packages ranked by the likes their plans got on this model and ROM version: the more people
+ * endorse a plan that removes a package, the higher it sits. Votes come from the plans, so a
+ * package nobody put in a verified plan does not appear at all.
+ */
 @Composable
-private fun AppsTab(apps: List<AppInfo>, rules: SafetyRules?, profile: DeviceProfile?) {
-    if (apps.isEmpty()) {
-        Text(
-            text = stringResource(Res.string.rules_empty),
+private fun RankingTab(apps: List<AppInfo>, rules: SafetyRules?, profile: DeviceProfile?) {
+    val repository = remember { PlanRepository(HttpClient()) }
+    var rows by remember { mutableStateOf<List<RankRow>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(profile) {
+        loading = true
+        val byPackage = linkedMapOf<String, Pair<Int, Int>>()
+        repository.plansFor(profile).forEach { plan ->
+            plan.packages.forEach { pkg ->
+                val (votes, count) = byPackage[pkg] ?: (0 to 0)
+                byPackage[pkg] = (votes + plan.votes) to (count + 1)
+            }
+        }
+        val byName = apps.associateBy { it.packageName }
+        rows = byPackage.entries
+            .map { (pkg, agg) -> RankRow(pkg, agg.first, agg.second, byName[pkg]) }
+            .sortedWith(compareByDescending<RankRow> { it.votes }.thenByDescending { it.plans })
+        loading = false
+    }
+
+    when {
+        loading -> Text("…", modifier = Modifier.padding(16.dp))
+        rows.isEmpty() -> Text(
+            text = "这台机器还没有人上传方案，所以没有排行。",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(16.dp),
         )
-        return
-    }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(apps, key = { it.packageName }) { app ->
-            val verdict = rules?.verdict(app.packageName, profile)
-            AppSafetyRow(app, verdict)
+        else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(rows, key = { _, row -> row.pkg }) { index, row ->
+                RankRowView(index + 1, row, rules?.verdict(row.pkg, profile))
+            }
         }
     }
 }
 
 @Composable
-private fun AppSafetyRow(app: AppInfo, verdict: SafetyVerdict?) {
+private fun RankRowView(rank: Int, row: RankRow, verdict: SafetyVerdict?) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AppIconImage(app)
+        Text(
+            text = "$rank",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(22.dp),
+        )
+        if (row.app != null) AppIconImage(row.app) else Spacer(Modifier.width(40.dp))
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = app.name,
+                text = row.app?.name ?: row.pkg,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = app.packageName,
+                text = row.pkg,
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Column(horizontalAlignment = Alignment.End) {
-            StatusChip(verdict)
+            Text("${row.votes} 赞", style = MaterialTheme.typography.labelMedium)
             Text(
-                text = if (app.isSystemApp) "system" else "user",
+                text = "${row.plans} 个方案" + if (row.app?.isSystemApp == true) " · system" else "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
+        Spacer(Modifier.width(8.dp))
+        StatusChip(verdict)
     }
 }
 
