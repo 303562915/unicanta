@@ -1,9 +1,13 @@
 package io.github.samolego.canta.ui.dialog
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -14,6 +18,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -37,15 +43,14 @@ import org.jetbrains.compose.resources.stringResource
  * upload anyway: the plan is then stored and labelled as a test, so the flow can be tried before
  * the phone has been restarted.
  *
- * @param packages what would be uploaded; fixed, the owner only names and describes the plan.
- * @param canUpload whether [packages] come from a reboot-verified batch.
+ * @param entries the apps this phone has already removed, name to package; fixed, the owner only
+ *   names and describes the plan.
+ * @param canUpload whether that removal was confirmed by a reboot.
  * @param testMode start with the test password field focused, for the "test upload" row.
  */
 @Composable
 fun UploadPlanDialog(
-    packages: List<String>,
-    /** Everything still waiting for its post-boot check, whether verified or not. */
-    pendingCount: Int,
+    entries: List<Pair<String, String>>,
     canUpload: Boolean,
     onDismiss: () -> Unit,
     onSubmit: (title: String, note: String, test: Boolean) -> Unit,
@@ -72,17 +77,41 @@ fun UploadPlanDialog(
             }
         },
     ) {
-        // Two different numbers, so the reader can tell "not written yet" from "nothing removed":
-        // everything that is waiting for its reboot check, and how much of it already survived one.
+        // The plan *is* the list of apps this phone no longer has, so show that list rather than a
+        // bare count: the uploader has to recognise what is being published.
         Text(
-            text = if (pendingCount == 0) {
-                "本机还没有已卸载、等待重启确认的包"
+            text = if (entries.isEmpty()) {
+                "本机还没有已删除的应用，先卸载几个再来"
             } else {
-                "$pendingCount 个包已卸载，${packages.size} 个已确认重启"
+                "将上传这 ${entries.size} 个已删除的应用"
             },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
+        if (entries.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 168.dp).verticalScroll(rememberScrollState())) {
+                entries.forEach { (name, pkg) ->
+                    Text(
+                        text = name,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = pkg,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            HorizontalDivider()
+        }
         if (!canUpload) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(

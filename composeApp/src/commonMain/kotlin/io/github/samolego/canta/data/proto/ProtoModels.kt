@@ -50,6 +50,11 @@ data class AppSettingsProto(
      * page needs no account. Never leaves the device except inside those requests.
      */
     @ProtoNumber(16) val identityToken: String = "",
+    /**
+     * The number the backend gave this install on first login (10000, 10001, ...). Kept so the
+     * app knows who it is without asking again; 0 means "not signed in yet".
+     */
+    @ProtoNumber(17) val identityUserId: Long = 0,
 )
 
 /**

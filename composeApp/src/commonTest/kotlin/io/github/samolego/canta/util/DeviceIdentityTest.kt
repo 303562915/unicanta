@@ -38,9 +38,34 @@ class DeviceIdentityTest {
     }
 
     @Test
-    fun ownerIsPrefixedAndEmptyStaysEmpty() {
-        assertEquals("dev-abc", DeviceIdentity.ownerOf("abc"))
-        assertEquals("", DeviceIdentity.ownerOf(""))
+    fun ownerIsTheNumberItself() {
+        assertEquals("10000", DeviceIdentity.ownerOf(10_000))
+        // Not signed in yet: nothing to own anything with.
+        assertEquals("", DeviceIdentity.ownerOf(0))
+        assertEquals("", DeviceIdentity.ownerOf(-5))
+    }
+
+    @Test
+    fun theVisibleCodeIsTheNumber() {
+        assertEquals("#10000", DeviceIdentity.codeOfUser(10_000))
+        assertEquals("#99999", DeviceIdentity.codeOfUser(99_999))
+        assertEquals("—", DeviceIdentity.codeOfUser(0))
+        // The first number the backend can hand out is 10000.
+        assertEquals(10_000L, DeviceIdentity.FIRST_USER_ID)
+    }
+
+    @Test
+    fun identityFallsBackToTheTokenHeadBeforeSignIn() {
+        val token = "0123456789abcdef0123456789abcdef"
+        val signedOut = Identity(token)
+        assertEquals("01234-56789", signedOut.code)
+        assertEquals("", signedOut.owner)
+        assertFalse(signedOut.known)
+
+        val signedIn = Identity(token, 10_042)
+        assertEquals("#10042", signedIn.code)
+        assertEquals("10042", signedIn.owner)
+        assertTrue(signedIn.known)
     }
 
     @Test
@@ -69,5 +94,24 @@ class DeviceIdentityTest {
         settings.setIdentityToken("0123456789abcdef0123456789abcdef")
 
         assertEquals("0123456789abcdef0123456789abcdef", DeviceIdentity.ensure(settings))
+    }
+
+    @Test
+    fun currentRemembersTheNumberAcrossRestarts() = runTest {
+        val storage = MemoryStorage()
+        val settings = CantaSettings(storage)
+
+        // First run: a token, but no number yet.
+        val first = DeviceIdentity.current(settings)
+        assertEquals(DeviceIdentity.TOKEN_LENGTH, first.token.length)
+        assertFalse(first.known)
+
+        settings.setIdentityUserId(10_000)
+
+        // Next run, same storage: the same token and the same number, without asking anybody.
+        val again = DeviceIdentity.current(CantaSettings(storage))
+        assertEquals(first.token, again.token)
+        assertEquals(10_000L, again.userId)
+        assertEquals("#10000", again.code)
     }
 }

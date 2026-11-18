@@ -139,17 +139,36 @@ class PlanRepository(
     }
 
     /**
-     * Deletes a plan uploaded by [owner]. The server only deletes when the owner matches, so
-     * this returns false for somebody else's plan instead of doing anything.
+     * Deletes a plan uploaded by [owner]. The server needs the [token] of that identity as well,
+     * so this returns false for somebody else's plan — or for a guessed number — instead of
+     * doing anything.
      */
-    suspend fun delete(planId: Long, owner: String): Boolean {
-        if (owner.isEmpty() || planId <= 0) return false
+    suspend fun delete(planId: Long, owner: String, token: String): Boolean {
+        if (owner.isEmpty() || token.isEmpty() || planId <= 0) return false
         val body = buildJsonObject {
             put("p_id", planId)
             put("p_owner", owner)
+            put("p_token", token)
         }.toString()
         return rpc("plan_delete", body)
             ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.booleanOrNull }.getOrNull() } == true
+    }
+
+    /**
+     * The number this [token] owns, creating it on first use: 10000 for the first install, then
+     * one up. Returns null when the backend cannot be reached. The token is created locally and
+     * never leaves the device except in these calls.
+     */
+    suspend fun signIn(token: String, profile: DeviceProfile? = null): Long? {
+        if (token.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_token", token)
+            put("p_model", profile?.model.orEmpty())
+            put("p_codename", profile?.device.orEmpty())
+        }.toString()
+        return rpc("user_login", body)
+            ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.longOrNull }.getOrNull() }
+            ?.takeIf { it > 0 }
     }
 
     suspend fun vote(planId: Long, voter: String): Int? {

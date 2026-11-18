@@ -17,12 +17,19 @@ const val TEST_UPLOAD_PASSWORD: String = "369369"
 /**
  * Who this install is, without an account.
  *
- * The first time the plans page is opened a random token is generated and written to the settings;
- * from then on that token is the identity — the owner of a plan (so it can be deleted again), the
- * voter (one vote per phone) and the comment author. Nothing is asked from the user, nothing is
- * derived from the hardware, and the code shown on screen is only the readable head of the token.
+ * The phone keeps a random token in its settings and asks the backend which row that token owns;
+ * the backend answers with a number that starts at [FIRST_USER_ID] and only ever goes up. That
+ * number is the identity from then on — the owner of the plans (so they can be deleted again), the
+ * voter (one vote per phone) and the comment author — and it is stored locally, so opening the
+ * page again is a read, not a login.
+ *
+ * The number is not a secret (it is shown on screen); the token is, and deleting a plan needs
+ * both: the number says which identity, the token proves it.
  */
 object DeviceIdentity {
+
+    /** First number the backend hands out; the sequence lives in the database. */
+    const val FIRST_USER_ID: Long = 10_000L
 
     /** Length of [newToken]; 32 hex characters, i.e. 128 random bits. */
     const val TOKEN_LENGTH: Int = 32
@@ -41,15 +48,18 @@ object DeviceIdentity {
     /** True when [input] is the test password; surrounding whitespace is forgiven. */
     fun isTestPassword(input: String): Boolean = input.trim() == TEST_UPLOAD_PASSWORD
 
-    /** "A1B2C-3D4E5": stable, quotable, and short enough for a one-line footer. */
+    /** "A1B2C-3D4E5": the token's readable head, used before a number is known. */
     fun codeOf(token: String): String {
         val clean = token.filter { it.isLetterOrDigit() }.uppercase()
         if (clean.isEmpty()) return "—"
         return clean.take(CODE_CHARS).padEnd(CODE_CHARS, '0').chunked(5).joinToString("-")
     }
 
-    /** The value the backend stores as owner/voter/author for this install. */
-    fun ownerOf(token: String): String = if (token.isEmpty()) "" else "dev-$token"
+    /** "10000": what a plan stores as its owner. */
+    fun ownerOf(userId: Long): String = if (userId > 0) userId.toString() else ""
+
+    /** "#10000": what the user sees. */
+    fun codeOfUser(userId: Long): String = if (userId > 0) "#$userId" else "—"
 
     /** Stored token if there is one, a freshly generated and stored one otherwise. */
     suspend fun ensure(settings: CantaSettings): String {
@@ -59,4 +69,23 @@ object DeviceIdentity {
         settings.setIdentityToken(token)
         return token
     }
+
+    /** Token plus the number it owns, read from the settings (0 while not signed in). */
+    suspend fun current(settings: CantaSettings): Identity {
+        val token = ensure(settings)
+        return Identity(token, settings.identityUserIdFlow.first())
+    }
+}
+
+/** This install: the secret token, and the number the backend gave it. */
+data class Identity(val token: String, val userId: Long = 0L) {
+
+    /** True once the backend has assigned a number. */
+    val known: Boolean get() = userId > 0
+
+    /** What a plan stores as its owner; empty while unknown. */
+    val owner: String get() = if (userId > 0) userId.toString() else ""
+
+    /** "#10000", or the token's head while the number is not known yet. */
+    val code: String get() = if (userId > 0) "#$userId" else DeviceIdentity.codeOf(token)
 }

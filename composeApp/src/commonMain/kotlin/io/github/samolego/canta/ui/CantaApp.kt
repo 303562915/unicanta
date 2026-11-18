@@ -270,7 +270,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 var planAuthor by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
                     planProfile = handler.deviceProfile()
-                    planAuthor = DeviceIdentity.codeOf(DeviceIdentity.ensure(deps.settings))
+                    // "#10000" once the number is known; the token head before that.
+                    planAuthor = DeviceIdentity.current(deps.settings).code
                 }
                 PlanDetailScreen(
                     planId = planId,

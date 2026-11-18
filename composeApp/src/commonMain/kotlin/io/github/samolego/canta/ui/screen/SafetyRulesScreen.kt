@@ -63,6 +63,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.util.DeviceIdentity
+import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
@@ -138,6 +139,11 @@ fun SafetyRulesScreen(
                     profile = profile,
                     settings = settings,
                     selectedPackages = appListViewModel.selectedApps.toList(),
+                    // What a plan actually is: the apps this phone no longer has.
+                    uninstalled = appListViewModel.apps
+                        .filter { it.isUninstalled }
+                        .map { it.name to it.packageName }
+                        .distinctBy { it.second },
                     onOpenPlan = onOpenPlan,
                 )
             }
@@ -292,6 +298,7 @@ private fun PlansTab(
     profile: DeviceProfile?,
     settings: CantaSettings,
     selectedPackages: List<String>,
+    uninstalled: List<Pair<String, String>>,
     onOpenPlan: (Long) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -301,20 +308,31 @@ private fun PlansTab(
     var upload by remember { mutableStateOf<UploadRequest?>(null) }
     var pendingDelete by remember { mutableStateOf<CommunityPlan?>(null) }
     var notice by remember { mutableStateOf("") }
-    // The install's own code: created once, then it is who we are — no account, no login, and it
-    // is what marks a plan as ours, so it can be deleted again.
-    var identity by remember { mutableStateOf("") }
+    // The install's own identity: a token created once, plus the number the backend gave it
+    // (10000, 10001, ...). Remembered locally, so opening this page is never a login.
+    var identity by remember { mutableStateOf(Identity("")) }
 
     val pending by settings.pendingRebootFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    // Only a batch whose removal survived a reboot proves anything, so it is the only uploadable set.
+    // The plan is the deleted list; the reboot record only decides whether it counts as verified.
+    val deletedPackages = uninstalled.map { it.second }
     val verified = pending.filter { it.survived }.mapNotNull { it.pkg }.distinct()
-    // What a test upload could carry: the whole pending batch (survived or not) plus whatever is
-    // ticked in the app list right now.
-    val testPackages = (pending.mapNotNull { it.pkg } + selectedPackages).distinct()
-    val owner = remember(identity) { DeviceIdentity.ownerOf(identity) }
-    val code = remember(identity) { DeviceIdentity.codeOf(identity) }
+    val confirmed = deletedPackages.count { it in verified }
+    // A test upload may also carry whatever is ticked in the app list right now.
+    val testPackages = (deletedPackages + pending.mapNotNull { it.pkg } + selectedPackages).distinct()
+    val owner = identity.owner
 
-    LaunchedEffect(Unit) { identity = DeviceIdentity.ensure(settings) }
+    // Read the remembered identity first; only a phone that has never signed in asks for a number.
+    LaunchedEffect(profile) {
+        var current = DeviceIdentity.current(settings)
+        if (!current.known) {
+            val issued = repository.signIn(current.token, profile)
+            if (issued != null) {
+                settings.setIdentityUserId(issued)
+                current = current.copy(userId = issued)
+            }
+        }
+        identity = current
+    }
 
     LaunchedEffect(profile, identity) {
         loading = true
@@ -329,7 +347,11 @@ private fun PlansTab(
         ) {
             Button(
                 onClick = {
-                    upload = UploadRequest(verified, canUpload = verified.isNotEmpty(), testMode = false)
+                    upload = UploadRequest(
+                        packages = deletedPackages,
+                        canUpload = deletedPackages.isNotEmpty() && confirmed > 0,
+                        testMode = false,
+                    )
                 },
                 enabled = profile != null,
                 modifier = Modifier.height(30.dp),
@@ -341,7 +363,7 @@ private fun PlansTab(
             Spacer(Modifier.width(8.dp))
             // Short, always visible: it is the whole login story of this page.
             Text(
-                text = "身份码 $code · 免登录",
+                text = "身份码 ${identity.code} · 免登录",
                 fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -409,8 +431,7 @@ private fun PlansTab(
 
     upload?.let { request ->
         UploadPlanDialog(
-            packages = request.packages,
-            pendingCount = pending.size,
+            entries = request.packages.map { pkg -> (uninstalled.firstOrNull { it.second == pkg }?.first ?: pkg) to pkg },
             canUpload = request.canUpload,
             testMode = request.testMode,
             onDismiss = { upload = null },
@@ -448,7 +469,7 @@ private fun PlansTab(
                         pendingDelete = null
                         val target = profile
                         scope.launch {
-                            val ok = repository.delete(plan.id, owner)
+                            val ok = repository.delete(plan.id, owner, identity.token)
                             notice = if (ok) "" else "删除失败：这个方案不是本机上传的，或者后端没通。"
                             if (target != null) plans = repository.plansFor(target)
                         }
