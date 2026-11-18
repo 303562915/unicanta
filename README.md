@@ -1,94 +1,215 @@
 <div align="center">
 
-# Canta
+# Canta · unicanta
 
-[![](https://raw.githubusercontent.com/samolego/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png)](https://samolego.github.io/Canta/)
+**免 root 卸载系统应用 / Uninstall pre-installed apps without root**
 
-Uninstall any\* app without root!
-Powered by [Shizuku](https://shizuku.rikka.app/) ([Android 16 fork](https://github.com/thedjchi/Shizuku)).
+中文 | [English](README.en.md)
 
-
-## Download
-
-[![](https://img.shields.io/f-droid/v/io.github.samolego.canta?include_prereleases&style=for-the-badge&logo=F-Droid&color=blue)](https://f-droid.org/en/packages/io.github.samolego.canta/)
-[![](https://img.shields.io/endpoint?&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAMAAABg3Am1AAADAFBMVEUA0////wAA0v8A0v8A0////wD//wAFz/QA0/8A0/8A0/8A0/8A0v///wAA0/8A0/8A0/8A0/8A0//8/gEA0/8A0/8B0/4A0/8A0/8A0/+j5QGAwwIA0//C9yEA0/8A0/8A0/8A0/8A0/8A0/+n4SAA0/8A0/8A0/+o6gCw3lKt7QCv5SC+422b3wC19AC36zAA0/+d1yMA0/8A0/+W2gEA0/+w8ACz8gCKzgG7+QC+9CFLfwkA0/8A0////wAA0/8A0/8A0/8A0/+f2xym3iuHxCGq5BoA1P+m2joI0vONyiCz3mLO7oYA0/8M1Piq3Ei78CbB8EPe8LLj9Ly751G77zWQ1AC96UYC0fi37CL//wAA0/8A0////wD//wCp3jcA0/+j3SGj2i/I72Sx4zHE8FLB8zak1kYeycDI6nRl3qEA0/7V7psA0v6WzTa95mGi2RvB5XkPy9zH5YJ3uwGV1yxVihRLiwdxtQ1ZkAf//wD//wD//wD//wD//wCn5gf//wD//wD//wD//wD//wAA0/+h4A3R6p8A0/+X1w565OD6/ARg237n9csz2vPz+gNt37V/vifO8HW68B/L6ZOCwxXY8KRQsWRzhExAtG/E612a1Rd/pTBpmR9qjysduKVhmxF9mTY51aUozK+CsDSA52T//wD//wAA0////wD//wBJ1JRRxFWjzlxDyXRc0pGT1wCG0CWB3VGUzSTh8h6c0TSr5CCJ5FFxvl6s4H3m8xML0/DA5CvK51EX1N+Y2gSt4Dag3ChE3fax2ki68yO57NF10FRZnUPl88eJxhuCxgCz5EOLwEGf1DFutmahzGW98x0W1PGk3R154MHE6bOn69qv3gy92oG90o+Hn07B7rhCmiyMwECv1nO+0pQfwrCo57xF2daXsVhKrEdenQAduaee1Bsjr42z5D9RoCXy+QNovXpy2Z5MtWDO/TiSukaF3UtE1K6j3B4YwLc5wXlzpyIK0u5zy3uJqg4pu5RTpkZmpVKyAP8A0wBHcExHcEyBUSeEAAABAHRSTlP///9F9wjAAxD7FCEGzBjd08QyEL39abMd6///8P/ZWAnipIv/cC6B//7////////L/1Dz/0D///////86/vYnquY3/v///5T//v///17///////////////84S3QNB/8L/////////////7r/////NP////9l/////wPD4yis/x7Ym2lWSP+em////0n////////v///////////////////7//7pdGN3Urr6/+v/6aT////+//H/o2P/1v+7r7jp4PM/3p4g////g///K///481LxO///v////9w////8v/////9/p3J///a+P9v/5KR/+n///+p/xf//8P//wAAe7FyaAAABCZJREFUSMdj+E8iYKBUgwIHnwQ3N7cEHxcH+///VayoAE0Dh41qR7aBnCIQ8MsJKHH9/99czYYMWlA0cIkJGjMgAKfq//9RNYzIgLcBWYOTiCgDMhDn+B9bh6LebiWyH6L5UZQzONoAHWSHoqEpDkkDsyKqelv1//9rG1HUN9YihZK9AKp6BkG+/6xNqA5ajhSsCkrIipmYGGRa//9vQXVQXSySBnkWJOUMfn5Myuz/G3hR1NdEIUUchwiy+bkTsg4dbW/fu6W/e1c3XMMy5JiOZkFxUFZo74mgKTqaKXu0+2HqVwkja3BH9kFu361JwcHTfPJD4mdfe8ULAdVRyGlJAcVFfg+CQOozZ4XrJ85+JgwBsVXIGriQw5Tp4ZScezd8JiWnBupru30qwJZa+ZAjmWlC8fUZM4qB6kPnLNSPLMWqQQ5ZQ5aOzs1HmamBaQHzFs6y+qAmJCTE8f9/QgKSBg4DJPWc6zVDQkIC09JkZSPD38kukpExFpT4z67uYI/QwCOOCCK/izvu5CWl6AcEWMnKWml7LWbKZfH9/99UkknQHhGsynDz+65eWXv3/JmJrq5eXienVlRUfH/z8VvCf45soKQIH1yDEQsszrp6gwq9C73T87xcXadKl5TkFev4A/2tygmSBqYXqAYJmK+ZuoJydDR1vP09DA0NOy2kpdML81+U/heCpH1JU3jig7lJ5nKOT4i/t6ZHkqGzs4lJmIVHfrj+JR4HqLQSD0yDkCNEpGNn5ix9D03/eJdElTZdKV2TpNOhkwt8YUlNUgimgV0dLMBvf1gz1MolPd5FRcVNSkpDQ8owJeBCDyIhrIDnOD5QcuIU+3/2QKSs9laQ+noNLS0zLWdtqyP7mBAFAw88TwsJgMuJYweBGjYngtWbmeuZOW+bvNQToUFOAlFqOBk4Ov3/L7Z60/aN0p1tUhpa5nqWlub7C3p2I9QzyAghlUvczOz/1fhzPT3XSIfpSmmYAdVbmm1gV0dSz8DSilpUQsqCddIWIA3meuZaJqdMJZEzl6gRqgZIWZAxUdoizERXN8yi5MltcZTChzMaRQM3JNUWHS8rL/+yaPGvMmvr5ywoGoxtkDWwQ+Pb89ycBeWfGSJeL/la+RS1eOPnRtbQKgMRjZg+t8x6PkP273nWQAoFOPAgaeAThKXAmXMrK39Kmr5fsuBlBqoXfJGLe3VbmHjG9Mczi9T//3h7vygXtcDlQtJg44iQiIjIBRbGPO7gghPJy0ZIxT2HOLIUgwxQzsgYrUR350HSIMaJLidhgKY+mw+pflBDrX8E7OGBjPCAPc76gQFSTqAIiYrb/8dRP4CyosJ/rmwU5XIxHMilt4QBJwsSkBMClxOQULBlkRRwEONmR2kJcDGjADX2/+xO8r5iqjExqmLyrWpcPFRta1BfAwCtyN3XpuJ4RgAAAABJRU5ErkJggg==&url=https://apt.izzysoft.de/fdroid/api/v1/shield/io.github.samolego.canta&style=for-the-badge&label=IzzyOnDroid&color=blue)](https://apt.izzysoft.de/fdroid/index/apk/io.github.samolego.canta)
-[![](https://img.shields.io/github/v/release/samolego/canta?include_prereleases&style=for-the-badge&logo=GitHub&label=GitHub&color=blue)](https://github.com/samolego/Canta/releases/latest/)
-<a href="https://play.google.com/store/apps/details?id=io.github.samolego.canta">
-  <img src="https://github.com/user-attachments/assets/b9628c34-797c-4760-94bb-57712fdef178" height="32" />
-</a>
-
-[![GitHub all releases](https://img.shields.io/github/downloads/samolego/Canta/total?label=Downloads&logo=github)](https://github.com/samolego/Canta/releases/)
-[<img src="https://shields.rbtlog.dev/simple/io.github.samolego.canta" alt="badge">](https://shields.rbtlog.dev/io.github.samolego.canta)
-[![donate badge](https://img.shields.io/badge/Donate_via-Paypal-blue)](https://www.paypal.com/donate/?hosted_button_id=FD4R46ZZ5EWME)
----
-
-Don't want to download and have a data USB cable and a Chromium-based browser? Try Canta directly on the [web](https://samolego.github.io/Canta/app/), without installing anything!
+基于 [samolego/Canta](https://github.com/samolego/Canta)，由 [Shizuku](https://shizuku.rikka.app/) 授权，
+包名 `io.github.a303562915.unicanta`，内部代号 **unicanta**。
 
 </div>
 
+---
+
+## 这个 fork 做了什么
+
+上游 Canta 是「选择应用 → 点垃圾桶 → 卸载」。本分支在此基础上补齐了**卸载前后**的三件事：
+知道自己删的是什么（设备规则 + 社区方案）、删错了能看出来（救砖信号 + 批量护栏）、
+以及**不依赖上游服务器**（自建遥测后端，可完全离线自托管）。
+
+| 方向 | 上游 | 本 fork |
+|---|---|---|
+| 界面语言 | 英文为主 | 中文全量翻译，应用名与设置项都是中文 |
+| 应用 ID | `io.github.samolego.canta` | `io.github.a303562915.unicanta` |
+| 遥测后端 | 上游服务器 | 自建 Supabase 项目，或 `server/node` 单文件自托管 |
+| 卸载建议 | 通用 debloat 列表 | 按 **品牌 / 机型 / ROM 版本** 判定的安全规则 |
+| 救砖信号 | 无 | 新增 `restored` 事件（build 未变却被装回 = 人工救砖），单独计入判分 |
+| 批量卸载 | 直接执行 | 大批量前弹告警，列出「上一批之后新装的包」 |
+| 社区方案 | 无 | 上传 / 阅读 / 点赞 / 评论，按安装身份去重 |
+| ROM 适配 | 部分 ROM 读不到包列表 | HyperOS / MIUI 隐藏包列表的兜底与授权入口 |
+
+---
+
+## 主要改动
+
+### 1. 自建遥测后端
+
+客户端 `util/Telemetry.kt` 只认四个 RPC，所以换后端只是换两个常量：
+
+| RPC | 请求 | 返回 |
+|---|---|---|
+| `challenge` | `{}` | `{challenge, sig}`，一次性、10 分钟有效 |
+| `record` | `{payload, challenge, sig, x}` | `{ok, accepted}` |
+| `package_scores` | `{}` | 每个包的全局聚合 |
+| `package_scores_for` | `{p_rom, p_rom_version}` | 指定 ROM（`-1` = 家族级）的聚合 |
+
+服务器侧两份实现，协议完全一致：
+
+- **Supabase**：`server/supabase/migrations/` 共 9 个迁移，一次性等价脚本是
+  `server/supabase/apply-all.sql`。当前线上项目 ref `axuhfogeovtsbxokqccf`（`ap-northeast-1`）。
+- **单文件自托管**：`server/node/server.mjs`，内置 SQLite（`node:sqlite`，不编译原生模块），
+  `node server.mjs` 就能起，环境变量 `PORT` / `DB_PATH` / `RETENTION_DAYS` / `POW_K`。
+
+客户端默认指向自建项目，构建时可覆盖：
+
+```bash
+./gradlew :androidApp:assembleDebug \
+  -Pcanta.telemetry.baseUrl=https://PROJECT.supabase.co/rest/v1/rpc/ \
+  -Pcanta.telemetry.apiKey=PUBLISHABLE_KEY
+```
+
+**Proof of Work 与客户端 `util/Pow.kt` 一致**，服务端不需要信任客户端上报：
+
+```
+prefix = challenge + ":" + hex(sha256(payload)) + ":" + x
+通过条件：sha256(prefix) 前 8 字节大端 < floor(2^64 / (10000 * 事件数))
+```
+
+同一条 challenge 重放会被拒，payload 被篡改则 PoW 校验失败。
+
+### 2. `restored` 事件与批量卸载护栏
+
+事件类型：`uninstalled` / `survived_reboot` / `reinstalled` / `voided` / **`restored`**。
+
+`restored` 是本 fork 新增的：包在 build 号未变的情况下又被装回，只可能是人手动的——
+它是「这批卸载救过砖」的唯一数据来源，也是判分里权重最高的信号。
+
+配套的界面行为：卸载批次过大时先弹 `UnsafeSelectionDialog`；上一批之后新出现的包会被点名，
+救回过的批次在列表里单独浮出（`RestoreSuspectsDialog`）。
+
+判分阈值（本项目自定，上游未公开）：
+
+```
+uninstalls < 5                              -> INSUFFICIENT
+restored / uninstalls >= 15%                -> BOOTLOOP
+(reinstalled + restored) / uninstalls >= 30% -> BOOTLOOP
+(reinstalled + restored) / uninstalls >= 10% -> BREAKS
+survived >= 50% 且上面 <= 2%                -> SAFE
+其余                                         -> UNCLEAR
+```
+
+### 3. 设备安全页与卸载规则
+
+`util/SafetyRules.kt` 把「这个包能不能删」从包名判断升级为**设备判断**：
+规则来自 `files/safety_rules.json`，按 `brand / model / rom / romVersion` 匹配，
+产出 `SAFE` / `RISKY` / `CRITICAL` 三档。设备画像（含 fingerprint）只在本机使用，
+**不上传**——这正是遥测承诺不发的东西。
+
+`SafetyRulesScreen` 两个页签：本机规则的命中情况 + 社区方案入口。
+
+### 4. 社区方案
+
+`data/community/PlanRepository.kt`：方案 = 一台手机删掉的一批包，且已被一次重启验证。
+支持上传、完整阅读、点赞、评论；每次安装有独立身份，只有上传者本人能删自己的方案；
+测试性上传会被标记，不进正常排名。后端对象在 `plans` 相关迁移里（含 `plan_test_and_owner`、`user_numbers`）。
+
+### 5. 界面重构
+
+- 浮动胶囊底栏 `FloatingPillBar`：磨砂圆角、图标在上文字在下，四个入口常驻中文标签；
+- 首个页签改成**按点赞驱动的卸载排行**；
+- 列表行更密，选中态是更宽的胶囊；
+- 每 ROM 的**系统微调页**（`TweaksScreen` + `util/RomTweaks.kt`），按 ROM 家族分组排序；
+- 方案详情页、上传对话框、评论列表。
+
+### 6. ROM 与权限适配
+
+- `hasInstalledAppsPermission()` 改为显式走 `packageManager.checkPermission(...)`，
+  否则部分 ROM 上权限查询永远返回 `false`；
+- 运行时请求 `com.android.permission.GET_INSTALLED_APPS`；
+- 优先从特权运行时读包列表，读不到时弹对话框引导开启 ROM 的「包列表」开关（HyperOS / MIUI）；
+- 该授权入口在界面上常驻，不会被埋进设置里。
+
+### 7. 构建与 CI
+
+- 自有 `applicationId`，release 开 R8 压缩并补齐缺失的 keep 规则；
+- Gradle wrapper 下载加超时，避免 CI 卡死在拉 distribution；
+- `fork-ci.yml` 在**每个分支**上跑通用测试并产出 debug APK，支持 `workflow_dispatch`
+  时覆盖遥测端点与 key（`telemetry_base_url` / `telemetry_api_key`）。
+
+---
+
+## 安装
+
+与上游一致：需要 Shizuku（Android 16 建议用 [fork 版](https://github.com/thedjchi/Shizuku)）。
+
+1. 安装并激活 [Shizuku](https://shizuku.rikka.app/guide/setup/)；
+2. 安装本仓库构建出的 APK（本 fork 未发布到任何商店，需自行构建，见下）；
+3. 选择应用 → 点垃圾桶。
+
 > [!Warning]
-> **DISCLAIMER:** ⛔ Use at your own risk. I am not responsible for any data loss or damage caused by this app ⛔.
+> **免责声明**：使用风险自负。卸载**关键应用**会导致 bootloop，只能恢复出厂设置。
+> 部分 oplus 应用已知拒绝卸载，见[上游跟踪 issue](https://github.com/samolego/Canta/issues/338)。
 
----
+## 构建
 
-## 📖 About
+```bash
+./gradlew :androidApp:assembleDebug     # 调试包
+./gradlew :androidApp:assembleRelease   # 需签名配置
+```
 
-Canta allows you to **uninstall pre-installed or user apps without root**, by leveraging [Shizuku](https://shizuku.rikka.app/).  
-It integrates with the [Universal Debloat List](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/) to provide safe recommendations.
+要求 JDK 21。多平台模块：`androidApp` / `desktopApp` / `webApp` / `composeApp`。
 
-- ✅ No root required  
-- ✅ Detects previously uninstalled apps (even across reinstalls)  
-- ✅ Works on Android **9.0+ (SDK 28+)**
-- ⚠️ No *permanent* bricking (If you uninstall **critical apps**, you can experience bootloop and have to **factory reset**!)
+## 本地回归
 
-\* **Some oplus apps** are known to be stubborn and don't allow uninstallations. See [tracking issue](https://github.com/samolego/Canta/issues/338).
+```bash
+# Supabase 侧：PGlite 起真 PostgreSQL，跑迁移 + 协议/方案断言
+cd server && npm install && npm test
 
----
+# 自托管单文件后端
+cd server/node && node test/e2e.test.mjs
+```
 
-## Screenshots
+覆盖：正常写入、challenge 重放被拒、篡改 payload → PoW 失败、非法事件类型、
+五种 verdict、ROM 版本级与家族级查询、`purge_raw_events`、方案上传/权限/评论。
 
-| <img width="256" src="metadata/en-US/images/phoneScreenshots/screenshot-main.png"> | <img width="256" src="metadata/en-US/images/phoneScreenshots/screenshot-search.png"> | <img width="256" src="metadata/en-US/images/phoneScreenshots/screenshot-uninstall-dialog.png"> |
-|:---:|:---:|:---:|
-| Home | Search | Uninstall |
-| <img width="256" src="metadata/en-US/images/phoneScreenshots/screenshot-app-description.png"> | <img width="256" src="metadata/en-US/images/phoneScreenshots/screenshot-uninstalled-list.png"> |  |
-| [App descriptions](https://github.com/Universal-Debloater-Alliance/universal-android-preinstalled-lists/) | See uninstalled |  |
+## 隐私
 
+- 只存 `brand` / ROM 家族 / ROM 主版本 / SDK，以及事件类型与批次桶；
+- 机型、build 号、指纹、安装 ID **一律不上传**；
+- 原始事件 35 天后由 `purge_raw_events()` 丢弃，只留聚合；
+- 原始表开了 RLS 且**没有任何 policy**：anon 只能调 RPC，直读表拿不到数据；
+  内部函数（`pow_space` / `pow_target` / `pow_head` / `verdict_of` / `purge_raw_events`）
+  已从 `anon` / `authenticated` 收回 EXECUTE。
 
-### Verification
-You can verify the authenticity of downloaded APKs using this SHA-256 certificate fingerprint:
+## 目录
+
+| 路径 | 内容 |
+|---|---|
+| `composeApp/` | 共享 UI 与业务逻辑（Compose Multiplatform） |
+| `androidApp/` | Android 壳、清单、图标 |
+| `desktopApp/` `webApp/` | 桌面与 web 壳 |
+| `server/supabase/` | 迁移、`apply-all.sql`、判分测试 fixture |
+| `server/node/` | 单文件自托管后端 + e2e 测试 |
+| `docs/` | VitePress 文档站 |
+| `packages/` | 平台相关辅助包 |
+
+## 已知待办
+
+- [`.github/workflows/supabase_migrations.yml`](.github/workflows/supabase_migrations.yml) 里的
+  `SUPABASE_PROJECT_ID` 仍是 `aahwoixjjlopftjqnner`，与本项目 `axuhfogeovtsbxokqccf` 不一致，
+  推 master 时会把迁移打到错误的库；
+- 用 CLI 推迁移需要在仓库 secrets 里放 `SUPABASE_ACCESS_TOKEN`；
+- 本 fork 未做 release 签名与分发，CI 只产出 debug APK。
+
+## 上游与致谢
+
+- [samolego/Canta](https://github.com/samolego/Canta)：本项目的基础；
+- [Universal-Debloater-Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/)：debloat 列表与安全建议来源；
+- [@RikkaApps](https://github.com/RikkaApps)：Shizuku；
+- 图标来自 [icon kitchen](https://icon.kitchen)。
+
+上游 APK 的 SHA-256 证书指纹（用于校验**上游**发行包，非本 fork 构建产物）：
+
 ```
 0A:26:40:31:7C:43:27:21:88:C3:E1:31:94:C1:54:60:69:1F:12:C3:9E:A1:9B:BA:72:7D:D6:7F:B5:62:89:D4
 ```
 
-## How-to
+## 截图
 
-* install [Shizuku](https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api)
-  & [activate it](https://shizuku.rikka.app/guide/setup/)
-    * you can
-      follow [this Android Police guide for more in-depth explanation](https://www.androidpolice.com/how-to-use-shizuku-for-adb-rootless-mods-on-any-android-device/)
-      * note: **Android 16** might need [forked version](https://github.com/thedjchi/Shizuku)
-* install Canta
-* select an app and click the trash button
+| <img width="220" src="metadata/en-US/images/phoneScreenshots/screenshot-main.png"> | <img width="220" src="metadata/en-US/images/phoneScreenshots/screenshot-search.png"> | <img width="220" src="metadata/en-US/images/phoneScreenshots/screenshot-uninstall-dialog.png"> |
+|:---:|:---:|:---:|
+| 主界面 | 搜索 | 卸载 |
 
-
-## Translations
-
-Do you want to help translate Canta? You can help us at [Crowdin](https://crowdin.com/project/canta)! Thank you 🙂!
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://badges.crowdin.net/badge/light/crowdin-on-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="https://badges.crowdin.net/badge/dark/crowdin-on-light.png">
-  <img alt="Crowdin logo" src="https://badges.crowdin.net/badge/light/crowdin-on-dark.png">
-</picture>
-
-https://crowdin.com/project/canta
-
-## Thanks
-
-* [Universal-Debloater-Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/)
-  for the debloat list
-* @RikkaApps for Shizuku
-* Icon created on [icon kitchen](https://icon.kitchen)
-
-## Star History
-
-[![Star History Chart](https://star-history.dera.page/svg?repos=samolego/Canta&type=Date)](https://star-history.dera.page/#samolego/Canta&Date)
+截图取自上游版本，本 fork 的界面已改为胶囊底栏与中文标签。
