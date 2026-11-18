@@ -18,32 +18,39 @@ import io.github.samolego.canta.data.bloat.BloatData
 enum class AppBadgeInfo(
     val icon: ImageVector,
     val badgeColor: Color,
-    val description: String
+    val description: String,
+    /** What the badge prints: a row has no room for the whole word. */
+    val code: String,
 ) {
     RECOMMENDED(
         Icons.Default.Check,
         Color.Green,
-        "Pointless or outright negative packages, and/or apps available through Google Play."
+        "Pointless or outright negative packages, and/or apps available through Google Play.",
+        "rec",
     ),
     ADVANCED(
         Icons.Default.Settings,
         Color.Yellow,
-        "Breaks obscure or minor parts of functionality, or apps that aren't easily enabled/installed through Settings/Google Play. This category is also used for apps that are useful (default keyboard/gallery/launcher/music app.) but that can easily be replaced by a better alternative."
+        "Breaks obscure or minor parts of functionality, or apps that aren't easily enabled/installed through Settings/Google Play. This category is also used for apps that are useful (default keyboard/gallery/launcher/music app.) but that can easily be replaced by a better alternative.",
+        "adv",
     ),
     EXPERT(
         Icons.Default.Warning,
         Color.Red,
-        "Breaks widespread and/or important functionality, but nothing important to the basic operation of the operating system. Removing an 'Expert' package should not bootloop the device (unless mentioned in the description) but we can't guarantee it 100%."
+        "Breaks widespread and/or important functionality, but nothing important to the basic operation of the operating system. Removing an 'Expert' package should not bootloop the device (unless mentioned in the description) but we can't guarantee it 100%.",
+        "exp",
     ),
     UNSAFE(
         Icons.Default.Close,
         Color.Magenta,
-        "Can break vital parts of the operating system. Removing an 'Unsafe' package have an extremely high risk of bootlooping your device."
+        "Can break vital parts of the operating system. Removing an 'Unsafe' package have an extremely high risk of bootlooping your device.",
+        "no",
     ),
     SYSTEM(
         Icons.Default.Android,
         Color.DarkGray,
-        "System apps are apps that come pre-installed with your device."
+        "System apps are apps that come pre-installed with your device.",
+        "sys",
     );
 
     companion object {

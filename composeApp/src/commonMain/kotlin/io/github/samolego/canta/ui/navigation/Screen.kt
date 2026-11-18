@@ -22,4 +22,15 @@ sealed class Screen(val route: String) {
         /** Concrete route for plan [id]; pairs with the `planId` argument of [route]. */
         fun routeFor(id: Long) = "plan/$id"
     }
+
+    /**
+     * One app's own page: what it is, whether it can be removed, and its reviews.
+     *
+     * The package name is a path argument, so [routeForApp] is the only place that builds
+     * the URL and the `package` segment is what [route] declares.
+     */
+    data object AppDetail : Screen("app/{package}") {
+        /** Concrete route for [packageName]; pairs with the `package` argument of [route]. */
+        fun routeForApp(packageName: String) = "app/$packageName"
+    }
 }

@@ -139,6 +139,8 @@ fun SafetyRulesScreen(
     appListViewModel: AppListViewModel,
     settings: CantaSettings,
     onOpenPlan: (Long) -> Unit,
+    /** Opens one app's own page from a ranking row. */
+    onOpenApp: (String) -> Unit = {},
     onNavigateBack: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -258,6 +260,7 @@ fun SafetyRulesScreen(
                     apps = apps,
                     rules = rules,
                     profile = profile,
+                    onOpenApp = onOpenApp,
                 )
             } else {
                 PlansTab(
@@ -424,6 +427,7 @@ private fun RankingTab(
     apps: List<AppInfo>,
     rules: SafetyRules?,
     profile: DeviceProfile?,
+    onOpenApp: (String) -> Unit,
 ) {
     val ranking = remember(plans) { rankPackages(plans) }
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -447,6 +451,7 @@ private fun RankingTab(
                     rank = row,
                     app = byPackage[row.pkg],
                     verdict = rules?.verdict(row.pkg, profile),
+                    onClick = { onOpenApp(row.pkg) },
                 )
             }
         }
@@ -455,9 +460,17 @@ private fun RankingTab(
 
 /** One ranking row: position, icon, what it is, and how much the community likes removing it. */
 @Composable
-private fun RankRowView(rank: PackageRank, app: AppInfo?, verdict: SafetyVerdict?) {
+private fun RankRowView(
+    rank: PackageRank,
+    app: AppInfo?,
+    verdict: SafetyVerdict?,
+    onClick: () -> Unit = {},
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RankBadge(rank)
@@ -484,6 +497,7 @@ private fun RankRowView(rank: PackageRank, app: AppInfo?, verdict: SafetyVerdict
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
+                // A like in this list means "this can go", not "this is good".
                 text = stringResource(Res.string.ranking_votes, rank.votes),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,

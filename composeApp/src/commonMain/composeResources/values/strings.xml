@@ -237,6 +237,15 @@
     <string name="require_auth_setting">Require authentication</string>
     <string name="settings_group_device">Device</string>
     <string name="settings_group_general">General</string>
+    <string name="settings_group_interface">Interface</string>
+    <string name="settings_show_tweaks">Show Tools in the bar</string>
+    <string name="settings_show_tweaks_description">The ROM tweaks page. Off by default: turn it on to keep an entry in the bar, turn it off again to hide it.</string>
+    <string name="settings_show_recommend">Show Picks in the bar</string>
+    <string name="settings_show_recommend_description">The recommended open-source apps page. Off by default, for the same reason.</string>
+    <string name="profile_default_name">You</string>
+    <string name="profile_name_title">Your name</string>
+    <string name="profile_name_hint">Shown on this page only</string>
+    <string name="profile_edit_name">Edit name</string>
     <string name="settings_group_permissions">Permissions</string>
     <string name="device_user">Device user</string>
     <string name="device_user_description">Which user or profile on the device Canta manages</string>

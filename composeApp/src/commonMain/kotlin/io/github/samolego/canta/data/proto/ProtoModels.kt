@@ -55,6 +55,18 @@ data class AppSettingsProto(
      * app knows who it is without asking again; 0 means "not signed in yet".
      */
     @ProtoNumber(17) val identityUserId: Long = 0,
+    /**
+     * The name the settings page greets the user with. Local only: it never leaves the device,
+     * and the avatar next to it is just its first character.
+     */
+    @ProtoNumber(18) val userName: String = "",
+    /**
+     * Whether the bar keeps an entry for the ROM tweaks page. Both optional pages are off by
+     * default, so a fresh install shows the three pages everyone needs.
+     */
+    @ProtoNumber(19) val showTweaksTab: Boolean = false,
+    /** Whether the bar keeps an entry for the recommended-apps page; see [showTweaksTab]. */
+    @ProtoNumber(20) val showRecommendTab: Boolean = false,
 )
 
 /**

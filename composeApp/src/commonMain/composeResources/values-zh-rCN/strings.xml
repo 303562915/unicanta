@@ -121,6 +121,15 @@
     <string name="require_auth_setting">需要身份认证</string>
     <string name="settings_group_device">设备</string>
     <string name="settings_group_general">常规</string>
+    <string name="settings_group_interface">界面</string>
+    <string name="settings_show_tweaks">在底栏显示「工具」</string>
+    <string name="settings_show_tweaks_description">就是系统调整那一页。默认不显示，打开后底栏多一个入口，关掉就收起。</string>
+    <string name="settings_show_recommend">在底栏显示「推荐」</string>
+    <string name="settings_show_recommend_description">开源应用推荐那一页。同样默认不显示，需要时再打开。</string>
+    <string name="profile_default_name">用户</string>
+    <string name="profile_name_title">你的名字</string>
+    <string name="profile_name_hint">只显示在这一页，不会上传</string>
+    <string name="profile_edit_name">改名字</string>
     <string name="settings_group_permissions">权限</string>
     <string name="select_device">Select device</string>
     <string name="select_device_description">Choose which Android device Canta should manage. Enable USB debugging on the device and authorize this computer when prompted.</string>

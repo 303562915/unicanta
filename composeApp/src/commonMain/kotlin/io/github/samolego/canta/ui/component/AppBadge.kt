@@ -31,7 +31,9 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun AppBadge(type: AppBadgeInfo) {
     AppBadgeContent(
-        label = type.name,
+        // The short code, not the whole word: the badge shares a line with the package name.
+        label = type.code,
+        description = type.name,
         icon = type.icon,
         color = type.badgeColor
     )
@@ -46,6 +48,7 @@ fun SystemBadge() {
 fun DisabledBadge() {
     AppBadgeContent(
         label = stringResource(Res.string.badge_disabled),
+        description = stringResource(Res.string.badge_disabled),
         icon = Icons.Default.DisabledByDefault,
         color = MaterialTheme.colorScheme.tertiary,
     )
@@ -55,6 +58,7 @@ fun DisabledBadge() {
 fun CantaBadge() {
     AppBadgeContent(
         label = APP_NAME.uppercase(),
+        description = APP_NAME,
         icon = Icons.Default.RestoreFromTrash,
         color = Color.Red.copy(alpha = 0.7f),
     )
@@ -65,6 +69,7 @@ internal fun AppBadgeContent(
     label: String,
     icon: ImageVector,
     color: Color,
+    description: String = "",
 ) {
     val contrastColor = color.getContrastColor()
     // Kept as small as the 8sp label allows: a badge sits on the same line as the package name,
@@ -85,7 +90,7 @@ internal fun AppBadgeContent(
                 .padding(vertical = 1.dp)
                 .size(12.dp)
                 .align(alignment = Alignment.CenterVertically),
-            contentDescription = label,
+            contentDescription = description.ifEmpty { label },
         )
         Spacer(modifier = Modifier.width(3.dp))
         Text(

@@ -49,6 +49,7 @@ import io.github.samolego.canta.ui.component.BottomBarItem
 import io.github.samolego.canta.ui.component.FloatingPillBar
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.navigation.Screen
+import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
@@ -121,6 +122,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         platform.messages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    // The two optional pages: off by default, so the bar only leads to what everyone needs.
+    val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
+    val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
+
     // Null until the stored settings have loaded, so the wrong screen never flashes.
     val onboardingVersion by settingsViewModel.onboardingVersion.collectAsStateWithLifecycle()
     val storedOnboardingVersion = onboardingVersion ?: return
@@ -180,6 +185,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     appListViewModel = appListViewModel,
                     settings = deps.settings,
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
+                    onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -216,8 +222,6 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     selectedUserId = selectedUserId,
                     fakeScores = fakeScores,
                     onFakeScoresChange = appListViewModel::setFakeScores,
-                    onOpenAppListPermission = if (handler.supportsPackageListSettings)
-                        ({ handler.openPackageListSettings() }) else null,
                     onUserSelected = { id ->
                         coroutineScope.launch {
                             handler.selectUser(id)
@@ -291,6 +295,39 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     author = planAuthor,
                     apps = appListViewModel.apps,
                     rules = planRules,
+                    notes = deps.notes,
+                    onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    // "Use this plan": select its packages on the app list and go there, so the
+                    // uninstall action is one tap away.
+                    onUsePlan = { packages ->
+                        appListViewModel.selectedApps.clear()
+                        appListViewModel.selectedApps.addAll(packages)
+                        navController.navigate(Screen.Main.route) { launchSingleTop = true }
+                    },
+                )
+            }
+            composable(route = Screen.AppDetail.route) { entry ->
+                // The package name is an undeclared path argument, read the way navigation
+                // itself reads it.
+                val packageName = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("package")) getString("package") else null }
+                        }.getOrNull()
+                    }.orEmpty()
+                var appProfile by remember { mutableStateOf<DeviceProfile?>(null) }
+                var appAuthor by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) {
+                    appProfile = handler.deviceProfile()
+                    appAuthor = DeviceIdentity.current(deps.settings).code
+                }
+                AppDetailScreen(
+                    packageName = packageName,
+                    app = appListViewModel.apps.firstOrNull { it.packageName == packageName },
+                    profile = appProfile,
+                    notes = deps.notes,
+                    author = appAuthor,
+                    onNavigateBack = { navController.navigateUp() },
                 )
             }
         }
@@ -314,7 +351,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         // Floating capsule bar, above the content like the dashboard capsule in FlClash.
         if (currentRoute != null && currentRoute in BOTTOM_BAR_ROUTES) {
             FloatingPillBar(
-                items = bottomBarItems(route = currentRoute),
+                items = bottomBarItems(route = currentRoute, showTweaks = showTweaksTab, showRecommend = showRecommendTab),
                 onSelect = { key -> onBottomBarSelect(key, navController) },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -348,19 +385,29 @@ private object BarKey {
 }
 
 /**
- * Five entries: the app list (installed/uninstalled are an in-page switch), the device safety
- * page, the ROM tweaks, the open-source app recommendations, and the settings.
+ * The bar's entries: the app list (installed/uninstalled are an in-page switch) and the device
+ * safety page always, the ROM tweaks and the recommended apps only when the settings keep them
+ * on, and the settings last. The dock centres itself below five entries, so hiding a page just
+ * makes the bar narrower.
  */
 @Composable
-private fun bottomBarItems(route: String?): List<BottomBarItem> = listOf(
+private fun bottomBarItems(
+    route: String?,
+    showTweaks: Boolean,
+    showRecommend: Boolean,
+): List<BottomBarItem> = buildList {
     // The same glyphs FlClash's own bar leads with — the grid of apps, the rules list,
     // the toolbox, the gear — plus one for the recommendations page.
-    BottomBarItem(BarKey.APPS, FlGlyphs.dashboard, stringResource(Res.string.tab_apps), route == Screen.Main.route),
-    BottomBarItem(BarKey.RULES, FlGlyphs.rules, stringResource(Res.string.tab_rules), route == Screen.Rules.route),
-    BottomBarItem(BarKey.TWEAKS, FlGlyphs.tools, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route),
-    BottomBarItem(BarKey.RECOMMEND, FlGlyphs.appsList, stringResource(Res.string.tab_recommend), route == Screen.Recommendations.route),
-    BottomBarItem(BarKey.SETTINGS, FlGlyphs.settings, stringResource(Res.string.settings), route == Screen.Settings.route),
-)
+    add(BottomBarItem(BarKey.APPS, FlGlyphs.dashboard, stringResource(Res.string.tab_apps), route == Screen.Main.route))
+    add(BottomBarItem(BarKey.RULES, FlGlyphs.rules, stringResource(Res.string.tab_rules), route == Screen.Rules.route))
+    if (showTweaks) {
+        add(BottomBarItem(BarKey.TWEAKS, FlGlyphs.tools, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route))
+    }
+    if (showRecommend) {
+        add(BottomBarItem(BarKey.RECOMMEND, FlGlyphs.appsList, stringResource(Res.string.tab_recommend), route == Screen.Recommendations.route))
+    }
+    add(BottomBarItem(BarKey.SETTINGS, FlGlyphs.settings, stringResource(Res.string.settings), route == Screen.Settings.route))
+}
 
 private fun onBottomBarSelect(
     key: String,

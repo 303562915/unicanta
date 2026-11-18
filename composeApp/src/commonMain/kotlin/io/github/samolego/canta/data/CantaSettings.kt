@@ -42,6 +42,9 @@ class CantaSettings(storage: AppBlobStorage) {
     val hideSuccessDialogFlow = field { it.hideSuccessDialog }
     val authEnabledFlow = field { it.authEnabled }
     val analyticsEnabledFlow = field { it.analyticsEnabled }
+    val userNameFlow = field { it.userName }
+    val showTweaksTabFlow = field { it.showTweaksTab }
+    val showRecommendTabFlow = field { it.showRecommendTab }
     val onboardingVersionFlow = field { it.onboardingVersion }
     val pendingRebootFlow: Flow<List<PendingUninstallProto>> = field { it.pendingReboot }
     val lastConfirmedPackagesFlow: Flow<List<String>> = field { it.lastConfirmedPackages }
@@ -62,6 +65,9 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setHideSuccessDialog(hide: Boolean) = update { it.copy(hideSuccessDialog = hide) }
     suspend fun setAuthEnabled(enabled: Boolean) = update { it.copy(authEnabled = enabled) }
     suspend fun setAnalyticsEnabled(enabled: Boolean) = update { it.copy(analyticsEnabled = enabled) }
+    suspend fun setUserName(name: String) = update { it.copy(userName = name) }
+    suspend fun setShowTweaksTab(show: Boolean) = update { it.copy(showTweaksTab = show) }
+    suspend fun setShowRecommendTab(show: Boolean) = update { it.copy(showRecommendTab = show) }
     suspend fun setOnboardingVersion(version: Int) = update { it.copy(onboardingVersion = version) }
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
     suspend fun setLastConfirmedPackages(packages: List<String>) = update { it.copy(lastConfirmedPackages = packages) }

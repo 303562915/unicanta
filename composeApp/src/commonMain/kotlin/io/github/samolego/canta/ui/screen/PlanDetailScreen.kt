@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -49,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
+import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.keyed
@@ -111,6 +114,12 @@ fun PlanDetailScreen(
     author: String = "",
     apps: List<AppInfo> = emptyList(),
     rules: SafetyRules? = null,
+    /** Where this install keeps what it liked, so a like is still a like after a restart. */
+    notes: AppNoteStore? = null,
+    /** Opens one app's own page from a package row. */
+    onOpenApp: (String) -> Unit = {},
+    /** Selects the plan's packages on the app list and goes there. */
+    onUsePlan: (List<String>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
 
@@ -125,6 +134,13 @@ fun PlanDetailScreen(
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
+
+    LaunchedEffect(planId) {
+        // A plan voted for before opening the page is already liked: the device remembers,
+        // because `plan_vote` never says who voted.
+        notes?.ensureReady()
+        liked = notes?.likedPlans?.value?.contains(planId) == true
+    }
 
     LaunchedEffect(planId, profile) {
         // Keep the already loaded plan on screen while a late profile reloads it.
@@ -156,6 +172,7 @@ fun PlanDetailScreen(
         if (current != null && !liked) {
             liked = true
             scope.launch {
+                notes?.markPlanLiked(current.id)
                 val votes = repository.vote(current.id, commentAuthor) ?: return@launch
                 plan = current.copy(votes = votes)
             }
@@ -211,6 +228,8 @@ fun PlanDetailScreen(
                 comments = comments,
                 liked = liked,
                 onVote = vote,
+                onOpenApp = onOpenApp,
+                onUsePlan = { onUsePlan(loaded.packages) },
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
@@ -228,6 +247,8 @@ private fun PlanDetailContent(
     comments: List<PlanComment>,
     liked: Boolean,
     onVote: () -> Unit,
+    onOpenApp: (String) -> Unit,
+    onUsePlan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -237,7 +258,7 @@ private fun PlanDetailContent(
         .sortedWith(compareBy(nullsLast()) { (_, rank) -> rank?.rank })
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(bottom = 16.dp)) {
-        item { PlanHero(plan, profile, liked, onVote) }
+        item { PlanHero(plan, profile, liked, onVote, onUsePlan) }
 
         item {
             SectionTitle(
@@ -254,6 +275,7 @@ private fun PlanDetailContent(
                 rank = rank,
                 app = byPackage[pkg],
                 verdict = rules?.verdict(pkg, profile),
+                onClick = { onOpenApp(pkg) },
             )
         }
 
@@ -287,6 +309,7 @@ private fun PlanHero(
     profile: DeviceProfile?,
     liked: Boolean,
     onVote: () -> Unit,
+    onUsePlan: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     Surface(color = colors.primaryContainer, modifier = Modifier.fillMaxWidth()) {
@@ -349,6 +372,33 @@ private fun PlanHero(
                     modifier = Modifier.weight(1f),
                 )
                 VoteAction(liked = liked, votes = plan.votes, onVote = onVote)
+            }
+            // One tap from reading a plan to acting on it: its packages become the
+            // selection on the app list, where the uninstall button already is.
+            Row(
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(colors.onPrimaryContainer.copy(alpha = 0.12f))
+                    .clickable(onClick = onUsePlan)
+                    .padding(vertical = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlaylistAddCheck,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = colors.onPrimaryContainer,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "使用这套方案（${plan.packages.size} 个包）",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onPrimaryContainer,
+                )
             }
             Text(
                 text = stringResource(Res.string.plan_detail_uploader, plan.owner.ifEmpty { "—" }) +
@@ -443,10 +493,14 @@ private fun PackageRankRow(
     rank: PackageRank?,
     app: AppInfo?,
     verdict: SafetyVerdict?,
+    onClick: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The position is the whole point of the section, so it leads the row.

@@ -39,6 +39,13 @@ class SettingsViewModel(
 
     val analyticsEnabled = settingsStore.analyticsEnabledFlow.state(false)
 
+    /** Local nickname shown on the settings page; the avatar is its first character. */
+    val userName = settingsStore.userNameFlow.state("")
+
+    /** The optional bar entries: off by default, turned on in the settings. */
+    val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
+    val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
+
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */
     val onboardingVersion: StateFlow<Int?> = settingsStore.onboardingVersionFlow.state<Int?>(null)
 
@@ -60,5 +67,8 @@ class SettingsViewModel(
     fun saveAllowUnsafeUninstalls(allow: Boolean) = save { setAllowUnsafeUninstalls(allow) }
     fun saveHideSuccessDialog(hide: Boolean) = save { setHideSuccessDialog(hide) }
     fun saveAuthEnabled(enabled: Boolean) = save { setAuthEnabled(enabled) }
+    fun saveUserName(name: String) = save { setUserName(name.trim()) }
+    fun saveShowTweaksTab(show: Boolean) = save { setShowTweaksTab(show) }
+    fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
 
 }

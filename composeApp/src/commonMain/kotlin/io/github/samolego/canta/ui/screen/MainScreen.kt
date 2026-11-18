@@ -123,7 +123,7 @@ fun MainScreen(
             HorizontalPager(
                 state = pagerState,
                 // Leaves room for the floating bar that is drawn over the screen.
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 76.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 92.dp),
             ) { page ->
                 PullToRefreshBox(
                     isRefreshing = appListViewModel.isLoading,
@@ -198,7 +198,9 @@ private fun MainFab(
                 AppsType.UNINSTALLED -> MaterialTheme.colorScheme.onPrimary
             },
             shape = RoundedCornerShape(32.dp),
-            modifier = Modifier.padding(16.dp).navigationBarsPadding(),
+            // Clear of the floating bar: the bar is 62 dp tall, 21 dp off the bottom edge,
+            // and a press on the action must not land on it.
+            modifier = Modifier.padding(end = 16.dp, top = 16.dp, bottom = 104.dp),
             onClick = onClick,
         ) {
             when (appsType) {
