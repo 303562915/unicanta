@@ -165,7 +165,11 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 )
             }
             composable(route = Screen.Rules.route) {
-                SafetyRulesScreen(handler = handler, onNavigateBack = { navController.navigateUp() })
+                SafetyRulesScreen(
+                    handler = handler,
+                    appListViewModel = appListViewModel,
+                    onNavigateBack = { navController.navigateUp() },
+                )
             }
             composable(route = Screen.Logs.route) {
                 LogsScreen(
