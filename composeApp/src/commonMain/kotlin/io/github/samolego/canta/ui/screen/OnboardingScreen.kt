@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -155,13 +156,13 @@ private fun OnboardingPage(
             Spacer(modifier = Modifier.height(20.dp))
             Text(
                 text = stringResource(title),
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineLarge,
                 textAlign = TextAlign.Center,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = stringResource(subtitle),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
@@ -176,6 +177,25 @@ private fun OnboardingPage(
         ) {
             negative()
             positive()
+        }
+    }
+}
+
+/**
+ * The flow's two button styles: one filled, one outlined, both the same height with the same
+ * 12 dp corner and the same label size, so the pair reads as one control.
+ */
+@Composable
+private fun OnboardingButton(onClick: () -> Unit, primary: Boolean, label: String) {
+    val shape = MaterialTheme.shapes.small
+    val padding = PaddingValues(horizontal = 22.dp, vertical = 12.dp)
+    if (primary) {
+        Button(onClick = onClick, shape = shape, contentPadding = padding) {
+            Text(text = label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, shape = shape, contentPadding = padding) {
+            Text(text = label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -226,8 +246,20 @@ private fun WarrantyPage(closeApp: () -> Unit, onAccept: () -> Unit) {
         },
         title = Res.string.onboarding_welcome_title,
         subtitle = Res.string.onboarding_welcome_subtitle,
-        negative = { TextButton(onClick = closeApp) { Text(stringResource(Res.string.exit)) } },
-        positive = { Button(onClick = onAccept) { Text(stringResource(Res.string.accept)) } },
+        negative = {
+            OnboardingButton(
+                onClick = closeApp,
+                primary = false,
+                label = stringResource(Res.string.exit),
+            )
+        },
+        positive = {
+            OnboardingButton(
+                onClick = onAccept,
+                primary = true,
+                label = stringResource(Res.string.accept),
+            )
+        },
     ) {
         NoWarrantyContent()
     }
@@ -244,10 +276,18 @@ private fun ContributePage(platform: CantaPlatform, onFinish: (Boolean) -> Unit)
         title = Res.string.onboarding_contribute_title,
         subtitle = Res.string.onboarding_contribute_subtitle,
         negative = {
-            OutlinedButton(onClick = { onFinish(false) }) { Text(stringResource(Res.string.onboarding_dont_share)) }
+            OnboardingButton(
+                onClick = { onFinish(false) },
+                primary = false,
+                label = stringResource(Res.string.onboarding_dont_share),
+            )
         },
         positive = {
-            Button(onClick = { onFinish(true) }) { Text(stringResource(Res.string.contribute)) }
+            OnboardingButton(
+                onClick = { onFinish(true) },
+                primary = true,
+                label = stringResource(Res.string.contribute),
+            )
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {

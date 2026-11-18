@@ -123,8 +123,11 @@ fun AppDetailScreen(
             )
         },
     ) { padding ->
+        // A box so the composer can sit at the foot of the page, over the list, the way a
+        // message field does.
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 120.dp),
         ) {
             item { AppHero(app = app, packageName = packageName, likes = likes, liked = liked, onToggleLike = toggleLike) }
@@ -148,6 +151,7 @@ fun AppDetailScreen(
             onSend = send,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+        }
     }
 }
 

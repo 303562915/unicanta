@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import io.github.samolego.canta.ui.fl.FlSurfaceLevel
+import io.github.samolego.canta.ui.fl.colorOf
 
 /** Width of dialogs with rich content (lists, requirement steps), as a fraction of the window. */
 const val WIDE_DIALOG_WIDTH = 0.9f
@@ -56,26 +58,31 @@ fun CantaDialog(
             usePlatformDefaultWidth = widthFraction == null,
         ),
     ) {
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+        // The sheet FlClash opens: the block surface one step above the page, a 28 dp corner,
+        // a 20 sp title and buttons that sit together at the end of a short gap.
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = FlSurfaceLevel.Block.colorOf(MaterialTheme.colorScheme),
+        ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(horizontal = 22.dp, vertical = 20.dp)
                     .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
             ) {
                 if (title != null) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
                 content()
                 if (buttons != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                         content = buttons,
                     )
                 }
