@@ -54,6 +54,7 @@ import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
 import io.github.samolego.canta.ui.screen.PresetsScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
+import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
 import io.github.samolego.canta.ui.theme.CantaTheme
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
@@ -178,6 +179,9 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
+            composable(route = Screen.Tweaks.route) {
+                TweaksScreen(handler = handler, onNavigateBack = { navController.navigateUp() })
+            }
             composable(route = Screen.Logs.route) {
                 LogsScreen(
                     platform = platform,
@@ -204,6 +208,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     onFakeScoresChange = appListViewModel::setFakeScores,
                     onOpenAppListPermission = if (handler.supportsPackageListSettings)
                         ({ handler.openPackageListSettings() }) else null,
+                    onOpenTweaks = { navController.navigateSingleTop(Screen.Tweaks.route) },
                     onUserSelected = { id ->
                         coroutineScope.launch {
                             handler.selectUser(id)

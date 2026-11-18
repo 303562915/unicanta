@@ -6,6 +6,7 @@ sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
     data object Presets : Screen("presets")
     data object Rules : Screen("rules")
+    data object Tweaks : Screen("tweaks")
     data object Onboarding : Screen("onboarding")
 
     /**

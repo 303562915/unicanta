@@ -222,4 +222,9 @@
     <string name="plan_comments_title">评论</string>
     <string name="plan_comment_hint">写点评论</string>
     <string name="plan_comment_send">发送</string>
+    <string name="tweaks_title">系统技巧</string>
+    <string name="tweaks_your_rom">你的系统</string>
+    <string name="tweaks_copy_path">复制路径</string>
+    <string name="tweaks_copied">已复制</string>
+    <string name="tweaks_steps">步骤</string>
 </resources>

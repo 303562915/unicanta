@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.AccountCircle
@@ -74,6 +75,7 @@ import io.github.samolego.canta.generated.resources.require_auth_setting
 import io.github.samolego.canta.generated.resources.require_auth_setting_desc
 import io.github.samolego.canta.generated.resources.analytics_section
 import io.github.samolego.canta.generated.resources.app_list_restricted_description
+import io.github.samolego.canta.generated.resources.tweaks_title
 import io.github.samolego.canta.generated.resources.app_list_restricted_open_settings
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.generated.resources.share_package_data
@@ -102,6 +104,7 @@ fun SettingsScreen(
     fakeScores: Boolean = false,
     onFakeScoresChange: (Boolean) -> Unit = {},
     onOpenAppListPermission: (() -> Unit)? = null,
+    onOpenTweaks: (() -> Unit)? = null,
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -176,6 +179,15 @@ fun SettingsScreen(
             )
             HorizontalDivider(modifier = Modifier.padding(16.dp))
 
+            if (onOpenTweaks != null) {
+                // Per-ROM workarounds (banner ads, forced splash screens) live on their own page.
+                SettingsItem(
+                    title = stringResource(Res.string.tweaks_title),
+                    description = null,
+                    icon = Icons.Default.Build,
+                    onClick = onOpenTweaks,
+                )
+            }
             if (onOpenAppListPermission != null) {
                 // HyperOS/MIUI keep their own switch for this and cannot be asked at runtime, so
                 // there is always a way to reach it, whatever the list looks like.
