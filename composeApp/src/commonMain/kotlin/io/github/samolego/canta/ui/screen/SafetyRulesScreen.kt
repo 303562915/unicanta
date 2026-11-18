@@ -275,7 +275,7 @@ fun SafetyRulesScreen(
                     owner = owner,
                     deletedCount = deletedPackages.size,
                     confirmedCount = confirmed,
-                    tickedCount = tickedApps.size,
+                    candidateCount = candidates.size,
                     liked = liked,
                     onUpload = { openUpload(false) },
                     onTestUpload = { openUpload(true) },
@@ -563,7 +563,7 @@ private fun PlansTab(
     owner: String,
     deletedCount: Int,
     confirmedCount: Int,
-    tickedCount: Int,
+    candidateCount: Int,
     liked: Set<Long>,
     onUpload: () -> Unit,
     onTestUpload: () -> Unit,
@@ -576,7 +576,7 @@ private fun PlansTab(
             profile = profile,
             deletedCount = deletedCount,
             confirmedCount = confirmedCount,
-            tickedCount = tickedCount,
+            candidateCount = candidateCount,
             identity = identity,
             onUpload = onUpload,
             onTestUpload = onTestUpload,
@@ -617,7 +617,7 @@ private fun UploadEntry(
     profile: DeviceProfile?,
     deletedCount: Int,
     confirmedCount: Int,
-    tickedCount: Int,
+    candidateCount: Int,
     identity: Identity,
     onUpload: () -> Unit,
     onTestUpload: () -> Unit,
@@ -641,7 +641,7 @@ private fun UploadEntry(
                     color = colors.onSurface,
                 )
                 Text(
-                    text = if (deletedCount + tickedCount == 0) {
+                    text = if (candidateCount == 0) {
                         stringResource(Res.string.plans_upload_cta_none)
                     } else {
                         stringResource(Res.string.plans_upload_cta_hint, deletedCount, confirmedCount)
@@ -700,7 +700,7 @@ private fun UploadEntry(
                 )
             }
             Text(
-                text = stringResource(Res.string.plans_test_entry_count, tickedCount),
+                text = stringResource(Res.string.plans_test_entry_count, candidateCount),
                 fontSize = 9.sp,
                 color = MaterialTheme.colorScheme.outline,
             )
