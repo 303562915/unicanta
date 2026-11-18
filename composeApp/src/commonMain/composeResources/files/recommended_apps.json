@@ -1,5 +1,5 @@
 {
- "version": 2,
+ "version": 3,
  "updated": "2026-11-18",
  "apps": [
   {
@@ -92,6 +92,17 @@
    "summary": "不登录也能从 Google Play 下载和更新应用，可以只装某一个应用，而不动整个账号。"
   },
   {
+   "id": "stellar",
+   "name": "Stellar",
+   "author": "HSSkyBoy",
+   "category": "store",
+   "license": "Apache-2.0",
+   "mark": "S",
+   "accent": "#6366F1",
+   "url": "https://github.com/HSSkyBoy/AppMarket",
+   "summary": "多源的应用商店：F-Droid、IzzyOnDroid 这些源放在同一个界面里，搜索、安装、看更新都不用再装一堆客户端。"
+  },
+  {
    "id": "aegis",
    "name": "Aegis",
    "author": "beemdevelopment",
@@ -134,6 +145,17 @@
    "accent": "#DC2626",
    "url": "https://github.com/AdAway/AdAway",
    "summary": "用 hosts 规则在系统层拦广告与跟踪域名：root 模式最彻底，没有 root 也可以走本地 VPN。"
+  },
+  {
+   "id": "telemetry-cleaner",
+   "name": "TelemetryCleaner",
+   "author": "Eynnzerr",
+   "category": "privacy",
+   "license": "MIT",
+   "mark": "T",
+   "accent": "#059669",
+   "url": "https://github.com/Eynnzerr/TelemetryCleaner",
+   "summary": "基于 Shizuku 免 root 清掉国产系统里的 SystemHelper、RegService 这类遥测模块：清数据、禁组件，不用把整套服务卸掉。"
   },
   {
    "id": "material-files",
@@ -257,6 +279,28 @@
    "summary": "播客管理器：订阅、倍速、离线下载都有，不需要账号，也没有推荐算法。"
   },
   {
+   "id": "vlc",
+   "name": "VLC",
+   "author": "videolan",
+   "category": "media",
+   "license": "GPL-2.0",
+   "mark": "V",
+   "accent": "#F97316",
+   "url": "https://github.com/videolan/vlc-android",
+   "summary": "什么格式都能放的播放器：本地文件和网络串流都吃，字幕、音轨、倍速、投屏一样不少。"
+  },
+  {
+   "id": "librera",
+   "name": "Librera FD",
+   "author": "foobnix",
+   "category": "media",
+   "license": "GPL-3.0",
+   "mark": "L",
+   "accent": "#B45309",
+   "url": "https://f-droid.org/packages/com.foobnix.pro.pdf.reader/",
+   "summary": "F-Droid 版的 Librera 阅读器：PDF、EPUB、MOBI、漫画都能翻，去掉谷歌服务，书库按文件夹整理。"
+  },
+  {
    "id": "termux",
    "name": "Termux",
    "author": "termux",
@@ -354,6 +398,17 @@
    "accent": "#475569",
    "url": "https://github.com/Genymobile/scrcpy",
    "summary": "在电脑上投屏并操作手机，走 adb 连接，延迟低，鼠标键盘直接可用。"
+  },
+  {
+   "id": "connectbot",
+   "name": "ConnectBot",
+   "author": "connectbot",
+   "category": "tools",
+   "license": "Apache-2.0",
+   "mark": "C",
+   "accent": "#10B981",
+   "url": "https://github.com/connectbot/connectbot",
+   "summary": "安卓上最早的 SSH 客户端：存多台主机、用密钥登录、开端口转发，配 Termux 当跳板很顺。"
   }
  ]
 }
