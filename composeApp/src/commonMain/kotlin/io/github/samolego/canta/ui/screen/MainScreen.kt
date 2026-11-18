@@ -43,6 +43,7 @@ import io.github.samolego.canta.ui.component.AppList
 import io.github.samolego.canta.ui.component.AppListPermissionBanner
 import io.github.samolego.canta.ui.component.CantaTopBar
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
+import io.github.samolego.canta.ui.dialog.AppListPermissionDialog
 import io.github.samolego.canta.ui.dialog.DeviceChooserDialog
 import io.github.samolego.canta.ui.dialog.ExplainBadgesDialog
 import io.github.samolego.canta.ui.dialog.RestoreSuspectsDialog
@@ -132,6 +133,16 @@ fun MainScreen(
                 }
             }
         }
+    }
+
+    if (appListViewModel.askForAppListPermission) {
+        AppListPermissionDialog(
+            onOpenSettings = {
+                appListViewModel.onAppListPermissionPrompted()
+                appListViewModel.openPackageListSettings()
+            },
+            onDismiss = appListViewModel::onAppListPermissionPrompted,
+        )
     }
 
     MainDialogs(handler, platform, mainViewModel)

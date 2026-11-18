@@ -132,6 +132,18 @@ class AppListViewModel(
     var appListRestricted by mutableStateOf(false)
         private set
 
+    /** Whether the "the system hides the app list" dialog was already shown in this run. */
+    private var noticeShown = false
+
+    /** True the first time a restricted list is loaded: the screen then asks for the permission. */
+    var askForAppListPermission by mutableStateOf(false)
+        private set
+
+    fun onAppListPermissionPrompted() {
+        askForAppListPermission = false
+        noticeShown = true
+    }
+
     /** Opens the ROM's package-list permission screen, if this platform has one. */
     fun openPackageListSettings() {
         cantaHandler.openPackageListSettings()
@@ -211,6 +223,7 @@ class AppListViewModel(
             isLoading = false
             isLoadingBadges = false
             appListRestricted = cantaHandler.appListRestricted && _apps.isNotEmpty()
+            if (appListRestricted && !noticeShown) askForAppListPermission = true
         }
     }
 

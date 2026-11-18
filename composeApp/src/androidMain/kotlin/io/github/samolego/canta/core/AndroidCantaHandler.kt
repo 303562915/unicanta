@@ -61,19 +61,22 @@ class AndroidCantaHandler(
     }
 
     /**
-     * [local] plus whatever only the privileged identity can see. The extras carry no label when
-     * the ROM hides app resources too; the list falls back to the package name.
+     * The privileged listing, completed with [local] for anything it does not contain. Returns
+     * [local] unchanged when the privileged call yields nothing, so a broken binder never leaves
+     * an empty list.
      */
-    private fun restrictedFallback(local: List<PackageInfo>): List<PackageInfo> {
-        if (!isAuthorized) return local
+    private fun privilegedFirst(local: List<PackageInfo>): List<PackageInfo> {
         val privileged = operations.privilegedInstalledPackages()
-        if (privileged.isEmpty()) return local
-        val known = local.mapTo(HashSet()) { it.packageName }
-        val extra = privileged.filterNot { it.packageName in known }
-        if (extra.isNotEmpty()) {
-            LogUtils.w(TAG, "Package list from the ROM had ${local.size} entries; added ${extra.size} from the privileged one")
+        if (privileged.isEmpty()) {
+            LogUtils.w(TAG, "Privileged package listing returned nothing; using the local one")
+            return local
         }
-        return local + extra
+        val known = privileged.mapTo(HashSet()) { it.packageName }
+        val extra = local.filterNot { it.packageName in known }
+        if (local.size < privileged.size) {
+            LogUtils.w(TAG, "The ROM only showed ${local.size} packages; the privileged listing has ${privileged.size}")
+        }
+        return privileged + extra
     }
 
     /**
@@ -136,10 +139,12 @@ class AndroidCantaHandler(
         // Reading labels loads each app's resources, which is slow on a cold
         // start; read packages in parallel, like the ADB helper does.
         val local = packageManager.getAllPackages()
-        val all = if (local.size < MIN_PLAUSIBLE_PACKAGES) restrictedFallback(local) else local
-        restrictedList = all.size > local.size && local.size < MIN_PLAUSIBLE_PACKAGES
-        // Logged so a report can tell "the ROM hid the list" from "the list really is short".
-        LogUtils.i(TAG, "Packages: ${local.size} from PackageManager, ${all.size} after the privileged fallback")
+        // With the privileged runtime, its own listing is complete no matter what the ROM does to
+        // our PackageManager, so it is the primary source and the local one only fills gaps.
+        val all = if (isAuthorized) privilegedFirst(local) else local
+        restrictedList = local.size < MIN_PLAUSIBLE_PACKAGES && all.size <= local.size
+        LogUtils.i(TAG, "Packages: ${local.size} from PackageManager, ${all.size} after the privileged listing")
+
         packages = all
             .map { info -> async { readSafely(info) { info.toPackageDetails(packageManager) to info.applicationInfo } } }
             .awaitAll()
