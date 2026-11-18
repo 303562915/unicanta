@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.app_list_restricted_description
 import io.github.samolego.canta.generated.resources.app_list_restricted_dismiss
+import io.github.samolego.canta.generated.resources.app_list_restricted_grant
 import io.github.samolego.canta.generated.resources.app_list_restricted_open_settings
 import io.github.samolego.canta.generated.resources.app_list_restricted_title
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -19,6 +20,8 @@ import org.jetbrains.compose.resources.stringResource
  */
 @Composable
 fun AppListPermissionDialog(
+    canRequest: Boolean,
+    onRequest: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -27,7 +30,14 @@ fun AppListPermissionDialog(
         title = stringResource(Res.string.app_list_restricted_title),
         buttons = {
             TextButton(onClick = onDismiss) { Text(stringResource(Res.string.app_list_restricted_dismiss)) }
-            TextButton(onClick = onOpenSettings) { Text(stringResource(Res.string.app_list_restricted_open_settings)) }
+            TextButton(onClick = if (canRequest) onRequest else onOpenSettings) {
+                Text(
+                    stringResource(
+                        if (canRequest) Res.string.app_list_restricted_grant
+                        else Res.string.app_list_restricted_open_settings
+                    )
+                )
+            }
         },
     ) {
         Text(

@@ -152,6 +152,7 @@
     <string name="unsafe_continue_safe_only">卸载其余的</string>
     <string name="app_list_restricted_title">系统没有把应用列表交给本应用</string>
     <string name="app_list_restricted_description">HyperOS / MIUI 用「获取应用列表」这个权限挡着，默认是关闭的，应用也没法自己申请，只能手动打开；没开之前你只能看到很少几个应用。</string>
+    <string name="app_list_restricted_grant">去授权</string>
     <string name="app_list_restricted_open_settings">去打开</string>
     <string name="app_list_restricted_dismiss">知道了</string>
     <string name="uninstall_large_batch_warning">一次卸这么多太多：建议分小批卸载，中间重启一次，出问题时才知道是哪个包。</string>

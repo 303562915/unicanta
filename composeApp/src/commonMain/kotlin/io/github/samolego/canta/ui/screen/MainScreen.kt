@@ -27,6 +27,9 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -41,6 +44,8 @@ import io.github.samolego.canta.generated.resources.uninstall
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.component.AppList
 import io.github.samolego.canta.ui.component.AppListPermissionBanner
+import io.github.samolego.canta.ui.permission.needsRequest
+import io.github.samolego.canta.ui.permission.rememberAppListAccess
 import io.github.samolego.canta.ui.component.CantaTopBar
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
 import io.github.samolego.canta.ui.dialog.AppListPermissionDialog
@@ -137,8 +142,24 @@ fun MainScreen(
         }
     }
 
+    // On ROMs that expose com.android.permission.GET_INSTALLED_APPS this pops the system dialog,
+    // exactly like FlClash does; everywhere else it falls back to the ROM's settings page.
+    val appListAccess = rememberAppListAccess()
+    var askedThisRun by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(appListAccess.supported, appListAccess.granted) {
+        if (appListAccess.needsRequest && !askedThisRun) {
+            askedThisRun = true
+            appListAccess.request()
+        }
+    }
+
     if (appListViewModel.askForAppListPermission) {
         AppListPermissionDialog(
+            canRequest = appListAccess.supported && !appListAccess.granted,
+            onRequest = {
+                appListViewModel.onAppListPermissionPrompted()
+                appListAccess.request()
+            },
             onOpenSettings = {
                 appListViewModel.onAppListPermissionPrompted()
                 appListViewModel.openPackageListSettings()
