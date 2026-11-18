@@ -46,7 +46,7 @@ We recommend keeping this enabled to avoid accidentally uninstalling important a
 
 Community scores are shown for all devices and, once at least 30 reports exist for your ROM version, for your own ROM version too (the latter is used for warnings and badges).
 
-Turning the switch off deletes any queued data that was not sent yet. See the [privacy policy](https://github.com/samolego/Canta/blob/master/privacy_policy.md) for details.
+Turning the switch off deletes any queued data that was not sent yet. See the [privacy policy](https://github.com/303562915/Canta/blob/master/privacy_policy.md) for details.
 
 ## Advanced Settings
 

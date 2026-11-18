@@ -43,6 +43,42 @@ fun romName(rom: String): String = when (rom) {
     else -> "Android"
 }
 
+/**
+ * The names the phone is *sold* under, best first.
+ *
+ * MIUI/HyperOS carries the retail model number in `ro.product.model` ("23113RKC6C" for a Redmi
+ * K70) and keeps the marketing name in a separate `marketname` property; stock Android and most
+ * other ROMs put the marketing name straight into `ro.product.model`. Reading these first is what
+ * makes the UI say "Redmi K70" instead of a part number.
+ */
+val MARKET_NAME_PROP_KEYS: List<String> = listOf(
+    "ro.product.marketname",
+    "ro.product.odm.marketname",
+    "ro.product.vendor.marketname",
+    "ro.product.system.marketname",
+    "ro.product.product.marketname",
+    "ro.config.marketing_name",
+    "ro.product.model.marketing",
+)
+
+/** The marketing name of the phone in [props], or an empty string when the ROM has none. */
+fun marketNameOf(props: Map<String, String>): String =
+    MARKET_NAME_PROP_KEYS.firstNotNullOfOrNull { key ->
+        props[key]?.trim()?.takeIf { it.isNotEmpty() && !it.equals("unknown", ignoreCase = true) }
+    }.orEmpty()
+
+/**
+ * Properties that identify this exact phone. They are read locally only, for matching plans and
+ * safety rules; none of them is ever sent as telemetry.
+ */
+val DEVICE_IDENTITY_PROP_KEYS: Set<String> = MARKET_NAME_PROP_KEYS.toSet() + setOf(
+    "ro.product.brand",
+    "ro.product.model",
+    "ro.product.device",
+    "ro.build.version.release",
+    "ro.build.fingerprint",
+)
+
 /** The only system properties ever read to build a [DeviceContext]. */
 val DEVICE_PROP_KEYS: Set<String> = setOf(
     "ro.product.manufacturer",
@@ -61,6 +97,12 @@ val DEVICE_PROP_KEYS: Set<String> = setOf(
     "ro.rom.version",
     "ro.build.nothing.version",
 )
+
+/**
+ * Everything a device read keeps: the telemetry whitelist plus the local-only identity props. Only
+ * [DeviceContext] out of this ever leaves the phone; the identity props stay on it.
+ */
+val LOCAL_PROP_KEYS: Set<String> = DEVICE_PROP_KEYS + DEVICE_IDENTITY_PROP_KEYS
 
 /**
  * Parses `getprop` output (`[key]: [value]` lines), keeping only [keys];

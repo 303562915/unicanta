@@ -6,7 +6,7 @@
 
 中文 | [English](README.en.md)
 
-基于 [samolego/Canta](https://github.com/samolego/Canta)，由 [Shizuku](https://shizuku.rikka.app/) 授权，
+基于上游 Canta 项目，由 [Shizuku](https://shizuku.rikka.app/) 授权，
 包名 `io.github.a303562915.unicanta`，内部代号 **unicanta**。
 
 </div>
@@ -110,7 +110,8 @@ survived >= 50% 且上面 <= 2%                -> SAFE
 - 浮动胶囊底栏 `FloatingPillBar`：磨砂圆角、图标在上文字在下，四个入口常驻中文标签；
 - 首个页签改成**按点赞驱动的卸载排行**；
 - 列表行更密，选中态是更宽的胶囊；
-- 每 ROM 的**系统微调页**（`TweaksScreen` + `util/RomTweaks.kt`），按 ROM 家族分组排序；
+- **系统技巧页**（`TweaksScreen` + `util/RomTweaks.kt`）：只放一件能点的事——恢复所有已卸载的应用，
+  点一下先弹提醒确认要装回几个，再逐个恢复，并附上等价的 `pm install-existing` 命令；
 - 方案详情页、上传对话框、评论列表。
 
 ### 6. ROM 与权限适配
@@ -140,7 +141,7 @@ survived >= 50% 且上面 <= 2%                -> SAFE
 
 > [!Warning]
 > **免责声明**：使用风险自负。卸载**关键应用**会导致 bootloop，只能恢复出厂设置。
-> 部分 oplus 应用已知拒绝卸载，见[上游跟踪 issue](https://github.com/samolego/Canta/issues/338)。
+> 部分 oplus 应用已知拒绝卸载，见上游跟踪 issue #338。
 
 ## 构建
 
@@ -193,14 +194,14 @@ cd server/node && node test/e2e.test.mjs
 - 用 CLI 推迁移需要在仓库 secrets 里放 `SUPABASE_ACCESS_TOKEN`；
 - 本 fork 未做 release 签名与分发，CI 只产出 debug APK。
 
-## 上游与致谢
+## 致谢
 
-- [samolego/Canta](https://github.com/samolego/Canta)：本项目的基础；
+- **Canta**：本项目的基础；
 - [Universal-Debloater-Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/)：debloat 列表与安全建议来源；
 - [@RikkaApps](https://github.com/RikkaApps)：Shizuku；
 - 图标来自 [icon kitchen](https://icon.kitchen)。
 
-上游 APK 的 SHA-256 证书指纹（用于校验**上游**发行包，非本 fork 构建产物）：
+上游发行包的 SHA-256 证书指纹（用于校验**上游**发行包，非本 fork 构建产物）：
 
 ```
 0A:26:40:31:7C:43:27:21:88:C3:E1:31:94:C1:54:60:69:1F:12:C3:9E:A1:9B:BA:72:7D:D6:7F:B5:62:89:D4

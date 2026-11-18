@@ -6,7 +6,7 @@
 
 [中文](README.md) | English
 
-Based on [samolego/Canta](https://github.com/samolego/Canta), powered by
+Based on the upstream Canta project, powered by
 [Shizuku](https://shizuku.rikka.app/). Application id `io.github.a303562915.unicanta`,
 internal codename **unicanta**.
 
@@ -115,7 +115,9 @@ may delete a plan; test uploads are flagged and kept out of the ranking. Backend
 - `FloatingPillBar`: frosted, rounded, icon-over-label, four entries with permanent Chinese labels;
 - the first tab is now an uninstall ranking driven by likes;
 - denser list rows, wider selected pill;
-- a per-ROM **system tweaks page** (`TweaksScreen` + `util/RomTweaks.kt`), grouped and ordered by ROM family;
+- a **system tweaks page** (`TweaksScreen` + `util/RomTweaks.kt`) with one tappable thing: restore every
+  uninstalled app — it asks how many will come back first, then restores them one by one, with the
+  equivalent `pm install-existing` command shown alongside;
 - plan detail screen, upload dialog, comment list.
 
 ### 6. ROM and permission handling
@@ -149,7 +151,7 @@ Same requirements as upstream: Shizuku (Android 16 may need the
 > [!Warning]
 > **DISCLAIMER:** use at your own risk. Uninstalling **critical apps** causes a bootloop that only a
 > factory reset fixes. Some oplus apps are known to refuse uninstallation, see the
-> [upstream tracking issue](https://github.com/samolego/Canta/issues/338).
+> upstream tracking issue #338.
 
 ## Build
 
@@ -202,9 +204,9 @@ all five verdicts, ROM-version and family-wide queries, `purge_raw_events`, plan
 - pushing migrations with the CLI needs `SUPABASE_ACCESS_TOKEN` in the repository secrets;
 - this fork has no release signing or distribution; CI only produces debug APKs.
 
-## Upstream and credits
+## Credits
 
-- [samolego/Canta](https://github.com/samolego/Canta): the base project;
+- **Canta**: the base project;
 - [Universal-Debloater-Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/): debloat list and safety recommendations;
 - [@RikkaApps](https://github.com/RikkaApps): Shizuku;
 - icon from [icon kitchen](https://icon.kitchen).

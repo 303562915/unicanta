@@ -42,12 +42,12 @@ export default defineConfig({
       {
         property: "og:image",
         content:
-          "https://raw.githubusercontent.com/samolego/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+          "https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
       },
     ],
     [
       "meta",
-      { property: "og:url", content: "https://samolego.github.io/Canta" },
+      { property: "og:url", content: "https://303562915.github.io/Canta" },
     ],
     [
       "meta",
@@ -62,17 +62,17 @@ export default defineConfig({
       "link",
       {
         rel: "icon",
-        href: "https://raw.githubusercontent.com/samolego/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+        href: "https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
       },
     ],
   ],
   sitemap: {
-    hostname: "https://samolego.github.io/Canta",
+    hostname: "https://303562915.github.io/Canta",
   },
   lastUpdated: true,
   // Theme customization
   themeConfig: {
-    logo: "https://raw.githubusercontent.com/samolego/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+    logo: "https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
     nav: [
       { text: "Home", link: "/" },
       { text: "Web App", link: "/app/", target: "_self" },
@@ -87,7 +87,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: "https://github.com/samolego/Canta/edit/master/site/:path",
+      pattern: "https://github.com/303562915/Canta/edit/master/site/:path",
       text: "Edit this page on GitHub",
     },
 
@@ -110,12 +110,12 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: "github", link: "https://github.com/samolego/Canta" },
+      { icon: "github", link: "https://github.com/303562915/Canta" },
     ],
 
     footer: {
       message: "Released under the LGPL-3.0 License.",
-      copyright: "Copyright © samo_lego",
+      copyright: "Copyright © unicanta",
     },
   },
 

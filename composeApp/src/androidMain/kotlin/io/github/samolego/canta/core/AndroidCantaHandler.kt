@@ -27,8 +27,10 @@ import io.github.samolego.canta.packages.toPackageDetails
 import io.github.samolego.canta.ui.component.APP_ICON_SIZE
 import io.github.samolego.canta.util.DeviceContext
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.LOCAL_PROP_KEYS
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.deviceContextOf
+import io.github.samolego.canta.util.marketNameOf
 import io.github.samolego.canta.util.parseGetprop
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -211,6 +213,7 @@ class AndroidCantaHandler(
     /** Build.* plus the ROM fields of [deviceContext]; never leaves the device. */
     override suspend fun deviceProfile(): DeviceProfile? = profile ?: withContext(Dispatchers.IO) {
         val ctx = deviceContext()
+        val props = localProps()
         DeviceProfile(
             brand = Build.MANUFACTURER.orEmpty().ifBlank { "unknown" }.replaceFirstChar { it.uppercase() },
             model = Build.MODEL.orEmpty().ifBlank { "unknown" },
@@ -220,6 +223,9 @@ class AndroidCantaHandler(
             rom = ctx?.rom ?: "unknown",
             romVersion = ctx?.romVersion ?: 0,
             fingerprint = Build.FINGERPRINT.orEmpty(),
+            // The market name is the only field Build does not expose: MIUI/HyperOS keeps the
+            // retail number in MODEL and the name people know in ro.product.marketname.
+            marketName = marketNameOf(props),
         ).also { profile = it }
     }
 
@@ -246,25 +252,33 @@ class AndroidCantaHandler(
     @Volatile
     private var deviceContext: DeviceContext? = null
 
+    /** `getprop` output, filtered to the local whitelist; read once per process. */
+    @Volatile
+    private var localProps: Map<String, String>? = null
+
     /**
-     * Runs `getprop` as the app's own process and keeps only the handful of
-     * properties [deviceContextOf] needs; falls back to [android.os.Build]
-     * for the brand and API level when it can't run.
+     * Runs `getprop` as the app's own process and keeps only the properties Canta may read: the
+     * [DeviceContext] whitelist plus the local-only identity props. Falls back to
+     * [android.os.Build] for the brand and API level when it can't run.
      */
-    override suspend fun deviceContext(): DeviceContext? = deviceContext ?: withContext(Dispatchers.IO) {
+    private suspend fun localProps(): Map<String, String> = localProps ?: withContext(Dispatchers.IO) {
         val props = runCatching {
             val process = Runtime.getRuntime().exec("getprop")
             try {
-                parseGetprop(process.inputStream.bufferedReader().readText())
+                parseGetprop(process.inputStream.bufferedReader().readText(), LOCAL_PROP_KEYS)
             } finally {
                 process.destroy()
             }
         }.onFailure { LogUtils.w(TAG, "getprop failed: $it") }.getOrNull().orEmpty()
-        val withFallback = props.toMutableMap().apply {
+        props.toMutableMap().apply {
             putIfAbsent("ro.product.manufacturer", android.os.Build.MANUFACTURER)
             putIfAbsent("ro.build.version.sdk", android.os.Build.VERSION.SDK_INT.toString())
-        }
-        deviceContextOf(withFallback).also {
+        }.also { localProps = it }
+    }
+
+    /** The ROM family and version of this phone, from the same `getprop` read as [deviceProfile]. */
+    override suspend fun deviceContext(): DeviceContext? = deviceContext ?: run {
+        deviceContextOf(localProps()).also {
             LogUtils.i(TAG, "Device context: $it")
             deviceContext = it
         }

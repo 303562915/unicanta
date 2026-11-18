@@ -20,13 +20,31 @@ data class DeviceProfile(
     val rom: String,
     val romVersion: Int,
     val fingerprint: String,
+    /**
+     * The name the phone is sold under ("Redmi K70"), read from the ROM's `marketname` property.
+     * Empty when the ROM keeps nothing but the part number in [model], which is the common case on
+     * MIUI/HyperOS where [model] is something like "23113RKC6C".
+     */
+    val marketName: String = "",
 ) {
-    /** "Xiaomi 23127PN0CC (fuxi) · HyperOS 2 · Android 15" */
-    fun label(): String {
-        val name = romName(rom)
-        val romPart = if (romVersion > 0 && name != "Android") "$name $romVersion" else name
-        return "$brand $model ($device) · $romPart · Android $release"
-    }
+    /** What the UI shows for the phone: the marketing name when there is one, else [model]. */
+    val displayModel: String get() = marketName.ifBlank { model }
+
+    /** "HyperOS 2" — the ROM as people name it. */
+    private val romPart: String
+        get() {
+            val name = romName(rom)
+            return if (romVersion > 0 && name != "Android") "$name $romVersion" else name
+        }
+
+    /**
+     * "Redmi K70 · HyperOS 2 · Android 15": one line, no part number, for headers and plan rows.
+     * The model code is deliberately left out — it is the thing users do not recognise.
+     */
+    fun shortLabel(): String = "$displayModel · $romPart · Android $release"
+
+    /** "Xiaomi Redmi K70 (fuxi) · HyperOS 2 · Android 15": full, for reports and settings. */
+    fun label(): String = "$brand $displayModel ($device) · $romPart · Android $release"
 }
 
 /** How dangerous removing a package is on a given device. */

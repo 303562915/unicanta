@@ -1,16 +1,16 @@
 ---
-title: Canta - Installation
-description: Installation instructions for Canta.
+title: Canta · unicanta - Installation
+description: 安装 unicanta 分支的步骤。
 ---
-# Installation
+# 安装
 
-1. Install [Shizuku](https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api) from Google Play Store
-  - Note: if you're using Android 16 and above, please use [forked version](https://github.com/thedjchi/Shizuku)
-2. [Activate Shizuku](https://shizuku.rikka.app/guide/setup/)
-3. Install Canta from your preferred source:
-   - [F-Droid](https://f-droid.org/en/packages/io.github.samolego.canta/)
-   - [IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/io.github.samolego.canta)
-   - [GitHub Releases](https://github.com/samolego/Canta/releases/latest/)
-   - [Google Play Store](https://play.google.com/store/apps/details?id=io.github.samolego.canta)
+1. 安装 [Shizuku](https://shizuku.rikka.app/guide/setup/)
+   - Android 16 及以上建议使用 [fork 版](https://github.com/thedjchi/Shizuku)
+2. [激活 Shizuku](https://shizuku.rikka.app/guide/setup/)
+3. 安装本仓库构建出的 APK：
+   - [GitHub Releases](https://github.com/303562915/Canta/releases/latest/)
+   - 或自行构建：`./gradlew :androidApp:assembleDebug`
 
-> For a more detailed Shizuku setup guide, check the [Android Police tutorial](https://www.androidpolice.com/how-to-use-shizuku-for-adb-rootless-mods-on-any-android-device/)
+本分支不上架 F-Droid / Google Play / IzzyOnDroid。
+
+> Shizuku 的更详细配置步骤见 [Android Police 教程](https://www.androidpolice.com/how-to-use-shizuku-for-adb-rootless-mods-on-any-android-device/)

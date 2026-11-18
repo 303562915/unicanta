@@ -1,14 +1,14 @@
 ---
 layout: home
-title: Canta - Debloat Android without root
-description: A powerful Android app that lets you uninstall any app without requiring root access, powered by Shizuku
+title: Canta · unicanta - Debloat Android without root
+description: 免 root 卸载系统应用的 Android 应用，由 Shizuku 驱动
 
 hero:
-  name: "Canta"
+  name: "Canta · unicanta"
   text: "Uninstall any app without root!"
   tagline: Powered by Shizuku - safe and easy app removal
   image:
-    src: https://raw.githubusercontent.com/samolego/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+    src: https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png
     alt: Canta
   actions:
     - theme: brand
@@ -16,7 +16,7 @@ hero:
       link: /install
     - theme: alt
       text: View on GitHub
-      link: https://github.com/samolego/Canta
+      link: https://github.com/303562915/Canta
     - theme: brand
       text: Open web app
       link: /app/
@@ -43,12 +43,12 @@ features:
 
   - icon: 🌍
     title: Translations
-    details: Help translate Canta into your language on Crowdin.<br><br><a href="https://crowdin.com/project/canta"><img src="https://badges.crowdin.net/canta/localized.svg" alt="Crowdin translation status"></a>
+    details: 本分支已含完整中文翻译；其余语言来自 Crowdin 社区。<br><br><a href="https://crowdin.com/project/canta"><img src="https://badges.crowdin.net/canta/localized.svg" alt="Crowdin translation status"></a>
     link: https://crowdin.com/project/canta
 
   - icon: 🪙
-    title: Donate
-    details: Enjoying Canta? It's built in my free time with privacy in mind - no ads, no tracking. If you find it useful, consider supporting its development!
-    link: https://www.paypal.com/donate/?hosted_button_id=FD4R46ZZ5EWME
+    title: 自建后端
+    details: 遥测后端由本项目自己托管，可完全离线自部署（`server/node`），不依赖上游服务器。
+    link: https://github.com/303562915/Canta/tree/master/server
 
 ---

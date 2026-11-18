@@ -378,9 +378,9 @@ private fun DockContents(
     val growth = with(density) { (LensGrowth * 2f).dp.toPx() }
     // A label wider than its slot shrinks, down to the smallest size FlClash
     // allows, instead of being cut off.
-    val widest = remember(items, labelStyle, measurer) {
+    val widest = remember(items.map { it.label }, labelStyle, measurer) {
         items.maxOf { item ->
-            measurer.measure(AnnotatedString(item.label), labelStyle, maxLines = 1).size.width
+            measurer.measure(AnnotatedString(item.label), labelStyle, maxLines = 1).size.width.toFloat()
         }
     }
     val room = layout.pitch - labelInset * 2f

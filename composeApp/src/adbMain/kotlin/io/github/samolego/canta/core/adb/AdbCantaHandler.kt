@@ -9,8 +9,11 @@ import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.packages.PackageDetails
 import io.github.samolego.canta.packages.canResetToFactory
 import io.github.samolego.canta.util.DeviceContext
+import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.LOCAL_PROP_KEYS
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.deviceContextOf
+import io.github.samolego.canta.util.marketNameOf
 import io.github.samolego.canta.util.parseGetprop
 import io.github.samolego.canta.util.payloadHash
 import kotlinx.coroutines.CancellationException
@@ -59,6 +62,7 @@ abstract class AdbCantaHandler(private val transport: AdbTransport) : CantaHandl
     protected suspend fun onConnected(): Boolean {
         packages = emptyMap()
         deviceContext = null
+        profile = null
         helper.userId = helper.currentUserId() ?: 0
         lastConnectionFailure = when {
             !helper.supportsDevice() -> DeviceConnectionFailure.UnsupportedAndroidVersion
@@ -130,22 +134,51 @@ abstract class AdbCantaHandler(private val transport: AdbTransport) : CantaHandl
     /** Read once per connected device; reset in [onConnected]. */
     private var deviceContext: DeviceContext? = null
 
-    override suspend fun deviceContext(): DeviceContext? {
-        deviceContext?.let { return it }
+    /** The phone as the plans and safety rules need it; read once per connection. */
+    private var profile: DeviceProfile? = null
+
+    /** `getprop`, filtered to what Canta may read (telemetry whitelist + local identity). */
+    private suspend fun localProps(): Map<String, String>? {
         if (!isConnected) return null
         return try {
             val result = transport.shell("getprop")
             if (result.exitCode != 0) return null
-            deviceContextOf(parseGetprop(result.stdout)).also {
-                LogUtils.i(TAG, "Device context: $it")
-                deviceContext = it
-            }
+            parseGetprop(result.stdout, LOCAL_PROP_KEYS)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            LogUtils.w(TAG, "Could not read the device context: $e")
+            LogUtils.w(TAG, "Could not read the device properties: $e")
             null
         }
+    }
+
+    override suspend fun deviceContext(): DeviceContext? {
+        deviceContext?.let { return it }
+        return localProps()?.let { deviceContextOf(it).also { ctx -> deviceContext = ctx } }
+    }
+
+    /**
+     * The connected phone: model, market name, ROM and fingerprint, all read locally. Without it
+     * the plan page has nothing to match against, so a missing profile means an empty plan list.
+     */
+    override suspend fun deviceProfile(): DeviceProfile? {
+        profile?.let { return it }
+        val props = localProps() ?: return null
+        fun prop(key: String): String = props[key]?.trim().orEmpty()
+        val ctx = deviceContextOf(props)
+        return DeviceProfile(
+            brand = prop("ro.product.brand").ifEmpty { prop("ro.product.manufacturer") }
+                .ifEmpty { "unknown" }
+                .replaceFirstChar { it.uppercase() },
+            model = prop("ro.product.model").ifEmpty { "unknown" },
+            device = prop("ro.product.device").ifEmpty { "unknown" },
+            sdk = prop("ro.build.version.sdk").toIntOrNull() ?: 0,
+            release = prop("ro.build.version.release").ifEmpty { "unknown" },
+            rom = ctx.rom,
+            romVersion = ctx.romVersion,
+            fingerprint = prop("ro.build.fingerprint"),
+            marketName = marketNameOf(props),
+        ).also { profile = it }
     }
 
     override suspend fun packageExists(packageName: String): Boolean {

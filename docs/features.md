@@ -77,4 +77,4 @@ No data is uploaded whatsoever.
 :::
 
 ### Open Source
-Canta is licensed under LGPL-3.0, with its complete source code available on [GitHub](https://github.com/samolego/Canta). This transparency ensures you can verify the app's functionality and contribute to its development if you wish.
+Canta is licensed under LGPL-3.0, with its complete source code available on [GitHub](https://github.com/303562915/Canta). This transparency ensures you can verify the app's functionality and contribute to its development if you wish.

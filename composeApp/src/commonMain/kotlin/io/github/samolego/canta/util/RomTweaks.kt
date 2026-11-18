@@ -5,79 +5,41 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * One per-ROM tweak: something the stock system does that can be worked around, described as
- * steps a person can follow. Actions that need root or shell are deliberately not automated;
- * only the paths are offered for copying.
+ * One system tweak: a single thing the stock system does, described as a card that offers either a
+ * button Canta can run itself or a command to copy.
  *
- * [rom] is a ROM family key (`xiaomi`, `oppo`, `vivo`, `honor`, …) or `all`.
+ * @param why what the system does and why the tweak works, one or two sentences.
+ * @param command the shell equivalent of the tweak, shown so it can be run by hand.
+ * @param action the operation behind the card's button, one of the `ACTION_*` keys of [RomTweaks];
+ *   null for a card that only explains.
  */
 @Serializable
 data class RomTweak(
     val id: String,
-    val rom: String,
     val title: String,
     val why: String = "",
-    val steps: List<String> = emptyList(),
-    val paths: List<String> = emptyList(),
-    /** Packages the tweak is about, shown so the reader can check whether they are installed. */
-    val packages: List<String> = emptyList(),
+    val command: String = "",
+    val action: String? = null,
 )
 
 @Serializable
 data class RomTweakSet(val version: Int = 1, val updated: String = "", val tweaks: List<RomTweak> = emptyList())
 
-/**
- * The shipped tweaks, grouped for display. The ROM family of the current phone comes first and is
- * marked, so a Xiaomi owner is not made to scroll past OPPO advice.
- */
+/** The shipped tweaks, in file order: the page is a flat list, not a per-vendor catalogue. */
 class RomTweaks(private val set: RomTweakSet) {
 
     constructor(json: String) : this(Json { ignoreUnknownKeys = true }.decodeFromString(RomTweakSet.serializer(), json))
 
     val all: List<RomTweak> get() = set.tweaks
 
-    /** [all] ordered so the groups matching [profile] come first; group key is included. */
-    fun groupedFor(profile: DeviceProfile?): List<Pair<String, List<RomTweak>>> {
-        val mine = profile?.let { familyKeyOf(it.rom) }
-        val groups = set.tweaks.groupBy { familyKeyOf(it.rom) }
-        return groups.entries
-            .sortedWith(
-                compareBy(
-                    { entry -> if (entry.key == "all") 2 else if (entry.key == mine) 0 else 1 },
-                    { entry -> entry.key },
-                )
-            )
-            .map { it.key to it.value }
-    }
-
     companion object {
         const val RESOURCE_PATH = "files/rom_tweaks.json"
+
+        /** Puts back every app uninstalled for the current user, one by one. */
+        const val ACTION_RESTORE_ALL = "restore-uninstalled"
 
         suspend fun bundled(): RomTweaks = runCatching {
             RomTweaks(Res.readBytes(RESOURCE_PATH).decodeToString())
         }.getOrDefault(RomTweaks(RomTweakSet()))
     }
-}
-
-/** Maps a [DeviceContext.rom] key onto the family a tweak is filed under. */
-fun familyKeyOf(rom: String): String = when (rom.lowercase()) {
-    "hyperos", "miui" -> "xiaomi"
-    "coloros", "realmeui" -> "oppo"
-    "originos", "funtouch" -> "vivo"
-    "magicos", "emui" -> "honor"
-    "oneui" -> "samsung"
-    "oxygenos", "nothingos" -> "other"
-    "all" -> "all"
-    else -> "other"
-}
-
-/** Display name of a family key. */
-fun familyLabel(key: String): String = when (key) {
-    "xiaomi" -> "小米 / Redmi（MIUI · HyperOS）"
-    "oppo" -> "OPPO / realme（ColorOS · realme UI）"
-    "vivo" -> "vivo / iQOO（OriginOS · Funtouch）"
-    "honor" -> "荣耀 / 华为（MagicOS · EMUI）"
-    "samsung" -> "三星（One UI）"
-    "all" -> "通用"
-    else -> "其他"
 }

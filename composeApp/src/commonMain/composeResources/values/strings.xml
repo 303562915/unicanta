@@ -286,8 +286,15 @@
     <string name="plan_comment_hint">Write a comment</string>
     <string name="plan_comment_send">Send</string>
     <string name="tweaks_title">System tweaks</string>
-    <string name="tweaks_your_rom">Your system</string>
-    <string name="tweaks_copy_path">Copy path</string>
+    <string name="tweaks_copy_command">Copy command</string>
     <string name="tweaks_copied">Copied</string>
-    <string name="tweaks_steps">Steps</string>
+    <string name="tweaks_restore_button">Restore all uninstalled apps</string>
+    <string name="tweaks_restore_confirm_title">Put every uninstalled app back?</string>
+    <string name="tweaks_restore_confirm_body">This reinstalls the %1$d apps you uninstalled for this user, the same thing the command above does.</string>
+    <string name="tweaks_restore_start">Restore</string>
+    <string name="tweaks_restore_loading">Checking which apps are uninstalled…</string>
+    <string name="tweaks_restore_nothing">No app is uninstalled for this user.</string>
+    <string name="tweaks_restore_needs_privilege">Restoring needs the privileged runtime. Connect it first, then try again.</string>
+    <string name="tweaks_restore_running">Restoring %1$d of %2$d…</string>
+    <string name="tweaks_restore_done">%1$d put back, %2$d failed.</string>
 </resources>
