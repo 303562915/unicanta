@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.savedstate.read
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -247,8 +248,15 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 )
             }
             composable(route = Screen.PlanDetail.route) { entry ->
-                // The id is an undeclared path argument, so it arrives as a plain string.
-                val planId = entry.arguments?.getString("planId")?.toLongOrNull() ?: 0L
+                // Navigation 2.10 hands out a SavedState, not a Bundle: read it the same way the
+                // navigation library itself does. The id is an undeclared path argument, so it
+                // arrives as a plain string.
+                val planId = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("planId")) getString("planId").toLongOrNull() else null }
+                        }.getOrNull()
+                    } ?: 0L
                 var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 LaunchedEffect(Unit) { planProfile = handler.deviceProfile() }
                 PlanDetailScreen(
