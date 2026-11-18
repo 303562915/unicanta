@@ -7,6 +7,9 @@ sealed class Screen(val route: String) {
     data object Presets : Screen("presets")
     data object Rules : Screen("rules")
     data object Tweaks : Screen("tweaks")
+
+    /** Open-source apps worth installing; the cards only link out to their project pages. */
+    data object Recommendations : Screen("recommend")
     data object Onboarding : Screen("onboarding")
 
     /**

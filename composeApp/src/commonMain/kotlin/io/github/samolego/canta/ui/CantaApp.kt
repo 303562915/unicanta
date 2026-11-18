@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Shield
@@ -44,6 +45,7 @@ import io.github.samolego.canta.generated.resources.select_all_enabled
 import io.github.samolego.canta.generated.resources.select_all_tip
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.generated.resources.tab_apps
+import io.github.samolego.canta.generated.resources.tab_recommend
 import io.github.samolego.canta.generated.resources.tab_rules
 import io.github.samolego.canta.generated.resources.tab_tweaks
 import io.github.samolego.canta.ui.AppsType
@@ -56,6 +58,7 @@ import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
 import io.github.samolego.canta.ui.screen.PresetsScreen
+import io.github.samolego.canta.ui.screen.RecommendationsScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
@@ -186,6 +189,12 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
             }
             composable(route = Screen.Tweaks.route) {
                 TweaksScreen(handler = handler, onNavigateBack = { navController.navigateUp() })
+            }
+            composable(route = Screen.Recommendations.route) {
+                RecommendationsScreen(
+                    platform = platform,
+                    onNavigateBack = { navController.navigateUp() },
+                )
             }
             composable(route = Screen.Logs.route) {
                 LogsScreen(
@@ -328,6 +337,7 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Main.route,
     Screen.Rules.route,
     Screen.Tweaks.route,
+    Screen.Recommendations.route,
     Screen.Settings.route,
     Screen.Presets.route,
 )
@@ -337,18 +347,20 @@ private object BarKey {
     const val APPS = "apps"
     const val RULES = "rules"
     const val TWEAKS = "tweaks"
+    const val RECOMMEND = "recommend"
     const val SETTINGS = "settings"
 }
 
 /**
- * Four entries: the app list (installed/uninstalled are an in-page switch), the device safety
- * page, the ROM tweaks, and the settings.
+ * Five entries: the app list (installed/uninstalled are an in-page switch), the device safety
+ * page, the ROM tweaks, the open-source app recommendations, and the settings.
  */
 @Composable
 private fun bottomBarItems(route: String?): List<BottomBarItem> = listOf(
     BottomBarItem(BarKey.APPS, AppsType.INSTALLED.icon, stringResource(Res.string.tab_apps), route == Screen.Main.route),
     BottomBarItem(BarKey.RULES, Icons.Default.Shield, stringResource(Res.string.tab_rules), route == Screen.Rules.route),
     BottomBarItem(BarKey.TWEAKS, Icons.Default.Build, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route),
+    BottomBarItem(BarKey.RECOMMEND, Icons.Default.Explore, stringResource(Res.string.tab_recommend), route == Screen.Recommendations.route),
     BottomBarItem(BarKey.SETTINGS, Icons.Default.Settings, stringResource(Res.string.settings), route == Screen.Settings.route),
 )
 
@@ -360,6 +372,7 @@ private fun onBottomBarSelect(
         BarKey.APPS -> navController.navigateSingleTop(Screen.Main.route)
         BarKey.RULES -> navController.navigateSingleTop(Screen.Rules.route)
         BarKey.TWEAKS -> navController.navigateSingleTop(Screen.Tweaks.route)
+        BarKey.RECOMMEND -> navController.navigateSingleTop(Screen.Recommendations.route)
         BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Settings.route)
     }
 }

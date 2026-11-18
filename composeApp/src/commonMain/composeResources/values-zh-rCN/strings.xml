@@ -149,6 +149,7 @@
     <string name="tab_tweaks">系统技巧</string>
     <string name="tab_rules">安全</string>
     <string name="tab_presets">预设</string>
+    <string name="tab_recommend">推荐</string>
     <string name="unsafe_device_prefix">本机规则：%1$s</string>
     <string name="unsafe_blocked_title">这些在你的机型上会导致开不了机，已拦下：</string>
     <string name="unsafe_risky_title">这些在你的机型上已知会破坏功能：</string>
@@ -285,4 +286,28 @@
     <string name="tweaks_restore_needs_privilege">恢复需要特权运行时（Shizuku）。先把它连上，再回来点一次。</string>
     <string name="tweaks_restore_running">正在恢复 %1$d / %2$d…</string>
     <string name="tweaks_restore_done">已装回 %1$d 个，失败 %2$d 个。</string>
+    <string name="recommend_title">应用推荐</string>
+    <string name="recommend_intro">这里都是开源、免费的应用。点卡片会在浏览器里打开项目主页——Canta 只负责给链接，不会从这里装任何东西。</string>
+    <string name="recommend_featured">本站推荐</string>
+    <string name="recommend_by">作者 %1$s</string>
+    <string name="recommend_open">在浏览器里打开 %1$s</string>
+    <string name="recommend_empty">推荐列表暂时是空的。</string>
+    <string name="recommend_footer">上面全是开源免费的项目。哪个在你手机里留下了，就去给作者点个 star。</string>
+    <string name="recommend_cat_system">系统与性能</string>
+    <string name="recommend_cat_store">商店与更新</string>
+    <string name="recommend_cat_privacy">隐私与安全</string>
+    <string name="recommend_cat_files">文件与传输</string>
+    <string name="recommend_cat_media">影音与阅读</string>
+    <string name="recommend_cat_tools">效率与工具</string>
+    <string name="tweaks_run">执行</string>
+    <string name="tweaks_running">正在执行：%1$s</string>
+    <string name="tweaks_run_done">跑完了。</string>
+    <string name="tweaks_run_not_ok">没跑完，下面是对应的输出。</string>
+    <string name="tweaks_run_unsupported">这个平台没有特权 shell（桌面或网页没有连手机）。</string>
+    <string name="tweaks_run_no_privilege">Shizuku 没连上或没授权，先把特权运行时开起来，再点一次。</string>
+    <string name="tweaks_run_timeout">特权 shell 没响应，等一下再点一次。</string>
+    <string name="tweaks_run_broken">特权 shell 回了错误，下面是对应的输出。</string>
+    <string name="tweaks_empty">这台机型暂时没有专属工具。</string>
+    <string name="tweaks_splash_needs_service">智能服务（com.miui.systemAdSolution）不在手机上：去小米浏览器搜「小米智能服务」装上，再点一次这个按钮，否则开屏还是会多等 3 秒。</string>
+    <string name="tweaks_restore_tool_why">把当前用户下卸载过的应用一次全装回来，所有机型都能用。</string>
 </resources>

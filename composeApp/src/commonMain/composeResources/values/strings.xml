@@ -119,6 +119,7 @@
     <string name="tab_tweaks">Tweaks</string>
     <string name="tab_rules">Safety</string>
     <string name="tab_presets">Presets</string>
+    <string name="tab_recommend">Picks</string>
     <string name="unsafe_device_prefix">Rules for this device: %1$s</string>
     <string name="unsafe_blocked_title">These would strand this phone — held back:</string>
     <string name="unsafe_risky_title">These are known to break something here:</string>
@@ -346,4 +347,28 @@
     <string name="tweaks_restore_needs_privilege">Restoring needs the privileged runtime. Connect it first, then try again.</string>
     <string name="tweaks_restore_running">Restoring %1$d of %2$d…</string>
     <string name="tweaks_restore_done">%1$d put back, %2$d failed.</string>
+    <string name="recommend_title">App recommendations</string>
+    <string name="recommend_intro">Open-source apps worth installing. Tap a card and its project page opens in the browser: Canta only hands over the link and installs nothing from here.</string>
+    <string name="recommend_featured">Featured</string>
+    <string name="recommend_by">by %1$s</string>
+    <string name="recommend_open">Open %1$s in the browser</string>
+    <string name="recommend_empty">The recommendation list is empty right now.</string>
+    <string name="recommend_footer">Everything above is open source and free. If one of them earns its place on your phone, give the author a star.</string>
+    <string name="recommend_cat_system">System and performance</string>
+    <string name="recommend_cat_store">Stores and updates</string>
+    <string name="recommend_cat_privacy">Privacy and security</string>
+    <string name="recommend_cat_files">Files and transfer</string>
+    <string name="recommend_cat_media">Media and reading</string>
+    <string name="recommend_cat_tools">Tools and productivity</string>
+    <string name="tweaks_run">Run</string>
+    <string name="tweaks_running">Running %1$s…</string>
+    <string name="tweaks_run_done">Done.</string>
+    <string name="tweaks_run_not_ok">Did not finish; the output is below.</string>
+    <string name="tweaks_run_unsupported">This platform has no privileged shell (desktop or web with no phone attached).</string>
+    <string name="tweaks_run_no_privilege">Shizuku is not connected or not authorized; start the privileged runtime, then tap again.</string>
+    <string name="tweaks_run_timeout">The privileged shell did not answer; try again in a moment.</string>
+    <string name="tweaks_run_broken">The privileged shell returned an error; the output is below.</string>
+    <string name="tweaks_empty">No tool for this ROM yet.</string>
+    <string name="tweaks_splash_needs_service">智能服务 (com.miui.systemAdSolution) is not on this phone: search for 小米智能服务 in the Xiaomi browser, install it, then tap this button again — the splash screen still waits 3 seconds without it.</string>
+    <string name="tweaks_restore_tool_why">Reinstalls every app uninstalled for this user; works on every ROM.</string>
 </resources>
