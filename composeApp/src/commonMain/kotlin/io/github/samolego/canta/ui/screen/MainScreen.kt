@@ -223,6 +223,8 @@ private fun AppsTabs(pagerState: PagerState) {
             )
         },
         selectedIndex = pagerState.currentPage,
+        // The thumb rides a swipe as it happens, and the page animation carries it on a tap.
+        position = pagerState.currentPage + pagerState.currentPageOffsetFraction,
         onSelect = { index -> coroutineScope.launch { pagerState.animateScrollToPage(index) } },
     )
 }

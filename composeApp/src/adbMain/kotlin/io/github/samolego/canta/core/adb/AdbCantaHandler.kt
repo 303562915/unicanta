@@ -121,7 +121,13 @@ abstract class AdbCantaHandler(private val transport: AdbTransport) : CantaHandl
             // The transports hand the string to the device shell, which runs it with `sh -c`, so
             // a multi-line script needs no extra quoting here.
             val result = transport.shell(script)
-            TweakRun(ok = result.exitCode == 0, output = listOf(result.stdout, result.stderr).filter { it.isNotBlank() }.joinToString("\n").trim())
+            TweakRun(
+                ok = result.exitCode == 0,
+                output = listOf(result.stdout, result.stderr)
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n")
+                    .trim(),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

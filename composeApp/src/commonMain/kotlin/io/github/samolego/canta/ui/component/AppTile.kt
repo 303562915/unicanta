@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -67,13 +68,11 @@ fun AppTile(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        elevation =
-                CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 0.dp),
-        border =
-                if (showBorder) {
-                    BorderStroke(1.5.dp, checkedColor)
-                } else null,
+        // Flat cards on the page's own surface, with selection carried by the fill and the
+        // checkbox: the rest of the app draws its cards this way, so the list matches.
+        shape = MaterialTheme.shapes.small,
+        elevation = null,
+        border = if (showBorder) BorderStroke(1.dp, checkedColor) else null,
         colors =
                 CardDefaults.cardColors(
                     containerColor =
@@ -81,7 +80,7 @@ fun AppTile(
                                 checkedBackgroundColor
                             } else {
                                 MaterialTheme.colorScheme
-                                    .surface
+                                    .surfaceContainerLow
                                     .copy(alpha = if (enabled) 1f else 0.5f)
                             }
                 ),
@@ -104,6 +103,7 @@ fun AppTile(
                 Text(
                     text = appInfo.name,
                     style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

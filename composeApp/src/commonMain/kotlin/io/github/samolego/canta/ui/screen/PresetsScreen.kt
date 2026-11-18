@@ -118,10 +118,7 @@ fun PresetsScreen(
 
     Scaffold(
         topBar = {
-            ScreenTopBar(
-                onNavigateBack = { onNavigateBack(null) },
-                title = stringResource(Res.string.presets),
-            )
+            ScreenTopBar(title = stringResource(Res.string.presets))
         },
         floatingActionButton = {
             if (presets.isNotEmpty()) {

@@ -1,16 +1,20 @@
 package io.github.samolego.canta.ui.fl
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,20 +25,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** One choice of a segmented control. */
 data class FlSegment(val key: String, val label: String, val glyph: FlGlyph? = null)
 
+/** A pill: the track and its thumb both round to half their height. */
+private val Stadium = RoundedCornerShape(percent = 50)
+
+private val SegmentHeight = 38.dp
+private val ThumbInset = 4.dp
+
 /**
- * FlClash's segmented control: a track on the raised surface with the selected choice
- * drawn on a thumb that slides, not an underline. A page's switch between two lists
- * reads as one of these.
+ * FlClash's segmented control: a groove on the page, with the selected choice on a thumb
+ * that slides between slots, casts a soft shadow, and carries the emphasis of its label.
+ * A switch between two lists reads as one control instead of two underlined tabs.
+ *
+ * [position] is where the thumb stands in slots, so a swipe that is halfway between two
+ * choices leaves the thumb halfway too; it defaults to [selectedIndex], for a control
+ * with no gesture to follow.
  */
 @Composable
 fun FlSegmentedControl(
@@ -42,41 +58,44 @@ fun FlSegmentedControl(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    position: Float = selectedIndex.toFloat(),
 ) {
     if (segments.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
-    val track = FlSurfaceLevel.Page.raised.colorOf(scheme)
-    val thumb = FlSurfaceLevel.Page.colorOf(scheme)
-    val shape = RoundedCornerShape(percent = 50)
-    // The thumb springs between choices, so a tap reads as one movement.
-    val position by animateFloatAsState(
-        targetValue = selectedIndex.toFloat(),
-        animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
-        label = "segment-thumb",
-    )
+    val dark = scheme.isDark
+    // A groove under the page, and a thumb lifted out of it with a shadow.
+    val track = if (dark) scheme.surfaceContainerLow else scheme.surfaceContainerHighest
+    val thumb = if (dark) scheme.surfaceContainerHigh else scheme.surfaceBright
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .height(38.dp)
-            .clip(shape)
+            .height(SegmentHeight)
             .drawBehind {
-                drawRect(track)
-                val count = segments.size.toFloat()
-                val slot = size.width / count
-                val inset = 3.dp.toPx()
-                val left = position * slot + inset
                 drawRoundRect(
-                    color = thumb,
-                    topLeft = Offset(left, inset),
-                    size = Size(slot - inset * 2f, size.height - inset * 2f),
-                    cornerRadius = CornerRadius((size.height - inset * 2f) / 2f),
+                    color = track,
+                    cornerRadius = CornerRadius(size.height / 2f),
                 )
             },
     ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val slot: Dp = maxWidth / segments.size
+            Box(
+                modifier = Modifier
+                    .offset(
+                        x = slot * position.coerceIn(0f, (segments.size - 1).toFloat()) + ThumbInset,
+                        y = ThumbInset,
+                    )
+                    .width(slot - ThumbInset * 2)
+                    .height(SegmentHeight - ThumbInset * 2)
+                    .shadow(elevation = 5.dp, shape = Stadium, clip = false)
+                    .clip(Stadium)
+                    .background(thumb),
+            )
+        }
         Row(
-            modifier = Modifier.fillMaxWidth().height(38.dp),
+            modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             segments.forEachIndexed { index, segment ->
@@ -88,8 +107,8 @@ fun FlSegmentedControl(
                 Row(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .height(38.dp)
+                        .fillMaxSize()
+                        .semantics(mergeDescendants = true) { this.selected = selected }
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -99,20 +118,20 @@ fun FlSegmentedControl(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (segment.glyph != null) {
+                    val glyph = segment.glyph
+                    if (glyph != null) {
                         FlGlyphIcon(
-                            glyph = segment.glyph,
-                            size = 18.dp,
+                            glyph = glyph,
+                            size = 17.dp,
                             tint = color,
                             fill = if (selected) 1f else 0f,
                         )
-                        Box(Modifier.padding(start = 6.dp))
+                        Box(Modifier.size(6.dp))
                     }
                     Text(
                         text = segment.label,
-                        style = FlText.footnote.copy(
-                            fontWeight = if (selected) FlText.emphasized else null,
-                        ),
+                        style = FlText.footnote,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                         color = color,
                         maxLines = 1,
                     )
@@ -120,16 +139,4 @@ fun FlSegmentedControl(
             }
         }
     }
-}
-
-/** A label drawn in the color a status uses, for a caption that has to stand out. */
-@Composable
-fun FlStatusText(text: String, color: Color, modifier: Modifier = Modifier) {
-    Text(
-        text = text,
-        modifier = modifier,
-        style = FlText.footnote,
-        color = color,
-        maxLines = 1,
-    )
 }

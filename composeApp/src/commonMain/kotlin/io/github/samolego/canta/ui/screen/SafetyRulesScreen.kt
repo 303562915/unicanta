@@ -34,8 +34,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -88,6 +86,8 @@ import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.util.DeviceIdentity
@@ -227,22 +227,15 @@ fun SafetyRulesScreen(
     Scaffold(
         topBar = {
             Column {
-                ScreenTopBar(
-                    onNavigateBack = onNavigateBack,
-                    title = stringResource(Res.string.rules_title),
+                ScreenTopBar(title = stringResource(Res.string.rules_title))
+                FlSegmentedControl(
+                    segments = listOf(
+                        FlSegment("apps", stringResource(Res.string.safety_tab_apps)),
+                        FlSegment("plans", stringResource(Res.string.safety_tab_plans)),
+                    ),
+                    selectedIndex = tab,
+                    onSelect = { tab = it },
                 )
-                TabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.surface) {
-                    Tab(
-                        selected = tab == 0,
-                        onClick = { tab = 0 },
-                        text = { Text(stringResource(Res.string.safety_tab_apps), fontSize = 13.sp) },
-                    )
-                    Tab(
-                        selected = tab == 1,
-                        onClick = { tab = 1 },
-                        text = { Text(stringResource(Res.string.safety_tab_plans), fontSize = 13.sp) },
-                    )
-                }
             }
         },
     ) { padding ->

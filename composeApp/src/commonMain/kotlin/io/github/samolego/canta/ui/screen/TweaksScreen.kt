@@ -199,7 +199,7 @@ fun TweaksScreen(
 
     Scaffold(
         topBar = {
-            ScreenTopBar(onNavigateBack = onNavigateBack, title = stringResource(Res.string.tweaks_title))
+            ScreenTopBar(title = stringResource(Res.string.tweaks_title))
         },
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {

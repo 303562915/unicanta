@@ -122,7 +122,7 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            ScreenTopBar(onNavigateBack = onNavigateBack, title = stringResource(Res.string.settings))
+            ScreenTopBar(title = stringResource(Res.string.settings))
         }
     ) { padding ->
         Column(
