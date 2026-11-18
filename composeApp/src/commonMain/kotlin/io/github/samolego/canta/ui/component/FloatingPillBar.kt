@@ -267,7 +267,7 @@ fun FloatingPillBar(
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val pad = BarPadding.value * density.density
                 val span = constraints.maxWidth.toFloat() - pad * 2
-                val minLens = MinLensWidth.value * density.density
+                val minLens = MinLensWidth * density.density
                 val layout = remember(span, items.size, pad, minLens) {
                     dockLayout(span, items.size, pad, minLens)
                 }
