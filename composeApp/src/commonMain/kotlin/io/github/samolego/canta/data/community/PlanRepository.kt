@@ -47,8 +47,53 @@ data class CommunityPlan(
 /** Id of the local "test upload" row: never a server id, so it can be told apart. */
 const val TEST_PLAN_ID: Long = -1L
 
-/** A comment under a plan. */
-data class PlanComment(val author: String, val body: String, val createdAt: String)
+/**
+ * A comment under a plan or an app page.
+ *
+ * [replyTo] is what makes a thread: 0 for the comment that starts the conversation, the starter's
+ * [id] for an answer to it. A backend that predates the thread table sends neither id nor parent,
+ * which is why both default to 0 and the row still reads as a plain comment.
+ */
+data class PlanComment(
+    val author: String,
+    val body: String,
+    val createdAt: String,
+    /** The comment's own id; 0 when the server did not send one. */
+    val id: Long = 0L,
+    /** The comment this one answers; 0 when it starts a thread. */
+    val replyTo: Long = 0L,
+    /** How many answers hang under this comment. */
+    val replies: Int = 0,
+)
+
+/**
+ * What people said about removing one package: "it was fine" against "it broke something".
+ *
+ * Two scopes at once, because both are worth seeing: [canRemove]/[cannotRemove] only count the
+ * votes cast on this model and ROM version, the `all` ones count every device.
+ */
+data class PackageVotes(
+    val canRemove: Int = 0,
+    val cannotRemove: Int = 0,
+    val allCanRemove: Int = 0,
+    val allCannotRemove: Int = 0,
+) {
+    /** Votes on this device. */
+    val total: Int get() = canRemove + cannotRemove
+
+    /** Votes on every device. */
+    val allTotal: Int get() = allCanRemove + allCannotRemove
+
+    /** Share of "this can go" on this device, null while nobody voted. */
+    val share: Float? get() = if (total == 0) null else canRemove.toFloat() / total
+
+    /** Share of "this can go" across all devices, null while nobody voted. */
+    val allShare: Float? get() = if (allTotal == 0) null else allCanRemove.toFloat() / allTotal
+
+    companion object {
+        val EMPTY = PackageVotes()
+    }
+}
 
 /**
  * An identity as the backend knows it: the token it resolves to, the number it owns, and the
@@ -261,28 +306,209 @@ class PlanRepository(
         return rpc("plan_vote", body)?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.longOrNull?.toInt() }.getOrNull() }
     }
 
-    suspend fun comments(planId: Long): List<PlanComment> {
-        val body = buildJsonObject { put("p_id", planId) }.toString()
-        val text = rpc("plan_comments_for", body) ?: return emptyList()
+    /**
+     * What people say about removing [pkg]: this device's votes and everybody's, in one call.
+     * Null when the backend cannot be reached (or the table is not there yet).
+     */
+    suspend fun packageVotes(pkg: String, profile: DeviceProfile?): PackageVotes? {
+        val body = buildJsonObject {
+            put("p_pkg", pkg)
+            put("p_model", profile?.model.orEmpty())
+            put("p_codename", profile?.device.orEmpty())
+            put("p_rom", profile?.rom.orEmpty())
+            put("p_rom_version", profile?.romVersion ?: 0)
+        }.toString()
+        val text = rpc("package_vote_counts", body) ?: return null
+        return parseVotes(text)
+    }
+
+    /**
+     * Records that [voter] says [canRemove] about [pkg] on this device, and answers the fresh
+     * counts. Voting again replaces the earlier vote, so the same call changes someone's mind.
+     */
+    suspend fun votePackage(
+        pkg: String,
+        voter: String,
+        canRemove: Boolean,
+        profile: DeviceProfile?,
+    ): PackageVotes? {
+        if (voter.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_pkg", pkg)
+            put("p_voter", voter)
+            put("p_can_remove", canRemove)
+            put("p_brand", profile?.brand.orEmpty())
+            put("p_model", profile?.model.orEmpty())
+            put("p_codename", profile?.device.orEmpty())
+            put("p_rom", profile?.rom.orEmpty())
+            put("p_rom_version", profile?.romVersion ?: 0)
+            put("p_sdk", profile?.sdk ?: 0)
+        }.toString()
+        val text = rpc("package_vote", body) ?: return null
+        return parseVotes(text)
+    }
+
+    private fun parseVotes(text: String): PackageVotes? = runCatching {
+        val o = json.parseToJsonElement(text).jsonObject
+        PackageVotes(
+            canRemove = o["yes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            cannotRemove = o["no"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            allCanRemove = o["all_yes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            allCannotRemove = o["all_no"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+        )
+    }.getOrNull()
+
+    // ---------------------------------------------------------------- comments
+
+    /**
+     * The thread of one plan, newest first.
+     *
+     * A backend that predates the shared comment table only knows `plan_comments_for`: falling back
+     * to it keeps an older deployment readable instead of showing an empty thread.
+     */
+    suspend fun comments(planId: Long): List<PlanComment> =
+        commentsFor(COMMENT_KIND_PLAN, planId.toString())
+
+    /** The thread of one app's page, newest first. */
+    suspend fun appComments(packageName: String): List<PlanComment> =
+        commentsFor(COMMENT_KIND_APP, packageName)
+
+    private suspend fun commentsFor(kind: String, target: String): List<PlanComment> {
+        if (target.isEmpty()) return emptyList()
+        val body = buildJsonObject {
+            put("p_kind", kind)
+            put("p_target", target)
+        }.toString()
+        rpc("comments_for", body)?.let { text -> return parseComments(text) }
+        if (kind != COMMENT_KIND_PLAN) return emptyList()
+        val planId = target.toLongOrNull() ?: return emptyList()
+        val legacy = rpc("plan_comments_for", buildJsonObject { put("p_id", planId) }.toString())
+            ?: return emptyList()
+        return parseComments(legacy)
+    }
+
+    private fun parseComments(text: String): List<PlanComment> = runCatching {
+        json.parseToJsonElement(text).jsonArray.map { element ->
+            val o = element.jsonObject
+            PlanComment(
+                author = o["author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                body = o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                replyTo = o["parent_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            )
+        }
+    }.getOrElse { emptyList() }
+
+    /**
+     * Posts one comment, or one answer to [replyTo], and answers its id — null when the backend did
+     * not take it.
+     *
+     * [author] is the name the page shows next to the avatar; [authorId] is the identity number
+     * behind it, which is what keeps the comment deleteable after the user renames themselves.
+     */
+    suspend fun comment(
+        kind: String,
+        target: String,
+        body: String,
+        author: String,
+        authorId: String = "",
+        replyTo: Long = 0L,
+    ): Long? {
+        if (target.isEmpty() || body.isBlank()) return null
+        val payload = buildJsonObject {
+            put("p_kind", kind)
+            put("p_target", target)
+            put("p_body", body)
+            put("p_author", author)
+            put("p_author_id", authorId)
+            if (replyTo > 0L) put("p_parent", replyTo)
+        }.toString()
+        return rpc("comment_add", payload)
+            ?.let { text -> runCatching { json.parseToJsonElement(text).jsonPrimitive.longOrNull }.getOrNull() }
+    }
+
+    /** A comment on plan [planId]. */
+    suspend fun commentOnPlan(
+        planId: Long,
+        body: String,
+        author: String,
+        authorId: String = "",
+        replyTo: Long = 0L,
+    ): Long? = comment(COMMENT_KIND_PLAN, planId.toString(), body, author, authorId, replyTo)
+
+    /** A comment on the page of [pkg]. */
+    suspend fun commentOnApp(
+        pkg: String,
+        body: String,
+        author: String,
+        authorId: String = "",
+        replyTo: Long = 0L,
+    ): Long? = comment(COMMENT_KIND_APP, pkg, body, author, authorId, replyTo)
+
+    /**
+     * Deletes one comment this install wrote. [owner] is the identity number and [token] the
+     * secret that proves it, exactly like [delete]: somebody else's comment — or a guessed number —
+     * deletes nothing.
+     */
+    suspend fun deleteComment(id: Long, owner: String, token: String): Boolean {
+        if (id <= 0L || owner.isEmpty() || token.isEmpty()) return false
+        val body = buildJsonObject {
+            put("p_id", id)
+            put("p_owner", owner)
+            put("p_token", token)
+        }.toString()
+        return rpc("comment_delete", body)
+            ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.booleanOrNull }.getOrNull() } == true
+    }
+
+    /**
+     * Everything [owner] wrote — comments and answers alike — newest first. [owner] is the identity
+     * number, not the display name: renaming yourself must not lose the list.
+     */
+    suspend fun myComments(owner: String): List<MyComment> {
+        if (owner.isEmpty()) return emptyList()
+        val text = rpc("comments_by_author", buildJsonObject { put("p_owner", owner) }.toString())
+            ?: return emptyList()
         return runCatching {
-            json.parseToJsonElement(text).jsonArray.map {
-                val o = it.jsonObject
-                PlanComment(
+            json.parseToJsonElement(text).jsonArray.map { element ->
+                val o = element.jsonObject
+                MyComment(
+                    id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    kind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    target = o["target"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    author = "",
+                    body = o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                )
+            }
+        }.getOrElse { emptyList() }
+    }
+
+    /** The answers other people left under [owner]'s comments, newest first. */
+    suspend fun repliesToMe(owner: String): List<MyComment> {
+        if (owner.isEmpty()) return emptyList()
+        val text = rpc("comments_replies_to", buildJsonObject { put("p_owner", owner) }.toString())
+            ?: return emptyList()
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.map { element ->
+                val o = element.jsonObject
+                MyComment(
+                    id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    kind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    target = o["target"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     author = o["author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     body = o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    parentBody = o["parent_body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    parentId = o["parent_id"]?.jsonPrimitive?.longOrNull ?: 0L,
                 )
             }
-        }.getOrDefault(emptyList())
-    }
-
-    suspend fun comment(planId: Long, body: String, author: String): Boolean {
-        val payload = buildJsonObject {
-            put("p_id", planId)
-            put("p_body", body)
-            put("p_author", author)
-        }.toString()
-        return rpc("plan_comment", payload) != null
+        }.getOrElse { emptyList() }
     }
 }
 

@@ -37,7 +37,7 @@ fun ExplainBadgesDialog(
                 Row(modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
                     Box(modifier = Modifier.weight(2f)) { AppBadge(type = badgeInfo) }
                     Text(
-                        badgeInfo.description,
+                        text = stringResource(badgeInfo.description),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(3f)
                     )

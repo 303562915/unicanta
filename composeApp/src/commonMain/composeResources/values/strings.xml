@@ -43,6 +43,25 @@
     <string name="no_apps_found">No apps found</string>
     <string name="loading_apps">Loading apps</string>
     <string name="badge_info">Badge info</string>
+    <string name="badge_recommended_code">rec</string>
+    <string name="badge_recommended_name">Recommended</string>
+    <string name="badge_recommended_description">Pointless or outright negative packages, and/or apps available through Google Play.</string>
+    <string name="badge_advanced_code">adv</string>
+    <string name="badge_advanced_name">Advanced</string>
+    <string name="badge_advanced_description">Breaks obscure or minor parts of functionality, or apps that aren't easily enabled/installed through Settings/Google Play. This category is also used for apps that are useful (default keyboard/gallery/launcher/music app.) but that can easily be replaced by a better alternative.</string>
+    <string name="badge_expert_code">exp</string>
+    <string name="badge_expert_name">Expert</string>
+    <string name="badge_expert_description">Breaks widespread and/or important functionality, but nothing important to the basic operation of the operating system. Removing an 'Expert' package should not bootloop the device (unless mentioned in the description) but we can't guarantee it 100%.</string>
+    <string name="badge_unsafe_code">no</string>
+    <string name="badge_unsafe_name">Unsafe</string>
+    <string name="badge_unsafe_description">Can break vital parts of the operating system. Removing an 'Unsafe' package have an extremely high risk of bootlooping your device.</string>
+    <string name="badge_system_code">sys</string>
+    <string name="badge_system_name">System</string>
+    <string name="badge_system_description">System apps are apps that come pre-installed with your device.</string>
+    <string name="filter_any">Any</string>
+    <string name="filter_user">User</string>
+    <string name="filter_unclassified">Unclassified</string>
+    <string name="filter_disabled">Disabled</string>
     <string name="got_it">Got it</string>
     <string name="loading_badges">Loading badges ...</string>
     <string name="logs">Logs</string>
@@ -163,7 +182,7 @@
     >Tap %1$d more times to enable select all functionality.</string>
     <string
         name="select_all_enabled"
-    >Select all has been enabled for filter type "Recommended".</string>
+    >Select all has been enabled for filter type "%1$s".</string>
     <string name="reset_to_factory_version">Reset to factory version</string>
     <string name="import_preset">Import preset</string>
     <string

@@ -32,6 +32,8 @@ private data class AppNotesBlob(
     val reviews: Map<String, List<AppReview>> = emptyMap(),
     val likedPackages: List<String> = emptyList(),
     val likedPlans: List<Long> = emptyList(),
+    /** What this install said about removing a package: true = fine without it, false = it broke something. */
+    val packageVerdicts: Map<String, Boolean> = emptyMap(),
 )
 
 /**
@@ -48,6 +50,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     private val _reviews = MutableStateFlow<Map<String, List<AppReview>>>(emptyMap())
     private val _likedPackages = MutableStateFlow<Set<String>>(emptySet())
     private val _likedPlans = MutableStateFlow<Set<Long>>(emptySet())
+    private val _packageVerdicts = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 
     /** Reviews by package name, newest first. */
     val reviews: StateFlow<Map<String, List<AppReview>>> = _reviews.asStateFlow()
@@ -57,6 +60,13 @@ class AppNoteStore(private val storage: AppBlobStorage) {
 
     /** Plans this install liked. */
     val likedPlans: StateFlow<Set<Long>> = _likedPlans.asStateFlow()
+
+    /**
+     * What this install last said about each package: true = the phone was fine without it,
+     * false = removing it broke something. Kept locally so the button shows the choice back,
+     * and so the vote survives the backend being unreachable.
+     */
+    val packageVerdicts: StateFlow<Map<String, Boolean>> = _packageVerdicts.asStateFlow()
 
     private var loaded = false
 
@@ -69,6 +79,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
                 _reviews.value = blob.reviews
                 _likedPackages.value = blob.likedPackages.toSet()
                 _likedPlans.value = blob.likedPlans.toSet()
+                _packageVerdicts.value = blob.packageVerdicts
             }
         }
         loaded = true
@@ -115,11 +126,33 @@ class AppNoteStore(private val storage: AppBlobStorage) {
         }
     }
 
+    /**
+     * Stores what this install says about removing [pkg]: true = the phone was fine without it,
+     * false = it broke something. Voting again simply replaces the earlier answer, matching the
+     * one-vote-per-install the backend keeps.
+     */
+    suspend fun setPackageVerdict(pkg: String, canRemove: Boolean) {
+        ensureLoaded()
+        mutex.withLock {
+            val updated = _packageVerdicts.value.toMutableMap()
+            updated[pkg] = canRemove
+            _packageVerdicts.value = updated
+            persistLocked()
+        }
+    }
+
+    /** What this install said about [pkg], or null when it never voted. */
+    suspend fun packageVerdict(pkg: String): Boolean? {
+        ensureLoaded()
+        return _packageVerdicts.value[pkg]
+    }
+
     private suspend fun persistLocked() {
         val blob = AppNotesBlob(
             reviews = _reviews.value,
             likedPackages = _likedPackages.value.toList(),
             likedPlans = _likedPlans.value.toList(),
+            packageVerdicts = _packageVerdicts.value,
         )
         runCatching {
             storage.write(json.encodeToString(AppNotesBlob.serializer(), blob).encodeToByteArray())

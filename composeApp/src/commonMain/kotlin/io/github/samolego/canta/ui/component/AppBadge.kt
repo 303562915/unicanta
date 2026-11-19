@@ -32,8 +32,8 @@ import androidx.compose.ui.unit.sp
 fun AppBadge(type: AppBadgeInfo) {
     AppBadgeContent(
         // The short code, not the whole word: the badge shares a line with the package name.
-        label = type.code,
-        description = type.name,
+        label = stringResource(type.code),
+        description = stringResource(type.nameRes),
         icon = type.icon,
         color = type.badgeColor
     )

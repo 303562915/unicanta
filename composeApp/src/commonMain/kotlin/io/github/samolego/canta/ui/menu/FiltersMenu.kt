@@ -64,7 +64,7 @@ fun FiltersMenu(
 
         // Filter submenu trigger
         FilterChip(
-                text = appListViewModel.selectedFilter.name,
+                text = stringResource(appListViewModel.selectedFilter.label),
                 isSelected = filtersMenu,
                 onClick = { filtersMenu = !filtersMenu },
                 trailingContent = {
@@ -79,7 +79,7 @@ fun FiltersMenu(
         if (filtersMenu) {
             Filter.availableFilters.forEach { filter ->
                 FilterChip(
-                        text = filter.name,
+                        text = stringResource(filter.label),
                         isSelected = appListViewModel.selectedFilter == filter,
                         onClick = {
                             appListViewModel.selectedFilter = filter

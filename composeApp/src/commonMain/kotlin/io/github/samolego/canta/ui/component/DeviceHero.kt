@@ -46,7 +46,7 @@ import org.jetbrains.compose.resources.stringResource
 import io.ktor.client.call.body
 
 /** How tall the picture of the phone is at the top of the plans page. */
-private val HERO_HEIGHT = 150.dp
+private val HERO_HEIGHT = 120.dp
 
 /** Where the picture comes from. Wikimedia Commons is the one public source that can be searched
  *  by model name and hot-linked without a key, so the app ships no per-model image list. */

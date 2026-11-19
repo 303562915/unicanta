@@ -35,6 +35,7 @@ import io.github.samolego.canta.core.CantaAppDependencies
 import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.select_all_enabled
 import io.github.samolego.canta.generated.resources.select_all_tip
@@ -264,7 +265,12 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                         coroutineScope.launch {
                             when {
                                 versionTapCounter == SECRET_TAPS ->
-                                    platform.showMessage(getString(Res.string.select_all_enabled))
+                                    platform.showMessage(
+                                        getString(
+                                            Res.string.select_all_enabled,
+                                            getString(Res.string.badge_recommended_name),
+                                        )
+                                    )
                                 versionTapCounter in (SECRET_TAPS_HINT_AFTER + 1)..<SECRET_TAPS ->
                                     platform.showMessage(getString(Res.string.select_all_tip, SECRET_TAPS - versionTapCounter))
                             }
@@ -347,9 +353,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     }.orEmpty()
                 var appProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 var appAuthor by remember { mutableStateOf("") }
+                // Who the vote is recorded under: the number this install owns, or its token's
+                // head before the backend has given it one.
+                var appVoter by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
                     appProfile = handler.deviceProfile()
                     appAuthor = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    appVoter = identity.owner.ifEmpty { identity.token.take(16) }
                 }
                 AppDetailScreen(
                     packageName = packageName,
@@ -358,6 +369,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     notes = deps.notes,
                     author = appAuthor,
                     onNavigateBack = { navController.navigateUp() },
+                    repository = communityRepository,
+                    voter = appVoter,
                 )
             }
         }

@@ -7,23 +7,24 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -32,18 +33,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.AppReview
+import io.github.samolego.canta.data.community.PackageVotes
+import io.github.samolego.canta.data.community.PlanComment
+import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
-import io.github.samolego.canta.ui.fl.FlBarButton
+import io.github.samolego.canta.ui.component.commentThreads
+import io.github.samolego.canta.ui.dialog.CantaDialog
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
@@ -54,14 +63,27 @@ import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.DeviceProfile
 import kotlinx.coroutines.launch
 
+/** Green for "the phone was fine without it", the colour of a pass. */
+private val CAN_REMOVE = Color(0xFF2FA84F)
+
+/** Red for "removing it broke something". */
+private val CANNOT_REMOVE = Color(0xFFE0453B)
+
+/** Height of the two-sided vote bar. */
+private val VOTE_BAR = 10.dp
+
 /**
  * One app's own page: what it is, whether this phone can live without it, and what other
  * owners of the same phone said about removing it.
  *
- * The verdict on this page is the community's: a like means "this can go", which is the
- * same meaning a like has in the uninstall ranking. Reviews carry the phone they were
- * written on — a note from another model says nothing about yours, so it is shown as
- * context rather than as advice.
+ * The vote is two-sided: people say either "the phone was fine without it" (green) or "removing
+ * it broke something" (red), and the bar shows both sides at once. Votes are counted twice — on
+ * this exact model and ROM version, and on every device — and the page lets the reader switch
+ * between the two, because a verdict from a different ROM is context, not advice.
+ *
+ * The comments below the vote are the same thread a plan has: anybody can answer anybody, the
+ * install can delete what it wrote, and a review written here is kept on the device as well, so it
+ * is still readable when the backend cannot be reached.
  */
 @Composable
 fun AppDetailScreen(
@@ -71,43 +93,108 @@ fun AppDetailScreen(
     notes: AppNoteStore,
     author: String,
     onNavigateBack: () -> Unit,
+    /** The community backend; null keeps the vote and the reviews local. */
+    repository: PlanRepository? = null,
+    /** Who the vote and the comments are recorded under: this install's identity number. */
+    voter: String = "",
+    /** This install's secret, needed to delete a comment it wrote. */
+    token: String = "",
 ) {
     val scope = rememberCoroutineScope()
     var reviews by remember { mutableStateOf<List<AppReview>>(emptyList()) }
-    var liked by remember { mutableStateOf(false) }
-    var likes by remember { mutableStateOf(0) }
+    var comments by remember { mutableStateOf<List<PlanComment>>(emptyList()) }
     var draft by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var submitFailed by remember { mutableStateOf(false) }
+    /** The comment being answered; null while the composer writes a new one. */
+    var replyTo by remember { mutableStateOf<PlanComment?>(null) }
+    var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
+    // What this install said about the app, and what everybody else said.
+    var mine by remember { mutableStateOf<Boolean?>(null) }
+    var votes by remember { mutableStateOf(PackageVotes.EMPTY) }
+    var voting by remember { mutableStateOf(false) }
+    // 0 = this phone only, 1 = every device.
+    var voteScope by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(packageName) {
         reviews = notes.reviewsOf(packageName)
-        liked = packageName in notes.likedPackages.value
-        // The count starts from this install's own verdict; the ranking adds the rest.
-        likes = if (liked) 1 else 0
+        mine = notes.packageVerdict(packageName)
+        votes = repository?.packageVotes(packageName, profile) ?: PackageVotes.EMPTY
+        comments = repository?.appComments(packageName).orEmpty()
     }
 
-    val toggleLike: () -> Unit = {
-        scope.launch {
-            liked = notes.togglePackageLike(packageName)
-            likes = if (liked) 1 else 0
+    val castVote: (Boolean) -> Unit = { canRemove ->
+        if (!voting) {
+            scope.launch {
+                voting = true
+                mine = canRemove
+                notes.setPackageVerdict(packageName, canRemove)
+                repository?.votePackage(packageName, voter, canRemove, profile)?.let { fresh ->
+                    votes = fresh
+                }
+                voting = false
+            }
         }
     }
 
     val send: () -> Unit = {
         val body = draft.trim()
-        if (body.isNotEmpty()) {
-            val review = AppReview(
-                author = author.ifEmpty { "u-anon" },
-                body = body,
-                model = profile?.displayModel.orEmpty(),
-                sdk = profile?.sdk ?: 0,
-                createdAt = "",
-                removable = liked,
-            )
+        if (body.isNotEmpty() && !sending) {
+            val signature = author.ifEmpty { "u-anon" }
             scope.launch {
-                notes.addReview(packageName, review)
+                sending = true
+                // The device copy first: a review written offline is still this install's, and it
+                // is what the page falls back to while the community thread is out of reach.
+                notes.addReview(
+                    packageName,
+                    AppReview(
+                        author = signature,
+                        body = body,
+                        model = profile?.displayModel.orEmpty(),
+                        sdk = profile?.sdk ?: 0,
+                        createdAt = "",
+                        removable = mine == true,
+                    ),
+                )
                 reviews = notes.reviewsOf(packageName)
-                draft = ""
+                val posted = repository?.commentOnApp(
+                    pkg = packageName,
+                    body = body,
+                    author = signature,
+                    replyTo = replyTo?.id ?: 0L,
+                )
+                submitFailed = repository != null && posted == null
+                if (!submitFailed) {
+                    draft = ""
+                    replyTo = null
+                    comments = repository?.appComments(packageName).orEmpty()
+                }
+                sending = false
             }
+        }
+    }
+
+    pendingDelete?.let { comment ->
+        CantaDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = "删除评论",
+            buttons = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                TextButton(onClick = {
+                    pendingDelete = null
+                    scope.launch {
+                        repository?.deleteComment(comment.id, author, token)
+                        comments = repository?.appComments(packageName).orEmpty()
+                    }
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        ) {
+            Text(
+                text = "「${comment.body.take(40)}」会被删除，它下面的回复一起去掉。",
+                fontSize = 12.sp,
+            )
         }
     }
 
@@ -116,28 +203,70 @@ fun AppDetailScreen(
             ScreenTopBar(
                 title = app?.name ?: packageName,
                 onNavigateBack = onNavigateBack,
-                actions = {
-                    FlBarButton(
-                        glyph = if (liked) FlGlyphs.checkCircle else FlGlyphs.check,
-                        contentDescription = if (liked) "已标记可卸载" else "标记为可卸载",
-                        selected = liked,
-                        onClick = toggleLike,
-                    )
+            )
+        },
+        bottomBar = {
+            CommentComposer(
+                draft = draft,
+                onDraftChange = {
+                    draft = it
+                    if (submitFailed) submitFailed = false
                 },
+                onSend = send,
+                replyToName = replyTo?.author.orEmpty(),
+                onCancelReply = { replyTo = null },
+                sending = sending,
+                failed = submitFailed,
+                hint = "写一条评价…",
+                failLabel = "发送失败，检查一下网络再试",
             )
         },
     ) { padding ->
-        // A box so the composer can sit at the foot of the page, over the list, the way a
-        // message field does.
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        val threads = remember(comments) { comments.threads() }
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 120.dp),
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(bottom = 16.dp),
         ) {
-            item { AppHero(app = app, packageName = packageName, likes = likes, liked = liked, onToggleLike = toggleLike) }
+            item {
+                AppHero(
+                    app = app,
+                    packageName = packageName,
+                    votes = votes,
+                    scope = voteScope,
+                    onScopeChange = { voteScope = it },
+                    profile = profile,
+                    mine = mine,
+                    voting = voting,
+                    onVote = castVote,
+                )
+            }
             item { SectionHeading("评价") }
-            if (reviews.isEmpty()) {
-                item {
+            when {
+                threads.isNotEmpty() -> commentThreads(
+                    threads = threads,
+                    me = author,
+                    onReply = { comment ->
+                        replyTo = comment
+                        submitFailed = false
+                    },
+                    onDelete = { comment -> pendingDelete = comment },
+                )
+
+                // Nothing from the community: what this install wrote itself is still worth
+                // showing, and it is all there is until the thread loads again.
+                reviews.isNotEmpty() -> {
+                    item {
+                        Text(
+                            text = "还没有别人评价这个应用，下面是本机写过的：",
+                            style = FlText.caption2,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                    }
+                    items(reviews) { review -> ReviewRow(review) }
+                }
+
+                else -> item {
                     Text(
                         text = "还没有人评价这个应用。写一条，告诉别人它在你的机型上是什么样。",
                         style = FlText.footnote,
@@ -146,27 +275,22 @@ fun AppDetailScreen(
                     )
                 }
             }
-            items(reviews) { review -> ReviewRow(review) }
-        }
-
-        ReviewComposer(
-            draft = draft,
-            onDraftChange = { draft = it },
-            onSend = send,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
         }
     }
 }
 
-/** The app itself: icon, name, package, version, size, and the verdict with its count. */
+/** The app itself: icon, name, package, version, size, and the two-sided vote about removing it. */
 @Composable
 private fun AppHero(
     app: AppInfo?,
     packageName: String,
-    likes: Int,
-    liked: Boolean,
-    onToggleLike: () -> Unit,
+    votes: PackageVotes,
+    scope: Int,
+    onScopeChange: (Int) -> Unit,
+    profile: DeviceProfile?,
+    mine: Boolean?,
+    voting: Boolean,
+    onVote: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -219,7 +343,7 @@ private fun AppHero(
                 AppBadge(badge)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = badge.description,
+                    text = stringResource(badge.description),
                     style = FlText.caption1,
                     color = scheme.onSurfaceVariant,
                 )
@@ -240,36 +364,194 @@ private fun AppHero(
         }
 
         Spacer(Modifier.height(14.dp))
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(percent = 50))
-                .background(if (liked) scheme.primary else FlSurfaceLevel.Page.raised.colorOf(scheme))
-                .clickable(onClick = onToggleLike)
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FlGlyphIconInline(
-                glyph = if (liked) FlGlyphs.checkCircle else FlGlyphs.check,
-                tint = if (liked) scheme.onPrimary else scheme.onSurface,
+        VoteBlock(
+            votes = votes,
+            scope = scope,
+            onScopeChange = onScopeChange,
+            profile = profile,
+            mine = mine,
+            voting = voting,
+            onVote = onVote,
+        )
+    }
+}
+
+/**
+ * The two-sided vote: green "it was fine without it" against red "it broke something", as a bar,
+ * the two counts, the phone the counts are for, and the two buttons that cast this install's vote.
+ *
+ * [scope] picks which counts are shown: 0 is this model and ROM version, 1 is every device. Both
+ * are computed by the backend in one call, so switching costs nothing.
+ */
+@Composable
+private fun VoteBlock(
+    votes: PackageVotes,
+    scope: Int,
+    onScopeChange: (Int) -> Unit,
+    profile: DeviceProfile?,
+    mine: Boolean?,
+    voting: Boolean,
+    onVote: (Boolean) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val canRemove = if (scope == 0) votes.canRemove else votes.allCanRemove
+    val cannotRemove = if (scope == 0) votes.cannotRemove else votes.allCannotRemove
+    val total = canRemove + cannotRemove
+    val share = if (total == 0) 0f else canRemove.toFloat() / total
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Two pills instead of a segmented control: this sits inside the hero's own 16dp, and a
+        // control with its own padding would end up too narrow to read.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ScopePill(
+                label = "只看本机",
+                selected = scope == 0,
+                onClick = { onScopeChange(0) },
             )
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = if (liked) "已标记：可以卸载" else "标记：可以卸载",
-                style = FlText.footnote.copy(fontWeight = io.github.samolego.canta.ui.fl.FlText.emphasized),
-                color = if (liked) scheme.onPrimary else scheme.onSurface,
+            ScopePill(
+                label = "全部机型",
+                selected = scope == 1,
+                onClick = { onScopeChange(1) },
             )
-            if (likes > 0) {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "$likes",
-                    style = FlText.caption1,
-                    color = if (liked) scheme.onPrimary else scheme.onSurfaceVariant,
-                )
+        }
+
+        // The bar: one track, split by what people said. Green is left, red is right, and the
+        // split is the share of "can remove".
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp)
+                .height(VOTE_BAR)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(scheme.surfaceContainerHighest),
+        ) {
+            if (total > 0) {
+                if (canRemove > 0) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .weight(canRemove.toFloat())
+                            .background(CAN_REMOVE),
+                    )
+                }
+                if (cannotRemove > 0) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .weight(cannotRemove.toFloat())
+                            .background(CANNOT_REMOVE),
+                    )
+                }
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "$canRemove 人可以删",
+                style = FlText.caption1.copy(fontWeight = FontWeight.W600),
+                color = if (canRemove > 0) CAN_REMOVE else scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = if (total == 0) "还没有人投票" else "${(share * 100).toInt()}% 说可以删",
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "$cannotRemove 人不可以删",
+                style = FlText.caption1.copy(fontWeight = FontWeight.W600),
+                color = if (cannotRemove > 0) CANNOT_REMOVE else scheme.onSurfaceVariant,
+            )
+        }
+
+        // Which phone the counts above are for: the whole point of the device scope.
+        if (profile != null) {
+            Text(
+                text = if (scope == 0) profile.shortLabel() else "所有机型 · ${votes.allTotal} 票",
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            VoteButton(
+                label = if (mine == true) "我选：可以删" else "可以删",
+                color = CAN_REMOVE,
+                selected = mine == true,
+                enabled = !voting,
+                onClick = { onVote(true) },
+            )
+            Spacer(Modifier.width(10.dp))
+            VoteButton(
+                label = if (mine == false) "我选：不可以删" else "不可以删",
+                color = CANNOT_REMOVE,
+                selected = mine == false,
+                enabled = !voting,
+                onClick = { onVote(false) },
+            )
         }
     }
 }
 
+/** One scope choice: filled once picked, a raised page surface while not. */
+@Composable
+private fun ScopePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        text = label,
+        style = FlText.caption1.copy(
+            fontWeight = if (selected) FontWeight.W600 else FontWeight.Normal,
+        ),
+        color = if (selected) scheme.onPrimary else scheme.onSurfaceVariant,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (selected) scheme.primary else FlSurfaceLevel.Page.raised.colorOf(scheme))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+/** One side of the vote: outlined until this install picked it, filled once it did. */
+@Composable
+private fun VoteButton(
+    label: String,
+    color: Color,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (selected) color else FlSurfaceLevel.Page.raised.colorOf(scheme))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIconInline(
+            glyph = if (selected) FlGlyphs.checkCircle else FlGlyphs.check,
+            tint = if (selected) Color.White else color,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            style = FlText.footnote.copy(fontWeight = FlText.emphasized),
+            color = if (selected) Color.White else scheme.onSurface,
+        )
+    }
+}
+
+/** A review this install wrote, shown while the community thread has nothing to say. */
 @Composable
 private fun ReviewRow(review: AppReview) {
     val scheme = MaterialTheme.colorScheme
@@ -292,7 +574,7 @@ private fun ReviewRow(review: AppReview) {
             Spacer(Modifier.width(8.dp))
             Text(
                 text = review.author,
-                style = FlText.caption1.copy(fontWeight = io.github.samolego.canta.ui.fl.FlText.emphasized),
+                style = FlText.caption1.copy(fontWeight = FlText.emphasized),
                 color = scheme.onSurface,
             )
             Spacer(Modifier.width(8.dp))
@@ -322,52 +604,6 @@ private fun ReviewRow(review: AppReview) {
         }
         Spacer(Modifier.height(4.dp))
         Text(text = review.body, style = FlText.footnote, color = scheme.onSurface)
-    }
-}
-
-@Composable
-private fun ReviewComposer(
-    draft: String,
-    onDraftChange: (String) -> Unit,
-    onSend: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .imePadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .clip(RoundedCornerShape(percent = 50))
-            .drawBehind { drawRect(FlSurfaceLevel.floatingOf(scheme).colorOf(scheme)) }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(modifier = Modifier.weight(1f)) {
-            if (draft.isEmpty()) {
-                Text(
-                    text = "写一条评价…",
-                    style = FlText.footnote,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-            BasicTextField(
-                value = draft,
-                onValueChange = onDraftChange,
-                textStyle = FlText.footnote.copy(color = scheme.onSurface),
-                singleLine = true,
-                cursorBrush = SolidColor(scheme.primary),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        FlBarButton(
-            glyph = FlGlyphs.send,
-            contentDescription = "发送",
-            onClick = onSend,
-            filled = false,
-            size = 34.dp,
-            iconSize = 20.dp,
-        )
     }
 }
 

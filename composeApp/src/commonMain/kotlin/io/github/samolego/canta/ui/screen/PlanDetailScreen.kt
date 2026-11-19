@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,17 +20,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +53,7 @@ import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.keyed
 import io.github.samolego.canta.data.community.rankPackages
+import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plan_comment_hint
 import io.github.samolego.canta.generated.resources.plan_comment_send
@@ -77,8 +75,14 @@ import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.generated.resources.ranking_plans
 import io.github.samolego.canta.generated.resources.ranking_votes
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.commentThreads
+import io.github.samolego.canta.ui.dialog.CantaDialog
+import io.github.samolego.canta.ui.fl.FlBarButton
+import io.github.samolego.canta.ui.fl.FlGlyphs
+import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
@@ -90,7 +94,7 @@ import org.jetbrains.compose.resources.stringResource
 private val PACKAGE_ICON = 34.dp
 
 /**
- * One community plan, opened from the plans list.
+ * One community plan, opened from the plans list — or from a share code somebody pasted.
  *
  * The page answers the question the list only hints at: *does removing these packages work on a
  * phone like mine?* — so the plan's packages are shown in this model's own ranking, each with how
@@ -103,8 +107,9 @@ private val PACKAGE_ICON = 34.dp
  * out of that list, and a plan that is not in it (deleted, or for another build) is reported as
  * missing rather than guessed at.
  *
- * The comment field posts as an anonymous per-install handle, so a thread keeps one identity
- * without asking for an account.
+ * Who uploaded it is part of the answer, so the header shows the uploader's letter avatar next to
+ * their number — and the comments below it are a thread: every comment can be answered, this
+ * install can delete what it wrote, and the reply count says whether anyone came back.
  */
 @Composable
 fun PlanDetailScreen(
@@ -117,10 +122,14 @@ fun PlanDetailScreen(
     rules: SafetyRules? = null,
     /** Where this install keeps what it liked, so a like is still a like after a restart. */
     notes: AppNoteStore? = null,
+    /** This install's secret, needed to delete a comment it wrote. */
+    token: String = "",
     /** Opens one app's own page from a package row. */
     onOpenApp: (String) -> Unit = {},
     /** Selects the plan's packages on the app list and goes there. */
     onUsePlan: (List<String>) -> Unit = {},
+    /** Shares this plan: copies its code to the clipboard. */
+    onShare: (CommunityPlan) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
 
@@ -132,6 +141,10 @@ fun PlanDetailScreen(
     var sending by remember { mutableStateOf(false) }
     var submitFailed by remember { mutableStateOf(false) }
     var liked by remember { mutableStateOf(false) }
+    /** The comment being answered; null while the composer writes a new one. */
+    var replyTo by remember { mutableStateOf<PlanComment?>(null) }
+    /** The comment the delete confirmation is about. */
+    var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -153,19 +166,32 @@ fun PlanDetailScreen(
         loading = false
     }
 
+    val reloadComments: suspend () -> Unit = { comments = repository.comments(planId) }
+
     val sendComment: () -> Unit = {
         val body = draft.trim()
         if (body.isNotEmpty() && !sending) {
             scope.launch {
                 sending = true
-                submitFailed = !repository.comment(planId, body, commentAuthor)
+                val posted = repository.commentOnPlan(
+                    planId = planId,
+                    body = body,
+                    author = commentAuthor,
+                    replyTo = replyTo?.id ?: 0L,
+                )
+                submitFailed = posted == null
                 if (!submitFailed) {
                     draft = ""
-                    comments = repository.comments(planId)
+                    replyTo = null
+                    reloadComments()
                 }
                 sending = false
             }
         }
+    }
+
+    val deleteComment: (PlanComment) -> Unit = { comment ->
+        pendingDelete = comment
     }
 
     val vote: () -> Unit = {
@@ -180,23 +206,64 @@ fun PlanDetailScreen(
         }
     }
 
+    pendingDelete?.let { comment ->
+        CantaDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = "删除评论",
+            buttons = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                TextButton(onClick = {
+                    pendingDelete = null
+                    scope.launch {
+                        repository.deleteComment(comment.id, commentAuthor, token)
+                        reloadComments()
+                    }
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        ) {
+            Text(
+                text = "「${comment.body.take(40)}」会被删除，它下面的回复一起去掉。",
+                fontSize = 12.sp,
+            )
+        }
+    }
+
     Scaffold(
         topBar = {
             ScreenTopBar(
                 onNavigateBack = onNavigateBack,
                 title = stringResource(Res.string.plan_detail_title),
+                actions = {
+                    plan?.let { loaded ->
+                        FlBarButton(
+                            glyph = FlGlyphs.copy,
+                            contentDescription = "分享方案",
+                            onClick = { onShare(loaded) },
+                            filled = false,
+                            size = 34.dp,
+                            iconSize = 18.dp,
+                        )
+                    }
+                },
             )
         },
         bottomBar = {
-            CommentInputBar(
+            CommentComposer(
                 draft = draft,
-                sending = sending,
-                submitFailed = submitFailed,
                 onDraftChange = { changed ->
                     draft = changed
                     if (submitFailed) submitFailed = false
                 },
                 onSend = sendComment,
+                replyToName = replyTo?.author.orEmpty(),
+                onCancelReply = { replyTo = null },
+                sending = sending,
+                failed = submitFailed,
+                sendLabel = stringResource(Res.string.plan_comment_send),
+                hint = stringResource(Res.string.plan_comment_hint),
+                failLabel = stringResource(Res.string.plan_upload_failed),
             )
         },
     ) { padding ->
@@ -227,10 +294,16 @@ fun PlanDetailScreen(
                 rules = rules,
                 profile = profile,
                 comments = comments,
+                me = commentAuthor,
                 liked = liked,
                 onVote = vote,
                 onOpenApp = onOpenApp,
                 onUsePlan = { onUsePlan(loaded.packages) },
+                onReply = { comment ->
+                    replyTo = comment
+                    submitFailed = false
+                },
+                onDeleteComment = deleteComment,
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
@@ -246,10 +319,13 @@ private fun PlanDetailContent(
     rules: SafetyRules?,
     profile: DeviceProfile?,
     comments: List<PlanComment>,
+    me: String,
     liked: Boolean,
     onVote: () -> Unit,
     onOpenApp: (String) -> Unit,
     onUsePlan: () -> Unit,
+    onReply: (PlanComment) -> Unit,
+    onDeleteComment: (PlanComment) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -257,9 +333,12 @@ private fun PlanDetailContent(
     val ranked = plan.packages
         .map { pkg -> pkg to ranking[pkg] }
         .sortedWith(compareBy(nullsLast()) { (_, rank) -> rank?.rank })
+    val threads = remember(comments) { comments.threads() }
+    // The number of the person who uploaded it, in the form the rest of the app shows.
+    val uploaderName = DeviceIdentity.codeOfUser(plan.owner.toLongOrNull() ?: 0L)
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(bottom = 16.dp)) {
-        item { PlanHero(plan, profile, liked, onVote, onUsePlan) }
+        item { PlanHero(plan, profile, uploaderName, me, liked, onVote, onUsePlan) }
 
         item {
             SectionTitle(
@@ -296,25 +375,62 @@ private fun PlanDetailContent(
                 )
             }
         }
-        items(comments) { comment -> CommentRow(comment) }
+        commentThreads(
+            threads = threads,
+            me = me,
+            onReply = onReply,
+            onDelete = onDeleteComment,
+        )
     }
 }
 
 /**
- * What the plan is, on this phone: title, whether it was reboot-proven, the device line the plan
- * was matched against, and the three numbers people judge plans by.
+ * What the plan is, on this phone: who uploaded it, the title, whether it was reboot-proven, the
+ * device line the plan was matched against, and the three numbers people judge plans by.
  */
 @Composable
 private fun PlanHero(
     plan: CommunityPlan,
     profile: DeviceProfile?,
+    uploaderName: String,
+    me: String,
     liked: Boolean,
     onVote: () -> Unit,
     onUsePlan: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
     Surface(color = colors.primaryContainer, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            // Who wrote it, before what it says: a plan is advice from a person on the same phone,
+            // and the avatar is the first character of that person's name, like everywhere else.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LetterAvatar(
+                    name = uploaderName,
+                    size = 22.dp,
+                    background = colors.primary,
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = stringResource(Res.string.plan_detail_uploader, uploaderName),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (mine) {
+                    Spacer(Modifier.width(6.dp))
+                    Chip(label = "我的方案", color = colors.primary)
+                }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = plan.rebootedAt.take(10),
+                    fontSize = 9.sp,
+                    color = colors.onPrimaryContainer.copy(alpha = 0.7f),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = plan.title,
@@ -401,15 +517,6 @@ private fun PlanHero(
                     color = colors.onPrimaryContainer,
                 )
             }
-            Text(
-                text = stringResource(Res.string.plan_detail_uploader, plan.owner.ifEmpty { "—" }) +
-                    " · " + plan.rebootedAt.take(10),
-                fontSize = 9.sp,
-                color = colors.onPrimaryContainer.copy(alpha = 0.7f),
-                modifier = Modifier.padding(top = 8.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -470,7 +577,7 @@ private fun VoteAction(liked: Boolean, votes: Int, onVote: () -> Unit) {
     }
 }
 
-/** A small label: "测试", "重启验证". */
+/** A small label: "测试", "重启验证", "我的方案". */
 @Composable
 private fun Chip(label: String, color: androidx.compose.ui.graphics.Color) {
     Text(
@@ -610,97 +717,5 @@ private fun SectionTitle(title: String, subtitle: String?) {
             )
         }
         HorizontalDivider(modifier = Modifier.padding(top = 6.dp))
-    }
-}
-
-/** One comment, newest first because the backend already orders them that way. */
-@Composable
-private fun CommentRow(comment: PlanComment) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        // The same letter avatar the reviews use: the first character of the name, or of the
-        // install code when the commenter has not renamed themselves.
-        LetterAvatar(
-            name = comment.author,
-            size = 24.dp,
-            background = MaterialTheme.colorScheme.secondaryContainer,
-        )
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = comment.author,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = comment.createdAt.take(10),
-                    fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.outline,
-                )
-            }
-            Text(
-                text = comment.body,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                modifier = Modifier.padding(top = 1.dp),
-            )
-        }
-    }
-}
-
-/** Draft field plus the send button, pinned under the list. */
-@Composable
-private fun CommentInputBar(
-    draft: String,
-    sending: Boolean,
-    submitFailed: Boolean,
-    onDraftChange: (String) -> Unit,
-    onSend: () -> Unit,
-) {
-    Surface(tonalElevation = 3.dp) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = onDraftChange,
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(Res.string.plan_comment_hint), fontSize = 12.sp) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = onSend,
-                    enabled = draft.isNotBlank() && !sending,
-                    modifier = Modifier.height(44.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(Res.string.plan_comment_send), fontSize = 11.sp)
-                }
-            }
-            if (submitFailed) {
-                Text(
-                    text = stringResource(Res.string.plan_upload_failed),
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
-            }
-        }
     }
 }
