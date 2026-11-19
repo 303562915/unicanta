@@ -170,7 +170,8 @@ fun AppDetailScreen(
     val send: () -> Unit = {
         val body = draft.trim()
         if (body.isNotEmpty() && !sending) {
-            val signature = author.ifEmpty { "u-anon" }            scope.launch {
+            val signature = author.ifEmpty { "u-anon" }
+            scope.launch {
                 sending = true
                 // The device copy first: a review written offline is still this install's, and it
                 // is what the page falls back to while the community thread is out of reach.
