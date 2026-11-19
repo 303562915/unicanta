@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.HeartBroken
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.HeartBroken
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -56,6 +57,8 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.PlanComment
 import kotlin.math.absoluteValue
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -259,7 +262,7 @@ private fun ThreadToggle(expanded: Boolean, count: Int, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (expanded) "收起" else "展开 $count 条回复",
+                text = if (expanded) "—— 收起" else "—— 展开 $count 条回复",
                 fontSize = 11.sp,
                 lineHeight = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -443,11 +446,12 @@ fun CommentRow(
                 )
             }
         }
-        // The heart column on the far right, the way a short-video comment list ends every row:
-        // the heart with its count, and the broken heart that puts the comment away.
-        Column(
+        // The heart pair on the far right, side by side the way this list ends every row: the
+        // heart with its count — hollow until tapped, red once it is — and the hollow broken heart
+        // that puts the comment away.
+        Row(
             modifier = Modifier.padding(start = 8.dp, top = 2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 modifier = Modifier
@@ -472,9 +476,9 @@ fun CommentRow(
                     )
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.width(8.dp))
             Icon(
-                imageVector = Icons.Default.HeartBroken,
+                imageVector = Icons.Outlined.HeartBroken,
                 contentDescription = "不喜欢这条评论，先把它收起来",
                 modifier = Modifier
                     .size(16.dp)
@@ -800,13 +804,26 @@ fun shortStamp(iso: String): String {
  * column existed — falls back to [shortStamp] instead of blanking the row.
  */
 @OptIn(ExperimentalTime::class)
-fun relativeStamp(iso: String, now: Instant = Clock.System.now()): String {
+fun relativeStamp(
+    iso: String,
+    now: Instant = Clock.System.now(),
+    /** The calendar the "昨天" is read against; tests pin it so a runner's zone cannot flip them. */
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): String {
     val parsed = runCatching { Instant.parse(iso.replace(Regex("[+]00:00$"), "Z")) }.getOrNull()
         ?: return shortStamp(iso)
     val elapsed = now - parsed
     if (elapsed.inWholeSeconds < 60L) return "刚刚"
     val minutes = elapsed.inWholeMinutes
     if (minutes < 60L) return "${minutes}分钟前"
+    // The calendar says it landed yesterday: it reads as that day and its time, not as a bare
+    // hour count — "11小时前" tells nothing about which evening the comment came from.
+    val daysBetween = now.toLocalDateTime(zone).date.toEpochDays() -
+        parsed.toLocalDateTime(zone).date.toEpochDays()
+    if (daysBetween == 1L) {
+        val time = parsed.toLocalDateTime(zone).time
+        return "昨天 " + time.hour.toString().padStart(2, '0') + ":" + time.minute.toString().padStart(2, '0')
+    }
     val hours = elapsed.inWholeHours
     if (hours < 24L) return "${hours}小时前"
     val days = elapsed.inWholeDays

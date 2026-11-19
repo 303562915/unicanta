@@ -2,7 +2,9 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.Dp
 import io.github.samolego.canta.ui.fl.FlTopBar
+import io.github.samolego.canta.ui.fl.FlTopBarHeight
 
 /**
  * The bar of a page opened on top of another: FlClash's compact toolbar — the title
@@ -16,11 +18,14 @@ fun ScreenTopBar(
     onNavigateBack: (() -> Unit)? = null,
     title: String,
     actions: @Composable RowScope.() -> Unit = {},
+    /** Row height below the status bar; pages that float the bar over content go slimmer. */
+    height: Dp = FlTopBarHeight,
 ) {
     FlTopBar(
         title = title,
         centered = true,
         onBack = onNavigateBack,
         actions = actions,
+        height = height,
     )
 }

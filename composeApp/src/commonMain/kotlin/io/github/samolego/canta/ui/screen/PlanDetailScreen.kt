@@ -84,7 +84,7 @@ import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
-import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import io.github.samolego.canta.ui.fl.FlTopBarCompactHeight
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
@@ -368,6 +368,7 @@ fun PlanDetailScreen(
             ScreenTopBar(
                 onNavigateBack = onNavigateBack,
                 title = stringResource(Res.string.plan_detail_title),
+                height = FlTopBarCompactHeight,
                 actions = {
                     plan?.let { current ->
                         // The share glyph, not the clipboard one: what the button does is hand the
@@ -453,10 +454,10 @@ private fun PlanDetailContent(
     val uploaderName = plan.authorName
     // The content starts below the floating title bar but scrolls under it: this is where the bar
     // ends, not a wall it draws on.
-    // The bar's own height is exactly its bottom edge: the card starts where the bar ends, with
-    // no gap to spare.
+    // The slim floating bar's height is exactly the content's top edge: the card starts where the
+    // bar ends, with no gap to spare.
     val topSpace = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-        FlTopBarHeight
+        FlTopBarCompactHeight
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
         item { PlanHero(plan, profile, uploaderName, me, liked, foreign, onVote, onUsePlan) }

@@ -27,6 +27,12 @@ import androidx.compose.ui.unit.dp
 /** The height of the bar's content, below the status bar. */
 val FlTopBarHeight: Dp = 72.dp
 
+/**
+ * The height of the bar on pages that float it over their own content: slimmer, so the page's
+ * first card starts just under the status bar instead of a full band below it.
+ */
+val FlTopBarCompactHeight: Dp = 54.dp
+
 /** Where a bar button starts, and how far the last one stays from the edge. */
 private val BarInset = 20.dp
 
@@ -50,6 +56,8 @@ fun FlTopBar(
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    /** Row height below the status bar; pages that float the bar over content go slimmer. */
+    height: Dp = FlTopBarHeight,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(
@@ -60,7 +68,7 @@ fun FlTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(FlTopBarHeight)
+                .height(height)
                 .padding(horizontal = BarInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {

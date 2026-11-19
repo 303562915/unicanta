@@ -3,6 +3,7 @@
 package io.github.samolego.canta.ui.component
 
 import io.github.samolego.canta.data.community.PlanComment
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Instant
@@ -20,7 +21,7 @@ class RelativeStampTest {
     fun aCommentUnderAMinuteOldJustHappened() {
         assertEquals(
             "刚刚",
-            relativeStamp("2026-11-19T09:59:30Z", now = at("2026-11-19T10:00:00Z")),
+            relativeStamp("2026-11-19T09:59:30Z", now = at("2026-11-19T10:00:00Z"), zone = TimeZone.UTC),
         )
     }
 
@@ -29,29 +30,29 @@ class RelativeStampTest {
         // A device clock a little behind the server's must not print a negative count.
         assertEquals(
             "刚刚",
-            relativeStamp("2026-11-19T10:05:00Z", now = at("2026-11-19T10:00:00Z")),
+            relativeStamp("2026-11-19T10:05:00Z", now = at("2026-11-19T10:00:00Z"), zone = TimeZone.UTC),
         )
     }
 
     @Test
     fun minutesAndHoursReadAsElapsed() {
         val now = at("2026-11-19T10:00:00Z")
-        assertEquals("5分钟前", relativeStamp("2026-11-19T09:55:00Z", now = now))
-        assertEquals("3小时前", relativeStamp("2026-11-19T07:00:00Z", now = now))
+        assertEquals("5分钟前", relativeStamp("2026-11-19T09:55:00Z", now = now, zone = TimeZone.UTC))
+        assertEquals("3小时前", relativeStamp("2026-11-19T07:00:00Z", now = now, zone = TimeZone.UTC))
     }
 
     @Test
     fun daysAndMonthsReadAsElapsed() {
         val now = at("2026-11-19T10:00:00Z")
-        assertEquals("2天前", relativeStamp("2026-11-17T10:00:00Z", now = now))
-        assertEquals("1个月前", relativeStamp("2026-10-05T10:00:00Z", now = now))
+        assertEquals("2天前", relativeStamp("2026-11-17T10:00:00Z", now = now, zone = TimeZone.UTC))
+        assertEquals("1个月前", relativeStamp("2026-10-05T10:00:00Z", now = now, zone = TimeZone.UTC))
     }
 
     @Test
     fun aYearOldCommentFallsBackToThePlainStamp() {
         assertEquals(
             "01-19 10:00",
-            relativeStamp("2025-01-19T10:00:00Z", now = at("2026-11-19T10:00:00Z")),
+            relativeStamp("2025-01-19T10:00:00Z", now = at("2026-11-19T10:00:00Z"), zone = TimeZone.UTC),
         )
     }
 
@@ -60,7 +61,25 @@ class RelativeStampTest {
         // PostgREST signs its UTC values "+00:00"; the parser wants "Z".
         assertEquals(
             "5分钟前",
-            relativeStamp("2026-11-19T09:55:00+00:00", now = at("2026-11-19T10:00:00Z")),
+            relativeStamp("2026-11-19T09:55:00+00:00", now = at("2026-11-19T10:00:00Z"), zone = TimeZone.UTC),
+        )
+    }
+
+    @Test
+    fun aCommentFromYesterdayReadsAsYesterdayWithItsTime() {
+        // 11 hours back but on the previous calendar day: the day it landed is what counts.
+        assertEquals(
+            "昨天 22:30",
+            relativeStamp("2026-11-18T22:30:00Z", now = at("2026-11-19T10:00:00Z"), zone = TimeZone.UTC),
+        )
+    }
+
+    @Test
+    fun anEarlierCommentTodayStillReadsAsElapsed() {
+        // Same calendar day, more than an hour back: hours, not "昨天".
+        assertEquals(
+            "3小时前",
+            relativeStamp("2026-11-19T07:00:00Z", now = at("2026-11-19T10:00:00Z"), zone = TimeZone.UTC),
         )
     }
 

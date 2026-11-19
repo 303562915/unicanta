@@ -3,11 +3,14 @@ package io.github.samolego.canta.ui.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,6 +58,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.fl.FlGlyphs
+import io.github.samolego.canta.ui.fl.FlTopBarCompactHeight
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.generated.resources.Res
@@ -283,12 +287,9 @@ fun AppDetailScreen(
     }
 
     Scaffold(
-        topBar = {
-            ScreenTopBar(
-                title = app?.name ?: packageName,
-                onNavigateBack = onNavigateBack,
-            )
-        },
+        // The title bar floats over the content as a transparent layer, like the plan page: what
+        // scrolls up under it stays readable through it, and the page's first card starts just
+        // under the status bar.
         bottomBar = {
             CommentComposer(
                 draft = draft,
@@ -306,10 +307,19 @@ fun AppDetailScreen(
         },
     ) { padding ->
         val threads = remember(comments) { comments.threads() }
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(bottom = 16.dp),
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = padding.calculateBottomPadding()),
         ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                // The slim bar's height is exactly the content's top edge: no gap of its own.
+                contentPadding = PaddingValues(
+                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + FlTopBarCompactHeight,
+                    bottom = 16.dp,
+                ),
+            ) {
             item {
                 AppHero(
                     app = app,
@@ -367,6 +377,13 @@ fun AppDetailScreen(
                     )
                 }
             }
+            }
+            // The floating title bar, drawn last so it sits over the scroll.
+            ScreenTopBar(
+                title = app?.name ?: packageName,
+                onNavigateBack = onNavigateBack,
+                height = FlTopBarCompactHeight,
+            )
         }
     }
 }
