@@ -7,7 +7,7 @@ name: 🌐 Deploy download page
 # 不用 deploy-pages@v4：那条链路要 pages: write + github-pages environment，
 # 在这个仓库上会卡在 deploy 阶段；分支部署只依赖 contents: write，最稳。
 #
-# 站点地址：https://303562915.github.io/Canta/
+# 站点地址：https://303562915.github.io/unicanta/
 
 on:
   release:
@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REPO: 303562915/Canta
+  REPO: 303562915/unicanta
 
 jobs:
   publish:
@@ -173,6 +173,6 @@ jobs:
           {
             echo "### 已发布 ${{ steps.release.outputs.tag || '（无 release，仅骨架）' }}"
             echo ""
-            echo "- 站点：https://303562915.github.io/Canta/"
+            echo "- 站点：https://303562915.github.io/unicanta/"
             echo "- 分支：gh-pages"
           } >> "$GITHUB_STEP_SUMMARY"

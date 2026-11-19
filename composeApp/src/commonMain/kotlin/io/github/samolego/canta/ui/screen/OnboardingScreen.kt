@@ -86,7 +86,7 @@ import io.github.samolego.canta.ui.dialog.TelemetryPreviewDialog
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-private const val PRIVACY_POLICY_URL = "https://github.com/303562915/Canta/blob/master/privacy_policy.md"
+private const val PRIVACY_POLICY_URL = "https://github.com/303562915/unicanta/blob/master/privacy_policy.md"
 
 /** Widest the onboarding content gets, so it stays readable in a desktop window. */
 private val MAX_CONTENT_WIDTH = 560.dp

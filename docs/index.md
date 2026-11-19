@@ -8,7 +8,7 @@ hero:
   text: "Uninstall any app without root!"
   tagline: Powered by Shizuku - safe and easy app removal
   image:
-    src: https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+    src: https://raw.githubusercontent.com/303562915/unicanta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png
     alt: Canta
   actions:
     - theme: brand
@@ -16,7 +16,7 @@ hero:
       link: /install
     - theme: alt
       text: View on GitHub
-      link: https://github.com/303562915/Canta
+      link: https://github.com/303562915/unicanta
     - theme: brand
       text: Open web app
       link: /app/
@@ -44,11 +44,11 @@ features:
   - icon: 🌍
     title: Translations
     details: 完整中文翻译已内置（`values-zh-rCN`）；其余语言来自上游翻译项目。多语言文案随源码一起维护。
-    link: https://github.com/303562915/Canta
+    link: https://github.com/303562915/unicanta
 
   - icon: 🪙
     title: 自建后端
     details: 遥测后端由本项目自己托管，可完全离线自部署（`server/node`），不依赖上游服务器。
-    link: https://github.com/303562915/Canta/tree/master/server
+    link: https://github.com/303562915/unicanta/tree/master/server
 
 ---

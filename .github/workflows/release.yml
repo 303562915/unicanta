@@ -71,7 +71,7 @@ jobs:
           {
             echo "Canta $VERSION_NAME"
             echo ""
-            echo "- 下载页：https://303562915.github.io/Canta/"
+            echo "- 下载页：https://303562915.github.io/unicanta/"
             echo "- 包名：io.github.a303562915.unicanta"
             echo ""
             echo "校验和在 SHA256SUMS.txt 里，安装包由本仓库的 GitHub Actions 构建并签名。"

@@ -61,7 +61,7 @@ private val HERO_HEIGHT = 132.dp
 private const val COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 
 /** Wikimedia wants a user agent that says what is asking. */
-private const val USER_AGENT = "Canta/4.2 (device hero; https://github.com/303562915/Canta)"
+private const val USER_AGENT = "Canta/4.2 (device hero; https://github.com/303562915/unicanta)"
 
 /** Wide enough for a phone screen at 2x, small enough that the first load is quick. */
 private const val THUMB_WIDTH = 960

@@ -35,7 +35,7 @@ class CrashReportTest {
     @Test
     fun issueUrlIsEncodedAndPointsAtTheRepository() {
         val url = CrashReport.issueUrl(report("java.lang.IllegalStateException: boom & more"))
-        assertTrue(url.startsWith("https://github.com/303562915/Canta/issues/new?title="))
+        assertTrue(url.startsWith("https://github.com/303562915/unicanta/issues/new?title="))
         assertContains(url, "&body=")
         assertContains(url, "boom%20%26%20more")
         assertTrue(' ' !in url && '\n' !in url)

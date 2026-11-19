@@ -17,12 +17,12 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 
 /** Where the app is published. */
-internal const val UPDATE_REPO_URL = "https://github.com/303562915/Canta"
+internal const val UPDATE_REPO_URL = "https://github.com/303562915/unicanta"
 
 /** The download page published from `site/`; it always shows the newest published release. */
-internal const val DOWNLOAD_PAGE_URL = "https://303562915.github.io/Canta/"
+internal const val DOWNLOAD_PAGE_URL = "https://303562915.github.io/unicanta/"
 
-private const val LATEST_RELEASE_API = "https://api.github.com/repos/303562915/Canta/releases/latest"
+private const val LATEST_RELEASE_API = "https://api.github.com/repos/303562915/unicanta/releases/latest"
 
 /** GitHub rejects anonymous API calls without one. */
 private const val USER_AGENT = "Canta-Android (+$UPDATE_REPO_URL)"

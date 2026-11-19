@@ -48,7 +48,7 @@ The choice is made once, on the last onboarding page ("Contribute" / "Don't shar
 
 Community scores are shown for all devices and, once at least 30 reports exist for your ROM version, for your own ROM version too (the latter is used for warnings and badges).
 
-Choosing not to contribute leaves any queued data unsent and deletes it. See the [privacy policy](https://github.com/303562915/Canta/blob/master/privacy_policy.md) for details.
+Choosing not to contribute leaves any queued data unsent and deletes it. See the [privacy policy](https://github.com/303562915/unicanta/blob/master/privacy_policy.md) for details.
 
 ## Advanced Settings
 

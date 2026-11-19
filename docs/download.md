@@ -8,7 +8,7 @@ description: 下载 Canta 的 unicanta 分支。
 
 ## GitHub Releases
 
-[![GitHub](https://img.shields.io/github/v/release/303562915/Canta?include_prereleases&style=for-the-badge&logo=GitHub&label=GitHub&color=blue)](https://github.com/303562915/Canta/releases/latest/)
+[![GitHub](https://img.shields.io/github/v/release/303562915/unicanta?include_prereleases&style=for-the-badge&logo=GitHub&label=GitHub&color=blue)](https://github.com/303562915/unicanta/releases/latest/)
 
 ## 自行构建
 

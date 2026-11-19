@@ -17,8 +17,8 @@ const cantaRed = {
 };
 
 export default defineConfig({
-  title: "Canta",
-  base: "/Canta/",
+  title: "Unicanta",
+  base: "/unicanta/",
   description: "Uninstall any app without root!",
   head: [
     ["meta", { name: "author", content: "unicanta" }],
@@ -34,7 +34,7 @@ export default defineConfig({
       "meta",
       {
         property: "og:title",
-        content: "Canta - Uninstall any app without root",
+        content: "Unicanta - Uninstall any app without root",
       },
     ],
     [
@@ -42,12 +42,12 @@ export default defineConfig({
       {
         property: "og:image",
         content:
-          "https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+          "https://raw.githubusercontent.com/303562915/unicanta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
       },
     ],
     [
       "meta",
-      { property: "og:url", content: "https://303562915.github.io/Canta" },
+      { property: "og:url", content: "https://303562915.github.io/unicanta" },
     ],
     [
       "meta",
@@ -62,17 +62,17 @@ export default defineConfig({
       "link",
       {
         rel: "icon",
-        href: "https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+        href: "https://raw.githubusercontent.com/303562915/unicanta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
       },
     ],
   ],
   sitemap: {
-    hostname: "https://303562915.github.io/Canta",
+    hostname: "https://303562915.github.io/unicanta",
   },
   lastUpdated: true,
   // Theme customization
   themeConfig: {
-    logo: "https://raw.githubusercontent.com/303562915/Canta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+    logo: "https://raw.githubusercontent.com/303562915/unicanta/master/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
     nav: [
       { text: "Home", link: "/" },
       { text: "Web App", link: "/app/", target: "_self" },
@@ -87,7 +87,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: "https://github.com/303562915/Canta/edit/master/site/:path",
+      pattern: "https://github.com/303562915/unicanta/edit/master/site/:path",
       text: "Edit this page on GitHub",
     },
 
@@ -110,7 +110,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: "github", link: "https://github.com/303562915/Canta" },
+      { icon: "github", link: "https://github.com/303562915/unicanta" },
     ],
 
     footer: {

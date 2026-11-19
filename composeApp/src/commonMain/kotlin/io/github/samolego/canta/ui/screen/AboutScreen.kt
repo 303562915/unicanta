@@ -89,7 +89,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 /** Where the app is published and where it came from. */
-private const val REPO_URL = "https://github.com/303562915/Canta"
+private const val REPO_URL = "https://github.com/303562915/unicanta"
 private const val CONTRIBUTORS_URL = "$REPO_URL/graphs/contributors"
 private const val ORIGINAL_URL = "https://github.com/samolego/Canta"
 /** The author's Coolapk page, and the number at the end of it. */

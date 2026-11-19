@@ -33,7 +33,7 @@
 | 项 | 值 |
 |---|---|
 | 本地路径 | `/sdcard/Aaaa/unicanta/Canta` |
-| 远程 | `origin` → `https://github.com/303562915/Canta.git` |
+| 远程 | `origin` → `https://github.com/303562915/unicanta.git` |
 | 默认分支 | `master` |
 | 构建身份 | `gh` 已登录 `303562915`（scopes: repo, workflow, read:org, gist） |
 

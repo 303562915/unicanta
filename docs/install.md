@@ -8,7 +8,7 @@ description: 安装 unicanta 分支的步骤。
    - Android 16 及以上建议使用 [fork 版](https://github.com/thedjchi/Shizuku)
 2. [激活 Shizuku](https://shizuku.rikka.app/guide/setup/)
 3. 安装本仓库构建出的 APK：
-   - [GitHub Releases](https://github.com/303562915/Canta/releases/latest/)
+   - [GitHub Releases](https://github.com/303562915/unicanta/releases/latest/)
    - 或自行构建：`./gradlew :androidApp:assembleDebug`
 
 本分支不上架 F-Droid / Google Play / IzzyOnDroid。
