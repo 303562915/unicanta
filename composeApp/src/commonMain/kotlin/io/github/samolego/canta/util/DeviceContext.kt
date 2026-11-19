@@ -27,6 +27,15 @@ data class DeviceContext(
     }
 }
 
+/**
+ * A ROM family with its major version, the way a plan row names the build it was made on:
+ * "HyperOS 2", or just "Android" on a stock build — a version number means nothing there.
+ */
+fun romLabelOf(rom: String, romVersion: Int): String {
+    val name = romName(rom)
+    return if (romVersion > 0 && name != "Android") "$name $romVersion" else name
+}
+
 /** Display name of a ROM family ("hyperos" becomes "HyperOS"), "Android" for stock or unknown ones. */
 fun romName(rom: String): String = when (rom) {
     "hyperos" -> "HyperOS"
