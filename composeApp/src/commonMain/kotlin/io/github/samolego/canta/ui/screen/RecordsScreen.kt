@@ -41,6 +41,7 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.records_action_reinstall
 import io.github.samolego.canta.generated.resources.records_action_uninstall
 import io.github.samolego.canta.generated.resources.records_batch
+import io.github.samolego.canta.generated.resources.records_empty
 import io.github.samolego.canta.generated.resources.records_failed
 import io.github.samolego.canta.generated.resources.records_reset_to_factory
 import io.github.samolego.canta.generated.resources.records_success

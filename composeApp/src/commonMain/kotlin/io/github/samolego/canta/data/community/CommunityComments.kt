@@ -39,7 +39,7 @@ data class MyComment(
     fun planIdOrNull(): Long? = if (kind == COMMENT_KIND_PLAN) target.toLongOrNull() else null
 
     /** The package name, when this comment hangs under an app page. */
-    fun packageOrNull(): String? = if (kind == COMMENT_KIND_APP) target : null
+    fun packageOrNull(): String? = if (kind == COMMENT_KIND_APP) target else null
 }
 
 /** One comment and the answers it collected, in the order the backend served them. */

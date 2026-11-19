@@ -79,7 +79,7 @@ import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
-import io.github.samolego.canta.ui.dialog.CantaDialog
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.util.DeviceIdentity
