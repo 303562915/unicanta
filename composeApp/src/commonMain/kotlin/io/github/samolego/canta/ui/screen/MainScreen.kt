@@ -135,7 +135,7 @@ fun MainScreen(
                 if (tab == AppsTab.RECORDS) {
                     RecordsScreen(
                         history = history,
-                        platform = platform,
+                        apps = appListViewModel.apps,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

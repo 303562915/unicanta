@@ -11,6 +11,12 @@ sealed class Screen(val route: String) {
     data object Rules : Screen("rules")
     data object Tweaks : Screen("tweaks")
 
+    /**
+     * Everything this install wrote and everything other people wrote back: the comments it left
+     * on plans and app pages, and the replies under them. Each row opens the page it lives on.
+     */
+    data object MyComments : Screen("my-comments")
+
     /** Open-source apps worth installing; the cards only link out to their project pages. */
     data object Recommendations : Screen("recommend")
     data object Onboarding : Screen("onboarding")

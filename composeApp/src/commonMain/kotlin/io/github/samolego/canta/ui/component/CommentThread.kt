@@ -152,6 +152,18 @@ fun CommentRow(
                     )
                 }
             }
+            // The phone it was written on: a comment about removing an app is only as useful as the
+            // model it is about, so the writer's device sits right under their name.
+            if (comment.deviceLabel.isNotEmpty()) {
+                Text(
+                    text = comment.deviceLabel,
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 text = comment.body,
                 fontSize = 12.sp,

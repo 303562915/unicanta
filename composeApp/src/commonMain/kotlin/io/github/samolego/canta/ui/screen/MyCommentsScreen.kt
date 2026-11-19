@@ -79,10 +79,10 @@ fun MyCommentsScreen(
     var pendingDelete by remember { mutableStateOf<MyComment?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(author, reloads) {
+    LaunchedEffect(author, owner, reloads) {
         loading = true
-        mine = repository.myComments(author)
-        replies = repository.repliesToMe(author)
+        mine = repository.myComments(owner)
+        replies = repository.repliesToMe(owner)
         loading = false
     }
 
@@ -104,7 +104,7 @@ fun MyCommentsScreen(
                 TextButton(onClick = {
                     pendingDelete = null
                     scope.launch {
-                        val ok = repository.deleteComment(comment.id, owner.ifEmpty { author }, token)
+                        val ok = repository.deleteComment(comment.id, owner, token)
                         notice = if (ok) null else "删不掉：这条评论不是本机写的，或者后端没通。"
                         reloads++
                     }

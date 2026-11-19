@@ -122,6 +122,8 @@ fun PlanDetailScreen(
     rules: SafetyRules? = null,
     /** Where this install keeps what it liked, so a like is still a like after a restart. */
     notes: AppNoteStore? = null,
+    /** This install's identity number: what comments are recorded and deleted under. */
+    owner: String = "",
     /** This install's secret, needed to delete a comment it wrote. */
     token: String = "",
     /** Opens one app's own page from a package row. */
@@ -177,7 +179,10 @@ fun PlanDetailScreen(
                     planId = planId,
                     body = body,
                     author = commentAuthor,
+                    authorId = owner,
                     replyTo = replyTo?.id ?: 0L,
+                    deviceModel = profile?.displayModel.orEmpty(),
+                    androidVersion = profile?.release.orEmpty(),
                 )
                 submitFailed = posted == null
                 if (!submitFailed) {
@@ -215,7 +220,7 @@ fun PlanDetailScreen(
                 TextButton(onClick = {
                     pendingDelete = null
                     scope.launch {
-                        repository.deleteComment(comment.id, commentAuthor, token)
+                        repository.deleteComment(comment.id, owner, token)
                         reloadComments()
                     }
                 }) {

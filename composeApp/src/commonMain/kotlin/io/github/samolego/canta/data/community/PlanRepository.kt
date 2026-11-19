@@ -64,7 +64,18 @@ data class PlanComment(
     val replyTo: Long = 0L,
     /** How many answers hang under this comment. */
     val replies: Int = 0,
-)
+    /** The phone it was written on ("Redmi K70"); empty on comments written before it was kept. */
+    val deviceModel: String = "",
+    /** Its Android version ("15"), not the API level: "Android 36" is a number nobody recognises. */
+    val androidVersion: String = "",
+) {
+    /** "Redmi K70 · Android 15", or "" when the writer's device is unknown. */
+    val deviceLabel: String
+        get() = buildList {
+            if (deviceModel.isNotBlank()) add(deviceModel)
+            if (androidVersion.isNotBlank()) add("Android $androidVersion")
+        }.joinToString(" · ")
+}
 
 /**
  * What people said about removing one package: "it was fine" against "it broke something".
@@ -397,6 +408,8 @@ class PlanRepository(
                 id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
                 replyTo = o["parent_id"]?.jsonPrimitive?.longOrNull ?: 0L,
                 replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                deviceModel = o["device_model"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                androidVersion = o["android_version"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
         }
     }.getOrElse { emptyList() }
@@ -415,6 +428,8 @@ class PlanRepository(
         author: String,
         authorId: String = "",
         replyTo: Long = 0L,
+        deviceModel: String = "",
+        androidVersion: String = "",
     ): Long? {
         if (target.isEmpty() || body.isBlank()) return null
         val payload = buildJsonObject {
@@ -423,6 +438,8 @@ class PlanRepository(
             put("p_body", body)
             put("p_author", author)
             put("p_author_id", authorId)
+            put("p_model", deviceModel)
+            put("p_android", androidVersion)
             if (replyTo > 0L) put("p_parent", replyTo)
         }.toString()
         return rpc("comment_add", payload)
@@ -436,7 +453,18 @@ class PlanRepository(
         author: String,
         authorId: String = "",
         replyTo: Long = 0L,
-    ): Long? = comment(COMMENT_KIND_PLAN, planId.toString(), body, author, authorId, replyTo)
+        deviceModel: String = "",
+        androidVersion: String = "",
+    ): Long? = comment(
+        kind = COMMENT_KIND_PLAN,
+        target = planId.toString(),
+        body = body,
+        author = author,
+        authorId = authorId,
+        replyTo = replyTo,
+        deviceModel = deviceModel,
+        androidVersion = androidVersion,
+    )
 
     /** A comment on the page of [pkg]. */
     suspend fun commentOnApp(
@@ -445,7 +473,18 @@ class PlanRepository(
         author: String,
         authorId: String = "",
         replyTo: Long = 0L,
-    ): Long? = comment(COMMENT_KIND_APP, pkg, body, author, authorId, replyTo)
+        deviceModel: String = "",
+        androidVersion: String = "",
+    ): Long? = comment(
+        kind = COMMENT_KIND_APP,
+        target = pkg,
+        body = body,
+        author = author,
+        authorId = authorId,
+        replyTo = replyTo,
+        deviceModel = deviceModel,
+        androidVersion = androidVersion,
+    )
 
     /**
      * Deletes one comment this install wrote. [owner] is the identity number and [token] the

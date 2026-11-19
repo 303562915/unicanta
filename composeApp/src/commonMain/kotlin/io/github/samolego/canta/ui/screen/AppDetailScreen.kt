@@ -154,6 +154,7 @@ fun AppDetailScreen(
                         sdk = profile?.sdk ?: 0,
                         createdAt = "",
                         removable = mine == true,
+                        android = profile?.release.orEmpty(),
                     ),
                 )
                 reviews = notes.reviewsOf(packageName)
@@ -161,7 +162,10 @@ fun AppDetailScreen(
                     pkg = packageName,
                     body = body,
                     author = signature,
+                    authorId = voter,
                     replyTo = replyTo?.id ?: 0L,
+                    deviceModel = profile?.displayModel.orEmpty(),
+                    androidVersion = profile?.release.orEmpty(),
                 )
                 submitFailed = repository != null && posted == null
                 if (!submitFailed) {
@@ -183,7 +187,7 @@ fun AppDetailScreen(
                 TextButton(onClick = {
                     pendingDelete = null
                     scope.launch {
-                        repository?.deleteComment(comment.id, author, token)
+                        repository?.deleteComment(comment.id, voter, token)
                         comments = repository?.appComments(packageName).orEmpty()
                     }
                 }) {
@@ -217,7 +221,7 @@ fun AppDetailScreen(
                 onCancelReply = { replyTo = null },
                 sending = sending,
                 failed = submitFailed,
-                hint = "写一条评价…",
+                hint = "写一条评论…",
                 failLabel = "发送失败，检查一下网络再试",
             )
         },
@@ -240,7 +244,7 @@ fun AppDetailScreen(
                     onVote = castVote,
                 )
             }
-            item { SectionHeading("评价") }
+            item { SectionHeading("评论") }
             when {
                 threads.isNotEmpty() -> commentThreads(
                     threads = threads,
@@ -257,7 +261,7 @@ fun AppDetailScreen(
                 reviews.isNotEmpty() -> {
                     item {
                         Text(
-                            text = "还没有别人评价这个应用，下面是本机写过的：",
+                            text = "还没有别人的评论，下面是本机写过的：",
                             style = FlText.caption2,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -268,7 +272,7 @@ fun AppDetailScreen(
 
                 else -> item {
                     Text(
-                        text = "还没有人评价这个应用。写一条，告诉别人它在你的机型上是什么样。",
+                        text = "还没有人评论这个应用。写一条，告诉别人它在你的机型上是什么样。",
                         style = FlText.footnote,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -580,10 +584,7 @@ private fun ReviewRow(review: AppReview) {
             Spacer(Modifier.width(8.dp))
             // The phone and its Android version: a review is only worth as much as the
             // device it was written on.
-            val device = buildList {
-                if (review.model.isNotBlank()) add(review.model)
-                if (review.sdk > 0) add("Android ${review.sdk}")
-            }.joinToString(" · ")
+            val device = review.deviceLabel
             if (device.isNotEmpty()) {
                 Text(
                     text = device,

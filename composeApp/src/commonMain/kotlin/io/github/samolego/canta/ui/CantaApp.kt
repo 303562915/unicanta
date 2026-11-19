@@ -314,6 +314,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 // Comments are posted under this install's own code: no account, no login.
                 var planAuthor by remember { mutableStateOf("") }
+                // The identity number and its secret: what a comment of this install is deleted with.
+                var planIdentity by remember { mutableStateOf(DeviceIdentity.current(deps.settings)) }
                 // The plan's packages are shown with their icons and their device rules, the same
                 // way the app list shows them.
                 var planRules by remember { mutableStateOf<SafetyRules?>(null) }
@@ -321,6 +323,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     planProfile = handler.deviceProfile()
                     // The name from the settings, or "#10000" while none was picked.
                     planAuthor = DeviceIdentity.displayName(deps.settings)
+                    planIdentity = DeviceIdentity.current(deps.settings)
                     planRules = SafetyRules.bundled()
                 }
                 PlanDetailScreen(
@@ -332,6 +335,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     apps = appListViewModel.apps,
                     rules = planRules,
                     notes = deps.notes,
+                    owner = planIdentity.owner,
+                    token = planIdentity.token,
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     // "Use this plan": select its packages on the app list and go there, so the
                     // uninstall action is one tap away.
@@ -339,6 +344,13 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                         appListViewModel.selectedApps.clear()
                         appListViewModel.selectedApps.addAll(packages)
                         navController.navigate(Screen.Main.route) { launchSingleTop = true }
+                    },
+                    // Sharing hands the plan to the clipboard as a code; the receiver's app reads
+                    // it at launch and opens this same page.
+                    onShare = { plan ->
+                        val code = ShareCode.of(plan.id)
+                        platform.copyToClipboard(ShareCode.message(plan.id, plan.title))
+                        platform.showMessage("分享码已复制：$code")
                     },
                 )
             }
@@ -371,6 +383,26 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     onNavigateBack = { navController.navigateUp() },
                     repository = communityRepository,
                     voter = appVoter,
+                    token = appToken,
+                )
+            }
+            composable(route = Screen.MyComments.route) {
+                // The page is about one identity: the name its comments are signed with, and the
+                // number plus token that prove it when one of them is deleted.
+                var myName by remember { mutableStateOf("") }
+                var myIdentity by remember { mutableStateOf(DeviceIdentity.current(deps.settings)) }
+                LaunchedEffect(Unit) {
+                    myName = DeviceIdentity.displayName(deps.settings)
+                    myIdentity = DeviceIdentity.current(deps.settings)
+                }
+                MyCommentsScreen(
+                    repository = communityRepository,
+                    author = myName,
+                    owner = myIdentity.owner,
+                    token = myIdentity.token,
+                    onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
+                    onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    onNavigateBack = { navController.navigateUp() },
                 )
             }
         }
