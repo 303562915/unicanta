@@ -23,6 +23,7 @@ import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.canta_description
 import io.github.samolego.canta.ui.AppsType
+import io.github.samolego.canta.ui.operationKind
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.CommunityScore
 import io.github.samolego.canta.util.DeviceContext
