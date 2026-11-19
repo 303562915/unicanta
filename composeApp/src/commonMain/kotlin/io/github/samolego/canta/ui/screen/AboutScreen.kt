@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,8 +51,12 @@ import io.github.samolego.canta.generated.resources.about_up_to_date
 import io.github.samolego.canta.generated.resources.auto_update_bloat_list
 import io.github.samolego.canta.generated.resources.confirm_uninstall
 import io.github.samolego.canta.generated.resources.hide_success_dialog
-import io.github.samolego.canta.generated.resources.settings_show_recommend
-import io.github.samolego.canta.generated.resources.settings_show_tweaks
+import io.github.samolego.canta.generated.resources.settings
+import io.github.samolego.canta.generated.resources.settings_bar_slots_hint
+import io.github.samolego.canta.generated.resources.tab_apps
+import io.github.samolego.canta.generated.resources.tab_recommend
+import io.github.samolego.canta.generated.resources.tab_rules
+import io.github.samolego.canta.generated.resources.tab_tweaks
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.SettingsSwitch
@@ -180,17 +185,14 @@ fun AboutScreen(
                 checked = hideSuccessDialog,
                 onCheckedChange = settingsViewModel::saveHideSuccessDialog,
             )
-            ToggleCard(
-                glyph = FlGlyphs.tools,
-                title = stringResource(Res.string.settings_show_tweaks),
-                checked = showTweaksTab,
-                onCheckedChange = settingsViewModel::saveShowTweaksTab,
-            )
-            ToggleCard(
-                glyph = FlGlyphs.appsList,
-                title = stringResource(Res.string.settings_show_recommend),
-                checked = showRecommendTab,
-                onCheckedChange = settingsViewModel::saveShowRecommendTab,
+
+            // The bar itself, as one row of five: the three pages everyone needs are lit and
+            // cannot be tapped, the other two are the switches — a page shows once its slot is on.
+            BarSlotsCard(
+                showTweaks = showTweaksTab,
+                showRecommend = showRecommendTab,
+                onToggleTweaks = settingsViewModel::saveShowTweaksTab,
+                onToggleRecommend = settingsViewModel::saveShowRecommendTab,
             )
 
             Spacer(Modifier.height(6.dp))
@@ -334,6 +336,102 @@ private fun ToggleCard(
         )
         Spacer(Modifier.width(8.dp))
         SettingsSwitch(checked)
+    }
+}
+
+/** One entry of the bottom bar: [glyph], [label], whether it is lit, and whether it takes a tap. */
+private data class BarSlot(
+    val glyph: FlGlyph,
+    val label: String,
+    val lit: Boolean,
+    val onToggle: (() -> Unit)?,
+)
+
+/**
+ * The bar as one row of five slots. The three pages everyone needs are always lit and cannot be
+ * tapped; the tools page and the picks page are switches, and a page only gets an entry in the bar
+ * while its slot is lit. This is the only place the two optional pages are turned on.
+ */
+@Composable
+private fun BarSlotsCard(
+    showTweaks: Boolean,
+    showRecommend: Boolean,
+    onToggleTweaks: (Boolean) -> Unit,
+    onToggleRecommend: (Boolean) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val slots = listOf(
+        BarSlot(FlGlyphs.dashboard, stringResource(Res.string.tab_apps), lit = true, onToggle = null),
+        BarSlot(FlGlyphs.rules, stringResource(Res.string.tab_rules), lit = true, onToggle = null),
+        BarSlot(
+            FlGlyphs.tools,
+            stringResource(Res.string.tab_tweaks),
+            lit = showTweaks,
+            onToggle = { onToggleTweaks(!showTweaks) },
+        ),
+        BarSlot(
+            FlGlyphs.appsList,
+            stringResource(Res.string.tab_recommend),
+            lit = showRecommend,
+            onToggle = { onToggleRecommend(!showRecommend) },
+        ),
+        BarSlot(FlGlyphs.settings, stringResource(Res.string.settings), lit = true, onToggle = null),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = CardInset, vertical = 4.dp)
+            .clip(RoundedCornerShape(CardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .padding(horizontal = 10.dp, vertical = 11.dp),
+    ) {
+        Text(
+            text = stringResource(Res.string.settings_bar_slots_hint),
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Spacer(Modifier.height(9.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            slots.forEach { slot -> BarSlotChip(slot, Modifier.weight(1f)) }
+        }
+    }
+}
+
+@Composable
+private fun BarSlotChip(slot: BarSlot, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val lit = slot.lit
+    val toggle = slot.onToggle
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .then(if (toggle != null) Modifier.clickable(onClick = toggle) else Modifier)
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(if (lit) scheme.primary else scheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            FlGlyphIcon(
+                glyph = slot.glyph,
+                size = 18.dp,
+                tint = if (lit) scheme.onPrimary else scheme.onSurfaceVariant,
+                fill = if (lit) 1f else 0f,
+            )
+        }
+        Text(
+            text = slot.label,
+            style = FlText.caption2,
+            color = if (lit) scheme.onSurface else scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
