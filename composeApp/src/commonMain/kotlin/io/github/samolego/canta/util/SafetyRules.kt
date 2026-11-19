@@ -31,11 +31,7 @@ data class DeviceProfile(
     val displayModel: String get() = marketName.ifBlank { model }
 
     /** "HyperOS 2" — the ROM as people name it. */
-    private val romPart: String
-        get() {
-            val name = romName(rom)
-            return if (romVersion > 0 && name != "Android") "$name $romVersion" else name
-        }
+    private val romPart: String get() = romLabelOf(rom, romVersion)
 
     /**
      * "Redmi K70 · HyperOS 2 · Android 15": one line, no part number, for headers and plan rows.

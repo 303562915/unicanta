@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -153,6 +154,8 @@ fun PlanDetailScreen(
     var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
     /** Threads the reader opened with "展开 N 条回复", by their own key; see [threadKey]. */
     var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
+    /** The "use this plan" tap that has to be confirmed, because the plan is for another phone. */
+    var confirmForeign by remember { mutableStateOf(false) }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -328,13 +331,45 @@ fun PlanDetailScreen(
                 },
                 onVote = vote,
                 onOpenApp = onOpenApp,
-                onUsePlan = { onUsePlan(loaded.packages) },
+                foreign = !loaded.matches(profile),
+                // Another model's plan is applied the same way — Canta does not block it — but the
+                // tap asks first, because nothing about it was proven on this phone.
+                onUsePlan = {
+                    if (loaded.matches(profile)) onUsePlan(loaded.packages) else confirmForeign = true
+                },
                 onReply = { comment ->
                     replyTo = comment
                     submitFailed = false
                 },
                 onDeleteComment = deleteComment,
                 modifier = Modifier.fillMaxSize().padding(padding),
+            )
+        }
+    }
+
+    // The one place a plan for another phone is turned into a selection on this one: say what will
+    // happen, then do exactly that. The wording states the limit — nothing here blocks an uninstall.
+    if (confirmForeign) {
+        val planDevice = plan?.deviceLabel.orEmpty().ifBlank { "未知机型" }
+        val thisDevice = profile?.shortLabel() ?: "-"
+        CantaDialog(
+            onDismissRequest = { confirmForeign = false },
+            title = "机型不符",
+            buttons = {
+                TextButton(onClick = { confirmForeign = false }) { Text("取消") }
+                Button(onClick = {
+                    confirmForeign = false
+                    plan?.let { onUsePlan(it.packages) }
+                }) { Text("仍然使用") }
+            },
+        ) {
+            Text(
+                text = "这套方案来自「$planDevice」，本机是「$thisDevice」。\n\n" +
+                    "使用不会被拦截：Canta 只把方案里的包选上，不会因为机型不同而阻止卸载，" +
+                    "也不会替你校验这些包在这台手机上安不安全。",
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
     }
@@ -348,6 +383,8 @@ private fun PlanDetailContent(
     apps: List<AppInfo>,
     rules: SafetyRules?,
     profile: DeviceProfile?,
+    /** True when the plan was proven on another model or build: the page says so, and asks first. */
+    foreign: Boolean = false,
     comments: List<PlanComment>,
     loadError: String? = null,
     me: String,
@@ -373,7 +410,7 @@ private fun PlanDetailContent(
     val uploaderName = plan.authorName
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
-        item { PlanHero(plan, profile, uploaderName, me, liked, onVote, onUsePlan) }
+        item { PlanHero(plan, profile, uploaderName, me, liked, foreign, onVote, onUsePlan) }
 
         item {
             SectionTitle(
@@ -447,6 +484,7 @@ private fun PlanHero(
     uploaderName: String,
     me: String,
     liked: Boolean,
+    foreign: Boolean,
     onVote: () -> Unit,
     onUsePlan: () -> Unit,
 ) {
@@ -526,6 +564,34 @@ private fun PlanHero(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // The plan names the phone it was proven on. When that is not this one, the page says
+            // it twice: once as the mismatch, once as what will happen (nothing will stop it).
+            if (foreign) {
+                Column(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = "机型不符：这是「${plan.deviceLabel.ifBlank { "未知机型" }}」的方案",
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.error,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        text = "使用不会被拦截：Canta 只按你选中的包执行，不会因为机型不同而停下。",
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        color = colors.onPrimaryContainer.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
+            }
             if (plan.note.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Text(

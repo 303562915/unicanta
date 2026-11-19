@@ -57,11 +57,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.data.community.CatalogModel
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.PlanCache
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.rankPackages
+import io.github.samolego.canta.data.community.toCatalogModels
 import io.github.samolego.canta.data.community.withoutDuplicates
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plan_test_chip
@@ -82,6 +84,9 @@ import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.DeviceHero
+import io.github.samolego.canta.ui.component.PlanScope
+import io.github.samolego.canta.ui.component.PlanScopeBar
+import io.github.samolego.canta.ui.component.PlanScopeDialog
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
@@ -127,16 +132,23 @@ private data class UploadRequest(
 )
 
 /**
- * Two views of the same question, both scoped to *this* phone.
+ * Two views of the same question, scoped to one phone at a time.
  *
- * *Top removed*: packages ranked by the likes their plans got on this model and ROM version — the
+ * *Top removed*: packages ranked by the likes their plans got on that model and ROM version — the
  * more people endorse a plan that removes a package, the higher it sits. Every row is a package
- * this phone could remove, with what the device-aware rules say about it.
+ * that phone could remove, with what the device-aware rules say about it.
  * *Plans*: the plans themselves, most liked first. A test plan needs no reboot: the test password
  * unlocks it and the plan is labelled as one. Plans this install uploaded can be deleted again.
  *
  * The phone is named the way it is sold ("Redmi K70"), never by the retail model number: that
  * number is what the ROM reports but not what anyone recognises.
+ *
+ * The phone is a *choice*, not a given: the name on the band opens the model chips, which list
+ * every model the backend has plans for — grouped by family, with how many people joined each one —
+ * and then the builds of the model that was opened. Both lists are that model's; nothing is
+ * silently mixed with this phone's. A plan read there is still readable and still applicable, and
+ * the plan's own page says so before it is used: another model's plan is not blocked, it is
+ * labelled.
  */
 @OptIn(ExperimentalTime::class)
 @Composable
@@ -156,6 +168,13 @@ fun SafetyRulesScreen(
     var tab by remember { mutableIntStateOf(0) }
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
     var rules by remember { mutableStateOf<SafetyRules?>(null) }
+    // Which phone's plans are on screen. This phone by default; another model when a chip in the
+    // picker was opened, which is the only way to read a plan before owning the phone.
+    var planScope by remember { mutableStateOf<PlanScope>(PlanScope.ThisPhone) }
+    // Every model the backend has plans for, with the counts its chips print.
+    var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
+    var catalogLoading by remember { mutableStateOf(true) }
+    var pickerOpen by remember { mutableStateOf(false) }
 
     // The photo at the top is decoration: the About page can turn it off, and the page then keeps
     // the band with the phone's name and the switch but not the picture under it. A plain `Flow`,
@@ -229,36 +248,86 @@ fun SafetyRulesScreen(
         identity = current
     }
 
-    LaunchedEffect(profile, reloads) {
-        val target = profile
-        if (target == null) {
-            loading = false
-            return@LaunchedEffect
-        }
-        // Whatever was cached shows immediately, so a page opened right after a reboot is not
-        // empty while the request is in flight.
-        if (plans.isEmpty()) {
-            planCache?.read(target)?.takeIf { it.isNotEmpty() }?.let { cached ->
-                plans = cached.withoutDuplicates()
+    // The catalog is what the picker draws: one row per build, folded into models. It is asked for
+    // with the plans, so opening the picker right after the page does not sit on an empty list.
+    LaunchedEffect(reloads) {
+        catalogLoading = true
+        catalog = repo.catalog()?.toCatalogModels().orEmpty()
+        catalogLoading = false
+    }
+
+    LaunchedEffect(profile, reloads, planScope) {
+        when (val scope = planScope) {
+            PlanScope.ThisPhone -> {
+                val target = profile
+                if (target == null) {
+                    loading = false
+                    return@LaunchedEffect
+                }
+                // Whatever was cached shows immediately, so a page opened right after a reboot is
+                // not empty while the request is in flight.
+                if (plans.isEmpty()) {
+                    planCache?.read(target)?.takeIf { it.isNotEmpty() }?.let { cached ->
+                        plans = cached.withoutDuplicates()
+                        loading = false
+                    }
+                }
+                loading = plans.isEmpty()
+                var fetched: List<CommunityPlan>? = null
+                for (attempt in 0 until PLAN_ATTEMPTS) {
+                    val result = repo.plansFor(target)
+                    if (result.isNotEmpty()) {
+                        fetched = result
+                        break
+                    }
+                    if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
+                }
+                offline = fetched == null
+                if (fetched != null) {
+                    plans = fetched.withoutDuplicates()
+                    planCache?.write(target, fetched)
+                }
+                loading = false
+            }
+
+            is PlanScope.Other -> {
+                // Another model's list is never cached: the cache belongs to this phone's own build,
+                // and a list from another model shown as "yours" after a reboot would be a lie.
+                loading = true
+                offline = false
+                var fetched: List<CommunityPlan>? = null
+                for (attempt in 0 until PLAN_ATTEMPTS) {
+                    val result = repo.plansForModel(
+                        brand = scope.model.brand,
+                        model = scope.model.model,
+                        rom = scope.build?.rom.orEmpty(),
+                        romVersion = scope.build?.romVersion ?: 0,
+                    )
+                    if (result != null) {
+                        fetched = result
+                        break
+                    }
+                    if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
+                }
+                offline = fetched == null
+                plans = fetched.orEmpty().withoutDuplicates().map { plan ->
+                    // A backend without the device columns sends no model: the scope already says
+                    // which phone these rows belong to, and the warning about using them needs it.
+                    if (plan.model.isNotBlank()) {
+                        plan
+                    } else {
+                        plan.copy(
+                            brand = scope.model.brand,
+                            model = scope.model.model,
+                            marketName = scope.model.marketName,
+                            rom = scope.build?.rom ?: plan.rom,
+                            romVersion = scope.build?.romVersion ?: plan.romVersion,
+                        )
+                    }
+                }
                 loading = false
             }
         }
-        loading = plans.isEmpty()
-        var fetched: List<CommunityPlan>? = null
-        for (attempt in 0 until PLAN_ATTEMPTS) {
-            val result = repo.plansFor(target)
-            if (result.isNotEmpty()) {
-                fetched = result
-                break
-            }
-            if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
-        }
-        offline = fetched == null
-        if (fetched != null) {
-            plans = fetched.withoutDuplicates()
-            planCache?.write(target, fetched)
-        }
-        loading = false
     }
 
     // What a plan may contain: everything this phone no longer has, plus whatever is ticked right
@@ -293,6 +362,23 @@ fun SafetyRulesScreen(
         }
     }
 
+    val ownLabel = profile?.displayModel.orEmpty()
+    val opened = planScope as? PlanScope.Other
+    // The band names whatever the list below is about. This phone keeps the wording it had; an
+    // opened model says so, because a plan read here may be for a phone that is not in hand.
+    val heroTitle = when {
+        opened != null -> opened.model.label
+        showDevicePhoto -> ownLabel.ifBlank { "-" }
+        else -> "本机"
+    }
+    val heroSubtitle = when {
+        opened != null -> "他机方案 · " + (opened.build?.versionLabel ?: "全部版本")
+        else -> profile?.let { romLine(it) }.orEmpty()
+    }
+    // What the empty states and the ranking call the device: the model on screen, or "本机" when
+    // the name is being kept off the page.
+    val listLabel = opened?.model?.label ?: ownLabel.ifBlank { "本机" }
+
     Scaffold(
         topBar = {
             // The phone is the header: its name and counters on the band, the page switch right
@@ -300,14 +386,19 @@ fun SafetyRulesScreen(
             // The switch covers the name as well as the picture: with it off the page says
             // "本机" and looks nothing up, which is the point of having the switch.
             DeviceHero(
-                model = if (showDevicePhoto) profile?.displayModel.orEmpty() else "",
-                title = if (showDevicePhoto) profile?.displayModel ?: "-" else "本机",
-                subtitle = profile?.let { romLine(it) }.orEmpty(),
+                model = if (showDevicePhoto) opened?.model?.label ?: ownLabel else "",
+                title = heroTitle,
+                subtitle = heroSubtitle,
                 showPhoto = showDevicePhoto,
+                // The name is the way to another phone: tapping it opens the model chips.
+                onTitleClick = { pickerOpen = true },
                 counters = buildList {
                     add("${plans.size}" to stringResource(Res.string.safety_tab_plans))
+                    // The reboot proof is this install's own: it means nothing under another model.
                     val pending = deletedPackages.size
-                    if (pending > 0) add("$confirmed/$pending" to stringResource(Res.string.plans_verified_short))
+                    if (pending > 0 && opened == null) {
+                        add("$confirmed/$pending" to stringResource(Res.string.plans_verified_short))
+                    }
                 },
                 footer = {
                     FlSegmentedControl(
@@ -321,12 +412,19 @@ fun SafetyRulesScreen(
                         // ordinary groove colours and the ordinary side inset.
                         insetHorizontal = 16.dp,
                     )
+                    Spacer(Modifier.height(4.dp))
+                    PlanScopeBar(
+                        scope = planScope,
+                        ownLabel = ownLabel,
+                        onOpen = { pickerOpen = true },
+                    )
                 },
             )
         },
         floatingActionButton = {
-            // Only the plans page publishes; the app ranking has nothing to upload.
-            if (tab == 1) {
+            // Only the plans page publishes, and only for this phone: another model's list is
+            // something to read, not somewhere to upload this phone's packages.
+            if (tab == 1 && planScope == PlanScope.ThisPhone) {
                 ExtendedFloatingActionButton(
                     onClick = openUpload,
                     // The page's own floating dock sits at the bottom centre: the button has to
@@ -372,6 +470,8 @@ fun SafetyRulesScreen(
                     apps = apps,
                     rules = rules,
                     profile = profile,
+                    deviceLabel = listLabel,
+                    otherDevice = opened != null,
                     offline = offline,
                     onOpenApp = onOpenApp,
                     onRetry = { reloads++ },
@@ -381,6 +481,7 @@ fun SafetyRulesScreen(
                     plans = plans,
                     loading = loading,
                     profile = profile,
+                    deviceLabel = listLabel,
                     owner = owner,
                     liked = liked,
                     offline = offline,
@@ -391,6 +492,28 @@ fun SafetyRulesScreen(
                 )
             }
         }
+    }
+
+    if (pickerOpen) {
+        PlanScopeDialog(
+            models = catalog,
+            ownLabel = ownLabel,
+            loading = catalogLoading,
+            scope = planScope,
+            onSelect = { picked ->
+                pickerOpen = false
+                if (picked != planScope) {
+                    // The old rows are another phone's: clearing them here means the list never
+                    // shows a plan under a name it does not belong to, not even for one frame.
+                    plans = emptyList()
+                    loading = true
+                    notice = null
+                    planScope = picked
+                }
+            },
+            onRetry = { reloads++ },
+            onDismiss = { pickerOpen = false },
+        )
     }
 
     upload?.let { request ->
@@ -508,6 +631,9 @@ private fun RankingTab(
     apps: List<AppInfo>,
     rules: SafetyRules?,
     profile: DeviceProfile?,
+    deviceLabel: String,
+    /** True when the list belongs to another model: the verdicts below are this phone's, not its. */
+    otherDevice: Boolean,
     offline: Boolean,
     onOpenApp: (String) -> Unit,
     onRetry: () -> Unit,
@@ -523,7 +649,7 @@ private fun RankingTab(
         )
         ranking.isEmpty() -> EmptyCard(
             title = stringResource(Res.string.safety_tab_apps),
-            body = stringResource(Res.string.ranking_empty, profile?.displayModel ?: "-"),
+            body = stringResource(Res.string.ranking_empty, deviceLabel.ifBlank { "-" }),
             onRetry = onRetry,
             retryHint = offline,
         )
@@ -535,7 +661,10 @@ private fun RankingTab(
                 RankRowView(
                     rank = row,
                     app = byPackage[row.pkg],
-                    verdict = rules?.verdict(row.pkg, profile),
+                    // The device rules describe packages on *this* phone: under another model their
+                    // answer would be somebody else's build wearing this one's name.
+                    verdict = if (otherDevice) null else rules?.verdict(row.pkg, profile),
+                    otherDevice = otherDevice,
                     onClick = { onOpenApp(row.pkg) },
                 )
             }
@@ -549,6 +678,7 @@ private fun RankRowView(
     rank: PackageRank,
     app: AppInfo?,
     verdict: SafetyVerdict?,
+    otherDevice: Boolean = false,
     onClick: () -> Unit = {},
 ) {
     Row(
@@ -590,7 +720,7 @@ private fun RankRowView(
             maxLines = 1,
         )
         Spacer(Modifier.width(6.dp))
-        StatusChip(verdict)
+        StatusChip(verdict, otherDevice)
     }
 }
 
@@ -628,12 +758,15 @@ private fun RankBadge(position: Int) {
 }
 
 @Composable
-private fun StatusChip(verdict: SafetyVerdict?) {
-    val (label, color) = when (verdict?.status) {
-        SafetyStatus.CRITICAL -> "禁区" to MaterialTheme.colorScheme.error
-        SafetyStatus.RISKY -> "有代价" to MaterialTheme.colorScheme.tertiary
-        SafetyStatus.SAFE -> "可卸" to MaterialTheme.colorScheme.primary
-        null -> "未知" to MaterialTheme.colorScheme.outline
+private fun StatusChip(verdict: SafetyVerdict?, otherDevice: Boolean = false) {
+    val (label, color) = when {
+        // Nothing is known about this package *on that phone*: saying "未知" would read as "the
+        // rules do not cover it", while the truth is that the rules were not asked.
+        otherDevice -> "他机" to MaterialTheme.colorScheme.outline
+        verdict?.status == SafetyStatus.CRITICAL -> "禁区" to MaterialTheme.colorScheme.error
+        verdict?.status == SafetyStatus.RISKY -> "有代价" to MaterialTheme.colorScheme.tertiary
+        verdict?.status == SafetyStatus.SAFE -> "可卸" to MaterialTheme.colorScheme.primary
+        else -> "未知" to MaterialTheme.colorScheme.outline
     }
     Text(
         text = label,
@@ -655,6 +788,7 @@ private fun PlansTab(
     plans: List<CommunityPlan>,
     loading: Boolean,
     profile: DeviceProfile?,
+    deviceLabel: String,
     owner: String,
     liked: Set<Long>,
     offline: Boolean,
@@ -670,7 +804,7 @@ private fun PlansTab(
             modifier = Modifier.padding(12.dp),
         )
         plans.isEmpty() -> EmptyCard(
-            title = stringResource(Res.string.plans_empty_title, profile?.displayModel ?: "-"),
+            title = stringResource(Res.string.plans_empty_title, deviceLabel.ifBlank { "-" }),
             body = stringResource(Res.string.plans_empty_body),
             onRetry = onRetry,
             retryHint = offline,
@@ -691,6 +825,9 @@ private fun PlansTab(
                 PlanCard(
                     plan = plan,
                     mine = owner.isNotEmpty() && plan.owner == owner,
+                    // A plan for another model is still readable, but the card has to say so: the
+                    // selection it applies is this phone's, not the one it was proven on.
+                    foreign = !plan.matches(profile),
                     // The position *is* the recommendation: the badge on the left says who the
                     // community trusts most, exactly like the package ranking does.
                     rank = index + 1,
@@ -713,6 +850,7 @@ private fun PlansTab(
 private fun PlanCard(
     plan: CommunityPlan,
     mine: Boolean,
+    foreign: Boolean,
     rank: Int?,
     liked: Boolean,
     onOpen: () -> Unit,
@@ -748,6 +886,10 @@ private fun PlanCard(
                 if (plan.isTest) {
                     Spacer(Modifier.width(6.dp))
                     TestChip()
+                }
+                if (foreign) {
+                    Spacer(Modifier.width(6.dp))
+                    ForeignChip()
                 }
                 if (mine) {
                     IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
@@ -836,6 +978,23 @@ private fun VoteButton(votes: Int, liked: Boolean, onVote: () -> Unit) {
             color = content,
         )
     }
+}
+
+/**
+ * The "another model" mark: the plan is readable, its device line is not this phone's, and using it
+ * will not be blocked — the mark is the warning, not a lock.
+ */
+@Composable
+private fun ForeignChip() {
+    Text(
+        text = "他机方案",
+        fontSize = 9.sp,
+        lineHeight = 11.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 /** The "test" mark: small, unmistakably not a verified plan. */

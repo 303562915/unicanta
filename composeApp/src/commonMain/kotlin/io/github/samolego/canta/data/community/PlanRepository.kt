@@ -2,6 +2,7 @@ package io.github.samolego.canta.data.community
 
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.TelemetryConfig
+import io.github.samolego.canta.util.romLabelOf
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -44,6 +45,20 @@ data class CommunityPlan(
     val isTest: Boolean = false,
     /** The name the uploader uses today; empty when the backend does not send it (old deployment). */
     val uploader: String = "",
+    /**
+     * The phone the plan was made on. Empty on rows from a deployment that predates the device
+     * columns; the page then cannot say whether the plan fits this phone, and treats it as "this
+     * one" instead of inventing a mismatch.
+     */
+    val brand: String = "",
+    val model: String = "",
+    /**
+     * The model's marketing name ("Redmi K70") when the uploader's ROM reported one. The retail
+     * number in [model] is what MIUI/HyperOS puts in `ro.product.model`, and nobody recognises it.
+     */
+    val marketName: String = "",
+    val rom: String = "",
+    val romVersion: Int = 0,
 ) {
     /**
      * What the card shows next to the avatar: the uploader's name, or the identity number
@@ -51,6 +66,26 @@ data class CommunityPlan(
      */
     val authorName: String
         get() = uploader.ifBlank { if (owner.isNotEmpty()) "#$owner" else "" }
+
+    /** "Redmi K70 · HyperOS 2", or "" when the backend did not say which device this is for. */
+    val deviceLabel: String
+        get() = buildList {
+            val phone = marketName.ifBlank { model }
+            if (phone.isNotBlank()) add(phone)
+            if (rom.isNotBlank()) add(romLabelOf(rom, romVersion))
+        }.joinToString(" · ")
+
+    /**
+     * Whether this plan was made for [profile]'s own build. A plan from an older deployment
+     * carries no device at all, and "unknown" must not read as "another phone": only a known,
+     * different model or build does.
+     */
+    fun matches(profile: DeviceProfile?): Boolean {
+        if (profile == null || model.isBlank()) return true
+        if (!model.equals(profile.model, ignoreCase = true)) return false
+        if (rom.isBlank()) return true
+        return rom.equals(profile.rom, ignoreCase = true) && romVersion == profile.romVersion
+    }
 }
 
 /** Id of the local "test upload" row: never a server id, so it can be told apart. */
@@ -203,9 +238,78 @@ class PlanRepository(
             put("p_rom_version", profile.romVersion)
         }.toString()
         val text = rpc("plans_for", body) ?: return emptyList()
+        return parsePlans(text)
+    }
+
+    /** Every plan row in [text]; an answer the parser cannot read is an empty list, not a crash. */
+    private fun parsePlans(text: String): List<CommunityPlan> = runCatching {
+        json.parseToJsonElement(text).jsonArray.mapNotNull { element -> parsePlan(element.jsonObject) }
+    }.getOrDefault(emptyList())
+
+    /**
+     * The plans of one model (and optionally one of its builds) — what the model chips open.
+     *
+     * [rom] empty asks for every build of the model, which is the "全部" chip. The answer carries
+     * the device columns, so the list can say which of these plans are for another phone. Null when
+     * the backend could not be reached; an empty list is an answer ("nobody uploaded here yet").
+     *
+     * A deployment without `plans_for_model` still answers `plans_for`, which matches on model and
+     * build alone when the codename is left out: the same rows, without the device columns.
+     */
+    suspend fun plansForModel(
+        brand: String,
+        model: String,
+        rom: String = "",
+        romVersion: Int = 0,
+    ): List<CommunityPlan>? {
+        if (model.isBlank()) return null
+        val body = buildJsonObject {
+            put("p_brand", brand)
+            put("p_model", model)
+            put("p_rom", rom)
+            put("p_rom_version", romVersion)
+        }.toString()
+        rpc("plans_for_model", body)?.let { return parsePlans(it) }
+
+        if (functionMissing && rom.isNotBlank() && romVersion > 0) {
+            val legacy = buildJsonObject {
+                put("p_model", model)
+                // Empty codename: `plans_for` then matches the model and build, whichever the
+                // device codename of that phone is.
+                put("p_codename", "")
+                put("p_rom", rom)
+                put("p_rom_version", romVersion)
+            }.toString()
+            rpc("plans_for", legacy)?.let { return parsePlans(it) }
+        }
+        return null
+    }
+
+    /**
+     * Every model the community has plans for, one row per build, with how many plans and people
+     * each has. Null when the backend could not be reached or predates the catalog call.
+     */
+    suspend fun catalog(): List<CatalogBuild>? {
+        val text = rpc("plan_catalog", "{}") ?: return null
         return runCatching {
-            json.parseToJsonElement(text).jsonArray.mapNotNull { element -> parsePlan(element.jsonObject) }
-        }.getOrDefault(emptyList())
+            json.parseToJsonElement(text).jsonArray.mapNotNull { element -> parseCatalogBuild(element.jsonObject) }
+        }.getOrNull()
+    }
+
+    private fun parseCatalogBuild(o: JsonObject): CatalogBuild? {
+        val model = o["model"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        if (model.isBlank()) return null
+        return CatalogBuild(
+            brand = o["brand"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            model = model,
+            marketName = o["market_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            romVersion = o["rom_version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            plans = o["plans"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            people = o["people"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            modelPlans = o["model_plans"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            modelPeople = o["model_people"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+        )
     }
 
     /**
@@ -255,6 +359,13 @@ class PlanRepository(
             owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             isTest = o["is_test"]?.jsonPrimitive?.booleanOrNull ?: false,
             uploader = o["owner_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            // Absent on a deployment that predates the device catalog: the page then treats the
+            // plan as this phone's, which is what the old backend meant anyway.
+            brand = o["brand"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            model = o["model"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            marketName = o["market_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            romVersion = o["rom_version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
         )
     }
 
@@ -279,6 +390,8 @@ class PlanRepository(
         val body = buildJsonObject {
             put("brand", profile.brand)
             put("model", profile.model)
+            // The name people recognise, so the model chips read "Redmi K70" and not "23113RKC6C".
+            put("market_name", profile.marketName)
             put("codename", profile.device)
             put("rom", profile.rom)
             put("rom_version", profile.romVersion)
