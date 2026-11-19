@@ -364,8 +364,9 @@ private fun PlanDetailContent(
         .map { pkg -> pkg to ranking[pkg] }
         .sortedWith(compareBy(nullsLast()) { (_, rank) -> rank?.rank })
     val threads = remember(comments) { comments.threads() }
-    // The number of the person who uploaded it, in the form the rest of the app shows.
-    val uploaderName = DeviceIdentity.codeOfUser(plan.owner.toLongOrNull() ?: 0L)
+    // The uploader's current name (or the identity number before names were synced), in the form the
+    // rest of the app shows: the plan card and this header must read the same.
+    val uploaderName = plan.authorName
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(bottom = 16.dp)) {
         item { PlanHero(plan, profile, uploaderName, me, liked, onVote, onUsePlan) }

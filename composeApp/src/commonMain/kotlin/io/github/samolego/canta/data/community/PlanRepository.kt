@@ -42,7 +42,16 @@ data class CommunityPlan(
     val owner: String = "",
     /** True for a plan uploaded with the test password: no reboot proof behind it. */
     val isTest: Boolean = false,
-)
+    /** The name the uploader uses today; empty when the backend does not send it (old deployment). */
+    val uploader: String = "",
+) {
+    /**
+     * What the card shows next to the avatar: the uploader's name, or the identity number
+     * ("#10000") for a plan from before names were synced.
+     */
+    val authorName: String
+        get() = uploader.ifBlank { if (owner.isNotEmpty()) "#$owner" else "" }
+}
 
 /** Id of the local "test upload" row: never a server id, so it can be told apart. */
 const val TEST_PLAN_ID: Long = -1L
@@ -195,6 +204,7 @@ class PlanRepository(
                     rebootedAt = o["rebooted_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     isTest = o["is_test"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    uploader = o["owner_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 )
             }
         }.getOrDefault(emptyList())

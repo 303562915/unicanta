@@ -54,18 +54,13 @@ import io.github.samolego.canta.generated.resources.plan_upload_next
 import io.github.samolego.canta.generated.resources.plan_upload_no_candidates
 import io.github.samolego.canta.generated.resources.plan_upload_note_label
 import io.github.samolego.canta.generated.resources.plan_upload_password_label
-import io.github.samolego.canta.generated.resources.plan_upload_password_optional
 import io.github.samolego.canta.generated.resources.plan_upload_publishing
-import io.github.samolego.canta.generated.resources.plan_upload_reboot_ok
 import io.github.samolego.canta.generated.resources.plan_upload_select_all
 import io.github.samolego.canta.generated.resources.plan_upload_selected
 import io.github.samolego.canta.generated.resources.plan_upload_step_details
-import io.github.samolego.canta.generated.resources.plan_upload_step_of
 import io.github.samolego.canta.generated.resources.plan_upload_step_packages
 import io.github.samolego.canta.generated.resources.plan_upload_still_installed
 import io.github.samolego.canta.generated.resources.plan_upload_submit
-import io.github.samolego.canta.generated.resources.plan_upload_test_hint
-import io.github.samolego.canta.generated.resources.plan_upload_test_note
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
@@ -83,15 +78,15 @@ private val CANDIDATE_LIST_MAX = 260.dp
  * Publishes a set of packages as a community plan, in two steps: pick the packages, then name the
  * plan.
  *
- * A batch that survived a reboot uploads directly. Without one, the test password unlocks the
- * upload anyway: the plan is then stored and labelled as a test, so the flow can be tried before
- * the phone has been restarted.
+ * There are exactly two ways to publish. A selection made only of packages that survived a reboot
+ * goes up as a verified plan. Anything else needs the password, and is stored and labelled as a
+ * test plan — the password is what stands in for the reboot proof, so it is the only other way in.
  *
  * @param candidates every package this phone may publish, in the order they should be listed
  *   (already-removed apps first): the owner sees exactly what a plan would contain.
- * @param preselected the packages that are the point of the upload — usually the removed ones.
- * @param canUpload whether that removal was confirmed by a reboot.
- * @param testMode start with the test password field focused, for the "test upload" row.
+ * @param preselected the packages that are the point of the upload — the reboot-proven ones, or all
+ *   of them for the password flow.
+ * @param verified the packages the reboot check passed; a plan made only of those needs no password.
  * @param publishing true while the caller is still sending: the dialog stays up, buttons go dead.
  */
 @Composable
@@ -99,10 +94,9 @@ fun UploadPlanDialog(
     candidates: List<AppInfo>,
     preselected: Set<String>,
     profile: DeviceProfile?,
-    canUpload: Boolean,
+    verified: Set<String>,
     onDismiss: () -> Unit,
     onSubmit: (title: String, note: String, packages: List<String>, test: Boolean) -> Unit,
-    testMode: Boolean = false,
     publishing: Boolean = false,
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
@@ -113,7 +107,10 @@ fun UploadPlanDialog(
     var selected by remember { mutableStateOf(preselected.toList()) }
 
     val unlocked = DeviceIdentity.isTestPassword(password)
-    val mayPublish = title.isNotBlank() && selected.isNotEmpty() && !publishing && (canUpload || unlocked)
+    // Verified means every package in the plan survived a reboot — a batch mixed with unproven ones
+    // is a test plan, whatever the selection started as.
+    val provenBatch = selected.isNotEmpty() && selected.all { it in verified }
+    val mayPublish = title.isNotBlank() && selected.isNotEmpty() && !publishing && (provenBatch || unlocked)
 
     CantaDialog(
         onDismissRequest = { if (!publishing) onDismiss() },
@@ -132,7 +129,7 @@ fun UploadPlanDialog(
                     Text(stringResource(Res.string.plan_upload_back))
                 }
                 Button(
-                    onClick = { onSubmit(title.trim(), note.trim(), selected, !canUpload || unlocked) },
+                    onClick = { onSubmit(title.trim(), note.trim(), selected, !provenBatch) },
                     enabled = mayPublish,
                 ) {
                     if (publishing) {
@@ -169,9 +166,7 @@ fun UploadPlanDialog(
             )
             else -> DetailsStep(
                 profile = profile,
-                canUpload = canUpload,
-                testMode = testMode,
-                unlocked = unlocked,
+                provenBatch = provenBatch,
                 selectedCount = selected.size,
                 totalCount = candidates.size,
                 title = title,
@@ -194,12 +189,6 @@ private fun StepHeader(step: Int) {
         Text("—", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
         Spacer(Modifier.width(6.dp))
         StepChip("2", stringResource(Res.string.plan_upload_step_details), active = step == 1, done = false)
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = stringResource(Res.string.plan_upload_step_of, step + 1, 2),
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.outline,
-        )
     }
 }
 
@@ -321,13 +310,11 @@ private fun CandidateRow(app: AppInfo, checked: Boolean, onToggle: () -> Unit) {
     }
 }
 
-/** Step two: what the phone is, what the plan is called, and whether it counts as verified. */
+/** Step two: what the phone is, what the plan is called, and the password when it has no proof. */
 @Composable
 private fun DetailsStep(
     profile: DeviceProfile?,
-    canUpload: Boolean,
-    testMode: Boolean,
-    unlocked: Boolean,
+    provenBatch: Boolean,
     selectedCount: Int,
     totalCount: Int,
     title: String,
@@ -387,30 +374,19 @@ private fun DetailsStep(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        HorizontalDivider()
-        OutlinedTextField(
-            value = password,
-            onValueChange = onPasswordChange,
-            label = { Text(stringResource(Res.string.plan_upload_password_label), fontSize = 12.sp) },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            modifier = Modifier.fillMaxWidth(),
-            isError = testMode && !unlocked && !canUpload,
-        )
-        Text(
-            text = when {
-                unlocked -> stringResource(Res.string.plan_upload_test_note)
-                canUpload -> stringResource(Res.string.plan_upload_reboot_ok)
-                testMode -> stringResource(Res.string.plan_upload_test_hint)
-                else -> stringResource(Res.string.plan_upload_password_optional)
-            },
-            fontSize = 10.sp,
-            lineHeight = 13.sp,
-            color = when {
-                unlocked || canUpload -> MaterialTheme.colorScheme.primary
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
+        // A batch the reboot already proved needs no password, so the field only appears when it is
+        // the one thing that can still let this upload through.
+        if (!provenBatch) {
+            HorizontalDivider()
+            OutlinedTextField(
+                value = password,
+                onValueChange = onPasswordChange,
+                label = { Text(stringResource(Res.string.plan_upload_password_label), fontSize = 12.sp) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }

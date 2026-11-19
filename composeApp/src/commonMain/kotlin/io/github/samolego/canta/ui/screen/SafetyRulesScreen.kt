@@ -17,11 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
@@ -32,8 +30,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -65,22 +64,19 @@ import io.github.samolego.canta.data.community.rankPackages
 import io.github.samolego.canta.data.community.withoutDuplicates
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plan_test_chip
+import io.github.samolego.canta.generated.resources.plan_upload_password_action
+import io.github.samolego.canta.generated.resources.plan_upload_reboot_action
+import io.github.samolego.canta.generated.resources.plan_upload_reboot_wait
 import io.github.samolego.canta.generated.resources.plan_upload_fail
 import io.github.samolego.canta.generated.resources.plan_upload_ok
-import io.github.samolego.canta.generated.resources.plan_upload_submit
 import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.generated.resources.plans_empty_body
 import io.github.samolego.canta.generated.resources.plans_empty_title
-import io.github.samolego.canta.generated.resources.plans_identity
 import io.github.samolego.canta.generated.resources.plans_mine
-import io.github.samolego.canta.generated.resources.plans_test_entry_body
-import io.github.samolego.canta.generated.resources.plans_test_entry_count
-import io.github.samolego.canta.generated.resources.plans_test_entry_title
 import io.github.samolego.canta.generated.resources.plans_reload
 import io.github.samolego.canta.generated.resources.plans_reload_failed
 import io.github.samolego.canta.generated.resources.plans_verified_short
 import io.github.samolego.canta.generated.resources.plans_upload_cta
-import io.github.samolego.canta.generated.resources.plans_upload_cta_hint
 import io.github.samolego.canta.generated.resources.plans_upload_cta_none
 import io.github.samolego.canta.generated.resources.ranking_empty
 import io.github.samolego.canta.generated.resources.ranking_plans
@@ -90,6 +86,7 @@ import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.DeviceHero
+import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
@@ -125,12 +122,10 @@ private const val PROFILE_ATTEMPTS = 5
 /** A line under the header: what the last upload or delete said. */
 private data class Notice(val text: String, val error: Boolean = false)
 
-/** One upload the dialog is about: what it may contain, and whether it counts as verified. */
+/** One upload the dialog is about: what it may contain, and what is already ticked. */
 private data class UploadRequest(
     val candidates: List<AppInfo>,
     val preselected: Set<String>,
-    val canUpload: Boolean,
-    val testMode: Boolean,
 )
 
 /**
@@ -191,8 +186,13 @@ fun SafetyRulesScreen(
     val tickedApps = apps.filter { it.packageName in ticked }
 
     val pending by settings.pendingRebootFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    val verified = pending.filter { it.survived }.mapNotNull { it.pkg }.distinct()
-    val confirmed = deletedPackages.count { it in verified }
+    // What may be published as reboot-verified: a package that was recorded at uninstall time, whose
+    // boot id already changed once, and that is still gone. A package that is only *pending* (no
+    // completed boot since the uninstall) is not in here, which is what keeps the normal upload to
+    // batches that really booted.
+    val verifiedPackages = pending.filter { it.survived }.mapNotNull { it.pkg }
+        .filter { it in deletedPackages }.distinct().toSet()
+    val confirmed = verifiedPackages.size
     val owner = identity.owner
 
     LaunchedEffect(Unit) {
@@ -258,20 +258,23 @@ fun SafetyRulesScreen(
     }
 
     // What a plan may contain: everything this phone no longer has, plus whatever is ticked right
-    // now — the test flow is meant to be usable before anything has been removed.
+    // now — the password flow is meant to be usable before anything has been removed.
     val candidates = (uninstalledApps + tickedApps).distinctBy { it.packageName }
     val emptyHint = stringResource(Res.string.plans_upload_cta_none)
+    val waitHint = stringResource(Res.string.plans_upload_wait_reboot)
     val noProfileHint = "还没有读到机型信息，稍等一下再试。"
-    val openUpload: (Boolean) -> Unit = { test ->
+    // The only two ways up: the batch that survived a reboot, or the password that stands in for it.
+    val openUpload: (Boolean) -> Unit = { verified ->
         notice = null
         when {
             profile == null -> notice = Notice(noProfileHint, error = true)
             candidates.isEmpty() -> notice = Notice(emptyHint, error = true)
+            verified && verifiedPackages.isEmpty() -> notice = Notice(waitHint, error = true)
             else -> upload = UploadRequest(
                 candidates = candidates,
-                preselected = if (test) candidates.map { it.packageName }.toSet() else deletedPackages.toSet(),
-                canUpload = !test && deletedPackages.isNotEmpty() && confirmed > 0,
-                testMode = test,
+                // The verified entry uploads exactly what the reboot proved; the password entry may
+                // contain anything this phone removed and is stored as a test plan.
+                preselected = if (verified) verifiedPackages else candidates.map { it.packageName }.toSet(),
             )
         }
     }
@@ -344,15 +347,13 @@ fun SafetyRulesScreen(
                     plans = plans,
                     loading = loading,
                     profile = profile,
-                    identity = identity,
                     owner = owner,
-                    deletedCount = deletedPackages.size,
-                    confirmedCount = confirmed,
+                    verifiedCount = confirmed,
                     candidateCount = candidates.size,
                     liked = liked,
                     offline = offline,
-                    onUpload = { openUpload(false) },
-                    onTestUpload = { openUpload(true) },
+                    onUploadVerified = { openUpload(true) },
+                    onUploadPassword = { openUpload(false) },
                     onOpenPlan = onOpenPlan,
                     onVote = vote,
                     onDelete = { pendingDelete = it },
@@ -366,9 +367,8 @@ fun SafetyRulesScreen(
         UploadPlanDialog(
             candidates = request.candidates,
             preselected = request.preselected,
+            verified = verifiedPackages,
             profile = profile,
-            canUpload = request.canUpload,
-            testMode = request.testMode,
             publishing = uploading,
             onDismiss = { if (!uploading) upload = null },
             onSubmit = { title, note, packages, test ->
@@ -603,20 +603,6 @@ private fun RankBadge(position: Int) {
     }
 }
 
-/** A titled group of plans: what the section is, and how to read its order. */
-@Composable
-private fun PlanSectionHeader(title: String, hint: String) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp)) {
-        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        Text(
-            text = hint,
-            fontSize = 10.sp,
-            lineHeight = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
 @Composable
 private fun StatusChip(verdict: SafetyVerdict?) {
     val (label, color) = when (verdict?.status) {
@@ -636,85 +622,50 @@ private fun StatusChip(verdict: SafetyVerdict?) {
     )
 }
 
-/** The plans of this phone: the picture of the phone, the upload entry, then the plans themselves. */
+/**
+ * The plans of this phone, most recommended first, and the way to publish one at the very bottom
+ * of the page — the ranking is what a visitor came for, uploading is what they do after reading it.
+ */
 @Composable
 private fun PlansTab(
     plans: List<CommunityPlan>,
     loading: Boolean,
     profile: DeviceProfile?,
-    identity: Identity,
     owner: String,
-    deletedCount: Int,
-    confirmedCount: Int,
+    verifiedCount: Int,
     candidateCount: Int,
     liked: Set<Long>,
     offline: Boolean,
-    onUpload: () -> Unit,
-    onTestUpload: () -> Unit,
+    onUploadVerified: () -> Unit,
+    onUploadPassword: () -> Unit,
     onOpenPlan: (Long) -> Unit,
     onVote: (CommunityPlan) -> Unit,
     onDelete: (CommunityPlan) -> Unit,
     onRetry: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        UploadEntry(
-            profile = profile,
-            deletedCount = deletedCount,
-            confirmedCount = confirmedCount,
-            candidateCount = candidateCount,
-            identity = identity,
-            onUpload = onUpload,
-            onTestUpload = onTestUpload,
-        )
-        HorizontalDivider()
-        // This install's own plans first, then everybody else's in the order the votes put them:
-        // the plan made on this phone is the one being looked for, the ranking is what to compare
-        // it with.
-        val mine = plans.filter { owner.isNotEmpty() && it.owner == owner }
-        val others = plans.filterNot { owner.isNotEmpty() && it.owner == owner }
-        when {
-            loading -> Text("…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
-            plans.isEmpty() -> EmptyCard(
-                title = stringResource(Res.string.plans_empty_title, profile?.displayModel ?: "-"),
-                body = stringResource(Res.string.plans_empty_body),
-                onRetry = onRetry,
-                retryHint = offline,
-            )
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (mine.isNotEmpty()) {
-                    item(key = "mine-header") {
-                        PlanSectionHeader(
-                            title = "我的方案 · ${mine.size}",
-                            hint = "在这台手机上验证过、可以再次使用或删除",
-                        )
-                    }
-                    items(mine, key = { plan -> "mine-${plan.id}" }) { plan ->
+        Column(modifier = Modifier.weight(1f)) {
+            when {
+                loading -> Text(
+                    "…",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(12.dp),
+                )
+                plans.isEmpty() -> EmptyCard(
+                    title = stringResource(Res.string.plans_empty_title, profile?.displayModel ?: "-"),
+                    body = stringResource(Res.string.plans_empty_body),
+                    onRetry = onRetry,
+                    retryHint = offline,
+                )
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    itemsIndexed(plans, key = { _, plan -> plan.id }) { index, plan ->
                         PlanCard(
                             plan = plan,
-                            mine = true,
-                            rank = null,
-                            liked = plan.id in liked,
-                            onOpen = { onOpenPlan(plan.id) },
-                            onVote = { onVote(plan) },
-                            onDelete = { onDelete(plan) },
-                        )
-                    }
-                }
-                if (others.isNotEmpty()) {
-                    item(key = "others-header") {
-                        PlanSectionHeader(
-                            title = "大家的方案排行",
-                            hint = "按点赞数排，和卸载排行一样：1 是被最多人推荐的",
-                        )
-                    }
-                    itemsIndexed(others, key = { _, plan -> "other-${plan.id}" }) { index, plan ->
-                        PlanCard(
-                            plan = plan,
-                            mine = false,
+                            mine = owner.isNotEmpty() && plan.owner == owner,
                             // The position *is* the recommendation: the badge on the left says who
                             // the community trusts most, exactly like the package ranking does.
                             rank = index + 1,
@@ -727,110 +678,97 @@ private fun PlansTab(
                 }
             }
         }
+        HorizontalDivider()
+        UploadFoot(
+            verifiedCount = verifiedCount,
+            ready = profile != null && candidateCount > 0,
+            onUploadVerified = onUploadVerified,
+            onUploadPassword = onUploadPassword,
+        )
     }
 }
 
 /**
- * The way into the upload flow: one tap-target that also says what would be published, plus the
- * identity this install uploads and votes under.
+ * The two ways to publish, at the bottom of the page: the batch the reboot already proved, or the
+ * password that stands in for that proof. Nothing else uploads, and neither entry carries a
+ * paragraph — the label says which one it is.
  */
 @Composable
-private fun UploadEntry(
-    profile: DeviceProfile?,
-    deletedCount: Int,
-    confirmedCount: Int,
-    candidateCount: Int,
-    identity: Identity,
-    onUpload: () -> Unit,
-    onTestUpload: () -> Unit,
+private fun UploadFoot(
+    verifiedCount: Int,
+    ready: Boolean,
+    onUploadVerified: () -> Unit,
+    onUploadPassword: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = stringResource(Res.string.plans_upload_cta),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.primaryContainer.copy(alpha = 0.55f))
-                .clickable(onClick = onUpload)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(Res.string.plans_upload_cta),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.onSurface,
-                )
-                Text(
-                    text = if (candidateCount == 0) {
-                        stringResource(Res.string.plans_upload_cta_none)
-                    } else {
-                        stringResource(Res.string.plans_upload_cta_hint, deletedCount, confirmedCount)
-                    },
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    color = colors.onSurfaceVariant,
-                )
-                Text(
-                    text = stringResource(Res.string.plans_identity, identity.code),
-                    fontSize = 9.sp,
-                    lineHeight = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = colors.outline,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
             Button(
-                onClick = onUpload,
-                enabled = profile != null,
-                modifier = Modifier.height(32.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                onClick = onUploadVerified,
+                enabled = ready && verifiedCount > 0,
+                modifier = Modifier.weight(1f).height(38.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(Res.string.plan_upload_submit), fontSize = 11.sp)
-            }
-        }
-        // The test flow: no reboot proof, no waiting, labelled as a test everywhere it shows up.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onTestUpload)
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(Res.string.plans_test_entry_title),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    TestChip()
-                }
                 Text(
-                    text = stringResource(Res.string.plans_test_entry_body),
-                    fontSize = 9.sp,
-                    lineHeight = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = if (verifiedCount > 0) {
+                        stringResource(Res.string.plan_upload_reboot_action)
+                    } else {
+                        stringResource(Res.string.plan_upload_reboot_wait)
+                    },
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = stringResource(Res.string.plans_test_entry_count, candidateCount),
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.outline,
-            )
+            OutlinedButton(
+                onClick = onUploadPassword,
+                enabled = ready,
+                modifier = Modifier.weight(1f).height(38.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.plan_upload_password_action),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
-/** One plan: its position in the community ranking, what it is, what it holds, and its likes. */
+/** A colour pair that stays with an author: the same name gets the same avatar everywhere. */
+@Composable
+private fun authorColors(name: String): Pair<Color, Color> {
+    val colors = MaterialTheme.colorScheme
+    val palette = listOf(
+        colors.primary to colors.onPrimary,
+        colors.tertiary to colors.onTertiary,
+        colors.secondary to colors.onSecondary,
+        colors.primaryContainer to colors.onPrimaryContainer,
+    )
+    val hash = name.fold(0) { acc, char -> (acc * 31 + char.code) and 0x7FFFFFFF }
+    return palette[hash % palette.size]
+}
+
+/**
+ * One plan: who wrote it (letter avatar plus name), what it is, what it holds, and how much the
+ * community likes it. The position in the ranking leads the card, the way the package ranking's does.
+ */
 @Composable
 private fun PlanCard(
     plan: CommunityPlan,
@@ -841,13 +779,17 @@ private fun PlanCard(
     onVote: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val author = plan.authorName
+    val (avatarColor, letterColor) = authorColors(author.ifEmpty { plan.title })
+
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         shape = RoundedCornerShape(16.dp),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Column(modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 6.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // The community ranking badge, drawn like the package ranking's: the top three on
                 // their own colours, the rest a plain number. This is the "who is most recommended"
@@ -856,34 +798,53 @@ private fun PlanCard(
                     RankBadge(position = rank)
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(
-                    text = plan.title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                // The uploader: the first character of their name, on the colour that name keeps.
+                LetterAvatar(
+                    name = author.ifEmpty { plan.title },
+                    size = 34.dp,
+                    background = avatarColor,
+                    letterColor = letterColor,
                 )
-                if (plan.isTest) {
-                    Spacer(Modifier.width(6.dp))
-                    TestChip()
-                }
-                if (mine) {
-                    Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(9.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = plan.title,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (plan.isTest) {
+                            Spacer(Modifier.width(6.dp))
+                            TestChip()
+                        }
+                        if (mine) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(Res.string.plans_mine),
+                                fontSize = 9.sp,
+                                color = colors.primary,
+                            )
+                        }
+                    }
                     Text(
-                        text = stringResource(Res.string.plans_mine),
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.primary,
+                        text = author,
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.weight(1f))
                 if (mine) {
-                    IconButton(onClick = onDelete, modifier = Modifier.size(26.dp)) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.error,
+                            tint = colors.error,
                         )
                     }
                 }
@@ -893,7 +854,7 @@ private fun PlanCard(
                     text = plan.note,
                     fontSize = 11.sp,
                     lineHeight = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colors.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -906,7 +867,7 @@ private fun PlanCard(
                 Text(
                     text = "${plan.packages.size} 包 · ${plan.comments} 评论 · ${plan.rebootedAt.take(10)}",
                     fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = colors.outline,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
