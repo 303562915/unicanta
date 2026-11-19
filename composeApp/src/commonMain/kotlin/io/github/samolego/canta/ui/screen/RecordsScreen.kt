@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,6 +55,9 @@ import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.fl.successColor
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
+
+/** Room the list keeps at its foot for the floating bar drawn over the page. */
+private val FLOATING_BAR_ROOM = 96.dp
 
 /**
  * The middle zone between the two app lists: the log of everything Canta did.
@@ -118,6 +122,8 @@ fun RecordsScreen(
             val entries = remember(records) { flattenByDay(records) }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                // Room for the floating bar, inside the list rather than around the page.
+                contentPadding = PaddingValues(bottom = FLOATING_BAR_ROOM),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(entries, key = RecordEntry::key) { entry ->

@@ -127,8 +127,9 @@ fun MainScreen(
             }
             HorizontalPager(
                 state = pagerState,
-                // Leaves room for the floating bar that is drawn over the screen.
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 92.dp),
+                // No bottom padding here: each list keeps the bar's room inside its own
+                // scrolling area, so nothing is left as an empty strip at the foot.
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             ) { page ->
                 val tab = AppsTab.entries[page]
                 if (tab == AppsTab.RECORDS) {

@@ -8,8 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateBottomPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,7 +36,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.LayoutDirection
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.app.AppInfo
 import org.jetbrains.compose.resources.pluralStringResource
@@ -60,6 +58,9 @@ import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 
 /** Space below the last row so the FAB never covers it. */
 private val FAB_CLEARANCE = 64.dp
+
+/** Room a list keeps at its foot for the floating bar drawn over the page. */
+private val FLOATING_BAR_ROOM = 96.dp
 
 /** Narrowest app tile; wider windows get more columns. */
 private val MIN_TILE_WIDTH = 360.dp
@@ -182,20 +183,16 @@ fun AppList(
                 // Adaptive columns: single column on phone portrait, multiple
                 // tiles per row on tablets, desktop and wide browser windows.
                 //
-                // Only the top and the sides come from the safe area: the page above
-                // already leaves room for the floating bar (MainScreen's pager pads its
-                // bottom), so applying the navigation-bar inset here too would count
-                // the bottom twice and push the list up out of step with the other pages.
-                val pagePadding = WindowInsets.safeDrawing.asPaddingValues()
+                // The bar's own room is added *inside* the scrolling area rather than by
+                // padding the page: a page that reserves a strip outside its list shows an
+                // empty band at the foot, which the other pages do not have. Nothing is
+                // added at the top, since the bar above already carries the status-bar inset.
+                val pageInsets = WindowInsets.safeDrawing.asPaddingValues()
+                val bottomRoom = pageInsets.calculateBottomPadding() + FLOATING_BAR_ROOM
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = MIN_TILE_WIDTH),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = pagePadding.calculateStartPadding(LayoutDirection.Ltr),
-                        top = pagePadding.calculateTopPadding(),
-                        end = pagePadding.calculateEndPadding(LayoutDirection.Ltr),
-                        bottom = 0.dp,
-                    ),
+                    contentPadding = PaddingValues(bottom = bottomRoom),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {

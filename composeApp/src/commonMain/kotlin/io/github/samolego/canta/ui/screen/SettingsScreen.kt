@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,7 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -93,30 +90,20 @@ import io.github.samolego.canta.generated.resources.profile_name_title
 import io.github.samolego.canta.generated.resources.require_auth_setting
 import io.github.samolego.canta.generated.resources.require_auth_setting_desc
 import io.github.samolego.canta.generated.resources.settings
-import io.github.samolego.canta.generated.resources.settings_bar_slots_hint
 import io.github.samolego.canta.generated.resources.settings_group_device
 import io.github.samolego.canta.generated.resources.settings_group_general
-import io.github.samolego.canta.generated.resources.settings_version_row
-import io.github.samolego.canta.generated.resources.settings_website_row
-import io.github.samolego.canta.generated.resources.tab_apps
-import io.github.samolego.canta.generated.resources.tab_recommend
-import io.github.samolego.canta.generated.resources.tab_rules
-import io.github.samolego.canta.generated.resources.tab_tweaks
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ExpandIcon
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsItem
+import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.SettingsTextItem
 import io.github.samolego.canta.ui.component.SwitchSettingsItem
-import io.github.samolego.canta.ui.fl.FlGlyph
-import io.github.samolego.canta.ui.fl.FlGlyphIcon
-import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import org.jetbrains.compose.resources.stringResource
 
-private const val CANTA_WEBSITE = "https://303562915.github.io/Canta"
 
 /** Longest nickname the dialog takes, so the avatar row never has to shrink it. */
 private const val MAX_NAME_LENGTH = 24
@@ -133,6 +120,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     settingsViewModel: SettingsViewModel,
     onVersionTap: () -> Unit,
+    onOpenAbout: () -> Unit,
     deviceUsers: List<DeviceUser> = emptyList(),
     selectedUserId: Int? = null,
     onUserSelected: (Int) -> Unit = {},
@@ -282,140 +270,17 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(GroupGap))
-            SettingsGroup(title = stringResource(Res.string.about_us)) {
+            SettingsGroup {
                 SettingsItem(
-                    title = stringResource(Res.string.settings_version_row),
+                    title = stringResource(Res.string.about_us),
+                    description = BuildInfo.VERSION_NAME,
                     icon = Icons.Default.Info,
-                    onClick = onVersionTap,
-                    trailing = {
-                        Text(
-                            text = BuildInfo.VERSION_NAME,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                )
-                SettingsItem(
-                    title = stringResource(Res.string.settings_website_row),
-                    icon = Icons.Default.Link,
-                    onClick = { platform.openUrl(CANTA_WEBSITE) },
                     divider = false,
-                    trailing = {
-                        Text(
-                            text = "303562915.github.io",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                )
-                // The bar, in one row: the three pages everyone needs are always lit and cannot be
-                // tapped; the two optional ones are switches, and a page only shows once lit.
-                BarSlotsRow(
-                    showTweaks = showTweaksTab,
-                    showRecommend = showRecommendTab,
-                    onToggleTweaks = settingsViewModel::saveShowTweaksTab,
-                    onToggleRecommend = settingsViewModel::saveShowRecommendTab,
+                    onClick = onOpenAbout,
+                    trailing = { SettingsChevron() },
                 )
             }
         }
-    }
-}
-
-/** One entry of the bottom bar: [glyph], [label], whether it is lit, and whether it takes a tap. */
-private data class BarSlot(
-    val glyph: FlGlyph,
-    val label: String,
-    val lit: Boolean,
-    val onToggle: (() -> Unit)?,
-)
-
-/**
- * The five bar slots as one row: three fixed pages (lit, not tappable) and the two optional ones,
- * which are switches — a slot lights up when its page is on, and only lit pages get an entry.
- */
-@Composable
-private fun BarSlotsRow(
-    showTweaks: Boolean,
-    showRecommend: Boolean,
-    onToggleTweaks: (Boolean) -> Unit,
-    onToggleRecommend: (Boolean) -> Unit,
-) {
-    val slots = listOf(
-        BarSlot(FlGlyphs.dashboard, stringResource(Res.string.tab_apps), lit = true, onToggle = null),
-        BarSlot(FlGlyphs.rules, stringResource(Res.string.tab_rules), lit = true, onToggle = null),
-        BarSlot(
-            FlGlyphs.tools,
-            stringResource(Res.string.tab_tweaks),
-            lit = showTweaks,
-            onToggle = { onToggleTweaks(!showTweaks) },
-        ),
-        BarSlot(
-            FlGlyphs.appsList,
-            stringResource(Res.string.tab_recommend),
-            lit = showRecommend,
-            onToggle = { onToggleRecommend(!showRecommend) },
-        ),
-        BarSlot(FlGlyphs.settings, stringResource(Res.string.settings), lit = true, onToggle = null),
-    )
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-        Text(
-            text = stringResource(Res.string.settings_bar_slots_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(modifier = Modifier.fillMaxWidth()) {
-            slots.forEach { slot -> BarSlotChip(slot, Modifier.weight(1f)) }
-        }
-    }
-}
-
-@Composable
-private fun BarSlotChip(slot: BarSlot, modifier: Modifier = Modifier) {
-    val scheme = MaterialTheme.colorScheme
-    val lit = slot.lit
-    val toggle = slot.onToggle
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .then(
-                if (toggle != null) {
-                    Modifier.clickable(role = Role.Switch, onClick = toggle)
-                } else {
-                    Modifier
-                }
-            )
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(
-                    when {
-                        lit -> scheme.primary
-                        // An unlit optional slot stays visible, but reads as off.
-                        else -> scheme.surfaceContainerHighest
-                    }
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            FlGlyphIcon(
-                glyph = slot.glyph,
-                size = 17.dp,
-                tint = if (lit) scheme.onPrimary else scheme.onSurfaceVariant,
-                fill = if (lit) 1f else 0f,
-            )
-        }
-        Text(
-            text = slot.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (lit) scheme.onSurface else scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 

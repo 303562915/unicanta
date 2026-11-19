@@ -53,6 +53,7 @@ import io.github.samolego.canta.ui.component.dockScroll
 import io.github.samolego.canta.ui.component.rememberDockVisibility
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.navigation.Screen
+import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
@@ -221,6 +222,13 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
+            composable(route = Screen.About.route) {
+                AboutScreen(
+                    platform = platform,
+                    settingsViewModel = settingsViewModel,
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
             composable(route = Screen.Settings.route) {
                 val fakeScores by appListViewModel.fakeScoresEnabled.collectAsStateWithLifecycle()
                 var deviceUsers by remember { mutableStateOf(emptyList<DeviceUser>()) }
@@ -258,6 +266,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                             }
                         }
                     },
+                    onOpenAbout = { navController.navigate(Screen.About.route) },
                 )
             }
             composable(route = Screen.Presets.route) {

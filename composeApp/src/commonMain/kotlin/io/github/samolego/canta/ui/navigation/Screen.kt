@@ -4,6 +4,9 @@ sealed class Screen(val route: String) {
     data object Main : Screen("main")
     data object Logs : Screen("logs")
     data object Settings : Screen("settings")
+
+    /** The app's own page: version, the switches that shape how it behaves, and where it lives. */
+    data object About : Screen("about")
     data object Presets : Screen("presets")
     data object Rules : Screen("rules")
     data object Tweaks : Screen("tweaks")

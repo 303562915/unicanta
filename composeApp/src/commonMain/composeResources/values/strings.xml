@@ -256,6 +256,18 @@
     <string name="profile_name_hint">Shown in your reviews, synced to the cloud</string>
     <string name="profile_edit_name">Edit name</string>
     <string name="about_us">About</string>
+    <string name="about_title">About</string>
+    <string name="about_tagline">An open-source debloat tool</string>
+    <string name="about_check_update">Check for updates</string>
+    <string name="about_check_update_action">Check</string>
+    <string name="about_check_update_hint">Fetch the latest release from GitHub</string>
+    <string name="about_checking">Checking…</string>
+    <string name="about_up_to_date">Up to date</string>
+    <string name="about_update_available">Version %1$s is out, tap to download</string>
+    <string name="about_update_failed">Check failed, try again later</string>
+    <string name="about_contributors">Contributors</string>
+    <string name="about_original_project">Original project</string>
+    <string name="description_source">Description from the UAD list, published in English</string>
     <string name="settings_version_row">Version</string>
     <string name="settings_website_row">Website</string>
     <string name="settings_bar_slots_hint">The three core pages always stay. Tap a grey slot to show it in the bar.</string>
@@ -319,7 +331,7 @@
     <string name="plans_empty_body">Yours would be the first. This list is also empty while offline.</string>
     <string name="plans_mine">Mine</string>
     <string name="plans_test_entry_title">Test plan · no reboot</string>
-    <string name="plans_test_entry_body">The test password %1$s uploads without a reboot</string>
+    <string name="plans_test_entry_body">No reboot needed: unlock the upload with the test password</string>
     <string name="plans_test_entry_count">%1$d packages to try</string>
     <string name="plan_vote">Helpful</string>
     <string name="plan_verified_chip">Reboot-verified</string>

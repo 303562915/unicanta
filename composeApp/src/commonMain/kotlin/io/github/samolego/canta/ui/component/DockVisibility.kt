@@ -69,10 +69,16 @@ fun rememberDockVisibility(): Pair<DockVisibility, NestedScrollConnection> {
     val thresholdPx = with(LocalDensity.current) { ScrollThreshold.toPx() }
     val dock = remember { DockVisibility(thresholdPx) }
     val connection = remember(dock) {
-        // Observation only: the offset is never consumed, so the page scrolls as it always did.
+        // Only *consumed* travel counts: a page that cannot scroll reports an offset it never
+        // took, and a list at its end keeps reporting drags nothing moves. Reading the post
+        // scroll leaves such pages at rest, with the bar where it was.
         object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                dock.scroll(available.y)
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                dock.scroll(consumed.y)
                 return Offset.Zero
             }
         }
