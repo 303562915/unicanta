@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -351,7 +352,7 @@ private fun PlanDetailContent(
     loadError: String? = null,
     me: String,
     liked: Boolean,
-    /** The comment threads the reader opened; the rest stay folded at two answers. */
+    /** The comment threads the reader opened; the rest keep their answers behind "展开 N 条回复". */
     expandedThreads: Set<Long> = emptySet(),
     onToggleThread: (Long) -> Unit = {},
     onVote: () -> Unit,
@@ -371,7 +372,7 @@ private fun PlanDetailContent(
     // rest of the app shows: the plan card and this header must read the same.
     val uploaderName = plan.authorName
 
-    LazyColumn(modifier = modifier, contentPadding = PaddingValues(bottom = 16.dp)) {
+    LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
         item { PlanHero(plan, profile, uploaderName, me, liked, onVote, onUsePlan) }
 
         item {
@@ -451,10 +452,23 @@ private fun PlanHero(
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
-    Surface(color = colors.primaryContainer, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            // Who wrote it, before what it says: a plan is advice from a person on the same phone,
-            // and the avatar is the first character of that person's name, like everywhere else.
+    // The block is a card, not a band: it keeps a margin from the page edge and from the bar above,
+    // so the top of the page stays the plain surface the title bar sits on, and its corners are
+    // rounded like every other card in the app. Everything inside is centred, because a plan is one
+    // sentence — who wrote it, what it is called, how it did — and a centred column reads as one.
+    Surface(
+        color = colors.primaryContainer,
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
+            // first character of that person's name, like everywhere else.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LetterAvatar(
                     name = uploaderName,
@@ -474,70 +488,77 @@ private fun PlanHero(
                     Spacer(Modifier.width(6.dp))
                     Chip(label = "我的方案", color = colors.primary)
                 }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = plan.rebootedAt.take(10),
-                    fontSize = 9.sp,
-                    color = colors.onPrimaryContainer.copy(alpha = 0.7f),
-                )
             }
+            Text(
+                text = plan.rebootedAt.take(10),
+                fontSize = 9.sp,
+                color = colors.onPrimaryContainer.copy(alpha = 0.7f),
+                modifier = Modifier.padding(top = 3.dp),
+            )
+
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = plan.title,
+                fontSize = 19.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.onPrimaryContainer,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = plan.title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.onPrimaryContainer,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Spacer(Modifier.width(8.dp))
-                Chip(
-                    label = if (plan.isTest) {
-                        stringResource(Res.string.plan_test_chip)
-                    } else {
-                        stringResource(Res.string.plan_verified_chip)
-                    },
-                    color = if (plan.isTest) colors.tertiary else colors.primary,
-                )
-            }
+            Chip(
+                label = if (plan.isTest) {
+                    stringResource(Res.string.plan_test_chip)
+                } else {
+                    stringResource(Res.string.plan_verified_chip)
+                },
+                color = if (plan.isTest) colors.tertiary else colors.primary,
+            )
             Text(
                 text = profile?.shortLabel() ?: "-",
                 fontSize = 10.sp,
                 lineHeight = 13.sp,
                 color = colors.onPrimaryContainer.copy(alpha = 0.78f),
-                modifier = Modifier.padding(top = 4.dp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (plan.note.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = plan.note,
                     fontSize = 12.sp,
-                    lineHeight = 16.sp,
+                    lineHeight = 17.sp,
                     color = colors.onPrimaryContainer,
-                    modifier = Modifier.padding(top = 8.dp),
+                    textAlign = TextAlign.Center,
                 )
             }
+
+            Spacer(Modifier.height(16.dp))
             Row(
-                modifier = Modifier.padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Stat(
                     value = "${plan.votes}",
                     label = stringResource(Res.string.plan_detail_stats_votes),
                     modifier = Modifier.weight(1f),
+                    centered = true,
                 )
                 Stat(
                     value = "${plan.packages.size}",
                     label = stringResource(Res.string.plan_detail_stats_packages),
                     modifier = Modifier.weight(1f),
+                    centered = true,
                 )
                 Stat(
                     value = "${plan.comments}",
                     label = stringResource(Res.string.plan_detail_stats_comments),
                     modifier = Modifier.weight(1f),
+                    centered = true,
                 )
                 VoteAction(liked = liked, votes = plan.votes, onVote = onVote)
             }
@@ -545,12 +566,12 @@ private fun PlanHero(
             // selection on the app list, where the uninstall button already is.
             Row(
                 modifier = Modifier
-                    .padding(top = 12.dp)
+                    .padding(top = 16.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(percent = 50))
                     .background(colors.onPrimaryContainer.copy(alpha = 0.12f))
                     .clickable(onClick = onUsePlan)
-                    .padding(vertical = 10.dp),
+                    .padding(vertical = 11.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -574,9 +595,14 @@ private fun PlanHero(
 
 /** One big number over its label, the way stats are read at a glance. */
 @Composable
-private fun Stat(value: String, label: String, modifier: Modifier = Modifier) {
+private fun Stat(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    centered: Boolean = false,
+) {
     val colors = MaterialTheme.colorScheme
-    Column(modifier = modifier) {
+    Column(modifier = modifier, horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start) {
         Text(
             text = value,
             fontSize = 17.sp,
