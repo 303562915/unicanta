@@ -6,10 +6,12 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Base64
 import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -224,11 +226,9 @@ class AndroidCantaPlatform(
     }
 
     /**
-     * Downloads the APK into the app's own external files directory.
-     *
-     * The privileged helper runs as `shell`, which can read `/storage/emulated/0/Android/data/...`
-     * but not the app's internal `filesDir`, so the update has to land outside the sandbox for
-     * `pm install` to open it.
+     * Downloads the APK into the app's own external files directory — the download's staging area,
+     * cleaned of stale APKs on every new download. Where the privileged shell may actually read
+     * the file from is decided at install time; see [installUpdate].
      */
     override suspend fun downloadUpdate(
         url: String,
@@ -279,20 +279,137 @@ class AndroidCantaPlatform(
      * Installs [path] over this app with `pm install -r -d` as Shizuku's identity: `-r` replaces
      * the installed copy and keeps its data, `-d` allows the older version code that a debug build
      * carries. Returns null on success, or the output that explains the failure.
+     *
+     * Where the shell may read the file from is decided by scoped storage, not by us: on Q+ the
+     * FUSE view hides another app's `Android/data` from the shell identity, and `pm install`
+     * answers "Consider using a file under /data/local/tmp/" because it cannot open the APK. So
+     * the same file is offered to `pm` through three homes, cheapest first — the first one that
+     * installs wins, and every staging copy is cleaned up afterwards:
+     *
+     *  1. the downloaded file itself: works before Q, and on ROMs that never closed the hole;
+     *  2. a copy in the public `Download/Canta/` folder through MediaStore, which the shell reads
+     *     like any other shared-storage file;
+     *  3. the bytes pushed into `/data/local/tmp/` in base64 chunks — the one place `pm` itself
+     *     recommends, readable wherever Shizuku can run.
      */
-    override suspend fun installUpdate(path: String): String? {
+    override suspend fun installUpdate(path: String): String? = withContext(Dispatchers.IO) {
         val file = File(path)
-        if (!file.exists()) return "update file is missing: $path"
-        val result = shell.run("pm install -r -d ${shellQuote(path)}")
-        val failed = when {
+        if (!file.exists()) return@withContext "update file is missing: $path"
+
+        val direct = runInstall(file.absolutePath)
+        if (direct == null) {
+            file.delete()
+            return@withContext null
+        }
+        LogUtils.w(TAG, "pm install from the app dir failed: $direct")
+
+        // The public Downloads folder is one MediaStore write away and readable by the shell.
+        val staged = stageInDownloads(file)
+        if (staged != null) {
+            val (stagedPath, stagedUri) = staged
+            val failure = runInstall(stagedPath)
+            runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
+            if (failure == null) {
+                file.delete()
+                return@withContext null
+            }
+            LogUtils.w(TAG, "pm install from $stagedPath failed: $failure")
+        }
+
+        // The chunked push to /data/local/tmp is the path that works everywhere Shizuku does; its
+        // answer is the one shown to the reader, since it is the last attempt made.
+        installViaTmp(file)?.let { return@withContext it }
+        file.delete()
+        null
+    }
+
+    /** One `pm install -r -d` of [where]; null on success, otherwise the output that explains it. */
+    private suspend fun runInstall(where: String): String? {
+        val result = shell.run("pm install -r -d ${shellQuote(where)}")
+        return when {
             result.ok && !result.output.contains("Failure", ignoreCase = true) -> null
             result.output.isBlank() -> "pm install failed without output"
             else -> result.output.trim()
         }
-        // The package is installed from its own copy by then, so the download has done its job: a
-        // failure keeps it around for one retry, but a success leaves nothing behind.
-        if (failed == null) runCatching { file.delete() }
-        return failed
+    }
+
+    /**
+     * Copies [file] into the public `Download/Canta/` folder and answers the filesystem path the
+     * shell can read plus the MediaStore row to clean up afterwards; null when any step failed.
+     */
+    private fun stageInDownloads(file: File): Pair<String, Uri>? = if (
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+    ) {
+        null // Before Q there is no scoped storage: the direct path already worked.
+    } else {
+        runCatching {
+            val resolver = context.contentResolver
+            val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val folder = "${Environment.DIRECTORY_DOWNLOADS}/Canta/"
+
+            // Reuse this app's own row when it is already there, so a retry replaces the file.
+            val existing = resolver.query(
+                collection,
+                arrayOf(MediaStore.MediaColumns._ID),
+                "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
+                arrayOf(file.name, folder),
+                null,
+            )?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
+
+            val uri = if (existing != null) {
+                ContentUris.withAppendedId(collection, existing)
+            } else {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.android.package-archive")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
+                }
+                resolver.insert(collection, values) ?: return null
+            }
+            resolver.openOutputStream(uri, "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } }
+                ?: return null
+            // `pm install` wants a filesystem path, not a content:// URI: the DATA column is the
+            // real one ("/storage/emulated/0/Download/Canta/<name>").
+            val where = resolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                ?: return null
+            where to uri
+        }.getOrNull()
+    }
+
+    /**
+     * Pushes [file] to `/data/local/tmp/.canta-update.apk` in base64 chunks and installs it there.
+     * Chunks stay far under the 128 KB per-argument limit of `execve`, so every `printf` is one
+     * legal `sh -c` script; the pushed byte count is verified before `pm install` runs, and both
+     * temporaries are removed afterwards whatever the outcome.
+     */
+    private suspend fun installViaTmp(file: File): String? {
+        val base = "/data/local/tmp/.canta-update"
+        shell.run("rm -f '$base.b64' '$base.apk'")
+        val encoded = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+        val chunkSize = 90_000
+        var offset = 0
+        while (offset < encoded.length) {
+            val end = minOf(offset + chunkSize, encoded.length)
+            val chunk = encoded.substring(offset, end)
+            val run = shell.run("printf %s '${chunk.replace("'", "'\\''")}' >> '$base.b64'")
+            if (!run.ok) {
+                shell.run("rm -f '$base.b64'")
+                return "推送到 /data/local/tmp 失败（偏移 $offset）：${run.output.trim().take(200)}"
+            }
+            offset = end
+        }
+        val verify = shell.run(
+            "base64 -d '$base.b64' > '$base.apk' && rm -f '$base.b64' && " +
+                "test \"\$(wc -c < '$base.apk')\" -eq ${file.length()} && echo ok"
+        )
+        if (!verify.ok || !verify.output.contains("ok")) {
+            shell.run("rm -f '$base.b64' '$base.apk'")
+            return "暂存的 APK 校验失败：${verify.output.trim().take(200)}"
+        }
+        val failure = runInstall("$base.apk")
+        shell.run("rm -f '$base.apk'")
+        return failure
     }
 
     /** Closes the process: the installer already replaced the APK, so the next launch is the new build. */
