@@ -47,7 +47,10 @@ import io.github.samolego.canta.ui.AppsTab
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
 import io.github.samolego.canta.ui.component.BottomBarItem
+import io.github.samolego.canta.ui.component.CollapsingBottomBar
 import io.github.samolego.canta.ui.component.FloatingPillBar
+import io.github.samolego.canta.ui.component.dockScroll
+import io.github.samolego.canta.ui.component.rememberDockVisibility
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
@@ -137,7 +140,13 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         if (storedOnboardingVersion >= CURRENT_ONBOARDING_VERSION) Screen.Main.route else Screen.Onboarding.route
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // The page under the bar drives it: scrolling down hides it, dragging back up shows it.
+    val (dock, dockScroll) = rememberDockVisibility()
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    // A page arrives at its top, so the bar is always there until something is scrolled.
+    LaunchedEffect(currentRoute) { dock.show() }
+
+    Box(modifier = Modifier.fillMaxSize().dockScroll(dockScroll)) {
         NavHost(navController = navController, startDestination = startDestination) {
             composable(Screen.Onboarding.route) {
                 OnboardingScreen(
@@ -337,7 +346,6 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
 
         // Read once at launch; shown only after onboarding, never on top of it.
         var crashReport by remember { mutableStateOf(crashReports?.read()) }
-        val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
         crashReport?.let { report ->
             if (currentRoute != null && currentRoute != Screen.Onboarding.route) {
                 CrashReportDialog(

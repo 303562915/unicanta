@@ -65,6 +65,7 @@ import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.about_us
 import io.github.samolego.canta.generated.resources.advanced_settings
 import io.github.samolego.canta.generated.resources.allow_unsafe_selections
 import io.github.samolego.canta.generated.resources.allow_unsafe_uninstalls_description
@@ -111,6 +112,9 @@ import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsItem
 import io.github.samolego.canta.ui.component.SettingsTextItem
 import io.github.samolego.canta.ui.component.SwitchSettingsItem
+import io.github.samolego.canta.ui.fl.FlGlyph
+import io.github.samolego.canta.ui.fl.FlGlyphIcon
+import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import org.jetbrains.compose.resources.stringResource
 
