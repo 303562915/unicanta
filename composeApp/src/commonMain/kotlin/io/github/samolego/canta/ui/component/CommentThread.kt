@@ -127,6 +127,9 @@ fun isPlanAuthor(comment: PlanComment, authorId: String, authorName: String): Bo
  */
 fun threadKey(comment: PlanComment, index: Int): Long = if (comment.id > 0L) comment.id else -1L - index
 
+/** How many answers a folded thread shows before "展开 N 条回复": a long one must not bury the rest. */
+private const val THREAD_PREVIEW = 2
+
 /**
  * The rows of one comment thread, for a `LazyColumn` that already has its own sections: every
  * comment that starts a conversation, then the answers it collected, indented under it.

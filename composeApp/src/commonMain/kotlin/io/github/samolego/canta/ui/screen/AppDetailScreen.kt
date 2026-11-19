@@ -121,7 +121,7 @@ fun AppDetailScreen(
     // Why the last vote or comment did not go through, when the backend said something.
     var voteError by remember { mutableStateOf<String?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
-    /** Threads the reader opened with "展开 N 条回复"; the rest stay folded at two answers. */
+    /** Threads the reader opened with "展开 N 条回复"; the rest keep their answers folded. */
     var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
 
     LaunchedEffect(packageName, voter) {
@@ -683,7 +683,9 @@ private fun ReviewRow(review: AppReview) {
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(text = review.body, style = FlText.footnote, color = scheme.onSurface)
+        // The same size the community comment list uses for a comment: a review and a comment are
+        // the same kind of thing to read, and two sizes for them would read as two kinds.
+        Text(text = review.body, style = FlText.subheadline, color = scheme.onSurface)
     }
 }
 

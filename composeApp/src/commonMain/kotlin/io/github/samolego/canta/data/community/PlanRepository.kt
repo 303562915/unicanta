@@ -79,6 +79,13 @@ data class PlanComment(
     val authorId: String = "",
     /** How many answers hang under this comment. */
     val replies: Int = 0,
+    /**
+     * How many hearts the comment carries. It is the only reaction a comment has: a wrong comment is
+     * answered, not counted down, which is why there is no second number beside this one.
+     */
+    val likes: Int = 0,
+    /** Whether this install is one of those hearts. */
+    val liked: Boolean = false,
     /** The phone it was written on ("Redmi K70"); empty on comments written before it was kept. */
     val deviceModel: String = "",
     /** Its system, the way the ROM line reads ("HyperOS 2"); the API level is not shown at all. */
@@ -91,6 +98,12 @@ data class PlanComment(
             if (systemName.isNotBlank()) add(systemName)
         }.joinToString(" · ")
 }
+
+/**
+ * A comment's hearts, as the backend counts them: how many there are, and whether this install is
+ * one of them. Returned by the tap so the page shows the server's number, not its own guess.
+ */
+data class CommentLikes(val likes: Int = 0, val liked: Boolean = false)
 
 /**
  * What people said about removing one package: "it was fine" against "it broke something".
@@ -457,20 +470,30 @@ class PlanRepository(
      * A backend that predates the shared comment table only knows `plan_comments_for`: falling back
      * to it keeps an older deployment readable instead of showing an empty thread.
      */
-    suspend fun comments(planId: Long): List<PlanComment> =
-        commentsFor(COMMENT_KIND_PLAN, planId.toString())
+    suspend fun comments(planId: Long, viewer: String = ""): List<PlanComment> =
+        commentsFor(COMMENT_KIND_PLAN, planId.toString(), viewer)
 
-    /** The thread of one app's page, newest first. */
-    suspend fun appComments(packageName: String): List<PlanComment> =
-        commentsFor(COMMENT_KIND_APP, packageName)
+    /** The thread of one app's page, newest first. [viewer] is whose hearts are marked. */
+    suspend fun appComments(packageName: String, viewer: String = ""): List<PlanComment> =
+        commentsFor(COMMENT_KIND_APP, packageName, viewer)
 
-    private suspend fun commentsFor(kind: String, target: String): List<PlanComment> {
+    private suspend fun commentsFor(kind: String, target: String, viewer: String = ""): List<PlanComment> {
         if (target.isEmpty()) return emptyList()
         val body = buildJsonObject {
             put("p_kind", kind)
             put("p_target", target)
+            put("p_voter", viewer)
         }.toString()
         rpc("comments_for", body)?.let { text -> return parseComments(text) }
+        // A backend older than the hearts reads `comments_for` with two arguments only. Asking again
+        // without the viewer keeps the thread readable there, unhearted rather than empty.
+        if (viewer.isNotEmpty()) {
+            val plain = buildJsonObject {
+                put("p_kind", kind)
+                put("p_target", target)
+            }.toString()
+            rpc("comments_for", plain)?.let { text -> return parseComments(text) }
+        }
         if (kind != COMMENT_KIND_PLAN) return emptyList()
         val planId = target.toLongOrNull() ?: return emptyList()
         val legacy = rpc("plan_comments_for", buildJsonObject { put("p_id", planId) }.toString())
@@ -491,6 +514,9 @@ class PlanRepository(
                 // nobody, which is the right answer when the server does not say who wrote it.
                 authorId = o["author_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                // Absent on a backend older than the hearts: no hearts is the right answer there.
+                likes = o["likes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                liked = o["liked"]?.jsonPrimitive?.booleanOrNull == true,
                 deviceModel = o["device_model"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 systemName = o["system_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
@@ -609,6 +635,34 @@ class PlanRepository(
         return rpc("comment_delete", body)
             ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.booleanOrNull }.getOrNull() } == true
     }
+
+    /**
+     * Taps the heart on comment [id]: [liked] true adds it, false takes it back.
+     *
+     * Answers the count and the state the server now holds — the page shows that rather than the
+     * number it guessed, so two devices watching the same comment cannot drift apart. Null when the
+     * heart did not reach the backend, in which case the page keeps what it already showed.
+     *
+     * [voter] is the identity number, the same one the comment was written under; a backend that
+     * predates the hearts has no `comment_like` and simply answers nothing.
+     */
+    suspend fun likeComment(id: Long, voter: String, liked: Boolean): CommentLikes? {
+        if (id <= 0L || voter.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_id", id)
+            put("p_voter", voter)
+            put("p_liked", liked)
+        }.toString()
+        return rpc("comment_like", body)?.let(::parseCommentLikes)
+    }
+
+    private fun parseCommentLikes(text: String): CommentLikes? = runCatching {
+        val o = json.parseToJsonElement(text).jsonObject
+        CommentLikes(
+            likes = o["likes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            liked = o["liked"]?.jsonPrimitive?.booleanOrNull == true,
+        )
+    }.getOrNull()
 
     /**
      * Which side this install picked for [pkg]: true, false, or null when it never voted.
