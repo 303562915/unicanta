@@ -318,6 +318,11 @@ fun AboutScreen(
                             val failure = platform.installUpdate(ready.path)
                             if (failure == null) {
                                 platform.exitApp()
+                            } else if (platform.requestInstall(ready.path)) {
+                                // The privileged runtime could not read any home for the APK, but
+                                // the system installer reads through the granted content URI, so
+                                // the same file still installs — with the system's own dialog.
+                                updateState = UpdateState.HandedOff(ready.version)
                             } else {
                                 updateState = UpdateState.FailedWith(failure)
                             }
@@ -396,6 +401,8 @@ private fun UpdateCard(
             stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary
         is UpdateState.Installing ->
             stringResource(Res.string.about_installing) to scheme.primary
+        is UpdateState.HandedOff ->
+            stringResource(Res.string.about_install_handoff, state.version) to scheme.primary
         is UpdateState.FailedWith -> state.reason to scheme.error
     }
     val openRelease = state is UpdateState.Available

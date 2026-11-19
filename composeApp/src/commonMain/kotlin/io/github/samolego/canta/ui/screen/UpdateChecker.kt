@@ -44,6 +44,9 @@ internal sealed interface UpdateState {
     /** `pm install` is running for the package at [path]. */
     data class Installing(val version: String, val path: String) : UpdateState
 
+    /** The privileged install failed, so the APK was handed to the system installer instead. */
+    data class HandedOff(val version: String) : UpdateState
+
     /** The download or the install did not go through; [reason] is what to show. */
     data class FailedWith(val reason: String) : UpdateState
 }

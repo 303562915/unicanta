@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the FileProvider may hand out: the folder downloaded updates wait in
+     (Context.getExternalFilesDir("updates")), seen from the app's external files root. -->
+<paths>
+    <external-files-path
+        name="updates"
+        path="updates/" />
+</paths>

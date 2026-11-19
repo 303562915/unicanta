@@ -320,6 +320,7 @@
     <string name="about_install_title">Install %1$s?</string>
     <string name="about_install_message">The app will be replaced and closed. Your settings and the uninstall history are kept. Charging is recommended, and the phone must stay inside Shizuku's reach.</string>
     <string name="about_install_confirm">Install now</string>
+    <string name="about_install_handoff">%1$s was handed to the system installer — confirm the install in its dialog.</string>
     <string name="about_install_cancel">Not now</string>
     <string name="about_coolapk">Author on Coolapk</string>
     <string name="about_coolapk_hint">Coolapk · u/43186862</string>
