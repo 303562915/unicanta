@@ -241,6 +241,14 @@ class AndroidCantaPlatform(
                 LogUtils.e(TAG, "Could not create ${directory.absolutePath}")
                 return@withContext null
             }
+            // One update at a time: an APK that was downloaded and never installed (the dialog was
+            // dismissed, or the install failed) would otherwise stay in this folder forever, and a
+            // folder of 30–70 MB APKs is the largest thing this app can leave on a phone.
+            directory.listFiles()?.forEach { stale ->
+                if (stale.isFile && runCatching { stale.delete() }.getOrDefault(false)) {
+                    LogUtils.i(TAG, "Removed the previous update ${stale.name}")
+                }
+            }
 
             val client = HttpClient(OkHttp)
             val bytes = try {
@@ -273,13 +281,18 @@ class AndroidCantaPlatform(
      * carries. Returns null on success, or the output that explains the failure.
      */
     override suspend fun installUpdate(path: String): String? {
-        if (!File(path).exists()) return "update file is missing: $path"
+        val file = File(path)
+        if (!file.exists()) return "update file is missing: $path"
         val result = shell.run("pm install -r -d ${shellQuote(path)}")
-        return when {
+        val failed = when {
             result.ok && !result.output.contains("Failure", ignoreCase = true) -> null
             result.output.isBlank() -> "pm install failed without output"
             else -> result.output.trim()
         }
+        // The package is installed from its own copy by then, so the download has done its job: a
+        // failure keeps it around for one retry, but a success leaves nothing behind.
+        if (failed == null) runCatching { file.delete() }
+        return failed
     }
 
     /** Closes the process: the installer already replaced the APK, so the next launch is the new build. */
