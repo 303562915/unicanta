@@ -255,8 +255,12 @@
     <string name="settings_show_recommend_description">The recommended open-source apps page. Off by default, for the same reason.</string>
     <string name="profile_default_name">You</string>
     <string name="profile_name_title">Your name</string>
-    <string name="profile_name_hint">Shown on this page only</string>
+    <string name="profile_name_hint">Shown in your reviews, synced to the cloud</string>
     <string name="profile_edit_name">Edit name</string>
+    <string name="about_us">About</string>
+    <string name="settings_version_row">Version</string>
+    <string name="settings_website_row">Website</string>
+    <string name="settings_bar_slots_hint">The three core pages always stay. Tap a grey slot to show it in the bar.</string>
     <string name="settings_group_permissions">Permissions</string>
     <string name="device_user">Device user</string>
     <string name="device_user_description">Which user or profile on the device Canta manages</string>

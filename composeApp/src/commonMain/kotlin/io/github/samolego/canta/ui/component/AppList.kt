@@ -35,7 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.LayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.app.AppInfo
 import org.jetbrains.compose.resources.pluralStringResource

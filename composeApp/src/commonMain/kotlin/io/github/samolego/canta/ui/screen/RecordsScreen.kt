@@ -70,6 +70,10 @@ fun RecordsScreen(
     val records by history.records.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
+    // The store keeps the log in a blob and only reads it on demand: do that once, so the
+    // records from earlier runs are there on the first look instead of an empty page.
+    LaunchedEffect(history) { history.ensureReady() }
+
     val title = stringResource(Res.string.tab_records)
     val hint = stringResource(Res.string.records_hint)
     val save = stringResource(Res.string.records_save)
