@@ -46,6 +46,7 @@ import io.github.samolego.canta.data.community.PackageVotes
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.threads
+import io.github.samolego.canta.data.community.updatedComment
 import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentComposer
@@ -123,6 +124,11 @@ fun AppDetailScreen(
     var sendError by remember { mutableStateOf<String?>(null) }
     /** Threads the reader opened with "展开 N 条回复"; the rest keep their answers folded. */
     var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
+    /**
+     * Comments this install put away with the broken heart: a personal hide, this session only —
+     * nothing on the server changes, and the page forgets it on the way out.
+     */
+    var hiddenComments by remember { mutableStateOf(setOf<Long>()) }
 
     LaunchedEffect(packageName, voter) {
         reviews = notes.reviewsOf(packageName)
@@ -164,8 +170,7 @@ fun AppDetailScreen(
     val send: () -> Unit = {
         val body = draft.trim()
         if (body.isNotEmpty() && !sending) {
-            val signature = author.ifEmpty { "u-anon" }
-            scope.launch {
+            val signature = author.ifEmpty { "u-anon" }            scope.launch {
                 sending = true
                 // The device copy first: a review written offline is still this install's, and it
                 // is what the page falls back to while the community thread is out of reach.
@@ -203,6 +208,24 @@ fun AppDetailScreen(
                     comments = repository?.appComments(packageName).orEmpty()
                 }
                 sending = false
+            }
+        }
+    }
+
+    val likeComment: (PlanComment) -> Unit = { comment ->
+        if (comment.id > 0L) {
+            val wanted = !comment.liked
+            // The page answers the tap at once; the backend's count corrects it when it answers.
+            comments = comments.updatedComment(comment.id) {
+                it.copy(liked = wanted, likes = (it.likes + if (wanted) 1 else -1).coerceAtLeast(0))
+            }
+            scope.launch {
+                val result = repository?.likeComment(comment.id, voter, wanted)
+                if (result != null) {
+                    comments = comments.updatedComment(comment.id) {
+                        it.copy(liked = result.liked, likes = result.likes)
+                    }
+                }
             }
         }
     }
@@ -277,7 +300,6 @@ fun AppDetailScreen(
                 onCancelReply = { replyTo = null },
                 sending = sending,
                 failed = submitFailed,
-                hint = "写一条评论…",
                 failLabel = sendError ?: "发送失败，检查一下网络再试",
             )
         },
@@ -316,6 +338,9 @@ fun AppDetailScreen(
                         submitFailed = false
                     },
                     onDelete = { comment -> pendingDelete = comment },
+                    onLike = likeComment,
+                    hidden = hiddenComments,
+                    onHide = { key -> hiddenComments = hiddenComments + key },
                 )
 
                 // Nothing from the community: what this install wrote itself is still worth

@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,7 +48,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,8 +60,8 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.keyed
 import io.github.samolego.canta.data.community.rankPackages
 import io.github.samolego.canta.data.community.threads
+import io.github.samolego.canta.data.community.updatedComment
 import io.github.samolego.canta.generated.resources.Res
-import io.github.samolego.canta.generated.resources.plan_comment_hint
 import io.github.samolego.canta.generated.resources.plan_comment_send
 import io.github.samolego.canta.generated.resources.plan_detail_missing
 import io.github.samolego.canta.generated.resources.plan_detail_no_comments
@@ -83,6 +85,7 @@ import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
@@ -154,6 +157,11 @@ fun PlanDetailScreen(
     var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
     /** Threads the reader opened with "展开 N 条回复", by their own key; see [threadKey]. */
     var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
+    /**
+     * Comments this install put away with the broken heart: a personal hide, this session only —
+     * nothing on the server changes, and the page forgets it on the way out.
+     */
+    var hiddenComments by remember { mutableStateOf(setOf<Long>()) }
     /** The "use this plan" tap that has to be confirmed, because the plan is for another phone. */
     var confirmForeign by remember { mutableStateOf(false) }
 
@@ -220,6 +228,28 @@ fun PlanDetailScreen(
         pendingDelete = comment
     }
 
+    val hideComment: (Long) -> Unit = { key ->
+        hiddenComments = hiddenComments + key
+    }
+
+    val likeComment: (PlanComment) -> Unit = { comment ->
+        if (comment.id > 0L) {
+            val wanted = !comment.liked
+            // The page answers the tap at once; the backend's count corrects it when it answers.
+            comments = comments.updatedComment(comment.id) {
+                it.copy(liked = wanted, likes = (it.likes + if (wanted) 1 else -1).coerceAtLeast(0))
+            }
+            scope.launch {
+                val result = repository.likeComment(comment.id, owner, wanted)
+                if (result != null) {
+                    comments = comments.updatedComment(comment.id) {
+                        it.copy(liked = result.liked, likes = result.likes)
+                    }
+                }
+            }
+        }
+    }
+
     val vote: () -> Unit = {
         val current = plan
         if (current != null && !liked) {
@@ -257,26 +287,8 @@ fun PlanDetailScreen(
     }
 
     Scaffold(
-        topBar = {
-            ScreenTopBar(
-                onNavigateBack = onNavigateBack,
-                title = stringResource(Res.string.plan_detail_title),
-                actions = {
-                    plan?.let { loaded ->
-                        // The share glyph, not the clipboard one: what the button does is hand the
-                        // plan to somebody else, and only the mechanism is a copy.
-                        IconButton(onClick = { onShare(loaded) }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "分享方案",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                },
-            )
-        },
+        // The title bar is not a Scaffold topBar: it floats over the content as a transparent
+        // layer, so what scrolls up under it stays readable through it.
         bottomBar = {
             CommentComposer(
                 draft = draft,
@@ -290,59 +302,87 @@ fun PlanDetailScreen(
                 sending = sending,
                 failed = submitFailed,
                 sendLabel = stringResource(Res.string.plan_comment_send),
-                hint = stringResource(Res.string.plan_comment_hint),
                 failLabel = sendError ?: stringResource(Res.string.plan_upload_failed),
             )
         },
     ) { padding ->
-        val loaded = plan
-        when {
-            loading -> Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("…", style = MaterialTheme.typography.bodyLarge)
-            }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = padding.calculateBottomPadding()),
+        ) {
+            val loaded = plan
+            when {
+                loading -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("…", style = MaterialTheme.typography.bodyLarge)
+                }
 
-            loaded == null -> Box(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(Res.string.plan_detail_missing),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                loaded == null -> Box(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.plan_detail_missing),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                else -> PlanDetailContent(
+                    plan = loaded,
+                    ranking = ranking,
+                    apps = apps,
+                    rules = rules,
+                    profile = profile,
+                    comments = comments,
+                    loadError = loadError,
+                    me = commentAuthor,
+                    liked = liked,
+                    expandedThreads = expandedThreads,
+                    onToggleThread = { key ->
+                        expandedThreads = if (key in expandedThreads) expandedThreads - key else expandedThreads + key
+                    },
+                    onVote = vote,
+                    onOpenApp = onOpenApp,
+                    foreign = !loaded.matches(profile),
+                    // Another model's plan is applied the same way — Canta does not block it — but the
+                    // tap asks first, because nothing about it was proven on this phone.
+                    onUsePlan = {
+                        if (loaded.matches(profile)) onUsePlan(loaded.packages) else confirmForeign = true
+                    },
+                    onReply = { comment ->
+                        replyTo = comment
+                        submitFailed = false
+                    },
+                    onDeleteComment = deleteComment,
+                    onLikeComment = likeComment,
+                    hiddenComments = hiddenComments,
+                    onHideComment = hideComment,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
-
-            else -> PlanDetailContent(
-                plan = loaded,
-                ranking = ranking,
-                apps = apps,
-                rules = rules,
-                profile = profile,
-                comments = comments,
-                loadError = loadError,
-                me = commentAuthor,
-                liked = liked,
-                expandedThreads = expandedThreads,
-                onToggleThread = { key ->
-                    expandedThreads = if (key in expandedThreads) expandedThreads - key else expandedThreads + key
+            // The floating title bar, drawn last so it sits over the scroll: a layer of nothing —
+            // no background of its own — with the page's name and its way out.
+            ScreenTopBar(
+                onNavigateBack = onNavigateBack,
+                title = stringResource(Res.string.plan_detail_title),
+                actions = {
+                    plan?.let { current ->
+                        // The share glyph, not the clipboard one: what the button does is hand the
+                        // plan to somebody else, and only the mechanism is a copy.
+                        IconButton(onClick = { onShare(current) }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "分享方案",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
                 },
-                onVote = vote,
-                onOpenApp = onOpenApp,
-                foreign = !loaded.matches(profile),
-                // Another model's plan is applied the same way — Canta does not block it — but the
-                // tap asks first, because nothing about it was proven on this phone.
-                onUsePlan = {
-                    if (loaded.matches(profile)) onUsePlan(loaded.packages) else confirmForeign = true
-                },
-                onReply = { comment ->
-                    replyTo = comment
-                    submitFailed = false
-                },
-                onDeleteComment = deleteComment,
-                modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
     }
@@ -397,6 +437,10 @@ private fun PlanDetailContent(
     onUsePlan: () -> Unit,
     onReply: (PlanComment) -> Unit,
     onDeleteComment: (PlanComment) -> Unit,
+    onLikeComment: (PlanComment) -> Unit = {},
+    /** Hide keys of the comments this install put away with the broken heart, this session only. */
+    hiddenComments: Set<Long> = emptySet(),
+    onHideComment: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -408,8 +452,12 @@ private fun PlanDetailContent(
     // The uploader's current name (or the identity number before names were synced), in the form the
     // rest of the app shows: the plan card and this header must read the same.
     val uploaderName = plan.authorName
+    // The content starts below the floating title bar but scrolls under it: this is where the bar
+    // ends, not a wall it draws on.
+    val topSpace = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+        FlTopBarHeight + 12.dp
 
-    LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
+    LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
         item { PlanHero(plan, profile, uploaderName, me, liked, foreign, onVote, onUsePlan) }
 
         item {
@@ -469,6 +517,9 @@ private fun PlanDetailContent(
             onToggleThread = onToggleThread,
             onReply = onReply,
             onDelete = onDeleteComment,
+            onLike = onLikeComment,
+            hidden = hiddenComments,
+            onHide = onHideComment,
         )
     }
 }
@@ -476,6 +527,11 @@ private fun PlanDetailContent(
 /**
  * What the plan is, on this phone: who uploaded it, the title, whether it was reboot-proven, the
  * device line the plan was matched against, and the three numbers people judge plans by.
+ *
+ * The card reads like an editorial header, not a poster: a strict left edge carries everything —
+ * who wrote it on top as a quiet eyebrow, the title as the loudest line under it, then the chips,
+ * the note, and the numbers. Nothing is centred, because centred type in a card this full turns
+ * every line into its own little island and buries the order the reader needs.
  */
 @Composable
 private fun PlanHero(
@@ -491,9 +547,8 @@ private fun PlanHero(
     val colors = MaterialTheme.colorScheme
     val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
     // The block is a card, not a band: it keeps a margin from the page edge and from the bar above,
-    // so the top of the page stays the plain surface the title bar sits on, and its corners are
-    // rounded like every other card in the app. Everything inside is centred, because a plan is one
-    // sentence — who wrote it, what it is called, how it did — and a centred column reads as one.
+    // so the top of the page stays the plain surface the floating title bar sits over, and its
+    // corners are rounded like every other card in the app.
     Surface(
         color = colors.primaryContainer,
         shape = RoundedCornerShape(24.dp),
@@ -503,10 +558,10 @@ private fun PlanHero(
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
-            // first character of that person's name, like everywhere else.
+            // first character of that person's name, like everywhere else. The name leads the line;
+            // the badge, if there is one, stands at the end of it.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LetterAvatar(
                     name = uploaderName,
@@ -521,6 +576,7 @@ private fun PlanHero(
                     color = colors.onPrimaryContainer,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (mine) {
                     Spacer(Modifier.width(6.dp))
@@ -541,29 +597,29 @@ private fun PlanHero(
                 lineHeight = 25.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.onPrimaryContainer,
-                textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(8.dp))
-            Chip(
-                label = if (plan.isTest) {
-                    stringResource(Res.string.plan_test_chip)
-                } else {
-                    stringResource(Res.string.plan_verified_chip)
-                },
-                color = if (plan.isTest) colors.tertiary else colors.primary,
-            )
-            Text(
-                text = profile?.shortLabel() ?: "-",
-                fontSize = 10.sp,
-                lineHeight = 13.sp,
-                color = colors.onPrimaryContainer.copy(alpha = 0.78f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Chip(
+                    label = if (plan.isTest) {
+                        stringResource(Res.string.plan_test_chip)
+                    } else {
+                        stringResource(Res.string.plan_verified_chip)
+                    },
+                    color = if (plan.isTest) colors.tertiary else colors.primary,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = profile?.shortLabel() ?: "-",
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = colors.onPrimaryContainer.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             // The plan names the phone it was proven on. When that is not this one, the page says
             // it twice: once as the mismatch, once as what will happen (nothing will stop it).
             if (foreign) {
@@ -572,7 +628,6 @@ private fun PlanHero(
                         .padding(top = 10.dp)
                         .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
                         text = "机型不符：这是「${plan.deviceLabel.ifBlank { "未知机型" }}」的方案",
@@ -580,14 +635,12 @@ private fun PlanHero(
                         lineHeight = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.error,
-                        textAlign = TextAlign.Center,
                     )
                     Text(
                         text = "使用不会被拦截：Canta 只按你选中的包执行，不会因为机型不同而停下。",
                         fontSize = 10.sp,
                         lineHeight = 13.sp,
                         color = colors.onPrimaryContainer.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
@@ -599,7 +652,6 @@ private fun PlanHero(
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                     color = colors.onPrimaryContainer,
-                    textAlign = TextAlign.Center,
                 )
             }
 
@@ -612,19 +664,18 @@ private fun PlanHero(
                     value = "${plan.votes}",
                     label = stringResource(Res.string.plan_detail_stats_votes),
                     modifier = Modifier.weight(1f),
-                    centered = true,
                 )
+                StatDivider()
                 Stat(
                     value = "${plan.packages.size}",
                     label = stringResource(Res.string.plan_detail_stats_packages),
                     modifier = Modifier.weight(1f),
-                    centered = true,
                 )
+                StatDivider()
                 Stat(
                     value = "${plan.comments}",
                     label = stringResource(Res.string.plan_detail_stats_comments),
                     modifier = Modifier.weight(1f),
-                    centered = true,
                 )
                 VoteAction(liked = liked, votes = plan.votes, onVote = onVote)
             }
@@ -659,16 +710,18 @@ private fun PlanHero(
     }
 }
 
-/** One big number over its label, the way stats are read at a glance. */
+/**
+ * One big number over its label, left-aligned on the card's shared left edge — the way an
+ * editorial stat line reads, top to bottom, rather than a row of little centred islands.
+ */
 @Composable
 private fun Stat(
     value: String,
     label: String,
     modifier: Modifier = Modifier,
-    centered: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    Column(modifier = modifier, horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start) {
+    Column(modifier = modifier) {
         Text(
             text = value,
             fontSize = 17.sp,
@@ -681,6 +734,18 @@ private fun Stat(
             color = colors.onPrimaryContainer.copy(alpha = 0.72f),
         )
     }
+}
+
+/** A hairline between two stats, as tall as the numbers it separates. */
+@Composable
+private fun StatDivider() {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 10.dp)
+            .width(1.dp)
+            .height(26.dp)
+            .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.18f)),
+    )
 }
 
 /** The like button of the detail page: filled once this install voted, springing when tapped. */

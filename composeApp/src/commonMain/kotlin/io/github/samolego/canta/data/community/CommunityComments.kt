@@ -53,6 +53,15 @@ fun List<MyComment>.unreadSince(lastSeenId: Long): List<MyComment> = filter { it
 /** The id to remember once the inbox has been opened: the newest reply in it, 0 when empty. */
 fun newestReplyId(replies: List<MyComment>): Long = replies.maxOfOrNull { it.id } ?: 0L
 
+/**
+ * [transform] applied to the comment carrying [id]; the list comes back otherwise untouched.
+ *
+ * A comment without an id (an older backend's row) matches nothing: its page keeps what it showed
+ * rather than rewriting the wrong row, because with no id there is no way to tell two rows apart.
+ */
+fun List<PlanComment>.updatedComment(id: Long, transform: (PlanComment) -> PlanComment): List<PlanComment> =
+    map { if (it.id == id) transform(it) else it }
+
 /** One comment and the answers it collected, in the order the backend served them. */
 data class CommentThread(val comment: PlanComment, val replies: List<PlanComment>)
 

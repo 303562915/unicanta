@@ -3,7 +3,6 @@ package io.github.samolego.canta.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,20 +19,26 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.HeartBroken
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,15 +46,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.PlanComment
 import kotlin.math.absoluteValue
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * The avatar colours, one per commenter, picked by name so the same person keeps the same circle on
@@ -73,6 +84,12 @@ private val AVATAR_COLORS = listOf(
  * would read as one more piece of the plan's own colour scheme.
  */
 private val AUTHOR_TAG = Color(0xFFFE2C55)
+
+/**
+ * The red a tapped heart turns: the same red the short-video comment lists light their hearts with,
+ * and the same one the "作者" badge wears. A heart is a feeling, not a theme colour.
+ */
+private val LIKE_RED = Color(0xFFFE2C55)
 
 /** Height of a name badge. Fixed, so "我" and "作者" cannot grow taller than the name beside them. */
 private val TAG_HEIGHT = 16.dp
@@ -127,22 +144,42 @@ fun isPlanAuthor(comment: PlanComment, authorId: String, authorName: String): Bo
  */
 fun threadKey(comment: PlanComment, index: Int): Long = if (comment.id > 0L) comment.id else -1L - index
 
-/** How many answers a folded thread shows before "展开 N 条回复": a long one must not bury the rest. */
-private const val THREAD_PREVIEW = 2
+/**
+ * The key a comment is hidden under when the reader puts it away with the broken heart.
+ *
+ * The comment's own id is what to use, but an older backend sends none: the thread's own key stands
+ * in for it there — a hide that lasts one session has no need for more.
+ */
+internal fun hideKey(comment: PlanComment, key: Long): Long = if (comment.id > 0L) comment.id else key
+
+/**
+ * The hide key of an answer: its id, or its thread's key folded with where it stands in that
+ * thread. The fold keeps an answer's key from ever matching a first-level comment's key, which is
+ * what would make one broken heart swallow the wrong row.
+ */
+internal fun replyHideKey(key: Long, reply: PlanComment, replyIndex: Int): Long =
+    if (reply.id > 0L) reply.id else key * 4096L - 1L - replyIndex
 
 /**
  * The rows of one comment thread, for a `LazyColumn` that already has its own sections: every
- * comment that starts a conversation, then the answers it collected, indented under it.
+ * comment that starts a conversation, then — once the reader asks for them — the answers it
+ * collected, indented under it.
  *
- * A thread that collected more than [THREAD_PREVIEW] answers is folded after the first ones, the
- * way a short-video comment list leaves one long conversation from burying everything else; the
- * reader opens it with "展开 N 条回复" and closes it again with "收起". [expanded] holds the
- * [threadKey]s that are open, [onToggleThread] flips one.
+ * A thread's answers never show on their own: the first-level comment stands alone until the
+ * reader opens it with "展开 N 条回复", and closes it again with "收起", which sits after the last
+ * answer, at the very end of the thread. [expanded] holds the [threadKey]s that are open,
+ * [onToggleThread] flips one.
  *
  * [me] is how this install is signed (its display name, or its code before it picked one): only the
  * rows carrying that name offer **delete**, and only they are "mine" for the reply hint. [authorId]
  * and [authorName] identify the plan's uploader, whose rows carry the red "作者" badge; both are
  * empty on an app page, which has no author to mark.
+ *
+ * [onLike] taps a comment's heart; the heart and its count are read off the comment itself, so the
+ * page only has to write the new state back into its list. [hidden] holds the hide keys of
+ * comments this install put away with the broken heart — a personal, session-long hide: a hidden
+ * answer leaves its thread, a hidden first-level comment takes its whole thread with it.
+ * [onHide] records one key.
  */
 fun LazyListScope.commentThreads(
     threads: List<CommentThread>,
@@ -153,41 +190,49 @@ fun LazyListScope.commentThreads(
     authorName: String = "",
     expanded: Set<Long> = emptySet(),
     onToggleThread: (Long) -> Unit = {},
+    onLike: (PlanComment) -> Unit = {},
+    hidden: Set<Long> = emptySet(),
+    onHide: (Long) -> Unit = {},
 ) {
-    // The ids are unique on the server, but an older backend sends none: the running index keeps
-    // the keys distinct either way, which `LazyColumn` insists on.
-    var position = 0
     threads.forEachIndexed { index, thread ->
         val starter = thread.comment
         val key = threadKey(starter, index)
-        // A short thread is always open: folding two answers would cost a tap and save nothing.
-        val open = thread.replies.size <= THREAD_PREVIEW || key in expanded
-        val shown = if (open) thread.replies else thread.replies.take(THREAD_PREVIEW)
-        item(key = "comment-${starter.id}-${position++}") {
+        // A hidden first-level comment takes its answers with it: nobody hides a comment but still
+        // wants the conversation under it on the page.
+        if (hideKey(starter, key) in hidden) return@forEachIndexed
+        // A thread's answers only ever show once the reader asked for them.
+        val open = thread.replies.isEmpty() || key in expanded
+        val kept = thread.replies
+            .withIndex()
+            .filter { (replyIndex, answer) -> replyHideKey(key, answer, replyIndex) !in hidden }
+        val shown = if (open) kept else emptyList()
+        item(key = "comment-${starter.id}-$index") {
             CommentRow(
                 comment = starter,
                 me = me,
                 byAuthor = isPlanAuthor(starter, authorId, authorName),
-                replies = starter.replies.coerceAtLeast(thread.replies.size),
                 onReply = onReply,
                 onDelete = onDelete,
+                onLike = { onLike(starter) },
+                onHide = { onHide(hideKey(starter, key)) },
             )
         }
-        shown.forEach { answer ->
-            item(key = "comment-${answer.id}-${position++}") {
+        shown.forEach { (replyIndex, answer) ->
+            item(key = "reply-${answer.id}-$index-$replyIndex") {
                 CommentRow(
                     comment = answer,
                     me = me,
                     byAuthor = isPlanAuthor(answer, authorId, authorName),
                     replyToName = starter.author,
-                    replies = 0,
                     indented = true,
                     onReply = onReply,
                     onDelete = onDelete,
+                    onLike = { onLike(answer) },
+                    onHide = { onHide(replyHideKey(key, answer, replyIndex)) },
                 )
             }
         }
-        if (thread.replies.size > THREAD_PREVIEW) {
+        if (thread.replies.isNotEmpty()) {
             item(key = "thread-more-$key") {
                 ThreadToggle(
                     expanded = open,
@@ -265,8 +310,16 @@ fun NameTag(label: String, container: Color, content: Color, modifier: Modifier 
 /**
  * One comment, laid out the way a short-video comment list lays one out: a round avatar on the left,
  * the name in small grey type with the phone it was written on, the comment underneath, then one
- * quiet line with the date and "回复". A long press opens the same actions as that line, because
- * that is how people delete a comment there.
+ * quiet line with how long ago it landed and "回复".
+ *
+ * The row itself carries the two gestures a comment list owns: a tap answers it — the composer comes
+ * up below, naming who it answers — and a long press opens the action sheet, which is where delete
+ * lives. Nothing on the row says "删除": a comment somebody else wrote is not something the page
+ * puts a bin on, and one's own is taken back the way the short-video lists do it, from the sheet.
+ *
+ * On the right edge sits the column those lists end every row with: the heart and its count, red
+ * once this install tapped it, and under it the broken heart, which puts the comment away — a hide
+ * that belongs to this reader and this session only, not a deletion on the server.
  *
  * Next to the name sit the two badges that tell a reader who they are talking to: the plan's
  * uploader is marked "作者" in red, this install is marked "我" in the accent colour. Both are the
@@ -281,12 +334,15 @@ fun CommentRow(
     comment: PlanComment,
     me: String,
     replyToName: String = "",
-    replies: Int = 0,
     indented: Boolean = false,
     /** True for a comment the plan's uploader wrote: the row then carries the red "作者" badge. */
     byAuthor: Boolean = false,
     onReply: (PlanComment) -> Unit = {},
     onDelete: (PlanComment) -> Unit = {},
+    /** Taps the heart on this comment. */
+    onLike: () -> Unit = {},
+    /** Puts this comment away for this reader, this session only. */
+    onHide: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = me.isNotEmpty() &&
@@ -297,15 +353,14 @@ fun CommentRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // One gesture pair for the whole row: a thumb lands anywhere on the comment and gets
+            // the same two actions, the way a short-video comment list does it. The buttons keep
+            // their own taps.
+            .combinedClickable(onClick = { onReply(comment) }, onLongClick = openSheet)
             .padding(start = if (indented) 48.dp else 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // The avatar carries the long press as well as the text: a thumb lands on either.
-        Box(
-            modifier = Modifier
-                .clip(CircleShape)
-                .pointerInput(Unit) { detectTapGestures(onLongPress = { openSheet() }) },
-        ) {
+        Box(modifier = Modifier.clip(CircleShape)) {
             LetterAvatar(
                 name = comment.author,
                 size = if (indented) 26.dp else 36.dp,
@@ -314,13 +369,7 @@ fun CommentRow(
             )
         }
         Spacer(Modifier.width(9.dp))
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                // The long press belongs to the comment's own text block, so the "回复" and "删除"
-                // underneath stay ordinary taps.
-                .pointerInput(Unit) { detectTapGestures(onLongPress = { openSheet() }) },
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = comment.author.ifEmpty { "匿名" },
@@ -378,7 +427,7 @@ fun CommentRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = shortStamp(comment.createdAt),
+                    text = relativeStamp(comment.createdAt),
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
                     color = colors.outline,
@@ -388,41 +437,54 @@ fun CommentRow(
                     text = "回复",
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
                     color = colors.onSurfaceVariant,
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
                         .clickable { onReply(comment) }
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
-                if (mine && comment.id > 0L) {
-                    Spacer(Modifier.width(2.dp))
+            }
+        }
+        // The heart column on the far right, the way a short-video comment list ends every row:
+        // the heart with its count, and the broken heart that puts the comment away.
+        Column(
+            modifier = Modifier.padding(start = 8.dp, top = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onLike)
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(
+                    imageVector = if (comment.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "赞这条评论",
+                    modifier = Modifier.size(16.dp),
+                    tint = if (comment.liked) LIKE_RED else colors.outline,
+                )
+                if (comment.likes > 0) {
                     Text(
-                        text = "删除",
+                        text = "${comment.likes}",
                         fontSize = 10.sp,
-                        lineHeight = 13.sp,
-                        color = colors.error.copy(alpha = 0.9f),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .clickable { onDelete(comment) }
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (comment.liked) LIKE_RED else colors.outline,
                     )
                 }
             }
-        }
-        // The reply count sits on the far right, the way a like count does in a comment list.
-        if (replies > 0) {
-            Column(
+            Spacer(Modifier.height(6.dp))
+            Icon(
+                imageVector = Icons.Default.HeartBroken,
+                contentDescription = "不喜欢这条评论，先把它收起来",
                 modifier = Modifier
-                    .padding(start = 8.dp, top = 6.dp)
+                    .size(16.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable { onReply(comment) }
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(text = "$replies", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.outline)
-                Text(text = "回复", fontSize = 8.sp, color = colors.outline)
-            }
+                    .clickable(onClick = onHide)
+                    .padding(2.dp),
+                tint = colors.outline,
+            )
         }
     }
 
@@ -492,8 +554,10 @@ private fun CommentActions(
 }
 
 /**
- * The composer every comment page ends with: one line, the send button, and — while an answer is
- * being written — the name of the person it will answer, with a way out of it.
+ * The composer every comment page ends with: one quiet pill field and the send button. The field
+ * asks for a comment on its own — "发条评论，说说你的感受" — and names the person it answers once
+ * one was picked, the way a short-video composer does it. Picking a comment brings the field up
+ * focused, so the answer starts where the thumb landed.
  */
 @Composable
 fun CommentComposer(
@@ -506,40 +570,74 @@ fun CommentComposer(
     sending: Boolean = false,
     failed: Boolean = false,
     sendLabel: String = "发送",
-    hint: String = "写一条评论",
     failLabel: String = "发送失败，检查一下网络再试",
 ) {
+    val colors = MaterialTheme.colorScheme
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(replyToName) {
+        if (replyToName.isNotEmpty()) focusRequester.requestFocus()
+    }
     Surface(tonalElevation = 3.dp) {
         Column(
             modifier = modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
         ) {
             if (replyToName.isNotEmpty()) {
                 ReplyChip(name = replyToName, onCancel = onCancelReply)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = onDraftChange,
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(hint, fontSize = 12.sp) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                )
+                // The pill field: a quiet grey capsule, the placeholder inside it — the person being
+                // answered while one is picked, an open invitation otherwise. The field fills the
+                // capsule, so a thumb landing on the empty half still brings the keyboard up.
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(19.dp))
+                        .background(colors.surfaceContainerHigh)
+                        .clickable { focusRequester.requestFocus() }
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = onDraftChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
+                        textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { onSend() }),
+                    )
+                    if (draft.isEmpty()) {
+                        Text(
+                            text = if (replyToName.isNotEmpty()) {
+                                "回复 @$replyToName"
+                            } else {
+                                "发条评论，说说你的感受"
+                            },
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = colors.outline,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = onSend,
                     enabled = draft.isNotBlank() && !sending,
-                    modifier = Modifier.height(44.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    modifier = Modifier.height(38.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Send,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(15.dp),
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(sendLabel, fontSize = 11.sp)
@@ -675,4 +773,29 @@ fun MyCommentRow(
 fun shortStamp(iso: String): String {
     if (iso.length < 16) return iso.take(10)
     return iso.substring(5, 10) + " " + iso.substring(11, 16)
+}
+
+/**
+ * "3分钟前" out of a Postgres timestamp — the way a short-video comment list dates its rows: what
+ * is fresh reads as the time that passed since it landed, what is months old falls back to the
+ * plain "11-18 06:51".
+ *
+ * The timestamp is parsed rather than sliced; PostgREST signs its UTC values "+00:00", which the
+ * parser wants as "Z". Anything that does not parse — a drifted clock, a row written before the
+ * column existed — falls back to [shortStamp] instead of blanking the row.
+ */
+@OptIn(ExperimentalTime::class)
+fun relativeStamp(iso: String, now: Instant = Clock.System.now()): String {
+    val parsed = runCatching { Instant.parse(iso.replace(Regex("[+]00:00$"), "Z")) }.getOrNull()
+        ?: return shortStamp(iso)
+    val elapsed = now - parsed
+    if (elapsed.inWholeSeconds < 60L) return "刚刚"
+    val minutes = elapsed.inWholeMinutes
+    if (minutes < 60L) return "${minutes}分钟前"
+    val hours = elapsed.inWholeHours
+    if (hours < 24L) return "${hours}小时前"
+    val days = elapsed.inWholeDays
+    if (days < 30L) return "${days}天前"
+    if (days < 365L) return "${days / 30L}个月前"
+    return shortStamp(iso)
 }
