@@ -287,6 +287,8 @@
     <string name="about_contributors">Contributors</string>
     <string name="about_original_project">Original project</string>
     <string name="description_source">Description from the UAD list, published in English</string>
+    <string name="description_translated_source">Description translated by Canta from the UAD list</string>
+    <string name="bloat_description_language">en</string>
     <string name="settings_version_row">Version</string>
     <string name="settings_website_row">Website</string>
     <string name="settings_bar_slots_hint">The three core pages always stay. Tap a grey slot to show it in the bar.</string>

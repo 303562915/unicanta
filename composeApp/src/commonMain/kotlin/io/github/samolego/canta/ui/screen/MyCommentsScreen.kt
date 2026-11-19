@@ -41,7 +41,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.MyCommentRow
 import io.github.samolego.canta.ui.component.ScreenTopBar
-import io.github.samolego.canta.ui.dialog.CantaDialog
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import kotlinx.coroutines.launch

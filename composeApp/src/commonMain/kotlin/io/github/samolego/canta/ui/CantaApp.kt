@@ -58,6 +58,7 @@ import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
+import io.github.samolego.canta.ui.screen.MyCommentsScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
 import io.github.samolego.canta.ui.screen.PresetsScreen
@@ -71,10 +72,12 @@ import io.github.samolego.canta.ui.viewmodel.CURRENT_ONBOARDING_VERSION
 import io.github.samolego.canta.ui.viewmodel.MainViewModel
 import io.github.samolego.canta.ui.viewmodel.PresetsViewModel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
+import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.CrashReportStore
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
+import io.github.samolego.canta.util.ShareCode
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -152,6 +155,24 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     // A page arrives at its top, so the bar is always there until something is scrolled.
     LaunchedEffect(currentRoute) { dock.show() }
+
+    // A share code pasted into the clipboard before the app was opened: read it once, then open
+    // that plan as soon as the app itself is on screen (not over onboarding).
+    var sharedPlan by remember { mutableStateOf<Long?>(null) }
+    var shareChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!shareChecked) {
+            shareChecked = true
+            sharedPlan = ShareCode.parse(platform.readClipboard())
+        }
+    }
+    LaunchedEffect(sharedPlan, currentRoute) {
+        val planId = sharedPlan ?: return@LaunchedEffect
+        if (currentRoute != Screen.Main.route) return@LaunchedEffect
+        sharedPlan = null
+        platform.showMessage("识别到分享码，正在打开方案 #$planId")
+        navController.navigate(Screen.PlanDetail.routeFor(planId))
+    }
 
     Box(modifier = Modifier.fillMaxSize().dockScroll(dockScroll)) {
         NavHost(navController = navController, startDestination = startDestination) {
@@ -277,6 +298,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                         }
                     },
                     onOpenAbout = { navController.navigate(Screen.About.route) },
+                    onOpenMyComments = { navController.navigate(Screen.MyComments.route) },
                 )
             }
             composable(route = Screen.Presets.route) {
@@ -315,7 +337,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 // Comments are posted under this install's own code: no account, no login.
                 var planAuthor by remember { mutableStateOf("") }
                 // The identity number and its secret: what a comment of this install is deleted with.
-                var planIdentity by remember { mutableStateOf(DeviceIdentity.current(deps.settings)) }
+                var planIdentity by remember { mutableStateOf(Identity("")) }
                 // The plan's packages are shown with their icons and their device rules, the same
                 // way the app list shows them.
                 var planRules by remember { mutableStateOf<SafetyRules?>(null) }
@@ -368,11 +390,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 // Who the vote is recorded under: the number this install owns, or its token's
                 // head before the backend has given it one.
                 var appVoter by remember { mutableStateOf("") }
+                // The secret that proves the number, needed to delete a comment of this install.
+                var appToken by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
                     appProfile = handler.deviceProfile()
                     appAuthor = DeviceIdentity.displayName(deps.settings)
                     val identity = DeviceIdentity.current(deps.settings)
                     appVoter = identity.owner.ifEmpty { identity.token.take(16) }
+                    appToken = identity.token
                 }
                 AppDetailScreen(
                     packageName = packageName,
@@ -390,7 +415,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 // The page is about one identity: the name its comments are signed with, and the
                 // number plus token that prove it when one of them is deleted.
                 var myName by remember { mutableStateOf("") }
-                var myIdentity by remember { mutableStateOf(DeviceIdentity.current(deps.settings)) }
+                var myIdentity by remember { mutableStateOf(Identity("")) }
                 LaunchedEffect(Unit) {
                     myName = DeviceIdentity.displayName(deps.settings)
                     myIdentity = DeviceIdentity.current(deps.settings)

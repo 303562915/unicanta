@@ -121,6 +121,8 @@ fun SettingsScreen(
     settingsViewModel: SettingsViewModel,
     onVersionTap: () -> Unit,
     onOpenAbout: () -> Unit,
+    /** Opens the page that lists this install's comments and the replies to them. */
+    onOpenMyComments: () -> Unit = {},
     deviceUsers: List<DeviceUser> = emptyList(),
     selectedUserId: Int? = null,
     onUserSelected: (Int) -> Unit = {},
@@ -271,6 +273,15 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(GroupGap))
             SettingsGroup {
+                // What this install wrote in the community pages, and who answered: the comments
+                // live on the backend, so the page is one tap away rather than a local list.
+                SettingsItem(
+                    title = "我的评论",
+                    description = "我评论过的方案和应用，别人给我的回复",
+                    icon = Icons.AutoMirrored.Default.Message,
+                    onClick = onOpenMyComments,
+                    trailing = { SettingsChevron() },
+                )
                 SettingsItem(
                     title = stringResource(Res.string.about_us),
                     description = BuildInfo.VERSION_NAME,

@@ -693,6 +693,11 @@ private fun PlansTab(
             onTestUpload = onTestUpload,
         )
         HorizontalDivider()
+        // This install's own plans first, then everybody else's in the order the votes put them:
+        // the plan made on this phone is the one being looked for, the ranking is what to compare
+        // it with.
+        val mine = plans.filter { owner.isNotEmpty() && it.owner == owner }
+        val others = plans.filterNot { owner.isNotEmpty() && it.owner == owner }
         when {
             loading -> Text("…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
             plans.isEmpty() -> EmptyCard(
@@ -706,15 +711,45 @@ private fun PlansTab(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(plans, key = { it.id }) { plan ->
-                    PlanCard(
-                        plan = plan,
-                        mine = owner.isNotEmpty() && plan.owner == owner,
-                        liked = plan.id in liked,
-                        onOpen = { onOpenPlan(plan.id) },
-                        onVote = { onVote(plan) },
-                        onDelete = { onDelete(plan) },
-                    )
+                if (mine.isNotEmpty()) {
+                    item(key = "mine-header") {
+                        PlanSectionHeader(
+                            title = "我的方案 · ${mine.size}",
+                            hint = "在这台手机上验证过、可以再次使用或删除",
+                        )
+                    }
+                    items(mine, key = { plan -> "mine-${plan.id}" }) { plan ->
+                        PlanCard(
+                            plan = plan,
+                            mine = true,
+                            rank = null,
+                            liked = plan.id in liked,
+                            onOpen = { onOpenPlan(plan.id) },
+                            onVote = { onVote(plan) },
+                            onDelete = { onDelete(plan) },
+                        )
+                    }
+                }
+                if (others.isNotEmpty()) {
+                    item(key = "others-header") {
+                        PlanSectionHeader(
+                            title = "大家的方案排行",
+                            hint = "按点赞数排，和卸载排行一样：1 是被最多人推荐的",
+                        )
+                    }
+                    itemsIndexed(others, key = { _, plan -> "other-${plan.id}" }) { index, plan ->
+                        PlanCard(
+                            plan = plan,
+                            mine = false,
+                            // The position *is* the recommendation: the badge on the left says who
+                            // the community trusts most, exactly like the package ranking does.
+                            rank = index + 1,
+                            liked = plan.id in liked,
+                            onOpen = { onOpenPlan(plan.id) },
+                            onVote = { onVote(plan) },
+                            onDelete = { onDelete(plan) },
+                        )
+                    }
                 }
             }
         }
@@ -821,11 +856,12 @@ private fun UploadEntry(
     }
 }
 
-/** One plan: what it is, what it contains, and how many people liked it. Tapping it opens it. */
+/** One plan: its position in the community ranking, what it is, what it holds, and its likes. */
 @Composable
 private fun PlanCard(
     plan: CommunityPlan,
     mine: Boolean,
+    rank: Int?,
     liked: Boolean,
     onOpen: () -> Unit,
     onVote: () -> Unit,
@@ -839,6 +875,13 @@ private fun PlanCard(
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // The community ranking badge, drawn like the package ranking's: the top three on
+                // their own colours, the rest a plain number. This is the "who is most recommended"
+                // mark, so it leads the card.
+                if (rank != null) {
+                    RankBadge(rank = rank)
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(
                     text = plan.title,
                     fontSize = 14.sp,

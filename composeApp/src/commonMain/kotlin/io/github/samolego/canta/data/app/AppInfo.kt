@@ -43,6 +43,9 @@ data class AppInfo(
         get() = bloatData?.badgeInfo
     val description: String?
         get() = bloatData?.description
+    /** True when [description] is this build's translation, not the bloat list's own wording. */
+    val descriptionTranslated: Boolean
+        get() = bloatData?.translated == true
 
     fun withIcon(newIcon: ImageBitmap?): AppInfo = copy(icon = newIcon)
     fun withUninstalled(uninstalled: Boolean): AppInfo =

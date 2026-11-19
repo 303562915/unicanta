@@ -24,6 +24,12 @@ const val DEFAULT_BLOAT_COMMITS_URL =
 data class BloatData(
     internal val description: String?,
     internal val badgeInfo: AppBadgeInfo?,
+    /**
+     * True when [description] is this build's translation of the list rather than the list's own
+     * English. The app page says which one it is showing, so the wording is never passed off as
+     * the upstream text.
+     */
+    internal val translated: Boolean = false,
 )
 
 /**
@@ -32,18 +38,33 @@ data class BloatData(
  *
  * A usable cached list is never thrown away because of a failed download,
  * and a corrupt cache is replaced by a fresh download.
+ *
+ * [descriptions] is this build's translation of the list's English wording; it is applied to the
+ * parsed entries, so everything downstream (the badge, the app page, the list) sees one language.
  */
 class BloatRepository(
     private val client: HttpClient,
     private val cache: AppBlobStorage,
     private val settings: CantaSettings,
+    /**
+     * The translation to apply, resolved on first use: reading it touches the bundled resources,
+     * which the platforms that build this repository are not all ready for at construction time.
+     */
+    private val descriptions: suspend () -> BloatDescriptions = { BloatDescriptions.empty() },
 ) {
     private companion object {
         const val TAG = "BloatRepository"
     }
 
+    /** Resolved once: the table is a bundled file, it does not change while the app runs. */
+    private var resolvedDescriptions: BloatDescriptions? = null
+
+    private suspend fun translationTable(): BloatDescriptions =
+        resolvedDescriptions ?: descriptions().also { resolvedDescriptions = it }
+
     suspend fun load(): Map<String, BloatData> {
-        val cached = readCache()
+        val l10n = translationTable()
+        val cached = readCache(l10n)
         if (cached == null) {
             LogUtils.i(TAG, "No cached bloat list; downloading it")
         } else if (!settings.autoUpdateBloatListFlow.first()) {
@@ -65,7 +86,7 @@ class BloatRepository(
 
         val start = currentTimeMillis()
         val raw = fetchBloatList() ?: return cached.orEmpty()
-        val parsed = runCatching { parseBloatList(raw) }
+        val parsed = runCatching { parseBloatList(raw).localisedWith(l10n) }
             .onFailure { LogUtils.e(TAG, "Downloaded bloat list is invalid", it) }
             .getOrNull() ?: return cached.orEmpty()
 
@@ -77,8 +98,8 @@ class BloatRepository(
     }
 
     /** The cached list, or null if there is none or it can't be parsed. */
-    private fun readCache(): Map<String, BloatData>? =
-        runCatching { cache.read()?.decodeToString()?.let(::parseBloatList) }
+    private fun readCache(l10n: BloatDescriptions): Map<String, BloatData>? =
+        runCatching { cache.read()?.decodeToString()?.let(::parseBloatList)?.localisedWith(l10n) }
             .onFailure { LogUtils.w(TAG, "Ignoring unreadable bloat list cache: $it") }
             .getOrNull()
 

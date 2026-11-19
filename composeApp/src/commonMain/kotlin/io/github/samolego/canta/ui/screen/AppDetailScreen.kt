@@ -52,12 +52,13 @@ import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
-import io.github.samolego.canta.ui.dialog.CantaDialog
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.description_source
+import io.github.samolego.canta.generated.resources.description_translated_source
 import org.jetbrains.compose.resources.stringResource
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.DeviceProfile
@@ -357,11 +358,14 @@ private fun AppHero(
         app?.description?.takeIf { it.isNotBlank() }?.let { text ->
             Spacer(Modifier.height(8.dp))
             Text(text = text, style = FlText.footnote, color = scheme.onSurface)
-            // The bloat list is published in English only: say so, instead of leaving a
-            // Chinese page with an unexplained block of foreign text.
+            // The bloat list is published in English only. Say where the words came from: either
+            // "upstream English" or "translated by this build", never an unlabelled block.
             Spacer(Modifier.height(3.dp))
             Text(
-                text = stringResource(Res.string.description_source),
+                text = stringResource(
+                    if (app.descriptionTranslated) Res.string.description_translated_source
+                    else Res.string.description_source
+                ),
                 style = FlText.caption2,
                 color = scheme.onSurfaceVariant,
             )

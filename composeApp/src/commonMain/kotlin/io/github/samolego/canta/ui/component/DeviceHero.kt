@@ -2,11 +2,20 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,14 +29,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plans_hero_source
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -43,27 +55,26 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.jetbrains.compose.resources.stringResource
-import io.ktor.client.call.body
 
-/** How tall the picture of the phone is at the top of the plans page. */
-private val HERO_HEIGHT = 120.dp
+/** How tall the picture of the phone is at the top of the safety page. */
+private val HERO_HEIGHT = 132.dp
 
 /** Where the picture comes from. Wikimedia Commons is the one public source that can be searched
  *  by model name and hot-linked without a key, so the app ships no per-model image list. */
 private const val COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 
 /** Wikimedia wants a user agent that says what is asking. */
-private const val USER_AGENT = "Canta/4.2 (device plans header; https://github.com/303562915/Canta)"
+private const val USER_AGENT = "Canta/4.2 (device hero; https://github.com/303562915/Canta)"
 
 /** Wide enough for a phone screen at 2x, small enough that the first load is quick. */
 private const val THUMB_WIDTH = 960
 
 /**
- * Finds and downloads one picture of a phone, remembered for the life of the process: the header
+ * Finds and downloads one picture of a phone, remembered for the life of the process: the hero
  * asks once per model and shows the same bitmap from then on.
  *
  * Nothing here is required for the page to work — a model with no picture (or no network) simply
- * gets the drawn fallback.
+ * gets the grey fallback behind the model name.
  */
 private object DeviceImages {
     private val client = HttpClient { install(HttpTimeout) { requestTimeoutMillis = 9_000 } }
@@ -99,7 +110,7 @@ private object DeviceImages {
         val tokens = tokensOf(query)
 
         // Only matches whose file name carries the model name are used: a Commons search for a
-        // model also returns unrelated photos, and a wrong phone in the header would be worse than
+        // model also returns unrelated photos, and a wrong phone in the hero would be worse than
         // no phone at all.
         val ranked = pages.values.map { it.jsonObject }.mapNotNull { page ->
             val title = page["title"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -125,33 +136,44 @@ private object DeviceImages {
 }
 
 /**
- * The top of the plans page: the phone this page is about, as a picture.
+ * The top of the safety page: the phone this page is about, as a picture, with what the page
+ * knows about it written over the foot of the picture.
  *
- * The picture is looked up asynchronously and is purely decorative — the model name is already in
- * the header above, so a missing image changes nothing but the look.
+ * A model whose picture cannot be found keeps the same layout on a muted grey band instead of a
+ * coloured one, so a missing image reads as "no photo yet" rather than as a different design. The
+ * model name is drawn either way, which is why the picture is only ever decoration.
  */
 @Composable
-fun DeviceHeroImage(model: String, modifier: Modifier = Modifier) {
+fun DeviceHero(
+    model: String,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    trailing: @Composable RowScope.() -> Unit = {},
+) {
     var image by remember(model) { mutableStateOf<ImageBitmap?>(null) }
-    var attempted by remember(model) { mutableStateOf(false) }
 
     LaunchedEffect(model) {
-        attempted = false
         image = DeviceImages.load(model)
-        attempted = true
     }
 
-    val colors = MaterialTheme.colorScheme
+    val scheme = MaterialTheme.colorScheme
+    // The band under the picture: a photo gets a dark scrim so the white text stays readable, a
+    // missing one is grey on grey.
+    val scrim = if (image != null) Color.Black.copy(alpha = 0.45f) else scheme.surfaceContainerHighest
+    val onScrim = if (image != null) Color.White else scheme.onSurface
+
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
             .height(HERO_HEIGHT)
-            .clip(RoundedCornerShape(18.dp))
             .background(
-                Brush.linearGradient(
+                // A colourless gradient: the hero is a backdrop, not a badge.
+                Brush.verticalGradient(
                     listOf(
-                        colors.primaryContainer.copy(alpha = 0.85f),
-                        colors.tertiaryContainer.copy(alpha = 0.7f),
+                        scheme.surfaceContainerHigh,
+                        scheme.surfaceContainerHighest,
                     )
                 )
             ),
@@ -159,31 +181,66 @@ fun DeviceHeroImage(model: String, modifier: Modifier = Modifier) {
         image?.let { bitmap ->
             Image(
                 bitmap = bitmap,
-                contentDescription = model,
+                contentDescription = title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        if (attempted && image == null && model.isNotBlank()) {
-            // No picture: the name is the picture.
-            Text(
-                text = model,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.onPrimaryContainer,
-                modifier = Modifier.align(Alignment.Center),
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.35f to Color.Transparent,
+                        1f to scrim,
+                    )
+                )
+        )
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onScrim,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        color = onScrim.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                content = trailing,
             )
         }
+        // Wikimedia asks to be credited; the line is only shown when there really is their picture.
         if (image != null) {
             Text(
                 text = stringResource(Res.string.plans_hero_source),
                 fontSize = 8.sp,
-                color = colors.onSurface.copy(alpha = 0.6f),
+                color = Color.White.copy(alpha = 0.75f),
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .background(colors.surface.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                    .padding(end = 2.dp),
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
             )
         }
     }
