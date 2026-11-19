@@ -241,6 +241,20 @@ class AppListViewModel(
         viewModelScope.launch { telemetry.resolveSurvivors(loaded) }
     }
 
+    /**
+     * Re-runs the reboot check on what is loaded now, without waiting for another app start.
+     *
+     * The safety page calls this: coming back from a reboot, the check may have run before the app
+     * list was there (or not at all, when the boot broadcast was never delivered), and the page
+     * then showed "0 reboot-verified" although the phone had in fact rebooted.
+     */
+    fun refreshSurvivors() {
+        val tracker = telemetry ?: return
+        val loaded = _apps.toList()
+        if (loaded.isEmpty()) return
+        viewModelScope.launch { tracker.resolveSurvivors(loaded) }
+    }
+
     private suspend fun applyBloatData(bloat: Map<String, BloatData>) {
         val cantaBloat = BloatData(description = getString(Res.string.canta_description, UAD_CREDIT), badgeInfo = null)
         for (index in _apps.indices) {

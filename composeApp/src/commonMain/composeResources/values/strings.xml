@@ -327,6 +327,8 @@
     <string name="plans_upload_cta_hint">%1$d removed · %2$d reboot-verified</string>
     <string name="plans_upload_cta_none">Nothing removed yet — remove a few apps first</string>
     <string name="plans_identity">ID %1$s · no login</string>
+    <string name="plans_hero_source">Photo: Wikimedia Commons</string>
+    <string name="plans_reload">Reload</string>
     <string name="plans_empty_title">Nobody has uploaded a plan for %1$s yet</string>
     <string name="plans_empty_body">Yours would be the first. This list is also empty while offline.</string>
     <string name="plans_mine">Mine</string>

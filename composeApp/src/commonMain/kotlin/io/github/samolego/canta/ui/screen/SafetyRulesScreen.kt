@@ -59,8 +59,10 @@ import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
+import io.github.samolego.canta.data.community.PlanCache
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.rankPackages
+import io.github.samolego.canta.data.community.withoutDuplicates
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plan_test_chip
 import io.github.samolego.canta.generated.resources.plan_upload_fail
@@ -74,6 +76,9 @@ import io.github.samolego.canta.generated.resources.plans_mine
 import io.github.samolego.canta.generated.resources.plans_test_entry_body
 import io.github.samolego.canta.generated.resources.plans_test_entry_count
 import io.github.samolego.canta.generated.resources.plans_test_entry_title
+import io.github.samolego.canta.generated.resources.plans_reload
+import io.github.samolego.canta.generated.resources.plans_reload_failed
+import io.github.samolego.canta.generated.resources.plans_verified_short
 import io.github.samolego.canta.generated.resources.plans_upload_cta
 import io.github.samolego.canta.generated.resources.plans_upload_cta_hint
 import io.github.samolego.canta.generated.resources.plans_upload_cta_none
@@ -96,9 +101,9 @@ import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
 import io.github.samolego.canta.util.SafetyVerdict
-import io.github.samolego.canta.util.TEST_UPLOAD_PASSWORD
 import io.github.samolego.canta.util.romName
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
@@ -108,6 +113,15 @@ import org.jetbrains.compose.resources.stringResource
 
 /** Icon size of a ranking row: smaller than a tile, so more of them fit. */
 private val ROW_ICON = 32.dp
+
+/** How often the plans of this phone are asked for before the page accepts an empty answer. */
+private const val PLAN_ATTEMPTS = 3
+
+/** Waits between those attempts: a phone that just booted is often not on the network yet. */
+private val PLAN_RETRY_DELAYS = longArrayOf(1_000L, 3_000L)
+
+/** How often the device profile is read before the page gives up for this visit. */
+private const val PROFILE_ATTEMPTS = 5
 
 /** A line under the header: what the last upload or delete said. */
 private data class Notice(val text: String, val error: Boolean = false)
@@ -141,6 +155,10 @@ fun SafetyRulesScreen(
     onOpenPlan: (Long) -> Unit,
     /** Opens one app's own page from a ranking row. */
     onOpenApp: (String) -> Unit = {},
+    /** The community repository of the app; the page makes its own when none is given. */
+    repository: PlanRepository? = null,
+    /** The plans this phone saw last time; null keeps the page network-only. */
+    planCache: PlanCache? = null,
     onNavigateBack: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -148,9 +166,16 @@ fun SafetyRulesScreen(
     var rules by remember { mutableStateOf<SafetyRules?>(null) }
 
     val scope = rememberCoroutineScope()
-    val repository = remember { PlanRepository(HttpClient()) }
+    val fallbackRepository = remember { PlanRepository(HttpClient()) }
+    val repo = repository ?: fallbackRepository
     var plans by remember { mutableStateOf<List<CommunityPlan>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    // The device this phone's plans were asked for; retried explicitly when the answer was empty
+    // or the request did not arrive.
+    var reloads by remember { mutableIntStateOf(0) }
+    // True when the last request did not arrive: the list may then be the cached one, not this
+    // phone's plans.
+    var offline by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<Notice?>(null) }
     var upload by remember { mutableStateOf<UploadRequest?>(null) }
     var uploading by remember { mutableStateOf(false) }
@@ -172,16 +197,28 @@ fun SafetyRulesScreen(
     val owner = identity.owner
 
     LaunchedEffect(Unit) {
-        profile = handler.deviceProfile()
         rules = SafetyRules.bundled()
         if (appListViewModel.apps.isEmpty()) appListViewModel.loadApps()
+        // The profile is read from the device, which can still be busy right after a boot: keep
+        // asking instead of leaving the page without a device for the rest of the visit.
+        repeat(PROFILE_ATTEMPTS) {
+            profile = handler.deviceProfile()
+            if (profile != null) return@LaunchedEffect
+            delay(1_200L)
+        }
+    }
+
+    // The reboot check runs at every start, but a boot broadcast can be missed and the app list
+    // may have been empty when it ran: asking again here is what makes "重启验证" show up.
+    LaunchedEffect(apps.size) {
+        if (apps.isNotEmpty()) appListViewModel.refreshSurvivors()
     }
 
     // Read the remembered identity first; only a phone that has never signed in asks for a number.
     LaunchedEffect(profile) {
         var current = DeviceIdentity.current(settings)
         if (!current.known) {
-            repository.signIn(current.token, profile)?.let { issued ->
+            repo.signIn(current.token, profile)?.let { issued ->
                 settings.setIdentityUserId(issued)
                 current = current.copy(userId = issued)
             }
@@ -189,9 +226,35 @@ fun SafetyRulesScreen(
         identity = current
     }
 
-    LaunchedEffect(profile) {
-        loading = true
-        plans = repository.plansFor(profile)
+    LaunchedEffect(profile, reloads) {
+        val target = profile
+        if (target == null) {
+            loading = false
+            return@LaunchedEffect
+        }
+        // Whatever was cached shows immediately, so a page opened right after a reboot is not
+        // empty while the request is in flight.
+        if (plans.isEmpty()) {
+            planCache?.read(target)?.takeIf { it.isNotEmpty() }?.let { cached ->
+                plans = cached.withoutDuplicates()
+                loading = false
+            }
+        }
+        loading = plans.isEmpty()
+        var fetched: List<CommunityPlan>? = null
+        for (attempt in 0 until PLAN_ATTEMPTS) {
+            val result = repo.plansFor(target)
+            if (result.isNotEmpty()) {
+                fetched = result
+                break
+            }
+            if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
+        }
+        offline = fetched == null
+        if (fetched != null) {
+            plans = fetched.withoutDuplicates()
+            planCache?.write(target, fetched)
+        }
         loading = false
     }
 
@@ -217,7 +280,7 @@ fun SafetyRulesScreen(
         if (plan.id !in liked) {
             liked = liked + plan.id
             scope.launch {
-                val votes = repository.vote(
+                val votes = repo.vote(
                     plan.id,
                     owner.ifEmpty { "u-" + Random.nextLong().toString(16) },
                 ) ?: return@launch
@@ -230,6 +293,14 @@ fun SafetyRulesScreen(
         topBar = {
             Column {
                 ScreenTopBar(title = stringResource(Res.string.rules_title))
+                // The phone band sits right under the title: it names what the whole page is about,
+                // so it belongs to the header instead of scrolling with one of the tabs.
+                DeviceBanner(
+                    profile = profile,
+                    planCount = plans.size,
+                    pendingCount = deletedPackages.size,
+                    verifiedCount = confirmed,
+                )
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("apps", stringResource(Res.string.safety_tab_apps)),
@@ -242,7 +313,6 @@ fun SafetyRulesScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            DeviceBanner(profile = profile, planCount = plans.size)
             notice?.let { line ->
                 Text(
                     text = line.text,
@@ -260,7 +330,9 @@ fun SafetyRulesScreen(
                     apps = apps,
                     rules = rules,
                     profile = profile,
+                    offline = offline,
                     onOpenApp = onOpenApp,
+                    onRetry = { reloads++ },
                 )
             } else {
                 PlansTab(
@@ -273,11 +345,13 @@ fun SafetyRulesScreen(
                     confirmedCount = confirmed,
                     candidateCount = candidates.size,
                     liked = liked,
+                    offline = offline,
                     onUpload = { openUpload(false) },
                     onTestUpload = { openUpload(true) },
                     onOpenPlan = onOpenPlan,
                     onVote = vote,
                     onDelete = { pendingDelete = it },
+                    onRetry = { reloads++ },
                 )
             }
         }
@@ -297,7 +371,10 @@ fun SafetyRulesScreen(
                 if (target != null) {
                     scope.launch {
                         uploading = true
-                        val id = repository.submit(
+                        // Uploading the same set again is a retry, not a second plan: the earlier
+                        // copy is removed first, so the list keeps one row per package set.
+                        repo.deleteOwnDuplicates(target, owner, identity.token, packages)
+                        val id = repo.submit(
                             profile = target,
                             title = title,
                             note = note,
@@ -315,7 +392,9 @@ fun SafetyRulesScreen(
                             Notice(getString(Res.string.plan_upload_fail), error = true)
                         }
                         // Re-read either way: a failed upload simply leaves the list as it was.
-                        plans = repository.plansFor(target)
+                        val refreshed = repo.plansFor(target).withoutDuplicates()
+                        plans = refreshed
+                        if (refreshed.isNotEmpty()) planCache?.write(target, refreshed)
                     }
                 }
             },
@@ -333,13 +412,17 @@ fun SafetyRulesScreen(
                         pendingDelete = null
                         val target = profile
                         scope.launch {
-                            val ok = repository.delete(plan.id, owner, identity.token)
+                            val ok = repo.delete(plan.id, owner, identity.token)
                             notice = if (ok) {
                                 null
                             } else {
                                 Notice("删除失败：这个方案不是本机上传的，或者后端没通。", error = true)
                             }
-                            if (target != null) plans = repository.plansFor(target)
+                            if (target != null) {
+                                val refreshed = repo.plansFor(target).withoutDuplicates()
+                                plans = refreshed
+                                if (refreshed.isNotEmpty()) planCache?.write(target, refreshed)
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -360,10 +443,16 @@ fun SafetyRulesScreen(
 
 /**
  * The phone as it is sold, over the colour that marks this section: model, ROM, Android version,
- * and how many plans exist for it.
+ * and — on the right — what this page found for it (plans, removed apps, reboot-verified ones).
  */
 @Composable
-private fun DeviceBanner(profile: DeviceProfile?, planCount: Int, modifier: Modifier = Modifier) {
+private fun DeviceBanner(
+    profile: DeviceProfile?,
+    planCount: Int,
+    pendingCount: Int,
+    verifiedCount: Int,
+    modifier: Modifier = Modifier,
+) {
     val colors = MaterialTheme.colorScheme
     Surface(color = colors.primaryContainer, modifier = modifier.fillMaxWidth()) {
         Row(
@@ -388,20 +477,22 @@ private fun DeviceBanner(profile: DeviceProfile?, planCount: Int, modifier: Modi
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "$planCount",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.onPrimaryContainer,
-                )
-                Text(
-                    text = stringResource(Res.string.safety_tab_plans),
-                    fontSize = 9.sp,
-                    color = colors.onPrimaryContainer.copy(alpha = 0.75f),
-                )
+            BannerCounter("$planCount", stringResource(Res.string.safety_tab_plans))
+            if (pendingCount > 0) {
+                Spacer(Modifier.width(10.dp))
+                BannerCounter("$verifiedCount/$pendingCount", stringResource(Res.string.plans_verified_short))
             }
         }
+    }
+}
+
+/** One number with its caption, right-aligned in the device band. */
+@Composable
+private fun BannerCounter(value: String, caption: String) {
+    val color = MaterialTheme.colorScheme.onPrimaryContainer
+    Column(horizontalAlignment = Alignment.End) {
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = color)
+        Text(caption, fontSize = 9.sp, color = color.copy(alpha = 0.75f))
     }
 }
 
@@ -427,7 +518,9 @@ private fun RankingTab(
     apps: List<AppInfo>,
     rules: SafetyRules?,
     profile: DeviceProfile?,
+    offline: Boolean,
     onOpenApp: (String) -> Unit,
+    onRetry: () -> Unit,
 ) {
     val ranking = remember(plans) { rankPackages(plans) }
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -441,6 +534,8 @@ private fun RankingTab(
         ranking.isEmpty() -> EmptyCard(
             title = stringResource(Res.string.safety_tab_apps),
             body = stringResource(Res.string.ranking_empty, profile?.displayModel ?: "-"),
+            onRetry = onRetry,
+            retryHint = offline,
         )
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -560,7 +655,7 @@ private fun StatusChip(verdict: SafetyVerdict?) {
     )
 }
 
-/** The plans of this phone: an upload entry on top, then the plans themselves, most liked first. */
+/** The plans of this phone: the picture of the phone, the upload entry, then the plans themselves. */
 @Composable
 private fun PlansTab(
     plans: List<CommunityPlan>,
@@ -572,13 +667,21 @@ private fun PlansTab(
     confirmedCount: Int,
     candidateCount: Int,
     liked: Set<Long>,
+    offline: Boolean,
     onUpload: () -> Unit,
     onTestUpload: () -> Unit,
     onOpenPlan: (Long) -> Unit,
     onVote: (CommunityPlan) -> Unit,
     onDelete: (CommunityPlan) -> Unit,
+    onRetry: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
+        // The phone itself, at the top of the page: a picture of exactly this model when one can be
+        // found, otherwise a drawn band with its name.
+        DeviceHeroImage(
+            model = profile?.displayModel.orEmpty(),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
         UploadEntry(
             profile = profile,
             deletedCount = deletedCount,
@@ -594,6 +697,8 @@ private fun PlansTab(
             plans.isEmpty() -> EmptyCard(
                 title = stringResource(Res.string.plans_empty_title, profile?.displayModel ?: "-"),
                 body = stringResource(Res.string.plans_empty_body),
+                onRetry = onRetry,
+                retryHint = offline,
             )
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -698,7 +803,7 @@ private fun UploadEntry(
                     TestChip()
                 }
                 Text(
-                    text = stringResource(Res.string.plans_test_entry_body, TEST_UPLOAD_PASSWORD),
+                    text = stringResource(Res.string.plans_test_entry_body),
                     fontSize = 9.sp,
                     lineHeight = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -852,9 +957,14 @@ private fun TestChip() {
     )
 }
 
-/** An empty list still has to say why it is empty. */
+/** An empty list still has to say why it is empty — and, when nothing loaded, offer another try. */
 @Composable
-private fun EmptyCard(title: String, body: String) {
+private fun EmptyCard(
+    title: String,
+    body: String,
+    onRetry: (() -> Unit)? = null,
+    retryHint: Boolean = false,
+) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 20.dp)) {
         Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         Text(
@@ -864,5 +974,20 @@ private fun EmptyCard(title: String, body: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
+        if (onRetry != null) {
+            Text(
+                text = stringResource(
+                    if (retryHint) Res.string.plans_reload_failed else Res.string.plans_reload,
+                ),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onRetry)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
     }
 }

@@ -226,8 +226,10 @@ class PackageTelemetry(
             }.toMap()
             val (events, remaining) = resolvePending(pending, ResolveMode.START, bootId, fingerprint, states, clock.now(), deviceKey)
             recordRestores(events)
-            if (analytics && !telemetry.sendAndWait(events)) return
+            // The survival mark is local state the user is told about ("重启验证 N 个"), so it is kept
+            // even when the reports cannot be sent: an offline phone must not look unverified.
             if (remaining != pending) settings.setPendingReboot(remaining)
+            if (analytics) telemetry.sendAndWait(events)
         }
     }
 
@@ -272,9 +274,11 @@ class PackageTelemetry(
                 pending, ResolveMode.BOOT, currentBootId, snapshot.buildFingerprint.ifEmpty { null }, states, clock.now(), deviceKey,
             )
             recordRestores(events)
-            if (analytics && !telemetry.sendAndWait(events)) return false
+            // Local first: the check itself has happened, whether or not the reports can leave the
+            // phone right now. Only the delivery is retried by the worker.
             if (remaining != pending) settings.setPendingReboot(remaining)
-            return true
+            val delivered = !analytics || telemetry.sendAndWait(events)
+            return delivered
         }
     }
 }

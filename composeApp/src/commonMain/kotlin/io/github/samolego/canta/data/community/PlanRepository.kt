@@ -10,6 +10,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
 /** One community plan: a set of packages someone removed and confirmed by a reboot. */
+@Serializable
 data class CommunityPlan(
     val id: Long,
     val title: String,
@@ -229,6 +231,26 @@ class PlanRepository(
         return rpc("user_login", body)
             ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.longOrNull }.getOrNull() }
             ?.takeIf { it > 0 }
+    }
+
+    /**
+     * Deletes the plans this install already uploaded with exactly the same package set.
+     *
+     * Uploading the same set twice is a retry, not a second plan: without this the list ends up
+     * with two identical rows and the ranking counts the same removal twice.
+     */
+    suspend fun deleteOwnDuplicates(
+        profile: DeviceProfile,
+        owner: String,
+        token: String,
+        packages: List<String>,
+    ): Int {
+        if (owner.isEmpty() || token.isEmpty() || packages.isEmpty()) return 0
+        val wanted = packages.toSet()
+        val duplicates = plansFor(profile).filter { it.owner == owner && it.packages.toSet() == wanted }
+        var removed = 0
+        duplicates.forEach { if (delete(it.id, owner, token)) removed++ }
+        return removed
     }
 
     suspend fun vote(planId: Long, voter: String): Int? {
