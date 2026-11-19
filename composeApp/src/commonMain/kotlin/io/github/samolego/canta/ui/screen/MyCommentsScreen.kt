@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,10 +40,11 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.newestReplyId
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.MyCommentRow
-import io.github.samolego.canta.ui.component.avatarColorOf
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.fl.FlBarButton
+import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import kotlinx.coroutines.launch
@@ -143,47 +143,23 @@ fun MyCommentsScreen(
     Scaffold(
         topBar = {
             Column {
-                ScreenTopBar(onNavigateBack = onNavigateBack, title = "我的评论")
-                // Who the page is about, and how many of the two things there are.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LetterAvatar(
-                        name = author,
-                        size = 26.dp,
-                        background = avatarColorOf(author),
-                        letterColor = androidx.compose.ui.graphics.Color.White,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = author.ifEmpty { "—" },
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            maxLines = 1,
+                // Only two things belong above the list: the way out, the way to ask the backend
+                // again, and the switch between the two lists. The name and the two counts used to
+                // sit in a coloured card of their own, repeating what the segments already say —
+                // the page is about one install, so naming it a second time said nothing new.
+                ScreenTopBar(
+                    onNavigateBack = onNavigateBack,
+                    title = "我的评论",
+                    actions = {
+                        FlBarButton(
+                            glyph = FlGlyphs.refresh,
+                            contentDescription = "刷新",
+                            onClick = { reloads++ },
+                            iconSize = 20.dp,
+                            filled = false,
                         )
-                        Text(
-                            text = "${mine.size} 条我写的 · ${replies.size} 条回复我的",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-                        )
-                    }
-                    Text(
-                        text = "刷新",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { reloads++ }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
+                    },
+                )
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("mine", "我写的 · ${mine.size}"),
@@ -239,7 +215,7 @@ fun MyCommentsScreen(
                     }
                     owner.takeIf { it.isEmpty() }?.let {
                         Text(
-                            text = "这台设备还没有拿到编号，评论会记在令牌下；下拉刷新后如果仍是 0，把上面那行发给我。",
+                            text = "这台设备还没有拿到编号，评论会记在令牌下；点右上角刷新后如果仍是 0，把上面那行发给我。",
                             fontSize = 10.sp,
                             lineHeight = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

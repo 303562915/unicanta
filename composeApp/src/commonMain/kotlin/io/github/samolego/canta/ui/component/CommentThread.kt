@@ -584,8 +584,9 @@ private fun ReplyChip(name: String, onCancel: () -> Unit) {
 /**
  * A row of the "my comments" page: what was written, where, and how to get there.
  *
- * A long press deletes it, which is the gesture that page is used with; the bin on the row does the
- * same thing for people who do not know the gesture.
+ * The bin on the row deletes it; a long press does the same thing for anyone who tries it. Both
+ * are quiet — nothing on the row announces either one, because a list of one's own comments does
+ * not need a caption explaining how to remove one of them.
  */
 @Composable
 fun MyCommentRow(
@@ -647,8 +648,6 @@ fun MyCommentRow(
             Spacer(Modifier.height(3.dp))
             Text(text = "$replies 条回复", fontSize = 9.sp, color = colors.primary)
         }
-        Spacer(Modifier.height(2.dp))
-        Text(text = "长按可以删除", fontSize = 8.sp, color = colors.outline)
     }
 }
 

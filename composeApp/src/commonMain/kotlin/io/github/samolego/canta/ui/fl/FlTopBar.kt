@@ -65,12 +65,17 @@ fun FlTopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onBack != null) {
+                // The arrow every phone owner already knows, drawn flat instead of floating in
+                // a bubble: a bare chevron on a page-coloured circle reads as "something is
+                // broken" at this size, and the stem makes the direction unmistakable.
                 FlBarButton(
-                    glyph = FlGlyphs.chevronBack,
-                    contentDescription = null,
+                    glyph = FlGlyphs.arrowBack,
+                    contentDescription = "返回",
                     onClick = onBack,
+                    iconSize = 22.dp,
+                    filled = false,
                 )
-                Spacer(Modifier.width(ActionGap))
+                Spacer(Modifier.width(4.dp))
             }
             Box(
                 modifier = Modifier.weight(1f),
