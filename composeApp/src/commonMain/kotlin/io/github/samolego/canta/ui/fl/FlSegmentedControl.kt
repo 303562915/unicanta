@@ -65,6 +65,8 @@ fun FlSegmentedControl(
     modifier: Modifier = Modifier,
     position: Float = selectedIndex.toFloat(),
     onImage: Boolean = false,
+    /** Side inset of the groove; 0 when the caller already keeps the control off the edges. */
+    insetHorizontal: Dp = 16.dp,
 ) {
     if (segments.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
@@ -87,7 +89,7 @@ fun FlSegmentedControl(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = insetHorizontal, vertical = 8.dp)
             .height(SegmentHeight)
             .drawBehind {
                 drawRoundRect(

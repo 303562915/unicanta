@@ -309,8 +309,9 @@ fun SafetyRulesScreen(
                         ),
                         selectedIndex = tab,
                         onSelect = { tab = it },
-                        // No side inset: it is drawn on the hero, which already has its own.
-                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 2.dp),
+                        // The hero already keeps its content off the edges, and the groove runs
+                        // wider than it so the picture shows around it.
+                        insetHorizontal = 0.dp,
                         onImage = true,
                     )
                 },
