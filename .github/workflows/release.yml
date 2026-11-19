@@ -1,7 +1,18 @@
-name: 📦🚀 Build & prepare draft Android release
+name: 📦🚀 Build & publish Android release
 
+# 两条入口，都不需要点第二步：
+#   - 推 v* tag：自动构建、自动发布、页面自动更新（正常发版走这条）
+#   - 手动触发：可选择只建 draft，用来预演或补发
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      keep_draft:
+        description: "只建 draft，先不发布"
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -53,6 +64,19 @@ jobs:
           echo "VERSION_NAME=$version" >> $GITHUB_ENV
           echo "tag=v$version" >> $GITHUB_OUTPUT
 
+      - name: 📝 Write release notes
+        env:
+          VERSION_NAME: ${{ env.VERSION_NAME }}
+        run: |
+          {
+            echo "Canta $VERSION_NAME"
+            echo ""
+            echo "- 下载页：https://303562915.github.io/Canta/"
+            echo "- 包名：io.github.a303562915.unicanta"
+            echo ""
+            echo "校验和在 SHA256SUMS.txt 里，安装包由本仓库的 GitHub Actions 构建并签名。"
+          } > RELEASE_NOTES.md
+
       - name: 🤖📦 Build Android APKs
         run: ./gradlew :androidApp:assembleRelease
 
@@ -76,17 +100,30 @@ jobs:
         with:
           subject-path: 'androidApp/build/outputs/apk/release/*.apk'
 
-      - name: 📦 Create GitHub release draft
+      - name: 📦 Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.extract_version.outputs.tag }}
           VERSION_NAME: ${{ env.VERSION_NAME }}
+          KEEP_DRAFT: ${{ inputs.keep_draft }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
+          # A tag push already created the ref, so --target would be rejected there.
+          TARGET_ARGS=()
+          if [ "$REF_TYPE" != "tag" ]; then
+            TARGET_ARGS=(--target "$GITHUB_SHA")
+          fi
+
+          DRAFT_ARGS=()
+          if [ "$KEEP_DRAFT" = "true" ]; then
+            DRAFT_ARGS=(--draft)
+          fi
+
           gh release create "$TAG" \
-            --draft \
             --title "Canta $VERSION_NAME" \
-            --notes "" \
-            --target "$GITHUB_SHA"
+            --notes-file RELEASE_NOTES.md \
+            "${DRAFT_ARGS[@]}" \
+            "${TARGET_ARGS[@]}"
 
       - name: 📁 Upload APKs, checksums & attestation
         env:
