@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -160,15 +161,23 @@ private fun DayHeader(day: String) {
 /**
  * One operation: the app's icon and name, then when it happened and how it went. The batch is
  * only mentioned when it had more than one app in it, since "1 of 1" says nothing.
+ *
+ * The row is a button for the opposite operation: what is gone can be put back with one tap, and
+ * what was put back can be removed again the same way.
  */
 @Composable
-private fun RecordRow(record: OperationRecord, app: AppInfo?) {
+private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val isUninstall = record.kind == OperationKind.UNINSTALL
     val actionColor = if (isUninstall) scheme.error else scheme.primary
+    // The reverse of what the row says: a restore undoes an uninstall, and the other way round.
+    val reverseLabel = stringResource(
+        if (isUninstall) Res.string.records_action_reinstall else Res.string.records_action_uninstall
+    )
+    val reverseColor = if (isUninstall) scheme.primary else scheme.error
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onReverse),
         shape = RoundedCornerShape(12.dp),
         color = FlSurfaceLevel.Card.colorOf(scheme),
     ) {
@@ -216,6 +225,17 @@ private fun RecordRow(record: OperationRecord, app: AppInfo?) {
                             color = if (record.success) successColor() else scheme.error,
                         )
                     }
+                    // What a tap does, in the colour of the thing it will do.
+                    Text(
+                        text = reverseLabel,
+                        style = FlText.caption2.copy(fontWeight = FontWeight.SemiBold),
+                        color = reverseColor,
+                        modifier = Modifier
+                            .padding(top = 3.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(reverseColor.copy(alpha = 0.12f))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
                 }
             }
 

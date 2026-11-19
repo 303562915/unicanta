@@ -137,17 +137,27 @@ fun MainScreen(
                     RecordsScreen(
                         history = history,
                         apps = appListViewModel.apps,
-                        // A record shows what was done, so a tap undoes it: the app it uninstalled
-                        // is selected on the uninstalled list, and the one it restored on the
-                        // installed list, where the action button then sits one tap away.
+                        // A record says what was done, so a tap does the opposite of it: a removed
+                        // app is put back, a restored one is removed again, without walking to
+                        // another tab first.
                         onReverse = { record ->
-                            val target = when (record.kind) {
-                                OperationKind.UNINSTALL -> AppsType.UNINSTALLED
-                                OperationKind.REINSTALL -> AppsType.INSTALLED
+                            reverseScope.launch {
+                                val reverse = when (record.kind) {
+                                    OperationKind.UNINSTALL -> OperationKind.REINSTALL
+                                    OperationKind.REINSTALL -> OperationKind.UNINSTALL
+                                }
+                                val done = appListViewModel.applyPackages(
+                                    packageNames = listOf(record.packageName),
+                                    kind = reverse,
+                                )
+                                if (done > 0) {
+                                    val action = getString(
+                                        if (reverse == OperationKind.UNINSTALL) Res.string.uninstall
+                                        else Res.string.reinstall
+                                    )
+                                    platform.showMessage("$action · ${record.label}")
+                                }
                             }
-                            appListViewModel.selectedApps.clear()
-                            appListViewModel.selectedApps.add(record.packageName)
-                            pagerState.animateScrollToPage(AppsTab.entries.indexOfFirst { it.appsType == target })
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
