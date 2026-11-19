@@ -21,9 +21,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -57,7 +59,6 @@ import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plan_comment_hint
 import io.github.samolego.canta.generated.resources.plan_comment_send
-import io.github.samolego.canta.generated.resources.plan_comments_title
 import io.github.samolego.canta.generated.resources.plan_detail_missing
 import io.github.samolego.canta.generated.resources.plan_detail_no_comments
 import io.github.samolego.canta.generated.resources.plan_detail_no_rank
@@ -80,8 +81,6 @@ import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
-import io.github.samolego.canta.ui.fl.FlBarButton
-import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
@@ -182,7 +181,7 @@ fun PlanDetailScreen(
                     authorId = owner,
                     replyTo = replyTo?.id ?: 0L,
                     deviceModel = profile?.displayModel.orEmpty(),
-                    androidVersion = profile?.release.orEmpty(),
+                    systemName = profile?.systemLabel().orEmpty(),
                 )
                 submitFailed = posted == null
                 if (!submitFailed) {
@@ -242,14 +241,16 @@ fun PlanDetailScreen(
                 title = stringResource(Res.string.plan_detail_title),
                 actions = {
                     plan?.let { loaded ->
-                        FlBarButton(
-                            glyph = FlGlyphs.copy,
-                            contentDescription = "分享方案",
-                            onClick = { onShare(loaded) },
-                            filled = false,
-                            size = 34.dp,
-                            iconSize = 18.dp,
-                        )
+                        // The share glyph, not the clipboard one: what the button does is hand the
+                        // plan to somebody else, and only the mechanism is a copy.
+                        IconButton(onClick = { onShare(loaded) }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "分享方案",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 },
             )
@@ -366,7 +367,7 @@ private fun PlanDetailContent(
 
         item {
             SectionTitle(
-                title = "${stringResource(Res.string.plan_comments_title)} · ${comments.size}",
+                title = "共 ${comments.size} 条评论",
                 subtitle = null,
             )
         }

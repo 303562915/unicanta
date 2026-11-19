@@ -66,14 +66,14 @@ data class PlanComment(
     val replies: Int = 0,
     /** The phone it was written on ("Redmi K70"); empty on comments written before it was kept. */
     val deviceModel: String = "",
-    /** Its Android version ("15"), not the API level: "Android 36" is a number nobody recognises. */
-    val androidVersion: String = "",
+    /** Its system, the way the ROM line reads ("HyperOS 2"); the API level is not shown at all. */
+    val systemName: String = "",
 ) {
-    /** "Redmi K70 · Android 15", or "" when the writer's device is unknown. */
+    /** "Redmi K70 · HyperOS 2", or "" when the writer's device is unknown. */
     val deviceLabel: String
         get() = buildList {
             if (deviceModel.isNotBlank()) add(deviceModel)
-            if (androidVersion.isNotBlank()) add("Android $androidVersion")
+            if (systemName.isNotBlank()) add(systemName)
         }.joinToString(" · ")
 }
 
@@ -125,14 +125,35 @@ class PlanRepository(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * Why the last call came back empty: the backend's own message when it refused (a missing
+     * function, a rejected upload, a bad key), or the network error. "上传失败" without this is a
+     * dead end, so the pages that can fail show it.
+     */
+    var lastError: String? = null
+        private set
+
     private suspend fun rpc(name: String, body: String): String? = try {
         val response = client.post(baseUrl + name) {
             header("apikey", apiKey)
             header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
             setBody(body)
         }
-        if (response.status.isSuccess()) response.bodyAsText() else null
+        if (response.status.isSuccess()) {
+            lastError = null
+            response.bodyAsText()
+        } else {
+            // PostgREST answers a refusal with a JSON body carrying `message`; keep a short form of
+            // it so the upload dialog can say what the server did not like.
+            val text = runCatching { response.bodyAsText() }.getOrDefault("")
+            val message = runCatching {
+                Json.parseToJsonElement(text).jsonObject["message"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull().orEmpty().ifBlank { text.take(200) }
+            lastError = if (message.isBlank()) "HTTP ${response.status.value}" else message
+            null
+        }
     } catch (e: Exception) {
+        lastError = e.message?.take(200) ?: e::class.simpleName
         null
     }
 
@@ -409,7 +430,7 @@ class PlanRepository(
                 replyTo = o["parent_id"]?.jsonPrimitive?.longOrNull ?: 0L,
                 replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 deviceModel = o["device_model"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                androidVersion = o["android_version"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                systemName = o["system_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
         }
     }.getOrElse { emptyList() }
@@ -429,7 +450,7 @@ class PlanRepository(
         authorId: String = "",
         replyTo: Long = 0L,
         deviceModel: String = "",
-        androidVersion: String = "",
+        systemName: String = "",
     ): Long? {
         if (target.isEmpty() || body.isBlank()) return null
         val payload = buildJsonObject {
@@ -439,7 +460,7 @@ class PlanRepository(
             put("p_author", author)
             put("p_author_id", authorId)
             put("p_model", deviceModel)
-            put("p_android", androidVersion)
+            put("p_system", systemName)
             if (replyTo > 0L) put("p_parent", replyTo)
         }.toString()
         return rpc("comment_add", payload)
@@ -454,7 +475,7 @@ class PlanRepository(
         authorId: String = "",
         replyTo: Long = 0L,
         deviceModel: String = "",
-        androidVersion: String = "",
+        systemName: String = "",
     ): Long? = comment(
         kind = COMMENT_KIND_PLAN,
         target = planId.toString(),
@@ -463,7 +484,7 @@ class PlanRepository(
         authorId = authorId,
         replyTo = replyTo,
         deviceModel = deviceModel,
-        androidVersion = androidVersion,
+        systemName = systemName,
     )
 
     /** A comment on the page of [pkg]. */
@@ -474,7 +495,7 @@ class PlanRepository(
         authorId: String = "",
         replyTo: Long = 0L,
         deviceModel: String = "",
-        androidVersion: String = "",
+        systemName: String = "",
     ): Long? = comment(
         kind = COMMENT_KIND_APP,
         target = pkg,
@@ -483,7 +504,7 @@ class PlanRepository(
         authorId = authorId,
         replyTo = replyTo,
         deviceModel = deviceModel,
-        androidVersion = androidVersion,
+        systemName = systemName,
     )
 
     /**

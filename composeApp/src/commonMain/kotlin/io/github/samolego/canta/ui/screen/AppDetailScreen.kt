@@ -155,7 +155,7 @@ fun AppDetailScreen(
                         sdk = profile?.sdk ?: 0,
                         createdAt = "",
                         removable = mine == true,
-                        android = profile?.release.orEmpty(),
+                        system = profile?.systemLabel().orEmpty(),
                     ),
                 )
                 reviews = notes.reviewsOf(packageName)
@@ -166,7 +166,7 @@ fun AppDetailScreen(
                     authorId = voter,
                     replyTo = replyTo?.id ?: 0L,
                     deviceModel = profile?.displayModel.orEmpty(),
-                    androidVersion = profile?.release.orEmpty(),
+                    systemName = profile?.systemLabel().orEmpty(),
                 )
                 submitFailed = repository != null && posted == null
                 if (!submitFailed) {
@@ -245,7 +245,7 @@ fun AppDetailScreen(
                     onVote = castVote,
                 )
             }
-            item { SectionHeading("评论") }
+            item { SectionHeading("评论 · ${comments.size}") }
             when {
                 threads.isNotEmpty() -> commentThreads(
                     threads = threads,

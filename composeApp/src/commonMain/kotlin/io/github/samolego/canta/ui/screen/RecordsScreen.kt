@@ -65,11 +65,16 @@ private val ROW_ICON = 34.dp
  *
  * Every uninstall and restore is recorded as it happens — there is nothing to save — and the
  * same log is mirrored to a CSV in the download folder for anyone who wants to analyse it.
+ *
+ * One row per app: only where an app stands *now* is worth a glance, so the newest operation on
+ * a package hides the ones before it. Tapping a row does the opposite of what it shows — an
+ * uninstall is a one-tap restore, a restore is a one-tap uninstall.
  */
 @Composable
 fun RecordsScreen(
     history: OperationLogStore,
     apps: List<AppInfo>,
+    onReverse: (OperationRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val records by history.records.collectAsStateWithLifecycle()
@@ -82,13 +87,16 @@ fun RecordsScreen(
     // package is what the list is keyed by.
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
 
-    if (records.isEmpty()) {
+    // Newest first already, so the first record of a package is the one that describes it now.
+    val latest = remember(records) { records.distinctBy { it.packageName } }
+
+    if (latest.isEmpty()) {
         EmptyRecords(modifier = modifier.fillMaxSize())
         return
     }
 
     // One flat list of day headers and rows: a lazy list cannot nest one inside another.
-    val entries = remember(records) { flattenByDay(records) }
+    val entries = remember(latest) { flattenByDay(latest) }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -105,6 +113,7 @@ fun RecordsScreen(
                 is RecordEntry.Operation -> RecordRow(
                     record = entry.record,
                     app = byPackage[entry.record.packageName],
+                    onReverse = { onReverse(entry.record) },
                 )
             }
         }

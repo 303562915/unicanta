@@ -25,17 +25,17 @@ data class AppReview(
     val createdAt: String,
     /** The app's own verdict on this phone: whether the reviewer could uninstall it. */
     val removable: Boolean = true,
-    /** The Android version as people say it ("15"); [sdk] is the API level the ROM reports. */
-    val android: String = "",
+    /** The system the review was written on ("HyperOS 2"); empty on reviews from older builds. */
+    val system: String = "",
 ) {
-    /** "Redmi K70 · Android 15": the phone, not its API level, because 36 says nothing to a reader. */
+    /**
+     * "Redmi K70 · HyperOS 2": the phone and the build, which is what a reader compares against.
+     * The API level is deliberately not shown — [sdk] stays for older stored reviews only.
+     */
     val deviceLabel: String
         get() = buildList {
             if (model.isNotBlank()) add(model)
-            when {
-                android.isNotBlank() -> add("Android $android")
-                sdk > 0 -> add("Android API $sdk")
-            }
+            if (system.isNotBlank()) add(system)
         }.joinToString(" · ")
 }
 

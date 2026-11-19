@@ -390,7 +390,17 @@ fun SafetyRulesScreen(
                         notice = if (id != null) {
                             Notice(getString(Res.string.plan_upload_ok))
                         } else {
-                            Notice(getString(Res.string.plan_upload_fail), error = true)
+                            // The backend's own reason, when it gave one: "上传失败" alone leaves
+                            // the uploader guessing whether it was the network, the key or the plan.
+                            val reason = repo.lastError
+                            Notice(
+                                text = if (reason.isNullOrBlank()) {
+                                    getString(Res.string.plan_upload_fail)
+                                } else {
+                                    getString(Res.string.plan_upload_fail) + " · " + reason
+                                },
+                                error = true,
+                            )
                         }
                         // Re-read either way: a failed upload simply leaves the list as it was.
                         val refreshed = repo.plansFor(target).withoutDuplicates()

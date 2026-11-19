@@ -45,6 +45,14 @@ data class DeviceProfile(
 
     /** "Xiaomi Redmi K70 (fuxi) · HyperOS 2 · Android 15": full, for reports and settings. */
     fun label(): String = "$brand $displayModel ($device) · $romPart · Android $release"
+
+    /**
+     * What a comment is signed with as its system: "HyperOS 2", or "Android" on a stock build.
+     * The API level is left out on purpose — "Android 36" is a number nobody reads, while the ROM
+     * is the build the advice is actually about.
+     */
+    fun systemLabel(): String = romPart
+}
 }
 
 /** How dangerous removing a package is on a given device. */

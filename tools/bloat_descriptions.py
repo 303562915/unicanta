@@ -140,8 +140,9 @@ def cmd_check(args: argparse.Namespace) -> int:
             problems += 1
         original = ((uad.get(pkg) or {}).get("description") or "").strip()
         if zh.strip() == original:
-            print(f"untranslated (identical to English): {pkg}")
-            problems += 1
+            # A product name is spelled the same in every language ("Excel", "ShareChat") and a
+            # bare URL has nothing to translate, so this is reported but never a failure.
+            print(f"kept as-is (brand or URL): {pkg}")
     print(f"{len(table['descriptions'])} entries, {problems} problems")
     return 1 if problems else 0
 

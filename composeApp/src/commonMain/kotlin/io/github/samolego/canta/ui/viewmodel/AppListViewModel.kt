@@ -299,13 +299,25 @@ class AppListViewModel(
      * every selected app, updating the list as each one succeeds. Returns how
      * many succeeded.
      */
-    suspend fun applyToSelected(type: AppsType, resetToFactory: Boolean = false): Int {
-        val packageNames = selectedApps.toList()
-        val results = when (type) {
-            AppsType.INSTALLED -> cantaHandler.uninstallApps(packageNames, resetToFactory)
-            AppsType.UNINSTALLED -> cantaHandler.reinstallApps(packageNames)
-        }
+    suspend fun applyToSelected(type: AppsType, resetToFactory: Boolean = false): Int =
+        applyPackages(selectedApps.toList(), type.operationKind, resetToFactory)
+
+    /**
+     * Runs one batch of [kind] over [packageNames] without touching the selection: the rescue
+     * prompt reinstalls a whole batch this way, and the records tab reverses one operation.
+     * Returns how many succeeded.
+     */
+    suspend fun applyPackages(
+        packageNames: List<String>,
+        kind: OperationKind,
+        resetToFactory: Boolean = false,
+    ): Int {
+        if (packageNames.isEmpty()) return 0
         val before = _apps.associateBy { it.packageName }
+        val results = when (kind) {
+            OperationKind.UNINSTALL -> cantaHandler.uninstallApps(packageNames, resetToFactory)
+            OperationKind.REINSTALL -> cantaHandler.reinstallApps(packageNames)
+        }
         val succeededApps = mutableListOf<AppInfo>()
         val batchId = currentTimeMillis()
         val log = mutableListOf<OperationRecord>()
@@ -313,7 +325,7 @@ class AppListViewModel(
         results.collect { result ->
             log += operationRecord(
                 result = result,
-                kind = type.operationKind,
+                kind = kind,
                 label = before[result.packageName]?.name ?: result.packageName,
                 batchId = batchId,
                 batchIndex = log.size + 1,
@@ -323,17 +335,20 @@ class AppListViewModel(
             if (result.success) {
                 succeeded++
                 before[result.packageName]?.let(succeededApps::add)
-                toggleUninstalled(result.packageName)
+                // The list follows the batch in the direction it was applied, so a restore from
+                // the records tab moves the app back to the installed list.
+                setUninstalled(result.packageName, kind == OperationKind.UNINSTALL)
                 selectedApps.remove(result.packageName)
             } else {
-                LogUtils.w(TAG, "${type.name.lowercase()} '${result.packageName}' failed: ${result.message} (${result.status})")
+                LogUtils.w(TAG, "${kind.name.lowercase()} '${result.packageName}' failed: ${result.message} (${result.status})")
             }
         }
         recordOperations(log)
-        if (telemetry != null && succeededApps.isNotEmpty()) {
-            when (type) {
-                AppsType.INSTALLED -> telemetry.recordUninstalls(succeededApps, batchSize = packageNames.size)
-                AppsType.UNINSTALLED -> telemetry.recordReinstalls(succeededApps)
+        if (succeededApps.isNotEmpty()) {
+            when (kind) {
+                OperationKind.UNINSTALL ->
+                    telemetry?.recordUninstalls(succeededApps, batchSize = packageNames.size)
+                OperationKind.REINSTALL -> telemetry?.recordReinstalls(succeededApps)
             }
         }
         return succeeded
@@ -343,33 +358,8 @@ class AppListViewModel(
      * Reinstalls [packageNames] without touching the current selection (the rescue prompt of a
      * previous batch). Returns how many succeeded.
      */
-    suspend fun reinstallPackages(packageNames: List<String>): Int {
-        if (packageNames.isEmpty()) return 0
-        var succeeded = 0
-        val succeededApps = mutableListOf<AppInfo>()
-        val batchId = currentTimeMillis()
-        val log = mutableListOf<OperationRecord>()
-        cantaHandler.reinstallApps(packageNames).collect { result ->
-            log += operationRecord(
-                result = result,
-                kind = OperationKind.REINSTALL,
-                label = _apps.firstOrNull { it.packageName == result.packageName }?.name ?: result.packageName,
-                batchId = batchId,
-                batchIndex = log.size + 1,
-                batchSize = packageNames.size,
-            )
-            if (result.success) {
-                succeeded++
-                _apps.firstOrNull { it.packageName == result.packageName }?.let(succeededApps::add)
-                if (_apps.any { it.packageName == result.packageName && it.isUninstalled }) toggleUninstalled(result.packageName)
-            } else {
-                LogUtils.w(TAG, "reinstall '${result.packageName}' failed: ${result.message} (${result.status})")
-            }
-        }
-        recordOperations(log)
-        if (succeededApps.isNotEmpty()) telemetry?.recordReinstalls(succeededApps)
-        return succeeded
-    }
+    suspend fun reinstallPackages(packageNames: List<String>): Int =
+        applyPackages(packageNames, OperationKind.REINSTALL)
 
     /** One line of the records tab for [result]; the phone's own model is asked once per batch. */
     private suspend fun operationRecord(
@@ -414,11 +404,11 @@ class AppListViewModel(
             .onFailure { LogUtils.e(TAG, "Could not record the batch", it) }
     }
 
-    private fun toggleUninstalled(packageName: String) {
+    /** Marks one app as removed or back, leaving the others alone. */
+    private fun setUninstalled(packageName: String, uninstalled: Boolean) {
         val index = _apps.indexOfFirst { it.packageName == packageName }
-        if (index >= 0) {
-            val current = _apps[index]
-            _apps[index] = current.withUninstalled(!current.isUninstalled)
-        }
+        if (index < 0) return
+        val current = _apps[index]
+        if (current.isUninstalled != uninstalled) _apps[index] = current.withUninstalled(uninstalled)
     }
 }

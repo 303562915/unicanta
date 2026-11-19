@@ -82,11 +82,10 @@ fun LazyListScope.commentThreads(
 }
 
 /**
- * One comment: the letter avatar the reviews use, who wrote it and when, the text, and — under it —
- * the two actions a thread needs, "回复" and, for a comment of this install, a bin.
- *
- * [replyToName] is set on answers: the row then says who it answers, which is what makes a flat
- * list of indented replies readable.
+ * One comment, laid out the way the短视频 apps lay theirs out: a big round avatar on the left, the
+ * name in small grey type, the comment itself underneath it, then one quiet line with the date and
+ * "回复". Answers sit under their comment indented by the avatar's width, prefixed with
+ * "回复 @name：" the way a reply reads in those threads.
  */
 @Composable
 fun CommentRow(
@@ -103,95 +102,96 @@ fun CommentRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = if (indented) 40.dp else 16.dp, end = 16.dp, top = 5.dp, bottom = 5.dp),
+            .padding(start = if (indented) 46.dp else 12.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // The same letter avatar the reviews use: the first character of the name, or of the
-        // install code when the commenter has not renamed themselves.
         LetterAvatar(
             name = comment.author,
-            size = if (indented) 20.dp else 24.dp,
+            size = if (indented) 26.dp else 34.dp,
             background = if (indented) colors.surfaceContainerHighest else colors.secondaryContainer,
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(9.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = comment.author,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = comment.createdAt.take(10),
-                    fontSize = 9.sp,
-                    color = colors.outline,
-                )
-                if (replyToName.isNotEmpty()) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "回复 @$replyToName",
-                        fontSize = 9.sp,
-                        color = colors.outline,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                if (mine && comment.id > 0L) {
-                    Text(
-                        text = "删除",
-                        fontSize = 9.sp,
-                        color = colors.error,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onDelete(comment) }
-                            .padding(horizontal = 5.dp, vertical = 2.dp),
-                    )
-                }
-            }
-            // The phone it was written on: a comment about removing an app is only as useful as the
-            // model it is about, so the writer's device sits right under their name.
-            if (comment.deviceLabel.isNotEmpty()) {
-                Text(
-                    text = comment.deviceLabel,
-                    fontSize = 9.sp,
-                    lineHeight = 11.sp,
                     color = colors.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-            Text(
-                text = comment.body,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                modifier = Modifier.padding(top = 1.dp),
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Answering is one tap on the comment itself, not a mode the composer has to
-                // explain: the field above says who is being answered once it is on.
-                Text(
-                    text = "回复",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(colors.primary.copy(alpha = 0.10f))
-                        .clickable { onReply(comment) }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-                if (replies > 0) {
-                    Spacer(Modifier.width(8.dp))
+                // The phone it was written on, right after the name: a comment about removing an app
+                // is only as useful as the model and system it is about.
+                if (comment.deviceLabel.isNotEmpty()) {
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "$replies 条回复",
+                        text = comment.deviceLabel,
                         fontSize = 9.sp,
                         color = colors.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                 }
+            }
+            Row(modifier = Modifier.padding(top = 2.dp)) {
+                if (replyToName.isNotEmpty()) {
+                    Text(
+                        text = "回复 @$replyToName：",
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = colors.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = comment.body,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = colors.onSurface,
+                )
+            }
+            Row(
+                modifier = Modifier.padding(top = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = comment.createdAt.take(10),
+                    fontSize = 10.sp,
+                    color = colors.outline,
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "回复",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { onReply(comment) }
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                )
+                if (mine && comment.id > 0L) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "删除",
+                        fontSize = 10.sp,
+                        color = colors.error.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable { onDelete(comment) }
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
+            }
+        }
+        // The reply count sits on the far right, the way a like count does in a短视频 comment list.
+        if (replies > 0) {
+            Column(
+                modifier = Modifier.padding(start = 8.dp, top = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(text = "$replies", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.outline)
+                Text(text = "回复", fontSize = 8.sp, color = colors.outline)
             }
         }
     }
