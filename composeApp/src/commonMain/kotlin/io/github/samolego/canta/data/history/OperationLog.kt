@@ -201,7 +201,7 @@ object OperationTime {
     fun day(timestamp: Long): String = local(timestamp).date.toString()
 
     /** Whole days since 1970-01-01, so "today" and "yesterday" need no date arithmetic. */
-    fun dayIndex(timestamp: Long): Int = local(timestamp).date.toEpochDays()
+    fun dayIndex(timestamp: Long): Long = local(timestamp).date.toEpochDays()
 
     /** "01:12:33": the time of day, with seconds, because a batch can take a while. */
     fun clock(timestamp: Long): String {

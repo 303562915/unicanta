@@ -22,6 +22,7 @@
     <string name="device_android_too_old">This device runs an Android version older than 9, which Canta doesn't support.</string>
     <string name="helper_unavailable">Couldn't set up Canta's helper on the device. Check that it is connected and authorized, then try again.</string>
     <string name="tab_installed">Installed apps</string>
+    <string name="tab_records">Records</string>
     <string name="tab_uninstalled">Uninstalled apps</string>
     <string name="cannot_uninstall_canta">Can'ta ouch this!</string>
     <string name="device_unreachable">Failed to reach the device. Check that it is connected and authorized.</string>
