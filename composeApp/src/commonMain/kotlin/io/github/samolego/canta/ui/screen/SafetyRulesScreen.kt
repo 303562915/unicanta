@@ -21,17 +21,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,9 +65,6 @@ import io.github.samolego.canta.data.community.rankPackages
 import io.github.samolego.canta.data.community.withoutDuplicates
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plan_test_chip
-import io.github.samolego.canta.generated.resources.plan_upload_password_action
-import io.github.samolego.canta.generated.resources.plan_upload_reboot_action
-import io.github.samolego.canta.generated.resources.plan_upload_reboot_wait
 import io.github.samolego.canta.generated.resources.plan_upload_fail
 import io.github.samolego.canta.generated.resources.plan_upload_ok
 import io.github.samolego.canta.generated.resources.plan_vote
@@ -266,23 +264,21 @@ fun SafetyRulesScreen(
     }
 
     // What a plan may contain: everything this phone no longer has, plus whatever is ticked right
-    // now — the password flow is meant to be usable before anything has been removed.
+    // now.
     val candidates = (uninstalledApps + tickedApps).distinctBy { it.packageName }
     val emptyHint = stringResource(Res.string.plans_upload_cta_none)
-    val waitHint = stringResource(Res.string.plans_upload_wait_reboot)
     val noProfileHint = "还没有读到机型信息，稍等一下再试。"
-    // The only two ways up: the batch that survived a reboot, or the password that stands in for it.
-    val openUpload: (Boolean) -> Unit = { verified ->
+    // One way in: the dialog is where the two conditions live (a reboot-proven batch, or the
+    // password), so the button does not ask a question the dialog is about to answer anyway.
+    val openUpload: () -> Unit = {
         notice = null
         when {
             profile == null -> notice = Notice(noProfileHint, error = true)
             candidates.isEmpty() -> notice = Notice(emptyHint, error = true)
-            verified && verifiedPackages.isEmpty() -> notice = Notice(waitHint, error = true)
             else -> upload = UploadRequest(
                 candidates = candidates,
-                // The verified entry uploads exactly what the reboot proved; the password entry may
-                // contain anything this phone removed and is stored as a test plan.
-                preselected = if (verified) verifiedPackages else candidates.map { it.packageName }.toSet(),
+                // What the reboot already proved, or everything when it proved nothing yet.
+                preselected = verifiedPackages.ifEmpty { candidates.map { it.packageName }.toSet() },
             )
         }
     }
@@ -328,6 +324,35 @@ fun SafetyRulesScreen(
                 },
             )
         },
+        floatingActionButton = {
+            // Only the plans page publishes; the app ranking has nothing to upload.
+            if (tab == 1) {
+                ExtendedFloatingActionButton(
+                    onClick = openUpload,
+                    // The page's own floating dock sits at the bottom centre: the button has to
+                    // stand above it or it lands under a bar it cannot be tapped through.
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(bottom = DOCK_CLEARANCE),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(Res.string.plans_upload_cta),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
+                )
+            }
+        },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             notice?.let { line ->
@@ -357,12 +382,8 @@ fun SafetyRulesScreen(
                     loading = loading,
                     profile = profile,
                     owner = owner,
-                    verifiedCount = confirmed,
-                    candidateCount = candidates.size,
                     liked = liked,
                     offline = offline,
-                    onUploadVerified = { openUpload(true) },
-                    onUploadPassword = { openUpload(false) },
                     onOpenPlan = onOpenPlan,
                     onVote = vote,
                     onDelete = { pendingDelete = it },
@@ -632,8 +653,8 @@ private fun StatusChip(verdict: SafetyVerdict?) {
 }
 
 /**
- * The plans of this phone, most recommended first, and the way to publish one at the very bottom
- * of the page — the ranking is what a visitor came for, uploading is what they do after reading it.
+ * The plans of this phone, most recommended first. Publishing is not a section of this list: it is
+ * the floating button the page carries, and the dialog it opens is where the conditions live.
  */
 @Composable
 private fun PlansTab(
@@ -641,124 +662,48 @@ private fun PlansTab(
     loading: Boolean,
     profile: DeviceProfile?,
     owner: String,
-    verifiedCount: Int,
-    candidateCount: Int,
     liked: Set<Long>,
     offline: Boolean,
-    onUploadVerified: () -> Unit,
-    onUploadPassword: () -> Unit,
     onOpenPlan: (Long) -> Unit,
     onVote: (CommunityPlan) -> Unit,
     onDelete: (CommunityPlan) -> Unit,
     onRetry: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.weight(1f)) {
-            when {
-                loading -> Text(
-                    "…",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(12.dp),
-                )
-                plans.isEmpty() -> EmptyCard(
-                    title = stringResource(Res.string.plans_empty_title, profile?.displayModel ?: "-"),
-                    body = stringResource(Res.string.plans_empty_body),
-                    onRetry = onRetry,
-                    retryHint = offline,
-                )
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    itemsIndexed(plans, key = { _, plan -> plan.id }) { index, plan ->
-                        PlanCard(
-                            plan = plan,
-                            mine = owner.isNotEmpty() && plan.owner == owner,
-                            // The position *is* the recommendation: the badge on the left says who
-                            // the community trusts most, exactly like the package ranking does.
-                            rank = index + 1,
-                            liked = plan.id in liked,
-                            onOpen = { onOpenPlan(plan.id) },
-                            onVote = { onVote(plan) },
-                            onDelete = { onDelete(plan) },
-                        )
-                    }
-                }
-            }
-        }
-        // The floating dock stands over the foot of every page: the two buttons have to clear it,
-        // which is the bar's own height plus its margin, or they sit under it and cannot be tapped.
-        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
-            HorizontalDivider()
-            UploadFoot(
-                verifiedCount = verifiedCount,
-                ready = profile != null && candidateCount > 0,
-                onUploadVerified = onUploadVerified,
-                onUploadPassword = onUploadPassword,
-            )
-            Spacer(Modifier.height(DOCK_CLEARANCE))
-        }
-    }
-}
-
-/**
- * The two ways to publish, at the bottom of the page: the batch the reboot already proved, or the
- * password that stands in for that proof. Nothing else uploads, and neither entry carries a
- * paragraph — the label says which one it is.
- */
-@Composable
-private fun UploadFoot(
-    verifiedCount: Int,
-    ready: Boolean,
-    onUploadVerified: () -> Unit,
-    onUploadPassword: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            text = stringResource(Res.string.plans_upload_cta),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    when {
+        loading -> Text(
+            "…",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp),
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        plans.isEmpty() -> EmptyCard(
+            title = stringResource(Res.string.plans_empty_title, profile?.displayModel ?: "-"),
+            body = stringResource(Res.string.plans_empty_body),
+            onRetry = onRetry,
+            retryHint = offline,
+        )
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            // The floating button and the dock hang over the foot of the list: the last card has
+            // to be able to scroll clear of both.
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                end = 12.dp,
+                top = 6.dp,
+                bottom = DOCK_CLEARANCE + 56.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(
-                onClick = onUploadVerified,
-                enabled = ready && verifiedCount > 0,
-                modifier = Modifier.weight(1f).height(38.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-            ) {
-                Text(
-                    text = if (verifiedCount > 0) {
-                        stringResource(Res.string.plan_upload_reboot_action)
-                    } else {
-                        stringResource(Res.string.plan_upload_reboot_wait)
-                    },
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            OutlinedButton(
-                onClick = onUploadPassword,
-                enabled = ready,
-                modifier = Modifier.weight(1f).height(38.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.plan_upload_password_action),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            itemsIndexed(plans, key = { _, plan -> plan.id }) { index, plan ->
+                PlanCard(
+                    plan = plan,
+                    mine = owner.isNotEmpty() && plan.owner == owner,
+                    // The position *is* the recommendation: the badge on the left says who the
+                    // community trusts most, exactly like the package ranking does.
+                    rank = index + 1,
+                    liked = plan.id in liked,
+                    onOpen = { onOpenPlan(plan.id) },
+                    onVote = { onVote(plan) },
+                    onDelete = { onDelete(plan) },
                 )
             }
         }

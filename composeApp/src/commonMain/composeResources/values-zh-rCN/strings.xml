@@ -287,10 +287,6 @@
     <string name="whats_sent_description">这是发送内容的一个例子，除此之外不会有任何东西离开你的设备。</string>
     <string name="whats_sent_title">会发送什么</string>
     <string name="plan_upload_button">上传本机方案</string>
-    <string name="plan_upload_reboot_action">重启验证上传</string>
-    <string name="plan_upload_reboot_wait">待重启验证</string>
-    <string name="plan_upload_password_action">密码上传</string>
-    <string name="plans_upload_wait_reboot">还没有通过重启验证的批次</string>
     <string name="plan_upload_title">上传方案</string>
     <string name="plan_upload_name_hint">起个名字（例如「fuxi 轻度精简」）</string>
     <string name="plan_upload_note_hint">删了哪些、有什么要注意的</string>
@@ -347,6 +343,7 @@
     <string name="plan_upload_name_label">方案名称</string>
     <string name="plan_upload_note_label">说明（可选）</string>
     <string name="plan_upload_password_label">密码</string>
+    <string name="plan_upload_password_condition">没过重启验证也能上传：在这里输密码，方案会标成「测试」。</string>
     <string name="plan_upload_device_label">上传机型</string>
     <string name="plan_upload_publishing">上传中…</string>
     <string name="plan_upload_ok">已上传</string>

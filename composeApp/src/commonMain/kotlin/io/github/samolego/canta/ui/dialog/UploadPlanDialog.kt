@@ -53,8 +53,10 @@ import io.github.samolego.canta.generated.resources.plan_upload_name_label
 import io.github.samolego.canta.generated.resources.plan_upload_next
 import io.github.samolego.canta.generated.resources.plan_upload_no_candidates
 import io.github.samolego.canta.generated.resources.plan_upload_note_label
+import io.github.samolego.canta.generated.resources.plan_upload_password_condition
 import io.github.samolego.canta.generated.resources.plan_upload_password_label
 import io.github.samolego.canta.generated.resources.plan_upload_publishing
+import io.github.samolego.canta.generated.resources.plan_upload_reboot_ok
 import io.github.samolego.canta.generated.resources.plan_upload_select_all
 import io.github.samolego.canta.generated.resources.plan_upload_selected
 import io.github.samolego.canta.generated.resources.plan_upload_step_details
@@ -374,10 +376,17 @@ private fun DetailsStep(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        // A batch the reboot already proved needs no password, so the field only appears when it is
-        // the one thing that can still let this upload through.
-        if (!provenBatch) {
-            HorizontalDivider()
+        // The two conditions are stated right where they are decided: a batch the reboot already
+        // proved needs nothing more, and anything else says what the password would do to it.
+        HorizontalDivider()
+        if (provenBatch) {
+            Text(
+                text = stringResource(Res.string.plan_upload_reboot_ok),
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
             OutlinedTextField(
                 value = password,
                 onValueChange = onPasswordChange,
@@ -386,6 +395,14 @@ private fun DetailsStep(
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 modifier = Modifier.fillMaxWidth(),
+                isError = password.isNotEmpty() && !unlocked,
+                supportingText = {
+                    Text(
+                        text = stringResource(Res.string.plan_upload_password_condition),
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                    )
+                },
             )
         }
     }

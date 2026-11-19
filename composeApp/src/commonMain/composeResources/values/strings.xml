@@ -346,10 +346,6 @@
     <string name="crash_report_copy">Copy</string>
     <string name="crash_report_dismiss">Dismiss</string>
     <string name="plan_upload_button">Upload this phone's plan</string>
-    <string name="plan_upload_reboot_action">Upload (reboot-verified)</string>
-    <string name="plan_upload_reboot_wait">Waiting for reboot check</string>
-    <string name="plan_upload_password_action">Upload with password</string>
-    <string name="plans_upload_wait_reboot">No reboot-verified batch yet</string>
     <string name="plan_upload_title">Upload plan</string>
     <string name="plan_upload_name_hint">Name (e.g. "fuxi light debloat")</string>
     <string name="plan_upload_note_hint">What it removes / what to watch out for</string>
@@ -406,6 +402,7 @@
     <string name="plan_upload_name_label">Plan name</string>
     <string name="plan_upload_note_label">Notes (optional)</string>
     <string name="plan_upload_password_label">Password</string>
+    <string name="plan_upload_password_condition">Without a reboot check, this password uploads the plan as a test.</string>
     <string name="plan_upload_device_label">Device</string>
     <string name="plan_upload_publishing">Uploading…</string>
     <string name="plan_upload_ok">Uploaded</string>
