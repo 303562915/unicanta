@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.app.Filter
+import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.reinstall
@@ -136,6 +137,18 @@ fun MainScreen(
                     RecordsScreen(
                         history = history,
                         apps = appListViewModel.apps,
+                        // A record shows what was done, so a tap undoes it: the app it uninstalled
+                        // is selected on the uninstalled list, and the one it restored on the
+                        // installed list, where the action button then sits one tap away.
+                        onReverse = { record ->
+                            val target = when (record.kind) {
+                                OperationKind.UNINSTALL -> AppsType.UNINSTALLED
+                                OperationKind.REINSTALL -> AppsType.INSTALLED
+                            }
+                            appListViewModel.selectedApps.clear()
+                            appListViewModel.selectedApps.add(record.packageName)
+                            pagerState.animateScrollToPage(AppsTab.entries.indexOfFirst { it.appsType == target })
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

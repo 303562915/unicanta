@@ -53,7 +53,6 @@ data class DeviceProfile(
      */
     fun systemLabel(): String = romPart
 }
-}
 
 /** How dangerous removing a package is on a given device. */
 enum class SafetyStatus {
