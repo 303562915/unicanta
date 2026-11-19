@@ -40,6 +40,7 @@ import io.github.samolego.canta.data.community.MyComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.MyCommentRow
+import io.github.samolego.canta.ui.component.avatarColorOf
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.fl.FlSegment
@@ -78,11 +79,16 @@ fun MyCommentsScreen(
     var reloads by remember { mutableIntStateOf(0) }
     var pendingDelete by remember { mutableStateOf<MyComment?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(author, owner, reloads) {
+    LaunchedEffect(author, owner, token, reloads) {
         loading = true
-        mine = repository.myComments(owner)
-        replies = repository.repliesToMe(owner)
+        loadError = null
+        mine = repository.myComments(owner, token)
+        replies = repository.repliesToMe(owner, token)
+        // A backend that is missing the function, or a phone that is offline, must not read as
+        // "you never commented": say which one it was.
+        loadError = repository.lastError
         loading = false
     }
 
@@ -135,7 +141,8 @@ fun MyCommentsScreen(
                     LetterAvatar(
                         name = author,
                         size = 26.dp,
-                        background = MaterialTheme.colorScheme.primary,
+                        background = avatarColorOf(author),
+                        letterColor = androidx.compose.ui.graphics.Color.White,
                     )
                     Spacer(Modifier.width(8.dp))
                     Column(modifier = Modifier.weight(1f)) {
@@ -205,6 +212,26 @@ fun MyCommentsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
                     )
+                    // "0" and "the request failed" look the same otherwise, and the second one is a
+                    // bug report waiting to happen: name the reason the list is empty.
+                    loadError?.let { reason ->
+                        Text(
+                            text = "后端没有返回列表：$reason",
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                    owner.takeIf { it.isEmpty() }?.let {
+                        Text(
+                            text = "这台设备还没有拿到编号，评论会记在令牌下；下拉刷新后如果仍是 0，把上面那行发给我。",
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                 }
 
                 else -> LazyColumn(

@@ -116,11 +116,22 @@ fun AppDetailScreen(
     var voting by remember { mutableStateOf(false) }
     // 0 = this phone only, 1 = every device.
     var voteScope by remember { mutableIntStateOf(0) }
+    // A vote is confirmed before it is sent: one phone casts one vote, so a mistap is a real change.
+    var pendingVote by remember { mutableStateOf<Boolean?>(null) }
+    // Why the last vote or comment did not go through, when the backend said something.
+    var voteError by remember { mutableStateOf<String?>(null) }
+    var sendError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(packageName) {
+    LaunchedEffect(packageName, voter) {
         reviews = notes.reviewsOf(packageName)
-        mine = notes.packageVerdict(packageName)
         votes = repository?.packageVotes(packageName, profile) ?: PackageVotes.EMPTY
+        // The backend's copy of this install's vote wins over the local one: it is what the counts
+        // next to it were computed from, and it survives a reinstall.
+        mine = if (repository != null && voter.isNotEmpty()) {
+            repository.myPackageVote(packageName, voter) ?: notes.packageVerdict(packageName)
+        } else {
+            notes.packageVerdict(packageName)
+        }
         comments = repository?.appComments(packageName).orEmpty()
     }
 
@@ -128,10 +139,20 @@ fun AppDetailScreen(
         if (!voting) {
             scope.launch {
                 voting = true
-                mine = canRemove
-                notes.setPackageVerdict(packageName, canRemove)
-                repository?.votePackage(packageName, voter, canRemove, profile)?.let { fresh ->
+                voteError = null
+                val fresh = repository?.votePackage(packageName, voter, canRemove, profile)
+                if (fresh == null) {
+                    // Nothing was recorded: keep the page showing what the server still says.
+                    voteError = repository?.lastError?.let { "投票没记上：$it" } ?: "投票没发出去，检查一下网络。"
+                    if (repository == null) {
+                        // No backend configured: the vote is this phone's own note, as before.
+                        mine = canRemove
+                        notes.setPackageVerdict(packageName, canRemove)
+                    }
+                } else {
+                    mine = canRemove
                     votes = fresh
+                    notes.setPackageVerdict(packageName, canRemove)
                 }
                 voting = false
             }
@@ -170,7 +191,11 @@ fun AppDetailScreen(
                     replyToName = replyTo?.author.orEmpty(),
                 )
                 submitFailed = repository != null && posted == null
-                if (!submitFailed) {
+                if (submitFailed) {
+                    // "网络问题" is wrong half the time: the backend names the actual refusal.
+                    sendError = repository?.lastError?.let { "发送失败：$it" } ?: "发送失败，检查一下网络再试"
+                } else {
+                    sendError = null
                     draft = ""
                     replyTo = null
                     comments = repository?.appComments(packageName).orEmpty()
@@ -204,6 +229,33 @@ fun AppDetailScreen(
         }
     }
 
+    // The vote a tap asked for, waiting for a yes: the counts are public, so a vote is a statement.
+    pendingVote?.let { wanted ->
+        CantaDialog(
+            onDismissRequest = { pendingVote = null },
+            title = "确认投票",
+            buttons = {
+                TextButton(onClick = { pendingVote = null }) { Text("再想想") }
+                TextButton(onClick = {
+                    pendingVote = null
+                    castVote(wanted)
+                }) {
+                    Text("确认", fontWeight = FontWeight.Bold)
+                }
+            },
+        ) {
+            Text(
+                text = if (wanted) {
+                    "投「可以删」：告诉别人你的${profile?.displayModel ?: "机型"}上删掉它没问题。\n每台设备只有一票，投了以后可以改。"
+                } else {
+                    "投「不可以删」：告诉别人删掉它会让你的${profile?.displayModel ?: "机型"}出问题。\n每台设备只有一票，投了以后可以改。"
+                },
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
+        }
+    }
+
     Scaffold(
         topBar = {
             ScreenTopBar(
@@ -224,7 +276,7 @@ fun AppDetailScreen(
                 sending = sending,
                 failed = submitFailed,
                 hint = "写一条评论…",
-                failLabel = "发送失败，检查一下网络再试",
+                failLabel = sendError ?: "发送失败，检查一下网络再试",
             )
         },
     ) { padding ->
@@ -243,7 +295,8 @@ fun AppDetailScreen(
                     profile = profile,
                     mine = mine,
                     voting = voting,
-                    onVote = castVote,
+                    voteError = voteError,
+                    onVote = { wanted -> pendingVote = wanted },
                 )
             }
             item { SectionHeading("评论 · ${comments.size}") }
@@ -296,6 +349,7 @@ private fun AppHero(
     profile: DeviceProfile?,
     mine: Boolean?,
     voting: Boolean,
+    voteError: String? = null,
     onVote: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -380,6 +434,7 @@ private fun AppHero(
             profile = profile,
             mine = mine,
             voting = voting,
+            voteError = voteError,
             onVote = onVote,
         )
     }
@@ -400,6 +455,7 @@ private fun VoteBlock(
     profile: DeviceProfile?,
     mine: Boolean?,
     voting: Boolean,
+    voteError: String? = null,
     onVote: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -455,40 +511,40 @@ private fun VoteBlock(
             }
         }
 
+        // The two counts, with their share of the bar right next to them: a number without the
+        // other side is not a ratio, and the bar alone cannot be read to the vote.
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "$canRemove 人可以删",
+                text = "$canRemove 人可以删" + if (total > 0) " · ${(share * 100).toInt()}%" else "",
                 style = FlText.caption1.copy(fontWeight = FontWeight.W600),
                 color = if (canRemove > 0) CAN_REMOVE else scheme.onSurfaceVariant,
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = if (total == 0) "还没有人投票" else "${(share * 100).toInt()}% 说可以删",
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "$cannotRemove 人不可以删",
+                text = "$cannotRemove 人不可以删" + if (total > 0) " · ${((1f - share) * 100).toInt()}%" else "",
                 style = FlText.caption1.copy(fontWeight = FontWeight.W600),
                 color = if (cannotRemove > 0) CANNOT_REMOVE else scheme.onSurfaceVariant,
             )
         }
 
-        // Which phone the counts above are for: the whole point of the device scope.
-        if (profile != null) {
-            Text(
-                text = if (scope == 0) profile.shortLabel() else "所有机型 · ${votes.allTotal} 票",
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
+        // Which phone the counts above are for, and how many votes are behind them.
+        Text(
+            text = buildString {
+                append(if (scope == 0) (profile?.shortLabel() ?: "本机") else "所有机型")
+                append(" · 共 ")
+                append(total)
+                append(" 票")
+                if (total == 0) append(" · 还没有人投票，你可以是第一票")
+            },
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp),
+        )
 
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -508,6 +564,17 @@ private fun VoteBlock(
                 onClick = { onVote(false) },
             )
         }
+        Text(
+            text = when {
+                voting -> "正在投票…"
+                voteError != null -> voteError
+                mine != null -> "本机已投：${if (mine) "可以删" else "不可以删"}（再投一次就是改票）"
+                else -> "投票前会再确认一次"
+            },
+            style = FlText.caption2,
+            color = if (voteError != null) scheme.error else scheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp),
+        )
     }
 }
 

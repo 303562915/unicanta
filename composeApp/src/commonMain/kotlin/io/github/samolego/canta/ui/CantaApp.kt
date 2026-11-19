@@ -357,7 +357,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     apps = appListViewModel.apps,
                     rules = planRules,
                     notes = deps.notes,
-                    owner = planIdentity.owner,
+                    owner = planIdentity.owner.ifEmpty { planIdentity.token },
                     token = planIdentity.token,
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     // "Use this plan": select its packages on the app list and go there, so the
@@ -387,8 +387,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     }.orEmpty()
                 var appProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 var appAuthor by remember { mutableStateOf("") }
-                // Who the vote is recorded under: the number this install owns, or its token's
-                // head before the backend has given it one.
+                // Who the vote and the comments are recorded under: the number this install owns,
+                // or the token itself before the backend has given it one. The full token, not a
+                // slice: "my comments" is looked up by the same value, and a slice matches nothing
+                // the backend stores.
                 var appVoter by remember { mutableStateOf("") }
                 // The secret that proves the number, needed to delete a comment of this install.
                 var appToken by remember { mutableStateOf("") }
@@ -396,7 +398,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     appProfile = handler.deviceProfile()
                     appAuthor = DeviceIdentity.displayName(deps.settings)
                     val identity = DeviceIdentity.current(deps.settings)
-                    appVoter = identity.owner.ifEmpty { identity.token.take(16) }
+                    appVoter = identity.owner.ifEmpty { identity.token }
                     appToken = identity.token
                 }
                 AppDetailScreen(
@@ -423,7 +425,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 MyCommentsScreen(
                     repository = communityRepository,
                     author = myName,
-                    owner = myIdentity.owner,
+                    owner = myIdentity.owner.ifEmpty { myIdentity.token },
                     token = myIdentity.token,
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },

@@ -28,6 +28,8 @@ fun LetterAvatar(
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     background: Color = MaterialTheme.colorScheme.primary,
+    /** The letter's colour: white on the comment avatars, which are picked per person. */
+    letterColor: Color = MaterialTheme.colorScheme.onPrimary,
 ) {
     Box(
         modifier = modifier
@@ -40,7 +42,7 @@ fun LetterAvatar(
             text = avatarLetter(name),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimary,
+            color = letterColor,
         )
     }
 }

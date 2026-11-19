@@ -2,7 +2,9 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
@@ -28,15 +31,45 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.PlanComment
+import kotlin.math.absoluteValue
+
+/**
+ * The avatar colours, one per commenter, picked by name so the same person keeps the same circle on
+ * every page and after a restart. They are the saturated, slightly flat tones a short-video comment
+ * list uses, not theme colours: an avatar is an identity, not a surface.
+ */
+private val AVATAR_COLORS = listOf(
+    Color(0xFFF06A6A),
+    Color(0xFF4E8DF5),
+    Color(0xFF35B37E),
+    Color(0xFFEF9A3D),
+    Color(0xFF9A6BF0),
+    Color(0xFF2FB5C8),
+    Color(0xFFE0609B),
+    Color(0xFF7C8A3C),
+)
+
+/** The stable colour of [name]'s avatar. A hashCode can be negative or Int.MIN_VALUE: take the long. */
+fun avatarColorOf(name: String): Color {
+    if (AVATAR_COLORS.isEmpty()) return Color(0xFF8A8A8A)
+    val index = (name.hashCode().toLong().absoluteValue % AVATAR_COLORS.size).toInt()
+    return AVATAR_COLORS[index]
+}
 
 /**
  * The rows of one comment thread, for a `LazyColumn` that already has its own sections: every
@@ -82,10 +115,13 @@ fun LazyListScope.commentThreads(
 }
 
 /**
- * One comment, laid out the way the短视频 apps lay theirs out: a big round avatar on the left, the
- * name in small grey type, the comment itself underneath it, then one quiet line with the date and
- * "回复". Answers sit under their comment indented by the avatar's width, prefixed with
- * "回复 @name：" the way a reply reads in those threads.
+ * One comment, laid out the way a short-video comment list lays one out: a round avatar on the left,
+ * the name in small grey type with the phone it was written on, the comment underneath, then one
+ * quiet line with the date and "回复". A long press opens the same actions as that line, because
+ * that is how people delete a comment there.
+ *
+ * Answers sit under their comment indented by the avatar's width, prefixed with "回复 @name：" the
+ * way a reply reads in those threads.
  */
 @Composable
 fun CommentRow(
@@ -98,28 +134,58 @@ fun CommentRow(
     onDelete: (PlanComment) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
-    val mine = me.isNotEmpty() && comment.author == me
+    val mine = me.isNotEmpty() && (comment.author == me || comment.author == "#$me")
+    var sheet by remember(comment.id, comment.author, comment.body) { mutableStateOf(false) }
+    val openSheet = { sheet = true }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = if (indented) 46.dp else 12.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = if (indented) 48.dp else 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        LetterAvatar(
-            name = comment.author,
-            size = if (indented) 26.dp else 34.dp,
-            background = if (indented) colors.surfaceContainerHighest else colors.secondaryContainer,
-        )
+        // The avatar carries the long press as well as the text: a thumb lands on either.
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .pointerInput(Unit) { detectTapGestures(onLongPress = { openSheet() }) },
+        ) {
+            LetterAvatar(
+                name = comment.author,
+                size = if (indented) 26.dp else 36.dp,
+                background = avatarColorOf(comment.author),
+                letterColor = Color.White,
+            )
+        }
         Spacer(Modifier.width(9.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                // The long press belongs to the comment's own text block, so the "回复" and "删除"
+                // underneath stay ordinary taps.
+                .pointerInput(Unit) { detectTapGestures(onLongPress = { openSheet() }) },
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = comment.author,
+                    text = comment.author.ifEmpty { "匿名" },
                     fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
                     color = colors.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (mine) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "我",
+                        fontSize = 8.sp,
+                        color = colors.onPrimary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(colors.primary)
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    )
+                }
                 // The phone it was written on, right after the name: a comment about removing an app
                 // is only as useful as the model and system it is about.
                 if (comment.deviceLabel.isNotEmpty()) {
@@ -134,32 +200,32 @@ fun CommentRow(
                     )
                 }
             }
-            Row(modifier = Modifier.padding(top = 2.dp)) {
+            Row(modifier = Modifier.padding(top = 3.dp)) {
                 if (replyToName.isNotEmpty()) {
                     Text(
                         text = "回复 @$replyToName：",
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
                         color = colors.onSurfaceVariant,
                     )
                 }
                 Text(
                     text = comment.body,
                     fontSize = 13.sp,
-                    lineHeight = 18.sp,
+                    lineHeight = 19.sp,
                     color = colors.onSurface,
                 )
             }
             Row(
-                modifier = Modifier.padding(top = 3.dp),
+                modifier = Modifier.padding(top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = comment.createdAt.take(10),
+                    text = shortStamp(comment.createdAt),
                     fontSize = 10.sp,
                     color = colors.outline,
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = "回复",
                     fontSize = 10.sp,
@@ -168,10 +234,10 @@ fun CommentRow(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
                         .clickable { onReply(comment) }
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
                 if (mine && comment.id > 0L) {
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                     Text(
                         text = "删除",
                         fontSize = 10.sp,
@@ -179,20 +245,88 @@ fun CommentRow(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
                             .clickable { onDelete(comment) }
-                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
             }
         }
-        // The reply count sits on the far right, the way a like count does in a短视频 comment list.
+        // The reply count sits on the far right, the way a like count does in a comment list.
         if (replies > 0) {
             Column(
-                modifier = Modifier.padding(start = 8.dp, top = 6.dp),
+                modifier = Modifier
+                    .padding(start = 8.dp, top = 6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onReply(comment) }
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(text = "$replies", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.outline)
                 Text(text = "回复", fontSize = 8.sp, color = colors.outline)
             }
+        }
+    }
+
+    if (sheet) {
+        CommentActions(
+            mine = mine && comment.id > 0L,
+            canReply = true,
+            onDismiss = { sheet = false },
+            onReply = {
+                sheet = false
+                onReply(comment)
+            },
+            onDelete = {
+                sheet = false
+                onDelete(comment)
+            },
+        )
+    }
+}
+
+/** The long-press sheet: what a comment can be answered with, and whether it can be taken back. */
+@Composable
+private fun CommentActions(
+    mine: Boolean,
+    canReply: Boolean,
+    onDismiss: () -> Unit,
+    onReply: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    CantaDialog(onDismissRequest = onDismiss, title = null) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            if (canReply) {
+                Text(
+                    text = "回复这条评论",
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onReply)
+                        .padding(horizontal = 10.dp, vertical = 12.dp),
+                )
+            }
+            if (mine) {
+                Text(
+                    text = "删除这条评论",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onDelete)
+                        .padding(horizontal = 10.dp, vertical = 12.dp),
+                )
+            }
+            Text(
+                text = "取消",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 10.dp, vertical = 12.dp),
+            )
         }
     }
 }
@@ -304,7 +438,12 @@ private fun ReplyChip(name: String, onCancel: () -> Unit) {
     }
 }
 
-/** A row of the "my comments" page: what was written, where, and how to get there. */
+/**
+ * A row of the "my comments" page: what was written, where, and how to get there.
+ *
+ * A long press deletes it, which is the gesture that page is used with; the bin on the row does the
+ * same thing for people who do not know the gesture.
+ */
 @Composable
 fun MyCommentRow(
     author: String,
@@ -323,10 +462,16 @@ fun MyCommentRow(
             .clip(RoundedCornerShape(14.dp))
             .background(colors.surfaceContainer)
             .clickable(onClick = onOpen)
+            .pointerInput(body, createdAt) { detectTapGestures(onLongPress = { onDelete() }) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            LetterAvatar(name = author, size = 22.dp, background = colors.secondaryContainer)
+            LetterAvatar(
+                name = author,
+                size = 22.dp,
+                background = avatarColorOf(author),
+                letterColor = Color.White,
+            )
             Spacer(Modifier.width(7.dp))
             Text(
                 text = targetLabel,
@@ -337,7 +482,7 @@ fun MyCommentRow(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = createdAt.take(10),
+                text = shortStamp(createdAt),
                 fontSize = 9.sp,
                 color = colors.outline,
             )
@@ -358,5 +503,16 @@ fun MyCommentRow(
             Spacer(Modifier.height(3.dp))
             Text(text = "$replies 条回复", fontSize = 9.sp, color = colors.primary)
         }
+        Spacer(Modifier.height(2.dp))
+        Text(text = "长按可以删除", fontSize = 8.sp, color = colors.outline)
     }
+}
+
+/**
+ * "11-18 06:51" out of a Postgres timestamp. The string is sliced rather than parsed: every backend
+ * this app talks to answers in ISO-8601 UTC, and a date that fails to parse must not blank a row.
+ */
+fun shortStamp(iso: String): String {
+    if (iso.length < 16) return iso.take(10)
+    return iso.substring(5, 10) + " " + iso.substring(11, 16)
 }

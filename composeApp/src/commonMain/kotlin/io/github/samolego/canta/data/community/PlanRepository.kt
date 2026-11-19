@@ -544,7 +544,9 @@ class PlanRepository(
      * deletes nothing.
      */
     suspend fun deleteComment(id: Long, owner: String, token: String): Boolean {
-        if (id <= 0L || owner.isEmpty() || token.isEmpty()) return false
+        // The token is the proof; the number only narrows the match. A comment written before the
+        // number arrived is signed with the token, and must still be deletable.
+        if (id <= 0L || token.isEmpty()) return false
         val body = buildJsonObject {
             put("p_id", id)
             put("p_owner", owner)
@@ -555,13 +557,36 @@ class PlanRepository(
     }
 
     /**
+     * Which side this install picked for [pkg]: true, false, or null when it never voted.
+     *
+     * Asked of the backend rather than remembered locally, so the page agrees with the count after a
+     * reinstall or a second device. Null also comes back when the call fails; the page keeps its
+     * local memory in that case instead of clearing a vote it knows about.
+     */
+    suspend fun myPackageVote(pkg: String, voter: String): Boolean? {
+        if (pkg.isEmpty() || voter.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_pkg", pkg)
+            put("p_voter", voter)
+        }.toString()
+        val text = rpc("package_my_vote", body) ?: return null
+        return runCatching { json.parseToJsonElement(text).jsonPrimitive.booleanOrNull }.getOrNull()
+    }
+
+    /**
      * Everything [owner] wrote — comments and answers alike — newest first. [owner] is the identity
      * number, not the display name: renaming yourself must not lose the list.
+     *
+     * [token] is sent as well, because a comment written before the backend handed out that number
+     * was signed with the token instead; the backend matches either.
      */
-    suspend fun myComments(owner: String): List<MyComment> {
-        if (owner.isEmpty()) return emptyList()
-        val text = rpc("comments_by_author", buildJsonObject { put("p_owner", owner) }.toString())
-            ?: return emptyList()
+    suspend fun myComments(owner: String, token: String = ""): List<MyComment> {
+        if (owner.isEmpty() && token.isEmpty()) return emptyList()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_token", token)
+        }.toString()
+        val text = rpc("comments_by_author", body) ?: return emptyList()
         return runCatching {
             json.parseToJsonElement(text).jsonArray.map { element ->
                 val o = element.jsonObject
@@ -579,11 +604,14 @@ class PlanRepository(
         }.getOrElse { emptyList() }
     }
 
-    /** The answers other people left under [owner]'s comments, newest first. */
-    suspend fun repliesToMe(owner: String): List<MyComment> {
-        if (owner.isEmpty()) return emptyList()
-        val text = rpc("comments_replies_to", buildJsonObject { put("p_owner", owner) }.toString())
-            ?: return emptyList()
+    /** The answers other people left under [owner]'s comments, newest first; [token] proves it too. */
+    suspend fun repliesToMe(owner: String, token: String = ""): List<MyComment> {
+        if (owner.isEmpty() && token.isEmpty()) return emptyList()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_token", token)
+        }.toString()
+        val text = rpc("comments_replies_to", body) ?: return emptyList()
         return runCatching {
             json.parseToJsonElement(text).jsonArray.map { element ->
                 val o = element.jsonObject

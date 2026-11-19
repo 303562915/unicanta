@@ -141,6 +141,10 @@ fun PlanDetailScreen(
     var draft by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var submitFailed by remember { mutableStateOf(false) }
+    /** Why the last comment did not go through: the backend's own words, not "网络问题". */
+    var sendError by remember { mutableStateOf<String?>(null) }
+    /** Why the thread is empty, when it is empty because the call failed. */
+    var loadError by remember { mutableStateOf<String?>(null) }
     var liked by remember { mutableStateOf(false) }
     /** The comment being answered; null while the composer writes a new one. */
     var replyTo by remember { mutableStateOf<PlanComment?>(null) }
@@ -164,6 +168,7 @@ fun PlanDetailScreen(
         plan = all.firstOrNull { it.id == planId }
         ranking = rankPackages(all).keyed()
         comments = repository.comments(planId)
+        loadError = if (comments.isEmpty()) repository.lastError else null
         loading = false
     }
 
@@ -187,6 +192,11 @@ fun PlanDetailScreen(
                     replyToName = replyTo?.author.orEmpty(),
                 )
                 submitFailed = posted == null
+                sendError = if (submitFailed) {
+                    repository.lastError?.let { "发送失败：$it" } ?: "发送失败，检查一下网络再试"
+                } else {
+                    null
+                }
                 if (!submitFailed) {
                     draft = ""
                     replyTo = null
@@ -272,7 +282,7 @@ fun PlanDetailScreen(
                 failed = submitFailed,
                 sendLabel = stringResource(Res.string.plan_comment_send),
                 hint = stringResource(Res.string.plan_comment_hint),
-                failLabel = stringResource(Res.string.plan_upload_failed),
+                failLabel = sendError ?: stringResource(Res.string.plan_upload_failed),
             )
         },
     ) { padding ->
@@ -303,6 +313,7 @@ fun PlanDetailScreen(
                 rules = rules,
                 profile = profile,
                 comments = comments,
+                loadError = loadError,
                 me = commentAuthor,
                 liked = liked,
                 onVote = vote,
@@ -328,6 +339,7 @@ private fun PlanDetailContent(
     rules: SafetyRules?,
     profile: DeviceProfile?,
     comments: List<PlanComment>,
+    loadError: String? = null,
     me: String,
     liked: Boolean,
     onVote: () -> Unit,
@@ -376,12 +388,23 @@ private fun PlanDetailContent(
         }
         if (comments.isEmpty()) {
             item {
-                Text(
-                    text = stringResource(Res.string.plan_detail_no_comments),
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                )
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    Text(
+                        text = stringResource(Res.string.plan_detail_no_comments),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // "no comments" and "the call failed" are different things, and the second one
+                    // is what a broken backend looks like.
+                    loadError?.let { reason ->
+                        Text(
+                            text = "后端没有返回评论：$reason",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                }
             }
         }
         commentThreads(
