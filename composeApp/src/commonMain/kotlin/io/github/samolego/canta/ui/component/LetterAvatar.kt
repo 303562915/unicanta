@@ -45,10 +45,21 @@ fun LetterAvatar(
     }
 }
 
-/** The first character of [name], kept whole when it is a surrogate pair; "?" when empty. */
+/**
+ * The first character of [name], kept whole when it is a surrogate pair; "?" when there is none.
+ *
+ * A leading sign is skipped: an install that never picked a name is signed "#10000", and the
+ * avatar of that review should read "1", not "#".
+ */
 fun avatarLetter(name: String): String {
     val trimmed = name.trim()
-    if (trimmed.isEmpty()) return "?"
-    val first = trimmed[0]
-    return if (first.isHighSurrogate() && trimmed.length > 1) trimmed.substring(0, 2) else first.toString()
+    var index = 0
+    while (index < trimmed.length) {
+        val char = trimmed[index]
+        // An emoji is two UTF-16 units; take both rather than half a character.
+        if (char.isHighSurrogate() && index + 1 < trimmed.length) return trimmed.substring(index, index + 2)
+        if (char.isLetterOrDigit()) return char.toString()
+        index++
+    }
+    return "?"
 }

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -17,6 +18,7 @@ import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
 import io.github.samolego.canta.util.LogUtils
 import java.io.File
+import java.security.MessageDigest
 
 class AndroidCantaPlatform(
     private val context: Context,
@@ -92,6 +94,34 @@ class AndroidCantaPlatform(
 
         biometricPrompt.authenticate(promptInfo)
     }
+
+    /**
+     * The device's lookup key for the login-free identity: a hash of `ANDROID_ID` and the build
+     * fingerprint. `ANDROID_ID` is per app signing key, per user and per device, and it is the only
+     * identifier a normal app may read that survives an uninstall — the serial number and the IMEI
+     * need `READ_PHONE_STATE` and answer "unknown" for non-privileged apps since Android 10.
+     *
+     * A factory reset changes it, which is the intended limit: a new phone, or a wiped one, is a
+     * new person. The raw values never leave the device; only this hash is ever sent.
+     */
+    override fun deviceKey(): String {
+        val androidId = runCatching {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        }.getOrNull().orEmpty()
+        val raw = listOf(
+            androidId,
+            Build.FINGERPRINT,
+            Build.MANUFACTURER,
+            Build.MODEL,
+            context.packageName,
+        ).joinToString("|")
+        return sha256Hex(raw)
+    }
+
+    private fun sha256Hex(text: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(text.toByteArray())
+            .joinToString("") { byte -> ((byte.toInt() and 0xFF) or 0x100).toString(16).substring(1) }
 
     override fun copyToClipboard(text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return

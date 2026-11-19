@@ -106,10 +106,11 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     val appListViewModel: AppListViewModel = viewModel {
         AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry, deps.history)
     }
-    // One client for the community pages: plans, comments, and the display name in settings.
+    // One client for the community pages: plans, comments, and the identity in settings.
     val communityRepository = remember { PlanRepository(HttpClient()) }
     val settingsViewModel: SettingsViewModel = viewModel {
-        SettingsViewModel(deps.settings, deps.packageTelemetry, communityRepository)
+        // The device key is what gives a reinstalled app its old identity back.
+        SettingsViewModel(deps.settings, deps.packageTelemetry, communityRepository, platform.deviceKey())
     }
     val presetViewModel: PresetsViewModel = viewModel { PresetsViewModel(deps.presetStore, handler, platform) }
     val mainViewModel: MainViewModel = viewModel { MainViewModel(handler, platform, deps.settings, appListViewModel) }

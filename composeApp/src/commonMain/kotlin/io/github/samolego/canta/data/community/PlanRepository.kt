@@ -49,10 +49,11 @@ const val TEST_PLAN_ID: Long = -1L
 data class PlanComment(val author: String, val body: String, val createdAt: String)
 
 /**
- * An identity as the backend knows it: the number it owns, and the display name the user picked.
- * [name] is empty until they rename themselves, in which case the install code is shown instead.
+ * An identity as the backend knows it: the token it resolves to, the number it owns, and the
+ * display name the user picked. [name] is empty until they rename themselves, in which case the
+ * install code is shown instead.
  */
-data class UserProfile(val userId: Long, val name: String = "")
+data class UserProfile(val token: String, val userId: Long, val name: String = "")
 
 /**
  * Reads and writes the community plans for the caller's own device. Matching is exact on model,
@@ -161,6 +162,26 @@ class PlanRepository(
     }
 
     /**
+     * This install's token, number and display name, creating the row on first use.
+     *
+     * [deviceKey] is the phone's stable lookup key (see `CantaPlatform.deviceKey`). When that phone
+     * already bound a token — i.e. the app was reinstalled — the backend answers with the old one,
+     * so the identity, its number and its name survive the reinstall. The returned [UserProfile.token]
+     * is therefore the token the caller must use from now on, which may differ from [token].
+     *
+     * Null when the backend cannot be reached; the caller then keeps its local token.
+     */
+    suspend fun identify(token: String, deviceKey: String = ""): UserProfile? {
+        if (token.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_token", token)
+            put("p_device_key", deviceKey)
+        }.toString()
+        val text = rpc("identity_bind", body) ?: return null
+        return parseProfile(text)
+    }
+
+    /**
      * This install's number and display name, creating the row on first use. The name is the one
      * the user picked in Settings; it is empty until they do, and the install code shows instead.
      * Null when the backend cannot be reached.
@@ -186,7 +207,11 @@ class PlanRepository(
         val o = Json.parseToJsonElement(text).jsonObject
         val id = o["id"]?.jsonPrimitive?.longOrNull ?: return null
         if (id <= 0) return null
-        UserProfile(id, o["name"]?.jsonPrimitive?.contentOrNull.orEmpty())
+        UserProfile(
+            token = o["token"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            userId = id,
+            name = o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+        )
     }.getOrNull()
 
     /**

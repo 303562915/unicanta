@@ -28,6 +28,8 @@ class SettingsViewModel(
     private val settingsStore: CantaSettings,
     private val packageTelemetry: PackageTelemetry? = null,
     private val repository: PlanRepository? = null,
+    /** The phone's stable lookup key, so a reinstall gets its old identity back. */
+    private val deviceKey: String = "",
 ) : ViewModel() {
 
     private fun <T> Flow<T>.state(initial: T): StateFlow<T> =
@@ -62,14 +64,19 @@ class SettingsViewModel(
     }
 
     /**
-     * Pulls the name that belongs to this install's token and pushes the local one when the cloud
-     * has nothing yet. A fresh install therefore shows the name it used before, and renaming
-     * anywhere else on this token wins over the (still empty) local value.
+     * Claims this phone's identity and pulls the name that belongs to it.
+     *
+     * The device key is what makes a reinstall look like the same person: when this phone bound a
+     * token before, the backend answers with that old token and the app adopts it, plus the number
+     * and the name that came with it. A local name the cloud does not have yet is pushed up.
      */
     private suspend fun syncName() {
         val repo = repository ?: return
-        val token = DeviceIdentity.ensure(settingsStore)
-        val remote = repo.profile(token) ?: return
+        val localToken = DeviceIdentity.ensure(settingsStore)
+        val remote = repo.identify(localToken, deviceKey) ?: return
+        // Adopt the token the phone already owned, if this is a reinstall.
+        val token = remote.token.ifEmpty { localToken }
+        if (token != localToken) settingsStore.setIdentityToken(token)
         if (remote.userId > 0) settingsStore.setIdentityUserId(remote.userId)
         val local = settingsStore.userNameFlow.first().trim()
         when {
