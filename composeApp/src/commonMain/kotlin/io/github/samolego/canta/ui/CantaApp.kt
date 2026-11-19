@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,8 +67,17 @@ import io.github.samolego.canta.ui.screen.PlanDetailScreen
 import io.github.samolego.canta.ui.screen.PresetsScreen
 import io.github.samolego.canta.ui.screen.RecommendationsScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
+import io.github.samolego.canta.ui.screen.UpdateState
+import io.github.samolego.canta.ui.screen.downloadRelease
+import io.github.samolego.canta.ui.screen.isNewerVersion
+import io.github.samolego.canta.ui.screen.latestRelease
 import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
+import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.about_install_cancel
+import io.github.samolego.canta.generated.resources.about_install_confirm
+import io.github.samolego.canta.generated.resources.about_install_message
+import io.github.samolego.canta.generated.resources.about_install_title
 import io.github.samolego.canta.ui.theme.CantaTheme
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.ui.viewmodel.CURRENT_ONBOARDING_VERSION
@@ -78,6 +90,7 @@ import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
+import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -137,6 +150,29 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         platform.messages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    // A release found at start-up is downloaded without asking; installing it still asks,
+    // because it replaces the running app and closes it.
+    val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
+    var autoUpdate by remember { mutableStateOf<UpdateState?>(null) }
+    var autoInstallAsked by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
+    val updateClient = remember { HttpClient() }
+
+    LaunchedEffect(autoInstallUpdates) {
+        if (!autoInstallUpdates) return@LaunchedEffect
+        val tag = runCatching { latestRelease(updateClient) }.getOrNull() ?: return@LaunchedEffect
+        if (!isNewerVersion(tag, BuildInfo.VERSION_NAME)) return@LaunchedEffect
+
+        autoUpdate = UpdateState.Downloading(tag, 0)
+        val path = downloadRelease(platform, tag) { percent ->
+            autoUpdate = UpdateState.Downloading(tag, percent)
+        }
+        autoUpdate = if (path == null) {
+            null
+        } else {
+            UpdateState.ReadyToInstall(tag, path).also { autoInstallAsked = it }
+        }
+    }
+
     // The two optional pages: off by default, so the bar only leads to what everyone needs.
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
@@ -148,6 +184,28 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     // Fixed at first composition: finishing onboarding navigates explicitly.
     val startDestination = remember {
         if (storedOnboardingVersion >= CURRENT_ONBOARDING_VERSION) Screen.Main.route else Screen.Onboarding.route
+    }
+
+    autoInstallAsked?.let { ready ->
+        AlertDialog(
+            onDismissRequest = { autoInstallAsked = null },
+            title = { Text(stringResource(Res.string.about_install_title, ready.version)) },
+            text = { Text(stringResource(Res.string.about_install_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    autoInstallAsked = null
+                    coroutineScope.launch {
+                        val failure = platform.installUpdate(ready.path)
+                        if (failure == null) platform.exitApp() else platform.showMessage(failure)
+                    }
+                }) { Text(stringResource(Res.string.about_install_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { autoInstallAsked = null }) {
+                    Text(stringResource(Res.string.about_install_cancel))
+                }
+            },
+        )
     }
 
     // The page under the bar drives it: scrolling down hides it, dragging back up shows it.

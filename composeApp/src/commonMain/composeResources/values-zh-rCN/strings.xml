@@ -170,6 +170,15 @@
     <string name="about_up_to_date">已是最新版本</string>
     <string name="about_update_available">发现新版本 %1$s，点击前往下载</string>
     <string name="about_update_failed">检查失败，请稍后再试</string>
+    <string name="about_auto_install">自动下载更新包</string>
+    <string name="about_downloading">正在下载… %1$d%%</string>
+    <string name="about_ready_to_install">%1$s 已下载，点击安装</string>
+    <string name="about_installing">正在安装…完成后应用会退出</string>
+    <string name="about_download_failed">下载失败</string>
+    <string name="about_install_title">安装 %1$s？</string>
+    <string name="about_install_message">本应用会被覆盖并退出。设置和卸载记录都会保留。建议保持电量充足，安装期间不要关闭 Shizuku。</string>
+    <string name="about_install_confirm">立即安装</string>
+    <string name="about_install_cancel">暂不安装</string>
     <string name="about_coolapk">作者的酷安</string>
     <string name="about_coolapk_hint">酷安 · u/43186862</string>
     <string name="about_qq_group">作者的 QQ 群</string>

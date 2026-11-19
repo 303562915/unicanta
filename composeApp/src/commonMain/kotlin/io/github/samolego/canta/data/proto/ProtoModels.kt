@@ -67,6 +67,12 @@ data class AppSettingsProto(
     @ProtoNumber(19) val showTweaksTab: Boolean = false,
     /** Whether the bar keeps an entry for the recommended-apps page; see [showTweaksTab]. */
     @ProtoNumber(20) val showRecommendTab: Boolean = false,
+    /**
+     * When on, a new release is downloaded as soon as the update check finds one, and the app
+     * offers to install it through Shizuku. The install itself always asks first: it replaces
+     * the app and closes it, which is not something to do behind someone's back.
+     */
+    @ProtoNumber(21) val autoInstallUpdates: Boolean = false,
 )
 
 /**

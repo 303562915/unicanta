@@ -65,4 +65,26 @@ interface CantaPlatform {
      * which case the app keeps working with its token alone.
      */
     fun deviceKey(): String = ""
+
+    /**
+     * Downloads [url] into a place the privileged helper can read, reporting 0-100 through
+     * [onProgress]. Returns the absolute path of the downloaded file, or null when the platform
+     * cannot download at all (the web build, tests).
+     *
+     * The file has to survive until [installUpdate] reads it, so it goes next to the app's own
+     * cache rather than into a temporary directory that is cleaned up on the next start.
+     */
+    suspend fun downloadUpdate(url: String, fileName: String, onProgress: (Int) -> Unit): String? = null
+
+    /**
+     * Installs the APK at [path] over this app through the privileged runtime, i.e. `pm install`
+     * as Shizuku's identity. Returns null on success, or the reason it failed.
+     *
+     * Platforms without a privileged helper answer with an explanation instead of throwing: the
+     * caller shows it and leaves the manual download link in place.
+     */
+    suspend fun installUpdate(path: String): String? = "this build cannot install updates"
+
+    /** Closes the app, so the freshly installed version starts clean on the next launch. */
+    fun exitApp() = Unit
 }

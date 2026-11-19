@@ -56,6 +56,9 @@ class SettingsViewModel(
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
 
+    /** Downloads a found release on its own; the install still asks first. */
+    val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(false)
+
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */
     val onboardingVersion: StateFlow<Int?> = settingsStore.onboardingVersionFlow.state<Int?>(null)
 
@@ -105,6 +108,7 @@ class SettingsViewModel(
     fun saveAuthEnabled(enabled: Boolean) = save { setAuthEnabled(enabled) }
     fun saveShowTweaksTab(show: Boolean) = save { setShowTweaksTab(show) }
     fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
+    fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
 
     /**
      * Renames this install: the value is stored at once, so the page and the next review use it

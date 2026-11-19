@@ -284,6 +284,15 @@
     <string name="about_up_to_date">Up to date</string>
     <string name="about_update_available">Version %1$s is out, tap to download</string>
     <string name="about_update_failed">Check failed, try again later</string>
+    <string name="about_auto_install">Download updates automatically</string>
+    <string name="about_downloading">Downloading… %1$d%%</string>
+    <string name="about_ready_to_install">%1$s is downloaded, tap to install</string>
+    <string name="about_installing">Installing… the app will close when it is done</string>
+    <string name="about_download_failed">Download failed</string>
+    <string name="about_install_title">Install %1$s?</string>
+    <string name="about_install_message">The app will be replaced and closed. Your settings and the uninstall history are kept. Charging is recommended, and the phone must stay inside Shizuku's reach.</string>
+    <string name="about_install_confirm">Install now</string>
+    <string name="about_install_cancel">Not now</string>
     <string name="about_coolapk">Author on Coolapk</string>
     <string name="about_coolapk_hint">Coolapk · u/43186862</string>
     <string name="about_qq_group">Author's QQ group</string>

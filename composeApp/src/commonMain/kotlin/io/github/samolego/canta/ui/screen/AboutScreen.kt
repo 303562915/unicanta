@@ -16,11 +16,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,10 +39,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
+import io.ktor.client.HttpClient
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.about_check_update
 import io.github.samolego.canta.generated.resources.about_check_update_action
 import io.github.samolego.canta.generated.resources.about_check_update_hint
+import io.github.samolego.canta.generated.resources.about_auto_install
+import io.github.samolego.canta.generated.resources.about_downloading
+import io.github.samolego.canta.generated.resources.about_ready_to_install
+import io.github.samolego.canta.generated.resources.about_installing
+import io.github.samolego.canta.generated.resources.about_install_title
+import io.github.samolego.canta.generated.resources.about_install_message
+import io.github.samolego.canta.generated.resources.about_install_confirm
+import io.github.samolego.canta.generated.resources.about_install_cancel
+import io.github.samolego.canta.generated.resources.about_download_failed
 import io.github.samolego.canta.generated.resources.about_checking
 import io.github.samolego.canta.generated.resources.about_contributors
 import io.github.samolego.canta.generated.resources.about_coolapk
@@ -72,28 +85,13 @@ import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
-import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.stringResource
 
 /** Where the app is published and where it came from. */
 private const val REPO_URL = "https://github.com/303562915/Canta"
 private const val CONTRIBUTORS_URL = "$REPO_URL/graphs/contributors"
 private const val ORIGINAL_URL = "https://github.com/samolego/Canta"
-/** The download page published from `site/`; it always shows the newest published release. */
-private const val DOWNLOAD_PAGE_URL = "https://303562915.github.io/Canta/"
-private const val LATEST_RELEASE_API = "https://api.github.com/repos/303562915/Canta/releases/latest"
-
-/** GitHub rejects anonymous API calls without one. */
-private const val USER_AGENT = "Canta-Android (+$REPO_URL)"
-
 /** The author's Coolapk page, and the number at the end of it. */
 private const val COOLAPK_UID = "43186862"
 private const val COOLAPK_URL = "https://www.coolapk.com/u/$COOLAPK_UID"
@@ -124,15 +122,6 @@ private val CardCorner = 12.dp
 /** Height the icon tile is drawn at. */
 private val IconTile = 62.dp
 
-/** What the last check said. */
-private sealed interface UpdateState {
-    data object Idle : UpdateState
-    data object Checking : UpdateState
-    data object Latest : UpdateState
-    data class Available(val version: String) : UpdateState
-    data object Failed : UpdateState
-}
-
 /**
  * The about page, laid out the way FlClash lays out its own: the app on top, then the switches
  * that decide how it behaves, then where it lives.
@@ -152,28 +141,54 @@ fun AboutScreen(
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
 
+    val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
+
     val scope = rememberCoroutineScope()
     val client = remember { HttpClient() }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var pendingInstall by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     // Read here, not in the tap handler: `getString` suspends, and a click is not a suspend call.
     val qqGroupCopied = stringResource(Res.string.about_qq_group_copied)
 
-    val checkUpdate: () -> Unit = {
-        if (updateState != UpdateState.Checking) {
-            updateState = UpdateState.Checking
-            scope.launch {
-                updateState = runCatching { latestRelease(client) }
-                    .getOrNull()
-                    ?.let { tag ->
-                        if (isNewerVersion(tag, BuildInfo.VERSION_NAME)) {
-                            UpdateState.Available(tag)
-                        } else {
-                            UpdateState.Latest
-                        }
-                    }
-                    ?: UpdateState.Failed
+    val downloadFailed = stringResource(Res.string.about_download_failed)
+
+    /** Fetches the package behind [version] and parks it in [UpdateState.ReadyToInstall]. */
+    val download: (String) -> Unit = { version ->
+        updateState = UpdateState.Downloading(version, 0)
+        scope.launch {
+            val path = downloadRelease(platform, version) { percent ->
+                updateState = UpdateState.Downloading(version, percent)
+            }
+            updateState = if (path == null) {
+                UpdateState.FailedWith(downloadFailed)
+            } else {
+                UpdateState.ReadyToInstall(version, path)
             }
         }
+    }
+
+    val checkUpdate: () -> Unit = {
+        if (updateState !is UpdateState.Checking) {
+            updateState = UpdateState.Checking
+            scope.launch {
+                val tag = runCatching { latestRelease(client) }.getOrNull()
+                updateState = when {
+                    tag == null -> UpdateState.Failed
+                    !isNewerVersion(tag, BuildInfo.VERSION_NAME) -> UpdateState.Latest
+                    autoInstallUpdates -> {
+                        download(tag)
+                        UpdateState.Downloading(tag, 0)
+                    }
+                    else -> UpdateState.Available(tag)
+                }
+            }
+        }
+    }
+
+    // The download is done: ask before replacing a running app.
+    LaunchedEffect(updateState) {
+        val ready = updateState
+        if (ready is UpdateState.ReadyToInstall) pendingInstall = ready
     }
 
     Scaffold(
@@ -195,6 +210,19 @@ fun AboutScreen(
                 state = updateState,
                 onCheck = checkUpdate,
                 onOpenRelease = { platform.openUrl(DOWNLOAD_PAGE_URL) },
+            )
+            Spacer(Modifier.height(10.dp))
+
+            ToggleCard(
+                glyph = FlGlyphs.cloudDownload,
+                title = stringResource(Res.string.about_auto_install),
+                checked = autoInstallUpdates,
+                onCheckedChange = { enabled ->
+                    settingsViewModel.saveAutoInstallUpdates(enabled)
+                    // Turning it on with a release already waiting starts the download right away.
+                    val pending = updateState
+                    if (enabled && pending is UpdateState.Available) download(pending.version)
+                },
             )
             Spacer(Modifier.height(10.dp))
 
@@ -263,6 +291,35 @@ fun AboutScreen(
                 onClick = { platform.openUrl(ORIGINAL_URL) },
             )
         }
+
+        // The install replaces the app and closes it, so it always asks first — the switch only
+        // decides who downloads, never whether the user gets told.
+        pendingInstall?.let { ready ->
+            AlertDialog(
+                onDismissRequest = { pendingInstall = null },
+                title = { Text(stringResource(Res.string.about_install_title, ready.version)) },
+                text = { Text(stringResource(Res.string.about_install_message)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        pendingInstall = null
+                        updateState = UpdateState.Installing(ready.version, ready.path)
+                        scope.launch {
+                            val failure = platform.installUpdate(ready.path)
+                            if (failure == null) {
+                                platform.exitApp()
+                            } else {
+                                updateState = UpdateState.FailedWith(failure)
+                            }
+                        }
+                    }) { Text(stringResource(Res.string.about_install_confirm)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingInstall = null }) {
+                        Text(stringResource(Res.string.about_install_cancel))
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -322,6 +379,13 @@ private fun UpdateCard(
         is UpdateState.Available ->
             stringResource(Res.string.about_update_available, state.version) to scheme.primary
         UpdateState.Failed -> stringResource(Res.string.about_update_failed) to scheme.error
+        is UpdateState.Downloading ->
+            stringResource(Res.string.about_downloading, state.progress) to scheme.primary
+        is UpdateState.ReadyToInstall ->
+            stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary
+        is UpdateState.Installing ->
+            stringResource(Res.string.about_installing) to scheme.primary
+        is UpdateState.FailedWith -> state.reason to scheme.error
     }
     val openRelease = state is UpdateState.Available
 
@@ -342,7 +406,7 @@ private fun UpdateCard(
                 color = scheme.onSurface,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (state == UpdateState.Checking) {
+                if (state == UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing) {
                     CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp)
                     Spacer(Modifier.width(6.dp))
                 }
@@ -532,45 +596,4 @@ private fun LinkCard(
         }
         SettingsChevron()
     }
-}
-
-/** `tag_name` of the latest release, e.g. `v4.2.0`; throws when GitHub cannot be reached. */
-private suspend fun latestRelease(client: HttpClient): String {
-    val body = client.get(LATEST_RELEASE_API) {
-        header(HttpHeaders.UserAgent, USER_AGENT)
-        header(HttpHeaders.Accept, "application/vnd.github+json")
-    }.bodyAsText()
-    return Json.parseToJsonElement(body)
-        .jsonObject["tag_name"]
-        ?.jsonPrimitive
-        ?.content
-        ?.takeIf { it.isNotBlank() }
-        ?: error("no tag in the release payload")
-}
-
-/**
- * Whether [remote] (e.g. `v4.3.0`) is strictly newer than [local] (e.g. `4.2.0`).
- *
- * Compares the numeric parts only: a plain string compare would call `4.10.0` older than
- * `4.9.0`, and an equality check would offer a "update" to anyone running a local build
- * ahead of the last release.
- */
-internal fun isNewerVersion(remote: String, local: String): Boolean {
-    fun parts(version: String): List<Int> =
-        version.trim()
-            .trimStart('v', 'V')
-            .substringBefore('-')
-            .substringBefore('+')
-            .split('.')
-            .map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
-
-    val a = parts(remote)
-    val b = parts(local)
-    val length = maxOf(a.size, b.size)
-    for (i in 0 until length) {
-        val x = a.getOrElse(i) { 0 }
-        val y = b.getOrElse(i) { 0 }
-        if (x != y) return x > y
-    }
-    return false
 }

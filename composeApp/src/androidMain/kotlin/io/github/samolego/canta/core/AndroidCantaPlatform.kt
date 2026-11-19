@@ -16,9 +16,20 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
+import io.github.samolego.canta.core.shizuku.ShizukuShell
 import io.github.samolego.canta.util.LogUtils
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.onDownload
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
+import kotlin.system.exitProcess
 
 class AndroidCantaPlatform(
     private val context: Context,
@@ -30,6 +41,9 @@ class AndroidCantaPlatform(
 
     @Volatile
     private var biometricActivity: FragmentActivity? = null
+
+    /** Runs `pm install` as Shizuku; created on first update, not for every page. */
+    private val shell by lazy { ShizukuShell(context) }
 
     /** Attach the activity (from `onCreate`); used for biometric prompts. */
     fun attachActivity(activity: FragmentActivity) {
@@ -208,6 +222,73 @@ class AndroidCantaPlatform(
             ?: return writeExternalFile(fileName, content)
         return "Download/Canta/$fileName"
     }
+
+    /**
+     * Downloads the APK into the app's own external files directory.
+     *
+     * The privileged helper runs as `shell`, which can read `/storage/emulated/0/Android/data/...`
+     * but not the app's internal `filesDir`, so the update has to land outside the sandbox for
+     * `pm install` to open it.
+     */
+    override suspend fun downloadUpdate(
+        url: String,
+        fileName: String,
+        onProgress: (Int) -> Unit,
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            val directory = context.getExternalFilesDir("updates") ?: context.filesDir
+            if (!directory.exists() && !directory.mkdirs()) {
+                LogUtils.e(TAG, "Could not create ${directory.absolutePath}")
+                return@withContext null
+            }
+
+            val client = HttpClient(OkHttp)
+            val bytes = try {
+                client.get(url) {
+                    onDownload { sent, total ->
+                        if (total != null && total > 0) {
+                            onProgress(((sent * 100) / total).toInt().coerceIn(0, 100))
+                        }
+                    }
+                    header(HttpHeaders.UserAgent, "Canta-Android")
+                }.body<ByteArray>()
+            } finally {
+                client.close()
+            }
+
+            val target = File(directory, fileName)
+            target.writeBytes(bytes)
+            onProgress(100)
+            LogUtils.i(TAG, "Downloaded ${bytes.size} bytes to ${target.absolutePath}")
+            target.absolutePath
+        } catch (e: Exception) {
+            LogUtils.e(TAG, "Could not download the update", e)
+            null
+        }
+    }
+
+    /**
+     * Installs [path] over this app with `pm install -r -d` as Shizuku's identity: `-r` replaces
+     * the installed copy and keeps its data, `-d` allows the older version code that a debug build
+     * carries. Returns null on success, or the output that explains the failure.
+     */
+    override suspend fun installUpdate(path: String): String? {
+        if (!File(path).exists()) return "update file is missing: $path"
+        val result = shell.run("pm install -r -d ${shellQuote(path)}")
+        return when {
+            result.ok && !result.output.contains("Failure", ignoreCase = true) -> null
+            result.output.isBlank() -> "pm install failed without output"
+            else -> result.output.trim()
+        }
+    }
+
+    /** Closes the process: the installer already replaced the APK, so the next launch is the new build. */
+    override fun exitApp() {
+        exitProcess(0)
+    }
+
+    /** Single-quotes [value] for `sh -c`, the quoting `pm install` needs for a path with spaces. */
+    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     private fun writeExternalFile(fileName: String, content: String): String? {
         val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null
