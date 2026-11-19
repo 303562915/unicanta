@@ -256,11 +256,12 @@ fun AboutScreen(
                 onToggleRecommend = settingsViewModel::saveShowRecommendTab,
             )
 
-            // The photo at the top of the safety page: decoration, so it is a switch rather than
-            // something baked into the page. Off, the list starts where the picture was.
+            // The name and the photo at the top of the safety page: both are decoration, and the
+            // model string is more than some users want on screen, so they share one switch and it
+            // starts off. Turned on, the picture is looked up and the model names the band.
             ToggleCard(
                 glyph = FlGlyphs.iconTile,
-                title = "显示机型照片",
+                title = "显示机型与照片",
                 checked = showDevicePhoto,
                 onCheckedChange = settingsViewModel::saveShowDevicePhoto,
             )

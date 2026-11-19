@@ -76,8 +76,7 @@ import io.github.samolego.canta.generated.resources.plans_verified_short
 import io.github.samolego.canta.generated.resources.plans_upload_cta
 import io.github.samolego.canta.generated.resources.plans_upload_cta_none
 import io.github.samolego.canta.generated.resources.ranking_empty
-import io.github.samolego.canta.generated.resources.ranking_plans
-import io.github.samolego.canta.generated.resources.ranking_votes
+import io.github.samolego.canta.generated.resources.ranking_marks
 import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
@@ -162,7 +161,7 @@ fun SafetyRulesScreen(
     // the band with the phone's name and the switch but not the picture under it. A plain `Flow`,
     // like the other stored settings, so it needs the value to show before the first read comes
     // back — and the picture is on by default, which is what a fresh install should start with.
-    val showDevicePhoto by settings.showDevicePhotoFlow.collectAsStateWithLifecycle(initialValue = true)
+    val showDevicePhoto by settings.showDevicePhotoFlow.collectAsStateWithLifecycle(initialValue = false)
 
     val scope = rememberCoroutineScope()
     val fallbackRepository = remember { PlanRepository(HttpClient()) }
@@ -298,9 +297,11 @@ fun SafetyRulesScreen(
         topBar = {
             // The phone is the header: its name and counters on the band, the page switch right
             // under them, and the picture of the model below the switch.
+            // The switch covers the name as well as the picture: with it off the page says
+            // "本机" and looks nothing up, which is the point of having the switch.
             DeviceHero(
-                model = profile?.displayModel.orEmpty(),
-                title = profile?.displayModel ?: "-",
+                model = if (showDevicePhoto) profile?.displayModel.orEmpty() else "",
+                title = if (showDevicePhoto) profile?.displayModel ?: "-" else "本机",
                 subtitle = profile?.let { romLine(it) }.orEmpty(),
                 showPhoto = showDevicePhoto,
                 counters = buildList {
@@ -579,21 +580,15 @@ private fun RankRowView(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                // A like in this list means "this can go", not "this is good".
-                text = stringResource(Res.string.ranking_votes, rank.votes),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = stringResource(Res.string.ranking_plans, rank.plans),
-                fontSize = 9.sp,
-                lineHeight = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
+        // One number, one line: how many people marked it. How many plans it was marked in is a
+        // detail for the package's own page, where there is room to read it next to the plans.
+        Text(
+            // A mark in this list means "this can go", not "this is good".
+            text = stringResource(Res.string.ranking_marks, rank.votes),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
         Spacer(Modifier.width(6.dp))
         StatusChip(verdict)
     }

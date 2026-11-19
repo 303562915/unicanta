@@ -319,6 +319,7 @@
     <string name="ranking_scope">%1$s 上的方案</string>
     <string name="ranking_empty">%1$s 还没有人上传方案，所以没有排行。</string>
     <string name="ranking_votes">%1$d 人标记可卸</string>
+    <string name="ranking_marks">%1$d 标记</string>
     <string name="ranking_plans">%1$d 个方案</string>
     <string name="plan_detail_ranking_title">本机排行</string>
     <string name="plan_detail_ranking_hint">同一个机型（%1$s）上，这些包各自被多少人点赞</string>

@@ -75,10 +75,24 @@ private val AVATAR_COLORS = listOf(
 private val AUTHOR_TAG = Color(0xFFFE2C55)
 
 /** Height of a name badge. Fixed, so "我" and "作者" cannot grow taller than the name beside them. */
-private val TAG_HEIGHT = 14.dp
+private val TAG_HEIGHT = 16.dp
 
-/** Answers shown under a comment before the rest folds behind "展开 N 条回复". */
-private const val THREAD_PREVIEW = 2
+/**
+ * The type scale of the comment list, measured off the short-video comment list this page is laid
+ * out like: the name is small and grey, the comment itself is the size of body text, and everything
+ * that is not the comment — the phone it was written on, the date, "回复" — is smaller and quieter
+ * than the comment it stands under.
+ */
+private val NAME_SIZE = 13.sp
+private val NAME_LINE = 17.sp
+private val BODY_SIZE = 15.sp
+private val BODY_LINE = 21.sp
+private val META_SIZE = 11.sp
+private val META_LINE = 14.sp
+private val ACTION_SIZE = 12.sp
+
+/** Where a thread's own lines start: the 12dp gutter, the 36dp avatar and the 9dp gap after it. */
+private val THREAD_TEXT_INSET = 57.dp
 
 /** Where a reply's text starts: the 48dp indent, its 26dp avatar and the 9dp gap after it. */
 private val REPLY_TEXT_INSET = 83.dp

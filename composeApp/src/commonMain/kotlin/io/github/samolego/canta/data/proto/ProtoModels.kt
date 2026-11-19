@@ -74,11 +74,11 @@ data class AppSettingsProto(
      */
     @ProtoNumber(21) val autoInstallUpdates: Boolean = false,
     /**
-     * Whether the safety page opens on the photograph of this phone. It is decoration — the page
-     * reads the same without it — so a phone that wants the room back can drop it, and the band
-     * with the name and the page switch stays exactly where it was.
+     * Whether the safety page names this phone and opens on its photograph. Off by default: the
+     * model a phone reports is not something every user wants on screen, and the page reads the
+     * same without it — the band, the counters and the page switch stay exactly where they were.
      */
-    @ProtoNumber(22) val showDevicePhoto: Boolean = true,
+    @ProtoNumber(22) val showDevicePhoto: Boolean = false,
 )
 
 /**

@@ -196,6 +196,22 @@ class PlanRepository(
     }
 
     /**
+     * Every plan [owner] uploaded, whatever device it was matched to, newest first.
+     *
+     * "Manage my plans" needs this: after an OS update the plan no longer matches this phone's
+     * `plans_for` row, so a list built from that call would lose the very plans the user wants to
+     * delete. Empty when the backend cannot be reached or predates the call.
+     */
+    suspend fun plansByOwner(owner: String): List<CommunityPlan> {
+        if (owner.isEmpty()) return emptyList()
+        val text = rpc("plans_by_owner", buildJsonObject { put("p_owner", owner) }.toString())
+            ?: return emptyList()
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.mapNotNull { parsePlan(it.jsonObject) }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
      * One plan by id, whatever device it was uploaded for.
      *
      * The page a comment or a notification links to may not be in this phone's own list: another

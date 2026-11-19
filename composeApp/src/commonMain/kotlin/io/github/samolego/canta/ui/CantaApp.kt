@@ -505,9 +505,13 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 // number plus token that prove it when one of them is deleted.
                 var myName by remember { mutableStateOf("") }
                 var myIdentity by remember { mutableStateOf(Identity("")) }
+                // "My plans" asks for them by identity; this phone is only the fallback for a
+                // deployment that predates `plans_by_owner`.
+                var myProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 LaunchedEffect(Unit) {
                     myName = DeviceIdentity.displayName(deps.settings)
                     myIdentity = DeviceIdentity.current(deps.settings)
+                    myProfile = handler.deviceProfile()
                 }
                 MyCommentsScreen(
                     repository = communityRepository,
@@ -530,6 +534,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     },
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    profile = myProfile,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }

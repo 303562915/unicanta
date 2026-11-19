@@ -56,8 +56,8 @@ class SettingsViewModel(
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
 
-    /** Whether the safety page opens on the picture of this phone. */
-    val showDevicePhoto = settingsStore.showDevicePhotoFlow.state(true)
+    /** Whether the safety page names this phone and opens on its picture; off unless turned on. */
+    val showDevicePhoto = settingsStore.showDevicePhotoFlow.state(false)
 
     /** Downloads a found release on its own; the install still asks first. */
     val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(false)
