@@ -105,6 +105,7 @@ import io.github.samolego.canta.generated.resources.settings_show_tweaks
 import io.github.samolego.canta.generated.resources.settings_show_tweaks_description
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ExpandIcon
+import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsItem
