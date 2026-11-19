@@ -57,7 +57,7 @@ jobs:
           fi
 
           gh release view "$TAG" --repo "$REPO" \
-            --json tagName,publishedAt,assets > release.json
+            --json tagName,publishedAt,body,assets > release.json
 
           echo "found=true" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -122,6 +122,7 @@ jobs:
               "size": apk.get("size", 0),
               "sha256": digest,
               "checksum_file": f"{base}/{sums['name']}" if sums else None,
+              "notes": (rel.get("body") or "").strip(),
           }
 
           data = dict(entry)
@@ -143,6 +144,7 @@ jobs:
             "size": 0,
             "sha256": "",
             "checksum_file": null,
+            "notes": "",
             "history": []
           }
           JSON

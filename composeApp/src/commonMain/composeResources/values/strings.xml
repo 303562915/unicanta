@@ -279,7 +279,7 @@
     <string name="about_tagline">An open-source debloat tool</string>
     <string name="about_check_update">Check for updates</string>
     <string name="about_check_update_action">Check</string>
-    <string name="about_check_update_hint">Fetch the latest release from GitHub</string>
+    <string name="about_check_update_hint">Fetch the latest version from the download page</string>
     <string name="about_checking">Checking…</string>
     <string name="about_up_to_date">Up to date</string>
     <string name="about_update_available">Version %1$s is out, tap to download</string>

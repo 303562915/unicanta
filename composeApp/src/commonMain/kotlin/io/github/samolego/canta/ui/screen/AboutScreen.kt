@@ -74,7 +74,9 @@ import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -85,8 +87,12 @@ import org.jetbrains.compose.resources.stringResource
 private const val REPO_URL = "https://github.com/303562915/Canta"
 private const val CONTRIBUTORS_URL = "$REPO_URL/graphs/contributors"
 private const val ORIGINAL_URL = "https://github.com/samolego/Canta"
-private const val RELEASES_URL = "$REPO_URL/releases"
+/** The download page published from `site/`; it always shows the newest published release. */
+private const val DOWNLOAD_PAGE_URL = "https://303562915.github.io/Canta/"
 private const val LATEST_RELEASE_API = "https://api.github.com/repos/303562915/Canta/releases/latest"
+
+/** GitHub rejects anonymous API calls without one. */
+private const val USER_AGENT = "Canta-Android (+$REPO_URL)"
 
 /** The author's Coolapk page, and the number at the end of it. */
 private const val COOLAPK_UID = "43186862"
@@ -159,11 +165,10 @@ fun AboutScreen(
                 updateState = runCatching { latestRelease(client) }
                     .getOrNull()
                     ?.let { tag ->
-                        val latest = tag.trimStart('v', 'V')
-                        if (latest.equals(BuildInfo.VERSION_NAME, ignoreCase = true)) {
-                            UpdateState.Latest
-                        } else {
+                        if (isNewerVersion(tag, BuildInfo.VERSION_NAME)) {
                             UpdateState.Available(tag)
+                        } else {
+                            UpdateState.Latest
                         }
                     }
                     ?: UpdateState.Failed
@@ -189,7 +194,7 @@ fun AboutScreen(
             UpdateCard(
                 state = updateState,
                 onCheck = checkUpdate,
-                onOpenRelease = { platform.openUrl(RELEASES_URL) },
+                onOpenRelease = { platform.openUrl(DOWNLOAD_PAGE_URL) },
             )
             Spacer(Modifier.height(10.dp))
 
@@ -531,11 +536,41 @@ private fun LinkCard(
 
 /** `tag_name` of the latest release, e.g. `v4.2.0`; throws when GitHub cannot be reached. */
 private suspend fun latestRelease(client: HttpClient): String {
-    val body = client.get(LATEST_RELEASE_API).bodyAsText()
+    val body = client.get(LATEST_RELEASE_API) {
+        header(HttpHeaders.UserAgent, USER_AGENT)
+        header(HttpHeaders.Accept, "application/vnd.github+json")
+    }.bodyAsText()
     return Json.parseToJsonElement(body)
         .jsonObject["tag_name"]
         ?.jsonPrimitive
         ?.content
         ?.takeIf { it.isNotBlank() }
         ?: error("no tag in the release payload")
+}
+
+/**
+ * Whether [remote] (e.g. `v4.3.0`) is strictly newer than [local] (e.g. `4.2.0`).
+ *
+ * Compares the numeric parts only: a plain string compare would call `4.10.0` older than
+ * `4.9.0`, and an equality check would offer a "update" to anyone running a local build
+ * ahead of the last release.
+ */
+internal fun isNewerVersion(remote: String, local: String): Boolean {
+    fun parts(version: String): List<Int> =
+        version.trim()
+            .trimStart('v', 'V')
+            .substringBefore('-')
+            .substringBefore('+')
+            .split('.')
+            .map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
+
+    val a = parts(remote)
+    val b = parts(local)
+    val length = maxOf(a.size, b.size)
+    for (i in 0 until length) {
+        val x = a.getOrElse(i) { 0 }
+        val y = b.getOrElse(i) { 0 }
+        if (x != y) return x > y
+    }
+    return false
 }
