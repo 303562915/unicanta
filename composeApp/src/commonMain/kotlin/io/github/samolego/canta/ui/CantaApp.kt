@@ -73,7 +73,6 @@ import io.github.samolego.canta.ui.screen.isNewerVersion
 import io.github.samolego.canta.ui.screen.latestRelease
 import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
-import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.about_install_cancel
 import io.github.samolego.canta.generated.resources.about_install_confirm
 import io.github.samolego.canta.generated.resources.about_install_message
