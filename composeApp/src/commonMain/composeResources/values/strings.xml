@@ -308,12 +308,12 @@
     <string name="plans_test_entry_title">Test plan · no reboot</string>
     <string name="plans_test_entry_body">The test password %1$s uploads without a reboot</string>
     <string name="plans_test_entry_count">%1$d packages to try</string>
-    <string name="plan_vote">Like</string>
+    <string name="plan_vote">Helpful</string>
     <string name="plan_verified_chip">Reboot-verified</string>
     <string name="plan_test_chip">Test</string>
     <string name="ranking_scope">Plans for %1$s</string>
     <string name="ranking_empty">No plans for %1$s yet, so there is no ranking.</string>
-    <string name="ranking_votes">%1$d likes</string>
+    <string name="ranking_votes">%1$d say removable</string>
     <string name="ranking_plans">%1$d plans</string>
     <string name="plan_detail_ranking_title">Ranking here</string>
     <string name="plan_detail_ranking_hint">How often each of these packages was liked on the same model (%1$s)</string>

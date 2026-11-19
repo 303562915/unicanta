@@ -247,12 +247,12 @@
     <string name="plans_test_entry_title">测试方案 · 免重启</string>
     <string name="plans_test_entry_body">填测试密码 %1$s 就能上传，不用卸载后重启</string>
     <string name="plans_test_entry_count">%1$d 个包待测试</string>
-    <string name="plan_vote">点赞</string>
+    <string name="plan_vote">有用</string>
     <string name="plan_verified_chip">重启验证</string>
     <string name="plan_test_chip">测试</string>
     <string name="ranking_scope">%1$s 上的方案</string>
     <string name="ranking_empty">%1$s 还没有人上传方案，所以没有排行。</string>
-    <string name="ranking_votes">%1$d 赞</string>
+    <string name="ranking_votes">%1$d 人标记可卸</string>
     <string name="ranking_plans">%1$d 个方案</string>
     <string name="plan_detail_ranking_title">本机排行</string>
     <string name="plan_detail_ranking_hint">同一个机型（%1$s）上，这些包各自被多少人点赞</string>

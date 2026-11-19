@@ -4,6 +4,7 @@ import io.github.samolego.canta.data.AppBlobStorage
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.community.AppNoteStore
+import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.preset.CantaPresetStore
 import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.Telemetry
@@ -29,6 +30,8 @@ class CantaAppDependencies(
     val packageTelemetry: PackageTelemetry,
     /** Reviews, and the apps and plans this install liked. */
     val notes: AppNoteStore,
+    /** What was uninstalled and put back, and when; mirrored to a CSV in the download folder. */
+    val history: OperationLogStore,
 )
 
 /** Names of the persisted blobs; each platform maps them to a file or storage key. */
@@ -39,6 +42,9 @@ object StoredData {
 
     /** Reviews and likes this install wrote: see [io.github.samolego.canta.data.community.AppNoteStore]. */
     const val APP_NOTES = "app_notes.json"
+
+    /** The uninstall/restore log behind the records tab: see [OperationLogStore]. */
+    const val OPERATION_LOG = "operation_log.json"
 }
 
 /**
@@ -71,5 +77,6 @@ fun cantaAppDependencies(
         telemetry = telemetry,
         packageTelemetry = PackageTelemetry(cantaHandler, telemetry, settings),
         notes = AppNoteStore(storage(StoredData.APP_NOTES)),
+        history = OperationLogStore(storage(StoredData.OPERATION_LOG), platform),
     )
 }

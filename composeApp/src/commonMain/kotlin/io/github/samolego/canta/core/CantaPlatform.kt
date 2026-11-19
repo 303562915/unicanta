@@ -30,4 +30,11 @@ interface CantaPlatform {
 
     fun copyToClipboard(text: String)
     fun readClipboard(): String?
+
+    /**
+     * Writes [content] to a file the user can pull off the device without the app: on Android
+     * `Download/Canta/[fileName]`, on the desktop the user's Downloads folder. Returns where the
+     * file landed, or null where there is no such place (the web build).
+     */
+    fun exportLog(fileName: String, content: String): String? = null
 }

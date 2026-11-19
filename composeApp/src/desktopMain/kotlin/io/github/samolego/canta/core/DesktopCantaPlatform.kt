@@ -5,6 +5,7 @@ import java.awt.Desktop
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
+import java.io.File
 
 /** Desktop [CantaPlatform], using AWT for the browser and clipboard. */
 class DesktopCantaPlatform : AdbCantaPlatform(TAG) {
@@ -41,5 +42,17 @@ class DesktopCantaPlatform : AdbCantaPlatform(TAG) {
         } catch (e: Exception) {
             null
         }
+    }
+
+    /** The user's Downloads folder, or the home directory when there is none. */
+    override fun exportLog(fileName: String, content: String): String? = try {
+        val home = File(System.getProperty("user.home"))
+        val downloads = File(home, "Downloads").let { if (it.isDirectory) it else home }
+        val file = File(downloads, fileName)
+        file.writeText(content)
+        file.absolutePath
+    } catch (e: Exception) {
+        LogUtils.e(TAG, "Could not write '$fileName' to the Downloads folder", e)
+        null
     }
 }

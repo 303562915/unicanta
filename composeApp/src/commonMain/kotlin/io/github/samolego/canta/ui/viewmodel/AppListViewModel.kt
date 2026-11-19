@@ -16,6 +16,10 @@ import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.bloat.BloatRepository
+import io.github.samolego.canta.data.history.OperationKind
+import io.github.samolego.canta.data.history.OperationLogStore
+import io.github.samolego.canta.data.history.OperationRecord
+import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.canta_description
 import io.github.samolego.canta.ui.AppsType
@@ -39,6 +43,8 @@ class AppListViewModel(
     private val bloatRepository: BloatRepository,
     /** Opt-in analytics; null when there is none (tests). */
     private val telemetry: PackageTelemetry? = null,
+    /** The record of what was removed and put back; null when there is none (tests). */
+    private val history: OperationLogStore? = null,
 ) : ViewModel() {
 
     companion object {
@@ -286,8 +292,19 @@ class AppListViewModel(
         }
         val before = _apps.associateBy { it.packageName }
         val succeededApps = mutableListOf<AppInfo>()
+        val batchId = currentTimeMillis()
+        val log = mutableListOf<OperationRecord>()
         var succeeded = 0
         results.collect { result ->
+            log += operationRecord(
+                result = result,
+                kind = type.operationKind,
+                label = before[result.packageName]?.name ?: result.packageName,
+                batchId = batchId,
+                batchIndex = log.size + 1,
+                batchSize = packageNames.size,
+                resetToFactory = resetToFactory,
+            )
             if (result.success) {
                 succeeded++
                 before[result.packageName]?.let(succeededApps::add)
@@ -297,6 +314,7 @@ class AppListViewModel(
                 LogUtils.w(TAG, "${type.name.lowercase()} '${result.packageName}' failed: ${result.message} (${result.status})")
             }
         }
+        recordOperations(log)
         if (telemetry != null && succeededApps.isNotEmpty()) {
             when (type) {
                 AppsType.INSTALLED -> telemetry.recordUninstalls(succeededApps, batchSize = packageNames.size)
@@ -314,7 +332,17 @@ class AppListViewModel(
         if (packageNames.isEmpty()) return 0
         var succeeded = 0
         val succeededApps = mutableListOf<AppInfo>()
+        val batchId = currentTimeMillis()
+        val log = mutableListOf<OperationRecord>()
         cantaHandler.reinstallApps(packageNames).collect { result ->
+            log += operationRecord(
+                result = result,
+                kind = OperationKind.REINSTALL,
+                label = _apps.firstOrNull { it.packageName == result.packageName }?.name ?: result.packageName,
+                batchId = batchId,
+                batchIndex = log.size + 1,
+                batchSize = packageNames.size,
+            )
             if (result.success) {
                 succeeded++
                 _apps.firstOrNull { it.packageName == result.packageName }?.let(succeededApps::add)
@@ -323,8 +351,52 @@ class AppListViewModel(
                 LogUtils.w(TAG, "reinstall '${result.packageName}' failed: ${result.message} (${result.status})")
             }
         }
+        recordOperations(log)
         if (succeededApps.isNotEmpty()) telemetry?.recordReinstalls(succeededApps)
         return succeeded
+    }
+
+    /** One line of the records tab for [result]; the phone's own model is asked once per batch. */
+    private suspend fun operationRecord(
+        result: OperationResult,
+        kind: OperationKind,
+        label: String,
+        batchId: Long,
+        batchIndex: Int,
+        batchSize: Int,
+        resetToFactory: Boolean = false,
+    ): OperationRecord {
+        val device = if (batchIndex == 1) {
+            runCatching { cantaHandler.deviceProfile()?.shortLabel() }.getOrNull().orEmpty()
+        } else {
+            batchDevice
+        }
+        if (batchIndex == 1) batchDevice = device
+        return OperationRecord(
+            timestamp = currentTimeMillis(),
+            kind = kind,
+            packageName = result.packageName,
+            label = label,
+            success = result.success,
+            message = if (result.success) "" else result.message,
+            batchId = batchId,
+            batchIndex = batchIndex,
+            batchSize = batchSize,
+            resetToFactory = resetToFactory,
+            device = device,
+            user = cantaHandler.selectedUserId,
+        )
+    }
+
+    /** Model of the phone the running batch talks to; read once instead of per package. */
+    private var batchDevice: String = ""
+
+    /** Writes [records] to the log; the records tab and the CSV in Download both read from it. */
+    private suspend fun recordOperations(records: List<OperationRecord>) {
+        val store = history ?: return
+        if (records.isEmpty()) return
+        runCatching { store.record(records) }
+            .onFailure { LogUtils.e(TAG, "Could not record the batch", it) }
     }
 
     private fun toggleUninstalled(packageName: String) {
