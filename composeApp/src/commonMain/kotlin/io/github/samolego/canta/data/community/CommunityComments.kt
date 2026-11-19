@@ -56,11 +56,11 @@ fun newestReplyId(replies: List<MyComment>): Long = replies.maxOfOrNull { it.id 
 /**
  * [transform] applied to the comment carrying [id]; the list comes back otherwise untouched.
  *
- * A comment without an id (an older backend's row) matches nothing: its page keeps what it showed
- * rather than rewriting the wrong row, because with no id there is no way to tell two rows apart.
+ * A call without a real id — 0, the mark of an older backend's row — rewrites nothing: with no id
+ * there is no way to tell two rows apart, so the page keeps what it showed.
  */
 fun List<PlanComment>.updatedComment(id: Long, transform: (PlanComment) -> PlanComment): List<PlanComment> =
-    map { if (it.id == id) transform(it) else it }
+    if (id <= 0L) this else map { if (it.id == id) transform(it) else it }
 
 /** One comment and the answers it collected, in the order the backend served them. */
 data class CommentThread(val comment: PlanComment, val replies: List<PlanComment>)

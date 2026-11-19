@@ -66,7 +66,8 @@ class RelativeStampTest {
 
     @Test
     fun anUnparsableStampFallsBackInsteadOfBlanking() {
-        assertEquals("11-18", relativeStamp("bad-stamp"))
+        // The fallback hands the string to the plain stamp, which echoes what it cannot slice.
+        assertEquals("bad-stamp", relativeStamp("bad-stamp"))
         assertEquals("", relativeStamp(""))
     }
 }
