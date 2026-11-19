@@ -3,6 +3,10 @@ name: 🌐 Deploy download page
 # 公开仓库后，Release 资产本身就能被任何人直接下载，
 # 所以这里只负责把 site/ 的静态页面发布到 GitHub Pages。
 #
+# 发布方式：把生成好的 _site 推到 gh-pages 分支，由 GitHub 做分支部署。
+# 不用 deploy-pages@v4：那条链路要 pages: write + github-pages environment，
+# 在这个仓库上会卡在 deploy 阶段；分支部署只依赖 contents: write，最稳。
+#
 # 站点地址：https://303562915.github.io/Canta/
 
 on:
@@ -21,9 +25,7 @@ on:
         type: string
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -33,7 +35,7 @@ env:
   REPO: 303562915/Canta
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout
@@ -153,18 +155,24 @@ jobs:
           echo "--- _site ---"
           ls -la _site
 
-      - name: 📤 Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
+      - name: 🚀 Push to gh-pages
+        run: |
+          set -euo pipefail
+          cd _site
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "site: ${{ steps.release.outputs.tag || 'skeleton' }}"
+          git push --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            HEAD:gh-pages
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: 🚀 Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: 🧾 Summary
+        run: |
+          {
+            echo "### 已发布 ${{ steps.release.outputs.tag || '（无 release，仅骨架）' }}"
+            echo ""
+            echo "- 站点：https://303562915.github.io/Canta/"
+            echo "- 分支：gh-pages"
+          } >> "$GITHUB_STEP_SUMMARY"
