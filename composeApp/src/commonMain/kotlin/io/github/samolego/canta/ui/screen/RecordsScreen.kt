@@ -83,7 +83,7 @@ fun RecordsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, top = 8.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
