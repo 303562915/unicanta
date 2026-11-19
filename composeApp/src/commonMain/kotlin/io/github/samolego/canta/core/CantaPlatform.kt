@@ -22,6 +22,22 @@ interface CantaPlatform {
     fun openUrl(url: String)
 
     /**
+     * Open [appSchemes] in the app that claims them — the author's Coolapk page, a QQ group card —
+     * and fall back to [web] when none of them is handled.
+     *
+     * The schemes are tried in order because the same app answers to more than one spelling of the
+     * same deep link. Platforms without app deep links (the web build, the desktop build, tests)
+     * just open [web]; that default is what keeps this an optional capability. An empty [web] means
+     * there is no page worth opening, and the caller handles the "nothing opened" answer itself.
+     *
+     * Returns true when an app scheme was what got opened.
+     */
+    fun openLink(web: String, vararg appSchemes: String): Boolean {
+        if (web.isNotEmpty()) openUrl(web)
+        return false
+    }
+
+    /**
      * Request biometric/device-credential authentication before an action.
      * [title] and [subtitle] are shown by the system prompt; platforms
      * without biometrics should invoke [onSuccess] immediately.

@@ -290,8 +290,8 @@ fun SafetyRulesScreen(
 
     Scaffold(
         topBar = {
-            // The phone is the header, and the page switch is drawn on the same picture: one
-            // surface at the top instead of a title bar, a device band and a groove under it.
+            // The phone is the header: its name and counters on the band, the page switch right
+            // under them, and the picture of the model below the switch.
             DeviceHero(
                 model = profile?.displayModel.orEmpty(),
                 title = profile?.displayModel ?: "-",
@@ -309,10 +309,9 @@ fun SafetyRulesScreen(
                         ),
                         selectedIndex = tab,
                         onSelect = { tab = it },
-                        // The hero already keeps its content off the edges, and the groove runs
-                        // wider than it so the picture shows around it.
-                        insetHorizontal = 0.dp,
-                        onImage = true,
+                        // The switch is on the page band now, not on the photo: it takes the
+                        // ordinary groove colours and the ordinary side inset.
+                        insetHorizontal = 16.dp,
                     )
                 },
             )

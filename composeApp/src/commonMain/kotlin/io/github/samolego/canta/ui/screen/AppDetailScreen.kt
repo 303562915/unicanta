@@ -167,6 +167,7 @@ fun AppDetailScreen(
                     replyTo = replyTo?.id ?: 0L,
                     deviceModel = profile?.displayModel.orEmpty(),
                     systemName = profile?.systemLabel().orEmpty(),
+                    replyToName = replyTo?.author.orEmpty(),
                 )
                 submitFailed = repository != null && posted == null
                 if (!submitFailed) {

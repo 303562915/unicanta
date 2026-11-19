@@ -42,7 +42,12 @@ import io.github.samolego.canta.generated.resources.about_check_update_action
 import io.github.samolego.canta.generated.resources.about_check_update_hint
 import io.github.samolego.canta.generated.resources.about_checking
 import io.github.samolego.canta.generated.resources.about_contributors
+import io.github.samolego.canta.generated.resources.about_coolapk
+import io.github.samolego.canta.generated.resources.about_coolapk_hint
 import io.github.samolego.canta.generated.resources.about_original_project
+import io.github.samolego.canta.generated.resources.about_qq_group
+import io.github.samolego.canta.generated.resources.about_qq_group_copied
+import io.github.samolego.canta.generated.resources.about_qq_group_hint
 import io.github.samolego.canta.generated.resources.about_tagline
 import io.github.samolego.canta.generated.resources.about_title
 import io.github.samolego.canta.generated.resources.about_update_available
@@ -74,7 +79,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /** Where the app is published and where it came from. */
@@ -83,6 +87,27 @@ private const val CONTRIBUTORS_URL = "$REPO_URL/graphs/contributors"
 private const val ORIGINAL_URL = "https://github.com/samolego/Canta"
 private const val RELEASES_URL = "$REPO_URL/releases"
 private const val LATEST_RELEASE_API = "https://api.github.com/repos/303562915/Canta/releases/latest"
+
+/** The author's Coolapk page, and the number at the end of it. */
+private const val COOLAPK_UID = "43186862"
+private const val COOLAPK_URL = "https://www.coolapk.com/u/$COOLAPK_UID"
+
+/**
+ * What Coolapk answers to, best first: the scheme spelled with the page's host is the form the app
+ * registers for its own site, the short one is the older spelling some builds still use. The web
+ * page is the fallback, so a phone without Coolapk installed loses nothing.
+ */
+private val COOLAPK_SCHEMES = listOf(
+    "coolapk://www.coolapk.com/u/$COOLAPK_UID",
+    "coolapk://u/$COOLAPK_UID",
+)
+
+/** The author's group, and the two spellings QQ accepts for a group card. */
+private const val QQ_GROUP = "913795959"
+private val QQ_GROUP_SCHEMES = listOf(
+    "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=$QQ_GROUP&card_type=group&source=qrcode",
+    "mqq://card/show_pslcard?uin=$QQ_GROUP&card_type=group",
+)
 
 /** Side inset of a card, the same as the settings page uses. */
 private val CardInset = 13.dp
@@ -124,6 +149,8 @@ fun AboutScreen(
     val scope = rememberCoroutineScope()
     val client = remember { HttpClient() }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    // Read here, not in the tap handler: `getString` suspends, and a click is not a suspend call.
+    val qqGroupCopied = stringResource(Res.string.about_qq_group_copied)
 
     val checkUpdate: () -> Unit = {
         if (updateState != UpdateState.Checking) {
@@ -196,6 +223,30 @@ fun AboutScreen(
             )
 
             Spacer(Modifier.height(6.dp))
+            // The author first: the two entries people look for when they want to ask something,
+            // each opened in its own app when it is installed and on the web page otherwise.
+            LinkCard(
+                glyph = FlGlyphs.profiles,
+                title = stringResource(Res.string.about_coolapk),
+                subtitle = stringResource(Res.string.about_coolapk_hint),
+                onClick = { platform.openLink(COOLAPK_URL, *COOLAPK_SCHEMES.toTypedArray()) },
+            )
+            LinkCard(
+                glyph = FlGlyphs.link,
+                title = stringResource(Res.string.about_qq_group),
+                subtitle = stringResource(Res.string.about_qq_group_hint),
+                onClick = {
+                    // No web page can join a group without an invite key, so there is nothing to
+                    // fall back to: no QQ means the number is copied instead.
+                    val opened = platform.openLink("", *QQ_GROUP_SCHEMES.toTypedArray())
+                    // No QQ on this phone: the number is what a person needs, so hand it over
+                    // instead of opening a page that cannot join anything.
+                    if (!opened) {
+                        platform.copyToClipboard(QQ_GROUP)
+                        platform.showMessage(qqGroupCopied)
+                    }
+                },
+            )
             LinkCard(
                 glyph = FlGlyphs.profiles,
                 title = stringResource(Res.string.about_contributors),
@@ -435,11 +486,12 @@ private fun BarSlotChip(slot: BarSlot, modifier: Modifier = Modifier) {
     }
 }
 
-/** A row that opens something outside the app. */
+/** A row that opens something outside the app: [title] with the address under it, when known. */
 @Composable
 private fun LinkCard(
     glyph: FlGlyph,
     title: String,
+    subtitle: String = "",
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -455,14 +507,24 @@ private fun LinkCard(
     ) {
         FlGlyphIcon(glyph = glyph, size = 19.dp, tint = scheme.primary, fill = 0.2f)
         Spacer(Modifier.width(11.dp))
-        Text(
-            text = title,
-            style = FlText.subheadline,
-            color = scheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = FlText.subheadline,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         SettingsChevron()
     }
 }

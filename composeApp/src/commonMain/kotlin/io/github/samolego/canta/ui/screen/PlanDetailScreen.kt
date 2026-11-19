@@ -182,6 +182,9 @@ fun PlanDetailScreen(
                     replyTo = replyTo?.id ?: 0L,
                     deviceModel = profile?.displayModel.orEmpty(),
                     systemName = profile?.systemLabel().orEmpty(),
+                    // Only an older backend needs the name: it stores no parent id, so the answer
+                    // goes in as text that starts with who it answers.
+                    replyToName = replyTo?.author.orEmpty(),
                 )
                 submitFailed = posted == null
                 if (!submitFailed) {

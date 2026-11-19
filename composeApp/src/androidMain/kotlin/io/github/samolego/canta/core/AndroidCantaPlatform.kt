@@ -54,6 +54,31 @@ class AndroidCantaPlatform(
         context.startActivity(intent)
     }
 
+    /**
+     * Tries the app's own schemes before the web page. `startActivity` is the check: a scheme no
+     * installed app claims throws [android.content.ActivityNotFoundException] here, which is the one
+     * test that still works on Android 11+, where [Intent.resolveActivity] also needs a
+     * `queries` entry in the manifest per scheme.
+     */
+    override fun openLink(web: String, vararg appSchemes: String): Boolean {
+        for (scheme in appSchemes) {
+            val intent = Intent(Intent.ACTION_VIEW, scheme.toUri()).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val opened = try {
+                context.startActivity(intent)
+                true
+            } catch (e: Exception) {
+                // No handler (or a security refusal): the next spelling, then the web page.
+                LogUtils.w(TAG, "No app for '$scheme': ${e.message}")
+                false
+            }
+            if (opened) return true
+        }
+        if (web.isNotEmpty()) openUrl(web)
+        return false
+    }
+
     override fun requireBiometric(title: String, subtitle: String, onSuccess: () -> Unit) {
         val activity = biometricActivity
         if (activity == null) {

@@ -284,6 +284,11 @@
     <string name="about_up_to_date">Up to date</string>
     <string name="about_update_available">Version %1$s is out, tap to download</string>
     <string name="about_update_failed">Check failed, try again later</string>
+    <string name="about_coolapk">Author on Coolapk</string>
+    <string name="about_coolapk_hint">Coolapk · u/43186862</string>
+    <string name="about_qq_group">Author's QQ group</string>
+    <string name="about_qq_group_hint">Group 913795959</string>
+    <string name="about_qq_group_copied">Group number 913795959 copied</string>
     <string name="about_contributors">Contributors</string>
     <string name="about_original_project">Original project</string>
     <string name="description_source">Description from the UAD list, published in English</string>

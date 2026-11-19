@@ -157,6 +157,14 @@ class PlanRepository(
         null
     }
 
+    /**
+     * True when the last call failed only because this deployment does not have the function yet:
+     * an older backend answers PostgREST with `PGRST202` / "Could not find the function". The pages
+     * use it to fall back to the calls that deployment does have instead of reporting a failure.
+     */
+    private val functionMissing: Boolean
+        get() = lastError?.let { it.contains("PGRST202") || it.contains("Could not find the function") } == true
+
     /** Verified plans for [profile], most liked first; empty on any failure. */
     suspend fun plansFor(profile: DeviceProfile?): List<CommunityPlan> {
         profile ?: return emptyList()
@@ -451,6 +459,8 @@ class PlanRepository(
         replyTo: Long = 0L,
         deviceModel: String = "",
         systemName: String = "",
+        /** Who wrote the comment being answered; only the old, flat backend needs the name. */
+        replyToName: String = "",
     ): Long? {
         if (target.isEmpty() || body.isBlank()) return null
         val payload = buildJsonObject {
@@ -463,8 +473,25 @@ class PlanRepository(
             put("p_system", systemName)
             if (replyTo > 0L) put("p_parent", replyTo)
         }.toString()
-        return rpc("comment_add", payload)
-            ?.let { text -> runCatching { json.parseToJsonElement(text).jsonPrimitive.longOrNull }.getOrNull() }
+        rpc("comment_add", payload)?.let { text ->
+            return runCatching { json.parseToJsonElement(text).jsonPrimitive.longOrNull }.getOrNull()
+        }
+        // A deployment that predates the thread table has no `comment_add`, but it still has the
+        // old plan writer. Posting there keeps the thread readable instead of showing "发送失败" on
+        // a comment the old page would have taken; a reply carries its "回复 @name" in the text,
+        // because the old table has no parent column to put it in.
+        if (kind == COMMENT_KIND_PLAN && functionMissing) {
+            val planId = target.toLongOrNull() ?: return null
+            val text = if (replyTo > 0L && replyToName.isNotEmpty()) "回复 @$replyToName：$body" else body
+            val legacyBody = buildJsonObject {
+                put("p_id", planId)
+                put("p_body", text)
+                put("p_author", author)
+            }.toString()
+            return rpc("plan_comment", legacyBody)
+                ?.let { text -> runCatching { json.parseToJsonElement(text).jsonPrimitive.longOrNull }.getOrNull() }
+        }
+        return null
     }
 
     /** A comment on plan [planId]. */
@@ -476,6 +503,7 @@ class PlanRepository(
         replyTo: Long = 0L,
         deviceModel: String = "",
         systemName: String = "",
+        replyToName: String = "",
     ): Long? = comment(
         kind = COMMENT_KIND_PLAN,
         target = planId.toString(),
@@ -485,6 +513,7 @@ class PlanRepository(
         replyTo = replyTo,
         deviceModel = deviceModel,
         systemName = systemName,
+        replyToName = replyToName,
     )
 
     /** A comment on the page of [pkg]. */
@@ -496,6 +525,7 @@ class PlanRepository(
         replyTo: Long = 0L,
         deviceModel: String = "",
         systemName: String = "",
+        replyToName: String = "",
     ): Long? = comment(
         kind = COMMENT_KIND_APP,
         target = pkg,
@@ -505,6 +535,7 @@ class PlanRepository(
         replyTo = replyTo,
         deviceModel = deviceModel,
         systemName = systemName,
+        replyToName = replyToName,
     )
 
     /**

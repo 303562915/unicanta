@@ -170,6 +170,11 @@
     <string name="about_up_to_date">已是最新版本</string>
     <string name="about_update_available">发现新版本 %1$s，点击前往下载</string>
     <string name="about_update_failed">检查失败，请稍后再试</string>
+    <string name="about_coolapk">作者的酷安</string>
+    <string name="about_coolapk_hint">酷安 · u/43186862</string>
+    <string name="about_qq_group">作者的 QQ 群</string>
+    <string name="about_qq_group_hint">群号 913795959</string>
+    <string name="about_qq_group_copied">群号 913795959 已复制</string>
     <string name="about_contributors">贡献者</string>
     <string name="about_original_project">原开源项目</string>
     <string name="description_source">描述来自 UAD 标注库，原文为英文</string>
