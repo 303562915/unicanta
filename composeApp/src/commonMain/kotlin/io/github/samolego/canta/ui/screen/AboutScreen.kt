@@ -140,6 +140,7 @@ fun AboutScreen(
     val hideSuccessDialog by settingsViewModel.hideSuccessDialog.collectAsStateWithLifecycle()
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
+    val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
 
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
 
@@ -253,6 +254,15 @@ fun AboutScreen(
                 showRecommend = showRecommendTab,
                 onToggleTweaks = settingsViewModel::saveShowTweaksTab,
                 onToggleRecommend = settingsViewModel::saveShowRecommendTab,
+            )
+
+            // The photo at the top of the safety page: decoration, so it is a switch rather than
+            // something baked into the page. Off, the list starts where the picture was.
+            ToggleCard(
+                glyph = FlGlyphs.iconTile,
+                title = "显示机型照片",
+                checked = showDevicePhoto,
+                onCheckedChange = settingsViewModel::saveShowDevicePhoto,
             )
 
             Spacer(Modifier.height(6.dp))

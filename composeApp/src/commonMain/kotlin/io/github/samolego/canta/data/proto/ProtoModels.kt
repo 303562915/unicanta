@@ -73,6 +73,12 @@ data class AppSettingsProto(
      * the app and closes it, which is not something to do behind someone's back.
      */
     @ProtoNumber(21) val autoInstallUpdates: Boolean = false,
+    /**
+     * Whether the safety page opens on the photograph of this phone. It is decoration — the page
+     * reads the same without it — so a phone that wants the room back can drop it, and the band
+     * with the name and the page switch stays exactly where it was.
+     */
+    @ProtoNumber(22) val showDevicePhoto: Boolean = true,
 )
 
 /**

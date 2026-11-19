@@ -161,6 +161,10 @@ fun SafetyRulesScreen(
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
     var rules by remember { mutableStateOf<SafetyRules?>(null) }
 
+    // The photo at the top is decoration: the About page can turn it off, and the page then keeps
+    // the band with the phone's name and the switch but not the picture under it.
+    val showDevicePhoto by settings.showDevicePhotoFlow.collectAsStateWithLifecycle()
+
     val scope = rememberCoroutineScope()
     val fallbackRepository = remember { PlanRepository(HttpClient()) }
     val repo = repository ?: fallbackRepository
@@ -301,6 +305,7 @@ fun SafetyRulesScreen(
                 model = profile?.displayModel.orEmpty(),
                 title = profile?.displayModel ?: "-",
                 subtitle = profile?.let { romLine(it) }.orEmpty(),
+                showPhoto = showDevicePhoto,
                 counters = buildList {
                     add("${plans.size}" to stringResource(Res.string.safety_tab_plans))
                     val pending = deletedPackages.size

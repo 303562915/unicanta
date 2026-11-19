@@ -138,7 +138,8 @@ private object DeviceImages {
  *
  * The picture is decoration and nothing is written on it, so a missing one keeps the layout — the
  * same band of height [HERO_HEIGHT] in muted grey — and the page still reads the same: the switch
- * never moves, whichever way the picture turned out.
+ * never moves, whichever way the picture turned out. [showPhoto] turns the band off altogether, for
+ * a phone that would rather have the list start higher up: nothing is looked up, decoded or drawn.
  */
 @Composable
 fun DeviceHero(
@@ -148,11 +149,15 @@ fun DeviceHero(
     modifier: Modifier = Modifier,
     counters: List<Pair<String, String>> = emptyList(),
     footer: (@Composable () -> Unit)? = null,
+    /** False hides the picture and keeps its band: the heading and the switch do not move. */
+    showPhoto: Boolean = true,
 ) {
     var image by remember(model) { mutableStateOf<ImageBitmap?>(null) }
 
-    LaunchedEffect(model) {
-        image = DeviceImages.load(model)
+    LaunchedEffect(model, showPhoto) {
+        // Nothing is loaded when the picture is off, so a phone that turned it off pays neither the
+        // lookup nor the decode for a picture it will not see.
+        image = if (showPhoto) DeviceImages.load(model) else null
     }
 
     val scheme = MaterialTheme.colorScheme
@@ -228,11 +233,13 @@ fun DeviceHero(
             footer()
             Spacer(Modifier.height(8.dp))
         }
-        // The picture itself, under the switch: the photo band of the page.
+        // The picture itself, under the switch: the photo band of the page. Turned off it takes no
+        // room at all — the band was only there to hold the picture, and a phone that turned the
+        // picture off did it to get the list higher up the page.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(HERO_HEIGHT)
+                .height(if (showPhoto) HERO_HEIGHT else 0.dp)
                 .background(scheme.surfaceContainerHighest),
         ) {
             image?.let { bitmap ->

@@ -56,6 +56,9 @@ class SettingsViewModel(
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
 
+    /** Whether the safety page opens on the picture of this phone. */
+    val showDevicePhoto = settingsStore.showDevicePhotoFlow.state(true)
+
     /** Downloads a found release on its own; the install still asks first. */
     val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(false)
 
@@ -108,6 +111,7 @@ class SettingsViewModel(
     fun saveAuthEnabled(enabled: Boolean) = save { setAuthEnabled(enabled) }
     fun saveShowTweaksTab(show: Boolean) = save { setShowTweaksTab(show) }
     fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
+    fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
 
     /**
