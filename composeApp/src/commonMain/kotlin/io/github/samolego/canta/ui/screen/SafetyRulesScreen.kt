@@ -90,7 +90,7 @@ import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
-import io.github.samolego.canta.ui.component.DeviceHeroImage
+import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
@@ -611,11 +611,18 @@ private fun RankRowView(
     }
 }
 
-/** The position, painted differently on the podium so the top three read at a glance. */
+/** The position of a package in the ranking. */
 @Composable
-private fun RankBadge(rank: PackageRank) {
+private fun RankBadge(rank: PackageRank) = RankBadge(position = rank.rank)
+
+/**
+ * The position, painted differently on the podium so the top three read at a glance. Plans are
+ * numbered by the same rule, so the badge is drawn from a plain position too.
+ */
+@Composable
+private fun RankBadge(position: Int) {
     val colors = MaterialTheme.colorScheme
-    val (container, content) = when (rank.rank) {
+    val (container, content) = when (position) {
         1 -> colors.primary to colors.onPrimary
         2 -> colors.tertiary to colors.onTertiary
         3 -> colors.secondary to colors.onSecondary
@@ -629,10 +636,24 @@ private fun RankBadge(rank: PackageRank) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "${rank.rank}",
+            text = "$position",
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = content,
+        )
+    }
+}
+
+/** A titled group of plans: what the section is, and how to read its order. */
+@Composable
+private fun PlanSectionHeader(title: String, hint: String) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp)) {
+        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = hint,
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -679,8 +700,10 @@ private fun PlansTab(
     Column(modifier = Modifier.fillMaxSize()) {
         // The phone itself, at the top of the page: a picture of exactly this model when one can be
         // found, otherwise a drawn band with its name.
-        DeviceHeroImage(
+        DeviceHero(
             model = profile?.displayModel.orEmpty(),
+            title = profile?.displayModel ?: "-",
+            subtitle = profile?.let { romLine(it) }.orEmpty(),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
         UploadEntry(
@@ -879,7 +902,7 @@ private fun PlanCard(
                 // their own colours, the rest a plain number. This is the "who is most recommended"
                 // mark, so it leads the card.
                 if (rank != null) {
-                    RankBadge(rank = rank)
+                    RankBadge(position = rank)
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
