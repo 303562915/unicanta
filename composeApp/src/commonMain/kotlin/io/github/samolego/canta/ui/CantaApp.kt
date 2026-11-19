@@ -204,6 +204,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     settings = deps.settings,
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    // The shared client, and the list this phone saw last time, so a page opened
+                    // right after a reboot is not empty while the request is in flight.
+                    repository = communityRepository,
+                    planCache = deps.planCache,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }

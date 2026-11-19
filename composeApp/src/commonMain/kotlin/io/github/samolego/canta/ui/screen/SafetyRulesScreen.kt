@@ -90,6 +90,7 @@ import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.DeviceHeroImage
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl

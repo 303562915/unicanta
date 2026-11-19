@@ -26,9 +26,12 @@ class PlanCache(private val storage: AppBlobStorage) {
     private var loaded: PlanCacheBlob? = null
 
     private suspend fun ensureLoaded(): PlanCacheBlob = mutex.withLock {
-        loaded ?: runCatching {
+        loaded?.let { return@withLock it }
+        val blob = runCatching {
             storage.read()?.decodeToString()?.let { json.decodeFromString(PlanCacheBlob.serializer(), it) }
-        }.getOrNull().also { loaded = it ?: PlanCacheBlob() }
+        }.getOrNull() ?: PlanCacheBlob()
+        loaded = blob
+        blob
     }
 
     /** The cached plans for [profile]; empty when nothing was cached for this device. */
