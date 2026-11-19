@@ -6,7 +6,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,7 +31,6 @@ import androidx.compose.material.icons.filled.HeartBroken
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -265,14 +263,14 @@ private fun ThreadToggle(expanded: Boolean, count: Int, onClick: () -> Unit) {
                 fontSize = 11.sp,
                 lineHeight = 14.sp,
                 fontWeight = FontWeight.Medium,
-                color = colors.primary,
+                color = colors.outline,
             )
             Spacer(Modifier.width(1.dp))
             Icon(
                 imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = null,
                 modifier = Modifier.size(14.dp),
-                tint = colors.primary,
+                tint = colors.outline,
             )
         }
     }
@@ -589,16 +587,18 @@ fun CommentComposer(
                 ReplyChip(name = replyToName, onCancel = onCancelReply)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // The pill field: a quiet grey capsule, the placeholder inside it — the person being
-                // answered while one is picked, an open invitation otherwise. The field fills the
-                // capsule, so a thumb landing on the empty half still brings the keyboard up.
+                // The pill field: a quiet grey capsule, exactly 36dp tall whether it is empty or
+                // carrying text — the placeholder and the text share the same line box, so the
+                // field never grows or shrinks under the reader's thumb. The person being answered
+                // names itself inside it once one was picked.
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(19.dp))
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
                         .background(colors.surfaceContainerHigh)
                         .clickable { focusRequester.requestFocus() }
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                        .padding(horizontal = 14.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     BasicTextField(
@@ -628,19 +628,34 @@ fun CommentComposer(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = onSend,
-                    enabled = draft.isNotBlank() && !sending,
-                    modifier = Modifier.height(38.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                // The send pill: not a Material button — its minimum touch target would prop the
+                // whole bar up higher than a comment bar needs to be. A capsule, lit when there is
+                // something to send, dim when there is not.
+                val canSend = draft.isNotBlank() && !sending
+                Box(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (canSend) colors.primary else colors.surfaceContainerHighest)
+                        .clickable(enabled = canSend, onClick = onSend)
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(sendLabel, fontSize = 11.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = sendLabel,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             if (failed) {

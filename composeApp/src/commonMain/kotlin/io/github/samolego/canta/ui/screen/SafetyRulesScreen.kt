@@ -392,8 +392,9 @@ fun SafetyRulesScreen(
                 showPhoto = showDevicePhoto,
                 // The name is the way to another phone: tapping it opens the model chips.
                 onTitleClick = { pickerOpen = true },
+                // No plan count on the band: the switch under it already says which tab is
+                // which, and a counter there only squeezed the model's system line.
                 counters = buildList {
-                    add("${plans.size}" to stringResource(Res.string.safety_tab_plans))
                     // The reboot proof is this install's own: it means nothing under another model.
                     val pending = deletedPackages.size
                     if (pending > 0 && opened == null) {

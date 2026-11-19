@@ -67,6 +67,7 @@ fun PlanScope.buildLabel(): String? = when (this) {
  * The two chips under the page switch: which phone, and which of its builds — the state the list
  * below is drawn from. Tapping either opens the picker; the chevron says so.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlanScopeBar(
     scope: PlanScope,
@@ -82,10 +83,13 @@ fun PlanScopeBar(
             .padding(horizontal = 16.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
+        // The chips flow rather than share one line under an ellipsis: a system version is a long
+        // string, and truncating it under a capsule is what made the version look cut off. A pair
+        // that does not fit on one line simply wraps.
+        FlowRow(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             ScopeChip(
                 text = scope.label(ownLabel),

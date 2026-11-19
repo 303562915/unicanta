@@ -30,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -197,9 +196,11 @@ fun DeviceHero(
             verticalAlignment = Alignment.Bottom,
         ) {
             Column(
+                // No rounded clip on the text column: a clip here used to cut the last glyph of
+                // the system line as it reached the column's edge. The click area is the whole
+                // column either way.
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(10.dp))
                     .then(
                         if (onTitleClick != null) {
                             Modifier.clickable(onClick = onTitleClick)

@@ -67,6 +67,7 @@ import io.github.samolego.canta.generated.resources.plan_detail_missing
 import io.github.samolego.canta.generated.resources.plan_detail_no_comments
 import io.github.samolego.canta.generated.resources.plan_detail_no_rank
 import io.github.samolego.canta.generated.resources.plan_detail_ranking_hint
+import io.github.samolego.canta.generated.resources.ranking_marks
 import io.github.samolego.canta.generated.resources.plan_detail_ranking_title
 import io.github.samolego.canta.generated.resources.plan_detail_stats_comments
 import io.github.samolego.canta.generated.resources.plan_detail_stats_packages
@@ -77,8 +78,6 @@ import io.github.samolego.canta.generated.resources.plan_test_chip
 import io.github.samolego.canta.generated.resources.plan_upload_failed
 import io.github.samolego.canta.generated.resources.plan_verified_chip
 import io.github.samolego.canta.generated.resources.plan_vote
-import io.github.samolego.canta.generated.resources.ranking_plans
-import io.github.samolego.canta.generated.resources.ranking_votes
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.LetterAvatar
@@ -454,8 +453,10 @@ private fun PlanDetailContent(
     val uploaderName = plan.authorName
     // The content starts below the floating title bar but scrolls under it: this is where the bar
     // ends, not a wall it draws on.
+    // The bar's own height is exactly its bottom edge: the card starts where the bar ends, with
+    // no gap to spare.
     val topSpace = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-        FlTopBarHeight + 12.dp
+        FlTopBarHeight
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
         item { PlanHero(plan, profile, uploaderName, me, liked, foreign, onVote, onUsePlan) }
@@ -554,7 +555,7 @@ private fun PlanHero(
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 4.dp),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
@@ -866,22 +867,16 @@ private fun PackageRankRow(
                 color = colors.onSurfaceVariant,
             )
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = rank?.let { stringResource(Res.string.ranking_votes, it.votes) }
-                    ?: stringResource(Res.string.plan_detail_no_rank),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (rank != null) colors.onSurface else colors.outline,
-            )
-            Text(
-                text = rank?.let { stringResource(Res.string.ranking_plans, it.plans) } ?: "",
-                fontSize = 9.sp,
-                lineHeight = 11.sp,
-                color = colors.outline,
-                maxLines = 1,
-            )
-        }
+        // One number, one line, the wording the ranking page uses: how many people marked it.
+        // How many plans it was marked in is a detail — the package's own page has room for it.
+        Text(
+            text = rank?.let { stringResource(Res.string.ranking_marks, it.votes) }
+                ?: stringResource(Res.string.plan_detail_no_rank),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            color = if (rank != null) colors.onSurface else colors.outline,
+        )
         Spacer(Modifier.width(6.dp))
         SafetyChip(verdict)
     }
