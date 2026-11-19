@@ -22,6 +22,9 @@ concurrency:
 jobs:
   test:
     name: 🧪 Common tests
+    # master is covered by build.yml; only run the fork-style full CI on other
+    # branches to avoid running the same build twice on every push.
+    if: github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout
