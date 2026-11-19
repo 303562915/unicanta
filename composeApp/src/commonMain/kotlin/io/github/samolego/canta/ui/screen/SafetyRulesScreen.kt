@@ -78,6 +78,7 @@ import io.github.samolego.canta.generated.resources.plans_reload_failed
 import io.github.samolego.canta.generated.resources.plans_verified_short
 import io.github.samolego.canta.generated.resources.plans_upload_cta
 import io.github.samolego.canta.generated.resources.plans_upload_cta_none
+import io.github.samolego.canta.generated.resources.plans_upload_wait_reboot
 import io.github.samolego.canta.generated.resources.ranking_empty
 import io.github.samolego.canta.generated.resources.ranking_plans
 import io.github.samolego.canta.generated.resources.ranking_votes
