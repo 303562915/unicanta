@@ -6,16 +6,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,11 +37,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import io.github.samolego.canta.data.community.CatalogBuild
 import io.github.samolego.canta.data.community.CatalogModel
 import io.github.samolego.canta.data.community.FamilyGroup
 import io.github.samolego.canta.data.community.groupedByFamily
 import io.github.samolego.canta.data.community.peopleSuffix
+import io.github.samolego.canta.ui.fl.FlSurfaceLevel
+import io.github.samolego.canta.ui.fl.colorOf
 
 /**
  * Which phone's plans the page is showing.
@@ -114,9 +125,12 @@ fun PlanScopeBar(
  * each one — printed only when it is more than a handful — and, one level down, the builds of the
  * model that was opened.
  *
- * A model is a two-step choice on purpose: the list of models is long and the builds of one model
- * are only worth asking about after one of them was picked out.
+ * Near-fullscreen on purpose: the model list grows with the community, and a floating box that caps
+ * at a few hundred pixels turns the choice into a scrollbar inside a window smaller than the page it
+ * came from. A title bar on top, the rest of the height for the list, and the hint lines where they
+ * are read — above the models, under the builds.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlanScopeDialog(
     models: List<CatalogModel>,
@@ -130,33 +144,67 @@ fun PlanScopeDialog(
     var opened by remember { mutableStateOf<CatalogModel?>(null) }
     val current = opened
 
-    CantaDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
-        title = if (current == null) "选择机型" else current.label,
-        widthFraction = WIDE_DIALOG_WIDTH,
-        buttons = {
-            TextButton(onClick = onDismiss) { Text("取消") }
-            if (current != null) {
-                TextButton(onClick = { opened = null }) { Text("返回机型") }
-            }
-        },
+        // The dialog owns the window: a platform-default dialog width would clip the chips row
+        // after the first few models and cap the list at a third of the screen.
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        if (current == null) {
-            ModelPicker(
-                models = models,
-                ownLabel = ownLabel,
-                loading = loading,
-                scope = scope,
-                onOpenModel = { opened = it },
-                onRetry = onRetry,
-                onSelectThisPhone = { onSelect(PlanScope.ThisPhone) },
-            )
-        } else {
-            BuildPicker(
-                model = current,
-                scope = scope,
-                onSelect = onSelect,
-            )
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = FlSurfaceLevel.Block.colorOf(MaterialTheme.colorScheme),
+            modifier = Modifier
+                .padding(horizontal = 10.dp, vertical = 12.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 10.dp, end = 8.dp, top = 10.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (current != null) {
+                        TextButton(onClick = { opened = null }) { Text("‹ 机型") }
+                    }
+                    Text(
+                        text = if (current == null) "选择机型" else current.label,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                }
+                HorizontalDivider()
+
+                if (current == null) {
+                    ModelPicker(
+                        models = models,
+                        ownLabel = ownLabel,
+                        loading = loading,
+                        scope = scope,
+                        onOpenModel = { opened = it },
+                        onRetry = onRetry,
+                        onSelectThisPhone = { onSelect(PlanScope.ThisPhone) },
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    BuildPicker(
+                        model = current,
+                        scope = scope,
+                        onSelect = onSelect,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
     }
 }
@@ -170,61 +218,67 @@ private fun ModelPicker(
     onOpenModel: (CatalogModel) -> Unit,
     onRetry: () -> Unit,
     onSelectThisPhone: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    Text(
-        // The one thing a visitor must know before the list: choosing a phone here only changes
-        // what is *read*. Nothing is blocked later, whichever phone the plan came from.
-        text = "选中别的机型后，下面的列表换成它的社区方案；用他机方案时 Canta 不会拦截。",
-        fontSize = 10.sp,
-        lineHeight = 14.sp,
-        color = colors.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 10.dp),
-    )
-
-    ScopeChip(
-        text = "本机 · ${ownLabel.ifBlank { "-" }}",
-        selected = scope == PlanScope.ThisPhone,
-        onClick = onSelectThisPhone,
-    )
-    Spacer(Modifier.height(6.dp))
-
-    when {
-        loading && models.isEmpty() -> Text(
-            text = "正在读取机型…",
-            fontSize = 11.sp,
+    Column(modifier = modifier) {
+        Text(
+            // The one thing a visitor must know before the list: choosing a phone here only changes
+            // what is *read*. Nothing is blocked later, whichever phone the plan came from.
+            text = "选中别的机型后，下面的列表换成它的社区方案；用他机方案时 Canta 不会拦截。",
+            fontSize = 10.sp,
+            lineHeight = 14.sp,
             color = colors.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = 12.dp),
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
         )
-
-        models.isEmpty() -> Column(modifier = Modifier.padding(vertical = 10.dp)) {
-            Text(
-                text = "后端还没有任何机型的方案，或者这次没连上。",
-                fontSize = 11.sp,
-                color = colors.onSurfaceVariant,
-            )
-            Text(
-                text = "重试",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.primary,
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .clickable(onClick = onRetry)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+        Row(modifier = Modifier.padding(horizontal = 18.dp)) {
+            ScopeChip(
+                text = "本机 · ${ownLabel.ifBlank { "-" }}",
+                selected = scope == PlanScope.ThisPhone,
+                onClick = onSelectThisPhone,
             )
         }
+        Spacer(Modifier.height(8.dp))
 
-        else -> LazyColumn(
-            modifier = Modifier.heightIn(max = 430.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(models.groupedByFamily(), key = { it.family.name }) { group ->
-                FamilyBlock(
-                    group = group,
-                    scope = scope,
-                    onOpenModel = onOpenModel,
+        when {
+            loading && models.isEmpty() -> Text(
+                text = "正在读取机型…",
+                fontSize = 11.sp,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+            )
+
+            models.isEmpty() -> Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)) {
+                Text(
+                    text = "后端还没有任何机型的方案，或者这次没连上。",
+                    fontSize = 11.sp,
+                    color = colors.onSurfaceVariant,
                 )
+                Text(
+                    text = "重试",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.primary,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .clickable(onClick = onRetry)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+
+            else -> LazyColumn(
+                // The whole remaining height: the list is the page, not a peek at it.
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(models.groupedByFamily(), key = { it.family.name }) { group ->
+                    FamilyBlock(
+                        group = group,
+                        scope = scope,
+                        onOpenModel = onOpenModel,
+                    )
+                }
             }
         }
     }
@@ -268,42 +322,46 @@ private fun BuildPicker(
     model: CatalogModel,
     scope: PlanScope,
     onSelect: (PlanScope) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val selectedBuild = (scope as? PlanScope.Other)?.takeIf { it.model.model == model.model }?.build
 
-    Text(
-        text = "只有后端的方案库里出现过的系统版本才在这里：没有版本，就没有那一版的人试过。",
-        fontSize = 10.sp,
-        lineHeight = 14.sp,
-        color = colors.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 10.dp),
-    )
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        ScopeChip(
-            text = "全部版本" + peopleSuffix(model.people),
-            selected = selectedBuild == null,
-            onClick = { onSelect(PlanScope.Other(model, null)) },
+    Column(modifier = modifier) {
+        Text(
+            text = "只有后端的方案库里出现过的系统版本才在这里：没有版本，就没有那一版的人试过。",
+            fontSize = 10.sp,
+            lineHeight = 14.sp,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
         )
-        model.builds.forEach { build ->
+        FlowRow(
+            modifier = Modifier.padding(horizontal = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             ScopeChip(
-                text = build.versionLabel + peopleSuffix(build.people),
-                selected = selectedBuild?.rom == build.rom && selectedBuild.romVersion == build.romVersion,
-                onClick = { onSelect(PlanScope.Other(model, build)) },
+                text = "全部版本" + peopleSuffix(model.people),
+                selected = selectedBuild == null,
+                onClick = { onSelect(PlanScope.Other(model, null)) },
             )
+            model.builds.forEach { build ->
+                ScopeChip(
+                    text = build.versionLabel + peopleSuffix(build.people),
+                    selected = selectedBuild?.rom == build.rom && selectedBuild.romVersion == build.romVersion,
+                    onClick = { onSelect(PlanScope.Other(model, build)) },
+                )
+            }
         }
+        Text(
+            text = "${model.label} 一共有 ${model.plans} 个方案、${model.people} 人加入。",
+            fontSize = 10.sp,
+            color = colors.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp),
+        )
     }
-    Text(
-        text = "${model.label} 一共有 ${model.plans} 个方案、${model.people} 人加入。",
-        fontSize = 10.sp,
-        color = colors.onSurfaceVariant,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(top = 12.dp),
-    )
 }
 
 /** One chip of the picker: the model, the build, or this phone. */
