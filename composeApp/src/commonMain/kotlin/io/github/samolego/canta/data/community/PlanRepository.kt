@@ -62,6 +62,12 @@ data class PlanComment(
     val id: Long = 0L,
     /** The comment this one answers; 0 when it starts a thread. */
     val replyTo: Long = 0L,
+    /**
+     * The identity number behind [author], as the backend keeps it. A display name can be picked
+     * twice or changed at any time; the number is what says a comment belongs to the plan's
+     * uploader ("作者"), and what keeps "delete" working after a rename.
+     */
+    val authorId: String = "",
     /** How many answers hang under this comment. */
     val replies: Int = 0,
     /** The phone it was written on ("Redmi K70"); empty on comments written before it was kept. */
@@ -436,6 +442,9 @@ class PlanRepository(
                 createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
                 replyTo = o["parent_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                // Absent on a backend older than the thread table: an empty id simply matches
+                // nobody, which is the right answer when the server does not say who wrote it.
+                authorId = o["author_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 deviceModel = o["device_model"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 systemName = o["system_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),

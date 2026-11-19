@@ -121,6 +121,8 @@ fun AppDetailScreen(
     // Why the last vote or comment did not go through, when the backend said something.
     var voteError by remember { mutableStateOf<String?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
+    /** Threads the reader opened with "展开 N 条回复"; the rest stay folded at two answers. */
+    var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
 
     LaunchedEffect(packageName, voter) {
         reviews = notes.reviewsOf(packageName)
@@ -304,6 +306,11 @@ fun AppDetailScreen(
                 threads.isNotEmpty() -> commentThreads(
                     threads = threads,
                     me = author,
+                    expanded = expandedThreads,
+                    onToggleThread = { key ->
+                        expandedThreads =
+                            if (key in expandedThreads) expandedThreads - key else expandedThreads + key
+                    },
                     onReply = { comment ->
                         replyTo = comment
                         submitFailed = false

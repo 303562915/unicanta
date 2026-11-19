@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -64,6 +66,22 @@ private val AVATAR_COLORS = listOf(
     Color(0xFF7C8A3C),
 )
 
+/**
+ * The red of the "作者" badge, taken from the short-video comment lists this page is laid out like.
+ * It stays that red in both themes: the badge marks a role, not a surface, and a theme-toned badge
+ * would read as one more piece of the plan's own colour scheme.
+ */
+private val AUTHOR_TAG = Color(0xFFFE2C55)
+
+/** Height of a name badge. Fixed, so "我" and "作者" cannot grow taller than the name beside them. */
+private val TAG_HEIGHT = 14.dp
+
+/** Answers shown under a comment before the rest folds behind "展开 N 条回复". */
+private const val THREAD_PREVIEW = 2
+
+/** Where a reply's text starts: the 48dp indent, its 26dp avatar and the 9dp gap after it. */
+private val REPLY_TEXT_INSET = 83.dp
+
 /** The stable colour of [name]'s avatar. A hashCode can be negative or Int.MIN_VALUE: take the long. */
 fun avatarColorOf(name: String): Color {
     if (AVATAR_COLORS.isEmpty()) return Color(0xFF8A8A8A)
@@ -72,38 +90,78 @@ fun avatarColorOf(name: String): Color {
 }
 
 /**
+ * Whether [comment] was written by the person who uploaded the plan.
+ *
+ * The identity number decides it whenever both sides have one: two people can pick the same
+ * display name, and a name can change between the upload and the comment. [authorName] is the
+ * uploader's number-shaped signature ("#10000"), which is what a comment written before the
+ * backend kept the number was signed with — the only thing left to match on in that case.
+ */
+fun isPlanAuthor(comment: PlanComment, authorId: String, authorName: String): Boolean = when {
+    authorId.isEmpty() && authorName.isEmpty() -> false
+    comment.authorId.isEmpty() -> authorName.isNotEmpty() && comment.author == authorName
+    authorId.isEmpty() -> false
+    else -> comment.authorId == authorId
+}
+
+/**
+ * The key a thread's open/closed state is remembered under.
+ *
+ * A comment id is what to use, but an older backend sends none: the position on the page keeps the
+ * keys distinct there, which is all a fold needs.
+ */
+fun threadKey(comment: PlanComment, index: Int): Long = if (comment.id > 0L) comment.id else -1L - index
+
+/**
  * The rows of one comment thread, for a `LazyColumn` that already has its own sections: every
  * comment that starts a conversation, then the answers it collected, indented under it.
  *
+ * A thread that collected more than [THREAD_PREVIEW] answers is folded after the first ones, the
+ * way a short-video comment list leaves one long conversation from burying everything else; the
+ * reader opens it with "展开 N 条回复" and closes it again with "收起". [expanded] holds the
+ * [threadKey]s that are open, [onToggleThread] flips one.
+ *
  * [me] is how this install is signed (its display name, or its code before it picked one): only the
- * rows carrying that name offer **delete**, and only they are "mine" for the reply hint.
+ * rows carrying that name offer **delete**, and only they are "mine" for the reply hint. [authorId]
+ * and [authorName] identify the plan's uploader, whose rows carry the red "作者" badge; both are
+ * empty on an app page, which has no author to mark.
  */
 fun LazyListScope.commentThreads(
     threads: List<CommentThread>,
     me: String,
     onReply: (PlanComment) -> Unit,
     onDelete: (PlanComment) -> Unit,
+    authorId: String = "",
+    authorName: String = "",
+    expanded: Set<Long> = emptySet(),
+    onToggleThread: (Long) -> Unit = {},
 ) {
     // The ids are unique on the server, but an older backend sends none: the running index keeps
     // the keys distinct either way, which `LazyColumn` insists on.
     var position = 0
-    threads.forEach { thread ->
-        val starterKey = "comment-${thread.comment.id}-${position++}"
-        item(key = starterKey) {
+    threads.forEachIndexed { index, thread ->
+        val starter = thread.comment
+        val key = threadKey(starter, index)
+        // A short thread is always open: folding two answers would cost a tap and save nothing.
+        val open = thread.replies.size <= THREAD_PREVIEW || key in expanded
+        val shown = if (open) thread.replies else thread.replies.take(THREAD_PREVIEW)
+        item(key = "comment-${starter.id}-${position++}") {
             CommentRow(
-                comment = thread.comment,
+                comment = starter,
                 me = me,
-                replies = thread.comment.replies.coerceAtLeast(thread.replies.size),
+                byAuthor = isPlanAuthor(starter, authorId, authorName),
+                replies = starter.replies.coerceAtLeast(thread.replies.size),
                 onReply = onReply,
                 onDelete = onDelete,
             )
         }
-        thread.replies.forEach { answer ->
+        shown.forEach { answer ->
             item(key = "comment-${answer.id}-${position++}") {
                 CommentRow(
                     comment = answer,
                     me = me,
-                    replyToName = thread.comment.author,
+                    byAuthor = isPlanAuthor(answer, authorId, authorName),
+                    replyToName = starter.author,
                     replies = 0,
                     indented = true,
                     onReply = onReply,
@@ -111,6 +169,78 @@ fun LazyListScope.commentThreads(
                 )
             }
         }
+        if (thread.replies.size > THREAD_PREVIEW) {
+            item(key = "thread-more-$key") {
+                ThreadToggle(
+                    expanded = open,
+                    count = thread.replies.size,
+                    onClick = { onToggleThread(key) },
+                )
+            }
+        }
+    }
+}
+
+/** "展开 5 条回复" / "收起" under a thread: the one line that shows or hides its answers. */
+@Composable
+private fun ThreadToggle(expanded: Boolean, count: Int, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = REPLY_TEXT_INSET, end = 12.dp, top = 1.dp, bottom = 5.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 3.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (expanded) "收起" else "展开 $count 条回复",
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = colors.primary,
+            )
+            Spacer(Modifier.width(1.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = colors.primary,
+            )
+        }
+    }
+}
+
+/**
+ * A badge beside a comment's name: "作者" or "我".
+ *
+ * It is as tall as the small type inside it ([TAG_HEIGHT]) rather than as tall as its text's line
+ * box, and it is centred in that height, so it lines up with the name instead of standing over it.
+ */
+@Composable
+fun NameTag(label: String, container: Color, content: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .height(TAG_HEIGHT)
+            .clip(RoundedCornerShape(50))
+            .background(container)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            // Slightly taller than the glyphs, or the descent of a CJK character is clipped by the
+            // capsule it sits in.
+            lineHeight = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = content,
+            maxLines = 1,
+        )
     }
 }
 
@@ -119,6 +249,11 @@ fun LazyListScope.commentThreads(
  * the name in small grey type with the phone it was written on, the comment underneath, then one
  * quiet line with the date and "回复". A long press opens the same actions as that line, because
  * that is how people delete a comment there.
+ *
+ * Next to the name sit the two badges that tell a reader who they are talking to: the plan's
+ * uploader is marked "作者" in red, this install is marked "我" in the accent colour. Both are the
+ * height of a line of small type — a badge that grows taller than the name next to it reads as a
+ * button, which neither of them is.
  *
  * Answers sit under their comment indented by the avatar's width, prefixed with "回复 @name：" the
  * way a reply reads in those threads.
@@ -130,11 +265,14 @@ fun CommentRow(
     replyToName: String = "",
     replies: Int = 0,
     indented: Boolean = false,
+    /** True for a comment the plan's uploader wrote: the row then carries the red "作者" badge. */
+    byAuthor: Boolean = false,
     onReply: (PlanComment) -> Unit = {},
     onDelete: (PlanComment) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
-    val mine = me.isNotEmpty() && (comment.author == me || comment.author == "#$me")
+    val mine = me.isNotEmpty() &&
+        (comment.author == me || comment.author == "#$me" || comment.authorId == me)
     var sheet by remember(comment.id, comment.author, comment.body) { mutableStateOf(false) }
     val openSheet = { sheet = true }
 
@@ -169,22 +307,22 @@ fun CommentRow(
                 Text(
                     text = comment.author.ifEmpty { "匿名" },
                     fontSize = 11.sp,
+                    // The line height is given, not inherited: the ambient body style would leave a
+                    // 20sp-tall line box around 11sp type, which is what made the badges beside it
+                    // look oversized.
+                    lineHeight = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = colors.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (byAuthor) {
+                    Spacer(Modifier.width(4.dp))
+                    NameTag(label = "作者", container = AUTHOR_TAG, content = Color.White)
+                }
                 if (mine) {
                     Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "我",
-                        fontSize = 8.sp,
-                        color = colors.onPrimary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(colors.primary)
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                    )
+                    NameTag(label = "我", container = colors.primary, content = colors.onPrimary)
                 }
                 // The phone it was written on, right after the name: a comment about removing an app
                 // is only as useful as the model and system it is about.
@@ -193,6 +331,7 @@ fun CommentRow(
                     Text(
                         text = comment.deviceLabel,
                         fontSize = 9.sp,
+                        lineHeight = 12.sp,
                         color = colors.outline,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -223,12 +362,14 @@ fun CommentRow(
                 Text(
                     text = shortStamp(comment.createdAt),
                     fontSize = 10.sp,
+                    lineHeight = 13.sp,
                     color = colors.outline,
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
                     text = "回复",
                     fontSize = 10.sp,
+                    lineHeight = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.onSurfaceVariant,
                     modifier = Modifier
@@ -241,6 +382,7 @@ fun CommentRow(
                     Text(
                         text = "删除",
                         fontSize = 10.sp,
+                        lineHeight = 13.sp,
                         color = colors.error.copy(alpha = 0.9f),
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))

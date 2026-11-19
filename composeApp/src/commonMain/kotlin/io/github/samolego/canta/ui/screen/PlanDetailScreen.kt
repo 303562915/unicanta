@@ -150,6 +150,8 @@ fun PlanDetailScreen(
     var replyTo by remember { mutableStateOf<PlanComment?>(null) }
     /** The comment the delete confirmation is about. */
     var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
+    /** Threads the reader opened with "展开 N 条回复", by their own key; see [threadKey]. */
+    var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -316,6 +318,10 @@ fun PlanDetailScreen(
                 loadError = loadError,
                 me = commentAuthor,
                 liked = liked,
+                expandedThreads = expandedThreads,
+                onToggleThread = { key ->
+                    expandedThreads = if (key in expandedThreads) expandedThreads - key else expandedThreads + key
+                },
                 onVote = vote,
                 onOpenApp = onOpenApp,
                 onUsePlan = { onUsePlan(loaded.packages) },
@@ -342,6 +348,9 @@ private fun PlanDetailContent(
     loadError: String? = null,
     me: String,
     liked: Boolean,
+    /** The comment threads the reader opened; the rest stay folded at two answers. */
+    expandedThreads: Set<Long> = emptySet(),
+    onToggleThread: (Long) -> Unit = {},
     onVote: () -> Unit,
     onOpenApp: (String) -> Unit,
     onUsePlan: () -> Unit,
@@ -410,6 +419,12 @@ private fun PlanDetailContent(
         commentThreads(
             threads = threads,
             me = me,
+            // The uploader's own comments carry the red "作者" badge, matched on the identity
+            // number; their number-shaped name is the fallback for rows written before it existed.
+            authorId = plan.owner,
+            authorName = uploaderName,
+            expanded = expandedThreads,
+            onToggleThread = onToggleThread,
             onReply = onReply,
             onDelete = onDeleteComment,
         )
