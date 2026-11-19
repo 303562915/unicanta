@@ -1,0 +1,168 @@
+name: 🌐 Deploy download page
+
+# 公开仓库后，Release 资产本身就能被任何人直接下载，
+# 所以这里只负责把 site/ 的静态页面发布到 GitHub Pages。
+#
+# 站点地址：https://303562915.github.io/Canta/
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [master]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要展示的 tag（留空 = 最新 release）"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  REPO: 303562915/Canta
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Resolve release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.event.release.tag_name }}"
+
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --repo "$REPO" --json tagName --jq '.tagName' 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$TAG" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::仓库还没有 published release，本次只发布页面骨架"
+            exit 0
+          fi
+
+          gh release view "$TAG" --repo "$REPO" \
+            --json tagName,publishedAt,assets > release.json
+
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "解析到 $TAG"
+          cat release.json
+
+      - name: 🧬 Assemble site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ env.REPO }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp -r site/. _site/
+          : > _site/.nojekyll
+
+          VERSION_CODE=$(grep '^version_code=' gradle.properties | cut -d'=' -f2)
+          export VERSION_CODE
+
+          if [ "${{ steps.release.outputs.found }}" = "true" ]; then
+            TAG=$(python3 -c "import json;print(json.load(open('release.json'))['tagName'])")
+            export TAG
+
+            # 校验和文件是可选的，取不到就留空
+            if gh release download "$TAG" --repo "$REPO" \
+                 --pattern 'SHA256SUMS.txt' --dir . --clobber; then
+              echo "已取得 SHA256SUMS.txt"
+            fi
+
+            python3 - <<'PY'
+          import json, os, pathlib
+
+          repo = os.environ["REPO"]
+          rel = json.loads(pathlib.Path("release.json").read_text(encoding="utf-8"))
+          tag = rel["tagName"]
+          version = tag[1:] if tag.startswith("v") else tag
+
+          assets = [a for a in rel.get("assets", []) if a["name"].lower().endswith(".apk")]
+          if not assets:
+              raise SystemExit("release 中没有 APK 资产")
+
+          apk = assets[0]
+          sums = next((a for a in rel.get("assets", []) if a["name"] == "SHA256SUMS.txt"), None)
+
+          digest = ""
+          sums_path = pathlib.Path("SHA256SUMS.txt")
+          if sums and sums_path.exists():
+              for line in sums_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                  parts = line.split()
+                  if len(parts) >= 2 and parts[-1].lstrip("*") == apk["name"]:
+                      digest = parts[0]
+                      break
+
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+          entry = {
+              "version_name": version,
+              "version_code": int(os.environ.get("VERSION_CODE") or 0),
+              "tag": tag,
+              "published_at": rel.get("publishedAt"),
+              "file": f"{base}/{apk['name']}",
+              "file_name": apk["name"],
+              "size": apk.get("size", 0),
+              "sha256": digest,
+              "checksum_file": f"{base}/{sums['name']}" if sums else None,
+          }
+
+          data = dict(entry)
+          data["history"] = [entry]
+          pathlib.Path("_site/latest.json").write_text(
+              json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(data, ensure_ascii=False, indent=2))
+          PY
+          else
+            cat > _site/latest.json <<'JSON'
+          {
+            "version_name": null,
+            "version_code": 0,
+            "tag": null,
+            "published_at": null,
+            "file": null,
+            "file_name": null,
+            "size": 0,
+            "sha256": "",
+            "checksum_file": null,
+            "history": []
+          }
+          JSON
+          fi
+
+          echo "--- _site ---"
+          ls -la _site
+
+      - name: 📤 Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

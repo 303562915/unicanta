@@ -15,14 +15,16 @@ on:
         default: ""
         required: false
 
+# 注意：GitHub Pages 的发布者是 pages.yml（下载页）。
+# 同一个仓库只能有一个 Pages 站点，两套工作流同时 deploy-pages 会互相覆盖，
+# 所以这里只做「文档站能否构建成功」的验证，不再上传/部署。
+# 等文档站要真正上线时，把它的产物并入 pages.yml 的 _site/（例如挂到 /docs/ 子路径）。
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Allow only one concurrent deployment
+# 只约束本工作流自身，避免和 pages.yml 抢同一个 concurrency group
 concurrency:
-  group: pages
+  group: docs-build
   cancel-in-progress: true
 
 jobs:
@@ -105,19 +107,11 @@ jobs:
           npm run site:build:no-wasm
         working-directory: repo-docs
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      # 只是把构建产物存下来证明"文档站能编出来"，不部署到 Pages
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
         with:
+          name: docs-site
           path: repo-docs/docs/.vitepress/dist
+          retention-days: 7
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    needs: build
-    runs-on: ubuntu-latest
-    name: Deploy
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
