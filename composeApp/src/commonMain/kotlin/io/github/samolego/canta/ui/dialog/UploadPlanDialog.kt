@@ -177,6 +177,7 @@ fun UploadPlanDialog(
                 onNoteChange = { note = it },
                 password = password,
                 onPasswordChange = { password = it },
+                unlocked = unlocked,
             )
         }
     }
@@ -325,6 +326,8 @@ private fun DetailsStep(
     onNoteChange: (String) -> Unit,
     password: String,
     onPasswordChange: (String) -> Unit,
+    /** True when the typed password is the one that stands in for a reboot. */
+    unlocked: Boolean,
 ) {
     Column(
         modifier = Modifier
