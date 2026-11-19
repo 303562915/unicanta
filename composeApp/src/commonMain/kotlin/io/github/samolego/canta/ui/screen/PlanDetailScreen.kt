@@ -168,6 +168,9 @@ fun PlanDetailScreen(
         if (plan == null) loading = true
         val all = repository.plansFor(profile)
         plan = all.firstOrNull { it.id == planId }
+        // Opened from a comment or a share code: the plan may belong to another model, or be one
+        // this phone's list does not carry. Ask for that one plan by id before calling it missing.
+        if (plan == null) plan = repository.planById(planId)
         ranking = rankPackages(all).keyed()
         comments = repository.comments(planId)
         loadError = if (comments.isEmpty()) repository.lastError else null

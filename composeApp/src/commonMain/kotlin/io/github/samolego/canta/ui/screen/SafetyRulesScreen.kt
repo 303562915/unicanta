@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,7 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -72,7 +72,6 @@ import io.github.samolego.canta.generated.resources.plan_upload_ok
 import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.generated.resources.plans_empty_body
 import io.github.samolego.canta.generated.resources.plans_empty_title
-import io.github.samolego.canta.generated.resources.plans_mine
 import io.github.samolego.canta.generated.resources.plans_reload
 import io.github.samolego.canta.generated.resources.plans_reload_failed
 import io.github.samolego.canta.generated.resources.plans_verified_short
@@ -87,7 +86,6 @@ import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.DeviceHero
-import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
@@ -107,6 +105,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+
+/** Space the floating dock takes at the foot of a page: its height plus its margin. */
+private val DOCK_CLEARANCE = 84.dp
 
 /** Icon size of a ranking row: smaller than a tile, so more of them fit. */
 private val ROW_ICON = 32.dp
@@ -679,13 +680,18 @@ private fun PlansTab(
                 }
             }
         }
-        HorizontalDivider()
-        UploadFoot(
-            verifiedCount = verifiedCount,
-            ready = profile != null && candidateCount > 0,
-            onUploadVerified = onUploadVerified,
-            onUploadPassword = onUploadPassword,
-        )
+        // The floating dock stands over the foot of every page: the two buttons have to clear it,
+        // which is the bar's own height plus its margin, or they sit under it and cannot be tapped.
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+            HorizontalDivider()
+            UploadFoot(
+                verifiedCount = verifiedCount,
+                ready = profile != null && candidateCount > 0,
+                onUploadVerified = onUploadVerified,
+                onUploadPassword = onUploadPassword,
+            )
+            Spacer(Modifier.height(DOCK_CLEARANCE))
+        }
     }
 }
 
@@ -752,23 +758,10 @@ private fun UploadFoot(
     }
 }
 
-/** A colour pair that stays with an author: the same name gets the same avatar everywhere. */
-@Composable
-private fun authorColors(name: String): Pair<Color, Color> {
-    val colors = MaterialTheme.colorScheme
-    val palette = listOf(
-        colors.primary to colors.onPrimary,
-        colors.tertiary to colors.onTertiary,
-        colors.secondary to colors.onSecondary,
-        colors.primaryContainer to colors.onPrimaryContainer,
-    )
-    val hash = name.fold(0) { acc, char -> (acc * 31 + char.code) and 0x7FFFFFFF }
-    return palette[hash % palette.size]
-}
-
 /**
- * One plan: who wrote it (letter avatar plus name), what it is, what it holds, and how much the
- * community likes it. The position in the ranking leads the card, the way the package ranking's does.
+ * One plan in the community ranking: its position, its title, what it holds, who uploaded it, and
+ * how much people like it. The uploader is a name here — the avatar belongs to the plan's own page,
+ * where there is room for it.
  */
 @Composable
 private fun PlanCard(
@@ -782,7 +775,6 @@ private fun PlanCard(
 ) {
     val colors = MaterialTheme.colorScheme
     val author = plan.authorName
-    val (avatarColor, letterColor) = authorColors(author.ifEmpty { plan.title })
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
@@ -790,54 +782,26 @@ private fun PlanCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         shape = RoundedCornerShape(16.dp),
     ) {
-        Column(modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 6.dp, bottom = 8.dp)) {
+        Column(modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 8.dp, bottom = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // The community ranking badge, drawn like the package ranking's: the top three on
-                // their own colours, the rest a plain number. This is the "who is most recommended"
-                // mark, so it leads the card.
+                // The rank leads: the position itself is the recommendation.
                 if (rank != null) {
                     RankBadge(position = rank)
                     Spacer(Modifier.width(8.dp))
                 }
-                // The uploader: the first character of their name, on the colour that name keeps.
-                LetterAvatar(
-                    name = author.ifEmpty { plan.title },
-                    size = 34.dp,
-                    background = avatarColor,
-                    letterColor = letterColor,
+                Text(
+                    text = plan.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(9.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = plan.title,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        if (plan.isTest) {
-                            Spacer(Modifier.width(6.dp))
-                            TestChip()
-                        }
-                        if (mine) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(Res.string.plans_mine),
-                                fontSize = 9.sp,
-                                color = colors.primary,
-                            )
-                        }
-                    }
-                    Text(
-                        text = author,
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
-                        color = colors.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                // The test mark goes with the numbers on the right: it qualifies the plan, it is
+                // not part of its name.
+                if (plan.isTest) {
+                    Spacer(Modifier.width(6.dp))
+                    TestChip()
                 }
                 if (mine) {
                     IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
@@ -866,7 +830,12 @@ private fun PlanCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "${plan.packages.size} 包 · ${plan.comments} 评论 · ${plan.rebootedAt.take(10)}",
+                    // "12 包 · 3 评论 · 2026-11-18 · @李雷": the author closes the line, so who wrote
+                    // it reads after when it was written.
+                    text = buildString {
+                        append("${plan.packages.size} 包 · ${plan.comments} 评论 · ${plan.rebootedAt.take(10)}")
+                        if (author.isNotEmpty()) append(" · @$author")
+                    },
                     fontSize = 9.sp,
                     color = colors.outline,
                     maxLines = 1,

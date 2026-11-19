@@ -191,23 +191,42 @@ class PlanRepository(
         }.toString()
         val text = rpc("plans_for", body) ?: return emptyList()
         return runCatching {
-            json.parseToJsonElement(text).jsonArray.map { element ->
-                val o = element.jsonObject
-                CommunityPlan(
-                    id = o["id"]?.jsonPrimitive?.longOrNull ?: 0,
-                    title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    note = o["note"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    packages = (o["packages"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
-                    votes = o["votes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
-                    comments = o["comments"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
-                    createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    rebootedAt = o["rebooted_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    isTest = o["is_test"]?.jsonPrimitive?.booleanOrNull ?: false,
-                    uploader = o["owner_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                )
-            }
+            json.parseToJsonElement(text).jsonArray.mapNotNull { element -> parsePlan(element.jsonObject) }
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * One plan by id, whatever device it was uploaded for.
+     *
+     * The page a comment or a notification links to may not be in this phone's own list: another
+     * model, a plan the list did not carry, or one whose ROM version changed since. Asking for that
+     * one plan is what still lets the page open instead of "找不到这个方案". Null when it is gone —
+     * or when the deployment predates `plan_get`.
+     */
+    suspend fun planById(id: Long): CommunityPlan? {
+        if (id <= 0L) return null
+        val text = rpc("plan_get", buildJsonObject { put("p_id", id) }.toString()) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.firstNotNullOfOrNull { parsePlan(it.jsonObject) }
+        }.getOrNull()
+    }
+
+    /** One row of `plans_for` / `plan_get`, or null when it carries no id. */
+    private fun parsePlan(o: JsonObject): CommunityPlan? {
+        val id = o["id"]?.jsonPrimitive?.longOrNull ?: return null
+        return CommunityPlan(
+            id = id,
+            title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            note = o["note"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            packages = (o["packages"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
+            votes = o["votes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            comments = o["comments"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            rebootedAt = o["rebooted_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            isTest = o["is_test"]?.jsonPrimitive?.booleanOrNull ?: false,
+            uploader = o["owner_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+        )
     }
 
     /**

@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -603,8 +604,9 @@ fun MyCommentRow(
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(colors.surfaceContainer)
-            .clickable(onClick = onOpen)
-            .pointerInput(body, createdAt) { detectTapGestures(onLongPress = { onDelete() }) }
+            // One gesture detector for both: a separate detectTapGestures(onLongPress) swallows
+            // the tap it sits next to, which is why the row never opened its page.
+            .combinedClickable(onClick = onOpen, onLongClick = onDelete)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
