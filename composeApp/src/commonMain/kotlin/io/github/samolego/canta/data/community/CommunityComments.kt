@@ -42,6 +42,17 @@ data class MyComment(
     fun packageOrNull(): String? = if (kind == COMMENT_KIND_APP) target else null
 }
 
+/**
+ * The replies that are new to this install: everything newer than the last one it opened.
+ *
+ * The backend only ever adds rows, so a reply id grows and a comment the reader already saw keeps
+ * its id — which is why "unread" is [lastSeenId] against the id, not a timestamp against a clock.
+ */
+fun List<MyComment>.unreadSince(lastSeenId: Long): List<MyComment> = filter { it.id > lastSeenId }
+
+/** The id to remember once the inbox has been opened: the newest reply in it, 0 when empty. */
+fun newestReplyId(replies: List<MyComment>): Long = replies.maxOfOrNull { it.id } ?: 0L
+
 /** One comment and the answers it collected, in the order the backend served them. */
 data class CommentThread(val comment: PlanComment, val replies: List<PlanComment>)
 

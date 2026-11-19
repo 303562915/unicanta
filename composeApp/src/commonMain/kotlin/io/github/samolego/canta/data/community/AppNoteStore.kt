@@ -46,6 +46,12 @@ private data class AppNotesBlob(
     val likedPlans: List<Long> = emptyList(),
     /** What this install said about removing a package: true = fine without it, false = it broke something. */
     val packageVerdicts: Map<String, Boolean> = emptyMap(),
+    /**
+     * The newest reply this install has opened. Anything with a larger id is new, which is what the
+     * red dot on the inbox counts: replies are only ever added, so an id goes up and never down,
+     * while a stored "seen at" timestamp would disagree with a phone whose clock is behind.
+     */
+    val lastSeenReplyId: Long = 0L,
 )
 
 /**
@@ -63,6 +69,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     private val _likedPackages = MutableStateFlow<Set<String>>(emptySet())
     private val _likedPlans = MutableStateFlow<Set<Long>>(emptySet())
     private val _packageVerdicts = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    private val _lastSeenReplyId = MutableStateFlow(0L)
 
     /** Reviews by package name, newest first. */
     val reviews: StateFlow<Map<String, List<AppReview>>> = _reviews.asStateFlow()
@@ -80,6 +87,9 @@ class AppNoteStore(private val storage: AppBlobStorage) {
      */
     val packageVerdicts: StateFlow<Map<String, Boolean>> = _packageVerdicts.asStateFlow()
 
+    /** The newest reply this install has opened; see [markRepliesSeen]. */
+    val lastSeenReplyId: StateFlow<Long> = _lastSeenReplyId.asStateFlow()
+
     private var loaded = false
 
     /** Reads the blob once; called by every accessor before it answers. */
@@ -92,6 +102,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
                 _likedPackages.value = blob.likedPackages.toSet()
                 _likedPlans.value = blob.likedPlans.toSet()
                 _packageVerdicts.value = blob.packageVerdicts
+                _lastSeenReplyId.value = blob.lastSeenReplyId
             }
         }
         loaded = true
@@ -153,6 +164,22 @@ class AppNoteStore(private val storage: AppBlobStorage) {
         }
     }
 
+    /**
+     * Remembers that every reply up to [id] has been read, so the red dot clears.
+     *
+     * It only ever moves forwards: opening an old page after a newer one must not make an answer
+     * that was already read look new again.
+     */
+    suspend fun markRepliesSeen(id: Long) {
+        if (id <= 0L) return
+        ensureLoaded()
+        mutex.withLock {
+            if (id <= _lastSeenReplyId.value) return@withLock
+            _lastSeenReplyId.value = id
+            persistLocked()
+        }
+    }
+
     /** What this install said about [pkg], or null when it never voted. */
     suspend fun packageVerdict(pkg: String): Boolean? {
         ensureLoaded()
@@ -165,6 +192,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
             likedPackages = _likedPackages.value.toList(),
             likedPlans = _likedPlans.value.toList(),
             packageVerdicts = _packageVerdicts.value,
+            lastSeenReplyId = _lastSeenReplyId.value,
         )
         runCatching {
             storage.write(json.encodeToString(AppNotesBlob.serializer(), blob).encodeToByteArray())

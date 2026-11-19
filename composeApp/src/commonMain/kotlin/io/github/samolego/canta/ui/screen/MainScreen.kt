@@ -84,6 +84,10 @@ fun MainScreen(
     navigateToPage: (route: String) -> Unit,
     closeApp: () -> Unit,
     enableSelectAll: Boolean,
+    /** Replies to this install's comments that it has not opened: the bar's red dot. */
+    unreadReplies: Int = 0,
+    /** Opens the inbox from that dot. */
+    onOpenInbox: () -> Unit = {},
 ) {
     // Reversing a record runs on the page's own scope: the dialog is already closed by then.
     val reverseScope = rememberCoroutineScope()
@@ -109,6 +113,8 @@ fun MainScreen(
                 openBadgesInfoDialog = mainViewModel::showBadgesExplanation,
                 navigateToPage = navigateToPage,
                 appListViewModel = appListViewModel,
+                unreadReplies = unreadReplies,
+                onOpenInbox = onOpenInbox,
             )
         },
         floatingActionButton = {

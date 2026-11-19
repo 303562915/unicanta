@@ -37,6 +37,7 @@ import androidx.navigation.compose.rememberNavController
 import io.github.samolego.canta.core.CantaAppDependencies
 import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.preset_save_error
@@ -213,6 +214,30 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     // A page arrives at its top, so the bar is always there until something is scrolled.
     LaunchedEffect(currentRoute) { dock.show() }
 
+    // The inbox: answers to this install's comments that it has not opened, counted for the red
+    // dot on the app list's bar and in Settings. The backend is the only place that knows them
+    // (`comments_replies_to`), so the count is refreshed when the list comes back on screen
+    // rather than kept in a local copy that would go stale.
+    var unreadReplies by remember { mutableIntStateOf(0) }
+    var lastSeenReplyId by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) {
+        deps.notes.ensureReady()
+        lastSeenReplyId = deps.notes.lastSeenReplyId.value
+    }
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != Screen.Main.route && currentRoute != Screen.MyComments.route) return@LaunchedEffect
+        deps.notes.ensureReady()
+        val identity = DeviceIdentity.current(deps.settings)
+        val owner = identity.owner.ifEmpty { identity.token }
+        val seen = deps.notes.lastSeenReplyId.value
+        lastSeenReplyId = seen
+        unreadReplies = if (owner.isEmpty()) {
+            0
+        } else {
+            communityRepository.repliesToMe(owner, identity.token).unreadSince(seen).size
+        }
+    }
+
     // A share code pasted into the clipboard before the app was opened: read it once, then open
     // that plan as soon as the app itself is on screen (not over onboarding).
     var sharedPlan by remember { mutableStateOf<Long?>(null) }
@@ -274,6 +299,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     navigateToPage = { navController.navigate(it) },
                     closeApp = closeApp,
                     enableSelectAll = versionTapCounter >= SECRET_TAPS,
+                    // The dot on the bar, and the way to the page it is about: one tap from the
+                    // app list to the answers somebody left under this install's comments.
+                    unreadReplies = unreadReplies,
+                    onOpenInbox = { navController.navigate(Screen.MyComments.route) { launchSingleTop = true } },
                 )
             }
             composable(route = Screen.Rules.route) {
@@ -356,6 +385,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     },
                     onOpenAbout = { navController.navigate(Screen.About.route) },
                     onOpenMyComments = { navController.navigate(Screen.MyComments.route) },
+                    unreadReplies = unreadReplies,
                 )
             }
             composable(route = Screen.Presets.route) {
@@ -484,6 +514,20 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     author = myName,
                     owner = myIdentity.owner.ifEmpty { myIdentity.token },
                     token = myIdentity.token,
+                    // Opened from the red dot: the answers are what the reader came for.
+                    startOnReplies = unreadReplies > 0,
+                    unreadSince = lastSeenReplyId,
+                    onRepliesSeen = { newest ->
+                        // Reading the list is what clears the dot, and it stays cleared after a
+                        // restart because the id is kept next to the other community notes.
+                        coroutineScope.launch {
+                            // The dot goes away now, but the ids this visit came in with stay as
+                            // they are: the rows the reader has not reached yet keep their marker
+                            // until the page is opened again.
+                            deps.notes.markRepliesSeen(newest)
+                            unreadReplies = 0
+                        }
+                    },
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     onNavigateBack = { navController.navigateUp() },

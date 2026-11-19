@@ -99,6 +99,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsItem
 import io.github.samolego.canta.ui.component.SettingsChevron
+import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.SettingsTextItem
 import io.github.samolego.canta.ui.component.SwitchSettingsItem
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
@@ -123,6 +124,8 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit,
     /** Opens the page that lists this install's comments and the replies to them. */
     onOpenMyComments: () -> Unit = {},
+    /** Replies this install has not opened yet; the row shows a dot instead of quiet text. */
+    unreadReplies: Int = 0,
     deviceUsers: List<DeviceUser> = emptyList(),
     selectedUserId: Int? = null,
     onUserSelected: (Int) -> Unit = {},
@@ -277,10 +280,19 @@ fun SettingsScreen(
                 // live on the backend, so the page is one tap away rather than a local list.
                 SettingsItem(
                     title = "我的评论",
-                    description = "我评论过的方案和应用，别人给我的回复",
+                    description = if (unreadReplies > 0) {
+                        "$unreadReplies 条新回复，点这里看"
+                    } else {
+                        "我评论过的方案和应用，别人给我的回复"
+                    },
                     icon = Icons.AutoMirrored.Default.Message,
                     onClick = onOpenMyComments,
-                    trailing = { SettingsChevron() },
+                    trailing = {
+                        if (unreadReplies > 0) {
+                            UnreadDot(modifier = Modifier.padding(end = 6.dp))
+                        }
+                        SettingsChevron()
+                    },
                 )
                 SettingsItem(
                     title = stringResource(Res.string.about_us),

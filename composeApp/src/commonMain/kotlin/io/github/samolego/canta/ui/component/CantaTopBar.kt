@@ -1,21 +1,32 @@
 package io.github.samolego.canta.ui.component
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,9 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.APP_NAME
@@ -60,6 +73,10 @@ fun CantaTopBar(
     openBadgesInfoDialog: () -> Unit,
     navigateToPage: (route: String) -> Unit,
     appListViewModel: AppListViewModel,
+    /** Replies to this install's comments that it has not opened yet: drawn as a red dot. */
+    unreadReplies: Int = 0,
+    /** Opens the inbox, which is the page the dot is about; opening it clears the dot. */
+    onOpenInbox: () -> Unit = {},
 ) {
     var showMoreOptionsMenu by remember { mutableStateOf(false) }
     var showFiltersMenu by remember { mutableStateOf(false) }
@@ -106,6 +123,9 @@ fun CantaTopBar(
                 selected = showMoreOptionsMenu,
                 onClick = { showMoreOptionsMenu = !showMoreOptionsMenu },
             )
+            // The inbox sits at the end of the bar, where a notification entry belongs: it is the
+            // one action here that is about something that happened without the page being open.
+            InboxBarButton(unread = unreadReplies, onClick = onOpenInbox)
 
             FiltersMenu(
                 showMenu = showFiltersMenu,
@@ -125,6 +145,55 @@ fun CantaTopBar(
     LaunchedEffect(searchActive) {
         if (searchActive) {
             searchFocusRequester.requestFocus()
+        }
+    }
+}
+
+/**
+ * The bar's entry to the inbox, with a red dot while somebody waits for an answer.
+ *
+ * It is drawn like the other bar buttons, but with a Material glyph instead of one of the FlClash
+ * set: the set has no message icon, and a chat bubble is what people read as "replies".
+ */
+@Composable
+private fun InboxBarButton(unread: Int, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.9f else 1f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 700f),
+        label = "inbox-button-press",
+    )
+    Box(
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .size(44.dp)
+            .scale(pressScale)
+            .clip(CircleShape)
+            .drawBehind { drawCircle(FlSurfaceLevel.Page.raised.colorOf(scheme)) }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = "回复我的",
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.Message,
+            contentDescription = if (unread > 0) "回复我的，$unread 条没看" else "回复我的",
+            modifier = Modifier.size(20.dp),
+            tint = scheme.onSurface,
+        )
+        if (unread > 0) {
+            UnreadDot(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 9.dp, end = 9.dp),
+                size = 9.dp,
+            )
         }
     }
 }

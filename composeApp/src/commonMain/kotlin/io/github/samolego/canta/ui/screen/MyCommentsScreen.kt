@@ -38,10 +38,12 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.COMMENT_KIND_APP
 import io.github.samolego.canta.data.community.MyComment
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.newestReplyId
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.MyCommentRow
 import io.github.samolego.canta.ui.component.avatarColorOf
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
@@ -70,9 +72,15 @@ fun MyCommentsScreen(
     onOpenPlan: (Long) -> Unit = {},
     onOpenApp: (String) -> Unit = {},
     onNavigateBack: () -> Unit,
+    /** Whether the page opens on the answers: the inbox is usually opened *because* of them. */
+    startOnReplies: Boolean = false,
+    /** What this install had already opened when it came in, so the new answers can be marked. */
+    unreadSince: Long = 0L,
+    /** Reports the newest answer once the list of them has been opened: that clears the red dot. */
+    onRepliesSeen: (Long) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableIntStateOf(if (startOnReplies) 1 else 0) }
     var mine by remember { mutableStateOf<List<MyComment>>(emptyList()) }
     var replies by remember { mutableStateOf<List<MyComment>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -90,6 +98,12 @@ fun MyCommentsScreen(
         // "you never commented": say which one it was.
         loadError = repository.lastError
         loading = false
+    }
+
+    // Having the answers on screen is what "read" means: the dot is cleared the moment the tab
+    // that shows them is the one being looked at, not when the page is left.
+    LaunchedEffect(tab, replies) {
+        if (tab == 1 && replies.isNotEmpty()) onRepliesSeen(newestReplyId(replies))
     }
 
     val open: (MyComment) -> Unit = { comment ->
@@ -251,7 +265,11 @@ fun MyCommentsScreen(
                                 onDelete = { pendingDelete = comment },
                             )
                         } else {
-                            ReplyRow(comment = comment, onOpen = { open(comment) })
+                            ReplyRow(
+                                comment = comment,
+                                isNew = comment.id > unreadSince,
+                                onOpen = { open(comment) },
+                            )
                         }
                     }
                 }
@@ -267,9 +285,14 @@ private fun targetLabel(comment: MyComment): String {
     return "$kind · $name"
 }
 
-/** One answer somebody left under a comment of mine: who, what they answered, what they said. */
+/**
+ * One answer somebody left under a comment of mine: who, what they answered, what they said.
+ *
+ * [isNew] marks the ones that arrived since the last time this page was opened with the red dot,
+ * so a list of ten answers still says which two are the news.
+ */
 @Composable
-private fun ReplyRow(comment: MyComment, onOpen: () -> Unit) {
+private fun ReplyRow(comment: MyComment, isNew: Boolean, onOpen: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
@@ -289,6 +312,10 @@ private fun ReplyRow(comment: MyComment, onOpen: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
             )
+            if (isNew) {
+                Spacer(Modifier.width(4.dp))
+                UnreadDot(size = 6.dp)
+            }
             Spacer(Modifier.width(6.dp))
             Text(text = comment.createdAt.take(10), fontSize = 9.sp, color = colors.outline)
             Spacer(Modifier.weight(1f))
