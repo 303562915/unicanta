@@ -20,6 +20,16 @@
     <string name="tab_installed">已安装</string>
     <string name="tab_records">记录</string>
     <string name="tab_uninstalled">已卸载</string>
+    <string name="records_action_uninstall">卸载</string>
+    <string name="records_action_reinstall">恢复</string>
+    <string name="records_success">成功</string>
+    <string name="records_failed">失败</string>
+    <string name="records_batch">第 %1$d 个，共 %2$d 个</string>
+    <string name="records_reset_to_factory">已回滚到出厂</string>
+    <string name="records_hint">每次操作都会同时写入下载目录的 canta-operations.csv，方便随时取出分析。</string>
+    <string name="records_empty">还没有记录。卸载或恢复应用后，这里会记下每一次操作。</string>
+    <string name="records_save">保存日志</string>
+    <string name="records_saved">日志已保存到下载目录</string>
     <string name="cannot_uninstall_canta">Can'ta ouch this!</string>
     <string name="device_unreachable">Failed to reach the device. Check that it is connected and authorized.</string>
     <string name="app_size">Size: %1$s</string>

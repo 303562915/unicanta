@@ -8,6 +8,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -19,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** A card with a [title]/[subtitle] header that expands to show [content]. */
@@ -28,6 +30,8 @@ fun Dropdown(
     subtitle: String? = null,
     modifier: Modifier = Modifier,
     backgroundColor: Color = MaterialTheme.colorScheme.background,
+    /** Optional cap on the expanded card; without it the content is allowed to grow. */
+    maxHeight: Dp = Dp.Unspecified,
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -43,7 +47,13 @@ fun Dropdown(
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut()
         ) {
-            Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = colors) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(max = maxHeight),
+                colors = colors,
+            ) {
                 Column { content() }
             }
         }

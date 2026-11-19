@@ -36,9 +36,11 @@ import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.app.Filter
+import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.reinstall
 import io.github.samolego.canta.generated.resources.uninstall
+import io.github.samolego.canta.ui.AppsTab
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.component.AppList
 import io.github.samolego.canta.ui.component.AppListPermissionBanner
@@ -64,7 +66,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
-/** The app list screen: installed/uninstalled tabs, the action FAB and its dialogs. */
+/** The app list screen: installed/records/uninstalled tabs, the action FAB and its dialogs. */
 @Composable
 fun MainScreen(
     handler: CantaHandler,
@@ -73,6 +75,8 @@ fun MainScreen(
     mainViewModel: MainViewModel,
     appListViewModel: AppListViewModel,
     settingsViewModel: SettingsViewModel,
+    /** The uninstall/restore log shown by the middle records tab. */
+    history: OperationLogStore,
     presetEditMode: Boolean,
     onPresetEditFinish: () -> Unit,
     navigateToPage: (route: String) -> Unit,
@@ -80,7 +84,8 @@ fun MainScreen(
     enableSelectAll: Boolean,
 ) {
     // Pager state is hoisted to CantaNavigation so preset-applying knows the tab.
-    val selectedAppsType = AppsType.entries[pagerState.currentPage]
+    val currentTab = AppsTab.entries[pagerState.currentPage]
+    val selectedAppsType = currentTab.appsType
 
     LaunchedEffect(pagerState) {
         // Filters and selection are per tab: reset them when the user switches
@@ -103,11 +108,11 @@ fun MainScreen(
         },
         floatingActionButton = {
             MainFab(
-                visible = appListViewModel.selectedApps.isNotEmpty(),
+                visible = selectedAppsType != null && appListViewModel.selectedApps.isNotEmpty(),
                 presetEditMode = presetEditMode,
                 appsType = selectedAppsType,
                 onPresetEditFinish = onPresetEditFinish,
-                onClick = { mainViewModel.applyToSelected(selectedAppsType) },
+                onClick = { selectedAppsType?.let { mainViewModel.applyToSelected(it) } },
             )
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
@@ -125,18 +130,27 @@ fun MainScreen(
                 // Leaves room for the floating bar that is drawn over the screen.
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 92.dp),
             ) { page ->
-                PullToRefreshBox(
-                    isRefreshing = appListViewModel.isLoading,
-                    onRefresh = appListViewModel::loadApps,
-                ) {
-                    AppList(
-                        appType = AppsType.entries[page],
-                        appListModel = appListViewModel,
-                        settingsViewModel = settingsViewModel,
+                val tab = AppsTab.entries[page]
+                if (tab == AppsTab.RECORDS) {
+                    RecordsScreen(
+                        history = history,
                         platform = platform,
-                        handler = handler,
-                        enableSelectAll = enableSelectAll,
+                        modifier = Modifier.fillMaxSize(),
                     )
+                } else {
+                    PullToRefreshBox(
+                        isRefreshing = appListViewModel.isLoading,
+                        onRefresh = appListViewModel::loadApps,
+                    ) {
+                        AppList(
+                            appType = tab.appsType ?: AppsType.INSTALLED,
+                            appListModel = appListViewModel,
+                            settingsViewModel = settingsViewModel,
+                            platform = platform,
+                            handler = handler,
+                            enableSelectAll = enableSelectAll,
+                        )
+                    }
                 }
             }
         }
@@ -175,7 +189,7 @@ fun MainScreen(
 private fun MainFab(
     visible: Boolean,
     presetEditMode: Boolean,
-    appsType: AppsType,
+    appsType: AppsType?,
     onPresetEditFinish: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -188,6 +202,7 @@ private fun MainFab(
             PresetEditFAB(onPresetEditFinish = onPresetEditFinish)
             return@AnimatedVisibility
         }
+        appsType ?: return@AnimatedVisibility
         FloatingActionButton(
             containerColor = when (appsType) {
                 AppsType.INSTALLED -> MaterialTheme.colorScheme.error
@@ -217,7 +232,7 @@ private fun AppsTabs(pagerState: PagerState) {
     // A segmented control rather than a tab strip: FlClash switches between two lists
     // this way, and an underline under a filled title reads as Material, not as the app.
     FlSegmentedControl(
-        segments = AppsType.entries.map { tab ->
+        segments = AppsTab.entries.map { tab ->
             FlSegment(
                 key = tab.name,
                 label = stringResource(tab.label),

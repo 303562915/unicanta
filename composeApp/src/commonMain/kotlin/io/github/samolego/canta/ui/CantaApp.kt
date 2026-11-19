@@ -43,6 +43,7 @@ import io.github.samolego.canta.generated.resources.tab_apps
 import io.github.samolego.canta.generated.resources.tab_recommend
 import io.github.samolego.canta.generated.resources.tab_rules
 import io.github.samolego.canta.generated.resources.tab_tweaks
+import io.github.samolego.canta.ui.AppsTab
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
 import io.github.samolego.canta.ui.component.BottomBarItem
@@ -100,15 +101,16 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     val coroutineScope = rememberCoroutineScope()
 
     val appListViewModel: AppListViewModel = viewModel {
-        AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry)
+        AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry, deps.history)
     }
     val settingsViewModel: SettingsViewModel = viewModel { SettingsViewModel(deps.settings, deps.packageTelemetry) }
     val presetViewModel: PresetsViewModel = viewModel { PresetsViewModel(deps.presetStore, handler, platform) }
     val mainViewModel: MainViewModel = viewModel { MainViewModel(handler, platform, deps.settings, appListViewModel) }
 
     // Hoisted so preset-applying (below) knows which tab is showing.
-    val pagerState = rememberPagerState(pageCount = { AppsType.entries.size })
-    val selectedAppsType = AppsType.entries[pagerState.currentPage]
+    val pagerState = rememberPagerState(pageCount = { AppsTab.entries.size })
+    // The records tab shows no app list, so a preset applied from there falls back to installed.
+    val selectedAppsType = AppsTab.entries[pagerState.currentPage].appsType ?: AppsType.INSTALLED
 
     var versionTapCounter by remember { mutableIntStateOf(0) }
 
@@ -157,6 +159,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     mainViewModel = mainViewModel,
                     appListViewModel = appListViewModel,
                     settingsViewModel = settingsViewModel,
+                    history = deps.history,
                     presetEditMode = presetViewModel.editingPreset != null,
                     onPresetEditFinish = {
                         val preset = presetViewModel.editingPreset ?: return@MainScreen

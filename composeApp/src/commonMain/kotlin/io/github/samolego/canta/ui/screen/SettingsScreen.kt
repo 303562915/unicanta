@@ -27,12 +27,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
@@ -57,7 +56,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -180,25 +178,6 @@ fun SettingsScreen(
             }
             Spacer(modifier = Modifier.height(GroupGap))
 
-            SettingsGroup(title = stringResource(Res.string.settings_group_interface)) {
-                SwitchSettingsItem(
-                    title = stringResource(Res.string.settings_show_tweaks),
-                    description = stringResource(Res.string.settings_show_tweaks_description),
-                    icon = Icons.Default.Build,
-                    checked = showTweaksTab,
-                    onCheckedChange = settingsViewModel::saveShowTweaksTab,
-                )
-                SwitchSettingsItem(
-                    title = stringResource(Res.string.settings_show_recommend),
-                    description = stringResource(Res.string.settings_show_recommend_description),
-                    icon = Icons.Default.Apps,
-                    checked = showRecommendTab,
-                    onCheckedChange = settingsViewModel::saveShowRecommendTab,
-                    divider = false,
-                )
-            }
-            Spacer(modifier = Modifier.height(GroupGap))
-
             if (deviceUsers.size > 1) {
                 SettingsGroup(title = stringResource(Res.string.settings_group_device)) {
                     DeviceUserItem(deviceUsers, selectedUserId, onUserSelected, divider = false)
@@ -301,29 +280,130 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 26.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = stringResource(Res.string.app_version, BuildInfo.VERSION_NAME),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable(onClick = onVersionTap)
+            Spacer(modifier = Modifier.height(GroupGap))
+            SettingsGroup(title = stringResource(Res.string.about_us)) {
+                SettingsItem(
+                    title = stringResource(Res.string.settings_version_row),
+                    icon = Icons.Default.Info,
+                    onClick = onVersionTap,
+                    trailing = {
+                        Text(
+                            text = BuildInfo.VERSION_NAME,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
                 )
-                Text(
-                    text = CANTA_WEBSITE,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.clickable { platform.openUrl(CANTA_WEBSITE) }
+                SettingsItem(
+                    title = stringResource(Res.string.settings_website_row),
+                    icon = Icons.Default.Link,
+                    onClick = { platform.openUrl(CANTA_WEBSITE) },
+                    divider = false,
+                    trailing = {
+                        Text(
+                            text = "303562915.github.io",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+                // The bar, in one row: the three pages everyone needs are always lit and cannot be
+                // tapped; the two optional ones are switches, and a page only shows once lit.
+                BarSlotsRow(
+                    showTweaks = showTweaksTab,
+                    showRecommend = showRecommendTab,
+                    onToggleTweaks = settingsViewModel::saveShowTweaksTab,
+                    onToggleRecommend = settingsViewModel::saveShowRecommendTab,
                 )
             }
         }
+    }
+}
+
+/** One entry of the bottom bar: [glyph], [label], whether it is lit, and whether it takes a tap. */
+private data class BarSlot(
+    val glyph: FlGlyph,
+    val label: String,
+    val lit: Boolean,
+    val onToggle: (() -> Unit)?,
+)
+
+/**
+ * The five bar slots as one row: three fixed pages (lit, not tappable) and the two optional ones,
+ * which are switches — a slot lights up when its page is on, and only lit pages get an entry.
+ */
+@Composable
+private fun BarSlotsRow(
+    showTweaks: Boolean,
+    showRecommend: Boolean,
+    onToggleTweaks: (Boolean) -> Unit,
+    onToggleRecommend: (Boolean) -> Unit,
+) {
+    val slots = listOf(
+        BarSlot(FlGlyphs.dashboard, stringResource(Res.string.tab_apps), lit = true, onToggle = null),
+        BarSlot(FlGlyphs.rules, stringResource(Res.string.tab_rules), lit = true, onToggle = null),
+        BarSlot(FlGlyphs.tools, stringResource(Res.string.tab_tweaks), lit = showTweaks) { onToggleTweaks(!showTweaks) },
+        BarSlot(FlGlyphs.appsList, stringResource(Res.string.tab_recommend), lit = showRecommend) { onToggleRecommend(!showRecommend) },
+        BarSlot(FlGlyphs.settings, stringResource(Res.string.settings), lit = true, onToggle = null),
+    )
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Text(
+            text = stringResource(Res.string.settings_bar_slots_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            slots.forEach { slot -> BarSlotChip(slot, Modifier.weight(1f)) }
+        }
+    }
+}
+
+@Composable
+private fun BarSlotChip(slot: BarSlot, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val lit = slot.lit
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .then(
+                if (slot.onToggle != null) {
+                    Modifier.clickable(role = Role.Switch, onClick = slot.onToggle)
+                } else {
+                    Modifier
+                }
+            )
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        lit -> scheme.primary
+                        // An unlit optional slot stays visible, but reads as off.
+                        else -> scheme.surfaceContainerHighest
+                    }
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            FlGlyphIcon(
+                glyph = slot.glyph,
+                size = 17.dp,
+                tint = if (lit) scheme.onPrimary else scheme.onSurfaceVariant,
+                fill = if (lit) 1f else 0f,
+            )
+        }
+        Text(
+            text = slot.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (lit) scheme.onSurface else scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -342,20 +422,7 @@ private fun UserCard(name: String, onEdit: () -> Unit) {
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = avatarLetter(shown),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimary,
-            )
-        }
+        LetterAvatar(name = shown, size = 38.dp)
         Spacer(modifier = Modifier.width(11.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -380,15 +447,7 @@ private fun UserCard(name: String, onEdit: () -> Unit) {
     }
 }
 
-/** The first character of [name], kept whole when it is a surrogate pair. */
-private fun avatarLetter(name: String): String {
-    val trimmed = name.trim()
-    if (trimmed.isEmpty()) return "?"
-    val first = trimmed[0]
-    return if (first.isHighSurrogate() && trimmed.length > 1) trimmed.substring(0, 2) else first.toString()
-}
-
-/** Renames the local profile; the name is only used on this page. */
+/** The first character of [name] is drawn by [LetterAvatar]; this dialog only edits the text. */
 @Composable
 private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var value by remember { mutableStateOf(current) }

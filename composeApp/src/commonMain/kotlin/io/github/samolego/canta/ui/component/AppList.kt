@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.LayoutDirection
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.app.AppInfo
 import org.jetbrains.compose.resources.pluralStringResource
@@ -129,6 +131,10 @@ fun AppList(
                     ),
                     modifier = Modifier.padding(8.dp),
                     backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
+                    // The expanded list is capped so a large selection does not push the
+                    // app list off the screen; the FAB sits at the foot of the page, not
+                    // under this card, so the list needs no trailing clearance.
+                    maxHeight = 288.dp,
                     content = {
                         LazyColumn {
                             item {
@@ -165,9 +171,6 @@ fun AppList(
                                     )
                                 }
                             }
-                            item {
-                                Spacer(modifier = Modifier.height(FAB_CLEARANCE))
-                            }
                         }
                     }
                 )
@@ -176,10 +179,21 @@ fun AppList(
             if (appList.isNotEmpty()) {
                 // Adaptive columns: single column on phone portrait, multiple
                 // tiles per row on tablets, desktop and wide browser windows.
+                //
+                // Only the top and the sides come from the safe area: the page above
+                // already leaves room for the floating bar (MainScreen's pager pads its
+                // bottom), so applying the navigation-bar inset here too would count
+                // the bottom twice and push the list up out of step with the other pages.
+                val pagePadding = WindowInsets.safeDrawing.asPaddingValues()
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = MIN_TILE_WIDTH),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = WindowInsets.safeDrawing.asPaddingValues(),
+                    contentPadding = PaddingValues(
+                        start = pagePadding.calculateStartPadding(LayoutDirection.Ltr),
+                        top = pagePadding.calculateTopPadding(),
+                        end = pagePadding.calculateEndPadding(LayoutDirection.Ltr),
+                        bottom = 0.dp,
+                    ),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
