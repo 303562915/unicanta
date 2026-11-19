@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -51,6 +52,10 @@ private val ThumbInset = 4.dp
  * [position] is where the thumb stands in slots, so a swipe that is halfway between two
  * choices leaves the thumb halfway too; it defaults to [selectedIndex], for a control
  * with no gesture to follow.
+ *
+ * [onImage] is for a control drawn over a picture (the phone hero on the safety page): the groove
+ * turns into a dark translucent band and the thumb a light translucent one, so the photo stays
+ * visible through the control instead of being cut by an opaque pill.
  */
 @Composable
 fun FlSegmentedControl(
@@ -59,13 +64,25 @@ fun FlSegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     position: Float = selectedIndex.toFloat(),
+    onImage: Boolean = false,
 ) {
     if (segments.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.isDark
     // A groove under the page, and a thumb lifted out of it with a shadow.
-    val track = if (dark) scheme.surfaceContainerLow else scheme.surfaceContainerHighest
-    val thumb = if (dark) scheme.surfaceContainerHigh else scheme.surfaceBright
+    val track = when {
+        onImage -> Color.Black.copy(alpha = 0.32f)
+        dark -> scheme.surfaceContainerLow
+        else -> scheme.surfaceContainerHighest
+    }
+    val thumb = when {
+        onImage -> Color.White.copy(alpha = 0.92f)
+        dark -> scheme.surfaceContainerHigh
+        else -> scheme.surfaceBright
+    }
+    // Over a photo the labels sit on their own dark band, so they are always light.
+    val selectedTint = if (onImage) Color.Black else scheme.onSurface
+    val unselectedTint = if (onImage) Color.White.copy(alpha = 0.85f) else scheme.onSurfaceVariant
 
     Box(
         modifier = modifier
@@ -101,7 +118,7 @@ fun FlSegmentedControl(
             segments.forEachIndexed { index, segment ->
                 val selected = index == selectedIndex
                 val color by animateColorAsState(
-                    targetValue = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
+                    targetValue = if (selected) selectedTint else unselectedTint,
                     label = "segment-tint",
                 )
                 Row(

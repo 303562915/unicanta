@@ -85,13 +85,11 @@ import io.github.samolego.canta.generated.resources.plans_upload_cta_none
 import io.github.samolego.canta.generated.resources.ranking_empty
 import io.github.samolego.canta.generated.resources.ranking_plans
 import io.github.samolego.canta.generated.resources.ranking_votes
-import io.github.samolego.canta.generated.resources.rules_title
 import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.DeviceHero
-import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
@@ -292,29 +290,31 @@ fun SafetyRulesScreen(
 
     Scaffold(
         topBar = {
-            Column {
-                // The phone itself is the header: a picture of exactly this model when one can be
-                // found, a grey band with its name when not. No page title above it — the picture
-                // and the model name already say what the page is about.
-                DeviceHero(
-                    model = profile?.displayModel.orEmpty(),
-                    title = profile?.displayModel ?: "-",
-                    subtitle = profile?.let { romLine(it) }.orEmpty(),
-                    counters = buildList {
-                        add("${plans.size}" to stringResource(Res.string.safety_tab_plans))
-                        val pending = deletedPackages.size
-                        if (pending > 0) add("$confirmed/$pending" to stringResource(Res.string.plans_verified_short))
-                    },
-                )
-                FlSegmentedControl(
-                    segments = listOf(
-                        FlSegment("apps", stringResource(Res.string.safety_tab_apps)),
-                        FlSegment("plans", stringResource(Res.string.safety_tab_plans)),
-                    ),
-                    selectedIndex = tab,
-                    onSelect = { tab = it },
-                )
-            }
+            // The phone is the header, and the page switch is drawn on the same picture: one
+            // surface at the top instead of a title bar, a device band and a groove under it.
+            DeviceHero(
+                model = profile?.displayModel.orEmpty(),
+                title = profile?.displayModel ?: "-",
+                subtitle = profile?.let { romLine(it) }.orEmpty(),
+                counters = buildList {
+                    add("${plans.size}" to stringResource(Res.string.safety_tab_plans))
+                    val pending = deletedPackages.size
+                    if (pending > 0) add("$confirmed/$pending" to stringResource(Res.string.plans_verified_short))
+                },
+                footer = {
+                    FlSegmentedControl(
+                        segments = listOf(
+                            FlSegment("apps", stringResource(Res.string.safety_tab_apps)),
+                            FlSegment("plans", stringResource(Res.string.safety_tab_plans)),
+                        ),
+                        selectedIndex = tab,
+                        onSelect = { tab = it },
+                        // No side inset: it is drawn on the hero, which already has its own.
+                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 2.dp),
+                        onImage = true,
+                    )
+                },
+            )
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {

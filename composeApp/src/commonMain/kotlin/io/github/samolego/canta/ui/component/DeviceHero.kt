@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
@@ -26,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -136,7 +135,8 @@ private object DeviceImages {
 
 /**
  * The top of the safety page: the phone this page is about, as a picture, with what the page
- * knows about it written over the foot of the picture.
+ * knows about it written over the foot of the picture, and — when [footer] is given — the rest of
+ * the header drawn on the same picture rather than under it.
  *
  * A model whose picture cannot be found keeps the same layout on a muted grey band instead of a
  * coloured one, so a missing image reads as "no photo yet" rather than as a different design. The
@@ -149,6 +149,7 @@ fun DeviceHero(
     subtitle: String,
     modifier: Modifier = Modifier,
     counters: List<Pair<String, String>> = emptyList(),
+    footer: (@Composable () -> Unit)? = null,
 ) {
     var image by remember(model) { mutableStateOf<ImageBitmap?>(null) }
 
@@ -166,7 +167,9 @@ fun DeviceHero(
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
-            .height(HERO_HEIGHT)
+            // The Band sizes itself from what is written on it, so the header is exactly as tall as
+            // the model name and whatever else the page puts in it.
+            .heightIn(min = HERO_HEIGHT)
             .background(
                 // A colourless gradient: the hero is a backdrop, not a badge.
                 Brush.verticalGradient(
@@ -182,67 +185,74 @@ fun DeviceHero(
                 bitmap = bitmap,
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.matchParentSize(),
             )
         }
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0.35f to Color.Transparent,
+                        0.2f to Color.Transparent,
                         1f to scrim,
                     )
                 )
         )
-        Row(
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.Bottom,
+                .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = onScrim,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (subtitle.isNotBlank()) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = subtitle,
-                        fontSize = 10.sp,
-                        lineHeight = 13.sp,
-                        color = onScrim.copy(alpha = 0.8f),
+                        text = title,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onScrim,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                counters.forEach { (value, caption) ->
-                    Column(horizontalAlignment = Alignment.End) {
+                    if (subtitle.isNotBlank()) {
                         Text(
-                            text = value,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onScrim,
-                        )
-                        Text(
-                            text = caption,
-                            fontSize = 9.sp,
-                            color = onScrim.copy(alpha = 0.75f),
+                            text = subtitle,
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = onScrim.copy(alpha = 0.8f),
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
+                Spacer(Modifier.width(10.dp))
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    counters.forEach { (value, caption) ->
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = value,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = onScrim,
+                            )
+                            Text(
+                                text = caption,
+                                fontSize = 9.sp,
+                                color = onScrim.copy(alpha = 0.75f),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+            // Whatever belongs to the header sits on the same picture: the whole top block is one
+            // surface, so the page never reads as a bar stacked on a bar.
+            if (footer != null) {
+                Spacer(Modifier.height(4.dp))
+                footer()
             }
         }
         // Wikimedia asks to be credited; the line is only shown when there really is their picture.
