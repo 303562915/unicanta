@@ -77,6 +77,7 @@ import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.generated.resources.ranking_plans
 import io.github.samolego.canta.generated.resources.ranking_votes
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
@@ -619,20 +620,13 @@ private fun CommentRow(comment: PlanComment) {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // A round monogram instead of an avatar: the author is a number, not a person.
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(RoundedCornerShape(50))
-                .background(MaterialTheme.colorScheme.secondaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = comment.author.takeLast(2),
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-        }
+        // The same letter avatar the reviews use: the first character of the name, or of the
+        // install code when the commenter has not renamed themselves.
+        LetterAvatar(
+            name = comment.author,
+            size = 24.dp,
+            background = MaterialTheme.colorScheme.secondaryContainer,
+        )
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

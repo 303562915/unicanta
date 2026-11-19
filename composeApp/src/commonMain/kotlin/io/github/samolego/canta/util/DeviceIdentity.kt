@@ -75,6 +75,15 @@ object DeviceIdentity {
         val token = ensure(settings)
         return Identity(token, settings.identityUserIdFlow.first())
     }
+
+    /**
+     * What a review or a comment is signed with: the name the user picked in Settings, or the
+     * install code when they have not picked one. The avatar next to it is its first character.
+     */
+    suspend fun displayName(settings: CantaSettings): String {
+        val name = settings.userNameFlow.first().trim()
+        return name.ifEmpty { current(settings).code }
+    }
 }
 
 /** This install: the secret token, and the number the backend gave it. */

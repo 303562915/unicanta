@@ -49,6 +49,12 @@ const val TEST_PLAN_ID: Long = -1L
 data class PlanComment(val author: String, val body: String, val createdAt: String)
 
 /**
+ * An identity as the backend knows it: the number it owns, and the display name the user picked.
+ * [name] is empty until they rename themselves, in which case the install code is shown instead.
+ */
+data class UserProfile(val userId: Long, val name: String = "")
+
+/**
  * Reads and writes the community plans for the caller's own device. Matching is exact on model,
  * codename, ROM and ROM version: a plan for another build is worthless and potentially harmful,
  * so it is never shown.
@@ -153,6 +159,35 @@ class PlanRepository(
         return rpc("plan_delete", body)
             ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.booleanOrNull }.getOrNull() } == true
     }
+
+    /**
+     * This install's number and display name, creating the row on first use. The name is the one
+     * the user picked in Settings; it is empty until they do, and the install code shows instead.
+     * Null when the backend cannot be reached.
+     */
+    suspend fun profile(token: String): UserProfile? {
+        if (token.isEmpty()) return null
+        val text = rpc("profile_get", buildJsonObject { put("p_token", token) }.toString()) ?: return null
+        return parseProfile(text)
+    }
+
+    /** Stores [name] for [token] and answers what the backend kept; null on failure. */
+    suspend fun setName(token: String, name: String): UserProfile? {
+        if (token.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_token", token)
+            put("p_name", name)
+        }.toString()
+        val text = rpc("profile_set_name", body) ?: return null
+        return parseProfile(text)
+    }
+
+    private fun parseProfile(text: String): UserProfile? = runCatching {
+        val o = Json.parseToJsonElement(text).jsonObject
+        val id = o["id"]?.jsonPrimitive?.longOrNull ?: return null
+        if (id <= 0) return null
+        UserProfile(id, o["name"]?.jsonPrimitive?.contentOrNull.orEmpty())
+    }.getOrNull()
 
     /**
      * The number this [token] owns, creating it on first use: 10000 for the first install, then

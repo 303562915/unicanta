@@ -72,9 +72,7 @@
     >Canta is an open source uninstaller app that uses Shizuku to remove system and user apps. It allows you to debloat your device as you wish, no PC required.\n\nSpecial thanks to %1$s.\nCanta would't be the same without their work.</string>
     <string name="search_apps">Search apps</string>
     <string name="auto_update_bloat_list">Auto update bloat list</string>
-    <string
-        name="auto_update_bloat_list_description"
-    >Automatically fetch new version of app bloat info. This guarantees up-to-date badges and app descriptions.</string>
+    <string name="auto_update_bloat_list_description">Keeps badges and descriptions up to date.</string>
     <string name="settings">Settings</string>
     <string name="confirm_uninstall">Confirm uninstallations</string>
     <string name="app_version">App version: %1$s</string>
@@ -250,9 +248,9 @@
     <string name="settings_group_general">General</string>
     <string name="settings_group_interface">Interface</string>
     <string name="settings_show_tweaks">Show Tools in the bar</string>
-    <string name="settings_show_tweaks_description">The ROM tweaks page. Off by default: turn it on to keep an entry in the bar, turn it off again to hide it.</string>
+    <string name="settings_show_tweaks_description">The ROM tweaks page.</string>
     <string name="settings_show_recommend">Show Picks in the bar</string>
-    <string name="settings_show_recommend_description">The recommended open-source apps page. Off by default, for the same reason.</string>
+    <string name="settings_show_recommend_description">The recommended open-source apps page.</string>
     <string name="profile_default_name">You</string>
     <string name="profile_name_title">Your name</string>
     <string name="profile_name_hint">Shown in your reviews, synced to the cloud</string>

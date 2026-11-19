@@ -106,7 +106,11 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     val appListViewModel: AppListViewModel = viewModel {
         AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry, deps.history)
     }
-    val settingsViewModel: SettingsViewModel = viewModel { SettingsViewModel(deps.settings, deps.packageTelemetry) }
+    // One client for the community pages: plans, comments, and the display name in settings.
+    val communityRepository = remember { PlanRepository(HttpClient()) }
+    val settingsViewModel: SettingsViewModel = viewModel {
+        SettingsViewModel(deps.settings, deps.packageTelemetry, communityRepository)
+    }
     val presetViewModel: PresetsViewModel = viewModel { PresetsViewModel(deps.presetStore, handler, platform) }
     val mainViewModel: MainViewModel = viewModel { MainViewModel(handler, platform, deps.settings, appListViewModel) }
 

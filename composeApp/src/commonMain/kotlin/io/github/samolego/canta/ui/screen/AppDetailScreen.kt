@@ -41,6 +41,7 @@ import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.AppReview
 import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -270,6 +271,14 @@ private fun ReviewRow(review: AppReview) {
             .padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // Every review carries an avatar: the first character of the name, or of the
+            // install code when the reviewer has not renamed themselves.
+            LetterAvatar(
+                name = review.author,
+                size = 24.dp,
+                background = scheme.secondaryContainer,
+            )
+            Spacer(Modifier.width(8.dp))
             Text(
                 text = review.author,
                 style = FlText.caption1.copy(fontWeight = io.github.samolego.canta.ui.fl.FlText.emphasized),

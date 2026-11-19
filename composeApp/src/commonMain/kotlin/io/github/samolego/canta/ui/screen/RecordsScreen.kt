@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -113,26 +114,16 @@ fun RecordsScreen(
         if (records.isEmpty()) {
             EmptyRecords(modifier = Modifier.fillMaxSize())
         } else {
-            // Grouped by the day each operation happened, newest first.
-            val sections = remember(records) { groupByDay(records) }
+            // One flat list of day headers and rows: a lazy list cannot nest one inside another.
+            val entries = remember(records) { flattenByDay(records) }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(sections, key = { it.day }) { section ->
-                    item(key = "day-${section.day}") {
-                        Text(
-                            text = section.day,
-                            style = FlText.caption1.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                        )
-                    }
-                    items(
-                        section.records,
-                        key = { "${it.timestamp}-${it.packageName}-${it.batchIndex}" },
-                    ) { record ->
-                        RecordRow(record = record)
+                items(entries, key = RecordEntry::key) { entry ->
+                    when (entry) {
+                        is RecordEntry.Day -> DayHeader(entry.day)
+                        is RecordEntry.Operation -> RecordRow(record = entry.record)
                     }
                 }
             }
@@ -140,27 +131,41 @@ fun RecordsScreen(
     }
 }
 
-/** One day of the log, in the order the operations happened within it. */
-private data class RecordSection(val day: String, val records: List<OperationRecord>)
+/** A row of the records list: the day a group starts, or one operation. */
+private sealed interface RecordEntry {
+    val key: String
 
-private fun groupByDay(records: List<OperationRecord>): List<RecordSection> = buildList {
-    var day = ""
-    var current = mutableListOf<OperationRecord>()
-    fun flush() {
-        if (current.isNotEmpty()) {
-            add(RecordSection(day, current.toList()))
-            current.clear()
-        }
+    data class Day(val day: String) : RecordEntry {
+        override val key: String get() = "day-$day"
     }
+
+    data class Operation(val record: OperationRecord) : RecordEntry {
+        override val key: String
+            get() = "${record.timestamp}-${record.packageName}-${record.batchIndex}"
+    }
+}
+
+/** The log as it is drawn: newest day first, a header before each day's operations. */
+private fun flattenByDay(records: List<OperationRecord>): List<RecordEntry> = buildList {
+    var day = ""
     records.forEach { record ->
         val recordDay = OperationTime.day(record.timestamp)
         if (recordDay != day) {
-            flush()
             day = recordDay
+            add(RecordEntry.Day(recordDay))
         }
-        current.add(record)
+        add(RecordEntry.Operation(record))
     }
-    flush()
+}
+
+@Composable
+private fun DayHeader(day: String) {
+    Text(
+        text = day,
+        style = FlText.caption1.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+    )
 }
 
 /** One operation: when, what was done, which app, and how it went. */
