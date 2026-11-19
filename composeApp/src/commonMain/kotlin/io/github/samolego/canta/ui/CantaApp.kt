@@ -352,12 +352,17 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         }
 
         // Floating capsule bar, above the content like the dashboard capsule in FlClash.
+        // It steps out of the way while the page scrolls down and returns on the way up.
         if (currentRoute != null && currentRoute in BOTTOM_BAR_ROUTES) {
-            FloatingPillBar(
-                items = bottomBarItems(route = currentRoute, showTweaks = showTweaksTab, showRecommend = showRecommendTab),
-                onSelect = { key -> onBottomBarSelect(key, navController) },
+            CollapsingBottomBar(
+                visible = dock.visible,
                 modifier = Modifier.align(Alignment.BottomCenter),
-            )
+            ) {
+                FloatingPillBar(
+                    items = bottomBarItems(route = currentRoute, showTweaks = showTweaksTab, showRecommend = showRecommendTab),
+                    onSelect = { key -> onBottomBarSelect(key, navController) },
+                )
+            }
         }
 
         SnackbarHost(
