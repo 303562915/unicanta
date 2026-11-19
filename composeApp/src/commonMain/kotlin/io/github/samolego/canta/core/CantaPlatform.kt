@@ -85,6 +85,15 @@ interface CantaPlatform {
      */
     suspend fun installUpdate(path: String): String? = "this build cannot install updates"
 
+    /**
+     * Hands the APK at [path] to the system package installer through a content:// URI the
+     * installer is granted read access to — the path-agnostic way to install, used when the
+     * privileged `pm install` cannot read any location the app can write (scoped storage hides
+     * `Android/data` from the shell, and ROMs differ on what else they allow). The reader then
+     * confirms the install in the system dialog. Returns true when an installer screen launched.
+     */
+    fun requestInstall(path: String): Boolean = false
+
     /** Closes the app, so the freshly installed version starts clean on the next launch. */
     fun exitApp() = Unit
 }

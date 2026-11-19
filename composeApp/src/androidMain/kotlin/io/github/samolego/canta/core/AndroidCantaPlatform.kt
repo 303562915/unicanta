@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
 import io.github.samolego.canta.core.shizuku.ShizukuShell
@@ -419,6 +420,29 @@ class AndroidCantaPlatform(
 
     /** Single-quotes [value] for `sh -c`, the quoting `pm install` needs for a path with spaces. */
     private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    /**
+     * Hands the APK to the system installer: a content:// URI the installer is granted read
+     * access to, so the system reads the file through the provider and no path permission on this
+     * phone matters. The reader confirms the install in the system dialog, which also survives the
+     * case where every privileged location was refused.
+     */
+    override fun requestInstall(path: String): Boolean {
+        val file = File(path)
+        if (!file.exists()) return false
+        val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            LogUtils.w(TAG, "No installer could take the update: $e")
+            false
+        }
+    }
 
     private fun writeExternalFile(fileName: String, content: String): String? {
         val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null

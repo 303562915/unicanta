@@ -36,11 +36,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -86,20 +90,28 @@ import io.github.samolego.canta.ui.dialog.TelemetryPreviewDialog
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-private const val PRIVACY_POLICY_URL = "https://github.com/303562915/unicanta/blob/master/privacy_policy.md"
+private const val REPO_URL = "https://github.com/303562915/unicanta"
+private const val README_URL = "$REPO_URL/blob/master/README.md"
+private const val PRIVACY_POLICY_URL = "$REPO_URL/blob/master/privacy_policy.md"
+private const val ORIGINAL_URL = "https://github.com/samolego/Canta"
 
 /** Widest the onboarding content gets, so it stays readable in a desktop window. */
 private val MAX_CONTENT_WIDTH = 560.dp
 
 private const val PAGE_WARRANTY = 0
 private const val PAGE_CONTRIBUTE = 1
-private const val PAGE_COUNT = 2
+private const val PAGE_ORIGIN = 2
+private const val PAGE_ABOUT = 3
+private const val PAGE_COUNT = 4
 
 
 /**
- * First-run flow: the no-warranty disclaimer, then the analytics opt-in.
- * The disclaimer can't be skipped: only Accept leads past it, and system
- * back on this start destination just leaves the app.
+ * First-run flow: the no-warranty disclaimer, the analytics opt-in, then two read-only pages that
+ * say where the project came from and what it does. The disclaimer can't be skipped: only Accept
+ * leads past it, and system back on this start destination just leaves the app.
+ *
+ * The analytics answer is taken on page two but only written when the last page is done, so the
+ * two pages after it can still be walked back from without losing the choice.
  *
  * @param onFinish called with whether the user chose to contribute.
  */
@@ -110,6 +122,8 @@ fun OnboardingScreen(
     onFinish: (contribute: Boolean) -> Unit,
 ) {
     var page by rememberSaveable { mutableIntStateOf(PAGE_WARRANTY) }
+    // Default is "don't share": page two always sets it before the flow can move on.
+    var contribute by rememberSaveable { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
         AnimatedContent(
@@ -126,7 +140,23 @@ fun OnboardingScreen(
         ) { current ->
             when (current) {
                 PAGE_WARRANTY -> WarrantyPage(closeApp = closeApp, onAccept = { page = PAGE_CONTRIBUTE })
-                else -> ContributePage(platform = platform, onFinish = onFinish)
+                PAGE_CONTRIBUTE -> ContributePage(
+                    platform = platform,
+                    onChoose = { choice ->
+                        contribute = choice
+                        page = PAGE_ORIGIN
+                    },
+                )
+                PAGE_ORIGIN -> OriginPage(
+                    platform = platform,
+                    onBack = { page = PAGE_CONTRIBUTE },
+                    onNext = { page = PAGE_ABOUT },
+                )
+                else -> AboutPage(
+                    platform = platform,
+                    onBack = { page = PAGE_ORIGIN },
+                    onDone = { onFinish(contribute) },
+                )
             }
         }
     }
@@ -265,8 +295,12 @@ private fun WarrantyPage(closeApp: () -> Unit, onAccept: () -> Unit) {
     }
 }
 
+/**
+ * Page two: the analytics opt-in. Both buttons record the answer and move on; the choice is only
+ * written to settings by the last page, so the two pages after this one stay walkable.
+ */
 @Composable
-private fun ContributePage(platform: CantaPlatform, onFinish: (Boolean) -> Unit) {
+private fun ContributePage(platform: CantaPlatform, onChoose: (Boolean) -> Unit) {
     var showPreview by rememberSaveable { mutableStateOf(false) }
 
     // Equal prominence on purpose: neither choice is pre-selected, both are full buttons.
@@ -277,14 +311,14 @@ private fun ContributePage(platform: CantaPlatform, onFinish: (Boolean) -> Unit)
         subtitle = Res.string.onboarding_contribute_subtitle,
         negative = {
             OnboardingButton(
-                onClick = { onFinish(false) },
+                onClick = { onChoose(false) },
                 primary = false,
                 label = stringResource(Res.string.onboarding_dont_share),
             )
         },
         positive = {
             OnboardingButton(
-                onClick = { onFinish(true) },
+                onClick = { onChoose(true) },
                 primary = true,
                 label = stringResource(Res.string.contribute),
             )
@@ -312,8 +346,137 @@ private fun ContributePage(platform: CantaPlatform, onFinish: (Boolean) -> Unit)
     if (showPreview) TelemetryPreviewDialog(onDismiss = { showPreview = false })
 }
 
+/** Page three: where the project comes from, condensed from the README. */
 @Composable
-private fun InfoRow(icon: ImageVector, title: StringResource, body: StringResource) {
+private fun OriginPage(platform: CantaPlatform, onBack: () -> Unit, onNext: () -> Unit) {
+    OnboardingPage(
+        pageIndex = PAGE_ORIGIN,
+        badge = { IconBadge(Icons.Default.Build) },
+        title = Res.string.onboarding_origin_title,
+        subtitle = Res.string.onboarding_origin_subtitle,
+        negative = {
+            OnboardingButton(
+                onClick = onBack,
+                primary = false,
+                label = stringResource(Res.string.onboarding_back),
+            )
+        },
+        positive = {
+            OnboardingButton(
+                onClick = onNext,
+                primary = true,
+                label = stringResource(Res.string.onboarding_next),
+            )
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            InfoRow(
+                Icons.Default.Build,
+                Res.string.onboarding_origin_upstream_title,
+                Res.string.onboarding_origin_upstream_body,
+            )
+            InfoRow(
+                Icons.Default.Info,
+                Res.string.onboarding_origin_why_title,
+                Res.string.onboarding_origin_why_body,
+            )
+            InfoRow(
+                Icons.Default.CheckCircle,
+                Res.string.onboarding_origin_added_title,
+                Res.string.onboarding_origin_added_body,
+            )
+            InfoRow(
+                Icons.Default.Lock,
+                Res.string.onboarding_origin_selfhost_title,
+                Res.string.onboarding_origin_selfhost_body,
+            )
+            InfoRow(
+                Icons.Default.Star,
+                Res.string.onboarding_origin_code_title,
+                Res.string.onboarding_origin_code_body,
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        ) {
+            TextButton(onClick = { platform.openUrl(README_URL) }) {
+                Text(stringResource(Res.string.onboarding_read_readme))
+            }
+        }
+    }
+}
+
+/** Page four: what this fork adds, where it lives, who it stands on, and who is welcome. */
+@Composable
+private fun AboutPage(platform: CantaPlatform, onBack: () -> Unit, onDone: () -> Unit) {
+    OnboardingPage(
+        pageIndex = PAGE_ABOUT,
+        badge = { IconBadge(Icons.Default.Star) },
+        title = Res.string.onboarding_about_title,
+        subtitle = Res.string.onboarding_about_subtitle,
+        negative = {
+            OnboardingButton(
+                onClick = onBack,
+                primary = false,
+                label = stringResource(Res.string.onboarding_back),
+            )
+        },
+        positive = {
+            OnboardingButton(
+                onClick = onDone,
+                primary = true,
+                label = stringResource(Res.string.onboarding_start),
+            )
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            InfoRow(
+                Icons.Default.Star,
+                Res.string.onboarding_about_features_title,
+                Res.string.onboarding_about_features_body,
+            )
+            InfoRow(
+                Icons.Default.Share,
+                Res.string.onboarding_about_repo_title,
+                Res.string.onboarding_about_repo_body,
+                REPO_URL,
+            )
+            InfoRow(
+                Icons.Default.Favorite,
+                Res.string.onboarding_about_original_title,
+                Res.string.onboarding_about_original_body,
+                ORIGINAL_URL,
+            )
+            InfoRow(
+                Icons.Default.Person,
+                Res.string.onboarding_about_join_title,
+                Res.string.onboarding_about_join_body,
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        ) {
+            TextButton(onClick = { platform.openUrl(REPO_URL) }) {
+                Text(stringResource(Res.string.onboarding_open_repo))
+            }
+            TextButton(onClick = { platform.openUrl(ORIGINAL_URL) }) {
+                Text(stringResource(Res.string.onboarding_open_original))
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(
+    icon: ImageVector,
+    title: StringResource,
+    body: StringResource,
+    vararg args: Any,
+) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Icon(
             imageVector = icon,
@@ -328,7 +491,7 @@ private fun InfoRow(icon: ImageVector, title: StringResource, body: StringResour
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = stringResource(body),
+                text = stringResource(body, *args),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
