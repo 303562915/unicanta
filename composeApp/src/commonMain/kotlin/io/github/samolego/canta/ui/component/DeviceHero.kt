@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -149,7 +148,7 @@ fun DeviceHero(
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,
-    trailing: @Composable RowScope.() -> Unit = {},
+    counters: List<Pair<String, String>> = emptyList(),
 ) {
     var image by remember(model) { mutableStateOf<ImageBitmap?>(null) }
 
@@ -227,8 +226,24 @@ fun DeviceHero(
             Row(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                content = trailing,
-            )
+            ) {
+                counters.forEach { (value, caption) ->
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = value,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onScrim,
+                        )
+                        Text(
+                            text = caption,
+                            fontSize = 9.sp,
+                            color = onScrim.copy(alpha = 0.75f),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
         }
         // Wikimedia asks to be credited; the line is only shown when there really is their picture.
         if (image != null) {

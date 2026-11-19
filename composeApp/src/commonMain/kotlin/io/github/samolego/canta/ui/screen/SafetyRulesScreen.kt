@@ -293,14 +293,18 @@ fun SafetyRulesScreen(
     Scaffold(
         topBar = {
             Column {
-                ScreenTopBar(title = stringResource(Res.string.rules_title))
-                // The phone band sits right under the title: it names what the whole page is about,
-                // so it belongs to the header instead of scrolling with one of the tabs.
-                DeviceBanner(
-                    profile = profile,
-                    planCount = plans.size,
-                    pendingCount = deletedPackages.size,
-                    verifiedCount = confirmed,
+                // The phone itself is the header: a picture of exactly this model when one can be
+                // found, a grey band with its name when not. No page title above it — the picture
+                // and the model name already say what the page is about.
+                DeviceHero(
+                    model = profile?.displayModel.orEmpty(),
+                    title = profile?.displayModel ?: "-",
+                    subtitle = profile?.let { romLine(it) }.orEmpty(),
+                    counters = buildList {
+                        add("${plans.size}" to stringResource(Res.string.safety_tab_plans))
+                        val pending = deletedPackages.size
+                        if (pending > 0) add("$confirmed/$pending" to stringResource(Res.string.plans_verified_short))
+                    },
                 )
                 FlSegmentedControl(
                     segments = listOf(
@@ -449,61 +453,6 @@ fun SafetyRulesScreen(
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
-    }
-}
-
-/**
- * The phone as it is sold, over the colour that marks this section: model, ROM, Android version,
- * and — on the right — what this page found for it (plans, removed apps, reboot-verified ones).
- */
-@Composable
-private fun DeviceBanner(
-    profile: DeviceProfile?,
-    planCount: Int,
-    pendingCount: Int,
-    verifiedCount: Int,
-    modifier: Modifier = Modifier,
-) {
-    val colors = MaterialTheme.colorScheme
-    Surface(color = colors.primaryContainer, modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = profile?.displayModel ?: "-",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = profile?.let { romLine(it) } ?: "",
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    color = colors.onPrimaryContainer.copy(alpha = 0.75f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            BannerCounter("$planCount", stringResource(Res.string.safety_tab_plans))
-            if (pendingCount > 0) {
-                Spacer(Modifier.width(10.dp))
-                BannerCounter("$verifiedCount/$pendingCount", stringResource(Res.string.plans_verified_short))
-            }
-        }
-    }
-}
-
-/** One number with its caption, right-aligned in the device band. */
-@Composable
-private fun BannerCounter(value: String, caption: String) {
-    val color = MaterialTheme.colorScheme.onPrimaryContainer
-    Column(horizontalAlignment = Alignment.End) {
-        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = color)
-        Text(caption, fontSize = 9.sp, color = color.copy(alpha = 0.75f))
     }
 }
 
@@ -708,14 +657,6 @@ private fun PlansTab(
     onRetry: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // The phone itself, at the top of the page: a picture of exactly this model when one can be
-        // found, otherwise a drawn band with its name.
-        DeviceHero(
-            model = profile?.displayModel.orEmpty(),
-            title = profile?.displayModel ?: "-",
-            subtitle = profile?.let { romLine(it) }.orEmpty(),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
         UploadEntry(
             profile = profile,
             deletedCount = deletedCount,
