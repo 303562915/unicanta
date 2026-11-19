@@ -162,8 +162,10 @@ fun SafetyRulesScreen(
     var rules by remember { mutableStateOf<SafetyRules?>(null) }
 
     // The photo at the top is decoration: the About page can turn it off, and the page then keeps
-    // the band with the phone's name and the switch but not the picture under it.
-    val showDevicePhoto by settings.showDevicePhotoFlow.collectAsStateWithLifecycle()
+    // the band with the phone's name and the switch but not the picture under it. A plain `Flow`,
+    // like the other stored settings, so it needs the value to show before the first read comes
+    // back — and the picture is on by default, which is what a fresh install should start with.
+    val showDevicePhoto by settings.showDevicePhotoFlow.collectAsStateWithLifecycle(initialValue = true)
 
     val scope = rememberCoroutineScope()
     val fallbackRepository = remember { PlanRepository(HttpClient()) }
