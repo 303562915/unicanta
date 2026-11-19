@@ -69,7 +69,6 @@ import io.github.samolego.canta.generated.resources.about_us
 import io.github.samolego.canta.generated.resources.advanced_settings
 import io.github.samolego.canta.generated.resources.allow_unsafe_selections
 import io.github.samolego.canta.generated.resources.allow_unsafe_uninstalls_description
-import io.github.samolego.canta.generated.resources.app_version
 import io.github.samolego.canta.generated.resources.auth_required
 import io.github.samolego.canta.generated.resources.auth_required_description
 import io.github.samolego.canta.generated.resources.auto_update_bloat_list
@@ -77,18 +76,15 @@ import io.github.samolego.canta.generated.resources.auto_update_bloat_list_descr
 import io.github.samolego.canta.generated.resources.bloat_list_url
 import io.github.samolego.canta.generated.resources.bloat_list_url_description
 import io.github.samolego.canta.generated.resources.cancel
-import io.github.samolego.canta.generated.resources.click_to_expand
 import io.github.samolego.canta.generated.resources.commits_url
 import io.github.samolego.canta.generated.resources.commits_url_description
 import io.github.samolego.canta.generated.resources.confirm_uninstall
-import io.github.samolego.canta.generated.resources.confirm_uninstall_description
 import io.github.samolego.canta.generated.resources.debug_section
 import io.github.samolego.canta.generated.resources.device_user
 import io.github.samolego.canta.generated.resources.device_user_description
 import io.github.samolego.canta.generated.resources.fake_community_scores
 import io.github.samolego.canta.generated.resources.fake_community_scores_description
 import io.github.samolego.canta.generated.resources.hide_success_dialog
-import io.github.samolego.canta.generated.resources.hide_success_dialog_description
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.generated.resources.profile_default_name
 import io.github.samolego.canta.generated.resources.profile_edit_name
@@ -203,14 +199,12 @@ fun SettingsScreen(
                 )
                 SwitchSettingsItem(
                     title = stringResource(Res.string.confirm_uninstall),
-                    description = stringResource(Res.string.confirm_uninstall_description),
                     icon = Icons.Default.Delete,
                     checked = confirmBeforeUninstall,
                     onCheckedChange = settingsViewModel::saveConfirmBeforeUninstall,
                 )
                 SwitchSettingsItem(
                     title = stringResource(Res.string.hide_success_dialog),
-                    description = stringResource(Res.string.hide_success_dialog_description),
                     icon = Icons.AutoMirrored.Default.Message,
                     checked = hideSuccessDialog,
                     onCheckedChange = settingsViewModel::saveHideSuccessDialog,
@@ -233,7 +227,6 @@ fun SettingsScreen(
             SettingsGroup {
                 SettingsItem(
                     title = stringResource(Res.string.advanced_settings),
-                    description = stringResource(Res.string.click_to_expand),
                     icon = Icons.Default.Settings,
                     onClick = { advancedSettingsExpanded = !advancedSettingsExpanded },
                     // The hairline is only there while something follows the row.
@@ -350,8 +343,18 @@ private fun BarSlotsRow(
     val slots = listOf(
         BarSlot(FlGlyphs.dashboard, stringResource(Res.string.tab_apps), lit = true, onToggle = null),
         BarSlot(FlGlyphs.rules, stringResource(Res.string.tab_rules), lit = true, onToggle = null),
-        BarSlot(FlGlyphs.tools, stringResource(Res.string.tab_tweaks), lit = showTweaks) { onToggleTweaks(!showTweaks) },
-        BarSlot(FlGlyphs.appsList, stringResource(Res.string.tab_recommend), lit = showRecommend) { onToggleRecommend(!showRecommend) },
+        BarSlot(
+            FlGlyphs.tools,
+            stringResource(Res.string.tab_tweaks),
+            lit = showTweaks,
+            onToggle = { onToggleTweaks(!showTweaks) },
+        ),
+        BarSlot(
+            FlGlyphs.appsList,
+            stringResource(Res.string.tab_recommend),
+            lit = showRecommend,
+            onToggle = { onToggleRecommend(!showRecommend) },
+        ),
         BarSlot(FlGlyphs.settings, stringResource(Res.string.settings), lit = true, onToggle = null),
     )
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -371,12 +374,13 @@ private fun BarSlotsRow(
 private fun BarSlotChip(slot: BarSlot, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val lit = slot.lit
+    val toggle = slot.onToggle
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .then(
-                if (slot.onToggle != null) {
-                    Modifier.clickable(role = Role.Switch, onClick = slot.onToggle)
+                if (toggle != null) {
+                    Modifier.clickable(role = Role.Switch, onClick = toggle)
                 } else {
                     Modifier
                 }

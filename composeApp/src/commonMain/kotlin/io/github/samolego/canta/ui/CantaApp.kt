@@ -299,13 +299,13 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 var planRules by remember { mutableStateOf<SafetyRules?>(null) }
                 LaunchedEffect(Unit) {
                     planProfile = handler.deviceProfile()
-                    // "#10000" once the number is known; the token head before that.
-                    planAuthor = DeviceIdentity.current(deps.settings).code
+                    // The name from the settings, or "#10000" while none was picked.
+                    planAuthor = DeviceIdentity.displayName(deps.settings)
                     planRules = SafetyRules.bundled()
                 }
                 PlanDetailScreen(
                     planId = planId,
-                    repository = remember { PlanRepository(HttpClient()) },
+                    repository = communityRepository,
                     profile = planProfile,
                     onNavigateBack = { navController.navigateUp() },
                     author = planAuthor,
@@ -335,7 +335,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 var appAuthor by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
                     appProfile = handler.deviceProfile()
-                    appAuthor = DeviceIdentity.current(deps.settings).code
+                    appAuthor = DeviceIdentity.displayName(deps.settings)
                 }
                 AppDetailScreen(
                     packageName = packageName,
