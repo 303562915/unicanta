@@ -1,12 +1,12 @@
 name: 🏗️ Push Build
 
-# Single job: tests, debug APK and (when the signing secret is configured)
+# Push build: tests, debug APK and (when the signing secret is configured)
 # the release APK. All compilation happens here in GitHub Actions — local
 # builds are not supported, so this is the only place a build is produced.
 #
-# Everything runs in one job so the Gradle build directory and daemon are
-# shared between the test and assemble tasks: one cold compilation instead of
-# several, and no cross-job cache miss.
+# Tests, debug and release run as three parallel jobs after the test job, so
+# the runners compile concurrently instead of serially; the Gradle build cache
+# (org.gradle.caching) lets the two APK jobs reuse the compilation done here.
 
 on:
   push:
@@ -20,8 +20,8 @@ env:
   JAVA_VERSION: "21"
 
 jobs:
-  build:
-    name: 🏗️ Test + APK
+  tests:
+    name: 🧪 Tests
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout
@@ -36,6 +36,71 @@ jobs:
 
       - name: 🔧 Make gradlew executable
         run: chmod +x gradlew
+
+      - name: 🧪 Run the test suite
+        run: ./gradlew :composeApp:desktopTest :packages:desktopTest --stacktrace --no-daemon
+
+      - name: 📤 Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          retention-days: 7
+
+  apkDebug:
+    name: 🤖 Debug APK
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: 🔧 Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: 🏗️ Assemble debug
+        run: ./gradlew :androidApp:assembleDebug --stacktrace --no-daemon
+
+      - name: 📝 Checksums and package name
+        run: |
+          cd androidApp/build/outputs/apk/debug
+          sha256sum *.apk | tee SHA256SUMS.txt
+          AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          "$AAPT2" dump badging *.apk | head -1
+
+      - name: 📦 Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: androidApp/build/outputs/apk/debug/
+          retention-days: 14
+
+  apkRelease:
+    name: 📦 Release APK
+    # Only when the signing secret is configured. The check happens inside the
+    # job (steps skip themselves), so the workflow itself stays valid without it.
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: "temurin"
+          cache: "gradle"
 
       - name: 🔍 Check whether the keystore secret is configured
         id: keystore
@@ -70,41 +135,22 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > "$GITHUB_WORKSPACE/key.properties"
 
-      # Tests and the APK builds share one Gradle invocation, so the compile
-      # output produced for the tests is reused by the assemble tasks.
-      - name: 🧪 Test + 🏗️ Build
-        run: |
-          ./gradlew :composeApp:desktopTest :packages:desktopTest \
-            :androidApp:assembleDebug :desktopApp:desktopJar \
-            :webApp:wasmJsBrowserDistribution --stacktrace
-          if [ "${{ steps.keystore.outputs.configured }}" = "true" ]; then
-            ./gradlew :androidApp:assembleRelease --stacktrace
-          fi
+      - name: 🔧 Make gradlew executable
+        if: steps.keystore.outputs.configured == 'true'
+        run: chmod +x gradlew
 
-      - name: 📝 Checksums and package name
+      - name: 🏗️ Assemble release (R8 + resource shrinking)
+        if: steps.keystore.outputs.configured == 'true'
+        run: ./gradlew :androidApp:assembleRelease --stacktrace --no-daemon
+
+      - name: 📝 Checksums, sizes and the package name the APK really has
+        if: steps.keystore.outputs.configured == 'true'
         run: |
-          cd androidApp/build/outputs/apk/debug
+          cd androidApp/build/outputs/apk/release
           sha256sum *.apk | tee SHA256SUMS.txt
+          ls -l --block-size=K *.apk
           AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
           "$AAPT2" dump badging *.apk | head -1
-
-      - name: 📤 Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: |
-            **/build/reports/tests/**
-            **/build/test-results/**
-          retention-days: 7
-
-      - name: 📦 Upload debug APK
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug
-          path: androidApp/build/outputs/apk/debug/
-          retention-days: 14
 
       - name: 📦 Upload release APK
         if: steps.keystore.outputs.configured == 'true'
