@@ -65,6 +65,7 @@ import io.github.samolego.canta.ui.viewmodel.MainViewModel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /** The app list screen: installed/records/uninstalled tabs, the action FAB and its dialogs. */
@@ -84,6 +85,9 @@ fun MainScreen(
     closeApp: () -> Unit,
     enableSelectAll: Boolean,
 ) {
+    // Reversing a record runs on the page's own scope: the dialog is already closed by then.
+    val reverseScope = rememberCoroutineScope()
+
     // Pager state is hoisted to CantaNavigation so preset-applying knows the tab.
     val currentTab = AppsTab.entries[pagerState.currentPage]
     val selectedAppsType = currentTab.appsType
