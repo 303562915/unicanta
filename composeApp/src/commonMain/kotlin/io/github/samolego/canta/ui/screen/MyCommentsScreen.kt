@@ -56,6 +56,7 @@ import io.github.samolego.canta.data.community.MyComment
 import io.github.samolego.canta.data.community.Page
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.newestInboxCommentId
+import io.github.samolego.canta.ui.component.EmotionText
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.MyCommentRow
@@ -620,13 +621,7 @@ private fun InboxRow(item: InboxItem, isNew: Boolean, onOpen: () -> Unit) {
         Spacer(Modifier.height(3.dp))
         // For a reply or a comment under my plan: what was written. For a heart: the comment or
         // plan that was hearted — "somebody hearted this thing of yours" needs to say which thing.
-        Text(
-            text = item.body,
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
+        EmotionText(body = item.body, fontSize = 12, lineHeight = 16, maxLines = 3)
         if (item.parentBody.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             // Quoting what was answered: without it a reply reads as a remark about nothing.

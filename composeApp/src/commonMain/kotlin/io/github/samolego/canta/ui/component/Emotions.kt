@@ -1,0 +1,910 @@
+package io.github.samolego.canta.ui.component
+
+import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.emo_18jin
+import io.github.samolego.canta.generated.resources.emo_6
+import io.github.samolego.canta.generated.resources.emo_666
+import io.github.samolego.canta.generated.resources.emo_aileaile
+import io.github.samolego.canta.generated.resources.emo_aimu
+import io.github.samolego.canta.generated.resources.emo_aixinshou
+import io.github.samolego.canta.generated.resources.emo_anpai
+import io.github.samolego.canta.generated.resources.emo_anqila
+import io.github.samolego.canta.generated.resources.emo_anzhongguancha
+import io.github.samolego.canta.generated.resources.emo_baibai
+import io.github.samolego.canta.generated.resources.emo_baiyan
+import io.github.samolego.canta.generated.resources.emo_bangbangtang
+import io.github.samolego.canta.generated.resources.emo_baobaolong_emoji
+import io.github.samolego.canta.generated.resources.emo_baobaoni
+import io.github.samolego.canta.generated.resources.emo_baojinziji
+import io.github.samolego.canta.generated.resources.emo_baoquan
+import io.github.samolego.canta.generated.resources.emo_beiwokanqiu
+import io.github.samolego.canta.generated.resources.emo_bianpao
+import io.github.samolego.canta.generated.resources.emo_biaomianciya
+import io.github.samolego.canta.generated.resources.emo_biaomianweixiao
+import io.github.samolego.canta.generated.resources.emo_biefadianle
+import io.github.samolego.canta.generated.resources.emo_bigexin
+import io.github.samolego.canta.generated.resources.emo_bimawen
+import io.github.samolego.canta.generated.resources.emo_bingtanghulu
+import io.github.samolego.canta.generated.resources.emo_bisheng
+import io.github.samolego.canta.generated.resources.emo_bishi
+import io.github.samolego.canta.generated.resources.emo_bixin
+import io.github.samolego.canta.generated.resources.emo_biyela
+import io.github.samolego.canta.generated.resources.emo_bizui
+import io.github.samolego.canta.generated.resources.emo_bukan
+import io.github.samolego.canta.generated.resources.emo_bulutuo
+import io.github.samolego.canta.generated.resources.emo_bunibuxiang
+import io.github.samolego.canta.generated.resources.emo_bushiba
+import io.github.samolego.canta.generated.resources.emo_buxinyaoyan
+import io.github.samolego.canta.generated.resources.emo_cahan
+import io.github.samolego.canta.generated.resources.emo_caigou
+import io.github.samolego.canta.generated.resources.emo_candy
+import io.github.samolego.canta.generated.resources.emo_chaojiai
+import io.github.samolego.canta.generated.resources.emo_chaoren
+import io.github.samolego.canta.generated.resources.emo_chengqiangluolei
+import io.github.samolego.canta.generated.resources.emo_chiguaqunzhong
+import io.github.samolego.canta.generated.resources.emo_chiyuebing
+import io.github.samolego.canta.generated.resources.emo_chuoshoushou
+import io.github.samolego.canta.generated.resources.emo_chuoyichuo
+import io.github.samolego.canta.generated.resources.emo_chuquwan
+import io.github.samolego.canta.generated.resources.emo_dacall
+import io.github.samolego.canta.generated.resources.emo_daikouzhao
+import io.github.samolego.canta.generated.resources.emo_daisi
+import io.github.samolego.canta.generated.resources.emo_daiwoqu
+import io.github.samolego.canta.generated.resources.emo_daiwugu
+import io.github.samolego.canta.generated.resources.emo_daji
+import io.github.samolego.canta.generated.resources.emo_dajinya
+import io.github.samolego.canta.generated.resources.emo_daku
+import io.github.samolego.canta.generated.resources.emo_dalian
+import io.github.samolego.canta.generated.resources.emo_damie
+import io.github.samolego.canta.generated.resources.emo_dangao
+import io.github.samolego.canta.generated.resources.emo_dangji
+import io.github.samolego.canta.generated.resources.emo_dao
+import io.github.samolego.canta.generated.resources.emo_dashengchitao
+import io.github.samolego.canta.generated.resources.emo_dashengxiaomiao
+import io.github.samolego.canta.generated.resources.emo_dawa_emoji
+import io.github.samolego.canta.generated.resources.emo_daxiao
+import io.github.samolego.canta.generated.resources.emo_default_emoticon_cover
+import io.github.samolego.canta.generated.resources.emo_dengchang
+import io.github.samolego.canta.generated.resources.emo_denglong
+import io.github.samolego.canta.generated.resources.emo_deyi
+import io.github.samolego.canta.generated.resources.emo_dianhuo
+import io.github.samolego.canta.generated.resources.emo_dianlianghaojin
+import io.github.samolego.canta.generated.resources.emo_diantouhayao
+import io.github.samolego.canta.generated.resources.emo_diaoxie
+import io.github.samolego.canta.generated.resources.emo_dihua
+import io.github.samolego.canta.generated.resources.emo_dongdongnaozi
+import io.github.samolego.canta.generated.resources.emo_duojin
+import io.github.samolego.canta.generated.resources.emo_duoshou
+import io.github.samolego.canta.generated.resources.emo_emo
+import io.github.samolego.canta.generated.resources.emo_erha
+import io.github.samolego.canta.generated.resources.emo_erwa_emoji
+import io.github.samolego.canta.generated.resources.emo_fa
+import io.github.samolego.canta.generated.resources.emo_fanbaiyan
+import io.github.samolego.canta.generated.resources.emo_fangyanhua
+import io.github.samolego.canta.generated.resources.emo_fanu
+import io.github.samolego.canta.generated.resources.emo_fasheaixin
+import io.github.samolego.canta.generated.resources.emo_feiwen
+import io.github.samolego.canta.generated.resources.emo_feiyangyang
+import io.github.samolego.canta.generated.resources.emo_fendou
+import io.github.samolego.canta.generated.resources.emo_fenfa
+import io.github.samolego.canta.generated.resources.emo_fengyi
+import io.github.samolego.canta.generated.resources.emo_fennu
+import io.github.samolego.canta.generated.resources.emo_fenseaixin
+import io.github.samolego.canta.generated.resources.emo_fu
+import io.github.samolego.canta.generated.resources.emo_gairui
+import io.github.samolego.canta.generated.resources.emo_ganbei
+import io.github.samolego.canta.generated.resources.emo_ganfan_emoji
+import io.github.samolego.canta.generated.resources.emo_ganfanren
+import io.github.samolego.canta.generated.resources.emo_gangaliuhan
+import io.github.samolego.canta.generated.resources.emo_gannubuganyan
+import io.github.samolego.canta.generated.resources.emo_gaofei
+import io.github.samolego.canta.generated.resources.emo_gaxiao
+import io.github.samolego.canta.generated.resources.emo_geiguile
+import io.github.samolego.canta.generated.resources.emo_geili
+import io.github.samolego.canta.generated.resources.emo_gongxifacai_emoji
+import io.github.samolego.canta.generated.resources.emo_goutouhuaixiao
+import io.github.samolego.canta.generated.resources.emo_gouyin
+import io.github.samolego.canta.generated.resources.emo_guangtouqiang_emoji
+import io.github.samolego.canta.generated.resources.emo_guonianniu
+import io.github.samolego.canta.generated.resources.emo_guonianshu
+import io.github.samolego.canta.generated.resources.emo_guzhang
+import io.github.samolego.canta.generated.resources.emo_haideishiwo
+import io.github.samolego.canta.generated.resources.emo_haiqilai
+import io.github.samolego.canta.generated.resources.emo_haixiu
+import io.github.samolego.canta.generated.resources.emo_haizhua
+import io.github.samolego.canta.generated.resources.emo_han
+import io.github.samolego.canta.generated.resources.emo_hanshui
+import io.github.samolego.canta.generated.resources.emo_hanxiao
+import io.github.samolego.canta.generated.resources.emo_haokaixin
+import io.github.samolego.canta.generated.resources.emo_haoxiangchi
+import io.github.samolego.canta.generated.resources.emo_haoxiangyao
+import io.github.samolego.canta.generated.resources.emo_haqian
+import io.github.samolego.canta.generated.resources.emo_heiha
+import io.github.samolego.canta.generated.resources.emo_heilian
+import io.github.samolego.canta.generated.resources.emo_heixian
+import io.github.samolego.canta.generated.resources.emo_heniliaotian
+import io.github.samolego.canta.generated.resources.emo_hongbao
+import io.github.samolego.canta.generated.resources.emo_hongbaonalai_emoji
+import io.github.samolego.canta.generated.resources.emo_honglian
+import io.github.samolego.canta.generated.resources.emo_hongpaidashi
+import io.github.samolego.canta.generated.resources.emo_hongqi
+import io.github.samolego.canta.generated.resources.emo_hongtailang
+import io.github.samolego.canta.generated.resources.emo_hongtoujin
+import io.github.samolego.canta.generated.resources.emo_hongxiongqieqie
+import io.github.samolego.canta.generated.resources.emo_houwangshuagun_emoji
+import io.github.samolego.canta.generated.resources.emo_huaixiao
+import io.github.samolego.canta.generated.resources.emo_huangchaiquan
+import io.github.samolego.canta.generated.resources.emo_huangfa
+import io.github.samolego.canta.generated.resources.emo_huanglianganbei
+import io.github.samolego.canta.generated.resources.emo_huanglianqidao
+import io.github.samolego.canta.generated.resources.emo_huanglianqiujiwei
+import io.github.samolego.canta.generated.resources.emo_hufen
+import io.github.samolego.canta.generated.resources.emo_hugua
+import io.github.samolego.canta.generated.resources.emo_huitailang
+import io.github.samolego.canta.generated.resources.emo_huixie
+import io.github.samolego.canta.generated.resources.emo_huoguo
+import io.github.samolego.canta.generated.resources.emo_hutou
+import io.github.samolego.canta.generated.resources.emo_iloveyou
+import io.github.samolego.canta.generated.resources.emo_ipqiujiwei
+import io.github.samolego.canta.generated.resources.emo_jiagongde
+import io.github.samolego.canta.generated.resources.emo_jiahaoyou
+import io.github.samolego.canta.generated.resources.emo_jiajitui
+import io.github.samolego.canta.generated.resources.emo_jiangpai
+import io.github.samolego.canta.generated.resources.emo_jianxiao
+import io.github.samolego.canta.generated.resources.emo_jianyi
+import io.github.samolego.canta.generated.resources.emo_jiaolv
+import io.github.samolego.canta.generated.resources.emo_jiaozi
+import io.github.samolego.canta.generated.resources.emo_jiayi
+import io.github.samolego.canta.generated.resources.emo_jiayou
+import io.github.samolego.canta.generated.resources.emo_jiezhi
+import io.github.samolego.canta.generated.resources.emo_jijiguowang
+import io.github.samolego.canta.generated.resources.emo_jinbangtiming
+import io.github.samolego.canta.generated.resources.emo_jingkong
+import io.github.samolego.canta.generated.resources.emo_jingli
+import io.github.samolego.canta.generated.resources.emo_jingxuan
+import io.github.samolego.canta.generated.resources.emo_jingxuanzan
+import io.github.samolego.canta.generated.resources.emo_jingya
+import io.github.samolego.canta.generated.resources.emo_jingyuaimu
+import io.github.samolego.canta.generated.resources.emo_jingyuciya
+import io.github.samolego.canta.generated.resources.emo_jingyudianzan
+import io.github.samolego.canta.generated.resources.emo_jingyugaxiao
+import io.github.samolego.canta.generated.resources.emo_jingyuliulei
+import io.github.samolego.canta.generated.resources.emo_jingyutingji
+import io.github.samolego.canta.generated.resources.emo_jingyuwulian
+import io.github.samolego.canta.generated.resources.emo_jinli
+import io.github.samolego.canta.generated.resources.emo_jinpai
+import io.github.samolego.canta.generated.resources.emo_jinqiula
+import io.github.samolego.canta.generated.resources.emo_jiong
+import io.github.samolego.canta.generated.resources.emo_jiqing
+import io.github.samolego.canta.generated.resources.emo_jiqingkaimai
+import io.github.samolego.canta.generated.resources.emo_jiuzhuandachang
+import io.github.samolego.canta.generated.resources.emo_jizhang
+import io.github.samolego.canta.generated.resources.emo_jizhi
+import io.github.samolego.canta.generated.resources.emo_jue
+import io.github.samolego.canta.generated.resources.emo_juele
+import io.github.samolego.canta.generated.resources.emo_jugong
+import io.github.samolego.canta.generated.resources.emo_jundayi
+import io.github.samolego.canta.generated.resources.emo_jushou
+import io.github.samolego.canta.generated.resources.emo_juzhong
+import io.github.samolego.canta.generated.resources.emo_kafei
+import io.github.samolego.canta.generated.resources.emo_kaixintu
+import io.github.samolego.canta.generated.resources.emo_kan
+import io.github.samolego.canta.generated.resources.emo_kanfushanhai
+import io.github.samolego.canta.generated.resources.emo_kanxi
+import io.github.samolego.canta.generated.resources.emo_kaoyunbaopeng
+import io.github.samolego.canta.generated.resources.emo_keai
+import io.github.samolego.canta.generated.resources.emo_kelian
+import io.github.samolego.canta.generated.resources.emo_kiss
+import io.github.samolego.canta.generated.resources.emo_kisskiss
+import io.github.samolego.canta.generated.resources.emo_kongju
+import io.github.samolego.canta.generated.resources.emo_koubi
+import io.github.samolego.canta.generated.resources.emo_kuaikule
+import io.github.samolego.canta.generated.resources.emo_kuku
+import io.github.samolego.canta.generated.resources.emo_kulou
+import io.github.samolego.canta.generated.resources.emo_kun
+import io.github.samolego.canta.generated.resources.emo_kuse
+import io.github.samolego.canta.generated.resources.emo_kuye
+import io.github.samolego.canta.generated.resources.emo_laikanwo
+import io.github.samolego.canta.generated.resources.emo_lailiaotian
+import io.github.samolego.canta.generated.resources.emo_laji
+import io.github.samolego.canta.generated.resources.emo_lan
+import io.github.samolego.canta.generated.resources.emo_lanqiu
+import io.github.samolego.canta.generated.resources.emo_lantoujin
+import io.github.samolego.canta.generated.resources.emo_lanyangyang
+import io.github.samolego.canta.generated.resources.emo_leiben
+import io.github.samolego.canta.generated.resources.emo_lengmo
+import io.github.samolego.canta.generated.resources.emo_liangdai
+import io.github.samolego.canta.generated.resources.emo_liangxi
+import io.github.samolego.canta.generated.resources.emo_lianteng
+import io.github.samolego.canta.generated.resources.emo_liekai
+import io.github.samolego.canta.generated.resources.emo_lihaile
+import io.github.samolego.canta.generated.resources.emo_lingguangyishan
+import io.github.samolego.canta.generated.resources.emo_liulei
+import io.github.samolego.canta.generated.resources.emo_liwu
+import io.github.samolego.canta.generated.resources.emo_lubanqihao
+import io.github.samolego.canta.generated.resources.emo_luna
+import io.github.samolego.canta.generated.resources.emo_luosanpao
+import io.github.samolego.canta.generated.resources.emo_lvfa
+import io.github.samolego.canta.generated.resources.emo_lvmaozi
+import io.github.samolego.canta.generated.resources.emo_maimaimai
+import io.github.samolego.canta.generated.resources.emo_makalong
+import io.github.samolego.canta.generated.resources.emo_makeboluo
+import io.github.samolego.canta.generated.resources.emo_maohan
+import io.github.samolego.canta.generated.resources.emo_maomao_emoji
+import io.github.samolego.canta.generated.resources.emo_maoshoutao
+import io.github.samolego.canta.generated.resources.emo_maoxueren
+import io.github.samolego.canta.generated.resources.emo_mashizhang
+import io.github.samolego.canta.generated.resources.emo_masichundeweixiao
+import io.github.samolego.canta.generated.resources.emo_mazhu
+import io.github.samolego.canta.generated.resources.emo_meigui
+import io.github.samolego.canta.generated.resources.emo_meiyangyang
+import io.github.samolego.canta.generated.resources.emo_memeda
+import io.github.samolego.canta.generated.resources.emo_meng
+import io.github.samolego.canta.generated.resources.emo_menghuanhuojian
+import io.github.samolego.canta.generated.resources.emo_mifenggou
+import io.github.samolego.canta.generated.resources.emo_mini
+import io.github.samolego.canta.generated.resources.emo_miqi
+import io.github.samolego.canta.generated.resources.emo_motou
+import io.github.samolego.canta.generated.resources.emo_muyangren
+import io.github.samolego.canta.generated.resources.emo_naicha
+import io.github.samolego.canta.generated.resources.emo_nanguo
+import io.github.samolego.canta.generated.resources.emo_new_emoji
+import io.github.samolego.canta.generated.resources.emo_niannian
+import io.github.samolego.canta.generated.resources.emo_nianshoutu
+import io.github.samolego.canta.generated.resources.emo_nibudaxing
+import io.github.samolego.canta.generated.resources.emo_nike
+import io.github.samolego.canta.generated.resources.emo_ningshi
+import io.github.samolego.canta.generated.resources.emo_no
+import io.github.samolego.canta.generated.resources.emo_nonono
+import io.github.samolego.canta.generated.resources.emo_nuanyangyang
+import io.github.samolego.canta.generated.resources.emo_ok
+import io.github.samolego.canta.generated.resources.emo_okk
+import io.github.samolego.canta.generated.resources.emo_omg
+import io.github.samolego.canta.generated.resources.emo_papadalian
+import io.github.samolego.canta.generated.resources.emo_pengquan
+import io.github.samolego.canta.generated.resources.emo_piezui
+import io.github.samolego.canta.generated.resources.emo_pijiu
+import io.github.samolego.canta.generated.resources.emo_pinganguo
+import io.github.samolego.canta.generated.resources.emo_pingpangqiu
+import io.github.samolego.canta.generated.resources.emo_qian
+import io.github.samolego.canta.generated.resources.emo_qiang
+import io.github.samolego.canta.generated.resources.emo_qianjinshumao
+import io.github.samolego.canta.generated.resources.emo_qiaoda
+import io.github.samolego.canta.generated.resources.emo_qiaokeli
+import io.github.samolego.canta.generated.resources.emo_qiaomuyu
+import io.github.samolego.canta.generated.resources.emo_qibuchengsheng
+import io.github.samolego.canta.generated.resources.emo_qidao
+import io.github.samolego.canta.generated.resources.emo_qingshu
+import io.github.samolego.canta.generated.resources.emo_qingzhu
+import io.github.samolego.canta.generated.resources.emo_qinxishou
+import io.github.samolego.canta.generated.resources.emo_qiqididi
+import io.github.samolego.canta.generated.resources.emo_qiqiu
+import io.github.samolego.canta.generated.resources.emo_qiubaobao
+import io.github.samolego.canta.generated.resources.emo_qiuhaoyun
+import io.github.samolego.canta.generated.resources.emo_qiujiwei1
+import io.github.samolego.canta.generated.resources.emo_qiujiwei2
+import io.github.samolego.canta.generated.resources.emo_qiujiwei3
+import io.github.samolego.canta.generated.resources.emo_qiuqiule
+import io.github.samolego.canta.generated.resources.emo_qiuxie
+import io.github.samolego.canta.generated.resources.emo_qiwa_emoji
+import io.github.samolego.canta.generated.resources.emo_quantou
+import io.github.samolego.canta.generated.resources.emo_quwufen
+import io.github.samolego.canta.generated.resources.emo_rehuale
+import io.github.samolego.canta.generated.resources.emo_ribenguoqi
+import io.github.samolego.canta.generated.resources.emo_ruhua
+import io.github.samolego.canta.generated.resources.emo_ruo
+import io.github.samolego.canta.generated.resources.emo_sahua
+import io.github.samolego.canta.generated.resources.emo_sanwa_emoji
+import io.github.samolego.canta.generated.resources.emo_shamate
+import io.github.samolego.canta.generated.resources.emo_shangan
+import io.github.samolego.canta.generated.resources.emo_shanglianjie
+import io.github.samolego.canta.generated.resources.emo_shangxin
+import io.github.samolego.canta.generated.resources.emo_shaqiuzhizhu
+import io.github.samolego.canta.generated.resources.emo_shengdanmao
+import io.github.samolego.canta.generated.resources.emo_shengdanshu
+import io.github.samolego.canta.generated.resources.emo_shengli
+import io.github.samolego.canta.generated.resources.emo_shi
+import io.github.samolego.canta.generated.resources.emo_shihua
+import io.github.samolego.canta.generated.resources.emo_shixindonga
+import io.github.samolego.canta.generated.resources.emo_shouhua
+import io.github.samolego.canta.generated.resources.emo_shoutao
+import io.github.samolego.canta.generated.resources.emo_shuai
+import io.github.samolego.canta.generated.resources.emo_shuanq
+import io.github.samolego.canta.generated.resources.emo_sikao
+import io.github.samolego.canta.generated.resources.emo_siwa_emoji
+import io.github.samolego.canta.generated.resources.emo_songhua
+import io.github.samolego.canta.generated.resources.emo_songmeigui
+import io.github.samolego.canta.generated.resources.emo_songxin
+import io.github.samolego.canta.generated.resources.emo_taibaijinxing_emoji
+import io.github.samolego.canta.generated.resources.emo_taiyang
+import io.github.samolego.canta.generated.resources.emo_tajile
+import io.github.samolego.canta.generated.resources.emo_tanghulu
+import io.github.samolego.canta.generated.resources.emo_tanglaoya
+import io.github.samolego.canta.generated.resources.emo_tangping
+import io.github.samolego.canta.generated.resources.emo_tangyuan
+import io.github.samolego.canta.generated.resources.emo_tanqi
+import io.github.samolego.canta.generated.resources.emo_tanshou
+import io.github.samolego.canta.generated.resources.emo_tianping
+import io.github.samolego.canta.generated.resources.emo_tietie
+import io.github.samolego.canta.generated.resources.emo_tietiehongbao_emoji
+import io.github.samolego.canta.generated.resources.emo_tingge
+import io.github.samolego.canta.generated.resources.emo_toutouai
+import io.github.samolego.canta.generated.resources.emo_touxiang
+import io.github.samolego.canta.generated.resources.emo_touxiao
+import io.github.samolego.canta.generated.resources.emo_tu
+import io.github.samolego.canta.generated.resources.emo_tucaihong
+import io.github.samolego.canta.generated.resources.emo_tushe
+import io.github.samolego.canta.generated.resources.emo_tushexiaogou
+import io.github.samolego.canta.generated.resources.emo_tuxie
+import io.github.samolego.canta.generated.resources.emo_v5
+import io.github.samolego.canta.generated.resources.emo_weilong
+import io.github.samolego.canta.generated.resources.emo_weiqu
+import io.github.samolego.canta.generated.resources.emo_weixiao
+import io.github.samolego.canta.generated.resources.emo_weixiaodaishu
+import io.github.samolego.canta.generated.resources.emo_wen
+import io.github.samolego.canta.generated.resources.emo_what
+import io.github.samolego.canta.generated.resources.emo_wink_emoji
+import io.github.samolego.canta.generated.resources.emo_wokanxing
+import io.github.samolego.canta.generated.resources.emo_woshou
+import io.github.samolego.canta.generated.resources.emo_wosuanle
+import io.github.samolego.canta.generated.resources.emo_wotainanle
+import io.github.samolego.canta.generated.resources.emo_woxiangjingjing
+import io.github.samolego.canta.generated.resources.emo_wozhua
+import io.github.samolego.canta.generated.resources.emo_wulian
+import io.github.samolego.canta.generated.resources.emo_wululu
+import io.github.samolego.canta.generated.resources.emo_wumai
+import io.github.samolego.canta.generated.resources.emo_wuwa_emoji
+import io.github.samolego.canta.generated.resources.emo_wuyu
+import io.github.samolego.canta.generated.resources.emo_wuyuliuhan
+import io.github.samolego.canta.generated.resources.emo_xiang
+import io.github.samolego.canta.generated.resources.emo_xiannvsanhua_emoji
+import io.github.samolego.canta.generated.resources.emo_xiao
+import io.github.samolego.canta.generated.resources.emo_xiaochou
+import io.github.samolego.canta.generated.resources.emo_xiaodiaoya
+import io.github.samolego.canta.generated.resources.emo_xiaogui
+import io.github.samolego.canta.generated.resources.emo_xiaoguzhang
+import io.github.samolego.canta.generated.resources.emo_xiaohonghua
+import io.github.samolego.canta.generated.resources.emo_xiaohuangya
+import io.github.samolego.canta.generated.resources.emo_xiaoku
+import io.github.samolego.canta.generated.resources.emo_xiaokubao
+import io.github.samolego.canta.generated.resources.emo_xiaoqiao
+import io.github.samolego.canta.generated.resources.emo_xiaoxinxin
+import io.github.samolego.canta.generated.resources.emo_xiaqiyang
+import io.github.samolego.canta.generated.resources.emo_xiaxue
+import io.github.samolego.canta.generated.resources.emo_xieliuhai
+import io.github.samolego.canta.generated.resources.emo_xiexie_emoji
+import io.github.samolego.canta.generated.resources.emo_xieyan
+import io.github.samolego.canta.generated.resources.emo_xigua
+import io.github.samolego.canta.generated.resources.emo_xikang
+import io.github.samolego.canta.generated.resources.emo_xin
+import io.github.samolego.canta.generated.resources.emo_xindong
+import io.github.samolego.canta.generated.resources.emo_xingxingyan
+import io.github.samolego.canta.generated.resources.emo_xingyuncao
+import io.github.samolego.canta.generated.resources.emo_xiongda
+import io.github.samolego.canta.generated.resources.emo_xionger
+import io.github.samolego.canta.generated.resources.emo_xiongji
+import io.github.samolego.canta.generated.resources.emo_xiyangyang
+import io.github.samolego.canta.generated.resources.emo_xu
+import io.github.samolego.canta.generated.resources.emo_xueguohuanmeng
+import io.github.samolego.canta.generated.resources.emo_xuehua
+import io.github.samolego.canta.generated.resources.emo_xueqiu
+import io.github.samolego.canta.generated.resources.emo_xueren
+import io.github.samolego.canta.generated.resources.emo_xuhuohuaba
+import io.github.samolego.canta.generated.resources.emo_xuyuan
+import io.github.samolego.canta.generated.resources.emo_yanhanrelei
+import io.github.samolego.canta.generated.resources.emo_yanhua
+import io.github.samolego.canta.generated.resources.emo_yao
+import io.github.samolego.canta.generated.resources.emo_yayunguzhang
+import io.github.samolego.canta.generated.resources.emo_ye
+import io.github.samolego.canta.generated.resources.emo_yes
+import io.github.samolego.canta.generated.resources.emo_yeye_emoji
+import io.github.samolego.canta.generated.resources.emo_yinxian
+import io.github.samolego.canta.generated.resources.emo_yiqijiayou
+import io.github.samolego.canta.generated.resources.emo_yitouluanma
+import io.github.samolego.canta.generated.resources.emo_youbian
+import io.github.samolego.canta.generated.resources.emo_youhengheng
+import io.github.samolego.canta.generated.resources.emo_youxian
+import io.github.samolego.canta.generated.resources.emo_yuanbao
+import io.github.samolego.canta.generated.resources.emo_yuebing
+import io.github.samolego.canta.generated.resources.emo_yueliang
+import io.github.samolego.canta.generated.resources.emo_yun
+import io.github.samolego.canta.generated.resources.emo_yutu
+import io.github.samolego.canta.generated.resources.emo_yyds
+import io.github.samolego.canta.generated.resources.emo_zaijian
+import io.github.samolego.canta.generated.resources.emo_zaixianchigua
+import io.github.samolego.canta.generated.resources.emo_zan
+import io.github.samolego.canta.generated.resources.emo_zhadan
+import io.github.samolego.canta.generated.resources.emo_zhankaishuoshuo
+import io.github.samolego.canta.generated.resources.emo_zhaocaitu
+import io.github.samolego.canta.generated.resources.emo_zhaxin
+import io.github.samolego.canta.generated.resources.emo_zhenliang
+import io.github.samolego.canta.generated.resources.emo_zhifeiji
+import io.github.samolego.canta.generated.resources.emo_zhongcao
+import io.github.samolego.canta.generated.resources.emo_zhoudongyudeningshi
+import io.github.samolego.canta.generated.resources.emo_zhouma
+import io.github.samolego.canta.generated.resources.emo_zhoumei
+import io.github.samolego.canta.generated.resources.emo_zhuakuang
+import io.github.samolego.canta.generated.resources.emo_zhuangku
+import io.github.samolego.canta.generated.resources.emo_zhudi
+import io.github.samolego.canta.generated.resources.emo_zhuiju
+import io.github.samolego.canta.generated.resources.emo_zhutou
+import io.github.samolego.canta.generated.resources.emo_zhuwei
+import io.github.samolego.canta.generated.resources.emo_ziweibiezou
+import io.github.samolego.canta.generated.resources.emo_ziya
+import io.github.samolego.canta.generated.resources.emo_zongzi
+import io.github.samolego.canta.generated.resources.emo_zouyige
+import io.github.samolego.canta.generated.resources.emo_zuobian
+import io.github.samolego.canta.generated.resources.emo_zuoguilian
+import io.github.samolego.canta.generated.resources.emo_zuohengheng
+import io.github.samolego.canta.generated.resources.emo_zuoshang
+import io.github.samolego.canta.generated.resources.emo_zuqiu
+import org.jetbrains.compose.resources.DrawableResource
+
+/**
+ * One sticker of the comment bar: the key it is typed as, and the picture it stands for.
+ *
+ * A comment carries stickers as text, "[weixiao]", because the backend stores a body string and
+ * nothing else. The key is what travels; [resource] is what is drawn, in the picker and inline
+ * in the comment itself, so the same message reads the same way to somebody who never opened
+ * the picker.
+ */
+data class Emotion(val key: String, val resource: DrawableResource) {
+    /** The token a comment body carries: what the picker inserts and the renderer looks up. */
+    val token: String get() = "[" + key + "]"
+}
+
+/**
+ * Every sticker the picker offers, in a stable order.
+ *
+ * The order is the resource order rather than an invented grouping: these are the stickers the
+ * app ships, sorted by key, and a list that reshuffles itself between releases would move a
+ * sticker out from under a thumb that learned where it was.
+ */
+val EMOTIONS: List<Emotion> = listOf(
+    Emotion("18jin", Res.drawable.emo_18jin),
+    Emotion("6", Res.drawable.emo_6),
+    Emotion("666", Res.drawable.emo_666),
+    Emotion("aileaile", Res.drawable.emo_aileaile),
+    Emotion("aimu", Res.drawable.emo_aimu),
+    Emotion("aixinshou", Res.drawable.emo_aixinshou),
+    Emotion("anpai", Res.drawable.emo_anpai),
+    Emotion("anqila", Res.drawable.emo_anqila),
+    Emotion("anzhongguancha", Res.drawable.emo_anzhongguancha),
+    Emotion("baibai", Res.drawable.emo_baibai),
+    Emotion("baiyan", Res.drawable.emo_baiyan),
+    Emotion("bangbangtang", Res.drawable.emo_bangbangtang),
+    Emotion("baobaolong_emoji", Res.drawable.emo_baobaolong_emoji),
+    Emotion("baobaoni", Res.drawable.emo_baobaoni),
+    Emotion("baojinziji", Res.drawable.emo_baojinziji),
+    Emotion("baoquan", Res.drawable.emo_baoquan),
+    Emotion("beiwokanqiu", Res.drawable.emo_beiwokanqiu),
+    Emotion("bianpao", Res.drawable.emo_bianpao),
+    Emotion("biaomianciya", Res.drawable.emo_biaomianciya),
+    Emotion("biaomianweixiao", Res.drawable.emo_biaomianweixiao),
+    Emotion("biefadianle", Res.drawable.emo_biefadianle),
+    Emotion("bigexin", Res.drawable.emo_bigexin),
+    Emotion("bimawen", Res.drawable.emo_bimawen),
+    Emotion("bingtanghulu", Res.drawable.emo_bingtanghulu),
+    Emotion("bisheng", Res.drawable.emo_bisheng),
+    Emotion("bishi", Res.drawable.emo_bishi),
+    Emotion("bixin", Res.drawable.emo_bixin),
+    Emotion("biyela", Res.drawable.emo_biyela),
+    Emotion("bizui", Res.drawable.emo_bizui),
+    Emotion("bukan", Res.drawable.emo_bukan),
+    Emotion("bulutuo", Res.drawable.emo_bulutuo),
+    Emotion("bunibuxiang", Res.drawable.emo_bunibuxiang),
+    Emotion("bushiba", Res.drawable.emo_bushiba),
+    Emotion("buxinyaoyan", Res.drawable.emo_buxinyaoyan),
+    Emotion("cahan", Res.drawable.emo_cahan),
+    Emotion("caigou", Res.drawable.emo_caigou),
+    Emotion("candy", Res.drawable.emo_candy),
+    Emotion("chaojiai", Res.drawable.emo_chaojiai),
+    Emotion("chaoren", Res.drawable.emo_chaoren),
+    Emotion("chengqiangluolei", Res.drawable.emo_chengqiangluolei),
+    Emotion("chiguaqunzhong", Res.drawable.emo_chiguaqunzhong),
+    Emotion("chiyuebing", Res.drawable.emo_chiyuebing),
+    Emotion("chuoshoushou", Res.drawable.emo_chuoshoushou),
+    Emotion("chuoyichuo", Res.drawable.emo_chuoyichuo),
+    Emotion("chuquwan", Res.drawable.emo_chuquwan),
+    Emotion("dacall", Res.drawable.emo_dacall),
+    Emotion("daikouzhao", Res.drawable.emo_daikouzhao),
+    Emotion("daisi", Res.drawable.emo_daisi),
+    Emotion("daiwoqu", Res.drawable.emo_daiwoqu),
+    Emotion("daiwugu", Res.drawable.emo_daiwugu),
+    Emotion("daji", Res.drawable.emo_daji),
+    Emotion("dajinya", Res.drawable.emo_dajinya),
+    Emotion("daku", Res.drawable.emo_daku),
+    Emotion("dalian", Res.drawable.emo_dalian),
+    Emotion("damie", Res.drawable.emo_damie),
+    Emotion("dangao", Res.drawable.emo_dangao),
+    Emotion("dangji", Res.drawable.emo_dangji),
+    Emotion("dao", Res.drawable.emo_dao),
+    Emotion("dashengchitao", Res.drawable.emo_dashengchitao),
+    Emotion("dashengxiaomiao", Res.drawable.emo_dashengxiaomiao),
+    Emotion("dawa_emoji", Res.drawable.emo_dawa_emoji),
+    Emotion("daxiao", Res.drawable.emo_daxiao),
+    Emotion("default_emoticon_cover", Res.drawable.emo_default_emoticon_cover),
+    Emotion("dengchang", Res.drawable.emo_dengchang),
+    Emotion("denglong", Res.drawable.emo_denglong),
+    Emotion("deyi", Res.drawable.emo_deyi),
+    Emotion("dianhuo", Res.drawable.emo_dianhuo),
+    Emotion("dianlianghaojin", Res.drawable.emo_dianlianghaojin),
+    Emotion("diantouhayao", Res.drawable.emo_diantouhayao),
+    Emotion("diaoxie", Res.drawable.emo_diaoxie),
+    Emotion("dihua", Res.drawable.emo_dihua),
+    Emotion("dongdongnaozi", Res.drawable.emo_dongdongnaozi),
+    Emotion("duojin", Res.drawable.emo_duojin),
+    Emotion("duoshou", Res.drawable.emo_duoshou),
+    Emotion("emo", Res.drawable.emo_emo),
+    Emotion("erha", Res.drawable.emo_erha),
+    Emotion("erwa_emoji", Res.drawable.emo_erwa_emoji),
+    Emotion("fa", Res.drawable.emo_fa),
+    Emotion("fanbaiyan", Res.drawable.emo_fanbaiyan),
+    Emotion("fangyanhua", Res.drawable.emo_fangyanhua),
+    Emotion("fanu", Res.drawable.emo_fanu),
+    Emotion("fasheaixin", Res.drawable.emo_fasheaixin),
+    Emotion("feiwen", Res.drawable.emo_feiwen),
+    Emotion("feiyangyang", Res.drawable.emo_feiyangyang),
+    Emotion("fendou", Res.drawable.emo_fendou),
+    Emotion("fenfa", Res.drawable.emo_fenfa),
+    Emotion("fengyi", Res.drawable.emo_fengyi),
+    Emotion("fennu", Res.drawable.emo_fennu),
+    Emotion("fenseaixin", Res.drawable.emo_fenseaixin),
+    Emotion("fu", Res.drawable.emo_fu),
+    Emotion("gairui", Res.drawable.emo_gairui),
+    Emotion("ganbei", Res.drawable.emo_ganbei),
+    Emotion("ganfan_emoji", Res.drawable.emo_ganfan_emoji),
+    Emotion("ganfanren", Res.drawable.emo_ganfanren),
+    Emotion("gangaliuhan", Res.drawable.emo_gangaliuhan),
+    Emotion("gannubuganyan", Res.drawable.emo_gannubuganyan),
+    Emotion("gaofei", Res.drawable.emo_gaofei),
+    Emotion("gaxiao", Res.drawable.emo_gaxiao),
+    Emotion("geiguile", Res.drawable.emo_geiguile),
+    Emotion("geili", Res.drawable.emo_geili),
+    Emotion("gongxifacai_emoji", Res.drawable.emo_gongxifacai_emoji),
+    Emotion("goutouhuaixiao", Res.drawable.emo_goutouhuaixiao),
+    Emotion("gouyin", Res.drawable.emo_gouyin),
+    Emotion("guangtouqiang_emoji", Res.drawable.emo_guangtouqiang_emoji),
+    Emotion("guonianniu", Res.drawable.emo_guonianniu),
+    Emotion("guonianshu", Res.drawable.emo_guonianshu),
+    Emotion("guzhang", Res.drawable.emo_guzhang),
+    Emotion("haideishiwo", Res.drawable.emo_haideishiwo),
+    Emotion("haiqilai", Res.drawable.emo_haiqilai),
+    Emotion("haixiu", Res.drawable.emo_haixiu),
+    Emotion("haizhua", Res.drawable.emo_haizhua),
+    Emotion("han", Res.drawable.emo_han),
+    Emotion("hanshui", Res.drawable.emo_hanshui),
+    Emotion("hanxiao", Res.drawable.emo_hanxiao),
+    Emotion("haokaixin", Res.drawable.emo_haokaixin),
+    Emotion("haoxiangchi", Res.drawable.emo_haoxiangchi),
+    Emotion("haoxiangyao", Res.drawable.emo_haoxiangyao),
+    Emotion("haqian", Res.drawable.emo_haqian),
+    Emotion("heiha", Res.drawable.emo_heiha),
+    Emotion("heilian", Res.drawable.emo_heilian),
+    Emotion("heixian", Res.drawable.emo_heixian),
+    Emotion("heniliaotian", Res.drawable.emo_heniliaotian),
+    Emotion("hongbao", Res.drawable.emo_hongbao),
+    Emotion("hongbaonalai_emoji", Res.drawable.emo_hongbaonalai_emoji),
+    Emotion("honglian", Res.drawable.emo_honglian),
+    Emotion("hongpaidashi", Res.drawable.emo_hongpaidashi),
+    Emotion("hongqi", Res.drawable.emo_hongqi),
+    Emotion("hongtailang", Res.drawable.emo_hongtailang),
+    Emotion("hongtoujin", Res.drawable.emo_hongtoujin),
+    Emotion("hongxiongqieqie", Res.drawable.emo_hongxiongqieqie),
+    Emotion("houwangshuagun_emoji", Res.drawable.emo_houwangshuagun_emoji),
+    Emotion("huaixiao", Res.drawable.emo_huaixiao),
+    Emotion("huangchaiquan", Res.drawable.emo_huangchaiquan),
+    Emotion("huangfa", Res.drawable.emo_huangfa),
+    Emotion("huanglianganbei", Res.drawable.emo_huanglianganbei),
+    Emotion("huanglianqidao", Res.drawable.emo_huanglianqidao),
+    Emotion("huanglianqiujiwei", Res.drawable.emo_huanglianqiujiwei),
+    Emotion("hufen", Res.drawable.emo_hufen),
+    Emotion("hugua", Res.drawable.emo_hugua),
+    Emotion("huitailang", Res.drawable.emo_huitailang),
+    Emotion("huixie", Res.drawable.emo_huixie),
+    Emotion("huoguo", Res.drawable.emo_huoguo),
+    Emotion("hutou", Res.drawable.emo_hutou),
+    Emotion("iloveyou", Res.drawable.emo_iloveyou),
+    Emotion("ipqiujiwei", Res.drawable.emo_ipqiujiwei),
+    Emotion("jiagongde", Res.drawable.emo_jiagongde),
+    Emotion("jiahaoyou", Res.drawable.emo_jiahaoyou),
+    Emotion("jiajitui", Res.drawable.emo_jiajitui),
+    Emotion("jiangpai", Res.drawable.emo_jiangpai),
+    Emotion("jianxiao", Res.drawable.emo_jianxiao),
+    Emotion("jianyi", Res.drawable.emo_jianyi),
+    Emotion("jiaolv", Res.drawable.emo_jiaolv),
+    Emotion("jiaozi", Res.drawable.emo_jiaozi),
+    Emotion("jiayi", Res.drawable.emo_jiayi),
+    Emotion("jiayou", Res.drawable.emo_jiayou),
+    Emotion("jiezhi", Res.drawable.emo_jiezhi),
+    Emotion("jijiguowang", Res.drawable.emo_jijiguowang),
+    Emotion("jinbangtiming", Res.drawable.emo_jinbangtiming),
+    Emotion("jingkong", Res.drawable.emo_jingkong),
+    Emotion("jingli", Res.drawable.emo_jingli),
+    Emotion("jingxuan", Res.drawable.emo_jingxuan),
+    Emotion("jingxuanzan", Res.drawable.emo_jingxuanzan),
+    Emotion("jingya", Res.drawable.emo_jingya),
+    Emotion("jingyuaimu", Res.drawable.emo_jingyuaimu),
+    Emotion("jingyuciya", Res.drawable.emo_jingyuciya),
+    Emotion("jingyudianzan", Res.drawable.emo_jingyudianzan),
+    Emotion("jingyugaxiao", Res.drawable.emo_jingyugaxiao),
+    Emotion("jingyuliulei", Res.drawable.emo_jingyuliulei),
+    Emotion("jingyutingji", Res.drawable.emo_jingyutingji),
+    Emotion("jingyuwulian", Res.drawable.emo_jingyuwulian),
+    Emotion("jinli", Res.drawable.emo_jinli),
+    Emotion("jinpai", Res.drawable.emo_jinpai),
+    Emotion("jinqiula", Res.drawable.emo_jinqiula),
+    Emotion("jiong", Res.drawable.emo_jiong),
+    Emotion("jiqing", Res.drawable.emo_jiqing),
+    Emotion("jiqingkaimai", Res.drawable.emo_jiqingkaimai),
+    Emotion("jiuzhuandachang", Res.drawable.emo_jiuzhuandachang),
+    Emotion("jizhang", Res.drawable.emo_jizhang),
+    Emotion("jizhi", Res.drawable.emo_jizhi),
+    Emotion("jue", Res.drawable.emo_jue),
+    Emotion("juele", Res.drawable.emo_juele),
+    Emotion("jugong", Res.drawable.emo_jugong),
+    Emotion("jundayi", Res.drawable.emo_jundayi),
+    Emotion("jushou", Res.drawable.emo_jushou),
+    Emotion("juzhong", Res.drawable.emo_juzhong),
+    Emotion("kafei", Res.drawable.emo_kafei),
+    Emotion("kaixintu", Res.drawable.emo_kaixintu),
+    Emotion("kan", Res.drawable.emo_kan),
+    Emotion("kanfushanhai", Res.drawable.emo_kanfushanhai),
+    Emotion("kanxi", Res.drawable.emo_kanxi),
+    Emotion("kaoyunbaopeng", Res.drawable.emo_kaoyunbaopeng),
+    Emotion("keai", Res.drawable.emo_keai),
+    Emotion("kelian", Res.drawable.emo_kelian),
+    Emotion("kiss", Res.drawable.emo_kiss),
+    Emotion("kisskiss", Res.drawable.emo_kisskiss),
+    Emotion("kongju", Res.drawable.emo_kongju),
+    Emotion("koubi", Res.drawable.emo_koubi),
+    Emotion("kuaikule", Res.drawable.emo_kuaikule),
+    Emotion("kuku", Res.drawable.emo_kuku),
+    Emotion("kulou", Res.drawable.emo_kulou),
+    Emotion("kun", Res.drawable.emo_kun),
+    Emotion("kuse", Res.drawable.emo_kuse),
+    Emotion("kuye", Res.drawable.emo_kuye),
+    Emotion("laikanwo", Res.drawable.emo_laikanwo),
+    Emotion("lailiaotian", Res.drawable.emo_lailiaotian),
+    Emotion("laji", Res.drawable.emo_laji),
+    Emotion("lan", Res.drawable.emo_lan),
+    Emotion("lanqiu", Res.drawable.emo_lanqiu),
+    Emotion("lantoujin", Res.drawable.emo_lantoujin),
+    Emotion("lanyangyang", Res.drawable.emo_lanyangyang),
+    Emotion("leiben", Res.drawable.emo_leiben),
+    Emotion("lengmo", Res.drawable.emo_lengmo),
+    Emotion("liangdai", Res.drawable.emo_liangdai),
+    Emotion("liangxi", Res.drawable.emo_liangxi),
+    Emotion("lianteng", Res.drawable.emo_lianteng),
+    Emotion("liekai", Res.drawable.emo_liekai),
+    Emotion("lihaile", Res.drawable.emo_lihaile),
+    Emotion("lingguangyishan", Res.drawable.emo_lingguangyishan),
+    Emotion("liulei", Res.drawable.emo_liulei),
+    Emotion("liwu", Res.drawable.emo_liwu),
+    Emotion("lubanqihao", Res.drawable.emo_lubanqihao),
+    Emotion("luna", Res.drawable.emo_luna),
+    Emotion("luosanpao", Res.drawable.emo_luosanpao),
+    Emotion("lvfa", Res.drawable.emo_lvfa),
+    Emotion("lvmaozi", Res.drawable.emo_lvmaozi),
+    Emotion("maimaimai", Res.drawable.emo_maimaimai),
+    Emotion("makalong", Res.drawable.emo_makalong),
+    Emotion("makeboluo", Res.drawable.emo_makeboluo),
+    Emotion("maohan", Res.drawable.emo_maohan),
+    Emotion("maomao_emoji", Res.drawable.emo_maomao_emoji),
+    Emotion("maoshoutao", Res.drawable.emo_maoshoutao),
+    Emotion("maoxueren", Res.drawable.emo_maoxueren),
+    Emotion("mashizhang", Res.drawable.emo_mashizhang),
+    Emotion("masichundeweixiao", Res.drawable.emo_masichundeweixiao),
+    Emotion("mazhu", Res.drawable.emo_mazhu),
+    Emotion("meigui", Res.drawable.emo_meigui),
+    Emotion("meiyangyang", Res.drawable.emo_meiyangyang),
+    Emotion("memeda", Res.drawable.emo_memeda),
+    Emotion("meng", Res.drawable.emo_meng),
+    Emotion("menghuanhuojian", Res.drawable.emo_menghuanhuojian),
+    Emotion("mifenggou", Res.drawable.emo_mifenggou),
+    Emotion("mini", Res.drawable.emo_mini),
+    Emotion("miqi", Res.drawable.emo_miqi),
+    Emotion("motou", Res.drawable.emo_motou),
+    Emotion("muyangren", Res.drawable.emo_muyangren),
+    Emotion("naicha", Res.drawable.emo_naicha),
+    Emotion("nanguo", Res.drawable.emo_nanguo),
+    Emotion("new_emoji", Res.drawable.emo_new_emoji),
+    Emotion("niannian", Res.drawable.emo_niannian),
+    Emotion("nianshoutu", Res.drawable.emo_nianshoutu),
+    Emotion("nibudaxing", Res.drawable.emo_nibudaxing),
+    Emotion("nike", Res.drawable.emo_nike),
+    Emotion("ningshi", Res.drawable.emo_ningshi),
+    Emotion("no", Res.drawable.emo_no),
+    Emotion("nonono", Res.drawable.emo_nonono),
+    Emotion("nuanyangyang", Res.drawable.emo_nuanyangyang),
+    Emotion("ok", Res.drawable.emo_ok),
+    Emotion("okk", Res.drawable.emo_okk),
+    Emotion("omg", Res.drawable.emo_omg),
+    Emotion("papadalian", Res.drawable.emo_papadalian),
+    Emotion("pengquan", Res.drawable.emo_pengquan),
+    Emotion("piezui", Res.drawable.emo_piezui),
+    Emotion("pijiu", Res.drawable.emo_pijiu),
+    Emotion("pinganguo", Res.drawable.emo_pinganguo),
+    Emotion("pingpangqiu", Res.drawable.emo_pingpangqiu),
+    Emotion("qian", Res.drawable.emo_qian),
+    Emotion("qiang", Res.drawable.emo_qiang),
+    Emotion("qianjinshumao", Res.drawable.emo_qianjinshumao),
+    Emotion("qiaoda", Res.drawable.emo_qiaoda),
+    Emotion("qiaokeli", Res.drawable.emo_qiaokeli),
+    Emotion("qiaomuyu", Res.drawable.emo_qiaomuyu),
+    Emotion("qibuchengsheng", Res.drawable.emo_qibuchengsheng),
+    Emotion("qidao", Res.drawable.emo_qidao),
+    Emotion("qingshu", Res.drawable.emo_qingshu),
+    Emotion("qingzhu", Res.drawable.emo_qingzhu),
+    Emotion("qinxishou", Res.drawable.emo_qinxishou),
+    Emotion("qiqididi", Res.drawable.emo_qiqididi),
+    Emotion("qiqiu", Res.drawable.emo_qiqiu),
+    Emotion("qiubaobao", Res.drawable.emo_qiubaobao),
+    Emotion("qiuhaoyun", Res.drawable.emo_qiuhaoyun),
+    Emotion("qiujiwei1", Res.drawable.emo_qiujiwei1),
+    Emotion("qiujiwei2", Res.drawable.emo_qiujiwei2),
+    Emotion("qiujiwei3", Res.drawable.emo_qiujiwei3),
+    Emotion("qiuqiule", Res.drawable.emo_qiuqiule),
+    Emotion("qiuxie", Res.drawable.emo_qiuxie),
+    Emotion("qiwa_emoji", Res.drawable.emo_qiwa_emoji),
+    Emotion("quantou", Res.drawable.emo_quantou),
+    Emotion("quwufen", Res.drawable.emo_quwufen),
+    Emotion("rehuale", Res.drawable.emo_rehuale),
+    Emotion("ribenguoqi", Res.drawable.emo_ribenguoqi),
+    Emotion("ruhua", Res.drawable.emo_ruhua),
+    Emotion("ruo", Res.drawable.emo_ruo),
+    Emotion("sahua", Res.drawable.emo_sahua),
+    Emotion("sanwa_emoji", Res.drawable.emo_sanwa_emoji),
+    Emotion("shamate", Res.drawable.emo_shamate),
+    Emotion("shangan", Res.drawable.emo_shangan),
+    Emotion("shanglianjie", Res.drawable.emo_shanglianjie),
+    Emotion("shangxin", Res.drawable.emo_shangxin),
+    Emotion("shaqiuzhizhu", Res.drawable.emo_shaqiuzhizhu),
+    Emotion("shengdanmao", Res.drawable.emo_shengdanmao),
+    Emotion("shengdanshu", Res.drawable.emo_shengdanshu),
+    Emotion("shengli", Res.drawable.emo_shengli),
+    Emotion("shi", Res.drawable.emo_shi),
+    Emotion("shihua", Res.drawable.emo_shihua),
+    Emotion("shixindonga", Res.drawable.emo_shixindonga),
+    Emotion("shouhua", Res.drawable.emo_shouhua),
+    Emotion("shoutao", Res.drawable.emo_shoutao),
+    Emotion("shuai", Res.drawable.emo_shuai),
+    Emotion("shuanq", Res.drawable.emo_shuanq),
+    Emotion("sikao", Res.drawable.emo_sikao),
+    Emotion("siwa_emoji", Res.drawable.emo_siwa_emoji),
+    Emotion("songhua", Res.drawable.emo_songhua),
+    Emotion("songmeigui", Res.drawable.emo_songmeigui),
+    Emotion("songxin", Res.drawable.emo_songxin),
+    Emotion("taibaijinxing_emoji", Res.drawable.emo_taibaijinxing_emoji),
+    Emotion("taiyang", Res.drawable.emo_taiyang),
+    Emotion("tajile", Res.drawable.emo_tajile),
+    Emotion("tanghulu", Res.drawable.emo_tanghulu),
+    Emotion("tanglaoya", Res.drawable.emo_tanglaoya),
+    Emotion("tangping", Res.drawable.emo_tangping),
+    Emotion("tangyuan", Res.drawable.emo_tangyuan),
+    Emotion("tanqi", Res.drawable.emo_tanqi),
+    Emotion("tanshou", Res.drawable.emo_tanshou),
+    Emotion("tianping", Res.drawable.emo_tianping),
+    Emotion("tietie", Res.drawable.emo_tietie),
+    Emotion("tietiehongbao_emoji", Res.drawable.emo_tietiehongbao_emoji),
+    Emotion("tingge", Res.drawable.emo_tingge),
+    Emotion("toutouai", Res.drawable.emo_toutouai),
+    Emotion("touxiang", Res.drawable.emo_touxiang),
+    Emotion("touxiao", Res.drawable.emo_touxiao),
+    Emotion("tu", Res.drawable.emo_tu),
+    Emotion("tucaihong", Res.drawable.emo_tucaihong),
+    Emotion("tushe", Res.drawable.emo_tushe),
+    Emotion("tushexiaogou", Res.drawable.emo_tushexiaogou),
+    Emotion("tuxie", Res.drawable.emo_tuxie),
+    Emotion("v5", Res.drawable.emo_v5),
+    Emotion("weilong", Res.drawable.emo_weilong),
+    Emotion("weiqu", Res.drawable.emo_weiqu),
+    Emotion("weixiao", Res.drawable.emo_weixiao),
+    Emotion("weixiaodaishu", Res.drawable.emo_weixiaodaishu),
+    Emotion("wen", Res.drawable.emo_wen),
+    Emotion("what", Res.drawable.emo_what),
+    Emotion("wink_emoji", Res.drawable.emo_wink_emoji),
+    Emotion("wokanxing", Res.drawable.emo_wokanxing),
+    Emotion("woshou", Res.drawable.emo_woshou),
+    Emotion("wosuanle", Res.drawable.emo_wosuanle),
+    Emotion("wotainanle", Res.drawable.emo_wotainanle),
+    Emotion("woxiangjingjing", Res.drawable.emo_woxiangjingjing),
+    Emotion("wozhua", Res.drawable.emo_wozhua),
+    Emotion("wulian", Res.drawable.emo_wulian),
+    Emotion("wululu", Res.drawable.emo_wululu),
+    Emotion("wumai", Res.drawable.emo_wumai),
+    Emotion("wuwa_emoji", Res.drawable.emo_wuwa_emoji),
+    Emotion("wuyu", Res.drawable.emo_wuyu),
+    Emotion("wuyuliuhan", Res.drawable.emo_wuyuliuhan),
+    Emotion("xiang", Res.drawable.emo_xiang),
+    Emotion("xiannvsanhua_emoji", Res.drawable.emo_xiannvsanhua_emoji),
+    Emotion("xiao", Res.drawable.emo_xiao),
+    Emotion("xiaochou", Res.drawable.emo_xiaochou),
+    Emotion("xiaodiaoya", Res.drawable.emo_xiaodiaoya),
+    Emotion("xiaogui", Res.drawable.emo_xiaogui),
+    Emotion("xiaoguzhang", Res.drawable.emo_xiaoguzhang),
+    Emotion("xiaohonghua", Res.drawable.emo_xiaohonghua),
+    Emotion("xiaohuangya", Res.drawable.emo_xiaohuangya),
+    Emotion("xiaoku", Res.drawable.emo_xiaoku),
+    Emotion("xiaokubao", Res.drawable.emo_xiaokubao),
+    Emotion("xiaoqiao", Res.drawable.emo_xiaoqiao),
+    Emotion("xiaoxinxin", Res.drawable.emo_xiaoxinxin),
+    Emotion("xiaqiyang", Res.drawable.emo_xiaqiyang),
+    Emotion("xiaxue", Res.drawable.emo_xiaxue),
+    Emotion("xieliuhai", Res.drawable.emo_xieliuhai),
+    Emotion("xiexie_emoji", Res.drawable.emo_xiexie_emoji),
+    Emotion("xieyan", Res.drawable.emo_xieyan),
+    Emotion("xigua", Res.drawable.emo_xigua),
+    Emotion("xikang", Res.drawable.emo_xikang),
+    Emotion("xin", Res.drawable.emo_xin),
+    Emotion("xindong", Res.drawable.emo_xindong),
+    Emotion("xingxingyan", Res.drawable.emo_xingxingyan),
+    Emotion("xingyuncao", Res.drawable.emo_xingyuncao),
+    Emotion("xiongda", Res.drawable.emo_xiongda),
+    Emotion("xionger", Res.drawable.emo_xionger),
+    Emotion("xiongji", Res.drawable.emo_xiongji),
+    Emotion("xiyangyang", Res.drawable.emo_xiyangyang),
+    Emotion("xu", Res.drawable.emo_xu),
+    Emotion("xueguohuanmeng", Res.drawable.emo_xueguohuanmeng),
+    Emotion("xuehua", Res.drawable.emo_xuehua),
+    Emotion("xueqiu", Res.drawable.emo_xueqiu),
+    Emotion("xueren", Res.drawable.emo_xueren),
+    Emotion("xuhuohuaba", Res.drawable.emo_xuhuohuaba),
+    Emotion("xuyuan", Res.drawable.emo_xuyuan),
+    Emotion("yanhanrelei", Res.drawable.emo_yanhanrelei),
+    Emotion("yanhua", Res.drawable.emo_yanhua),
+    Emotion("yao", Res.drawable.emo_yao),
+    Emotion("yayunguzhang", Res.drawable.emo_yayunguzhang),
+    Emotion("ye", Res.drawable.emo_ye),
+    Emotion("yes", Res.drawable.emo_yes),
+    Emotion("yeye_emoji", Res.drawable.emo_yeye_emoji),
+    Emotion("yinxian", Res.drawable.emo_yinxian),
+    Emotion("yiqijiayou", Res.drawable.emo_yiqijiayou),
+    Emotion("yitouluanma", Res.drawable.emo_yitouluanma),
+    Emotion("youbian", Res.drawable.emo_youbian),
+    Emotion("youhengheng", Res.drawable.emo_youhengheng),
+    Emotion("youxian", Res.drawable.emo_youxian),
+    Emotion("yuanbao", Res.drawable.emo_yuanbao),
+    Emotion("yuebing", Res.drawable.emo_yuebing),
+    Emotion("yueliang", Res.drawable.emo_yueliang),
+    Emotion("yun", Res.drawable.emo_yun),
+    Emotion("yutu", Res.drawable.emo_yutu),
+    Emotion("yyds", Res.drawable.emo_yyds),
+    Emotion("zaijian", Res.drawable.emo_zaijian),
+    Emotion("zaixianchigua", Res.drawable.emo_zaixianchigua),
+    Emotion("zan", Res.drawable.emo_zan),
+    Emotion("zhadan", Res.drawable.emo_zhadan),
+    Emotion("zhankaishuoshuo", Res.drawable.emo_zhankaishuoshuo),
+    Emotion("zhaocaitu", Res.drawable.emo_zhaocaitu),
+    Emotion("zhaxin", Res.drawable.emo_zhaxin),
+    Emotion("zhenliang", Res.drawable.emo_zhenliang),
+    Emotion("zhifeiji", Res.drawable.emo_zhifeiji),
+    Emotion("zhongcao", Res.drawable.emo_zhongcao),
+    Emotion("zhoudongyudeningshi", Res.drawable.emo_zhoudongyudeningshi),
+    Emotion("zhouma", Res.drawable.emo_zhouma),
+    Emotion("zhoumei", Res.drawable.emo_zhoumei),
+    Emotion("zhuakuang", Res.drawable.emo_zhuakuang),
+    Emotion("zhuangku", Res.drawable.emo_zhuangku),
+    Emotion("zhudi", Res.drawable.emo_zhudi),
+    Emotion("zhuiju", Res.drawable.emo_zhuiju),
+    Emotion("zhutou", Res.drawable.emo_zhutou),
+    Emotion("zhuwei", Res.drawable.emo_zhuwei),
+    Emotion("ziweibiezou", Res.drawable.emo_ziweibiezou),
+    Emotion("ziya", Res.drawable.emo_ziya),
+    Emotion("zongzi", Res.drawable.emo_zongzi),
+    Emotion("zouyige", Res.drawable.emo_zouyige),
+    Emotion("zuobian", Res.drawable.emo_zuobian),
+    Emotion("zuoguilian", Res.drawable.emo_zuoguilian),
+    Emotion("zuohengheng", Res.drawable.emo_zuohengheng),
+    Emotion("zuoshang", Res.drawable.emo_zuoshang),
+    Emotion("zuqiu", Res.drawable.emo_zuqiu),
+)
+
+/** The stickers by key: how a "[weixiao]" in a comment body finds its picture. */
+private val EMOTIONS_BY_KEY: Map<String, Emotion> = EMOTIONS.associateBy { it.key }
+
+/** The sticker named [key], or null for a token that is just text somebody typed. */
+fun emotionOf(key: String): Emotion? = EMOTIONS_BY_KEY[key]
+
+/** The side one sticker is drawn at inside a comment, in dp: the line it sits on is 19sp. */
+const val EMOTION_INLINE_DP: Int = 17

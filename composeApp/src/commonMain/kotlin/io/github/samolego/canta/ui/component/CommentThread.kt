@@ -1,5 +1,11 @@
 package io.github.samolego.canta.ui.component
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -26,15 +32,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.HeartBroken
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.outlined.HeartBroken
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,6 +58,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -341,37 +350,11 @@ fun CommentRow(
     onDelete: (PlanComment) -> Unit = {},
     /** Taps the heart on this comment. */
     onLike: () -> Unit = {},
-    /** Folds this comment for this reader, this session only. */
+    /** Folds this comment's text for this reader, this session only; taps again to open it back. */
     onHide: () -> Unit = {},
     folded: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    if (folded) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = if (indented) 48.dp else 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "评论已折叠",
-                modifier = Modifier.weight(1f),
-                fontSize = 11.sp,
-                color = colors.outline,
-            )
-            Icon(
-                imageVector = Icons.Default.HeartBroken,
-                contentDescription = "展开这条评论",
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onHide)
-                    .padding(6.dp)
-                    .size(16.dp),
-                tint = colors.outline,
-            )
-        }
-        return
-    }
     val mine = me.isNotEmpty() &&
         (comment.author == me || comment.author == "#$me" || comment.authorId == me)
     var sheet by remember(comment.id, comment.author, comment.body) { mutableStateOf(false) }
@@ -384,6 +367,7 @@ fun CommentRow(
             // the same two actions, the way a short-video comment list does it. The buttons keep
             // their own taps.
             .combinedClickable(onClick = { onReply(comment) }, onLongClick = openSheet)
+            .animateContentSize()
             .padding(start = if (indented) 48.dp else 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -397,6 +381,9 @@ fun CommentRow(
         }
         Spacer(Modifier.width(9.dp))
         Column(modifier = Modifier.weight(1f)) {
+            // The avatar and the name are never folded: a list of folded comments still has to say
+            // *whose* comments they are. Only the text below them goes away, which is what makes a
+            // folded row one readable line instead of a blank.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = comment.author.ifEmpty { "匿名" },
@@ -433,58 +420,101 @@ fun CommentRow(
                     )
                 }
             }
-            Row(modifier = Modifier.padding(top = 3.dp)) {
-                if (replyToName.isNotEmpty()) {
+            // The fold is animated in place rather than replacing the row: the text slides shut
+            // under the name it belongs to, and the heart beside it never moves, so a fold cannot
+            // look like the comment was deleted.
+            AnimatedVisibility(
+                visible = !folded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column {
+                    Row(modifier = Modifier.padding(top = 3.dp)) {
+                        if (replyToName.isNotEmpty()) {
+                            Text(
+                                text = "回复 @$replyToName：",
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
+                        // Stickers are drawn as pictures here: the body carries "[weixiao]" and the
+                        // renderer puts the sticker back where it was typed, in the same paragraph.
+                        EmotionText(
+                            body = comment.body,
+                            fontSize = 13,
+                            lineHeight = 19,
+                            color = colors.onSurface,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = relativeStamp(comment.createdAt),
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = colors.outline,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "回复",
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = colors.onSurfaceVariant,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .clickable { onReply(comment) }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+            AnimatedVisibility(
+                visible = folded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        text = "回复 @$replyToName：",
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        color = colors.onSurfaceVariant,
+                        text = "评论已折叠",
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        color = colors.outline,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "展开",
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable(onClick = onHide)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
-                Text(
-                    text = comment.body,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                    color = colors.onSurface,
-                )
-            }
-            Row(
-                modifier = Modifier.padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = relativeStamp(comment.createdAt),
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    color = colors.outline,
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = "回复",
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    color = colors.onSurfaceVariant,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { onReply(comment) }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
             }
         }
-        // The heart pair on the far right, side by side the way this list ends every row: the
-        // heart with its count — hollow until tapped, red once it is — and the hollow broken heart
-        // that puts the comment away.
+        // The two reactions on the far right, side by side the way this list ends every row: the
+        // heart with its count *beside* it, and the single-stroke bolt that folds the comment. The
+        // count sits to the right of the heart rather than under it — a number under the heart
+        // pushes the two icons apart and reads as a caption instead of a tally.
         Row(
             modifier = Modifier.padding(start = 8.dp, top = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .clickable(onClick = onLike)
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = if (comment.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -493,6 +523,7 @@ fun CommentRow(
                     tint = if (comment.liked) LIKE_RED else colors.outline,
                 )
                 if (comment.likes > 0) {
+                    Spacer(Modifier.width(3.dp))
                     Text(
                         text = "${comment.likes}",
                         fontSize = 10.sp,
@@ -502,16 +533,19 @@ fun CommentRow(
                     )
                 }
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(4.dp))
+            // One stroke, not a broken heart: the bolt is the "put this away" mark, and it is the
+            // same 16dp as the heart beside it — the two are a pair, and a smaller one reads as a
+            // lesser action instead of the other half of the same choice.
             Icon(
-                imageVector = Icons.Outlined.HeartBroken,
-                contentDescription = "不喜欢这条评论，先把它收起来",
+                imageVector = Icons.Default.Bolt,
+                contentDescription = if (folded) "展开这条评论" else "折叠这条评论",
                 modifier = Modifier
+                    .padding(4.dp)
                     .size(16.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onHide)
-                    .padding(2.dp),
-                tint = colors.outline,
+                    .clickable(onClick = onHide),
+                tint = if (folded) colors.primary else colors.outline,
             )
         }
     }
@@ -602,8 +636,14 @@ fun CommentComposer(
 ) {
     val colors = MaterialTheme.colorScheme
     val focusRequester = remember { FocusRequester() }
+    // Whether the sticker panel is up. It owns the bottom of the bar while it is: the keyboard goes
+    // down, the field keeps its draft, and a tap on a sticker lands in that draft — a picker that
+    // hides the field it types into would make every sticker a scroll back up.
+    var pickerOpen by remember { mutableStateOf(false) }
+    val imeController = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
     LaunchedEffect(replyToName) {
-        if (replyToName.isNotEmpty()) focusRequester.requestFocus()
+        if (replyToName.isNotEmpty() && !pickerOpen) focusRequester.requestFocus()
     }
     Surface(modifier = modifier.fillMaxWidth(), tonalElevation = 3.dp) {
         // What the bar has to clear at the bottom is whichever wins: the keyboard while it is up,
@@ -669,10 +709,38 @@ fun CommentComposer(
                         }
                     }
                     Spacer(Modifier.width(8.dp))
+                    // The sticker key, between the field and send: the one action this bar has that
+                    // is not text. Lit while the panel is up, so the bar says where the taps go.
+                    Icon(
+                        imageVector = if (pickerOpen) {
+                            Icons.Default.Keyboard
+                        } else {
+                            Icons.Default.EmojiEmotions
+                        },
+                        contentDescription = if (pickerOpen) "收起表情" else "表情",
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(50))
+                            .clickable {
+                                if (pickerOpen) {
+                                    pickerOpen = false
+                                    focusRequester.requestFocus()
+                                } else {
+                                    // The keyboard gives way to the panel: both open at once would
+                                    // leave the grid with a quarter of the screen.
+                                    focus.clearFocus()
+                                    imeController?.hide()
+                                    pickerOpen = true
+                                }
+                            }
+                            .padding(6.dp),
+                        tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    val canSend = draft.isNotBlank() && !sending
                     // The send pill: not a Material button — its minimum touch target would prop
                     // the whole bar up higher than a comment bar needs to be. A capsule, lit when
                     // there is something to send, dim when there is not.
-                    val canSend = draft.isNotBlank() && !sending
                     Box(
                         modifier = Modifier
                             .height(36.dp)
@@ -708,8 +776,40 @@ fun CommentComposer(
                     )
                 }
             }
+            // The panel lives outside the padded column so it can sit edge to edge under the bar.
+            if (pickerOpen) {
+                EmotionPicker(
+                    onPick = { emotion ->
+                        rememberEmotionPick(emotion.key)
+                        onDraftChange(draft + emotion.token)
+                    },
+                    onDelete = { onDraftChange(dropLastSticker(draft)) },
+                    onKeyboard = {
+                        pickerOpen = false
+                        focusRequester.requestFocus()
+                    },
+                )
+            }
         }
     }
+}
+
+/**
+ * [draft] with its last sticker taken out, or its last character when it does not end with one.
+ *
+ * Backspace in the sticker panel deletes a sticker whole: a sticker is one thing the reader put
+ * there, and half of `[wei` on screen is a token that no longer means anything.
+ */
+internal fun dropLastSticker(draft: String): String {
+    val trimmed = draft.trimEnd()
+    if (trimmed.endsWith("]")) {
+        val open = trimmed.lastIndexOf('[')
+        if (open >= 0) {
+            val key = trimmed.substring(open + 1, trimmed.length - 1)
+            if (emotionOf(key) != null) return trimmed.substring(0, open)
+        }
+    }
+    return if (draft.isEmpty()) draft else draft.dropLast(1)
 }
 
 
@@ -818,7 +918,9 @@ fun MyCommentRow(
             )
         }
         Spacer(Modifier.height(3.dp))
-        Text(text = body, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        // The same renderer the thread uses: a comment full of stickers has to look the same on the
+        // page that lists what this install wrote as it does under the plan.
+        EmotionText(body = body, fontSize = 12, lineHeight = 16, maxLines = 3, color = colors.onSurface)
         // The two numbers a comment of one's own collects, said the way the thread says them: how
         // many hearts and how many answers. A heart on this row is the same event the inbox
         // reports, so the tally is drawn here too — otherwise "3 人赞了" would arrive without the

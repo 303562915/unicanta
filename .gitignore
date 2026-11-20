@@ -29,3 +29,9 @@ server/node/telemetry.db-journal
 
 # Local-only Supabase credentials / endpoints (never commit)
 SUPABASE.local.md
+
+# Sticker source files: the copies the app ships live in composeResources/drawable as emo_*.png
+/static/
+
+# Working copies made before a risky edit
+/backups/
