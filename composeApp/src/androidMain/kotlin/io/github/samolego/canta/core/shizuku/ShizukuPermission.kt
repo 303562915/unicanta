@@ -8,6 +8,14 @@ import rikka.sui.Sui
 
 object ShizukuPermission {
     private const val SHIZUKU_PACKAGE_NAME = "moe.shizuku.privileged.api"
+
+    /**
+     * Stellar is a Shizuku fork with a built-in compatibility layer: it feeds the same binder to
+     * [rikka.shizuku.ShizukuProvider] under the same API, so an app cannot tell the two apart. Only
+     * the manager package name differs, and that is what tells "not installed" from "installed but
+     * not running" here.
+     */
+    private const val STELLAR_PACKAGE_NAME = "roro.stellar.manager"
     private const val SHIZUKU_CODE = 0xCA07A
 
     private val isSui: Boolean = Sui.init("io.github.samolego.canta")
@@ -70,16 +78,25 @@ object ShizukuPermission {
         if (isSui || isCantaAuthorized()) {
             return PrivilegeStatus.ACTIVE
         }
-        return try {
-            packageManager.getPackageInfo(SHIZUKU_PACKAGE_NAME, 0)
-            if (Shizuku.pingBinder() && !Shizuku.isPreV11()) {
-                PrivilegeStatus.NOT_AUTHORIZED
-            } else {
-                // Installed (the lookup above succeeded) but the service isn't up.
-                PrivilegeStatus.NOT_RUNNING
-            }
-        } catch (e: PackageManager.NameNotFoundException) {
-            PrivilegeStatus.NOT_AVAILABLE
+        if (!runtimeInstalled(packageManager)) {
+            return PrivilegeStatus.NOT_AVAILABLE
+        }
+        return if (Shizuku.pingBinder() && !Shizuku.isPreV11()) {
+            PrivilegeStatus.NOT_AUTHORIZED
+        } else {
+            // Installed but the service isn't up; either manager counts, they are interchangeable.
+            PrivilegeStatus.NOT_RUNNING
         }
     }
+
+    /** Whether either manager is on this phone: the original, or a fork that speaks its API. */
+    private fun runtimeInstalled(packageManager: PackageManager): Boolean =
+        listOf(SHIZUKU_PACKAGE_NAME, STELLAR_PACKAGE_NAME).any { name ->
+            try {
+                packageManager.getPackageInfo(name, 0)
+                true
+            } catch (e: PackageManager.NameNotFoundException) {
+                false
+            }
+        }
 }

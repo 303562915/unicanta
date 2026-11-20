@@ -22,6 +22,21 @@ interface CantaPlatform {
     fun openUrl(url: String)
 
     /**
+     * Whether a VPN currently carries this device's traffic. The community backend is Supabase in
+     * Tokyo, so on a phone without a proxy every community read looks like "the server is offline"
+     * even though the network is fine; the onboarding asks this to say so instead of letting people
+     * believe the app is broken.
+     */
+    fun isVpnActive(): Boolean = false
+
+    /**
+     * Opens the place where the VPN is switched on: an installed proxy client when there is one
+     * (its connect button is what actually matters), otherwise the system VPN screen. False where
+     * the platform has neither.
+     */
+    fun openProxySettings(): Boolean = false
+
+    /**
      * Open [appSchemes] in the app that claims them — the author's Coolapk page, a QQ group card —
      * and fall back to [web] when none of them is handled.
      *

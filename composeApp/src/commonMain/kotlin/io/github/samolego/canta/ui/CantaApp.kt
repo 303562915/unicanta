@@ -261,6 +261,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
             composable(Screen.Onboarding.route) {
                 OnboardingScreen(
                     platform = platform,
+                    handler = handler,
                     closeApp = closeApp,
                     onFinish = { contribute ->
                         settingsViewModel.completeOnboarding(contribute)

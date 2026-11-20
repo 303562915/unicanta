@@ -2,8 +2,11 @@ package io.github.samolego.canta.ui.screen
 
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.samolego.canta.generated.resources.app_icon
 import org.jetbrains.compose.resources.painterResource
 import androidx.compose.ui.draw.clip
@@ -71,7 +74,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.core.PrivilegeStatus
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.accept
 import io.github.samolego.canta.generated.resources.contribute
@@ -107,6 +112,29 @@ import io.github.samolego.canta.generated.resources.onboarding_ip_title
 import io.github.samolego.canta.generated.resources.onboarding_never_sent
 import io.github.samolego.canta.generated.resources.onboarding_never_sent_title
 import io.github.samolego.canta.generated.resources.onboarding_next
+import io.github.samolego.canta.generated.resources.onboarding_network_enable
+import io.github.samolego.canta.generated.resources.onboarding_network_note
+import io.github.samolego.canta.generated.resources.onboarding_network_recheck
+import io.github.samolego.canta.generated.resources.onboarding_network_title
+import io.github.samolego.canta.generated.resources.onboarding_network_vpn_off
+import io.github.samolego.canta.generated.resources.onboarding_network_vpn_on
+import io.github.samolego.canta.generated.resources.onboarding_privilege_detect
+import io.github.samolego.canta.generated.resources.onboarding_privilege_grant
+import io.github.samolego.canta.generated.resources.onboarding_privilege_note
+import io.github.samolego.canta.generated.resources.onboarding_privilege_recommended
+import io.github.samolego.canta.generated.resources.onboarding_privilege_shizuku_action
+import io.github.samolego.canta.generated.resources.onboarding_privilege_shizuku_body
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_active
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_authorized
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_available
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
+import io.github.samolego.canta.generated.resources.onboarding_privilege_stellar_action
+import io.github.samolego.canta.generated.resources.onboarding_privilege_stellar_body
+import io.github.samolego.canta.generated.resources.onboarding_privilege_step_grant
+import io.github.samolego.canta.generated.resources.onboarding_privilege_step_install
+import io.github.samolego.canta.generated.resources.onboarding_privilege_step_start
+import io.github.samolego.canta.generated.resources.onboarding_privilege_subtitle
+import io.github.samolego.canta.generated.resources.onboarding_privilege_title
 import io.github.samolego.canta.generated.resources.onboarding_opt_out_note
 import io.github.samolego.canta.generated.resources.onboarding_origin_chip_ci
 import io.github.samolego.canta.generated.resources.onboarding_origin_chip_client
@@ -138,6 +166,8 @@ import io.github.samolego.canta.ui.dialog.TelemetryPreviewDialog
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.ui.theme.GreenOk
+import io.github.samolego.canta.ui.theme.Orange
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -146,6 +176,10 @@ private const val README_URL = "$REPO_URL/blob/master/README.md"
 private const val PRIVACY_POLICY_URL = "$REPO_URL/blob/master/privacy_policy.md"
 private const val ORIGINAL_URL = "https://github.com/samolego/Canta"
 
+/** The privileged runtime page points at both; Stellar is the one we steer people to. */
+private const val STELLAR_URL = "https://github.com/roro2239/Stellar/releases"
+private const val SHIZUKU_URL = "https://github.com/RikkaApps/Shizuku/releases"
+
 /** Widest the onboarding content gets, so it stays readable in a desktop window. */
 private val MAX_CONTENT_WIDTH = 560.dp
 
@@ -153,22 +187,37 @@ private const val PAGE_WARRANTY = 0
 private const val PAGE_CONTRIBUTE = 1
 private const val PAGE_ORIGIN = 2
 private const val PAGE_ABOUT = 3
-private const val PAGE_COUNT = 4
+private const val PAGE_PRIVILEGE = 4
+private const val PAGE_NETWORK = 5
+private const val PAGE_COUNT = 6
 
 
 /**
- * First-run flow: the no-warranty disclaimer, the analytics opt-in, then two read-only pages that
- * say where the project came from and what it does. The disclaimer can't be skipped: only Accept
- * leads past it, and system back on this start destination just leaves the app.
+ * First-run flow: the no-warranty disclaimer, the analytics opt-in, two read-only pages that say
+ * where the project came from and what it does, then the two pages that decide whether the app can
+ * do anything: the privileged runtime, and the network the community data lives behind. The disclaimer
+ * can't be skipped: only Accept leads past it, and system back on this start destination just
+ * leaves the app.
  *
  * The analytics answer is taken on page two but only written when the last page is done, so the
- * two pages after it can still be walked back from without losing the choice.
+ * pages after it can still be walked back from without losing the choice.
  *
+ * Page five is the one that matters for actually doing something: without Shizuku (or Stellar, the
+ * Shizuku-compatible fork we point people at) nothing can be removed at all, so the page checks the
+ * runtime live, offers both downloads, and lets the user go on either way — the app is still useful
+ * as a list, and the setup dialog is reachable from the main screen.
+ *
+ * Page six covers the other half: the community backend is Supabase in Tokyo, so with no proxy the
+ * community scores, plans and reports all read as if the server were down. It says so plainly and
+ * opens the proxy when there is one; the last button is "start", which is what ends the flow.
+ *
+ * @param handler the platform's package handler, asked for [PrivilegeStatus].
  * @param onFinish called with whether the user chose to contribute.
  */
 @Composable
 fun OnboardingScreen(
     platform: CantaPlatform,
+    handler: CantaHandler,
     closeApp: () -> Unit,
     onFinish: (contribute: Boolean) -> Unit,
 ) {
@@ -203,9 +252,20 @@ fun OnboardingScreen(
                     onBack = { page = PAGE_CONTRIBUTE },
                     onNext = { page = PAGE_ABOUT },
                 )
-                else -> AboutPage(
+                PAGE_ABOUT -> AboutPage(
                     platform = platform,
                     onBack = { page = PAGE_ORIGIN },
+                    onNext = { page = PAGE_PRIVILEGE },
+                )
+                PAGE_PRIVILEGE -> PrivilegePage(
+                    platform = platform,
+                    handler = handler,
+                    onBack = { page = PAGE_ABOUT },
+                    onNext = { page = PAGE_NETWORK },
+                )
+                else -> NetworkPage(
+                    platform = platform,
+                    onBack = { page = PAGE_PRIVILEGE },
                     onDone = { onFinish(contribute) },
                 )
             }
@@ -589,9 +649,355 @@ private fun VerifyCard(chips: List<String>) {
     }
 }
 
+/**
+ * Page six, the last one: the network the community features depend on. The backend is Supabase in
+ * Tokyo, so without a proxy every community read fails and the app looks broken while it is only
+ * unreachable.
+ * The page states the situation, gives the shortest path to a working proxy, and lets the user walk
+ * on either way — local rules and removal never touch the network.
+ */
+@Composable
+private fun NetworkPage(platform: CantaPlatform, onBack: () -> Unit, onDone: () -> Unit) {
+    var hasProxy by remember { mutableStateOf(platform.isVpnActive()) }
+
+    LifecycleResumeEffect(Unit) {
+        hasProxy = platform.isVpnActive()
+        onPauseOrDispose {}
+    }
+
+    OnboardingPage(
+        pageIndex = PAGE_NETWORK,
+        badge = { IconBadge(Icons.Default.Info) },
+        title = Res.string.onboarding_network_title,
+        subtitle = Res.string.onboarding_network_vpn_off,
+        negative = {
+            OnboardingButton(
+                onClick = onBack,
+                primary = false,
+                label = stringResource(Res.string.onboarding_back),
+            )
+        },
+        positive = {
+            OnboardingButton(
+                onClick = onDone,
+                primary = true,
+                label = stringResource(Res.string.onboarding_start),
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (hasProxy) MaterialTheme.colorScheme.primaryContainer else FlSurfaceLevel.Card.colorOf(MaterialTheme.colorScheme))
+                .padding(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(9.dp)
+                        .background(if (hasProxy) GreenOk else Orange, CircleShape),
+                )
+                Text(
+                    text = stringResource(
+                        if (hasProxy) Res.string.onboarding_network_vpn_on else Res.string.onboarding_network_vpn_off
+                    ),
+                    style = FlText.subheadline,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!hasProxy) {
+                    OnboardingButton(
+                        onClick = { platform.openProxySettings() },
+                        primary = true,
+                        label = stringResource(Res.string.onboarding_network_enable),
+                    )
+                }
+                OnboardingButton(
+                    onClick = { hasProxy = platform.isVpnActive() },
+                    primary = false,
+                    label = stringResource(Res.string.onboarding_network_recheck),
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(Res.string.onboarding_network_note),
+            style = FlText.caption1,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Page five: the privileged runtime. Everything the app does after this page needs one, so this is
+ * the page that has to get the user somewhere — Stellar first (a tuned Shizuku fork that speaks the
+ * same API), plain Shizuku as the equally valid second option, and a live status line that turns
+ * into "you're set" the moment either one authorizes Canta.
+ *
+ * Nothing here is a gate: someone who only wants to browse the list can press next, and the main
+ * screen's setup dialog can pick the setup up later.
+ */
+@Composable
+private fun PrivilegePage(
+    platform: CantaPlatform,
+    handler: CantaHandler,
+    onBack: () -> Unit,
+    onNext: () -> Unit,
+) {
+    // Re-read on resume: every step happens in another app, and the user comes straight back.
+    var status by remember { mutableStateOf(handler.privilegeStatus) }
+    var isAuthorized by remember { mutableStateOf(handler.isAuthorized) }
+    val scope = rememberCoroutineScope()
+
+    fun refresh() {
+        status = handler.privilegeStatus
+        isAuthorized = handler.isAuthorized
+    }
+
+    LifecycleResumeEffect(handler) {
+        refresh()
+        onPauseOrDispose {}
+    }
+
+    val ready = status == PrivilegeStatus.ACTIVE || isAuthorized
+
+    OnboardingPage(
+        pageIndex = PAGE_PRIVILEGE,
+        badge = { IconBadge(if (ready) Icons.Default.CheckCircle else Icons.Default.Lock) },
+        title = Res.string.onboarding_privilege_title,
+        subtitle = Res.string.onboarding_privilege_subtitle,
+        negative = {
+            OnboardingButton(
+                onClick = onBack,
+                primary = false,
+                label = stringResource(Res.string.onboarding_back),
+            )
+        },
+        positive = {
+            OnboardingButton(
+                onClick = onNext,
+                primary = true,
+                label = stringResource(Res.string.onboarding_next),
+            )
+        },
+    ) {
+        StatusCard(
+            ready = ready,
+            status = status,
+            onDetect = { refresh() },
+            onGrant = {
+                if (status == PrivilegeStatus.NOT_AUTHORIZED) {
+                    scope.launch {
+                        handler.requestAuthorization()
+                        refresh()
+                    }
+                } else {
+                    // Nothing installed, or the service is down: the fix lives in the runtime app,
+                    // and the two download cards right below are the way there.
+                    platform.openUrl(STELLAR_URL)
+                }
+            },
+        )
+        Spacer(Modifier.height(14.dp))
+        RuntimeCard(
+            recommended = true,
+            mark = "St",
+            title = "Stellar",
+            body = Res.string.onboarding_privilege_stellar_body,
+            action = Res.string.onboarding_privilege_stellar_action,
+            onOpen = { platform.openUrl(STELLAR_URL) },
+        )
+        Spacer(Modifier.height(10.dp))
+        RuntimeCard(
+            recommended = false,
+            mark = "Sh",
+            title = "Shizuku",
+            body = Res.string.onboarding_privilege_shizuku_body,
+            action = Res.string.onboarding_privilege_shizuku_action,
+            onOpen = { platform.openUrl(SHIZUKU_URL) },
+        )
+        Spacer(Modifier.height(14.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            StepLine("1", Res.string.onboarding_privilege_step_install, done = status != PrivilegeStatus.NOT_AVAILABLE)
+            StepLine("2", Res.string.onboarding_privilege_step_start, done = status == PrivilegeStatus.NOT_AUTHORIZED || ready)
+            StepLine("3", Res.string.onboarding_privilege_step_grant, done = ready)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = stringResource(Res.string.onboarding_privilege_note),
+            style = FlText.caption1,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The live state of the runtime: one coloured dot, one sentence in plain words, and the one button
+ * that moves the user forward from wherever they are.
+ */
+@Composable
+private fun StatusCard(
+    ready: Boolean,
+    status: PrivilegeStatus,
+    onDetect: () -> Unit,
+    onGrant: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val message = when {
+        ready -> Res.string.onboarding_privilege_state_active
+        status == PrivilegeStatus.NOT_AUTHORIZED -> Res.string.onboarding_privilege_state_not_authorized
+        status == PrivilegeStatus.NOT_RUNNING -> Res.string.onboarding_privilege_state_not_running
+        else -> Res.string.onboarding_privilege_state_not_available
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (ready) scheme.primaryContainer else FlSurfaceLevel.Card.colorOf(scheme))
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(9.dp)
+                    .background(if (ready) GreenOk else scheme.primary, CircleShape),
+            )
+            Text(
+                text = stringResource(message),
+                style = FlText.subheadline,
+                fontWeight = FontWeight.SemiBold,
+                color = if (ready) scheme.onPrimaryContainer else scheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (!ready) {
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OnboardingButton(
+                    onClick = onGrant,
+                    primary = true,
+                    label = stringResource(Res.string.onboarding_privilege_grant),
+                )
+                OnboardingButton(
+                    onClick = onDetect,
+                    primary = false,
+                    label = stringResource(Res.string.onboarding_privilege_detect),
+                )
+            }
+        }
+    }
+}
+
+/** One of the two runtimes: a mark, a name with the "recommended" pill, one line, one download. */
+@Composable
+private fun RuntimeCard(
+    recommended: Boolean,
+    mark: String,
+    title: String,
+    body: StringResource,
+    action: StringResource,
+    onOpen: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                if (recommended) scheme.primary.copy(alpha = 0.06f) else FlSurfaceLevel.Card.colorOf(scheme)
+            )
+            .clickable(onClick = onOpen)
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(30.dp).background(scheme.primary, RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = mark,
+                style = FlText.subheadline,
+                fontWeight = FontWeight.Bold,
+                color = scheme.onPrimary,
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = FlText.subheadline,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface,
+                )
+                if (recommended) {
+                    Chip(
+                        text = stringResource(Res.string.onboarding_privilege_recommended),
+                        container = scheme.primary.copy(alpha = 0.14f),
+                        content = scheme.primary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = stringResource(body),
+                style = FlText.caption1,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(action),
+                style = FlText.caption1,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.primary,
+            )
+        }
+    }
+}
+
+/** A numbered line that strikes through once the runtime reports that step done. */
+@Composable
+private fun StepLine(index: String, text: StringResource, done: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .background(if (done) GreenOk else scheme.outlineVariant, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (done) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = scheme.onPrimary,
+                )
+            } else {
+                Text(text = index, style = FlText.caption2, fontWeight = FontWeight.Bold, color = scheme.onSurfaceVariant)
+            }
+        }
+        Text(
+            text = stringResource(text),
+            style = FlText.footnote,
+            color = if (done) scheme.onSurfaceVariant else scheme.onSurface,
+        )
+    }
+}
+
 /** Page four: the four things this fork is, where it lives, who it stands on, and who is welcome. */
 @Composable
-private fun AboutPage(platform: CantaPlatform, onBack: () -> Unit, onDone: () -> Unit) {
+private fun AboutPage(platform: CantaPlatform, onBack: () -> Unit, onNext: () -> Unit) {
     OnboardingPage(
         pageIndex = PAGE_ABOUT,
         badge = { IconBadge(Icons.Default.Star) },
@@ -606,9 +1012,9 @@ private fun AboutPage(platform: CantaPlatform, onBack: () -> Unit, onDone: () ->
         },
         positive = {
             OnboardingButton(
-                onClick = onDone,
+                onClick = onNext,
                 primary = true,
-                label = stringResource(Res.string.onboarding_start),
+                label = stringResource(Res.string.onboarding_next),
             )
         },
     ) {

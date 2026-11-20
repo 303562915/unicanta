@@ -64,6 +64,41 @@ class AndroidCantaPlatform(
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
     }
 
+    /**
+     * True while a VPN, or an app told to route through Android's always-on VPN setting, carries the
+     * traffic. Clash-style clients (FlClash, Karing on this phone) describe themselves as VPN apps
+     * when they take over routing, so this covers the usual proxy setups without knowing about any
+     * one of them.
+     */
+    override fun isVpnActive(): Boolean = runCatching {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+            ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+    }.getOrDefault(false)
+
+    /**
+     * Opens the proxy client's own screen when one is installed: connecting is a button inside that
+     * app, and this is the shortest path to it. Falls back to the system VPN settings, then to the
+     * wireless settings, so the button never does nothing.
+     */
+    override fun openProxySettings(): Boolean {
+        val candidates = listOf(
+            // Same order as the runtime page: the client this phone is most likely to run first.
+            Intent(Intent.ACTION_MAIN).setPackage("com.follow.clash").addCategory(Intent.CATEGORY_LAUNCHER),
+            Intent(Intent.ACTION_MAIN).setPackage("com.nebula.karing").addCategory(Intent.CATEGORY_LAUNCHER),
+            Intent(Settings.ACTION_VPN_SETTINGS),
+            Intent(Settings.ACTION_WIRELESS_SETTINGS),
+        )
+        for (intent in candidates) {
+            val opened = runCatching {
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.isSuccess
+            if (opened) return true
+        }
+        LogUtils.w(TAG, "No VPN settings screen answered")
+        return false
+    }
+
     override fun openUrl(url: String) {
         val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

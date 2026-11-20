@@ -157,6 +157,29 @@
     <string name="onboarding_origin_title">Where this project comes from</string>
     <string name="onboarding_read_readme">Read the full README</string>
     <string name="onboarding_start">Get started</string>
+    <string name="onboarding_network_title">Community data needs a proxy</string>
+    <string name="onboarding_network_vpn_on">Proxy detected — community scores and plans will load.</string>
+    <string name="onboarding_network_vpn_off">No proxy right now. The community database is in Tokyo, so safety scores, plans and reports will look offline until one is on.</string>
+    <string name="onboarding_network_enable">Turn on proxy</string>
+    <string name="onboarding_network_recheck">Check network</string>
+    <string name="onboarding_network_note">Without it the app still works: local rules, app list and removal are unaffected.</string>
+    <string name="onboarding_privilege_title">Last step: the privilege</string>
+    <string name="onboarding_privilege_subtitle">Removing system apps needs one privileged runtime. Either one works; we recommend Stellar.</string>
+    <string name="onboarding_privilege_state_active">Privilege granted — this phone is ready.</string>
+    <string name="onboarding_privilege_state_not_authorized">Service is running. Allow UniCanta in it.</string>
+    <string name="onboarding_privilege_state_not_running">Installed, service not started.</string>
+    <string name="onboarding_privilege_state_not_available">No privileged runtime detected yet.</string>
+    <string name="onboarding_privilege_detect">Check again</string>
+    <string name="onboarding_privilege_grant">Grant now</string>
+    <string name="onboarding_privilege_recommended">Recommended</string>
+    <string name="onboarding_privilege_stellar_body">A tuned Shizuku fork: finer permissions, starts with the phone, and fixes the MediaTek bug. Shizuku-API apps work unchanged.</string>
+    <string name="onboarding_privilege_stellar_action">Download Stellar</string>
+    <string name="onboarding_privilege_shizuku_body">The original. Follows the same Shizuku-API contract, use it if you already run it.</string>
+    <string name="onboarding_privilege_shizuku_action">Download Shizuku</string>
+    <string name="onboarding_privilege_step_install">1 · Install Stellar (or Shizuku)</string>
+    <string name="onboarding_privilege_step_start">2 · Start its service (wireless debugging or root)</string>
+    <string name="onboarding_privilege_step_grant">3 · Allow UniCanta in the app</string>
+    <string name="onboarding_privilege_note">Without either one, only the app list works; removing anything is disabled.</string>
     <string name="onboarding_badges_title">Your badges</string>
     <string name="onboarding_change_title">Your choice</string>
     <string name="community_title">Community</string>
@@ -273,6 +296,7 @@
     <string
         name="grant_shizuku_permission_to_canta"
     >Grant permission to Canta in Shizuku</string>
+    <string name="install_stellar_instead">Recommended: Stellar, a Shizuku fork that works the same way</string>
     <string name="shizuku_required">Shizuku Required</string>
     <string
         name="shizuku_requirement_description"

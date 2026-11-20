@@ -33,6 +33,7 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.close
 import io.github.samolego.canta.generated.resources.grant_shizuku_permission_to_canta
 import io.github.samolego.canta.generated.resources.install_shizuku
+import io.github.samolego.canta.generated.resources.install_stellar_instead
 import io.github.samolego.canta.generated.resources.start_shizuku_service
 import io.github.samolego.canta.generated.resources.take_action
 import io.github.samolego.canta.generated.resources.shizuku_required
@@ -45,6 +46,9 @@ import org.jetbrains.compose.resources.stringResource
 
 private const val SHIZUKU_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api"
 private const val SHIZUKU_GITHUB_URL = "https://github.com/RikkaApps/Shizuku/releases"
+
+/** The fork we steer people to: same API and same binder, finer permissions, boots with the phone. */
+private const val STELLAR_URL = "https://github.com/roro2239/Stellar/releases"
 
 /**
  * Walks the user through the Shizuku setup. [onClose] with `true` means
@@ -96,6 +100,13 @@ internal fun ShizukuRequirementDialogContent(
         )
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             usbRequirementRow()
+            // Offered above the original: one tap to the fork most people should use, while the
+            // Shizuku row below keeps working for anyone who already has it.
+            RequirementItem(
+                text = stringResource(Res.string.install_stellar_instead),
+                isCompleted = status != PrivilegeStatus.NOT_AVAILABLE,
+                onActionClick = { platform.openUrl(STELLAR_URL) },
+            )
             RequirementItem(
                 text = stringResource(Res.string.install_shizuku),
                 isCompleted = status != PrivilegeStatus.NOT_AVAILABLE,
