@@ -3,6 +3,7 @@ package io.github.samolego.canta.ui.screen
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,8 +47,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,6 +61,7 @@ import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.CommentOrder
+import io.github.samolego.canta.data.community.NOTE_MAX_LENGTH
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.inOrder
@@ -176,6 +180,9 @@ fun PlanDetailScreen(
      * on newest every time, because that is what "what did people say about this plan" means.
      */
     var order by remember { mutableStateOf(CommentOrder.NEWEST) }
+    /** Whether the uploader is rewriting the plan's note; see [onEditNote]. */
+    var editingNote by remember { mutableStateOf(false) }
+    var noteDraft by remember { mutableStateOf("") }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -256,6 +263,31 @@ fun PlanDetailScreen(
         hiddenComments = if (key in hiddenComments) hiddenComments - key else hiddenComments + key
     }
 
+    /**
+     * The uploader rewriting the note: the one part of a plan that a week of use can improve, and
+     * the only alternative was deleting the plan and losing its votes and comments with it.
+     */
+    val saveNote: (String) -> Unit = { text ->
+        scope.launch {
+            editingNote = false
+            val ok = repository.setNote(
+                planId = planId,
+                owner = plan.owner.ifEmpty { owner },
+                token = token,
+                note = text.trim(),
+            )
+            if (ok) {
+                plan = plan?.copy(note = text.trim())
+                noteDraft = text.trim()
+            } else {
+                // The composer's own error line is the page's one place for "that call did not go
+                // through", so a failed note is said there rather than in a second place.
+                submitFailed = true
+                sendError = "说明没存上：${repository.lastError ?: "检查一下网络再试"}"
+            }
+        }
+    }
+
     val likeComment: (PlanComment) -> Unit = { comment ->
         if (comment.id > 0L) {
             val wanted = !comment.liked
@@ -283,6 +315,46 @@ fun PlanDetailScreen(
                 val votes = repository.vote(current.id, commentAuthor) ?: return@launch
                 plan = current.copy(votes = votes)
             }
+        }
+    }
+
+    if (editingNote) {
+        CantaDialog(
+            onDismissRequest = { editingNote = false },
+            title = "改说明",
+            buttons = {
+                TextButton(onClick = { editingNote = false }) { Text("取消") }
+                TextButton(onClick = { saveNote(noteDraft) }) { Text("保存") }
+            },
+        ) {
+            Text(
+                text = "这一句会显示在方案卡片上，读的人先看到标题，再看到它。",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            BasicTextField(
+                value = noteDraft,
+                onValueChange = { noteDraft = it.take(NOTE_MAX_LENGTH) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                textStyle = TextStyle(fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                maxLines = 6,
+                decorationBox = { inner ->
+                    if (noteDraft.isEmpty()) {
+                        Text(
+                            text = "比如：这几个包在这台机器上会一起把桌面图标删掉，重启前先把桌面换回来。",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                    inner()
+                },
+            )
         }
     }
 
@@ -500,7 +572,10 @@ private fun PlanDetailContent(
         FlTopBarCompactHeight
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
-        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan) }
+        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, onEditNote = {
+            noteDraft = plan.note
+            editingNote = true
+        }) }
 
         item {
             SectionTitle(
@@ -589,6 +664,8 @@ private fun PlanHero(
     foreign: Boolean,
     onVote: () -> Unit,
     onUsePlan: () -> Unit,
+    /** Only offered to the uploader: rewriting somebody else's note is what [saveNote] refuses. */
+    onEditNote: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
@@ -703,6 +780,22 @@ private fun PlanHero(
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                     color = colors.onPrimaryContainer,
+                )
+            }
+            // The uploader's own tap: a note written a week after the plan, once use has shown what
+            // the upload could not. Shown even with an empty note — that is the case it is for.
+            if (mine && onEditNote != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (plan.note.isEmpty()) "补一句说明" else "改说明",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.onPrimaryContainer.copy(alpha = 0.10f))
+                        .clickable(onClick = onEditNote)
+                        .padding(horizontal = 9.dp, vertical = 4.dp),
                 )
             }
 

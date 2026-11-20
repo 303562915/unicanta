@@ -530,6 +530,25 @@ class PlanRepository(
     }
 
     /**
+     * Rewrites the note under [planId], which is the one part of a plan its author can still change
+     * after uploading. Both [owner] and [token] are needed, exactly as for [delete]: a plan's
+     * number is printed next to every plan and every comment, so it proves nothing on its own.
+     *
+     * Returns false when the backend refused — somebody else's plan, a stale token, no note.
+     */
+    suspend fun setNote(planId: Long, owner: String, token: String, note: String): Boolean {
+        if (owner.isEmpty() || token.isEmpty() || planId <= 0) return false
+        val body = buildJsonObject {
+            put("p_id", planId)
+            put("p_owner", owner)
+            put("p_token", token)
+            put("p_note", note)
+        }.toString()
+        return rpc("plan_set_note", body)
+            ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.booleanOrNull }.getOrNull() } == true
+    }
+
+    /**
      * This install's token, number and display name, creating the row on first use.
      *
      * [deviceKey] is the phone's stable lookup key (see `CantaPlatform.deviceKey`). When that phone

@@ -32,6 +32,12 @@ const val COMMENT_MAX_LENGTH: Int = 1000
 fun commentCharactersLeft(length: Int): Int = (COMMENT_MAX_LENGTH - length).coerceAtLeast(0)
 
 /**
+ * The longest plan note the backend keeps: `plan_set_note` stores `left(p_note, 2000)`, the same
+ * cap the upload path has had since the table was created.
+ */
+const val NOTE_MAX_LENGTH: Int = 2000
+
+/**
  * What kind of news one row of the inbox is.
  *
  * The list is one stream of four different things — somebody answered me, somebody wrote under the
