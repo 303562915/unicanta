@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,9 +23,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -49,8 +53,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -124,6 +130,8 @@ fun RecommendationsScreen(
     var catalog by remember { mutableStateOf<Recommendations?>(null) }
     var asGrid by rememberSaveable { mutableStateOf(true) }
     var detail by remember { mutableStateOf<RecommendedApp?>(null) }
+    /** What the search box holds; empty shows the whole catalog, categories and all. */
+    var query by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         catalog = Recommendations.bundled()
@@ -132,6 +140,10 @@ fun RecommendationsScreen(
     val loaded = catalog
     val groups = remember(loaded) { loaded?.grouped().orEmpty() }
     val featured = remember(loaded) { loaded?.featured.orEmpty() }
+    // While a search is running the category headings go away: a result is a result wherever it is
+    // filed, and a heading with one row under it is noise.
+    val found = remember(loaded, query) { loaded?.search(query).orEmpty() }
+    val searching = query.isNotBlank()
 
     Scaffold(
         topBar = {
@@ -169,66 +181,94 @@ fun RecommendationsScreen(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
+                    CatalogSearchField(query = query, onQueryChange = { query = it })
+                }
                 item(key = "intro", span = { GridItemSpan(maxLineSpan) }) { IntroNote() }
 
                 if (loaded.apps.isEmpty()) {
                     item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
                 }
 
-                if (featured.isNotEmpty()) {
-                    item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
-                        SectionHeader(label = stringResource(Res.string.recommend_featured), count = featured.size)
+                if (searching) {
+                    if (found.isEmpty()) {
+                        item(key = "no-hits", span = { GridItemSpan(maxLineSpan) }) {
+                            NoHits(query = query)
+                        }
                     }
-                    gridItems(featured, key = { "featured-${it.id}" }) { app ->
-                        AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
+                    gridItems(found, key = { "hit-${it.id}" }) { app ->
+                        AppGridCell(app = app, featured = app.featured, onClick = { openDetails(app) })
                     }
-                }
+                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                        FooterNote(found.size)
+                    }
+                } else {
+                    if (featured.isNotEmpty()) {
+                        item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(label = stringResource(Res.string.recommend_featured), count = featured.size)
+                        }
+                        gridItems(featured, key = { "featured-${it.id}" }) { app ->
+                            AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
+                        }
+                    }
 
-                groups.forEach { (category, apps) ->
-                    item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
-                        SectionHeader(label = categoryLabel(category), count = apps.size)
+                    groups.forEach { (category, apps) ->
+                        item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(label = categoryLabel(category), count = apps.size)
+                        }
+                        gridItems(apps, key = { it.id }) { app ->
+                            AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
+                        }
                     }
-                    gridItems(apps, key = { it.id }) { app ->
-                        AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
-                    }
-                }
 
-                item(key = "footer", span = { GridItemSpan(maxLineSpan) }) { FooterNote(loaded.apps.size) }
+                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) { FooterNote(loaded.apps.size) }
+                }
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(bottom = BarRoom),
             ) {
+                item(key = "search") { CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp) }
                 item(key = "intro") { IntroNote() }
 
                 if (loaded.apps.isEmpty()) {
                     item(key = "empty") { EmptyNote() }
                 }
 
-                if (featured.isNotEmpty()) {
-                    item(key = "featured-head") {
-                        SectionHeader(
-                            label = stringResource(Res.string.recommend_featured),
-                            count = featured.size,
-                            inset = 16.dp,
-                        )
+                if (searching) {
+                    if (found.isEmpty()) {
+                        item(key = "no-hits") { NoHits(query = query, inset = 16.dp) }
                     }
-                    items(featured, key = { "featured-${it.id}" }) { app ->
-                        RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
+                    items(found, key = { "hit-${it.id}" }) { app ->
+                        RecommendationCard(app = app, featured = app.featured, onClick = { openDetails(app) })
                     }
-                }
+                    item(key = "footer") { FooterNote(found.size, inset = 16.dp) }
+                } else {
+                    if (featured.isNotEmpty()) {
+                        item(key = "featured-head") {
+                            SectionHeader(
+                                label = stringResource(Res.string.recommend_featured),
+                                count = featured.size,
+                                inset = 16.dp,
+                            )
+                        }
+                        items(featured, key = { "featured-${it.id}" }) { app ->
+                            RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
+                        }
+                    }
 
-                groups.forEach { (category, apps) ->
-                    item(key = "head-$category") {
-                        SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
+                    groups.forEach { (category, apps) ->
+                        item(key = "head-$category") {
+                            SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
+                        }
+                        items(apps, key = { it.id }) { app ->
+                            RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
+                        }
                     }
-                    items(apps, key = { it.id }) { app ->
-                        RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
-                    }
-                }
 
-                item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
+                    item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
+                }
             }
         }
     }
@@ -566,4 +606,81 @@ private fun categoryLabel(key: String): String = when (key) {
     "media" -> stringResource(Res.string.recommend_cat_media)
     "tools" -> stringResource(Res.string.recommend_cat_tools)
     else -> key
+}
+
+/**
+ * The catalog's search box: a quiet pill, the same shape as the comment field, so the page keeps one
+ * kind of "type here" control.
+ *
+ * It searches the replaced package names as well as the prose, because pasting a package out of a
+ * debloat list is how people arrive at "what can replace this" — the name of the app is the answer,
+ * not the thing they know.
+ */
+@Composable
+private fun CatalogSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    inset: Dp = 6.dp,
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = inset, end = inset, top = 10.dp)
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surfaceContainerHigh)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            modifier = Modifier.size(15.dp),
+            tint = colors.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (query.isEmpty()) {
+                Text(
+                    text = "搜应用、作者，或系统包名",
+                    fontSize = 12.sp,
+                    color = colors.outline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
+                cursorBrush = SolidColor(colors.primary),
+                singleLine = true,
+            )
+        }
+        if (query.isNotEmpty()) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "清空搜索",
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(50))
+                    .clickable { onQueryChange("") }
+                    .padding(5.dp),
+                tint = colors.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** Nothing matched: say what was searched, so a typo is visible rather than mysterious. */
+@Composable
+private fun NoHits(query: String, inset: Dp = 6.dp) {
+    Text(
+        text = "没有匹配「$query」的应用。",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 14.dp),
+    )
 }

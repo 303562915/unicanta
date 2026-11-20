@@ -32,6 +32,18 @@ data class RecommendedApp(
     /** What to draw in the tile: the catalog's mark, or the first character of the name. */
     val tileMark: String
         get() = mark.ifBlank { name.trim().take(1) }.ifBlank { "?" }
+
+    /**
+     * Whether [needle] (already trimmed, not lower-cased) is found in anything this entry says
+     * about itself. Package names are searched as well as prose: pasting a package from a debloat
+     * list is a common way to arrive at this page.
+     */
+    fun matches(needle: String): Boolean {
+        val lower = needle.lowercase()
+        fun has(value: String) = value.lowercase().contains(lower)
+        return has(name) || has(author) || has(summary) || has(license) ||
+            replacesPackages.any(::has) || has(category)
+    }
 }
 
 @Serializable
@@ -63,6 +75,19 @@ class Recommendations(private val set: RecommendedAppSet) {
         return CATEGORIES.mapNotNull { category ->
             byCategory[category]?.let { category to it }
         }
+    }
+
+    /**
+     * What a search box keeps: the entries whose name, author, summary or replaced package names
+     * contain [query], case-insensitively.
+     *
+     * The package names are searched too, because that is what someone pasting "com.miui.analytics"
+     * from a debloat list is actually looking for — the app that replaces it.
+     */
+    fun search(query: String): List<RecommendedApp> {
+        val needle = query.trim()
+        if (needle.isEmpty()) return set.apps
+        return set.apps.filter { it.matches(needle) }
     }
 
     companion object {
