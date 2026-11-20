@@ -155,3 +155,31 @@ fun List<CatalogModel>.groupedByFamily(): List<FamilyGroup> {
  */
 fun peopleSuffix(people: Int, threshold: Int = 5): String =
     if (people > threshold) " · ${people}人" else ""
+
+/**
+ * One phone a plan's package set was reboot-proven on, as `plan_device_coverage` counts it.
+ *
+ * A plan page names the uploader's device, which answers "who wrote this". This answers the other
+ * question — "did anyone with a phone like mine keep it and come back with a working device" — and
+ * the page shows the top few as coverage rather than as a single claim.
+ *
+ * @param verified how many uploads of this same package set, on this same build, passed the check.
+ */
+data class DeviceCoverage(
+    val brand: String,
+    val model: String,
+    val marketName: String = "",
+    val rom: String = "",
+    val romVersion: Int = 0,
+    val sdk: Int = 0,
+    val verified: Int = 0,
+) {
+    /** "Redmi K70": the marketing name when the backend has one, else the retail model number. */
+    val label: String get() = marketName.ifBlank { model }
+
+    /** "Redmi K70 · HyperOS 2": the same shape the plan's own device line uses. */
+    val buildLabel: String
+        get() = listOf(label, romLabelOf(rom, romVersion))
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
+}

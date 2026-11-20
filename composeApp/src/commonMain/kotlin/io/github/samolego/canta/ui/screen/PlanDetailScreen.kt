@@ -61,6 +61,7 @@ import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.CommentOrder
+import io.github.samolego.canta.data.community.DeviceCoverage
 import io.github.samolego.canta.data.community.NOTE_MAX_LENGTH
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
@@ -190,6 +191,11 @@ fun PlanDetailScreen(
     /** Whether the uploader is rewriting the plan's note; see [onEditNote]. */
     var editingNote by remember { mutableStateOf(false) }
     var noteDraft by remember { mutableStateOf("") }
+    /**
+     * The other phones this exact package set was reboot-proven on. Loaded with the plan, so the hero
+     * can say "and four other builds" instead of only naming the uploader's.
+     */
+    var coverage by remember { mutableStateOf<List<DeviceCoverage>>(emptyList()) }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -228,6 +234,14 @@ fun PlanDetailScreen(
     }
 
     val reloadComments: suspend () -> Unit = { comments = repository.comments(planId) }
+
+    // Asked once the plan is known, because the question is about its package set. A backend that
+    // predates the call answers null and the list stays empty: the page then says what it always
+    // said, the uploader's own device.
+    LaunchedEffect(plan?.packages) {
+        val packages = plan?.packages.orEmpty()
+        coverage = if (packages.isEmpty()) emptyList() else repository.deviceCoverage(packages)
+    }
 
     val sendComment: () -> Unit = {
         val body = draft.trim()
@@ -603,7 +617,7 @@ private fun PlanDetailContent(
         FlTopBarCompactHeight
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
-        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, onEditNote = onEditNote) }
+        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, coverage = coverage, onEditNote = onEditNote) }
 
         item {
             SectionTitle(
@@ -692,6 +706,8 @@ private fun PlanHero(
     foreign: Boolean,
     onVote: () -> Unit,
     onUsePlan: () -> Unit,
+    /** The other phones this package set was proven on, most-proven first; empty when unknown. */
+    coverage: List<DeviceCoverage> = emptyList(),
     /** Only offered to the uploader: rewriting somebody else's note is what [saveNote] refuses.
      *  Handed the note as it stands, so the editor opens with the current text in it. */
     onEditNote: ((String) -> Unit)? = null,
@@ -810,6 +826,30 @@ private fun PlanHero(
                     lineHeight = 17.sp,
                     color = colors.onPrimaryContainer,
                 )
+            }
+            // The other phones, when there are any: one device line says who wrote this, this says
+            // whether anybody else lived with it. Only shown past the uploader's own row, so a plan
+            // nobody else has tried stays as quiet as before.
+            if (coverage.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "也在这些机器上验过",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onPrimaryContainer.copy(alpha = 0.75f),
+                )
+                coverage.forEach { device ->
+                    Text(
+                        text = device.buildLabel +
+                            if (device.verified > 1) " · ${device.verified} 人" else "",
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = colors.onPrimaryContainer.copy(alpha = 0.9f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
             // The uploader's own tap: a note written a week after the plan, once use has shown what
             // the upload could not. Shown even with an empty note — that is the case it is for.

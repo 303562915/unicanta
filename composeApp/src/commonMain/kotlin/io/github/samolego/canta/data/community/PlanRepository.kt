@@ -388,6 +388,41 @@ class PlanRepository(
     }
 
     /**
+     * The phones this exact set of packages was reboot-proven on, most-proven first.
+     *
+     * A plan page says which device *the uploader* held; this says whether anyone else with the
+     * same list came back with a working phone, which is the question a reader actually has. The
+     * set is compared by content, so two uploads with the packages in a different order match.
+     *
+     * Empty when the backend cannot be reached or predates the call — the page then shows the
+     * uploader's device alone, as before.
+     */
+    suspend fun deviceCoverage(packages: List<String>, limit: Int = 5): List<DeviceCoverage> {
+        if (packages.isEmpty()) return emptyList()
+        val body = buildJsonObject {
+            putJsonArray("p_packages") { packages.forEach { add(JsonPrimitive(it)) } }
+            put("p_limit", limit)
+        }.toString()
+        val text = rpc("plan_device_coverage", body) ?: return emptyList()
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.mapNotNull { element ->
+                val o = element.jsonObject
+                val model = o["model"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                if (model.isBlank()) return@mapNotNull null
+                DeviceCoverage(
+                    brand = o["brand"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    model = model,
+                    marketName = o["market_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    romVersion = o["rom_version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                    sdk = o["sdk"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                    verified = o["verified"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                )
+            }
+        }.getOrNull().orEmpty()
+    }
+
+    /**
      * Every model the community has plans for, one row per build, with how many plans and people
      * each has. Null when the backend could not be reached or predates the catalog call.
      */
