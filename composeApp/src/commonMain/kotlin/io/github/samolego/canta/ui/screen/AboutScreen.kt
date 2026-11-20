@@ -465,7 +465,13 @@ private fun AppHero() {
         Column {
             Text(text = APP_NAME, style = FlText.title2, color = scheme.onSurface)
             Text(
-                text = "v${BuildInfo.VERSION_NAME}",
+                // A development build carries the same version name as the release it was cut
+                // from; the build number is the only thing that tells the two apart on screen.
+                text = if (BuildInfo.DEVELOPMENT_BUILD_NUMBER > 0) {
+                    "v${BuildInfo.VERSION_NAME} (dev ${BuildInfo.DEVELOPMENT_BUILD_NUMBER})"
+                } else {
+                    "v${BuildInfo.VERSION_NAME}"
+                },
                 style = FlText.footnote,
                 color = scheme.onSurfaceVariant,
             )
