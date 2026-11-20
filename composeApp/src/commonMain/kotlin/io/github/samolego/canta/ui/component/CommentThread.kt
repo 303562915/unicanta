@@ -6,15 +6,21 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -561,6 +567,7 @@ private fun CommentActions(
  * one was picked, the way a short-video composer does it. Picking a comment brings the field up
  * focused, so the answer starts where the thumb landed.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CommentComposer(
     draft: String,
@@ -579,12 +586,18 @@ fun CommentComposer(
     LaunchedEffect(replyToName) {
         if (replyToName.isNotEmpty()) focusRequester.requestFocus()
     }
+    // What the bar must clear at the bottom: the keyboard while it is up, the navigation bar while
+    // it is down. Reading the IME inset unconditionally is what made the bar a whole window tall on
+    // ROMs that report the entire window as the IME inset while the keyboard is hidden — the field
+    // then sat at the very top of an empty full-height bar, and only fell back into place once the
+    // keyboard opened and the inset became a real keyboard height.
+    val imeVisible = WindowInsets.isImeVisible
+    val bottomInset = if (imeVisible) WindowInsets.ime else WindowInsets.navigationBars
     Surface(tonalElevation = 3.dp) {
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .imePadding()
+                .windowInsetsPadding(bottomInset.only(WindowInsetsSides.Bottom))
                 .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
         ) {
             if (replyToName.isNotEmpty()) {
