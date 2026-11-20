@@ -3,6 +3,7 @@ package io.github.samolego.canta.data.bloat
 import io.github.samolego.canta.data.AppBlobStorage
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppBadgeInfo
+import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.currentTimeMillis
 import io.ktor.client.HttpClient
@@ -39,6 +40,11 @@ data class BloatData(
  * A usable cached list is never thrown away because of a failed download,
  * and a corrupt cache is replaced by a fresh download.
  *
+ * When there is no cache and GitHub cannot be reached at all, the list shipped with the build
+ * ([bundled]) is used instead: a phone without a route to `raw.githubusercontent.com` still gets
+ * badges and descriptions rather than an empty list. The bundled copy is a starting point only —
+ * every successful download still replaces it and is cached as usual.
+ *
  * [descriptions] is this build's translation of the list's English wording; it is applied to the
  * parsed entries, so everything downstream (the badge, the app page, the list) sees one language.
  */
@@ -51,6 +57,12 @@ class BloatRepository(
      * which the platforms that build this repository are not all ready for at construction time.
      */
     private val descriptions: suspend () -> BloatDescriptions = { BloatDescriptions.empty() },
+    /**
+     * The raw list shipped with the build, resolved on first use for the same reason as
+     * [descriptions]. Returning null (or failing) simply means "no local copy", and the repository
+     * behaves exactly as it did before: whatever the download gives, possibly nothing.
+     */
+    private val bundled: suspend () -> String? = { null },
 ) {
     private companion object {
         const val TAG = "BloatRepository"
@@ -62,12 +74,31 @@ class BloatRepository(
     private suspend fun translationTable(): BloatDescriptions =
         resolvedDescriptions ?: descriptions().also { resolvedDescriptions = it }
 
+    /** The shipped list, parsed once; empty when this build has none. */
+    private var resolvedBundled: Map<String, BloatData>? = null
+
+    private suspend fun bundledEntries(l10n: BloatDescriptions): Map<String, BloatData> {
+        resolvedBundled?.let { return it }
+        val entries = runCatching { bundled()?.let { parseBloatList(it).localisedWith(l10n) } }
+            .onFailure { LogUtils.w(TAG, "Shipped bloat list is unreadable: $it") }
+            .getOrNull()
+            .orEmpty()
+        resolvedBundled = entries
+        return entries
+    }
+
     suspend fun load(): Map<String, BloatData> {
         val l10n = translationTable()
         val cached = readCache(l10n)
-        if (cached == null) {
-            LogUtils.i(TAG, "No cached bloat list; downloading it")
-        } else if (!settings.autoUpdateBloatListFlow.first()) {
+        // What to answer with when the network has nothing: the shipped list, never nothing.
+        val fallback = cached ?: bundledEntries(l10n).also {
+            if (it.isEmpty()) {
+                LogUtils.i(TAG, "No cached bloat list; downloading it")
+            } else {
+                LogUtils.i(TAG, "No cached bloat list; using the shipped list (${it.size} entries)")
+            }
+        }
+        if (cached != null && !settings.autoUpdateBloatListFlow.first()) {
             LogUtils.i(TAG, "Bloat list auto-update is off; using the cached list")
             return cached
         }
@@ -85,10 +116,10 @@ class BloatRepository(
         }
 
         val start = currentTimeMillis()
-        val raw = fetchBloatList() ?: return cached.orEmpty()
+        val raw = fetchBloatList() ?: return fallback
         val parsed = runCatching { parseBloatList(raw).localisedWith(l10n) }
             .onFailure { LogUtils.e(TAG, "Downloaded bloat list is invalid", it) }
-            .getOrNull() ?: return cached.orEmpty()
+            .getOrNull() ?: return fallback
 
         runCatching { cache.write(raw.encodeToByteArray()) }
             .onFailure { LogUtils.e(TAG, "Failed to cache the bloat list", it) }
@@ -112,6 +143,23 @@ class BloatRepository(
         runCatching { client.get(settings.bloatListUrlFlow.first()).bodyAsText() }
             .onFailure { LogUtils.e(TAG, "Failed to download the bloat list", it) }
             .getOrNull()
+}
+
+/**
+ * The UAD list shipped inside the build.
+ *
+ * The list is normally downloaded from GitHub and cached, but that host is not always reachable
+ * from the phone (no route, proxy, rate limit). This copy is what [BloatRepository] falls back to:
+ * it is parsed like any other list, and a later download still overrides it.
+ */
+object BundledBloatList {
+    /** Path of the shipped list under `composeResources`. */
+    const val RESOURCE_PATH = "files/bloat_list.json"
+
+    /** The shipped list, or null when it is missing or unreadable on this platform. */
+    suspend fun raw(): String? = runCatching { Res.readBytes(RESOURCE_PATH).decodeToString() }
+        .onFailure { LogUtils.w("BundledBloatList", "Shipped bloat list is unreadable: $it") }
+        .getOrNull()
 }
 
 /** Parses a raw bloat-list JSON string into a map of package name -> [BloatData]. */

@@ -11,12 +11,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class BloatRepositoryTest {
 
     private val listJson = """{"com.a": {"description": "A", "removal": "Recommended"}}"""
     private val cachedJson = """{"com.cached": {"description": "C", "removal": "Expert"}}"""
+    private val bundledJson = """{"com.bundled": {"description": "B", "removal": "Caution"}}"""
 
     /** Serves the commits API and the list; records requested URLs. */
     private class Server(var sha: String? = "new", var listOk: Boolean = true, val list: String) {
@@ -88,5 +90,38 @@ class BloatRepositoryTest {
         val server = Server(list = listJson)
         BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings(autoUpdate = false)).load()
         assertTrue(server.requests.isEmpty())
+    }
+
+    @Test
+    fun fallsBackToShippedListWhenOffline() = runTest {
+        val server = Server(sha = null, listOk = false, list = listJson)
+        val cache = MemoryStorage()
+
+        val bloat = BloatRepository(
+            server.client,
+            cache,
+            settings(),
+            bundled = { bundledJson },
+        ).load()
+
+        assertEquals(setOf("com.bundled"), bloat.keys)
+        // The shipped copy is not a download: it must not be written where the cache lives.
+        assertNull(cache.content)
+    }
+
+    @Test
+    fun downloadedListWinsOverShippedList() = runTest {
+        val server = Server(list = listJson)
+        val cache = MemoryStorage()
+
+        val bloat = BloatRepository(
+            server.client,
+            cache,
+            settings(),
+            bundled = { bundledJson },
+        ).load()
+
+        assertEquals(setOf("com.a"), bloat.keys)
+        assertEquals(listJson, cache.content?.decodeToString())
     }
 }

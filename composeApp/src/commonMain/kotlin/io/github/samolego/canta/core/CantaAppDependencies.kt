@@ -4,6 +4,7 @@ import io.github.samolego.canta.data.AppBlobStorage
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.bloat.BloatDescriptions
 import io.github.samolego.canta.data.bloat.BloatRepository
+import io.github.samolego.canta.data.bloat.BundledBloatList
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.PlanCache
 import io.github.samolego.canta.data.history.OperationLogStore
@@ -85,6 +86,7 @@ fun cantaAppDependencies(
             storage(StoredData.BLOAT_LIST),
             settings,
             descriptions = { BloatDescriptions.bundled() },
+            bundled = { BundledBloatList.raw() },
         ),
         telemetry = telemetry,
         packageTelemetry = PackageTelemetry(cantaHandler, telemetry, settings),
