@@ -802,20 +802,40 @@ class PlanRepository(
     }
 
     /**
-     * Everything [owner] wrote — comments and answers alike — newest first. [owner] is the identity
-     * number, not the display name: renaming yourself must not lose the list.
+     * Everything [owner] wrote — comments and answers alike — newest first, one page at a time.
      *
-     * [token] is sent as well, because a comment written before the backend handed out that number
-     * was signed with the token instead; the backend matches either.
+     * [owner] is the identity number, not the display name: renaming yourself must not lose the
+     * list. [token] is sent as well, because a comment written before the backend handed out that
+     * number was signed with the token instead; the backend matches either.
+     *
+     * [offset] is how far the list has already been read: the reader asks for the next page when it
+     * scrolls to the end, so a person with a year of comments still draws the first screen at once.
+     * A backend older than the paging simply ignores the limit and answers with everything it has,
+     * which is why the app keeps its own page size rather than trusting the server's.
      */
-    suspend fun myComments(owner: String, token: String = ""): List<MyComment> {
-        if (owner.isEmpty() && token.isEmpty()) return emptyList()
+    suspend fun myComments(
+        owner: String,
+        token: String = "",
+        offset: Int = 0,
+        limit: Int = INBOX_PAGE_SIZE,
+    ): List<MyComment> = myCommentsPage(owner, token, offset, limit).items
+
+    /** The same, with "is there another page" alongside: what a scrolling list needs. */
+    suspend fun myCommentsPage(
+        owner: String,
+        token: String = "",
+        offset: Int = 0,
+        limit: Int = INBOX_PAGE_SIZE,
+    ): Page<MyComment> {
+        if (owner.isEmpty() && token.isEmpty()) return Page.EMPTY
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_token", token)
+            put("p_limit", limit)
+            put("p_offset", offset)
         }.toString()
-        val text = rpc("comments_by_author", body) ?: return emptyList()
-        return runCatching {
+        val text = rpc("comments_by_author", body) ?: return Page.EMPTY
+        val items = runCatching {
             json.parseToJsonElement(text).jsonArray.map { element ->
                 val o = element.jsonObject
                 MyComment(
@@ -827,20 +847,37 @@ class PlanRepository(
                     body = o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                    likes = o["likes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 )
             }
         }.getOrElse { emptyList() }
+        return Page(items, hasMore = items.size >= limit)
     }
 
     /** The answers other people left under [owner]'s comments, newest first; [token] proves it too. */
-    suspend fun repliesToMe(owner: String, token: String = ""): List<MyComment> {
-        if (owner.isEmpty() && token.isEmpty()) return emptyList()
+    suspend fun repliesToMe(
+        owner: String,
+        token: String = "",
+        offset: Int = 0,
+        limit: Int = INBOX_PAGE_SIZE,
+    ): List<MyComment> = repliesToMePage(owner, token, offset, limit).items
+
+    /** The same, with "is there another page" alongside. */
+    suspend fun repliesToMePage(
+        owner: String,
+        token: String = "",
+        offset: Int = 0,
+        limit: Int = INBOX_PAGE_SIZE,
+    ): Page<MyComment> {
+        if (owner.isEmpty() && token.isEmpty()) return Page.EMPTY
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_token", token)
+            put("p_limit", limit)
+            put("p_offset", offset)
         }.toString()
-        val text = rpc("comments_replies_to", body) ?: return emptyList()
-        return runCatching {
+        val text = rpc("comments_replies_to", body) ?: return Page.EMPTY
+        val items = runCatching {
             json.parseToJsonElement(text).jsonArray.map { element ->
                 val o = element.jsonObject
                 MyComment(
@@ -856,6 +893,190 @@ class PlanRepository(
                 )
             }
         }.getOrElse { emptyList() }
+        return Page(items, hasMore = items.size >= limit)
+    }
+
+    // ---------------------------------------------------------------- the inbox feed
+
+    /**
+     * One page of the whole feed: replies, comments under my plans, hearts on my comments, and
+     * endorsements of my plans, merged and ordered by the backend.
+     *
+     * [perSource] rows are taken from each of the four at [offset], so the feed grows by asking for
+     * the next offset — one request per scroll, and the same rows whatever happened in between.
+     * A backend that predates `inbox_page` answers nothing, and the page falls back to the two
+     * list readers it does have; that is why [fallback] exists rather than the page failing.
+     */
+    suspend fun inboxPage(
+        owner: String,
+        token: String = "",
+        offset: Int = 0,
+        perSource: Int = INBOX_PAGE_SIZE / 2,
+    ): Page<InboxItem> {
+        if (owner.isEmpty() && token.isEmpty()) return Page.EMPTY
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_token", token)
+            put("p_per_source", perSource)
+            put("p_offset", offset)
+        }.toString()
+        val text = rpc("inbox_page", body) ?: return Page.EMPTY
+        val items = runCatching {
+            json.parseToJsonElement(text).jsonArray.mapNotNull { element ->
+                val o = element.jsonObject
+                val src = o["src"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                // A heart says "小张 等 3 人赞了你的评论": the name the voter uses today is what it
+                // has to read, and an unnamed voter falls back to the identity string beside it.
+                val actorName = o["actor_name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                InboxItem(
+                    kind = InboxKind.of(src),
+                    id = o["src_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    targetKind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        .ifEmpty { COMMENT_KIND_PLAN },
+                    target = o["target"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    body = o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    parentBody = o["parent_body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    actor = actorName.ifEmpty { o["actor"]?.jsonPrimitive?.contentOrNull.orEmpty() },
+                    createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    likes = o["likes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                )
+            }
+        }.getOrElse { emptyList() }
+        return Page(items, hasMore = pageHasMore(items, perSource))
+    }
+
+    // ---------------------------------------------------------------- corrected descriptions
+
+    /**
+     * Every rewrite of [packageName]'s description, the accepted one first — null when the backend
+     * cannot be reached (or does not carry the function yet, where the page shows the published
+     * line and says nothing about corrections).
+     *
+     * [viewer] is the identity whose votes are marked, so the page can light up the side this
+     * install already picked.
+     */
+    suspend fun descriptionFixes(packageName: String, viewer: String = ""): List<DescriptionFix>? {
+        if (packageName.isEmpty()) return emptyList()
+        val body = buildJsonObject {
+            put("p_pkg", packageName)
+            put("p_voter", viewer)
+        }.toString()
+        val text = rpc("description_fixes_for", body) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.map(::parseDescriptionFix)
+        }.getOrNull()
+    }
+
+    /**
+     * The rewrite that currently stands in for [packageName]'s published description, or null while
+     * the published one still does.
+     */
+    suspend fun appliedDescriptionFix(packageName: String): DescriptionFix? {
+        if (packageName.isEmpty()) return null
+        val body = buildJsonObject { put("p_pkg", packageName) }.toString()
+        val text = rpc("description_fix_current", body) ?: return null
+        return runCatching {
+            val element = json.parseToJsonElement(text)
+            if (element is kotlinx.serialization.json.JsonNull) null else parseDescriptionFix(element)
+        }.getOrNull()
+    }
+
+    /**
+     * Files [body] as a corrected description of [packageName], signed with [author] and owned by
+     * [authorId]. Writing again replaces the pending rewrite this identity already filed, so this
+     * is also how one's own suggestion is edited.
+     *
+     * Answers the rewrite's id; null when the backend refused it (text too long, no identity).
+     */
+    suspend fun addDescriptionFix(
+        packageName: String,
+        body: String,
+        note: String = "",
+        author: String = "",
+        authorId: String = "",
+    ): Long? {
+        if (packageName.isEmpty() || body.isBlank()) return null
+        val payload = buildJsonObject {
+            put("p_pkg", packageName)
+            put("p_body", body)
+            put("p_note", note)
+            put("p_author", author)
+            put("p_author_id", authorId)
+        }.toString()
+        val text = rpc("description_fix_add", payload) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
+        }.getOrNull()
+    }
+
+    /**
+     * Votes [agree] on rewrite [id] as [voter], and answers the fresh counts.
+     *
+     * The backend re-settles the package after every vote, so [DescriptionFixVote.applied] can turn
+     * true here: that is the moment the rewrite replaces the published description.
+     */
+    suspend fun voteDescriptionFix(id: Long, voter: String, agree: Boolean): DescriptionFixVote? {
+        if (id <= 0L || voter.isEmpty()) return null
+        val payload = buildJsonObject {
+            put("p_id", id)
+            put("p_voter", voter)
+            put("p_agree", agree)
+        }.toString()
+        val text = rpc("description_fix_vote", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            DescriptionFixVote(
+                agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                applied = o["applied"]?.jsonPrimitive?.booleanOrNull == true,
+            )
+        }.getOrNull()
+    }
+
+    /** One row of [descriptionFixes], with every field optional: an old answer stays readable. */
+    private fun parseDescriptionFix(element: kotlinx.serialization.json.JsonElement): DescriptionFix {
+        val o = element.jsonObject
+        return DescriptionFix(
+            id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            body = o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            note = o["note"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            author = o["author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            authorId = o["author_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            mine = o["mine"]?.jsonPrimitive?.booleanOrNull,
+            applied = o["applied"]?.jsonPrimitive?.booleanOrNull == true,
+            needed = o["needed"]?.jsonPrimitive?.longOrNull?.toInt() ?: DescriptionFix.VOTES_NEEDED,
+            shareNeeded = o["share"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: DescriptionFix.SHARE_NEEDED,
+        )
+    }
+
+    /**
+     * What is waiting for [owner]: four counts and the newest comment id, as one cheap call.
+     *
+     * This is what the red dot is drawn from. An older backend has no `inbox_summary`, so this
+     * answers null there and the caller counts the only way that deployment supports — one page of
+     * [repliesToMePage], which is still bounded.
+     */
+    suspend fun inboxSummary(owner: String, token: String = ""): InboxSummary? {
+        if (owner.isEmpty() && token.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_token", token)
+        }.toString()
+        val text = rpc("inbox_summary", body) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            InboxSummary(
+                replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                planComments = o["plan_comments"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                commentHearts = o["comment_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                planHearts = o["plan_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                newestCommentId = o["newest_comment_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            )
+        }.getOrNull()
     }
 }
 

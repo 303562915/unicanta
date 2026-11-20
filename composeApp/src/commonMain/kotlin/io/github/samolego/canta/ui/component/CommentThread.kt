@@ -770,6 +770,8 @@ fun MyCommentRow(
     replies: Int,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
+    /** How many people hearted this comment: the tally the inbox line is about, on the row itself. */
+    likes: Int = 0,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
@@ -817,9 +819,20 @@ fun MyCommentRow(
         }
         Spacer(Modifier.height(3.dp))
         Text(text = body, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        if (replies > 0) {
+        // The two numbers a comment of one's own collects, said the way the thread says them: how
+        // many hearts and how many answers. A heart on this row is the same event the inbox
+        // reports, so the tally is drawn here too — otherwise "3 人赞了" would arrive without the
+        // row it is about ever showing the 3.
+        if (replies > 0 || likes > 0) {
             Spacer(Modifier.height(3.dp))
-            Text(text = "$replies 条回复", fontSize = 9.sp, color = colors.primary)
+            Text(
+                text = buildList {
+                    if (likes > 0) add("$likes 赞")
+                    if (replies > 0) add("$replies 条回复")
+                }.joinToString(" · "),
+                fontSize = 9.sp,
+                color = colors.primary,
+            )
         }
     }
 }
