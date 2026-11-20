@@ -34,7 +34,7 @@
 
 | 项 | 值 |
 |---|---|
-| 本地路径 | `/sdcard/Aaaa/unicanta/Canta` |
+| 本地路径 | 当前检出：`G:\trae\respositories\unicanta`（历史笔记里的 `/sdcard/Aaaa/unicanta/Canta` 是另一台设备，不要照抄） |
 | 远程 | `origin` → `https://github.com/303562915/unicanta.git` |
 | 默认分支 | `master` |
 | 构建身份 | `gh` 已登录 `303562915`（scopes: repo, workflow, read:org, gist） |
@@ -81,7 +81,7 @@ git commit -m "fix: <一句话，说清修了什么编译/行为问题>"
 git push origin master             # 不要 --force，不要推空提交试探
 ```
 
-推送后**立刻**触发 `build.yml` 与 `fork-ci.yml`（同一 push 会同时跑这两套，见第 6 节）。
+推送后由 CI 跑 `build.yml`：master 上只跑这一套（`fork-ci.yml` 的 job 带 `if: github.ref != 'refs/heads/master'`，只在其他分支跑，见第 6 节）。
 
 约定：
 
@@ -118,11 +118,13 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
 
 ## 6. 已知问题与坑（改动前先看）
 
-1. **重复构建**：`build.yml` 和 `fork-ci.yml` 都是 `on: push`，同一次推送会完整跑两遍（各约 8–9 分钟）。要提效就该合并或收窄触发条件（例如 `fork-ci.yml` 只在非 `master` 分支跑），但这属于工作流改动，需要显式确认后再动。
-2. **`release.yml` 的 secret 名字对不上**：它读 `KEYSTORE_FILE_BASE64` / `KEYSTORE_KEY_ALIAS`，而仓库里实际配置的是 `CANTA_KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`。直接 `workflow_dispatch` 会因 keystore 为空而失败。发版前必须先统一两侧名字。
-3. **`supabase_migrations.yml` 缺 secret**：需要 `SUPABASE_ACCESS_TOKEN`，当前仓库 secrets 里没有，触碰 `server/supabase/migrations/**` 的推送会让该 run 失败。
-4. **过期的 action 版本**：`pull_request_build.yml` 与 `release.yml` 仍用 `actions/checkout@v3`、`actions/setup-java@v3`、`distribution: adopt`；`build.yml` / `fork-ci.yml` 已用 `@v4` + `temurin`。改这两个文件时顺手对齐。
-5. **`release.yml` 里有已废弃写法**：`echo "::set-output name=tag::..."` 已不被支持，`VERSION_NAME` 实际走的是 `$GITHUB_ENV`。
+下面第 1–5 条是历史上记在这里的坑，**现在都已经在仓库里修好**，留作对照：再看到别处的旧笔记说"会失败"，以这里的现状为准。
+
+1. **重复构建（已修）**：`fork-ci.yml` 的 job 带 `if: github.ref != 'refs/heads/master'`，master 推送只由 `build.yml` 跑一遍，不再双跑。
+2. **`release.yml` 的 secret 名（已对齐）**：它现在读 `CANTA_KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`，与仓库已配置的 secrets 一致，发版不再因 keystore 为空而失败。
+3. **`supabase_migrations.yml`（已可用）**：`SUPABASE_ACCESS_TOKEN` 与 `SUPABASE_DB_PASSWORD` 都已配置，`workflow_dispatch` 实测 `success`。**迁移由 CI 自动应用**：改 `server/supabase/migrations/**` 推到 master 就会 `supabase db push --remote --yes`，不需要本地手动推；本地也没有 `supabase` / `psql`，需要直接查库时走 Management API（见 `SUPABASE.local.md`）。
+4. **action 版本（已统一）**：所有 workflow 都是 `actions/checkout@v4` + `actions/setup-java@v4` + `distribution: temurin`。
+5. **`::set-output`（已移除）**：仓库里已无该写法，`VERSION_NAME` 走 `$GITHUB_ENV`。
 6. **本地不可构建是刻意的**：`gradlew` 无执行位、无 SDK、`/sdcard` 挂载限制。别提交"修 gradlew 权限""加 local.properties"这类补丁。
 7. `gradle.properties` 开了 `org.gradle.configuration-cache=true`，新增 Gradle 任务/插件若读取环境变量，需要在任务上声明输入，否则云端会因缓存命中而行为异常。
 

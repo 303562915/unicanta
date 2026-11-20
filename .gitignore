@@ -26,3 +26,6 @@ server/node/telemetry.db-journal
 
 # Scratch space for translating the bloat list (tools/bloat_descriptions.py)
 /.bloat-work/
+
+# Local-only Supabase credentials / endpoints (never commit)
+SUPABASE.local.md
