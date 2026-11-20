@@ -228,12 +228,14 @@ fun PlanDetailScreen(
         // this phone's list does not carry. Ask for that one plan by id before calling it missing.
         if (plan == null) plan = repository.planById(planId)
         ranking = rankPackages(all).keyed()
-        comments = repository.comments(planId)
+        // The viewer is sent with the read, not only with the tap: `liked` is a per-identity answer,
+        // and without it every heart on the thread comes back empty and a like looks forgotten.
+        comments = repository.comments(planId, owner)
         loadError = if (comments.isEmpty()) repository.lastError else null
         loading = false
     }
 
-    val reloadComments: suspend () -> Unit = { comments = repository.comments(planId) }
+    val reloadComments: suspend () -> Unit = { comments = repository.comments(planId, owner) }
 
     // Asked once the plan is known, because the question is about its package set. A backend that
     // predates the call answers null and the list stays empty: the page then says what it always
@@ -467,6 +469,7 @@ fun PlanDetailScreen(
                     apps = apps,
                     rules = rules,
                     profile = profile,
+                    coverage = coverage,
                     comments = comments,
                     loadError = loadError,
                     me = commentAuthor,
@@ -563,6 +566,8 @@ private fun PlanDetailContent(
     profile: DeviceProfile?,
     /** True when the plan was proven on another model or build: the page says so, and asks first. */
     foreign: Boolean = false,
+    /** The other phones this package set was proven on, most-proven first. */
+    coverage: List<DeviceCoverage> = emptyList(),
     comments: List<PlanComment>,
     loadError: String? = null,
     me: String,
