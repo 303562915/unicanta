@@ -23,7 +23,10 @@ class OperationFailureTest {
             OperationResult.STATUS_NO_RESULT, -1, 1, 2, 3, 4, 5, 6, 7, 8, 999,
         )
         codes.forEach { status ->
-            val explanation = assertNotNull(failed(status), "status $status has no explanation")
+            val explanation = assertNotNull(
+                failed(status).explainFailure(),
+                "status $status has no explanation",
+            )
             assertTrue(explanation.reason.isNotBlank(), "status $status has no reason")
             assertTrue(explanation.advice.isNotBlank(), "status $status has no advice")
         }
@@ -32,8 +35,7 @@ class OperationFailureTest {
     @Test
     fun theDeviceMessageOutranksAGenericStatus() {
         // A vendor block arrives as STATUS_FAILURE; the message is what says so.
-        val explanation = failed(1, "not allowed to disable this package")
-        val text = assertNotNull(explanation.explainFailure())
+        val text = assertNotNull(failed(1, "not allowed to disable this package").explainFailure())
         assertTrue(
             "厂商" in text.reason || "锁住" in text.reason,
             "a vendor block should not read as a generic failure: ${text.reason}",
