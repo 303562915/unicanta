@@ -183,6 +183,9 @@ fun SafetyRulesScreen(
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
     var catalogLoading by remember { mutableStateOf(true) }
     var pickerOpen by remember { mutableStateOf(false) }
+    // The picker opened from the bar's search button: the model filter is on and focused from the
+    // first frame, instead of the reader scrolling families to type a name.
+    var pickerSearch by remember { mutableStateOf(false) }
 
     // The photo at the top is decoration: the About page can turn it off, and the page then keeps
     // the band with the phone's name and the switch but not the picture under it. A plain `Flow`,
@@ -483,7 +486,10 @@ fun SafetyRulesScreen(
                     PlanScopeBar(
                         scope = planScope,
                         ownLabel = ownLabel,
-                        onOpen = { pickerOpen = true },
+                        onOpen = { pickerSearch = false; pickerOpen = true },
+                        // The same picker, one tap shorter: the search field is what the button is
+                        // for, so it opens straight into it.
+                        onSearch = { pickerSearch = true; pickerOpen = true },
                     )
                 },
             )
@@ -596,6 +602,7 @@ fun SafetyRulesScreen(
             },
             onRetry = { reloads++ },
             onDismiss = { pickerOpen = false },
+            startSearch = pickerSearch,
         )
     }
 
