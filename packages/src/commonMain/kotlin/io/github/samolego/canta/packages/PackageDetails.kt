@@ -11,7 +11,7 @@ import kotlinx.serialization.protobuf.ProtoNumber
  * The helper artifact is re-pushed by checksum anyway; this is reported by
  * the helper's `version` command for diagnostics.
  */
-const val PROTOCOL_VERSION = 4
+const val PROTOCOL_VERSION = 5
 
 /*
  * Wire format between the on-device ADB helper and Canta, encoded with
@@ -39,6 +39,17 @@ data class PackageDetails(
     @ProtoNumber(8) val installed: Boolean = false,
     /** Whether this is a system app with an update installed over it. */
     @ProtoNumber(9) val hasSystemUpdate: Boolean = false,
+    /**
+     * The package that installed this app (a store, a sideload, the system image), or empty when
+     * the platform does not say. Part of the snapshot kept before an uninstall: it is how a user
+     * later tells what "came back" means and where the app should be reinstalled from.
+     */
+    @ProtoNumber(10) val installerPackage: String = "",
+    /**
+     * When the app was first installed, in epoch milliseconds, or 0 when unknown. Zero-valued so
+     * a message without it reads as "unknown" rather than as 1970.
+     */
+    @ProtoNumber(11) val firstInstallTime: Long = 0,
 )
 
 /** Same rule as `ApplicationInfo.canResetToFactory`, for packages read through the helper. */

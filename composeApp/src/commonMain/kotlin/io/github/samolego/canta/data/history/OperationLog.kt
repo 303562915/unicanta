@@ -2,6 +2,7 @@ package io.github.samolego.canta.data.history
 
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.AppBlobStorage
+import io.github.samolego.canta.data.app.PackageSnapshot
 import io.github.samolego.canta.util.LogUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,12 @@ data class OperationRecord(
     val reason: String = "",
     /** What to try next, when there is something worth trying. */
     val advice: String = "",
+    /**
+     * The package as it was before the operation: version, installer, first install time. Only
+     * uninstalls carry one — that is the direction where knowing what was there matters — and
+     * records written before snapshots existed simply have none.
+     */
+    val snapshot: PackageSnapshot? = null,
     val batchId: Long = 0L,
     val batchIndex: Int = 0,
     val batchSize: Int = 1,
@@ -83,7 +90,8 @@ class OperationLogStore(
         const val FILE_NAME = "canta-operations.csv"
 
         private const val CSV_HEADER =
-            "time,action,result,package,label,batch_index,batch_size,reset_to_factory,device,user,message,reason,advice"
+            "time,action,result,package,label,batch_index,batch_size,reset_to_factory,device,user," +
+                "message,reason,advice,version_name,version_code,is_system,installer,first_install_time"
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -192,6 +200,23 @@ class OperationLogStore(
             append(record.reason.csvCell())
             append(',')
             append(record.advice.csvCell())
+            // The snapshot columns: what the package was before it left, so a CSV pulled off the
+            // device still answers "which build was that?" months later.
+            append(',')
+            append(record.snapshot?.versionName.orEmpty().csvCell())
+            append(',')
+            append(record.snapshot?.versionCode?.toString().orEmpty())
+            append(',')
+            append(if (record.snapshot?.isSystem == true) "yes" else "no")
+            append(',')
+            append(record.snapshot?.installerPackage.orEmpty().csvCell())
+            append(',')
+            append(
+                record.snapshot?.firstInstallTime
+                    ?.takeIf { it > 0 }
+                    ?.let(OperationTime::stamp)
+                    .orEmpty()
+            )
             append('\n')
         }
     }

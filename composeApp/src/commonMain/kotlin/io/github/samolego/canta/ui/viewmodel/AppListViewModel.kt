@@ -15,6 +15,7 @@ import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.explainFailure
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.app.Filter
+import io.github.samolego.canta.data.app.PackageSnapshot
 import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.history.OperationKind
@@ -334,14 +335,18 @@ class AppListViewModel(
         val log = mutableListOf<OperationRecord>()
         var succeeded = 0
         results.collect { result ->
+            val app = before[result.packageName]
             val record = operationRecord(
                 result = result,
                 kind = kind,
-                label = before[result.packageName]?.name ?: result.packageName,
+                label = app?.name ?: result.packageName,
                 batchId = batchId,
                 batchIndex = log.size + 1,
                 batchSize = packageNames.size,
                 resetToFactory = resetToFactory,
+                // Taken before the outcome is applied: an app that is gone can no longer be read,
+                // and the snapshot is of the thing that was there.
+                snapshot = app?.snapshot()?.takeIf { kind == OperationKind.UNINSTALL },
             )
             log += record
             if (result.success) {
@@ -384,6 +389,7 @@ class AppListViewModel(
         batchIndex: Int,
         batchSize: Int,
         resetToFactory: Boolean = false,
+        snapshot: PackageSnapshot? = null,
     ): OperationRecord {
         val device = if (batchIndex == 1) {
             runCatching { cantaHandler.deviceProfile()?.shortLabel() }.getOrNull().orEmpty()
@@ -401,6 +407,9 @@ class AppListViewModel(
             message = if (result.success) "" else result.message,
             reason = explanation?.reason.orEmpty(),
             advice = explanation?.advice.orEmpty(),
+            // Only an uninstall keeps the snapshot: that is the record a user reads when asking
+            // "what was that app, and what would putting it back bring?".
+            snapshot = snapshot,
             batchId = batchId,
             batchIndex = batchIndex,
             batchSize = batchSize,

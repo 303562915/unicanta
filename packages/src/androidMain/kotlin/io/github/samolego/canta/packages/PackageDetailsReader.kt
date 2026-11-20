@@ -4,6 +4,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.os.Build
 import android.util.Log
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -31,8 +32,28 @@ fun PackageInfo.toPackageDetails(packageManager: PackageManager): PackageDetails
         isSystem = appInfo?.isSystem == true,
         installed = installed,
         hasSystemUpdate = appInfo?.hasSystemUpdate == true,
+        installerPackage = installerPackageName(packageManager),
+        firstInstallTime = firstInstallTime,
     )
 }
+
+/**
+ * Who installed this package, or empty when the platform will not say. `getInstallSourceInfo` is
+ * the API that answers this properly from Android 11; before that the deprecated single-name call
+ * is all there is, and it can still come back null.
+ */
+private fun PackageInfo.installerPackageName(packageManager: PackageManager): String =
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            packageManager.getInstallSourceInfo(packageName).installingPackageName.orEmpty()
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstallerPackageName(packageName).orEmpty()
+        }
+    } catch (e: Exception) {
+        // A package the caller may not inspect: unknown is the right answer, not a failure.
+        ""
+    }
 
 /**
  * Runs [read] for [info], logging and returning null if the package can't be

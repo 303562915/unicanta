@@ -2,9 +2,12 @@ package io.github.samolego.canta.ui.viewmodel
 
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.data.app.AppBadgeInfo
+import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.canta_description
 import io.github.samolego.canta.testing.FakeHandler
+import io.github.samolego.canta.testing.FakePlatform
+import io.github.samolego.canta.testing.MemoryStorage
 import io.github.samolego.canta.testing.offlineBloatRepository
 import io.github.samolego.canta.ui.AppsType
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +26,8 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppListViewModelTest {
@@ -60,6 +65,32 @@ class AppListViewModelTest {
             mapOf("com.a" to true, "com.b" to false, "com.c" to false),
             viewModel.apps.associate { it.packageName to it.isUninstalled },
         )
+    }
+
+    @Test
+    fun anUninstallKeepsASnapshotOfWhatWasThere() = runVmTest {
+        val store = OperationLogStore(MemoryStorage(), FakePlatform())
+        val viewModel = AppListViewModel(handler, offlineBloatRepository(), history = store)
+        viewModel.loadApps().join()
+        viewModel.selectedApps.add("com.a")
+
+        viewModel.applyToSelected(AppsType.INSTALLED)
+
+        val record = assertNotNull(store.records.value.firstOrNull { it.packageName == "com.a" })
+        val snapshot = assertNotNull(record.snapshot, "an uninstall keeps what the package was")
+        assertEquals("com.a", snapshot.packageName)
+    }
+
+    @Test
+    fun aRestoreDoesNotPretendToSnapshotTheUninstall() = runVmTest {
+        val store = OperationLogStore(MemoryStorage(), FakePlatform())
+        val viewModel = AppListViewModel(handler, offlineBloatRepository(), history = store)
+        viewModel.loadApps().join()
+
+        viewModel.reinstallPackages(listOf("com.a"))
+
+        val record = assertNotNull(store.records.value.firstOrNull { it.packageName == "com.a" })
+        assertNull(record.snapshot, "putting an app back is not the moment to describe it")
     }
 
     @Test

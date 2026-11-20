@@ -39,6 +39,28 @@ data class AppInfo(
     val apkSize: Long?
         get() = details.apkSize.takeIf { it > 0 }
 
+    /** Who installed this app (a store's package name), or empty when the platform does not say. */
+    val installerPackage: String
+        get() = details.installerPackage
+
+    /** When the app was first installed in epoch milliseconds, or null when unknown. */
+    val firstInstallTime: Long?
+        get() = details.firstInstallTime.takeIf { it > 0 }
+
+    /**
+     * The package state worth keeping before it is removed: what was there, so a log read later
+     * says which build left the phone rather than only which package name did.
+     */
+    fun snapshot(): PackageSnapshot = PackageSnapshot(
+        packageName = packageName,
+        label = name,
+        versionName = versionName,
+        versionCode = versionCode,
+        isSystem = isSystemApp,
+        installerPackage = installerPackage,
+        firstInstallTime = firstInstallTime ?: 0,
+    )
+
     val badgeInfo: AppBadgeInfo?
         get() = bloatData?.badgeInfo
     val description: String?

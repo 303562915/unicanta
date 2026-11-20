@@ -273,14 +273,24 @@ private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> U
                 }
             val resetNote =
                 if (record.resetToFactory) stringResource(Res.string.records_reset_to_factory) else ""
-            val notes = listOf(batchNote, resetNote).filter { it.isNotEmpty() }
+            // What the package was when it left: the version, and who put it there. A log that
+            // says only the package name cannot be acted on a month later.
+            val snapshotNote = record.snapshot?.let { snapshot ->
+                if (snapshot.isBare) "" else snapshot.labelWithVersion
+            }.orEmpty()
+            val installerNote = record.snapshot?.installerPackage
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { "来自 $it" }
+                .orEmpty()
+            val notes = listOf(batchNote, snapshotNote, installerNote, resetNote)
+                .filter { it.isNotEmpty() }
             if (notes.isNotEmpty()) {
                 Spacer(Modifier.height(3.dp))
                 Text(
                     text = notes.joinToString(" · "),
                     style = FlText.caption2,
                     color = scheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = ROW_ICON + 10.dp),
                 )
