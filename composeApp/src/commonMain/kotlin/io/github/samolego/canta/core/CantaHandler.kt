@@ -6,6 +6,7 @@ import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.util.DeviceContext
 import io.github.samolego.canta.util.DeviceProfile
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * Status of the privileged runtime (Shizuku / Sui on Android).
