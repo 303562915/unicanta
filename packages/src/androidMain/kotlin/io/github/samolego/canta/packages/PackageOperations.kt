@@ -9,6 +9,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import io.github.samolego.canta.packages.OperationResult.Companion.STATUS_NEGATIVE_RESPONSE
 import io.github.samolego.canta.packages.OperationResult.Companion.STATUS_NO_RESULT
 import java.lang.reflect.InvocationTargetException
 
