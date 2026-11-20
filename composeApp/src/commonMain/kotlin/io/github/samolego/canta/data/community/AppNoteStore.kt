@@ -48,10 +48,17 @@ private data class AppNotesBlob(
     val packageVerdicts: Map<String, Boolean> = emptyMap(),
     /**
      * The newest reply this install has opened. Anything with a larger id is new, which is what the
-     * red dot on the inbox counts: replies are only ever added, so an id goes up and never down,
-     * while a stored "seen at" timestamp would disagree with a phone whose clock is behind.
+     * per-row "new" marker compares against: replies are only ever added, so an id goes up and never
+     * down. The red dot itself is decided by [inboxSeenAt].
      */
     val lastSeenReplyId: Long = 0L,
+    /**
+     * The instant the inbox was last opened, as the backend stamped it (`inbox_summary`'s
+     * `checked_at`). Every count comes back as "newer than this", so opening the list is what ends
+     * the news, and because the instant comes from the server a phone whose clock is behind still
+     * agrees with the rows. Empty until the inbox has been opened once.
+     */
+    val inboxSeenAt: String = "",
 )
 
 /**
@@ -70,6 +77,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     private val _likedPlans = MutableStateFlow<Set<Long>>(emptySet())
     private val _packageVerdicts = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     private val _lastSeenReplyId = MutableStateFlow(0L)
+    private val _inboxSeenAt = MutableStateFlow("")
 
     /** Reviews by package name, newest first. */
     val reviews: StateFlow<Map<String, List<AppReview>>> = _reviews.asStateFlow()
@@ -90,6 +98,9 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     /** The newest reply this install has opened; see [markRepliesSeen]. */
     val lastSeenReplyId: StateFlow<Long> = _lastSeenReplyId.asStateFlow()
 
+    /** When the inbox was last opened, server stamped; see [markInboxSeen]. Empty = never. */
+    val inboxSeenAt: StateFlow<String> = _inboxSeenAt.asStateFlow()
+
     private var loaded = false
 
     /** Reads the blob once; called by every accessor before it answers. */
@@ -103,6 +114,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
                 _likedPlans.value = blob.likedPlans.toSet()
                 _packageVerdicts.value = blob.packageVerdicts
                 _lastSeenReplyId.value = blob.lastSeenReplyId
+                _inboxSeenAt.value = blob.inboxSeenAt
             }
         }
         loaded = true
@@ -180,6 +192,23 @@ class AppNoteStore(private val storage: AppBlobStorage) {
         }
     }
 
+    /**
+     * Remembers that the inbox was opened at [at] — the instant the backend stamped when it counted
+     * the news, handed straight back to it on every later count.
+     *
+     * It only ever moves forwards: the stamps are the backend's own UTC strings, so they compare in
+     * order, and a slow answer from an earlier visit must not un-read what arrived after it.
+     */
+    suspend fun markInboxSeen(at: String) {
+        if (at.isEmpty()) return
+        ensureLoaded()
+        mutex.withLock {
+            if (at <= _inboxSeenAt.value) return@withLock
+            _inboxSeenAt.value = at
+            persistLocked()
+        }
+    }
+
     /** What this install said about [pkg], or null when it never voted. */
     suspend fun packageVerdict(pkg: String): Boolean? {
         ensureLoaded()
@@ -193,6 +222,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
             likedPlans = _likedPlans.value.toList(),
             packageVerdicts = _packageVerdicts.value,
             lastSeenReplyId = _lastSeenReplyId.value,
+            inboxSeenAt = _inboxSeenAt.value,
         )
         runCatching {
             storage.write(json.encodeToString(AppNotesBlob.serializer(), blob).encodeToByteArray())

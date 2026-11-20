@@ -176,14 +176,14 @@ private fun InboxBarButton(unread: Int, onClick: () -> Unit) {
                 interactionSource = interaction,
                 indication = null,
                 role = Role.Button,
-                onClickLabel = "回复我的",
+                onClickLabel = "消息",
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.Message,
-            contentDescription = if (unread > 0) "回复我的，$unread 条没看" else "回复我的",
+            contentDescription = if (unread > 0) "消息，$unread 条没看" else "消息",
             modifier = Modifier.size(20.dp),
             tint = scheme.onSurface,
         )

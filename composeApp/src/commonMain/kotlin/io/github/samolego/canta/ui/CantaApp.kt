@@ -249,13 +249,20 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     // — so the count comes from `inbox_summary`, one call that answers four numbers instead of
     // pulling the rows back to count them here.
     //
+    // "Unread" means *since the inbox was last opened*, and the cursor for that is an instant the
+    // backend stamped on that visit: this count is asked for with it, so a list that has been read
+    // answers 0 and the dot stays off — after a restart, and on the way back to the app list. A dot
+    // that comes back the moment you leave the page is not a notification, it is a tally.
+    //
     // A backend older than that function still answers `comments_replies_to`, so the fallback counts
     // one page of replies and keeps the dot's old meaning instead of never lighting up.
     var unreadReplies by remember { mutableIntStateOf(0) }
     var lastSeenReplyId by remember { mutableStateOf(0L) }
+    var inboxSeenAt by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         deps.notes.ensureReady()
         lastSeenReplyId = deps.notes.lastSeenReplyId.value
+        inboxSeenAt = deps.notes.inboxSeenAt.value
     }
     LaunchedEffect(currentRoute) {
         if (currentRoute != Screen.Main.route && currentRoute != Screen.MyComments.route) return@LaunchedEffect
@@ -264,12 +271,17 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         val owner = identity.owner.ifEmpty { identity.token }
         val seen = deps.notes.lastSeenReplyId.value
         lastSeenReplyId = seen
+        val seenAt = deps.notes.inboxSeenAt.value
+        inboxSeenAt = seenAt
         unreadReplies = if (owner.isEmpty()) {
             0
         } else {
-            // Four counts in one cheap call. The fallback keeps the old meaning on a deployment
-            // that predates it: one page of replies, never the whole history.
-            communityRepository.inboxSummary(owner, identity.token)?.total
+            // Four counts in one cheap call, all of them "since the inbox was last opened": the
+            // cursor is the instant the backend stamped on that visit, so nothing here depends on
+            // the phone's clock, and a list that has been read counts 0. The fallback keeps the old
+            // meaning on a deployment that predates the cursor: one page of replies, never the whole
+            // history.
+            communityRepository.inboxSummary(owner, identity.token, seenAt)?.total
                 ?: communityRepository.repliesToMe(owner, identity.token, offset = 0)
                     .unreadSince(seen).size
         }
@@ -590,14 +602,17 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     // Opened from the red dot: the news is what the reader came for.
                     startOnInbox = unreadReplies > 0,
                     unreadSince = lastSeenReplyId,
-                    onInboxSeen = { newest ->
-                        // Reading the list is what clears the dot, and it stays cleared after a
-                        // restart because the id is kept next to the other community notes.
+                    seenAt = inboxSeenAt,
+                    onInboxSeen = { newest, checkedAt ->
+                        // Opening the list is what clears the dot, and it stays cleared — after a
+                        // restart too, and on the next count — because the backend is told to count
+                        // from this instant rather than from the beginning of time.
                         coroutineScope.launch {
-                            // The dot goes away now, but the ids this visit came in with stay as
-                            // they are: the rows the reader has not reached yet keep their marker
-                            // until the page is opened again.
+                            // The ids this visit came in with stay as they are: the rows the reader
+                            // has not reached yet keep their marker until the page is opened again.
+                            deps.notes.markInboxSeen(checkedAt)
                             deps.notes.markRepliesSeen(newest)
+                            inboxSeenAt = deps.notes.inboxSeenAt.value
                             unreadReplies = 0
                         }
                     },

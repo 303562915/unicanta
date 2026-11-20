@@ -1136,17 +1136,24 @@ class PlanRepository(
     }
 
     /**
-     * What is waiting for [owner]: four counts and the newest comment id, as one cheap call.
+     * What is waiting for [owner] since [seenAt]: four counts, the newest comment id and the instant
+     * this answer was taken at, as one cheap call.
      *
-     * This is what the red dot is drawn from. An older backend has no `inbox_summary`, so this
-     * answers null there and the caller counts the only way that deployment supports — one page of
-     * [repliesToMePage], which is still bounded.
+     * This is what the red dot is drawn from, and [seenAt] is what makes it go away: pass the
+     * previous answer's [InboxSummary.checkedAt] and every count comes back as "newer than that",
+     * which is 0 once the list has been read. Empty = everything ever, for an install that has never
+     * opened the inbox.
+     *
+     * An older backend has no `inbox_summary` at all, so this answers null there and the caller
+     * counts the only way that deployment supports — one page of [repliesToMePage], which is still
+     * bounded.
      */
-    suspend fun inboxSummary(owner: String, token: String = ""): InboxSummary? {
+    suspend fun inboxSummary(owner: String, token: String = "", seenAt: String = ""): InboxSummary? {
         if (owner.isEmpty() && token.isEmpty()) return null
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_token", token)
+            put("p_seen_at", seenAt)
         }.toString()
         val text = rpc("inbox_summary", body) ?: return null
         return runCatching {
@@ -1157,6 +1164,7 @@ class PlanRepository(
                 commentHearts = o["comment_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 planHearts = o["plan_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 newestCommentId = o["newest_comment_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                checkedAt = o["checked_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
         }.getOrNull()
     }

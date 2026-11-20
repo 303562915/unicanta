@@ -98,10 +98,10 @@ data class InboxItem(
 /**
  * What the server says is waiting for this install, counted per source.
  *
- * The red dot is the sum: a heart on a comment and a comment under a plan are both "something
- * happened while the app was closed", and the page the dot opens shows all of them. The four
- * numbers are kept apart because the tab labels say how many of each — "回复 2 · 赞 5" — which a
- * single total cannot.
+ * The red dot is the sum, and the sum is "since the inbox was last opened": a heart on a comment
+ * and a comment under a plan are both news, and news stops being news the moment the list is read.
+ * The four numbers are kept apart because the tab labels say how many of each — "回复 2 · 赞 5" —
+ * which a single total cannot.
  */
 data class InboxSummary(
     val replies: Int = 0,
@@ -110,6 +110,12 @@ data class InboxSummary(
     val planHearts: Int = 0,
     /** The newest comment id among the comment shaped sources, for the per-row "new" marker. */
     val newestCommentId: Long = 0L,
+    /**
+     * When the backend counted these numbers: a UTC instant it stamped itself, which the page
+     * stores and hands back as the next call's cursor. That round trip is the read cursor — the
+     * phone's own clock never enters the comparison. Empty on a backend that predates it.
+     */
+    val checkedAt: String = "",
 ) {
     /** Everything that happened, which is what the red dot counts. */
     val total: Int get() = replies + planComments + commentHearts + planHearts

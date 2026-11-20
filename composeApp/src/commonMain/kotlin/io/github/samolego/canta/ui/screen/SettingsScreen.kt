@@ -294,7 +294,7 @@ fun SettingsScreen(
                 SettingsItem(
                     title = "我的评论",
                     description = if (unreadReplies > 0) {
-                        "$unreadReplies 条新回复，点这里看"
+                        "$unreadReplies 条新消息，点这里看"
                     } else {
                         "我评论过的方案和应用，别人给我的回复"
                     },

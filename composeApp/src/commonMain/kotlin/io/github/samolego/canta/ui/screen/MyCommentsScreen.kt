@@ -105,8 +105,13 @@ fun MyCommentsScreen(
     startOnInbox: Boolean = false,
     /** What this install had already opened when it came in, so the new rows can be marked. */
     unreadSince: Long = 0L,
-    /** Reports the newest news once the inbox has been opened: that clears the red dot. */
-    onInboxSeen: (Long) -> Unit = {},
+    /** The instant the inbox was last opened (`inbox_seen_at`): what the counts are taken from. */
+    seenAt: String = "",
+    /**
+     * Reports the newest news — and the instant the backend counted it at — once the inbox has been
+     * opened. That pair is what clears the red dot for good.
+     */
+    onInboxSeen: (newestCommentId: Long, checkedAt: String) -> Unit = { _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
     // 0 = what I wrote, 1 = the inbox, 2 = the plans I uploaded.
@@ -134,13 +139,17 @@ fun MyCommentsScreen(
     // One page of each list, and nothing else: the first screen is one request per list, and the
     // inbox is one request for its summary plus one for its first page. A phone that has to parse
     // two years of history before it can draw is a phone that looks frozen.
+    //
+    // The summary is asked for *from the cursor*: "消息 · 3" is how much is new, not how much has
+    // ever accumulated, and it is the same number the red dot shows. Reading the tab zeroes it right
+    // here, which is what makes the label and the dot agree at every moment.
     LaunchedEffect(author, owner, token, reloads) {
         loading = true
         loadError = null
         inboxOffset = 0
         val firstMine = repository.myCommentsPage(owner, token, offset = 0)
         val firstInbox = repository.inboxPage(owner, token, offset = 0, perSource = perSource)
-        summary = repository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
+        summary = repository.inboxSummary(owner, token, seenAt) ?: InboxSummary.EMPTY
         // Management asks for the owner's plans by identity, not by device: an OS update must not
         // hide the plan someone came here to delete. An older deployment falls back to the list of
         // this phone.
@@ -183,10 +192,26 @@ fun MyCommentsScreen(
     }
 
     // Having the inbox on screen is what "read" means: the dot is cleared the moment the tab that
-    // shows it is the one being looked at, not when the page is left.
+    // shows it is the one being looked at, not when the page is left — and it stays cleared, because
+    // what is reported back is the instant the backend counted from, not a number of rows.
+    //
+    // Waiting for the first page is deliberate: an inbox that came back empty has nothing to mark as
+    // read, and moving the cursor on an empty answer would hide news that arrived after the count.
     LaunchedEffect(tab, inbox) {
         if (tab == 1 && inbox.items.isNotEmpty()) {
-            onInboxSeen(maxOf(newestInboxCommentId(inbox.items), summary.newestCommentId))
+            onInboxSeen(
+                maxOf(newestInboxCommentId(inbox.items), summary.newestCommentId),
+                summary.checkedAt,
+            )
+            // From this moment the list has been read: the label stops saying "消息 · 3", which is
+            // also what the dot shows now that it is gone. The cursor itself is kept — a later page
+            // of the same visit still reports the instant this visit began.
+            summary = summary.copy(
+                replies = 0,
+                planComments = 0,
+                commentHearts = 0,
+                planHearts = 0,
+            )
         }
     }
 
