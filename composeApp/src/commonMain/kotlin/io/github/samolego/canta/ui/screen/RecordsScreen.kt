@@ -34,10 +34,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.data.history.BatchRollback
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.history.OperationRecord
 import io.github.samolego.canta.data.history.OperationTime
+import io.github.samolego.canta.data.history.rollbackCandidate
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.records_action_reinstall
 import io.github.samolego.canta.generated.resources.records_action_uninstall
@@ -77,6 +79,8 @@ fun RecordsScreen(
     apps: List<AppInfo>,
     onReverse: (OperationRecord) -> Unit,
     modifier: Modifier = Modifier,
+    /** Puts a whole batch back, in one tap: the newest removal that is still partly in place. */
+    onRollbackBatch: (BatchRollback) -> Unit = {},
 ) {
     val records by history.records.collectAsStateWithLifecycle()
 
@@ -96,6 +100,11 @@ fun RecordsScreen(
         return
     }
 
+    // Whether a package is gone right now, asked of the list rather than of the log: a later
+    // operation on the same package is what decides, and the log does not say which came last.
+    val gone = remember(apps) { apps.filter { it.isUninstalled }.map { it.packageName }.toSet() }
+    val rollback = remember(records, gone) { records.rollbackCandidate { it in gone } }
+
     // One flat list of day headers and rows: a lazy list cannot nest one inside another.
     val entries = remember(latest) { flattenByDay(latest) }
     LazyColumn(
@@ -108,6 +117,11 @@ fun RecordsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        rollback?.let { batch ->
+            item(key = "rollback-${batch.batchId}") {
+                RollbackBanner(batch = batch, onRollback = { onRollbackBatch(batch) })
+            }
+        }
         items(entries, key = RecordEntry::key) { entry ->
             when (entry) {
                 is RecordEntry.Day -> DayHeader(entry.day)
@@ -117,6 +131,46 @@ fun RecordsScreen(
                     onReverse = { onReverse(entry.record) },
                 )
             }
+        }
+    }
+}
+
+/**
+ * The one-tap way out of a batch: undoing ten removals by tapping ten rows is not an undo.
+ *
+ * It only appears for a batch that can actually be undone — an uninstall batch whose apps are
+ * still gone — so the button is never there to fail.
+ */
+@Composable
+private fun RollbackBanner(batch: BatchRollback, onRollback: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onRollback),
+        shape = RoundedCornerShape(12.dp),
+        color = scheme.primary.copy(alpha = 0.12f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "把这一批全部装回来",
+                    style = FlText.subheadline.copy(fontWeight = FontWeight.SemiBold),
+                    color = scheme.primary,
+                )
+                Text(
+                    text = "这一批删了 ${batch.size} 个，还都没回来",
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "一键恢复",
+                style = FlText.caption2.copy(fontWeight = FontWeight.SemiBold),
+                color = scheme.primary,
+            )
         }
     }
 }

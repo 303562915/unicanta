@@ -170,6 +170,16 @@ fun MainScreen(
                                 }
                             }
                         },
+                        // A whole batch is one tap on the action button, so undoing it is one tap
+                        // too: the rows are the last resort, not the normal way back.
+                        onRollbackBatch = { batch ->
+                            reverseScope.launch {
+                                val done = appListViewModel.reinstallPackages(batch.packages)
+                                if (done > 0) {
+                                    platform.showMessage("已恢复 $done 个")
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
