@@ -88,7 +88,7 @@ class MainViewModelTest {
         appList.selectedApps.add("com.a")
 
         main.applyToSelected(AppsType.INSTALLED)
-        assertEquals(MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true), main.dialog)
+        assertEquals(MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true, canFreeze = true), main.dialog)
         assertTrue(handler.uninstallCalls.isEmpty(), "nothing happens before confirming")
 
         main.onUninstallConfirmed(resetToFactory = true)
@@ -106,7 +106,7 @@ class MainViewModelTest {
         main.applyToSelected(AppsType.INSTALLED)
 
         assertEquals(
-            MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true, newPackages = listOf("com.a")),
+            MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true, newPackages = listOf("com.a"), canFreeze = true),
             main.dialog,
         )
     }
@@ -120,7 +120,7 @@ class MainViewModelTest {
 
         main.applyToSelected(AppsType.INSTALLED)
 
-        assertEquals(MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true), main.dialog)
+        assertEquals(MainDialog.ConfirmUninstall(appCount = 1, canResetToFactory = true, canFreeze = true), main.dialog)
     }
 
     @Test
