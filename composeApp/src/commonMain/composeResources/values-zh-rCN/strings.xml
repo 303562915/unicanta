@@ -171,6 +171,7 @@
     <string name="about_up_to_date">已是最新版本</string>
     <string name="about_update_available">发现新版本 %1$s，点击前往下载</string>
     <string name="about_update_failed">检查失败，请稍后再试</string>
+    <string name="about_update_store_managed">由 F-Droid 安装，请从商店更新</string>
     <string name="about_auto_install">自动下载更新包</string>
     <string name="update_channel">更新渠道</string>
     <string name="update_channel_stable">稳定版</string>

@@ -22,6 +22,14 @@ interface CantaPlatform {
     fun openUrl(url: String)
 
     /**
+     * True when F-Droid put this build in place. Every store re-signs what it ships, so an APK from
+     * the GitHub release can never replace an F-Droid install (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`,
+     * or a silent no-op after the user confirms): the updater has to send people back to the store
+     * instead of downloading and installing on its own.
+     */
+    fun isInstalledFromFdroid(): Boolean = false
+
+    /**
      * Whether a VPN currently carries this device's traffic. The community backend is Supabase in
      * Tokyo, so on a phone without a proxy every community read looks like "the server is offline"
      * even though the network is fine; the onboarding asks this to say so instead of letting people

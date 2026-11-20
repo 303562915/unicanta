@@ -164,6 +164,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         autoUpdate = null
         autoInstallAsked = null
         if (!autoInstallUpdates || updateChannel == null) return@LaunchedEffect
+        // F-Droid signs its own builds; downloading this repo's APK over one of them cannot work.
+        if (platform.isInstalledFromFdroid()) return@LaunchedEffect
         val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
         val release = try {
             latestRelease(updateClient, channel)

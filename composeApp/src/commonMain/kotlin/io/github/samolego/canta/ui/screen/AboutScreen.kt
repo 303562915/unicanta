@@ -183,8 +183,13 @@ fun AboutScreen(
         }
     }
 
-    val checkUpdate: () -> Unit = {
+    val checkUpdate: () -> Unit = checkUpdate@{
         if (updateChannel != null && updateState !is UpdateState.Checking && updateState !is UpdateState.Downloading && updateState !is UpdateState.Installing) {
+            // A store build cannot be replaced by this repo's APK: its signature is the store's.
+            if (platform.isInstalledFromFdroid()) {
+                updateState = UpdateState.StoreManaged
+                return@checkUpdate
+            }
             updateState = UpdateState.Checking
             updateJob = scope.launch {
                 val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
@@ -427,6 +432,7 @@ private fun UpdateCard(
         is UpdateState.Available ->
             stringResource(Res.string.about_update_available, state.version) to scheme.primary
         UpdateState.Failed -> stringResource(Res.string.about_update_failed) to scheme.error
+        UpdateState.StoreManaged -> stringResource(Res.string.about_update_store_managed) to scheme.onSurfaceVariant
         is UpdateState.Downloading ->
             stringResource(Res.string.about_downloading, state.progress) to scheme.primary
         is UpdateState.ReadyToInstall ->

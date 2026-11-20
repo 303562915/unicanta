@@ -43,6 +43,12 @@ internal sealed interface UpdateState {
     data class Available(val version: String, val release: UpdateRelease) : UpdateState
     data object Failed : UpdateState
 
+    /**
+     * F-Droid installed this build, so the store owns updates: its builds are signed with its own
+     * key, and an APK from the GitHub release cannot replace one of them.
+     */
+    data object StoreManaged : UpdateState
+
     /** The APK is being fetched; [progress] is 0-100. */
     data class Downloading(val version: String, val progress: Int) : UpdateState
 

@@ -347,6 +347,7 @@
     <string name="about_up_to_date">Up to date</string>
     <string name="about_update_available">Version %1$s is out, tap to download</string>
     <string name="about_update_failed">Check failed, try again later</string>
+    <string name="about_update_store_managed">Installed from F-Droid — update it there</string>
     <string name="about_auto_install">Download updates automatically</string>
     <string name="update_channel">Update channel</string>
     <string name="update_channel_stable">Stable</string>

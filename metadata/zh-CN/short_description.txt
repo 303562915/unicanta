@@ -1,0 +1,1 @@
+免 root 卸载任意 Android 应用，基于 Shizuku。

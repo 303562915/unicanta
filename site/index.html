@@ -140,6 +140,7 @@
   .meta dd{margin:0;font-size:.875rem;color:var(--fg);font-variant-numeric:tabular-nums;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .meta dd.mono{font-family:var(--mono);font-size:.75rem;letter-spacing:-.01em;color:var(--muted)}
+  .meta dd .ago{display:block;font-size:.72rem;color:var(--dim);letter-spacing:.02em}
 
   /* 区块 */
   section.block{margin-top:4.5rem}
@@ -162,6 +163,64 @@
   ol.steps b{color:var(--fg);font-weight:600}
   ol.steps a{color:#ff8f86;text-decoration:none;border-bottom:1px solid rgba(255,143,134,.3)}
   ol.steps a:hover{border-bottom-color:#ff8f86}
+
+  /* 运行时推荐：Shizuku 打头，Stellar 作为推荐项 */
+  .picks{display:grid;gap:.7rem;margin-bottom:1.1rem}
+  .pick{
+    display:flex;align-items:center;gap:1rem;
+    padding:1rem 1.15rem;
+    border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);color:var(--fg);text-decoration:none;
+    transition:border-color .18s,background .18s,transform .18s,box-shadow .18s;
+  }
+  .pick:hover{transform:translateY(-1px);border-color:var(--line-strong);background:rgba(255,255,255,.05)}
+  .pick.rec{
+    border-color:rgba(255,68,68,.32);
+    background:linear-gradient(180deg,rgba(255,68,68,.11),rgba(255,68,68,.03));
+    box-shadow:0 12px 30px -22px rgba(255,68,68,.9);
+  }
+  .pick.rec:hover{border-color:rgba(255,68,68,.55)}
+  .pick svg.ico{flex:none;width:40px;height:40px;border-radius:11px;display:block}
+  .pick .body{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+  .pick .head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .pick .head b{font-weight:650;font-size:.9688rem;letter-spacing:.01em}
+  .pick .tag{
+    font-family:var(--mono);font-size:.625rem;letter-spacing:.06em;text-transform:uppercase;
+    padding:.14rem .4rem;border-radius:5px;
+    border:1px solid rgba(255,255,255,.14);color:var(--muted);
+  }
+  .pick .tag.hot{border-color:rgba(255,68,68,.38);color:#ff9a92;background:var(--red-soft)}
+  .pick .desc{font-size:.8125rem;color:var(--muted);line-height:1.55}
+  .pick .go{
+    margin-left:auto;flex:none;display:flex;align-items:center;gap:.3rem;
+    font-size:.75rem;color:var(--dim);white-space:nowrap;transition:color .18s;
+  }
+  .pick:hover .go{color:#ff8f86}
+  .picks-note{margin:0 0 1.4rem;font-size:.78rem;color:var(--dim)}
+  .picks-note a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line-strong)}
+  .picks-note a:hover{color:var(--fg)}
+  @media (max-width:520px){.pick .go span{display:none}}
+
+  /* 分发渠道 */
+  .stores{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.7rem;margin-top:1.4rem}
+  .store{
+    display:flex;align-items:center;gap:.85rem;
+    padding:.9rem 1.05rem;
+    border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);color:var(--fg);text-decoration:none;
+    transition:border-color .18s,background .18s,transform .18s;
+  }
+  .store:hover{transform:translateY(-1px);border-color:var(--line-strong);background:rgba(255,255,255,.05)}
+  .store svg.ico{flex:none;width:34px;height:34px;border-radius:9px;display:block}
+  .store .body{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+  .store .head{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+  .store .head b{font-weight:650;font-size:.9375rem}
+  .store .desc{font-size:.75rem;color:var(--muted);line-height:1.5}
+  .store .tag{
+    font-family:var(--mono);font-size:.625rem;letter-spacing:.06em;
+    padding:.14rem .4rem;border-radius:5px;
+    border:1px solid rgba(255,255,255,.14);color:var(--muted);
+  }
 
   details{
     border:1px solid var(--line);border-radius:14px;background:var(--panel);
@@ -239,7 +298,7 @@
     <div class="pill"><span class="dot"></span><span id="pillText">正在读取最新版本…</span></div>
 
     <h1>unicanta</h1>
-    <p class="tagline">不用 root，<strong>卸载任何 Android 应用</strong>。基于 Shizuku，直连系统包管理器。</p>
+    <p class="tagline">不用 root，<strong>卸载任何 Android 应用</strong>。基于 Shizuku 协议，直连系统包管理器。</p>
 
     <div class="channels" role="group" aria-label="选择版本渠道">
       <button id="stableBtn" type="button" aria-pressed="true">稳定版 <small id="stableVersion">正在获取…</small></button>
@@ -263,6 +322,33 @@
       <a id="checksumLink" href="#" hidden>校验文件</a>
     </div>
 
+    <div class="stores">
+      <a class="store" href="https://github.com/303562915/unicanta/releases" target="_blank" rel="noopener noreferrer">
+        <svg class="ico" viewBox="0 0 34 34" aria-hidden="true">
+          <rect width="34" height="34" rx="9" fill="#1b1b22"/>
+          <path d="M17 6.5a7.6 7.6 0 0 0-2.4 14.8c.4.1.5-.2.5-.4v-1.4c-2.1.5-2.6-.9-2.6-.9-.4-.9-.9-1.1-.9-1.1-.7-.5.1-.5.1-.5.8.1 1.2.8 1.2.8.7 1.2 1.9.9 2.3.7.1-.5.3-.9.5-1.1-1.7-.2-3.4-.8-3.4-3.7 0-.8.3-1.5.8-2-.1-.2-.3-1 .1-2 0 0 .6-.2 2.1.8a7.2 7.2 0 0 1 3.8 0c1.5-1 2.1-.8 2.1-.8.4 1 .2 1.8.1 2 .5.5.8 1.2.8 2 0 2.9-1.7 3.5-3.4 3.7.3.2.5.7.5 1.4v1.9c0 .2.1.5.5.4A7.6 7.6 0 0 0 17 6.5z" fill="#fff"/>
+        </svg>
+        <span class="body">
+          <span class="head"><b>GitHub Releases</b><span class="tag">本页同源</span></span>
+          <span class="desc">稳定版与开发版的原始产物</span>
+        </span>
+      </a>
+
+      <a class="store" href="https://f-droid.org/packages/io.github.a303562915.unicanta/" target="_blank" rel="noopener noreferrer">
+        <svg class="ico" viewBox="0 0 34 34" aria-hidden="true">
+          <rect width="34" height="34" rx="9" fill="#1976d2"/>
+          <path d="M11.2 12.4 9.4 9.3m13.4 3.1 1.8-3.1" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+          <rect x="9" y="12" width="16" height="12" rx="4" fill="#fff"/>
+          <circle cx="13.6" cy="17.6" r="1.5" fill="#1976d2"/>
+          <circle cx="20.4" cy="17.6" r="1.5" fill="#1976d2"/>
+        </svg>
+        <span class="body">
+          <span class="head"><b>F-Droid</b><span class="tag">上架中</span></span>
+          <span class="desc">开源商店渠道，上架后可直接搜索安装</span>
+        </span>
+      </a>
+    </div>
+
     <div id="history"></div>
 
     <section id="notes">
@@ -273,16 +359,62 @@
     <dl class="meta">
       <div><dt>版本</dt><dd id="mVersion">—</dd></div>
       <div><dt>体积</dt><dd id="mSize">—</dd></div>
-      <div><dt>更新于</dt><dd id="mDate">—</dd></div>
+      <div><dt>更新于</dt><dd id="mDate"><span id="mDateAbs">—</span><span class="ago" id="mDateAgo"></span></dd></div>
       <div><dt>SHA-256</dt><dd class="mono" id="mSha">—</dd></div>
     </dl>
 
     <section class="block" id="install">
       <h2>安装</h2>
+
+      <div class="picks">
+        <a class="pick" href="https://shizuku.rikka.app/download/" target="_blank" rel="noopener noreferrer">
+          <svg class="ico" viewBox="0 0 48 48" aria-hidden="true">
+            <defs>
+              <linearGradient id="icoShizuku" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#4a5bd6"/><stop offset="1" stop-color="#2b3487"/>
+              </linearGradient>
+            </defs>
+            <rect width="48" height="48" rx="12" fill="url(#icoShizuku)"/>
+            <path d="M18.5 15.5H13.5V32.5h5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M29.5 15.5h5V32.5h-5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="24" r="2.6" fill="#fff"/>
+          </svg>
+          <span class="body">
+            <span class="head"><b>Shizuku</b><span class="tag">先装这个</span></span>
+            <span class="desc">官方运行时，最通用。按它的引导启动一次即可。</span>
+          </span>
+          <span class="go">前往下载
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+          </span>
+        </a>
+
+        <a class="pick rec" href="https://github.com/roro2239/Stellar/releases" target="_blank" rel="noopener noreferrer">
+          <svg class="ico" viewBox="0 0 48 48" aria-hidden="true">
+            <defs>
+              <linearGradient id="icoStellar" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#2a2050"/><stop offset="1" stop-color="#150f2b"/>
+              </linearGradient>
+            </defs>
+            <rect width="48" height="48" rx="12" fill="url(#icoStellar)"/>
+            <path d="M24 12.5l3.3 8.7 8.7 3.3-8.7 3.3L24 36.5l-3.3-8.7-8.7-3.3 8.7-3.3z" fill="#fff"/>
+            <circle cx="33.5" cy="14.5" r="2.1" fill="#ffb0a8"/>
+          </svg>
+          <span class="body">
+            <span class="head"><b>Stellar</b><span class="tag hot">推荐</span></span>
+            <span class="desc">Shizuku 的深度定制分支，用法一样，权限更细、可跟随开机启动。</span>
+          </span>
+          <span class="go">前往下载
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+          </span>
+        </a>
+      </div>
+
+      <p class="picks-note">Android 16 及以上若官方版启动不了，可换用 <a href="https://github.com/thedjchi/Shizuku" target="_blank" rel="noopener noreferrer">Shizuku fork 版</a>，界面与用法完全一致。</p>
+
       <ol class="steps">
-        <li><span>安装 <b>Shizuku</b> 并按其引导启动（Android 16 及以上建议用 <a href="https://github.com/thedjchi/Shizuku" rel="noopener noreferrer">fork 版</a>）。</span></li>
+        <li><span>安装上面任一运行时并按其引导启动。</span></li>
         <li><span>下载上面的 APK 并安装。若被拦截，在系统设置中允许「安装未知应用」。</span></li>
-        <li><span>打开 unicanta，在顶部授权 <b>Shizuku</b>，之后即可浏览、停用或卸载任意应用。</span></li>
+        <li><span>打开 unicanta，在顶部授权运行时（Shizuku 或 Stellar），之后即可浏览、停用或卸载任意应用。</span></li>
       </ol>
     </section>
 
@@ -349,6 +481,25 @@
     return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
   }
 
+  /** "3 小时前" for a release stamp; empty when there is nothing to compute. */
+  function fmtAgo(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d)) return "";
+    var seconds = (Date.now() - d.getTime()) / 1000;
+    if (seconds < 0) seconds = 0;
+    if (seconds < 60) return "刚刚";
+    var minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + " 分钟前";
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + " 小时前";
+    var days = Math.floor(hours / 24);
+    if (days < 30) return days + " 天前";
+    var months = Math.floor(days / 30);
+    if (months < 12) return months + " 个月前";
+    return Math.floor(days / 365) + " 年前";
+  }
+
   function toast(msg) {
     var t = $("toast");
     t.textContent = msg;
@@ -373,7 +524,8 @@
     $("notes").classList.remove("on");
     $("mVersion").textContent = "—";
     $("mSize").textContent = "—";
-    $("mDate").textContent = "—";
+    $("mDateAbs").textContent = "—";
+    $("mDateAgo").textContent = "";
     $("mSha").textContent = "—";
     $("mSha").title = "";
 
@@ -386,7 +538,8 @@
     $("pillText").textContent = channel.label + "最新版 v" + data.version_name;
     $("mVersion").textContent = "v" + data.version_name + " (" + data.version_code + ")";
     $("mSize").textContent = fmtSize(data.size);
-    $("mDate").textContent = fmtDate(data.published_at);
+    $("mDateAbs").textContent = fmtDate(data.published_at);
+    $("mDateAgo").textContent = fmtAgo(data.published_at);
     $("mSha").textContent = state.sha ? state.sha.slice(0, 16) + "…" : "未提供";
     $("mSha").title = state.sha || "";
 
@@ -480,6 +633,12 @@
   });
 
   $("year").textContent = new Date().getFullYear();
+
+  // The relative stamp would freeze on a page left open; recompute it once a minute.
+  setInterval(function () {
+    var data = state.channels[state.channel].data;
+    $("mDateAgo").textContent = data && data.published_at ? fmtAgo(data.published_at) : "";
+  }, 60000);
 })();
 </script>
 </body>

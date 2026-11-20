@@ -1,0 +1,25 @@
+unicanta 可以卸载设备上 <b>任意(*)</b> 应用，即使没有 root 权限。
+
+使用前需要先安装 Shizuku（https://shizuku.rikka.app/download/）并激活
+（https://shizuku.rikka.app/guide/setup/）。推荐改用 Stellar——Shizuku 的深度定制分支，
+权限更细、可跟随开机启动，并修好了联发科机型的老问题，现有 Shizuku 应用无需改动即可使用。
+
+应用列表与风险标记参考
+<a href="https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation">universal debloat list</a>，
+推荐理由的判定方式见
+<a href="https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/wiki/FAQ#how-are-the-recommendations-chosen">说明</a>。
+
+<b>特性</b>
+<ul>
+    <li>无需 root，也无需解锁 Bootloader</li>
+    <li>按风险等级标记系统应用，卸载前给出提醒</li>
+    <li>支持停用、卸载与批量预设，重复操作不用逐个翻列表</li>
+    <li>不收集设备标识，社区数据只用于共享预设与评论</li>
+</ul>
+
+<b>注意</b>
+<ul>
+    <li>卸载关键系统应用可能导致开机循环，只能通过恢复出厂设置解决；操作风险自负</li>
+</ul>
+
+(* ) 少数应用受系统保护，卸载会被系统拒绝。

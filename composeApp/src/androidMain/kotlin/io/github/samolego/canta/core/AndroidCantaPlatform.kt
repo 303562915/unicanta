@@ -43,6 +43,18 @@ class AndroidCantaPlatform(
 
     companion object {
         private const val TAG = "AndroidCantaPlatform"
+
+        /**
+         * The installers whose builds cannot be replaced by this repo's APK: F-Droid and the
+         * clients that talk to it, all of which re-sign what they install. The plain package name
+         * of F-Droid itself is what most devices report; the rest are the clients people actually
+         * use to browse the same index.
+         */
+        private val FDROID_INSTALLERS = setOf(
+            "org.fdroid.fdroid",
+            "com.looker.droidify",
+            "com.machiav3lli.fdroid",
+        )
     }
 
     @Volatile
@@ -101,6 +113,21 @@ class AndroidCantaPlatform(
         LogUtils.w(TAG, "No VPN settings screen answered")
         return false
     }
+
+    /**
+     * Asks the package manager who installed this package. `getInstallSourceInfo` needs API 30;
+     * below that the deprecated `getInstallerPackageName` answers the same question and is the only
+     * thing available, so the warning is suppressed rather than worked around.
+     */
+    override fun isInstalledFromFdroid(): Boolean = runCatching {
+        val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getInstallerPackageName(context.packageName)
+        }
+        installer in FDROID_INSTALLERS
+    }.getOrDefault(false)
 
     override fun openUrl(url: String) {
         val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
