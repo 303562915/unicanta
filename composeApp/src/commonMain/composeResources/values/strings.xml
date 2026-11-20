@@ -347,6 +347,13 @@
     <string name="about_up_to_date">Up to date</string>
     <string name="about_update_available">Version %1$s is out, tap to download</string>
     <string name="about_update_failed">Check failed, try again later</string>
+    <string name="about_update_failed_rate_limited">Check failed: GitHub is throttling this exit IP (403/429). The proxy node is shared — switch nodes or try again later</string>
+    <string name="about_update_failed_timeout">Check failed: the request timed out. Make sure the proxy is connected and try again</string>
+    <string name="about_update_failed_network">Check failed: GitHub is unreachable. Turn the proxy on, or pick a working node</string>
+    <string name="about_update_failed_server">Check failed: GitHub answered with an error. Try again later</string>
+    <string name="about_update_failed_no_release">Check failed: this channel has no published release yet</string>
+    <string name="about_update_failed_bad_answer">Check failed: the answer was not release data — the proxy may have rewritten it</string>
+    <string name="about_update_download_toast">Version %1$s found — downloading</string>
     <string name="about_update_store_managed">Installed from F-Droid — update it there</string>
     <string name="about_auto_install">Download updates automatically</string>
     <string name="update_channel">Update channel</string>

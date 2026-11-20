@@ -60,7 +60,7 @@ class SettingsViewModel(
     val showDevicePhoto = settingsStore.showDevicePhotoFlow.state(false)
 
     /** Downloads a found release on its own; the install still asks first. */
-    val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(false)
+    val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(true)
     val updateChannel = settingsStore.updateChannelFlow.state<String?>(null)
 
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */

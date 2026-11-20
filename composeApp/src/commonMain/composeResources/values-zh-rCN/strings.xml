@@ -171,6 +171,13 @@
     <string name="about_up_to_date">已是最新版本</string>
     <string name="about_update_available">发现新版本 %1$s，点击前往下载</string>
     <string name="about_update_failed">检查失败，请稍后再试</string>
+    <string name="about_update_failed_rate_limited">检查失败：GitHub 对本出口 IP 限流（403/429）。代理节点是共享的，换节点或稍后再试</string>
+    <string name="about_update_failed_timeout">检查失败：请求超时。确认代理已连通（全局模式）后重试</string>
+    <string name="about_update_failed_network">检查失败：连不上 GitHub。开启代理或换一个可用节点</string>
+    <string name="about_update_failed_server">检查失败：GitHub 返回异常，稍后再试</string>
+    <string name="about_update_failed_no_release">检查失败：这个渠道还没有发布版本</string>
+    <string name="about_update_failed_bad_answer">检查失败：返回的不是发布数据，代理可能改写了响应</string>
+    <string name="about_update_download_toast">发现新版本 %1$s，正在下载</string>
     <string name="about_update_store_managed">由 F-Droid 安装，请从商店更新</string>
     <string name="about_auto_install">自动下载更新包</string>
     <string name="update_channel">更新渠道</string>

@@ -42,4 +42,15 @@ sealed class Screen(val route: String) {
         /** Concrete route for [packageName]; pairs with the `package` argument of [route]. */
         fun routeForApp(packageName: String) = "app/$packageName"
     }
+
+    /**
+     * The corrected descriptions of one app: what people proposed, how the votes stand, and the two
+     * numbers a rewrite has to reach before the page shows it instead of the published line.
+     *
+     * The package is a path argument again, so [routeForApp] is the only place that builds the URL.
+     */
+    data object DescriptionFix : Screen("app/{package}/fixes") {
+        /** Concrete route for [packageName]'s corrections. */
+        fun routeForApp(packageName: String) = "app/$packageName/fixes"
+    }
 }

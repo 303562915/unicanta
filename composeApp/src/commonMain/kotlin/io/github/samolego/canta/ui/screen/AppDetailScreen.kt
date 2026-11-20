@@ -2,7 +2,6 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -20,9 +19,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,7 +44,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.AppReview
+import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PackageVotes
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
@@ -112,6 +119,8 @@ fun AppDetailScreen(
     voter: String = "",
     /** This install's secret, needed to delete a comment it wrote. */
     token: String = "",
+    /** Opens the page where this app's description can be corrected and voted on. */
+    onOpenDescriptionFixes: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var reviews by remember { mutableStateOf<List<AppReview>>(emptyList()) }
@@ -126,12 +135,22 @@ fun AppDetailScreen(
     var mine by remember { mutableStateOf<Boolean?>(null) }
     var votes by remember { mutableStateOf(PackageVotes.EMPTY) }
     var voting by remember { mutableStateOf(false) }
-    var voteScope by remember(packageName) { mutableIntStateOf(0) }
+    /**
+     * Which votes and comments the page shows: every device by default, because a thread narrowed to
+     * one model is usually empty, and an empty thread reads as "nobody uses this" when the rest of
+     * the world is one tap away. 0 is this model and ROM, 1 every device, 2 one system version.
+     */
+    var voteScope by remember(packageName) { mutableIntStateOf(1) }
     var systemsExpanded by remember(packageName) { mutableStateOf(false) }
     val selectedSystemState = remember(packageName) { mutableStateOf("") }
     val selectedSystem = selectedSystemState.value
     val onSystemChange: (String) -> Unit = { selectedSystemState.value = it }
     var recommendations by remember { mutableStateOf<Recommendations?>(null) }
+    /**
+     * The community's corrections of this app's description: the accepted one replaces the published
+     * line, the rest are counted for the entry that opens their page.
+     */
+    var descriptionFixes by remember { mutableStateOf<List<DescriptionFix>>(emptyList()) }
     // Why the last vote or comment did not go through, when the backend said something.
     var voteError by remember { mutableStateOf<String?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
@@ -158,6 +177,7 @@ fun AppDetailScreen(
             notes.packageVerdict(packageName)
         }
         comments = repository?.appComments(packageName).orEmpty()
+        descriptionFixes = repository?.descriptionFixes(packageName, voter).orEmpty()
     }
 
     val castVote: (Boolean) -> Unit = { canRemove ->
@@ -329,6 +349,8 @@ fun AppDetailScreen(
                     voting = voting,
                     voteError = voteError,
                     onVote = castVote,
+                    fixes = descriptionFixes,
+                    onOpenDescriptionFixes = { onOpenDescriptionFixes(packageName) },
                 )
             }
             item { SectionHeading("评论 · ${visibleComments.size}") }
@@ -418,11 +440,15 @@ private fun AppHero(
     voting: Boolean,
     voteError: String? = null,
     onVote: (Boolean) -> Unit,
+    /** The community's corrections of this app's description; empty when nobody filed one. */
+    fixes: List<DescriptionFix> = emptyList(),
+    onOpenDescriptionFixes: () -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
     val recommended = remember(recommendations, packageName) {
         recommendations?.apps?.firstOrNull { packageName in it.replacesPackages }
     }
+    val appliedFix = remember(fixes) { fixes.firstOrNull { it.applied } }
     Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (app != null) {
@@ -465,23 +491,16 @@ private fun AppHero(
                 }
             }
             Spacer(Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = if (app?.isUninstalled == true) "已卸载" else "未卸载",
-                    style = FlText.caption2.copy(fontWeight = FontWeight.W600),
-                    color = if (app?.isUninstalled == true) scheme.error else CAN_REMOVE,
-                    maxLines = 1,
-                )
-                recommended?.let { suggestion ->
-                    Text(
-                        text = "推荐 ${suggestion.name}",
-                        style = FlText.caption2.copy(fontWeight = FontWeight.W600),
-                        color = scheme.primary,
-                        maxLines = 1,
-                        modifier = Modifier.clickable { onOpenRecommendation(suggestion) },
-                    )
-                }
-            }
+            // Whether it is still on the phone is the first thing a reader checks, so it is a state
+            // of its own — a coloured dot and a word — not a caption that happens to say "已卸载".
+            UninstallStatus(app)
+        }
+
+        // What can stand in for this app, as a card of its own: the tile, the name, and a plain
+        // "推荐替换" that says what tapping it does. It used to be a bare arrow of text.
+        recommended?.let { suggestion ->
+            Spacer(Modifier.height(10.dp))
+            ReplacementRow(suggestion = suggestion, onOpen = { onOpenRecommendation(suggestion) })
         }
 
         app?.badgeInfo?.let { badge ->
@@ -497,22 +516,39 @@ private fun AppHero(
             }
         }
 
-        app?.description?.takeIf { it.isNotBlank() }?.let { text ->
+        // The accepted correction, when there is one, stands in for the published line: that is the
+        // whole point of voting on it. The source is named either way, so the reader knows whose
+        // words these are.
+        val shownDescription = appliedFix?.body?.takeIf { it.isNotBlank() }
+            ?: app?.description?.takeIf { it.isNotBlank() }
+        if (shownDescription != null) {
             Spacer(Modifier.height(8.dp))
             io.github.samolego.canta.ui.component.text.UrlText(
-                text = text,
+                text = shownDescription,
                 style = FlText.footnote,
             )
-            // The bloat list is published in English only. Say where the words came from: either
-            // "upstream English" or "translated by this build", never an unlabelled block.
             Spacer(Modifier.height(3.dp))
             Text(
-                text = stringResource(
-                    if (app.descriptionTranslated) Res.string.description_translated_source
-                    else Res.string.description_source
-                ),
+                text = if (appliedFix != null) {
+                    "社区修正 · 由 ${appliedFix.author.ifEmpty { "匿名" }} 提出 · " +
+                        "${appliedFix.agrees}/${appliedFix.votes} 人认同"
+                } else {
+                    stringResource(
+                        if (app?.descriptionTranslated == true) Res.string.description_translated_source
+                        else Res.string.description_source
+                    )
+                },
                 style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
+                color = if (appliedFix != null) scheme.primary else scheme.onSurfaceVariant,
+            )
+        }
+
+        if (app != null) {
+            Spacer(Modifier.height(8.dp))
+            DescriptionFixEntry(
+                fixCount = fixes.size,
+                accepted = appliedFix != null,
+                onClick = onOpenDescriptionFixes,
             )
         }
 
@@ -720,6 +756,177 @@ private fun VoteBlock(
             style = FlText.caption2,
             color = if (voteError != null) scheme.error else scheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
+/**
+ * Whether this app is still on the phone, as a state of its own: a coloured dot and a word on a
+ * tinted capsule, green while it is there and red once it is gone. A grey "状态未知" stands in while
+ * the app list has not been read yet — the page can be opened from a link before it is.
+ */
+@Composable
+private fun UninstallStatus(app: AppInfo?) {
+    val scheme = MaterialTheme.colorScheme
+    val uninstalled = app?.isUninstalled == true
+    val color = when {
+        app == null -> scheme.onSurfaceVariant
+        uninstalled -> CANNOT_REMOVE
+        else -> CAN_REMOVE
+    }
+    val label = when {
+        app == null -> "状态未知"
+        uninstalled -> "已卸载"
+        else -> "未卸载"
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(color.copy(alpha = 0.12f))
+            .padding(horizontal = 9.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = label,
+            style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+            color = color,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * What can replace this app: the catalog entry's own tile, its name, and a plain "推荐替换" with the
+ * arrow that says the tap goes somewhere. The catalog ships no images, so the tile is the entry's
+ * mark on its accent colour — the same tile the recommendations page draws.
+ */
+@Composable
+private fun ReplacementRow(suggestion: RecommendedApp, onOpen: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val accent = remember(suggestion.accent, suggestion.id) { recommendationAccent(suggestion) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 9.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(lerp(accent, Color.White, 0.18f), lerp(accent, Color.Black, 0.18f)),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = suggestion.tileMark,
+                color = Color.White,
+                fontSize = if (suggestion.tileMark.length > 1) 11.sp else 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "推荐替换",
+                style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                color = scheme.primary,
+                maxLines = 1,
+            )
+            Text(
+                text = suggestion.name,
+                style = FlText.footnote.copy(fontWeight = FlText.emphasized),
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "看看",
+            style = FlText.caption2,
+            color = scheme.primary,
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(2.dp))
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = scheme.primary,
+        )
+    }
+}
+
+/** The accent the catalog entry names, or the theme's own colour when it names none it can parse. */
+private fun recommendationAccent(app: RecommendedApp): Color {
+    val hex = app.accent.removePrefix("#").trim()
+    if (hex.length == 6) {
+        val value = hex.toLongOrNull(16)
+        if (value != null) return Color(0xFF000000 or value)
+    }
+    return Color(0xFF7A6FF0)
+}
+
+/**
+ * The way into the corrected descriptions: one row under the description itself, with the count of
+ * rewrites already filed. It is always here — a description that everyone agrees with still benefits
+ * from saying "you can propose a better one".
+ */
+@Composable
+private fun DescriptionFixEntry(fixCount: Int, accepted: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Edit,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = scheme.primary,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = if (fixCount > 0) "描述有误？看 $fixCount 条修正" else "描述有误？写一条修正",
+            style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+            color = scheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (accepted) {
+            Text(
+                text = "已有修正生效",
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = scheme.primary,
         )
     }
 }

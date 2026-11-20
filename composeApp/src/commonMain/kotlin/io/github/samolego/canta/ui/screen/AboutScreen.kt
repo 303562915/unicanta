@@ -22,6 +22,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -66,7 +67,14 @@ import io.github.samolego.canta.generated.resources.about_qq_group_hint
 import io.github.samolego.canta.generated.resources.about_tagline
 import io.github.samolego.canta.generated.resources.about_title
 import io.github.samolego.canta.generated.resources.about_update_available
+import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.generated.resources.about_update_failed
+import io.github.samolego.canta.generated.resources.about_update_failed_bad_answer
+import io.github.samolego.canta.generated.resources.about_update_failed_network
+import io.github.samolego.canta.generated.resources.about_update_failed_no_release
+import io.github.samolego.canta.generated.resources.about_update_failed_rate_limited
+import io.github.samolego.canta.generated.resources.about_update_failed_server
+import io.github.samolego.canta.generated.resources.about_update_failed_timeout
 import io.github.samolego.canta.generated.resources.about_up_to_date
 import io.github.samolego.canta.generated.resources.about_update_store_managed
 import io.github.samolego.canta.generated.resources.auto_update_bloat_list
@@ -85,6 +93,7 @@ import io.github.samolego.canta.generated.resources.update_channel_stable
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.SettingsSwitch
+import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -95,6 +104,7 @@ import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /** Where the app is published and where it came from. */
@@ -156,6 +166,8 @@ fun AboutScreen(
 
     val scope = rememberCoroutineScope()
     val client = remember { HttpClient() }
+    // The page's own toast host, painted in the theme colour; the check and the download report here.
+    val toast = remember { SnackbarHostState() }
     var updateState by remember(updateChannel) { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var pendingInstall by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     var updateJob by remember { mutableStateOf<Job?>(null) }
@@ -172,6 +184,8 @@ fun AboutScreen(
     val download: (UpdateRelease) -> Unit = { release ->
         val version = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
         updateState = UpdateState.Downloading(version, 0)
+        // A download runs in the background: say so in the theme's own colour before it starts.
+        scope.launch { toast.showSnackbar(getString(Res.string.about_update_download_toast, version)) }
         updateJob = scope.launch {
             val path = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
                 updateState = UpdateState.Downloading(version, percent)
@@ -194,24 +208,23 @@ fun AboutScreen(
             updateState = UpdateState.Checking
             updateJob = scope.launch {
                 val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
-                val release = try {
+                val found = try {
                     latestRelease(client, channel)
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: UpdateCheckException) {
+                    updateState = UpdateState.Failed(e.failure)
+                    return@launch
                 } catch (e: Exception) {
-                    null
+                    updateState = UpdateState.Failed(UpdateFailure.UNKNOWN)
+                    return@launch
                 }
-                val label = release?.let {
-                    if (it.buildNumber > 0) "${it.version} (dev ${it.buildNumber})" else it.version
-                }
-                updateState = when {
-                    release == null || label == null -> UpdateState.Failed
-                    !release.isNewerThanInstalled() -> UpdateState.Latest
-                    autoInstallUpdates -> {
-                        download(release)
-                        UpdateState.Downloading(label, 0)
-                    }
-                    else -> UpdateState.Available(label, release)
+                val label = if (found.buildNumber > 0) "${found.version} (dev ${found.buildNumber})" else found.version
+                when {
+                    !found.isNewerThanInstalled() -> updateState = UpdateState.Latest
+                    // Downloading on its own is what the switch is for; it is on by default.
+                    autoInstallUpdates -> download(found)
+                    else -> updateState = UpdateState.Available(label, found)
                 }
             }
         }
@@ -227,6 +240,8 @@ fun AboutScreen(
         topBar = {
             ScreenTopBar(title = stringResource(Res.string.about_title), onNavigateBack = onNavigateBack)
         },
+        // Notices land above the bottom edge, in the app's own colour rather than Material's grey.
+        snackbarHost = { ThemeToastHost(hostState = toast) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -418,6 +433,10 @@ private fun AppHero() {
 /**
  * The update row: what the last check said, and the tap that runs another one. The whole row is
  * the button, so there is nothing small to aim at.
+ *
+ * A failed check reads as the reason it failed, not as one generic sentence: on a phone behind a
+ * proxy the difference between "your node is dead", "GitHub counted this exit IP as spent" and
+ * "upstream answered badly" decides what the user does next. Either way the tap retries.
  */
 @Composable
 private fun UpdateCard(
@@ -426,13 +445,14 @@ private fun UpdateCard(
     onOpenRelease: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val failed = state is UpdateState.Failed || state is UpdateState.FailedWith
     val (statusText, statusColor) = when (state) {
         UpdateState.Idle -> stringResource(Res.string.about_check_update_hint) to scheme.onSurfaceVariant
         UpdateState.Checking -> stringResource(Res.string.about_checking) to scheme.onSurfaceVariant
         UpdateState.Latest -> stringResource(Res.string.about_up_to_date) to scheme.primary
         is UpdateState.Available ->
             stringResource(Res.string.about_update_available, state.version) to scheme.primary
-        UpdateState.Failed -> stringResource(Res.string.about_update_failed) to scheme.error
+        is UpdateState.Failed -> state.failure.reason() to scheme.error
         UpdateState.StoreManaged -> stringResource(Res.string.about_update_store_managed) to scheme.onSurfaceVariant
         is UpdateState.Downloading ->
             stringResource(Res.string.about_downloading, state.progress) to scheme.primary
@@ -445,6 +465,7 @@ private fun UpdateCard(
         is UpdateState.FailedWith -> state.reason to scheme.error
     }
     val openRelease = state is UpdateState.Available
+    val busy = state == UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing
 
     Row(
         modifier = Modifier
@@ -452,7 +473,9 @@ private fun UpdateCard(
             .padding(horizontal = CardInset)
             .clip(RoundedCornerShape(CardCorner))
             .background(FlSurfaceLevel.Card.colorOf(scheme))
-            .clickable { if (openRelease) onOpenRelease() else onCheck() }
+            // A failure is the one state where a second tap is the obvious next move, so the row
+            // keeps working as the retry button instead of only reporting.
+            .clickable(enabled = !busy) { if (openRelease) onOpenRelease() else onCheck() }
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -463,11 +486,18 @@ private fun UpdateCard(
                 color = scheme.onSurface,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (state == UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing) {
+                if (busy) {
                     CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp)
                     Spacer(Modifier.width(6.dp))
                 }
-                Text(text = statusText, style = FlText.caption2, color = statusColor)
+                Text(
+                    text = statusText,
+                    style = FlText.caption2,
+                    color = statusColor,
+                    // A reason names a proxy or a quota, so it is allowed to wrap rather than clip.
+                    maxLines = if (failed) 3 else Int.MAX_VALUE,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         if (openRelease) {
@@ -481,6 +511,20 @@ private fun UpdateCard(
         }
     }
 }
+
+/** One sentence per reason, naming the thing the user can act on. */
+@Composable
+private fun UpdateFailure.reason(): String = stringResource(
+    when (this) {
+        UpdateFailure.RATE_LIMITED -> Res.string.about_update_failed_rate_limited
+        UpdateFailure.TIMEOUT -> Res.string.about_update_failed_timeout
+        UpdateFailure.NETWORK -> Res.string.about_update_failed_network
+        UpdateFailure.SERVER -> Res.string.about_update_failed_server
+        UpdateFailure.NO_RELEASE -> Res.string.about_update_failed_no_release
+        UpdateFailure.MALFORMED -> Res.string.about_update_failed_bad_answer
+        UpdateFailure.UNKNOWN -> Res.string.about_update_failed
+    },
+)
 
 @Composable
 private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> Unit) {

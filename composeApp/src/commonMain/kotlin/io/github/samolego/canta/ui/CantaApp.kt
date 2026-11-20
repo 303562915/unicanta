@@ -8,7 +8,6 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -40,6 +39,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.badge_recommended_name
+import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.select_all_enabled
 import io.github.samolego.canta.generated.resources.select_all_tip
@@ -54,12 +54,14 @@ import io.github.samolego.canta.ui.dialog.CrashReportDialog
 import io.github.samolego.canta.ui.component.BottomBarItem
 import io.github.samolego.canta.ui.component.CollapsingBottomBar
 import io.github.samolego.canta.ui.component.FloatingPillBar
+import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.dockScroll
 import io.github.samolego.canta.ui.component.rememberDockVisibility
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
+import io.github.samolego.canta.ui.screen.DescriptionFixScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.MyCommentsScreen
@@ -172,12 +174,19 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // A silently skipped check is right here: the about page is where a failure is reported,
+            // and this pass runs on every start.
             return@LaunchedEffect
         }
         if (!release.isNewerThanInstalled()) return@LaunchedEffect
 
         val label = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
         autoUpdate = UpdateState.Downloading(label, 0)
+        // The download runs behind whatever page is open, so a notice in the theme colour is the
+        // only signal that something new is on its way. It runs alongside: the download starts at once.
+        coroutineScope.launch {
+            snackbarHostState.showSnackbar(getString(Res.string.about_update_download_toast, label))
+        }
         val path = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
             autoUpdate = UpdateState.Downloading(label, percent)
         }
@@ -230,10 +239,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     // A page arrives at its top, so the bar is always there until something is scrolled.
     LaunchedEffect(currentRoute) { dock.show() }
 
-    // The inbox: answers to this install's comments that it has not opened, counted for the red
-    // dot on the app list's bar and in Settings. The backend is the only place that knows them
-    // (`comments_replies_to`), so the count is refreshed when the list comes back on screen
-    // rather than kept in a local copy that would go stale.
+    // The inbox: everything that happened to what this install wrote, counted for the red dot on
+    // the app list's bar and in Settings. That is no longer "replies" alone — a heart on a comment
+    // and a comment under a plan this install uploaded are the same news to the person reading it
+    // — so the count comes from `inbox_summary`, one call that answers four numbers instead of
+    // pulling the rows back to count them here.
+    //
+    // A backend older than that function still answers `comments_replies_to`, so the fallback counts
+    // one page of replies and keeps the dot's old meaning instead of never lighting up.
     var unreadReplies by remember { mutableIntStateOf(0) }
     var lastSeenReplyId by remember { mutableStateOf(0L) }
     LaunchedEffect(Unit) {
@@ -250,7 +263,11 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         unreadReplies = if (owner.isEmpty()) {
             0
         } else {
-            communityRepository.repliesToMe(owner, identity.token).unreadSince(seen).size
+            // Four counts in one cheap call. The fallback keeps the old meaning on a deployment
+            // that predates it: one page of replies, never the whole history.
+            communityRepository.inboxSummary(owner, identity.token)?.total
+                ?: communityRepository.repliesToMe(owner, identity.token, offset = 0)
+                    .unreadSince(seen).size
         }
     }
 
@@ -517,6 +534,35 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     repository = communityRepository,
                     voter = appVoter,
                     token = appToken,
+                    onOpenDescriptionFixes = { pkg ->
+                        navController.navigate(Screen.DescriptionFix.routeForApp(pkg))
+                    },
+                )
+            }
+            composable(route = Screen.DescriptionFix.route) { entry ->
+                // The package name is the same undeclared path argument the app page reads.
+                val packageName = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("package")) getString("package") else null }
+                        }.getOrNull()
+                    }.orEmpty()
+                var fixAuthor by remember { mutableStateOf("") }
+                var fixIdentity by remember { mutableStateOf("") }
+                LaunchedEffect(packageName) {
+                    fixAuthor = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    fixIdentity = identity.owner.ifEmpty { identity.token }
+                }
+                val fixedApp = appListViewModel.apps.firstOrNull { it.packageName == packageName }
+                DescriptionFixScreen(
+                    packageName = packageName,
+                    appName = fixedApp?.name ?: packageName,
+                    publishedDescription = fixedApp?.description.orEmpty(),
+                    repository = communityRepository,
+                    author = fixAuthor,
+                    authorId = fixIdentity,
+                    onNavigateBack = { navController.navigateUp() },
                 )
             }
             composable(route = Screen.MyComments.route) {
@@ -537,10 +583,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     author = myName,
                     owner = myIdentity.owner.ifEmpty { myIdentity.token },
                     token = myIdentity.token,
-                    // Opened from the red dot: the answers are what the reader came for.
-                    startOnReplies = unreadReplies > 0,
+                    // Opened from the red dot: the news is what the reader came for.
+                    startOnInbox = unreadReplies > 0,
                     unreadSince = lastSeenReplyId,
-                    onRepliesSeen = { newest ->
+                    onInboxSeen = { newest ->
                         // Reading the list is what clears the dot, and it stays cleared after a
                         // restart because the id is kept next to the other community notes.
                         coroutineScope.launch {
@@ -588,7 +634,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
             }
         }
 
-        SnackbarHost(
+        ThemeToastHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp),
         )

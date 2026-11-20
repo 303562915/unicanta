@@ -71,8 +71,11 @@ data class AppSettingsProto(
      * When on, a new release is downloaded as soon as the update check finds one, and the app
      * offers to install it through Shizuku. The install itself always asks first: it replaces
      * the app and closes it, which is not something to do behind someone's back.
+     *
+     * On by default: a check that finds something new and then waits for a second tap is a check
+     * most people never finish. Installing still asks.
      */
-    @ProtoNumber(21) val autoInstallUpdates: Boolean = false,
+    @ProtoNumber(21) val autoInstallUpdates: Boolean = true,
     /**
      * Whether the safety page names this phone and opens on its photograph. Off by default: the
      * model a phone reports is not something every user wants on screen, and the page reads the
