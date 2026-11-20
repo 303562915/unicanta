@@ -50,6 +50,7 @@ import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
+import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
 
 /** Green for "这条修正说得对", the same pass colour the vote bar uses. */
@@ -299,7 +300,7 @@ fun DescriptionFixScreen(
                     Text(
                         text = "…",
                         style = FlText.footnote,
-                        modifier = Modifier.padding(start = 4.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp),
                     )
                 }
 
@@ -309,7 +310,7 @@ fun DescriptionFixScreen(
                             ?: "还没有人改过这条说明。写一条，让下一个人不用对着旧文案猜。",
                         style = FlText.footnote,
                         color = scheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 6.dp),
                     )
                 }
 
