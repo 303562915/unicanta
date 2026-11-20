@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.dialog
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -23,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,17 +32,16 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.cancel
@@ -84,7 +85,6 @@ import io.github.samolego.canta.ui.fl.isDark
 import io.github.samolego.canta.ui.fl.successColor
 import io.github.samolego.canta.ui.fl.warningColor
 import io.github.samolego.canta.util.DeviceProfile
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 /** Icon size of a package row inside the sheet: small, so a batch of twenty still fits. */
@@ -132,14 +132,7 @@ fun UploadPlanDialog(
     // Order is kept as given: the plan's package list is what the uploader ticked, in list order.
     var selected by remember { mutableStateOf(preselected.toList()) }
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-    val close = {
-        if (!publishing) {
-            scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
-        }
-        Unit
-    }
+    val close: () -> Unit = { if (!publishing) onDismiss() }
 
     val uploadable = candidates.filter { it.packageName in verified }
     val gate = when {
@@ -151,160 +144,191 @@ fun UploadPlanDialog(
     val provenSelection = selected.filter { it in verified }
     val mayPublish = title.isNotBlank() && provenSelection.isNotEmpty() && !publishing
 
-    ModalBottomSheet(
+    // A dialog drawn as a bottom sheet, not ModalBottomSheet: the platform sheet takes the scroll
+    // of the list inside over to drag itself, which made this one bounce up and down whenever the
+    // package list was scrolled. Here the surface sits at the bottom of the window at a fixed
+    // height, so the only thing that moves is the list.
+    BasicAlertDialog(
         onDismissRequest = { if (!publishing) onDismiss() },
-        sheetState = sheetState,
-        containerColor = FlSurfaceLevel.Block.colorOf(MaterialTheme.colorScheme),
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = null,
+        properties = DialogProperties(
+            dismissOnBackPress = !publishing,
+            dismissOnClickOutside = !publishing,
+            usePlatformDefaultWidth = false,
+        ),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(SHEET_HEIGHT_FRACTION)
-                .navigationBarsPadding(),
-        ) {
-            SheetGrip(enabled = !publishing, onClose = close)
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(Res.string.plan_upload_sheet_title),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                StateChip(gate)
-                Spacer(Modifier.width(8.dp))
-            }
-            Spacer(Modifier.height(10.dp))
-            HorizontalDivider()
-
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(
-                    start = 20.dp,
-                    end = 20.dp,
-                    top = 12.dp,
-                    bottom = 12.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                item("state") { StateCard(gate = gate, awaiting = candidates.size - uploadable.size) }
-                item("device") { DeviceCard(profile = profile, totalCount = candidates.size) }
-                item("pick") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(
-                                Res.string.plan_upload_selected,
-                                provenSelection.size,
-                                uploadable.size,
-                            ),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.weight(1f))
-                        TextButton(
-                            onClick = { selected = uploadable.map { it.packageName } },
-                            enabled = uploadable.isNotEmpty(),
-                        ) {
-                            Text(stringResource(Res.string.plan_upload_select_all), fontSize = 11.sp)
-                        }
-                        TextButton(onClick = { selected = emptyList() }, enabled = selected.isNotEmpty()) {
-                            Text(stringResource(Res.string.plan_upload_clear), fontSize = 11.sp)
-                        }
-                    }
-                }
-                if (candidates.isEmpty()) {
-                    item("empty") {
-                        Text(
-                            text = stringResource(Res.string.plan_upload_no_candidates),
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    items(candidates, key = { it.packageName }) { app ->
-                        CandidateRow(
-                            app = app,
-                            checked = app.packageName in selected,
-                            proven = app.packageName in verified,
-                            // Only a package the reboot check passed can be part of the plan: the
-                            // row of a waiting one is there to say why it cannot be ticked.
-                            onToggle = {
-                                if (app.packageName in verified) {
-                                    selected = if (app.packageName in selected) {
-                                        selected - app.packageName
-                                    } else {
-                                        selected + app.packageName
-                                    }
-                                }
-                            },
-                        )
-                    }
-                }
-                item("name") {
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { if (it.length <= 40) title = it },
-                        label = { Text(stringResource(Res.string.plan_upload_name_label), fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item("note") {
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { if (it.length <= 200) note = it },
-                        label = { Text(stringResource(Res.string.plan_upload_note_label), fontSize = 12.sp) },
-                        minLines = 2,
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-
-            HorizontalDivider()
-            Row(
+        Box(modifier = Modifier.fillMaxSize()) {
+            // The scrim: the dialog owns the window, so the dimmed area is drawn here, and a tap on
+            // it closes the sheet the way a platform one does.
+            Box(
                 modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = close,
+                    ),
+            )
+            Surface(
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = FlSurfaceLevel.Block.colorOf(MaterialTheme.colorScheme),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
+                    .fillMaxHeight(SHEET_HEIGHT_FRACTION),
             ) {
-                TextButton(onClick = close, enabled = !publishing) {
-                    Text(stringResource(Res.string.cancel))
-                }
-                Button(
-                    onClick = { onSubmit(title.trim(), note.trim(), provenSelection) },
-                    enabled = mayPublish,
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .navigationBarsPadding(),
                 ) {
-                    if (publishing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
+                    SheetGrip(enabled = !publishing, onClose = close)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.plan_upload_sheet_title),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
                         )
+                        StateChip(gate)
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text(
-                        if (publishing) {
-                            stringResource(Res.string.plan_upload_publishing)
-                        } else {
-                            stringResource(Res.string.plan_upload_submit)
+                    Spacer(Modifier.height(10.dp))
+                    HorizontalDivider()
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = 12.dp,
+                            bottom = 12.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        item("state") { StateCard(gate = gate, awaiting = candidates.size - uploadable.size) }
+                        item("device") { DeviceCard(profile = profile, totalCount = candidates.size) }
+                        item("pick") {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = stringResource(
+                                        Res.string.plan_upload_selected,
+                                        provenSelection.size,
+                                        uploadable.size,
+                                    ),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { selected = uploadable.map { it.packageName } },
+                                    enabled = uploadable.isNotEmpty(),
+                                ) {
+                                    Text(stringResource(Res.string.plan_upload_select_all), fontSize = 11.sp)
+                                }
+                                TextButton(onClick = { selected = emptyList() }, enabled = selected.isNotEmpty()) {
+                                    Text(stringResource(Res.string.plan_upload_clear), fontSize = 11.sp)
+                                }
+                            }
                         }
-                    )
+                        if (candidates.isEmpty()) {
+                            item("empty") {
+                                Text(
+                                    text = stringResource(Res.string.plan_upload_no_candidates),
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            items(candidates, key = { it.packageName }) { app ->
+                                CandidateRow(
+                                    app = app,
+                                    checked = app.packageName in selected,
+                                    proven = app.packageName in verified,
+                                    // Only a package the reboot check passed can be part of the plan: the
+                                    // row of a waiting one is there to say why it cannot be ticked.
+                                    onToggle = {
+                                        if (app.packageName in verified) {
+                                            selected = if (app.packageName in selected) {
+                                                selected - app.packageName
+                                            } else {
+                                                selected + app.packageName
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        item("name") {
+                            OutlinedTextField(
+                                value = title,
+                                onValueChange = { if (it.length <= 40) title = it },
+                                label = { Text(stringResource(Res.string.plan_upload_name_label), fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        item("note") {
+                            OutlinedTextField(
+                                value = note,
+                                onValueChange = { if (it.length <= 200) note = it },
+                                label = { Text(stringResource(Res.string.plan_upload_note_label), fontSize = 12.sp) },
+                                minLines = 2,
+                                maxLines = 3,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = close, enabled = !publishing) {
+                            Text(stringResource(Res.string.cancel))
+                        }
+                        Button(
+                            onClick = { onSubmit(title.trim(), note.trim(), provenSelection) },
+                            enabled = mayPublish,
+                        ) {
+                            if (publishing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(
+                                if (publishing) {
+                                    stringResource(Res.string.plan_upload_publishing)
+                                } else {
+                                    stringResource(Res.string.plan_upload_submit)
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/** The sheet's grip: the visual "you can drag this" pill, plus the way out when it cannot be dragged. */
+/**
+ * The sheet's grip line and the way out. The pill is decoration only — the surface does not follow
+ * a drag here, because the list inside is the thing being scrolled — so the close button beside it
+ * is what a finger reaching for the top of the sheet finds.
+ */
 @Composable
 private fun SheetGrip(enabled: Boolean, onClose: () -> Unit) {
     Box(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
