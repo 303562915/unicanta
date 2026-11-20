@@ -301,8 +301,8 @@
     <p class="tagline">不用 root，<strong>卸载任何 Android 应用</strong>。基于 Shizuku 协议，直连系统包管理器。</p>
 
     <div class="channels" role="group" aria-label="选择版本渠道">
-      <button id="stableBtn" type="button" aria-pressed="true">稳定版 <small id="stableVersion">正在获取…</small></button>
-      <button id="developmentBtn" type="button" aria-pressed="false">开发版 <small id="developmentVersion">正在获取…</small></button>
+      <button id="developmentBtn" type="button" aria-pressed="true">开发版 <small id="developmentVersion">正在获取…</small></button>
+      <button id="stableBtn" type="button" aria-pressed="false">稳定版 <small id="stableVersion">正在获取…</small></button>
     </div>
 
     <a class="dl" id="dl" href="#" aria-disabled="true" download>
@@ -460,7 +460,7 @@
 (function () {
   "use strict";
 
-  var state = { channel: "stable", sha: "", channels: {
+  var state = { channel: "development", sha: "", channels: {
     stable: { label: "稳定版", status: "loading", data: null },
     development: { label: "开发版", status: "loading", data: null }
   } };
@@ -500,6 +500,16 @@
     return Math.floor(days / 365) + " 年前";
   }
 
+  /**
+   * "v4.2.6" for a stable release, "v4.2.6 (dev 20)" for a development build. The two channels
+   * publish the same version name — a development build is that version plus a commit — so the
+   * build number is the only thing on the page that tells them apart.
+   */
+  function versionLabel(data) {
+    if (!data || !data.version_name) return "";
+    return "v" + data.version_name + (data.build_number ? " (dev " + data.build_number + ")" : "");
+  }
+
   function toast(msg) {
     var t = $("toast");
     t.textContent = msg;
@@ -535,8 +545,10 @@
       return;
     }
 
-    $("pillText").textContent = channel.label + "最新版 v" + data.version_name;
-    $("mVersion").textContent = "v" + data.version_name + " (" + data.version_code + ")";
+    $("pillText").textContent = channel.label + "最新版 " + versionLabel(data);
+    $("mVersion").textContent = data.build_number
+      ? versionLabel(data)
+      : versionLabel(data) + " (" + data.version_code + ")";
     $("mSize").textContent = fmtSize(data.size);
     $("mDateAbs").textContent = fmtDate(data.published_at);
     $("mDateAgo").textContent = fmtAgo(data.published_at);
@@ -564,7 +576,7 @@
         a.href = h.file;
         a.setAttribute("download", "");
         var name = document.createElement("span");
-        name.textContent = "v" + h.version_name;
+        name.textContent = versionLabel(h);
         var tm = document.createElement("time");
         tm.textContent = fmtDate(h.published_at) + " · " + fmtSize(h.size);
         a.appendChild(name);
@@ -584,6 +596,23 @@
     }
   }
 
+  /** 开发版是默认渠道；两者顺序变化只影响 aria，不影响数据流。 */
+  function setChannel(name) {
+    state.channel = name;
+    $("stableBtn").setAttribute("aria-pressed", String(name === "stable"));
+    $("developmentBtn").setAttribute("aria-pressed", String(name === "development"));
+    render();
+  }
+
+  /** 开发版暂无产物时退回稳定版，免得默认渠道的按钮点不动。 */
+  function fallbackIfEmpty(name) {
+    if (name !== "development" || state.channel !== "development") return false;
+    var data = state.channels.development.data;
+    if (data && data.version_name && data.file) return false;
+    setChannel("stable");
+    return true;
+  }
+
   function loadChannel(name, file) {
     var channel = state.channels[name];
     fetch(file, { cache: "no-store" })
@@ -594,24 +623,19 @@
       .then(function (data) {
         channel.data = data;
         channel.status = "loaded";
-        $(name + "Version").textContent = data.version_name && data.file ? "v" + data.version_name : "暂无版本";
-        if (state.channel === name) render();
+        $(name + "Version").textContent = data.version_name && data.file ? versionLabel(data) : "暂无版本";
+        if (state.channel === name && !fallbackIfEmpty(name)) render();
       })
       .catch(function (err) {
         channel.status = "error";
         $(name + "Version").textContent = "暂不可用";
-        if (state.channel === name) render();
+        if (state.channel === name && !fallbackIfEmpty(name)) render();
         if (window.console) console.warn("[canta] " + file + ":", err);
       });
   }
 
   ["stable", "development"].forEach(function (name) {
-    $(name + "Btn").addEventListener("click", function () {
-      state.channel = name;
-      $("stableBtn").setAttribute("aria-pressed", String(name === "stable"));
-      $("developmentBtn").setAttribute("aria-pressed", String(name === "development"));
-      render();
-    });
+    $(name + "Btn").addEventListener("click", function () { setChannel(name); });
   });
   loadChannel("stable", "latest.json");
   loadChannel("development", "development.json");
