@@ -39,6 +39,8 @@ import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.records_action_disable
+import io.github.samolego.canta.generated.resources.records_action_enable
 import io.github.samolego.canta.generated.resources.reinstall
 import io.github.samolego.canta.generated.resources.uninstall
 import io.github.samolego.canta.ui.AppsTab

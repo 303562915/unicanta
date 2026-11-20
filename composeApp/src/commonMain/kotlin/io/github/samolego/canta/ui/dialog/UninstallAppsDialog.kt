@@ -13,10 +13,12 @@ import io.github.samolego.canta.generated.resources.are_you_sure_to_uninstall_ap
 import io.github.samolego.canta.generated.resources.cancel
 import io.github.samolego.canta.generated.resources.community_bootloop_warning
 import io.github.samolego.canta.generated.resources.ok
+import io.github.samolego.canta.generated.resources.records_action_disable
 import io.github.samolego.canta.generated.resources.reset_to_factory_version
 import io.github.samolego.canta.generated.resources.uninstall_large_batch_warning
 import io.github.samolego.canta.generated.resources.uninstall_new_packages
 import io.github.samolego.canta.generated.resources.uninstall_new_packages_more
+import io.github.samolego.canta.generated.resources.uninstall_or_freeze_hint
 import io.github.samolego.canta.generated.resources.uninstall_recovery_hint
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
