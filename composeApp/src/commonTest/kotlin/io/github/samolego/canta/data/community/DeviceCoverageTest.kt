@@ -38,9 +38,11 @@ class DeviceCoverageTest {
     }
 
     @Test
-    fun aRowWithoutARomSaysOnlyTheModel() {
+    fun aRowWithoutARomStillNamesTheSystem() {
         val device = DeviceCoverage(brand = "Xiaomi", model = "23127PN0CC", marketName = "Redmi K70")
-        assertEquals("Redmi K70", device.buildLabel, "no trailing separator when there is no ROM")
+        // An unknown family reads as "Android" rather than as nothing: the line is about a phone and
+        // its system, and "Android" is the honest answer when the ROM was never recorded.
+        assertEquals("Redmi K70 · Android", device.buildLabel)
     }
 
     @Test
