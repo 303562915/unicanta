@@ -68,6 +68,7 @@ import io.github.samolego.canta.generated.resources.about_title
 import io.github.samolego.canta.generated.resources.about_update_available
 import io.github.samolego.canta.generated.resources.about_update_failed
 import io.github.samolego.canta.generated.resources.about_up_to_date
+import io.github.samolego.canta.generated.resources.about_update_store_managed
 import io.github.samolego.canta.generated.resources.auto_update_bloat_list
 import io.github.samolego.canta.generated.resources.about_install_handoff
 import io.github.samolego.canta.generated.resources.confirm_uninstall
