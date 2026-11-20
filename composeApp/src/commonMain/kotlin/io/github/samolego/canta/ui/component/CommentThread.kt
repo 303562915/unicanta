@@ -74,8 +74,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.community.COMMENT_MAX_LENGTH
 import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.CommentThread
+import io.github.samolego.canta.data.community.commentCharactersLeft
 import io.github.samolego.canta.data.community.PlanComment
 import kotlin.math.absoluteValue
 import kotlinx.datetime.TimeZone
@@ -759,6 +761,12 @@ private fun CommentActions(
 }
 
 /**
+ * The length at which the counter appears: near the end, where it is a warning rather than a
+ * decoration. Comments are rarely this long, so the bar stays clean for the usual case.
+ */
+private const val COMMENT_LENGTH_HINT_FROM = 800
+
+/**
  * The composer every comment page ends with: one quiet pill field and the send button. The field
  * asks for a comment on its own — "发条评论，说说你的感受" — and names the person it answers once
  * one was picked, the way a short-video composer does it. Picking a comment brings the field up
@@ -786,8 +794,7 @@ fun CommentComposer(
     pickerOpen: Boolean = false,
     /** Asked for when the panel's key is tapped: true to open it, false to go back to the keyboard. */
     onPickerOpenChange: (Boolean) -> Unit = {},
-) {
-    val colors = MaterialTheme.colorScheme
+) {    val colors = MaterialTheme.colorScheme
     val focusRequester = remember { FocusRequester() }
     val imeController = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
@@ -881,7 +888,12 @@ fun CommentComposer(
                             onValueChange = { typed ->
                                 // Backspace over a sticker takes the whole sticker: half a token on
                                 // screen would be a bracket the reader never typed.
-                                val next = backspaceEmotionAware(draft, typed.text)
+                                val next = backspaceEmotionAware(draft, typed.text).let {
+                                    // The backend stores `left(body, 1000)`; pasting more than that
+                                    // would send a comment that silently loses its ending, so the
+                                    // field stops at the limit the counter is counting against.
+                                    if (it.length > COMMENT_MAX_LENGTH) it.take(COMMENT_MAX_LENGTH) else it
+                                }
                                 fieldValue = if (next == typed.text) {
                                     typed
                                 } else {
@@ -979,6 +991,19 @@ fun CommentComposer(
                         text = failLabel,
                         fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
+                // The limit, only once it is close enough to matter: a counter that is always
+                // there is noise on a bar people type two words into. Past the limit it turns
+                // red, because the backend would otherwise keep the first 1000 characters and
+                // drop the rest without a word.
+                if (draft.length >= COMMENT_LENGTH_HINT_FROM) {
+                    val left = commentCharactersLeft(draft.length)
+                    Text(
+                        text = if (left > 0) "还能写 $left 字" else "已经到 ${COMMENT_MAX_LENGTH} 字上限",
+                        fontSize = 10.sp,
+                        color = if (left > 0) colors.onSurfaceVariant else MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
