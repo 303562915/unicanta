@@ -1,6 +1,6 @@
 {
- "version": 3,
- "updated": "2026-11-18",
+ "version": 4,
+ "updated": "2026-11-20",
  "apps": [
   {
    "id": "via",
@@ -421,6 +421,17 @@
    "accent": "#10B981",
    "url": "https://github.com/connectbot/connectbot",
    "summary": "安卓上最早的 SSH 客户端：存多台主机、用密钥登录、开端口转发，配 Termux 当跳板很顺。"
+  },
+  {
+   "id": "wifianalyzer",
+   "name": "WiFiAnalyzer",
+   "author": "VREM Software Development",
+   "category": "tools",
+   "license": "GPL-3.0",
+   "mark": "WA",
+   "accent": "#0284C7",
+   "url": "https://github.com/VREMSoftwareDevelopment/WiFiAnalyzer",
+   "summary": "把周围每个 Wi-Fi 的信号强度和信道占用画成曲线：一眼看出哪个信道最挤，路由器该挪到哪一段。"
   }
  ]
 }
