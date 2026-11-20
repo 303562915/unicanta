@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.appendInlineContent
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +43,12 @@ import org.jetbrains.compose.resources.painterResource
 
 /** One sticker's side inside a comment: the line it sits on is 19sp tall, so it fits with room. */
 private val InlineStickerSize = 17.dp
+
+/**
+ * The same side as a text unit: an inline placeholder is measured like a character, so its box is
+ * given in sp even though the picture inside it is drawn at [InlineStickerSize].
+ */
+private val InlineStickerSp = 17.sp
 
 /**
  * The last few stickers this install picked, newest first.
@@ -155,9 +162,12 @@ fun EmotionText(
                 is EmotionSpan.Sticker -> {
                     val id = "emotion-$index"
                     inline[id] = androidx.compose.foundation.text.InlineTextContent(
+                        // A placeholder is measured in text units, not dp: it stands where a
+                        // character of the paragraph would, so the line it is on keeps its height and
+                        // the text after a sticker starts where it should.
                         placeholder = Placeholder(
-                            width = InlineStickerSize,
-                            height = InlineStickerSize,
+                            width = InlineStickerSp,
+                            height = InlineStickerSp,
                             placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
                         ),
                     ) {
