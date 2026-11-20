@@ -4,6 +4,8 @@ import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.TelemetryConfig
 import io.github.samolego.canta.util.romLabelOf
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.head
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -11,6 +13,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -27,6 +30,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+
+/** How long one backend call may take before the app treats it as never having arrived. */
+private const val RPC_TIMEOUT_MS = 30_000L
+
+/** How long the preflight waits for any answer at all: a phone with no route must be told quickly. */
+private const val PROBE_TIMEOUT_MS = 6_000L
 
 /** One community plan: a set of packages someone removed and confirmed by a reboot. */
 @Serializable
@@ -197,28 +206,79 @@ class PlanRepository(
     var lastError: String? = null
         private set
 
-    private suspend fun rpc(name: String, body: String): String? = try {
-        val response = client.post(baseUrl + name) {
-            header("apikey", apiKey)
-            header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-            setBody(body)
+    /**
+     * True when the last call failed because nothing answered — no route out, a blocked host, a
+     * timeout — rather than because the server refused what was sent. An upload that never left the
+     * phone has to be told apart from one the server rejected: only the first is a network or VPN
+     * problem, and only the first is worth telling the user to check their connection.
+     */
+    var lastFailureWasNetwork: Boolean = false
+        private set
+
+    /** What one call to the backend came back as. */
+    private sealed interface Call {
+        class Ok(val text: String) : Call
+        class Refused(val reason: String) : Call
+        object Unreachable : Call
+    }
+
+    /**
+     * Whether the community backend answers at all.
+     *
+     * Uploading needs the request to leave the phone, and on many networks that only happens
+     * through a VPN or a proxy. Any answer proves reachability — the REST root answering "not
+     * found" is still a host that answered — so the check is about the route, not about the call.
+     */
+    suspend fun isReachable(): Boolean {
+        if (answers { client.head(baseUrl) { header("apikey", apiKey) } }) return true
+        return answers { client.get(baseUrl) { header("apikey", apiKey) } }
+    }
+
+    /** True when [request] came back inside [PROBE_TIMEOUT_MS]; a connection that never opens is not an answer. */
+    private suspend fun answers(request: suspend () -> Any?): Boolean =
+        runCatching { withTimeoutOrNull(PROBE_TIMEOUT_MS) { request(); true } }.getOrDefault(false)
+
+    private suspend fun call(name: String, body: String): Call {
+        val answered = runCatching {
+            withTimeoutOrNull(RPC_TIMEOUT_MS) {
+                val response = client.post(baseUrl + name) {
+                    header("apikey", apiKey)
+                    header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                    setBody(body)
+                }
+                if (response.status.isSuccess()) {
+                    Call.Ok(response.bodyAsText())
+                } else {
+                    // PostgREST answers a refusal with a JSON body carrying `message`; keep a short
+                    // form of it so the upload dialog can say what the server did not like.
+                    val text = runCatching { response.bodyAsText() }.getOrDefault("")
+                    val message = runCatching {
+                        Json.parseToJsonElement(text).jsonObject["message"]?.jsonPrimitive?.contentOrNull
+                    }.getOrNull().orEmpty().ifBlank { text.take(200) }
+                    Call.Refused(message.ifBlank { "HTTP ${response.status.value}" })
+                }
+            }
         }
-        if (response.status.isSuccess()) {
+        // A call that threw, and a call that ran out of time, both mean nothing answered.
+        return answered.getOrNull() ?: Call.Unreachable
+    }
+
+    private suspend fun rpc(name: String, body: String): String? = when (val result = call(name, body)) {
+        is Call.Ok -> {
+            lastFailureWasNetwork = false
             lastError = null
-            response.bodyAsText()
-        } else {
-            // PostgREST answers a refusal with a JSON body carrying `message`; keep a short form of
-            // it so the upload dialog can say what the server did not like.
-            val text = runCatching { response.bodyAsText() }.getOrDefault("")
-            val message = runCatching {
-                Json.parseToJsonElement(text).jsonObject["message"]?.jsonPrimitive?.contentOrNull
-            }.getOrNull().orEmpty().ifBlank { text.take(200) }
-            lastError = if (message.isBlank()) "HTTP ${response.status.value}" else message
+            result.text
+        }
+        is Call.Refused -> {
+            lastFailureWasNetwork = false
+            lastError = result.reason
             null
         }
-    } catch (e: Exception) {
-        lastError = e.message?.take(200) ?: e::class.simpleName
-        null
+        Call.Unreachable -> {
+            lastFailureWasNetwork = true
+            lastError = null
+            null
+        }
     }
 
     /**

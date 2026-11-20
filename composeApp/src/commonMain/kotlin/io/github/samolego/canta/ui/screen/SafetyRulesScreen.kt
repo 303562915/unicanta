@@ -68,7 +68,9 @@ import io.github.samolego.canta.data.community.withoutDuplicates
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.plan_test_chip
 import io.github.samolego.canta.generated.resources.plan_upload_fail
-import io.github.samolego.canta.generated.resources.plan_upload_ok
+import io.github.samolego.canta.generated.resources.plan_upload_failed_network
+import io.github.samolego.canta.generated.resources.plan_upload_offline
+import io.github.samolego.canta.generated.resources.plan_upload_ok_detail
 import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.generated.resources.plans_empty_body
 import io.github.samolego.canta.generated.resources.plans_empty_title
@@ -202,6 +204,10 @@ fun SafetyRulesScreen(
     var notice by remember { mutableStateOf<Notice?>(null) }
     var upload by remember { mutableStateOf<UploadRequest?>(null) }
     var uploading by remember { mutableStateOf(false) }
+    // Whether the community backend answered the preflight: null while it is being asked, and it is
+    // what the sheet shows before the upload button is allowed to do anything.
+    var reach by remember { mutableStateOf<Boolean?>(null) }
+    var reaching by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<CommunityPlan?>(null) }
     // Plans this install already liked: the button keeps its filled state, the count stays put.
     var liked by remember { mutableStateOf(setOf<Long>()) }
@@ -361,6 +367,21 @@ fun SafetyRulesScreen(
     // now. The sheet decides which of them may actually go up — only the reboot-checked ones.
     val candidates = (uninstalledApps + tickedApps).distinctBy { it.packageName }
     val noProfileHint = "还没有读到机型信息，稍等一下再试。"
+    // The way in is closed while nothing passed the check: the button then says the order of the
+    // work instead of opening a sheet that could only say "nothing to upload yet".
+    val canUpload = confirmed > 0
+    val blockedHint = stringResource(Res.string.plans_upload_gate_none)
+    // The preflight: one call, short timeout, and the answer is kept so the sheet can refuse to
+    // start an upload it knows cannot leave the phone. Retried from the sheet when it failed.
+    val checkReach: () -> Unit = {
+        if (!reaching) {
+            scope.launch {
+                reaching = true
+                reach = repo.isReachable()
+                reaching = false
+            }
+        }
+    }
     // One way in, and the sheet is where the order of the work is stated: remove, restart, pass the
     // check, then (and only then) name the plan. The button does not pre-empt that with a question.
     val openUpload: () -> Unit = {
@@ -374,12 +395,13 @@ fun SafetyRulesScreen(
                 // package is listed to be explained, never to be part of the plan.
                 preselected = verifiedPackages,
             )
+            // The sheet opens straight away — a probe must not make the button feel dead — and the
+            // reachability check runs beside it, so a phone with no route to the backend is told
+            // before it fills in a name instead of after an upload that silently does nothing.
+            reach = null
+            checkReach()
         }
     }
-    // The way in is closed while nothing passed the check: the button then says the order of the
-    // work instead of opening a sheet that could only say "nothing to upload yet".
-    val canUpload = confirmed > 0
-    val blockedHint = stringResource(Res.string.plans_upload_gate_none)
     val vote: (CommunityPlan) -> Unit = { plan ->
         if (plan.id !in liked) {
             liked = liked + plan.id
@@ -584,6 +606,9 @@ fun SafetyRulesScreen(
             verified = verifiedPackages,
             profile = profile,
             publishing = uploading,
+            reachable = reach,
+            checking = reaching,
+            onRecheck = checkReach,
             onDismiss = { if (!uploading) upload = null },
             onSubmit = { title, note, packages ->
                 val target = profile
@@ -592,6 +617,16 @@ fun SafetyRulesScreen(
                 if (target != null && packages.isNotEmpty()) {
                     scope.launch {
                         uploading = true
+                        // Preflight: the backend is not reachable from every network (many carriers
+                        // and campus Wi-Fis need a VPN or a proxy for it), so the upload is not
+                        // attempted blind. Checking first turns a silent failure into a line that
+                        // says what to do about it.
+                        if (!repo.isReachable()) {
+                            uploading = false
+                            upload = null
+                            notice = Notice(getString(Res.string.plan_upload_offline), error = true)
+                            return@launch
+                        }
                         // Uploading the same set again is a retry, not a second plan: the earlier
                         // copy is removed first, so the list keeps one row per package set.
                         repo.deleteOwnDuplicates(target, owner, identity.token, packages)
@@ -607,16 +642,20 @@ fun SafetyRulesScreen(
                         uploading = false
                         upload = null
                         notice = if (id != null) {
-                            Notice(getString(Res.string.plan_upload_ok))
+                            Notice(getString(Res.string.plan_upload_ok_detail))
                         } else {
-                            // The backend's own reason, when it gave one: "上传失败" alone leaves
-                            // the uploader guessing whether it was the network, the key or the plan.
+                            // A call that never arrived and a call the server refused are different
+                            // problems: only the first one is about the connection, and telling them
+                            // apart is what keeps the line from being a generic "上传失败".
                             val reason = repo.lastError
                             Notice(
-                                text = if (reason.isNullOrBlank()) {
-                                    getString(Res.string.plan_upload_fail)
-                                } else {
-                                    getString(Res.string.plan_upload_fail) + " · " + reason
+                                text = when {
+                                    repo.lastFailureWasNetwork ->
+                                        getString(Res.string.plan_upload_failed_network)
+                                    reason.isNullOrBlank() ->
+                                        getString(Res.string.plan_upload_fail)
+                                    else ->
+                                        getString(Res.string.plan_upload_fail) + " · " + reason
                                 },
                                 error = true,
                             )

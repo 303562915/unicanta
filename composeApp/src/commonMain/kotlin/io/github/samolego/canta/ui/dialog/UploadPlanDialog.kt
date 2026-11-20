@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,6 +63,11 @@ import io.github.samolego.canta.generated.resources.plan_upload_clear
 import io.github.samolego.canta.generated.resources.plan_upload_device_label
 import io.github.samolego.canta.generated.resources.plan_upload_flow_hint
 import io.github.samolego.canta.generated.resources.plan_upload_name_label
+import io.github.samolego.canta.generated.resources.plan_upload_net_blocked
+import io.github.samolego.canta.generated.resources.plan_upload_net_blocked_body
+import io.github.samolego.canta.generated.resources.plan_upload_net_checking
+import io.github.samolego.canta.generated.resources.plan_upload_net_ok
+import io.github.samolego.canta.generated.resources.plan_upload_net_retry
 import io.github.samolego.canta.generated.resources.plan_upload_no_candidates
 import io.github.samolego.canta.generated.resources.plan_upload_note_label
 import io.github.samolego.canta.generated.resources.plan_upload_publishing
@@ -114,6 +120,10 @@ private enum class GateState { READY, PARTIAL, BLOCKED }
  * @param candidates every package this phone may publish, in the order they should be listed.
  * @param preselected the packages the sheet starts on: the reboot-proven ones.
  * @param verified the packages the reboot check passed; nothing outside this set is tickable.
+ * @param reachable whether the community backend answered the preflight: null while it is being
+ *   asked, false when nothing came back. An upload cannot leave a phone with no route to it, so the
+ *   sheet says so before a name is typed instead of failing silently afterwards.
+ * @param checking true while the preflight is running.
  * @param publishing true while the caller is still sending: the sheet stays up, buttons go dead.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,6 +136,9 @@ fun UploadPlanDialog(
     onDismiss: () -> Unit,
     onSubmit: (title: String, note: String, packages: List<String>) -> Unit,
     publishing: Boolean = false,
+    reachable: Boolean? = null,
+    checking: Boolean = false,
+    onRecheck: () -> Unit = {},
 ) {
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
@@ -142,7 +155,9 @@ fun UploadPlanDialog(
     }
     // Only proven packages count, whatever was passed in: the tick list is filtered by the check.
     val provenSelection = selected.filter { it in verified }
-    val mayPublish = title.isNotBlank() && provenSelection.isNotEmpty() && !publishing
+    // Nothing goes up on a phone that cannot reach the backend: the button stays dead until the
+    // preflight answered yes, and the card above says what to do when it answered no.
+    val mayPublish = title.isNotBlank() && provenSelection.isNotEmpty() && !publishing && reachable == true
 
     // A dialog drawn as a bottom sheet, not ModalBottomSheet: the platform sheet takes the scroll
     // of the list inside over to drag itself, which made this one bounce up and down whenever the
@@ -210,7 +225,10 @@ fun UploadPlanDialog(
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        item("state") { StateCard(gate = gate, awaiting = candidates.size - uploadable.size) }
+                        item("net") {
+                        NetCard(reachable = reachable, checking = checking, onRecheck = onRecheck)
+                    }
+                    item("state") { StateCard(gate = gate, awaiting = candidates.size - uploadable.size) }
                         item("device") { DeviceCard(profile = profile, totalCount = candidates.size) }
                         item("pick") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -431,6 +449,80 @@ private fun StateCard(gate: GateState, awaiting: Int) {
                         lineHeight = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The connection line: the backend is not reachable from every network — carrier data and campus
+ * Wi-Fi often need a VPN or a proxy for it — so the sheet asks before the upload does. Three
+ * answers, three texts: still asking, answered, and nothing came back.
+ */
+@Composable
+private fun NetCard(reachable: Boolean?, checking: Boolean, onRecheck: () -> Unit) {
+    val color = when {
+        reachable == true -> successColor()
+        reachable == false -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val icon = when {
+        reachable == true -> Icons.Default.Check
+        reachable == false -> Icons.Default.Warning
+        else -> Icons.Default.Info
+    }
+    val headline = stringResource(
+        when {
+            checking || reachable == null -> Res.string.plan_upload_net_checking
+            reachable == true -> Res.string.plan_upload_net_ok
+            else -> Res.string.plan_upload_net_blocked
+        }
+    )
+    Surface(
+        color = color.copy(alpha = if (MaterialTheme.colorScheme.isDark) 0.18f else 0.10f),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (checking || reachable == null) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = color,
+                )
+            } else {
+                Box(
+                    modifier = Modifier.size(20.dp).background(color, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = Color(0xFFFFFFFF),
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = headline, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color)
+                if (reachable == false) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = stringResource(Res.string.plan_upload_net_blocked_body),
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (reachable == false) {
+                TextButton(onClick = onRecheck, enabled = !checking) {
+                    Text(stringResource(Res.string.plan_upload_net_retry), fontSize = 11.sp)
                 }
             }
         }

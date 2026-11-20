@@ -536,4 +536,12 @@
     <string name="recommend_switch_list">Switch to list layout</string>
     <string name="plan_upload_candidate_count">%1$d candidates on this phone</string>
     <string name="plans_upload_gate_none">Nothing removed yet: remove apps, restart, then pass the check before uploading</string>
+    <string name="plan_upload_net_ok">Network OK — uploads can go through</string>
+    <string name="plan_upload_net_checking">Checking the connection…</string>
+    <string name="plan_upload_net_blocked">Cannot reach the community server</string>
+    <string name="plan_upload_net_blocked_body">Uploading needs access to the community backend. On many networks that means turning on a VPN or proxy first — then tap Retry.</string>
+    <string name="plan_upload_net_retry">Retry</string>
+    <string name="plan_upload_offline">Cannot reach the community server: uploading needs access to the backend. Check the network or turn on the VPN, then retry.</string>
+    <string name="plan_upload_failed_network">Upload failed: the request never left the phone. Check the network or turn on the VPN, then retry.</string>
+    <string name="plan_upload_ok_detail">Uploaded — the plan is in, and it shows up once the list refreshes.</string>
 </resources>

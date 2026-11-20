@@ -476,4 +476,12 @@
     <string name="recommend_switch_list">切换成列表排列</string>
     <string name="plan_upload_candidate_count">本机可上传候选 %1$d 个</string>
     <string name="plans_upload_gate_none">还没有已卸载的应用：先卸载，再重启，验证通过后才能上传</string>
+    <string name="plan_upload_net_ok">网络正常，可以上传</string>
+    <string name="plan_upload_net_checking">正在检测网络…</string>
+    <string name="plan_upload_net_blocked">连不上社区服务器</string>
+    <string name="plan_upload_net_blocked_body">上传必须能访问社区后端。国内网络通常要先开 VPN 或代理，开好后点「重试」。</string>
+    <string name="plan_upload_net_retry">重试</string>
+    <string name="plan_upload_offline">连不上社区服务器：上传需要能访问后端，请检查网络或开启 VPN 后重试。</string>
+    <string name="plan_upload_failed_network">上传失败：请求没能发出去，检查网络或开启 VPN 后重试。</string>
+    <string name="plan_upload_ok_detail">已上传：方案已提交，列表刷新后就能看到。</string>
 </resources>
