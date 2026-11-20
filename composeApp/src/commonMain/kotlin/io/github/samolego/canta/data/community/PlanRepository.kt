@@ -287,6 +287,20 @@ class PlanRepository(
     }
 
     /**
+     * Every verified plan the backend has, whatever the phone — the ranking's widest scope.
+     *
+     * A phone that matches nothing (a fresh install on a model nobody uploaded for, a young
+     * community) would otherwise read an empty page although the server has plans. Null when the
+     * backend could not be reached; an empty list is an answer ("nobody uploaded anything yet").
+     */
+    suspend fun plansAll(limit: Int = 200): List<CommunityPlan>? {
+        if (limit <= 0) return emptyList()
+        val body = buildJsonObject { put("p_limit", limit) }.toString()
+        rpc("plans_all", body)?.let { return parsePlans(it) }
+        return null
+    }
+
+    /**
      * Every model the community has plans for, one row per build, with how many plans and people
      * each has. Null when the backend could not be reached or predates the catalog call.
      */

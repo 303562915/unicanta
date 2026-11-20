@@ -87,6 +87,7 @@ import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.PlanScope
 import io.github.samolego.canta.ui.component.PlanScopeBar
 import io.github.samolego.canta.ui.component.PlanScopeDialog
+import io.github.samolego.canta.ui.component.label
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
@@ -172,9 +173,10 @@ fun SafetyRulesScreen(
     var tab by remember { mutableIntStateOf(0) }
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
     var rules by remember { mutableStateOf<SafetyRules?>(null) }
-    // Which phone's plans are on screen. This phone by default; another model when a chip in the
-    // picker was opened, which is the only way to read a plan before owning the phone.
-    var planScope by remember { mutableStateOf<PlanScope>(PlanScope.ThisPhone) }
+    // Which phone's plans are on screen. Every model by default: with a young community this
+    // phone's own list is often empty, and an empty ranking says nothing useful about what the
+    // community removes. A chip in the picker narrows it to this phone or to another model.
+    var planScope by remember { mutableStateOf<PlanScope>(PlanScope.All) }
     // Every model the backend has plans for, with the counts its chips print.
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
     var catalogLoading by remember { mutableStateOf(true) }
@@ -264,6 +266,25 @@ fun SafetyRulesScreen(
 
     LaunchedEffect(profile, reloads, planScope) {
         when (val scope = planScope) {
+            PlanScope.All -> {
+                // Nothing is cached here: this list is every model's, and a cached copy of it would
+                // outlive the rows it was built from after the first vote.
+                loading = true
+                offline = false
+                var fetched: List<CommunityPlan>? = null
+                for (attempt in 0 until PLAN_ATTEMPTS) {
+                    val result = repo.plansAll()
+                    if (result != null) {
+                        fetched = result
+                        break
+                    }
+                    if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
+                }
+                offline = fetched == null
+                plans = fetched.orEmpty().withoutDuplicates()
+                loading = false
+            }
+
             PlanScope.ThisPhone -> {
                 val target = profile
                 if (target == null) {
@@ -374,20 +395,27 @@ fun SafetyRulesScreen(
 
     val ownLabel = profile?.displayModel.orEmpty()
     val opened = planScope as? PlanScope.Other
+    val allModels = planScope == PlanScope.All
     // The band names whatever the list below is about. This phone keeps the wording it had; an
     // opened model says so, because a plan read here may be for a phone that is not in hand.
     val heroTitle = when {
         opened != null -> opened.model.label
+        allModels -> PlanScope.All.label(ownLabel)
         showDevicePhoto -> ownLabel.ifBlank { "-" }
         else -> "本机"
     }
     val heroSubtitle = when {
         opened != null -> "他机方案 · " + (opened.build?.versionLabel ?: "全部版本")
+        allModels -> "全社区已验证方案 · 不分机型"
         else -> profile?.let { romLine(it) }.orEmpty()
     }
     // What the empty states and the ranking call the device: the model on screen, or "本机" when
     // the name is being kept off the page.
-    val listLabel = opened?.model?.label ?: ownLabel.ifBlank { "本机" }
+    val listLabel = when {
+        opened != null -> opened.model.label
+        allModels -> PlanScope.All.label(ownLabel)
+        else -> ownLabel.ifBlank { "本机" }
+    }
 
     Scaffold(
         topBar = {
@@ -396,18 +424,21 @@ fun SafetyRulesScreen(
             // The switch covers the name as well as the picture: with it off the page says
             // "本机" and looks nothing up, which is the point of having the switch.
             DeviceHero(
-                model = if (showDevicePhoto) opened?.model?.label ?: ownLabel else "",
+                // No phone on the band when every model is on screen: a picture of this one under
+                // the words "全部机型" would read as if the list were about it.
+                model = if (showDevicePhoto && !allModels) opened?.model?.label ?: ownLabel else "",
                 title = heroTitle,
                 subtitle = heroSubtitle,
-                showPhoto = showDevicePhoto,
+                showPhoto = showDevicePhoto && !allModels,
                 // The name is the way to another phone: tapping it opens the model chips.
                 onTitleClick = { pickerOpen = true },
                 // No plan count on the band: the switch under it already says which tab is
                 // which, and a counter there only squeezed the model's system line.
                 counters = buildList {
-                    // The reboot proof is this install's own: it means nothing under another model.
+                    // The reboot proof is this install's own: it means nothing under another model,
+                    // and under "全部机型" it would be read as if the whole community were counted.
                     val pending = deletedPackages.size
-                    if (pending > 0 && opened == null) {
+                    if (pending > 0 && opened == null && !allModels) {
                         add("$confirmed/$pending" to stringResource(Res.string.plans_verified_short))
                         if (awaitingFirstReboot > 0) {
                             add("$awaitingFirstReboot" to "待首次重启验证")
@@ -514,6 +545,7 @@ fun SafetyRulesScreen(
                     owner = owner,
                     liked = liked,
                     offline = offline,
+                    widerScope = opened != null || allModels,
                     onOpenPlan = onOpenPlan,
                     onVote = vote,
                     onDelete = { pendingDelete = it },
@@ -608,7 +640,6 @@ fun SafetyRulesScreen(
                 Button(
                     onClick = {
                         pendingDelete = null
-                        val target = profile
                         scope.launch {
                             val ok = repo.delete(plan.id, owner, identity.token)
                             notice = if (ok) {
@@ -616,10 +647,22 @@ fun SafetyRulesScreen(
                             } else {
                                 Notice("删除失败：这个方案不是本机上传的，或者后端没通。", error = true)
                             }
-                            if (target != null) {
-                                val refreshed = repo.plansFor(target).withoutDuplicates()
-                                plans = refreshed
-                                if (refreshed.isNotEmpty()) planCache?.write(target, refreshed)
+                            // Re-read the same list that is on screen: under "全部机型" that is every
+                            // model's, and reloading this phone's instead would silently narrow it.
+                            val refreshed = when (val current = planScope) {
+                                PlanScope.All -> repo.plansAll()
+                                PlanScope.ThisPhone -> profile?.let { repo.plansFor(it) }
+                                is PlanScope.Other -> repo.plansForModel(
+                                    brand = current.model.brand,
+                                    model = current.model.model,
+                                    rom = current.build?.rom.orEmpty(),
+                                    romVersion = current.build?.romVersion ?: 0,
+                                )
+                            }.orEmpty().withoutDuplicates()
+                            plans = refreshed
+                            val target = profile
+                            if (planScope == PlanScope.ThisPhone && target != null && refreshed.isNotEmpty()) {
+                                planCache?.write(target, refreshed)
                             }
                         }
                     },
@@ -822,6 +865,8 @@ private fun PlansTab(
     owner: String,
     liked: Set<Long>,
     offline: Boolean,
+    /** True when the list is not this phone's: uploading only ever happens for the phone in hand. */
+    widerScope: Boolean = false,
     onOpenPlan: (Long) -> Unit,
     onVote: (CommunityPlan) -> Unit,
     onDelete: (CommunityPlan) -> Unit,
@@ -839,33 +884,46 @@ private fun PlansTab(
             onRetry = onRetry,
             retryHint = offline,
         )
-        else -> LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            // The floating button and the dock hang over the foot of the list: the last card has
-            // to be able to scroll clear of both.
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
-                top = 6.dp,
-                bottom = DOCK_CLEARANCE + 56.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            itemsIndexed(plans, key = { _, plan -> plan.id }) { index, plan ->
-                PlanCard(
-                    plan = plan,
-                    mine = owner.isNotEmpty() && plan.owner == owner,
-                    // A plan for another model is still readable, but the card has to say so: the
-                    // selection it applies is this phone's, not the one it was proven on.
-                    foreign = !plan.matches(profile),
-                    // The position *is* the recommendation: the badge on the left says who the
-                    // community trusts most, exactly like the package ranking does.
-                    rank = index + 1,
-                    liked = plan.id in liked,
-                    onOpen = { onOpenPlan(plan.id) },
-                    onVote = { onVote(plan) },
-                    onDelete = { onDelete(plan) },
+        else -> Column(modifier = Modifier.fillMaxSize()) {
+            // The floating upload button is absent here on purpose; the line says why, so the page
+            // does not look broken to somebody who just tapped "全部机型".
+            if (widerScope) {
+                Text(
+                    text = "这是全部机型共用的方案，按社区点赞排序；上传要切回「本机」。",
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 2.dp),
                 )
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                // The floating button and the dock hang over the foot of the list: the last card
+                // has to be able to scroll clear of both.
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 6.dp,
+                    bottom = DOCK_CLEARANCE + 56.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(plans, key = { _, plan -> plan.id }) { index, plan ->
+                    PlanCard(
+                        plan = plan,
+                        mine = owner.isNotEmpty() && plan.owner == owner,
+                        // A plan for another model is still readable, but the card has to say so: the
+                        // selection it applies is this phone's, not the one it was proven on.
+                        foreign = !plan.matches(profile),
+                        // The position *is* the recommendation: the badge on the left says who the
+                        // community trusts most, exactly like the package ranking does.
+                        rank = index + 1,
+                        liked = plan.id in liked,
+                        onOpen = { onOpenPlan(plan.id) },
+                        onVote = { onVote(plan) },
+                        onDelete = { onDelete(plan) },
+                    )
+                }
             }
         }
     }

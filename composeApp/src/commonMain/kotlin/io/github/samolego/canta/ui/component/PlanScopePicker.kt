@@ -49,12 +49,16 @@ import io.github.samolego.canta.ui.fl.colorOf
 /**
  * Which phone's plans the page is showing.
  *
- * The default is this phone, matched exactly (model, codename, ROM and version). The other case is
- * a model the community has plans for, optionally narrowed to one of its builds — something a
- * visitor looks at *before* owning the phone, or when a plan for the same phone was uploaded on a
- * different build.
+ * [All] is the widest scope and the one a young community needs: every verified plan, whatever the
+ * phone, so a fresh install (or a model nobody has uploaded for yet) is not an empty page. The next
+ * case is this phone, matched exactly (model, codename, ROM and version). The last is a model the
+ * community has plans for, optionally narrowed to one of its builds — something a visitor looks at
+ * *before* owning the phone, or when a plan for the same phone was uploaded on a different build.
  */
 sealed interface PlanScope {
+    /** Every model at once: what the community removes most, before there is a phone to match. */
+    data object All : PlanScope
+
     /** This phone, exactly as `plans_for` matches it. */
     data object ThisPhone : PlanScope
 
@@ -62,14 +66,16 @@ sealed interface PlanScope {
     data class Other(val model: CatalogModel, val build: CatalogBuild? = null) : PlanScope
 }
 
-/** What the scope calls itself on the page: "本机" or the model's name. */
+/** What the scope calls itself on the page: "全部机型", "本机", or the model's name. */
 fun PlanScope.label(ownLabel: String): String = when (this) {
+    PlanScope.All -> "全部机型"
     PlanScope.ThisPhone -> ownLabel.ifBlank { "本机" }
     is PlanScope.Other -> model.label
 }
 
-/** The build part of the scope: "本机" has no separate build chip, another model always does. */
+/** The build part of the scope: only another model has a separate build chip. */
 fun PlanScope.buildLabel(): String? = when (this) {
+    PlanScope.All -> null
     PlanScope.ThisPhone -> null
     is PlanScope.Other -> build?.versionLabel ?: "全部版本"
 }
@@ -193,6 +199,7 @@ fun PlanScopeDialog(
                         scope = scope,
                         onOpenModel = { opened = it },
                         onRetry = onRetry,
+                        onSelectAll = { onSelect(PlanScope.All) },
                         onSelectThisPhone = { onSelect(PlanScope.ThisPhone) },
                         modifier = Modifier.weight(1f),
                     )
@@ -209,6 +216,7 @@ fun PlanScopeDialog(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ModelPicker(
     models: List<CatalogModel>,
@@ -217,6 +225,7 @@ private fun ModelPicker(
     scope: PlanScope,
     onOpenModel: (CatalogModel) -> Unit,
     onRetry: () -> Unit,
+    onSelectAll: () -> Unit,
     onSelectThisPhone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -231,7 +240,18 @@ private fun ModelPicker(
             color = colors.onSurfaceVariant,
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
         )
-        Row(modifier = Modifier.padding(horizontal = 18.dp)) {
+        FlowRow(
+            modifier = Modifier.padding(horizontal = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // The widest scope first, and the one a young community starts on: every plan the
+            // backend has, before this phone has a single one of its own.
+            ScopeChip(
+                text = "全部机型",
+                selected = scope == PlanScope.All,
+                onClick = onSelectAll,
+            )
             ScopeChip(
                 text = "本机 · ${ownLabel.ifBlank { "-" }}",
                 selected = scope == PlanScope.ThisPhone,
