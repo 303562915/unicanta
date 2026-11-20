@@ -170,6 +170,19 @@ fun AppDetailScreen(
         recommendations = Recommendations.bundled()
     }
 
+    /** Where this page's unsent comment is kept; see [AppNoteStore.draftOf]. */
+    val draftKey = "app:$packageName"
+
+    // Half-typed text survives leaving the page: this is the page people leave to go and look
+    // something up, which is exactly when a comment gets abandoned by accident.
+    LaunchedEffect(draftKey) {
+        notes.ensureReady()
+        if (draft.isEmpty()) draft = notes.draftOf(draftKey)
+    }
+    LaunchedEffect(draft, draftKey) {
+        notes.setDraft(draftKey, draft)
+    }
+
     LaunchedEffect(packageName, voter) {
         reviews = notes.reviewsOf(packageName)
         votes = repository?.packageVotes(packageName, profile) ?: PackageVotes.EMPTY

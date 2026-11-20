@@ -59,6 +59,14 @@ private data class AppNotesBlob(
      * agrees with the rows. Empty until the inbox has been opened once.
      */
     val inboxSeenAt: String = "",
+    /**
+     * Comments written but not sent, keyed by what they answer ("plan:12", "app:com.a"): leaving
+     * the page, or answering a call, must not throw away something half-typed.
+     *
+     * Only the one draft per target is kept — a second half-written comment for the same page
+     * would have nowhere to go back to.
+     */
+    val commentDrafts: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -78,6 +86,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     private val _packageVerdicts = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     private val _lastSeenReplyId = MutableStateFlow(0L)
     private val _inboxSeenAt = MutableStateFlow("")
+    private val _commentDrafts = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /** Reviews by package name, newest first. */
     val reviews: StateFlow<Map<String, List<AppReview>>> = _reviews.asStateFlow()
@@ -101,6 +110,9 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     /** When the inbox was last opened, server stamped; see [markInboxSeen]. Empty = never. */
     val inboxSeenAt: StateFlow<String> = _inboxSeenAt.asStateFlow()
 
+    /** Comments written but not sent, by target key; see [draftOf] and [setDraft]. */
+    val commentDrafts: StateFlow<Map<String, String>> = _commentDrafts.asStateFlow()
+
     private var loaded = false
 
     /** Reads the blob once; called by every accessor before it answers. */
@@ -115,6 +127,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
                 _packageVerdicts.value = blob.packageVerdicts
                 _lastSeenReplyId.value = blob.lastSeenReplyId
                 _inboxSeenAt.value = blob.inboxSeenAt
+                _commentDrafts.value = blob.commentDrafts
             }
         }
         loaded = true
@@ -215,6 +228,27 @@ class AppNoteStore(private val storage: AppBlobStorage) {
         return _packageVerdicts.value[pkg]
     }
 
+    /** The half-written comment for [key], or empty when there is none. */
+    suspend fun draftOf(key: String): String {
+        ensureLoaded()
+        return _commentDrafts.value[key].orEmpty()
+    }
+
+    /**
+     * Keeps [body] as the draft for [key]; an empty body forgets it instead, so a page that was
+     * written and then cleared does not come back with the old text.
+     */
+    suspend fun setDraft(key: String, body: String) {
+        ensureLoaded()
+        mutex.withLock {
+            val current = _commentDrafts.value
+            val updated = if (body.isBlank()) current - key else current + (key to body)
+            if (updated == current) return@withLock
+            _commentDrafts.value = updated
+            persistLocked()
+        }
+    }
+
     private suspend fun persistLocked() {
         val blob = AppNotesBlob(
             reviews = _reviews.value,
@@ -223,6 +257,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
             packageVerdicts = _packageVerdicts.value,
             lastSeenReplyId = _lastSeenReplyId.value,
             inboxSeenAt = _inboxSeenAt.value,
+            commentDrafts = _commentDrafts.value,
         )
         runCatching {
             storage.write(json.encodeToString(AppNotesBlob.serializer(), blob).encodeToByteArray())

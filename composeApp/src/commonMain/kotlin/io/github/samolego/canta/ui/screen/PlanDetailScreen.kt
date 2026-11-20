@@ -172,11 +172,23 @@ fun PlanDetailScreen(
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
 
+    /** Where this page's unsent comment is kept; see [AppNoteStore.draftOf]. */
+    val draftKey = "plan:$planId"
+
     LaunchedEffect(planId) {
         // A plan voted for before opening the page is already liked: the device remembers,
         // because `plan_vote` never says who voted.
         notes?.ensureReady()
         liked = notes?.likedPlans?.value?.contains(planId) == true
+        // Something half-typed last time comes back rather than being lost: leaving the page to
+        // check a package name is exactly when a comment gets interrupted.
+        draft = notes?.draftOf(draftKey) ?: ""
+    }
+
+    // Written back as it is typed, not on the way out: leaving through the system back gesture,
+    // a call, or the app being killed all end the page without running anything of its own.
+    LaunchedEffect(draft, draftKey) {
+        notes?.setDraft(draftKey, draft)
     }
 
     LaunchedEffect(planId, profile) {
