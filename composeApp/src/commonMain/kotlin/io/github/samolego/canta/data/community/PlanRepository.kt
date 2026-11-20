@@ -236,7 +236,15 @@ class PlanRepository(
 
     /** True when [request] came back inside [PROBE_TIMEOUT_MS]; a connection that never opens is not an answer. */
     private suspend fun answers(request: suspend () -> Any?): Boolean =
-        runCatching { withTimeoutOrNull(PROBE_TIMEOUT_MS) { request(); true } }.getOrDefault(false)
+        // `withTimeoutOrNull` answers null when the probe ran out of time, and runCatching answers a
+        // failure; both are "no". The Boolean is spelled out on the lambda rather than inferred:
+        // the nested ternaries of the two wrappers are what turned this into a Boolean? once.
+        runCatching {
+            withTimeoutOrNull(PROBE_TIMEOUT_MS) {
+                request()
+                true
+            } ?: false
+        }.getOrDefault(false)
 
     private suspend fun call(name: String, body: String): Call {
         val answered = runCatching {
