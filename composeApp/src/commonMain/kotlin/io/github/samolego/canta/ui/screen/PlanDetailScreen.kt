@@ -670,8 +670,9 @@ private fun PlanHero(
     foreign: Boolean,
     onVote: () -> Unit,
     onUsePlan: () -> Unit,
-    /** Only offered to the uploader: rewriting somebody else's note is what [saveNote] refuses. */
-    onEditNote: (() -> Unit)? = null,
+    /** Only offered to the uploader: rewriting somebody else's note is what [saveNote] refuses.
+     *  Handed the note as it stands, so the editor opens with the current text in it. */
+    onEditNote: ((String) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
