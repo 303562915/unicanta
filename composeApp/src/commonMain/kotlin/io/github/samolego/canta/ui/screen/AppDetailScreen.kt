@@ -292,7 +292,12 @@ fun AppDetailScreen(
             )
         },
     ) { padding ->
-        val threads = remember(comments) { comments.threads() }
+        // The thread follows the same device scope as the vote above it: with "只看本机" picked, a
+        // Redmi K70 page lists what K70 owners wrote, not what a Redmi K30 Ultra wrote.
+        val visibleComments = remember(comments, voteScope, selectedSystem, profile?.displayModel) {
+            scopedToDevice(comments, voteScope, selectedSystem, profile?.displayModel.orEmpty())
+        }
+        val threads = remember(visibleComments) { visibleComments.threads() }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -326,7 +331,19 @@ fun AppDetailScreen(
                     onVote = castVote,
                 )
             }
-            item { SectionHeading("评论 · ${comments.size}") }
+            item { SectionHeading("评论 · ${visibleComments.size}") }
+            // The count above is the scoped one; say what it left out, so a short thread does not
+            // read as "nobody else wrote anything" when the rest is one tap away.
+            if (visibleComments.size < comments.size) {
+                item {
+                    Text(
+                        text = "只看本机：另有 ${comments.size - visibleComments.size} 条来自其他机型或系统版本，切到「全部机型」查看。",
+                        style = FlText.caption2,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
+            }
             when {
                 threads.isNotEmpty() -> commentThreads(
                     threads = threads,
@@ -656,7 +673,10 @@ private fun VoteBlock(
                 append(
                     when (scope) {
                         1 -> "所有机型"
-                        2 -> selectedSystem.ifBlank { "系统版本" }
+                        // The system list only ever holds this phone's own builds, so name the
+                        // phone once here: "HyperOS 3" alone does not say whose HyperOS 3.
+                        2 -> (profile?.displayModel.orEmpty().ifBlank { "本机" }) +
+                            " · " + selectedSystem.ifBlank { "系统版本" }
                         else -> profile?.shortLabel() ?: "本机"
                     }
                 )
@@ -823,6 +843,31 @@ private fun FlGlyphIconInline(
     tint: androidx.compose.ui.graphics.Color,
 ) {
     io.github.samolego.canta.ui.fl.FlGlyphIcon(glyph = glyph, size = 16.dp, tint = tint, fill = 1f)
+}
+
+/**
+ * The thread narrowed to the device scope the page is showing.
+ *
+ * [scope] 1 is every model and keeps the whole thread; [scope] 0 keeps only what this exact phone
+ * wrote; 2 keeps this phone on the picked build. A comment stored before the device was kept has no
+ * model to compare with, so it stays in — unknown is not the same as another phone. An unknown
+ * [model] (the profile was not read yet) also leaves the thread whole rather than emptying it.
+ */
+private fun scopedToDevice(
+    comments: List<PlanComment>,
+    scope: Int,
+    system: String,
+    model: String,
+): List<PlanComment> = when {
+    scope == 1 || model.isBlank() -> comments
+    else -> comments.filter { comment ->
+        val sameModel = comment.deviceModel.isBlank() ||
+            comment.deviceModel.equals(model, ignoreCase = true)
+        sameModel && (
+            scope != 2 || system.isBlank() ||
+                comment.systemName.equals(system, ignoreCase = true)
+            )
+    }
 }
 
 private fun formatSize(bytes: Long): String {
