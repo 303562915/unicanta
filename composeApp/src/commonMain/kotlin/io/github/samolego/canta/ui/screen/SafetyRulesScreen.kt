@@ -93,6 +93,7 @@ import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
@@ -156,6 +157,7 @@ fun SafetyRulesScreen(
     handler: CantaHandler,
     appListViewModel: AppListViewModel,
     settings: CantaSettings,
+    telemetry: PackageTelemetry? = null,
     onOpenPlan: (Long) -> Unit,
     /** Opens one app's own page from a ranking row. */
     onOpenApp: (String) -> Unit = {},
@@ -209,13 +211,12 @@ fun SafetyRulesScreen(
     val tickedApps = apps.filter { it.packageName in ticked }
 
     val pending by settings.pendingRebootFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    // What may be published as reboot-verified: a package that was recorded at uninstall time, whose
-    // boot id already changed once, and that is still gone. A package that is only *pending* (no
-    // completed boot since the uninstall) is not in here, which is what keeps the normal upload to
-    // batches that really booted.
+    // A package is verified only after a tracked uninstall (or a baseline from before Canta) is
+    // still absent after a later boot. Older uninstalls seed a baseline instead of counting as proven.
     val verifiedPackages = pending.filter { it.survived }.mapNotNull { it.pkg }
         .filter { it in deletedPackages }.distinct().toSet()
     val confirmed = verifiedPackages.size
+    val awaitingFirstReboot = pending.count { it.baseline && !it.survived && it.pkg in deletedPackages }
     val owner = identity.owner
 
     LaunchedEffect(Unit) {
@@ -233,7 +234,10 @@ fun SafetyRulesScreen(
     // The reboot check runs at every start, but a boot broadcast can be missed and the app list
     // may have been empty when it ran: asking again here is what makes "重启验证" show up.
     LaunchedEffect(apps.size) {
-        if (apps.isNotEmpty()) appListViewModel.refreshSurvivors()
+        if (apps.isNotEmpty()) {
+            telemetry?.seedExistingUninstalls(apps)
+            appListViewModel.refreshSurvivors()
+        }
     }
 
     // Read the remembered identity first; only a phone that has never signed in asks for a number.
@@ -399,6 +403,9 @@ fun SafetyRulesScreen(
                     val pending = deletedPackages.size
                     if (pending > 0 && opened == null) {
                         add("$confirmed/$pending" to stringResource(Res.string.plans_verified_short))
+                        if (awaitingFirstReboot > 0) {
+                            add("$awaitingFirstReboot" to "待首次重启验证")
+                        }
                     }
                 },
                 footer = {

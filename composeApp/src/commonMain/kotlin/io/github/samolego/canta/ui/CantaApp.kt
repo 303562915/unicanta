@@ -327,6 +327,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     handler = handler,
                     appListViewModel = appListViewModel,
                     settings = deps.settings,
+                    telemetry = deps.packageTelemetry,
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     // The shared client, and the list this phone saw last time, so a page opened

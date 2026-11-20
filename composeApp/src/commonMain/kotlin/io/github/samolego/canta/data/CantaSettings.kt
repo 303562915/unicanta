@@ -80,6 +80,13 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setOnboardingVersion(version: Int) = update { it.copy(onboardingVersion = version) }
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
+    suspend fun seedPendingReboot(packages: List<PendingUninstallProto>): Boolean = update {
+        val deviceKey = packages.firstOrNull()?.deviceKey.orEmpty()
+        val known = it.pendingReboot.filter { entry ->
+            entry.deviceKey.isEmpty() || entry.deviceKey == deviceKey
+        }.map { entry -> entry.pkg }.toSet()
+        it.copy(pendingReboot = it.pendingReboot + packages.filterNot { entry -> entry.pkg in known })
+    }
     suspend fun setLastConfirmedPackages(packages: List<String>) = update { it.copy(lastConfirmedPackages = packages) }
     suspend fun setRestoreSuspects(packages: List<String>) = update { it.copy(restoreSuspects = packages) }
     suspend fun setIdentityToken(token: String) = update { it.copy(identityToken = token) }

@@ -122,6 +122,20 @@ class ProtoModelsTest {
     }
 
     @Test
+    fun pendingBaselineUsesField13AndDefaultsFalse() {
+        val value = PendingUninstallProto(pkg = "p", baseline = true)
+        val encoded = ProtoBuf.encodeToByteArray(PendingUninstallProto.serializer(), value)
+        assertEquals(value, ProtoBuf.decodeFromByteArray(PendingUninstallProto.serializer(), encoded))
+        // baseline (13) = true
+        val decoded = ProtoBuf.decodeFromByteArray(PendingUninstallProto.serializer(), bytes(0x68, 0x01))
+        assertEquals(PendingUninstallProto(baseline = true), decoded)
+        val oldEntry = ProtoBuf.decodeFromByteArray(
+            PendingUninstallProto.serializer(), bytes(0x0A, 0x01, 0x70),
+        )
+        assertEquals(false, oldEntry.baseline)
+    }
+
+    @Test
     fun decodesLegacyPresets() {
         assertEquals(presets, ProtoBuf.decodeFromByteArray(PresetsListProto.serializer(), presetsBytes))
     }

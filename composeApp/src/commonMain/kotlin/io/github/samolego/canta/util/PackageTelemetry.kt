@@ -70,18 +70,23 @@ fun resolvePending(
     states: Map<String, PackageState>,
     now: Instant,
     currentDeviceKey: String? = null,
+    countBaselinesAsSurvived: Boolean = false,
 ): Pair<List<TelemetryEvent>, List<PendingUninstallProto>> {
     val cutoff = now - TelemetryConfig.PENDING_MAX_AGE
     val events = mutableListOf<TelemetryEvent>()
     val remaining = mutableListOf<PendingUninstallProto>()
     for (entry in pending) {
-        if (Instant.fromEpochMilliseconds(entry.uninstalledAt) < cutoff) continue
+        if (!entry.baseline && Instant.fromEpochMilliseconds(entry.uninstalledAt) < cutoff) continue
         // Ids of different kinds (boot_id vs the "boot_count:" fallback) can't be compared.
         val comparable = entry.bootId.startsWith(BOOT_COUNT_PREFIX) == currentBootId?.startsWith(BOOT_COUNT_PREFIX)
         val state = states[entry.pkg]
         val otherDevice = entry.deviceKey.isNotEmpty() && currentDeviceKey != null && entry.deviceKey != currentDeviceKey
         if (otherDevice || currentBootId == null || !comparable || entry.bootId == currentBootId || state == null) {
             remaining += entry
+            continue
+        }
+        if (entry.baseline) {
+            if (state.uninstalled && countBaselinesAsSurvived) remaining += entry.copy(survived = true)
             continue
         }
         fun report(type: TelemetryEventType) = events.add(TelemetryEvent.ofPending(entry, type))
@@ -210,6 +215,46 @@ class PackageTelemetry(
         if (restored.isNotEmpty()) settings.addRestoreSuspects(restored)
     }
 
+    /** Adds pre-existing uninstalls as a local baseline; their next confirmed reboot is the first proof. */
+    suspend fun seedExistingUninstalls(apps: List<AppInfo>): Int {
+        val uninstalled = apps.filter { it.isSystemApp && it.isUninstalled }
+        if (uninstalled.isEmpty()) return 0
+        val bootId = handler.bootId() ?: return 0
+        val now = clock.now()
+        val device = handler.deviceContext() ?: DeviceContext.UNKNOWN
+        val deviceKey = handler.deviceKey().orEmpty()
+        val fingerprint = handler.buildFingerprint().orEmpty()
+        val week = cohortWeekOf(now)
+        val bucket = batchBucketOf(uninstalled.size)
+        pendingLock.withLock {
+            val existing = settings.pendingRebootFlow.first()
+            val known = existing.filter { it.deviceKey.isEmpty() || it.deviceKey == deviceKey }.map { it.pkg }.toSet()
+            val baseline = uninstalled.filterNot { app ->
+                app.packageName in known || existing.any { entry ->
+                    entry.pkg == app.packageName && entry.deviceKey.isNotEmpty() && entry.deviceKey != deviceKey
+                }
+            }.map { app ->
+                PendingUninstallProto(
+                    pkg = app.packageName,
+                    bootId = bootId,
+                    cohortWeek = week,
+                    batchBucket = bucket,
+                    uninstalledAt = now.toEpochMilliseconds(),
+                    brand = device.brand,
+                    rom = device.rom,
+                    romVersion = device.romVersion,
+                    sdk = device.sdk,
+                    buildFingerprint = fingerprint,
+                    deviceKey = deviceKey,
+                    baseline = true,
+                )
+            }
+            if (baseline.isEmpty()) 0
+            else if (settings.seedPendingReboot(baseline)) baseline.size
+            else 0
+        }
+    }
+
     /** Reports what became of the pending uninstalls, given the freshly loaded [apps] (Canta start). */
     suspend fun resolveSurvivors(apps: List<AppInfo>) {
         val analytics = settings.analyticsEnabledFlow.first()
@@ -224,7 +269,10 @@ class PackageTelemetry(
                 val app = byPackage[entry.pkg] ?: return@mapNotNull null
                 entry.pkg to PackageState(app.isUninstalled, if (app.isUninstalled) null else handler.installedSinceBoot(entry.pkg))
             }.toMap()
-            val (events, remaining) = resolvePending(pending, ResolveMode.START, bootId, fingerprint, states, clock.now(), deviceKey)
+            val (events, remaining) = resolvePending(
+                pending, ResolveMode.START, bootId, fingerprint, states, clock.now(), deviceKey,
+                countBaselinesAsSurvived = true,
+            )
             recordRestores(events)
             // The survival mark is local state the user is told about ("重启验证 N 个"), so it is kept
             // even when the reports cannot be sent: an offline phone must not look unverified.
@@ -272,6 +320,7 @@ class PackageTelemetry(
             if (pending.isEmpty()) return true
             val (events, remaining) = resolvePending(
                 pending, ResolveMode.BOOT, currentBootId, snapshot.buildFingerprint.ifEmpty { null }, states, clock.now(), deviceKey,
+                countBaselinesAsSurvived = true,
             )
             recordRestores(events)
             // Local first: the check itself has happened, whether or not the reports can leave the

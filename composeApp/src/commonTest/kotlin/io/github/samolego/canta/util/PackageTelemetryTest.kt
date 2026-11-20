@@ -42,6 +42,34 @@ class PackageTelemetryTest {
     private val gone = emptyList<PendingUninstallProto>()
 
     @Test
+    fun baselineNeedsALaterBootAndOnlyCountsWhenStillUninstalled() {
+        val baseline = entry("com.legacy").copy(baseline = true)
+        val sameBoot = resolvePending(
+            listOf(baseline), ResolveMode.START, "boot1", null,
+            mapOf("com.legacy" to uninstalled), now,
+        )
+        assertEquals(listOf(baseline), sameBoot.second)
+
+        val afterBoot = resolvePending(
+            listOf(baseline), ResolveMode.START, "boot2", null,
+            mapOf("com.legacy" to uninstalled), now, countBaselinesAsSurvived = true,
+        )
+        assertEquals(emptyList(), afterBoot.first)
+        assertEquals(listOf(baseline.copy(survived = true)), afterBoot.second)
+
+        val restored = resolvePending(
+            listOf(baseline), ResolveMode.START, "boot2", null,
+            mapOf("com.legacy" to installed()), now, countBaselinesAsSurvived = true,
+        )
+        assertEquals(emptyList(), restored.second)
+        val notYetProven = resolvePending(
+            listOf(baseline), ResolveMode.START, "boot2", null,
+            mapOf("com.legacy" to uninstalled), now,
+        )
+        assertEquals(listOf(baseline), notYetProven.second)
+    }
+
+    @Test
     fun stillUninstalledSurvivedInBothModes() {
         for (mode in ResolveMode.entries) {
             val e = entry("com.a")

@@ -106,6 +106,8 @@ data class PendingUninstallProto(
     @ProtoNumber(11) val buildFingerprint: String = "",
     /** Which device the uninstall happened on (see `CantaHandler.deviceKey`); stored locally only, never sent. Blank if unknown. */
     @ProtoNumber(12) val deviceKey: String = "",
+    /** True when first observed by the safety page after predating Canta's uninstall tracking. */
+    @ProtoNumber(13) val baseline: Boolean = false,
 )
 
 /**
