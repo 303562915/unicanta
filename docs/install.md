@@ -15,14 +15,15 @@ description: 安装 unicanta 分支的步骤。
 ## F-Droid
 
 包名 `io.github.a303562915.unicanta`，[包页](https://f-droid.org/packages/io.github.a303562915.unicanta/)
-在上架完成后生效，当前状态是**待收录**：本仓库源码为私有，而 F-Droid 只从公开源码复现构建，
-因此在源码公开并提交到 [fdroiddata](https://gitlab.com/fdroid/fdroiddata) 之前不会上架。
+在收录完成后生效。当前状态是**待提交**——源码已公开、许可证是 LGPL-3.0，仓库侧准备也齐了，
+只差向 [fdroiddata](https://gitlab.com/fdroid/fdroiddata) 提合并请求；进度与步骤见 [F-Droid 上架](/fdroid)。
 不接受 Google Play / IzzyOnDroid。
 
-上架所需的仓库侧准备已经就位，缺的只有“源码公开”这一步：
+上架所需的仓库侧准备已经就位：
 
 - `androidApp/build.gradle.kts` 关闭了 `dependenciesInfo`（可复现构建不写入依赖元数据）
 - `metadata/en-US/`、`metadata/zh-CN/` 是 fastlane 结构的商店文案，F-Droid 直接读取
+- recipe 草稿在 `metadata/fdroid/io.github.a303562915.unicanta.yml`
 - 构建产物签名密钥不进仓库，F-Droid 用自己的密钥重签
 
 > Shizuku 的更详细配置步骤见 [Android Police 教程](https://www.androidpolice.com/how-to-use-shizuku-for-adb-rootless-mods-on-any-android-device/)
