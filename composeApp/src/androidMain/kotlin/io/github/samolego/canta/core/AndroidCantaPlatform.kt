@@ -22,12 +22,14 @@ import androidx.fragment.app.FragmentActivity
 import io.github.samolego.canta.core.shizuku.ShizukuShell
 import io.github.samolego.canta.util.LogUtils
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
-import io.ktor.client.plugins.onDownload
-import io.ktor.client.request.get
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentLength
+import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -43,6 +45,18 @@ class AndroidCantaPlatform(
 
     companion object {
         private const val TAG = "AndroidCantaPlatform"
+
+        /** How long a silent socket may stay open before the transfer is called stalled. */
+        private const val STALL_TIMEOUT_MILLIS = 30_000L
+
+        /** Reaching GitHub at all: DNS plus TLS plus one round trip, with room for a slow node. */
+        private const val CONNECT_TIMEOUT_MILLIS = 20_000L
+
+        /** Ceiling for a whole APK over a proxy: slow is fine, never finishing is not. */
+        private const val DOWNLOAD_TIMEOUT_MILLIS = 10 * 60 * 1000L
+
+        /** Bytes per read, and the unit progress moves in when the server announces no size. */
+        private const val DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
         /**
          * The installers whose builds cannot be replaced by this repo's APK: F-Droid and the
@@ -292,50 +306,117 @@ class AndroidCantaPlatform(
     }
 
     /**
-     * Downloads the APK into a unique file in the app's external files directory.
-     * Where the privileged shell may read it is decided at install time; see [installUpdate].
+     * Downloads the APK into a unique file in the app's external files directory, streaming it to
+     * disk and counting the bytes itself.
+     *
+     * Two things this deliberately does not do any more. It does not buffer the whole APK in a
+     * `ByteArray` (30 MB of heap for a file that belongs on disk), and it does not rely on the
+     * progress callback of the engine: a download whose length the server never announces, or a
+     * plugin that is not installed, leaves that callback silent — which reads as "0%" forever even
+     * though bytes are arriving. Counting what is written cannot lie.
+     *
+     * A transfer that stops moving fails instead of hanging: the socket timeout below is what turns
+     * a stalled proxy node into an answer the page can act on.
      */
     override suspend fun downloadUpdate(
         url: String,
         fileName: String,
-        onProgress: (Int) -> Unit,
-    ): String? = withContext(Dispatchers.IO) {
+        onProgress: (received: Long, total: Long) -> Unit,
+    ): UpdateDownload = withContext(Dispatchers.IO) {
         var target: File? = null
+        val client = HttpClient(OkHttp) {
+            install(HttpTimeout) {
+                connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS
+                socketTimeoutMillis = STALL_TIMEOUT_MILLIS
+                // A ceiling for the whole transfer, so a node that keeps the socket alive but
+                // never finishes cannot hold the update screen open indefinitely.
+                requestTimeoutMillis = DOWNLOAD_TIMEOUT_MILLIS
+            }
+        }
         try {
             val directory = context.getExternalFilesDir("updates") ?: context.filesDir
             if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
                 LogUtils.e(TAG, "Could not create ${directory.absolutePath}")
-                return@withContext null
+                return@withContext UpdateDownload.Failed(UpdateDownloadFailure.STORAGE)
             }
-            val client = HttpClient(OkHttp)
-            val bytes = try {
-                client.get(url) {
-                    onDownload { sent, total ->
-                        if (total != null && total > 0) {
-                            onProgress(((sent * 100) / total).toInt().coerceIn(0, 100))
+            val downloaded = File.createTempFile("canta-update-", ".apk", directory)
+            target = downloaded
+
+            val written = client.prepareGet(url) {
+                header(HttpHeaders.UserAgent, "Canta-Android")
+            }.execute { response ->
+                val status = response.status.value
+                if (status !in 200..299) {
+                    throw DownloadFailure(UpdateDownloadFailure.NETWORK, "GitHub answered $status")
+                }
+                // 0 or less: no announced size, so the page shows movement, not a percentage.
+                val total = response.contentLength() ?: -1L
+                val channel = response.bodyAsChannel()
+                val buffer = ByteArray(DOWNLOAD_CHUNK_BYTES)
+                var received = 0L
+                var reported = -1L
+                downloaded.outputStream().use { out ->
+                    while (true) {
+                        val read = channel.readAvailable(buffer, 0, buffer.size)
+                        if (read == -1) break
+                        if (read == 0) continue
+                        out.write(buffer, 0, read)
+                        received += read
+                        // Report once per percent of an announced size, and once per chunk when
+                        // there is no size to divide by; a per-byte callback is just churn.
+                        val percent = if (total > 0) (received * 100) / total else received / DOWNLOAD_CHUNK_BYTES
+                        if (percent != reported) {
+                            reported = percent
+                            onProgress(received, total)
                         }
                     }
-                    header(HttpHeaders.UserAgent, "Canta-Android")
-                }.body<ByteArray>()
-            } finally {
-                client.close()
+                }
+                received
             }
 
             coroutineContext.ensureActive()
-            val downloaded = File.createTempFile("canta-update-", ".apk", directory)
-            target = downloaded
-            downloaded.writeBytes(bytes)
-            coroutineContext.ensureActive()
-            onProgress(100)
-            LogUtils.i(TAG, "Downloaded ${bytes.size} bytes to ${downloaded.absolutePath}")
-            downloaded.absolutePath
+            if (written <= 0L) {
+                downloaded.delete()
+                LogUtils.e(TAG, "Downloaded an empty file from $url")
+                return@withContext UpdateDownload.Failed(UpdateDownloadFailure.NETWORK)
+            }
+            onProgress(written, written)
+            LogUtils.i(TAG, "Downloaded $written bytes to ${downloaded.absolutePath}")
+            UpdateDownload.Done(downloaded.absolutePath)
         } catch (e: CancellationException) {
             target?.delete()
             throw e
         } catch (e: Exception) {
             target?.delete()
             LogUtils.e(TAG, "Could not download the update", e)
-            null
+            UpdateDownload.Failed(classifyDownloadFailure(e))
+        } finally {
+            client.close()
+        }
+    }
+
+    /** A download that ended for a reason already known, carrying it out unchanged. */
+    private class DownloadFailure(
+        val failure: UpdateDownloadFailure,
+        message: String,
+    ) : Exception(message)
+
+    /**
+     * Sorts a thrown error into the reasons the page names. The same rule as the check: the
+     * rendered exception is what means the same thing on every engine, so its text is matched
+     * rather than its type.
+     */
+    private fun classifyDownloadFailure(e: Throwable): UpdateDownloadFailure {
+        if (e is DownloadFailure) return e.failure
+        val text = e.toString().lowercase()
+        return when {
+            "enospc" in text || "no space" in text || "space left" in text -> UpdateDownloadFailure.STORAGE
+            "timeout" in text || "timed out" in text -> UpdateDownloadFailure.TIMEOUT
+            "unresolvedaddress" in text || "unknownhost" in text || "connect" in text ||
+                "ioexception" in text || "socket" in text || "ssl" in text ||
+                "handshake" in text || "refused" in text || "offline" in text ||
+                "network" in text || "http" in text -> UpdateDownloadFailure.NETWORK
+            else -> UpdateDownloadFailure.UNKNOWN
         }
     }
 

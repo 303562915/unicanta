@@ -1,6 +1,8 @@
 package io.github.samolego.canta.ui.screen
 
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.core.UpdateDownload
+import io.github.samolego.canta.core.UpdateDownloadFailure
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -105,7 +107,11 @@ internal sealed interface UpdateState {
      */
     data object StoreManaged : UpdateState
 
-    /** The APK is being fetched; [progress] is 0-100. */
+    /**
+     * The APK is being fetched; [progress] is 0-100, or [DOWNLOAD_PROGRESS_UNKNOWN] when the server
+     * announced no size. A percentage against an unknown size is what leaves the page reading
+     * "0%" while the transfer is in fact moving, so that case is shown without a number.
+     */
     data class Downloading(val version: String, val progress: Int) : UpdateState
 
     /** Downloaded and waiting for the user to allow the install. */
@@ -117,9 +123,20 @@ internal sealed interface UpdateState {
     /** The privileged install failed, so the APK was handed to the system installer instead. */
     data class HandedOff(val version: String) : UpdateState
 
-    /** The download or the install did not go through; [reason] is what to show. */
-    data class FailedWith(val reason: String) : UpdateState
+    /**
+     * The download or the install did not go through; [reason] is what to show.
+     *
+     * [download] is set when the download itself is what failed, which is the one case where the
+     * page can offer a way out that is not a retry: the download page in the browser.
+     */
+    data class FailedWith(
+        val reason: String,
+        val download: UpdateDownloadFailure? = null,
+    ) : UpdateState
 }
+
+/** [UpdateState.Downloading.progress] when the answer carried no `Content-Length`. */
+internal const val DOWNLOAD_PROGRESS_UNKNOWN = -1
 
 /**
  * Reads the selected published release and its immutable build identity.
@@ -296,12 +313,22 @@ internal fun isNewerVersion(remote: String, local: String): Boolean {
 }
 
 /**
- * Downloads the release [tag] and answers with the file's path, or null when it could not be
- * fetched. [onProgress] receives 0-100.
+ * Downloads the release [tag] and answers with the file's path, or the reason it did not arrive.
+ *
+ * [onProgress] receives 0-100, or [DOWNLOAD_PROGRESS_UNKNOWN] while the server has announced no
+ * size — the caller shows a spinner then, because a percentage of an unknown total is a lie.
  */
 internal suspend fun downloadRelease(
     platform: CantaPlatform,
     tag: String,
     buildNumber: Int = 0,
     onProgress: (Int) -> Unit,
-): String? = platform.downloadUpdate(apkUrl(tag, buildNumber), "canta-$tag-$buildNumber.apk", onProgress)
+): UpdateDownload = platform.downloadUpdate(
+    apkUrl(tag, buildNumber),
+    "canta-$tag-$buildNumber.apk",
+) { received, total ->
+    onProgress(
+        if (total > 0) ((received * 100) / total).toInt().coerceIn(0, 100)
+        else DOWNLOAD_PROGRESS_UNKNOWN,
+    )
+}

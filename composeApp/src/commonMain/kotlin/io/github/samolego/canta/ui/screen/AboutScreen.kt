@@ -42,13 +42,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.core.UpdateDownload
+import io.github.samolego.canta.core.UpdateDownloadFailure
 import io.ktor.client.HttpClient
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.about_check_update
 import io.github.samolego.canta.generated.resources.about_check_update_action
 import io.github.samolego.canta.generated.resources.about_check_update_hint
 import io.github.samolego.canta.generated.resources.about_auto_install
+import io.github.samolego.canta.generated.resources.about_download_cancel
+import io.github.samolego.canta.generated.resources.about_download_failed_network
+import io.github.samolego.canta.generated.resources.about_download_failed_storage
+import io.github.samolego.canta.generated.resources.about_download_failed_timeout
+import io.github.samolego.canta.generated.resources.about_download_failed_unsupported
+import io.github.samolego.canta.generated.resources.about_download_page
 import io.github.samolego.canta.generated.resources.about_downloading
+import io.github.samolego.canta.generated.resources.about_downloading_unknown
 import io.github.samolego.canta.generated.resources.about_ready_to_install
 import io.github.samolego.canta.generated.resources.about_installing
 import io.github.samolego.canta.generated.resources.about_install_title
@@ -104,6 +113,7 @@ import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
@@ -171,31 +181,47 @@ fun AboutScreen(
     var updateState by remember(updateChannel) { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var pendingInstall by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     var updateJob by remember { mutableStateOf<Job?>(null) }
+    // What a cancelled download can go back to: the release it was fetching, with its label.
+    var downloadable by remember { mutableStateOf<Pair<String, UpdateRelease>?>(null) }
     LaunchedEffect(updateChannel) {
         updateJob?.cancel()
         updateJob = null
         pendingInstall = null
+        downloadable = null
     }
     // Read here, not in the tap handler: `getString` suspends, and a click is not a suspend call.
     val qqGroupCopied = stringResource(Res.string.about_qq_group_copied)
 
-    val downloadFailed = stringResource(Res.string.about_download_failed)
-
     val download: (UpdateRelease) -> Unit = { release ->
         val version = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
-        updateState = UpdateState.Downloading(version, 0)
+        updateState = UpdateState.Downloading(version, DOWNLOAD_PROGRESS_UNKNOWN)
+        downloadable = version to release
         // A download runs in the background: say so in the theme's own colour before it starts.
         scope.launch { toast.showSnackbar(getString(Res.string.about_update_download_toast, version)) }
         updateJob = scope.launch {
-            val path = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
+            val result = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
                 updateState = UpdateState.Downloading(version, percent)
             }
-            updateState = if (path == null) {
-                UpdateState.FailedWith(downloadFailed)
-            } else {
-                UpdateState.ReadyToInstall(version, path)
+            downloadable = null
+            // A failure carries its reason, so the page can name it and leave the browser as the
+            // way out instead of only offering the same download again.
+            updateState = when (result) {
+                is UpdateDownload.Done -> UpdateState.ReadyToInstall(version, result.path)
+                is UpdateDownload.Failed ->
+                    UpdateState.FailedWith(getString(result.failure.reason()), result.failure)
             }
         }
+    }
+
+    // A download that is not moving is something the reader has to be able to stop, and a stopped
+    // download goes back to the release it was fetching rather than to an empty page.
+    val cancelDownload: () -> Unit = {
+        updateJob?.cancel()
+        updateJob = null
+        updateState = downloadable
+            ?.let { (version, release) -> UpdateState.Available(version, release) }
+            ?: UpdateState.Idle
+        downloadable = null
     }
 
     val checkUpdate: () -> Unit = checkUpdate@{
@@ -260,6 +286,30 @@ fun AboutScreen(
                     (updateState as? UpdateState.Available)?.let { download(it.release) }
                 },
             )
+            // The two ways out of an update that is not arriving. A download in flight can be
+            // stopped, and anything that failed can be fetched from the download page in a browser
+            // — the same page the check reads, which needs nothing from this app.
+            when {
+                updateState is UpdateState.Downloading -> {
+                    Spacer(Modifier.height(10.dp))
+                    LinkCard(
+                        glyph = FlGlyphs.close,
+                        title = stringResource(Res.string.about_download_cancel),
+                        onClick = cancelDownload,
+                    )
+                }
+
+                (updateState as? UpdateState.FailedWith)?.download != null ||
+                    updateState is UpdateState.Failed -> {
+                    Spacer(Modifier.height(10.dp))
+                    LinkCard(
+                        glyph = FlGlyphs.link,
+                        title = stringResource(Res.string.about_download_page),
+                        subtitle = DOWNLOAD_PAGE_URL,
+                        onClick = { platform.openUrl(DOWNLOAD_PAGE_URL) },
+                    )
+                }
+            }
             Spacer(Modifier.height(10.dp))
             UpdateChannelCard(
                 channel = updateChannel,
@@ -455,7 +505,13 @@ private fun UpdateCard(
         is UpdateState.Failed -> state.failure.reason() to scheme.error
         UpdateState.StoreManaged -> stringResource(Res.string.about_update_store_managed) to scheme.onSurfaceVariant
         is UpdateState.Downloading ->
-            stringResource(Res.string.about_downloading, state.progress) to scheme.primary
+            // No announced size: show that bytes are moving instead of a number that would sit at
+            // 0% for the whole transfer.
+            (if (state.progress == DOWNLOAD_PROGRESS_UNKNOWN) {
+                stringResource(Res.string.about_downloading_unknown)
+            } else {
+                stringResource(Res.string.about_downloading, state.progress)
+            }) to scheme.primary
         is UpdateState.ReadyToInstall ->
             stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary
         is UpdateState.Installing ->
@@ -525,6 +581,18 @@ private fun UpdateFailure.reason(): String = stringResource(
         UpdateFailure.UNKNOWN -> Res.string.about_update_failed
     },
 )
+
+/**
+ * The same for a download that did not finish. Every one of these is read together with the
+ * download-page row under the card, so each sentence only has to say what went wrong.
+ */
+private fun UpdateDownloadFailure.reason(): StringResource = when (this) {
+    UpdateDownloadFailure.NETWORK -> Res.string.about_download_failed_network
+    UpdateDownloadFailure.TIMEOUT -> Res.string.about_download_failed_timeout
+    UpdateDownloadFailure.STORAGE -> Res.string.about_download_failed_storage
+    UpdateDownloadFailure.UNSUPPORTED -> Res.string.about_download_failed_unsupported
+    UpdateDownloadFailure.UNKNOWN -> Res.string.about_download_failed
+}
 
 @Composable
 private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> Unit) {

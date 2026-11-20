@@ -90,14 +90,24 @@ interface CantaPlatform {
     fun deviceKey(): String = ""
 
     /**
-     * Downloads [url] into a place the privileged helper can read, reporting 0-100 through
-     * [onProgress]. Returns the absolute path of the downloaded file, or null when the platform
-     * cannot download at all (the web build, tests).
+     * Downloads [url] into a place the privileged helper can read, reporting the bytes that arrived
+     * and the size the server announced.
      *
-     * The file has to survive until [installUpdate] reads it, so it goes next to the app's own
-     * cache rather than into a temporary directory that is cleaned up on the next start.
+     * [onProgress] receives a [total] of 0 or less when the answer carries no length — a chunked
+     * response, or a proxy that drops `Content-Length`. That case has to be shown as an
+     * indeterminate spinner: computing a percentage against a size nobody announced is exactly how
+     * a running download sits at 0% while it works.
+     *
+     * Returns [UpdateDownload.Done] with the absolute path, or [UpdateDownload.Failed] with the
+     * reason, so the caller can offer the download page instead of a dead end. The file has to
+     * survive until [installUpdate] reads it, so it goes next to the app's own cache rather than
+     * into a temporary directory that is cleaned up on the next start.
      */
-    suspend fun downloadUpdate(url: String, fileName: String, onProgress: (Int) -> Unit): String? = null
+    suspend fun downloadUpdate(
+        url: String,
+        fileName: String,
+        onProgress: (received: Long, total: Long) -> Unit,
+    ): UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNSUPPORTED)
 
     /**
      * Installs the APK at [path] over this app through the privileged runtime, i.e. `pm install`

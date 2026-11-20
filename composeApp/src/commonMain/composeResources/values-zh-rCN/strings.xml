@@ -184,9 +184,16 @@
     <string name="update_channel_stable">稳定版</string>
     <string name="update_channel_dev">开发版</string>
     <string name="about_downloading">正在下载… %1$d%%</string>
+    <string name="about_downloading_unknown">正在下载…</string>
     <string name="about_ready_to_install">%1$s 已下载，点击安装</string>
     <string name="about_installing">正在安装…完成后应用会退出</string>
     <string name="about_download_failed">下载失败</string>
+    <string name="about_download_failed_network">下载失败：连接中断或服务器拒绝连接</string>
+    <string name="about_download_failed_timeout">下载失败：长时间没有数据，连接已停滞</string>
+    <string name="about_download_failed_storage">下载失败：文件写不进去，检查一下剩余空间</string>
+    <string name="about_download_failed_unsupported">这个版本不能自己下载更新</string>
+    <string name="about_download_cancel">取消下载</string>
+    <string name="about_download_page">用浏览器下载</string>
     <string name="about_install_title">安装 %1$s？</string>
     <string name="about_install_message">本应用会被覆盖并退出。设置和卸载记录都会保留。建议保持电量充足，安装期间不要关闭 Shizuku。</string>
     <string name="about_install_confirm">立即安装</string>

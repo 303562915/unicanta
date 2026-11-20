@@ -35,6 +35,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.github.samolego.canta.core.CantaAppDependencies
 import io.github.samolego.canta.core.DeviceUser
+import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.generated.resources.Res
@@ -71,6 +72,7 @@ import io.github.samolego.canta.ui.screen.PresetsScreen
 import io.github.samolego.canta.ui.screen.RecommendationsScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.UpdateState
+import io.github.samolego.canta.ui.screen.DOWNLOAD_PROGRESS_UNKNOWN
 import io.github.samolego.canta.ui.screen.downloadRelease
 import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
@@ -181,19 +183,21 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         if (!release.isNewerThanInstalled()) return@LaunchedEffect
 
         val label = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
-        autoUpdate = UpdateState.Downloading(label, 0)
+        autoUpdate = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
         // The download runs behind whatever page is open, so a notice in the theme colour is the
         // only signal that something new is on its way. It runs alongside: the download starts at once.
         coroutineScope.launch {
             snackbarHostState.showSnackbar(getString(Res.string.about_update_download_toast, label))
         }
-        val path = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
+        val result = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
             autoUpdate = UpdateState.Downloading(label, percent)
         }
-        autoUpdate = if (path == null) {
-            null
-        } else {
-            UpdateState.ReadyToInstall(label, path).also { autoInstallAsked = it }
+        // A failed start-up download is dropped in silence: the about page is where a failure is
+        // named and where the download page is offered as the way out.
+        autoUpdate = when (result) {
+            is UpdateDownload.Done ->
+                UpdateState.ReadyToInstall(label, result.path).also { autoInstallAsked = it }
+            is UpdateDownload.Failed -> null
         }
     }
 
