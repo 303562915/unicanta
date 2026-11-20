@@ -3,6 +3,7 @@ package io.github.samolego.canta.ui.screen
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
@@ -145,6 +147,9 @@ fun PlanDetailScreen(
     var draft by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var submitFailed by remember { mutableStateOf(false) }
+    // Whether the sticker panel under the bar is open. It lives here rather than inside the bar
+    // because the page is what knows a tap landed outside it.
+    var pickerOpen by remember { mutableStateOf(false) }
     /** Why the last comment did not go through: the backend's own words, not "网络问题". */
     var sendError by remember { mutableStateOf<String?>(null) }
     /** Why the thread is empty, when it is empty because the call failed. */
@@ -302,13 +307,23 @@ fun PlanDetailScreen(
                 failed = submitFailed,
                 sendLabel = stringResource(Res.string.plan_comment_send),
                 failLabel = sendError ?: stringResource(Res.string.plan_upload_failed),
+                pickerOpen = pickerOpen,
+                onPickerOpenChange = { pickerOpen = it },
             )
         },
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = padding.calculateBottomPadding()),
+                .padding(bottom = padding.calculateBottomPadding())
+                // A tap on the page behind the panel closes it, the way tapping outside a keyboard
+                // closes the keyboard: the panel is a temporary surface, and the way out of it
+                // should not be the key that opened it.
+                .pointerInput(pickerOpen) {
+                    if (pickerOpen) {
+                        detectTapGestures { pickerOpen = false }
+                    }
+                },
         ) {
             val loaded = plan
             when {

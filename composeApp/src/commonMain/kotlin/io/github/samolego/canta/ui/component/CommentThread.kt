@@ -296,6 +296,15 @@ private fun ThreadToggle(expanded: Boolean, count: Int, onClick: () -> Unit) {
 }
 
 /**
+ * How much of a [CrackedHeart]'s box the drawn heart leaves empty, as a fraction of its side.
+ *
+ * The outline is measured against what is left after this inset is taken off both sides, so the
+ * shape ends up the size Material's glyphs draw themselves inside the same box — which is the only
+ * way two icons given the same dp look like a pair.
+ */
+private const val HEART_GLYPH_INSET = 0.11f
+
+/**
  * A heart outline with one thin crack through it: the "not for me, fold this" reaction.
  *
  * Drawn rather than picked from the icon set, because neither glyph in the set is this: `Bolt` is a
@@ -315,17 +324,43 @@ internal fun CrackedHeart(
     strokeWidth: Dp = 1.1.dp,
 ) {
     Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
+        val w = size.width * (1f - HEART_GLYPH_INSET)
+        val h = size.height * (1f - HEART_GLYPH_INSET)
+        val left = (size.width - w) / 2f
+        val top = (size.height - h) / 2f
         val stroke = strokeWidth.toPx()
         val outline = Path().apply {
-            moveTo(w * 0.50f, h * 0.31f)
-            cubicTo(w * 0.50f, h * 0.20f, w * 0.41f, h * 0.06f, w * 0.28f, h * 0.06f)
-            cubicTo(w * 0.13f, h * 0.06f, w * 0.03f, h * 0.19f, w * 0.03f, h * 0.33f)
-            cubicTo(w * 0.03f, h * 0.53f, w * 0.23f, h * 0.70f, w * 0.50f, h * 0.94f)
-            cubicTo(w * 0.77f, h * 0.70f, w * 0.97f, h * 0.53f, w * 0.97f, h * 0.33f)
-            cubicTo(w * 0.97f, h * 0.19f, w * 0.87f, h * 0.06f, w * 0.72f, h * 0.06f)
-            cubicTo(w * 0.59f, h * 0.06f, w * 0.50f, h * 0.20f, w * 0.50f, h * 0.31f)
+            moveTo(left + w * 0.50f, top + h * 0.31f)
+            cubicTo(
+                left + w * 0.50f, top + h * 0.20f,
+                left + w * 0.41f, top + h * 0.06f,
+                left + w * 0.28f, top + h * 0.06f,
+            )
+            cubicTo(
+                left + w * 0.13f, top + h * 0.06f,
+                left + w * 0.03f, top + h * 0.19f,
+                left + w * 0.03f, top + h * 0.33f,
+            )
+            cubicTo(
+                left + w * 0.03f, top + h * 0.53f,
+                left + w * 0.23f, top + h * 0.70f,
+                left + w * 0.50f, top + h * 0.94f,
+            )
+            cubicTo(
+                left + w * 0.77f, top + h * 0.70f,
+                left + w * 0.97f, top + h * 0.53f,
+                left + w * 0.97f, top + h * 0.33f,
+            )
+            cubicTo(
+                left + w * 0.97f, top + h * 0.19f,
+                left + w * 0.87f, top + h * 0.06f,
+                left + w * 0.72f, top + h * 0.06f,
+            )
+            cubicTo(
+                left + w * 0.59f, top + h * 0.06f,
+                left + w * 0.50f, top + h * 0.20f,
+                left + w * 0.50f, top + h * 0.31f,
+            )
             close()
         }
         drawPath(
@@ -336,11 +371,11 @@ internal fun CrackedHeart(
         // One crack, starting in the notch at the top and running down past the middle. The kinks
         // are sharp (Miter) so it reads as a fracture rather than as a curve.
         val crack = Path().apply {
-            moveTo(w * 0.58f, h * 0.13f)
-            lineTo(w * 0.43f, h * 0.38f)
-            lineTo(w * 0.58f, h * 0.53f)
-            lineTo(w * 0.44f, h * 0.73f)
-            lineTo(w * 0.50f, h * 0.90f)
+            moveTo(left + w * 0.58f, top + h * 0.13f)
+            lineTo(left + w * 0.43f, top + h * 0.38f)
+            lineTo(left + w * 0.58f, top + h * 0.53f)
+            lineTo(left + w * 0.44f, top + h * 0.73f)
+            lineTo(left + w * 0.50f, top + h * 0.90f)
         }
         drawPath(
             path = crack,
@@ -600,8 +635,12 @@ fun CommentRow(
             // A heart with a thin crack down it, not a bolt and not Material's HeartBroken: that
             // glyph splits the heart into two halves with a wide gap, which reads as "broken
             // forever", while this one is the same outline heart as the like button beside it with
-            // one narrow zigzag stroke through the middle. The two are a pair — same 16dp, same
-            // weight — so they read as two reactions rather than as a reaction and a warning.
+            // one narrow zigzag stroke through the middle.
+            //
+            // 16dp like the heart, but drawn with [HEART_GLYPH_INSET] of it left empty: Material's
+            // glyphs fill about 7/8 of their box, so a shape drawn edge to edge in the same 16dp
+            // looks noticeably bigger than the icon it sits beside. The inset is what makes the two
+            // measure the same rather than merely share a size.
             CrackedHeart(
                 modifier = Modifier
                     .padding(4.dp)
@@ -696,17 +735,28 @@ fun CommentComposer(
     failed: Boolean = false,
     sendLabel: String = "发送",
     failLabel: String = "发送失败，检查一下网络再试",
+    /**
+     * Whether the sticker panel is up.
+     *
+     * Hoisted out of this composable on purpose: the panel covers the bottom of the page, and the
+     * only way a tap on the empty space above it can close it is if the page itself knows the panel
+     * is open. The bar owns the key that toggles it, the page owns "somebody tapped outside".
+     */
+    pickerOpen: Boolean = false,
+    /** Asked for when the panel's key is tapped: true to open it, false to go back to the keyboard. */
+    onPickerOpenChange: (Boolean) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val focusRequester = remember { FocusRequester() }
-    // Whether the sticker panel is up. It owns the bottom of the bar while it is: the keyboard goes
-    // down, the field keeps its draft, and a tap on a sticker lands in that draft — a picker that
-    // hides the field it types into would make every sticker a scroll back up.
-    var pickerOpen by remember { mutableStateOf(false) }
     val imeController = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     LaunchedEffect(replyToName) {
         if (replyToName.isNotEmpty() && !pickerOpen) focusRequester.requestFocus()
+    }
+    // The panel closing from outside — a tap on the page behind it — has to put the keyboard back:
+    // a bar with neither the panel nor a caret is a bar the reader cannot type into.
+    LaunchedEffect(pickerOpen) {
+        if (!pickerOpen) focusRequester.requestFocus()
     }
     Surface(modifier = modifier.fillMaxWidth(), tonalElevation = 3.dp) {
         // What the bar has to clear at the bottom is whichever wins: the keyboard while it is up,
@@ -839,14 +889,14 @@ fun CommentComposer(
                             .clip(RoundedCornerShape(50))
                             .clickable {
                                 if (pickerOpen) {
-                                    pickerOpen = false
+                                    onPickerOpenChange(false)
                                     focusRequester.requestFocus()
                                 } else {
                                     // The keyboard gives way to the panel: both open at once would
                                     // leave the grid with a quarter of the screen.
                                     focus.clearFocus()
                                     imeController?.hide()
-                                    pickerOpen = true
+                                    onPickerOpenChange(true)
                                 }
                             }
                             .padding(6.dp),
@@ -903,7 +953,7 @@ fun CommentComposer(
                         },
                         onDelete = { onDraftChange(dropLastSticker(draft)) },
                         onKeyboard = {
-                            pickerOpen = false
+                            onPickerOpenChange(false)
                             focusRequester.requestFocus()
                         },
                         panelHeight = panelHeight,

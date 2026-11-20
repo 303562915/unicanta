@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
@@ -128,6 +130,8 @@ fun AppDetailScreen(
     var draft by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var submitFailed by remember { mutableStateOf(false) }
+    // Whether the sticker panel under the bar is open; the page closes it when a tap lands outside.
+    var pickerOpen by remember { mutableStateOf(false) }
     /** The comment being answered; null while the composer writes a new one. */
     var replyTo by remember { mutableStateOf<PlanComment?>(null) }
     var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
@@ -309,6 +313,8 @@ fun AppDetailScreen(
                 sending = sending,
                 failed = submitFailed,
                 failLabel = sendError ?: "发送失败，检查一下网络再试",
+                pickerOpen = pickerOpen,
+                onPickerOpenChange = { pickerOpen = it },
             )
         },
     ) { padding ->
@@ -321,7 +327,14 @@ fun AppDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = padding.calculateBottomPadding()),
+                .padding(bottom = padding.calculateBottomPadding())
+                // A tap on the page behind the sticker panel closes it, the way tapping outside a
+                // keyboard closes the keyboard.
+                .pointerInput(pickerOpen) {
+                    if (pickerOpen) {
+                        detectTapGestures { pickerOpen = false }
+                    }
+                },
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
