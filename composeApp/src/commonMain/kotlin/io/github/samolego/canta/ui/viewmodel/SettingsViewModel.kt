@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** Bump to show the onboarding again to everyone (existing users have 0). */
-const val CURRENT_ONBOARDING_VERSION = 2
+const val CURRENT_ONBOARDING_VERSION = 3
 
 /**
  * Exposes [CantaSettings] as [StateFlow]s for the UI. Every value is derived

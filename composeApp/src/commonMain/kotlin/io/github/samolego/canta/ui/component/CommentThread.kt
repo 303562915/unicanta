@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.PlanComment
@@ -593,7 +594,11 @@ fun CommentComposer(
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
             val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
             val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            val keyboard = if (imeBottom < maxHeight * 0.7f) imeBottom else 0.dp
+            // The bar can be measured against an unbounded height, and an unbounded bound would
+            // make the check below always pass — which is the same as not having one. Bound the
+            // room first, then believe the IME inset only when it can be a keyboard.
+            val room = if (maxHeight.value.isFinite() && maxHeight > 0.dp) maxHeight else 800.dp
+            val keyboard = if (imeBottom.isSpecified && imeBottom < room * 0.6f) imeBottom else 0.dp
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
