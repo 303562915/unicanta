@@ -460,7 +460,7 @@ private fun PlanDetailContent(
         FlTopBarCompactHeight
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
-        item { PlanHero(plan, profile, uploaderName, me, liked, foreign, onVote, onUsePlan) }
+        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan) }
 
         item {
             SectionTitle(
@@ -527,8 +527,8 @@ private fun PlanDetailContent(
 }
 
 /**
- * What the plan is, on this phone: who uploaded it, the title, whether it was reboot-proven, the
- * device line the plan was matched against, and the three numbers people judge plans by.
+ * What the plan is: who uploaded it, the title, whether it was reboot-proven, the device the plan
+ * was proven on — the uploader's, never the reader's — and the three numbers people judge plans by.
  *
  * The card reads like an editorial header, not a poster: a strict left edge carries everything —
  * who wrote it on top as a quiet eyebrow, the title as the loudest line under it, then the chips,
@@ -538,7 +538,6 @@ private fun PlanDetailContent(
 @Composable
 private fun PlanHero(
     plan: CommunityPlan,
-    profile: DeviceProfile?,
     uploaderName: String,
     me: String,
     liked: Boolean,
@@ -613,13 +612,18 @@ private fun PlanHero(
                     color = if (plan.isTest) colors.tertiary else colors.primary,
                 )
                 Spacer(Modifier.width(8.dp))
+                // The phone the verdict belongs to is the uploader's, not this one: the reboot check
+                // passed on a real device someone else held, and the reader still needs to know
+                // whether that device is theirs.
                 Text(
-                    text = profile?.shortLabel() ?: "-",
+                    text = plan.deviceLabel.ifBlank { "上传者机型未知" },
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
-                    color = colors.onPrimaryContainer.copy(alpha = 0.78f),
-                    maxLines = 1,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onPrimaryContainer.copy(alpha = 0.85f),
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
             }
             // The plan names the phone it was proven on. When that is not this one, the page says

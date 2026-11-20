@@ -2,6 +2,7 @@ package io.github.samolego.canta.data.community
 
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.TelemetryConfig
+import io.github.samolego.canta.util.androidReleaseOf
 import io.github.samolego.canta.util.romLabelOf
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -68,6 +69,12 @@ data class CommunityPlan(
     val marketName: String = "",
     val rom: String = "",
     val romVersion: Int = 0,
+    /**
+     * The Android API level the uploader ran when the reboot check passed. 0 on rows from a
+     * deployment that predates the column, which is why it only ever extends [deviceLabel] and
+     * never stands in for something the row does not have.
+     */
+    val sdk: Int = 0,
 ) {
     /**
      * What the card shows next to the avatar: the uploader's name, or the identity number
@@ -76,12 +83,24 @@ data class CommunityPlan(
     val authorName: String
         get() = uploader.ifBlank { if (owner.isNotEmpty()) "#$owner" else "" }
 
-    /** "Redmi K70 · HyperOS 2", or "" when the backend did not say which device this is for. */
+    /**
+     * "Redmi K70 · HyperOS 2", or "" when the backend did not say which device this is for.
+     *
+     * Every part here comes from the row — the *uploader's* phone and build — never from the reader's
+     * own [DeviceProfile]: the detail page also shows the reader's device next to it, and a header
+     * that repeated the reader's model would say "this plan is mine" about somebody else's phone.
+     * A row that carries only a model code still reads as something: the code is better than silence.
+     *
+     * The Android release comes from the plan's own [sdk] — the level the uploader ran when the
+     * reboot check passed — so the line describes one phone start to finish. Backends that predate
+     * that column send no [sdk], and the line then stops after the ROM instead of guessing.
+     */
     val deviceLabel: String
         get() = buildList {
             val phone = marketName.ifBlank { model }
             if (phone.isNotBlank()) add(phone)
             if (rom.isNotBlank()) add(romLabelOf(rom, romVersion))
+            androidReleaseOf(sdk).takeIf { it.isNotEmpty() }?.let { add("Android $it") }
         }.joinToString(" · ")
 
     /**
@@ -449,6 +468,8 @@ class PlanRepository(
             marketName = o["market_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             romVersion = o["rom_version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            // The API level the uploader ran; absent on a deployment that predates the column.
+            sdk = o["sdk"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
         )
     }
 

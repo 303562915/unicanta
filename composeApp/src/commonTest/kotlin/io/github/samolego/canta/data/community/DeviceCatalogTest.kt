@@ -148,11 +148,31 @@ class DeviceCatalogTest {
         assertEquals("", plan(model = "", rom = "").deviceLabel)
     }
 
+    @Test
+    fun deviceLabelNamesTheUploadersBuildNotTheReaders() {
+        val uploader = plan(
+            model = "23127PN0CC",
+            marketName = "Xiaomi 14",
+            rom = "hyperos",
+            romVersion = 2,
+            sdk = 35,
+        )
+        // The level is the row's own, so the line ends with the uploader's Android version.
+        assertEquals("Xiaomi 14 · HyperOS 2 · Android 15", uploader.deviceLabel)
+
+        // A row that predates the column stops after the ROM: no version is invented for it.
+        assertEquals(
+            "Xiaomi 14 · HyperOS 2",
+            plan(model = "23127PN0CC", marketName = "Xiaomi 14", rom = "hyperos", romVersion = 2).deviceLabel,
+        )
+    }
+
     private fun plan(
         model: String,
         marketName: String = "",
         rom: String,
         romVersion: Int = 0,
+        sdk: Int = 0,
     ) = CommunityPlan(
         id = 1,
         title = "plan",
@@ -166,5 +186,6 @@ class DeviceCatalogTest {
         marketName = marketName,
         rom = rom,
         romVersion = romVersion,
+        sdk = sdk,
     )
 }

@@ -36,6 +36,33 @@ fun romLabelOf(rom: String, romVersion: Int): String {
     return if (romVersion > 0 && name != "Android") "$name $romVersion" else name
 }
 
+/**
+ * The Android release a given API level is sold as: 34 for "14", 36 for "16".
+ *
+ * Used where only the level was kept — a plan row stores `sdk`, not the release string — so a page
+ * can name the version of the phone that produced it without borrowing the reader's own. An unknown
+ * level answers "" and the caller leaves the part out: "Android 0" on a header is worse than nothing.
+ * 32 is "12L", the large-screen line, and would otherwise read as plain "12".
+ */
+fun androidReleaseOf(sdk: Int): String = when (sdk) {
+    in 21..22 -> if (sdk == 21) "5.0" else "5.1"
+    23 -> "6"
+    24 -> "7"
+    25 -> "7.1"
+    26 -> "8"
+    27 -> "8.1"
+    28 -> "9"
+    29 -> "10"
+    30 -> "11"
+    31 -> "12"
+    32 -> "12L"
+    33 -> "13"
+    34 -> "14"
+    35 -> "15"
+    36 -> "16"
+    else -> ""
+}
+
 /** Display name of a ROM family ("hyperos" becomes "HyperOS"), "Android" for stock or unknown ones. */
 fun romName(rom: String): String = when (rom) {
     "hyperos" -> "HyperOS"
