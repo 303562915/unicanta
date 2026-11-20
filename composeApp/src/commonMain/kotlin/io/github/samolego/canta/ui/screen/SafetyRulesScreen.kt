@@ -76,7 +76,7 @@ import io.github.samolego.canta.generated.resources.plans_reload
 import io.github.samolego.canta.generated.resources.plans_reload_failed
 import io.github.samolego.canta.generated.resources.plans_verified_short
 import io.github.samolego.canta.generated.resources.plans_upload_cta
-import io.github.samolego.canta.generated.resources.plans_upload_cta_none
+import io.github.samolego.canta.generated.resources.plans_upload_gate_none
 import io.github.samolego.canta.generated.resources.ranking_empty
 import io.github.samolego.canta.generated.resources.ranking_marks
 import io.github.samolego.canta.generated.resources.safety_tab_apps
@@ -138,8 +138,10 @@ private data class UploadRequest(
  * *Top removed*: packages ranked by the likes their plans got on that model and ROM version — the
  * more people endorse a plan that removes a package, the higher it sits. Every row is a package
  * that phone could remove, with what the device-aware rules say about it.
- * *Plans*: the plans themselves, most liked first. A test plan needs no reboot: the test password
- * unlocks it and the plan is labelled as one. Plans this install uploaded can be deleted again.
+ * *Plans*: the plans themselves, most liked first. A plan goes up only after the packages in it
+ * were removed, the phone restarted and the restart check passed: there is no password that stands
+ * in for that any more, and a plan uploaded by an older build without the proof keeps its "test"
+ * mark. Plans this install uploaded can be deleted again.
  *
  * The phone is named the way it is sold ("Redmi K70"), never by the retail model number: that
  * number is what the ROM reports but not what anyone recognises.
@@ -335,24 +337,28 @@ fun SafetyRulesScreen(
     }
 
     // What a plan may contain: everything this phone no longer has, plus whatever is ticked right
-    // now.
+    // now. The sheet decides which of them may actually go up — only the reboot-checked ones.
     val candidates = (uninstalledApps + tickedApps).distinctBy { it.packageName }
-    val emptyHint = stringResource(Res.string.plans_upload_cta_none)
     val noProfileHint = "还没有读到机型信息，稍等一下再试。"
-    // One way in: the dialog is where the two conditions live (a reboot-proven batch, or the
-    // password), so the button does not ask a question the dialog is about to answer anyway.
+    // One way in, and the sheet is where the order of the work is stated: remove, restart, pass the
+    // check, then (and only then) name the plan. The button does not pre-empt that with a question.
     val openUpload: () -> Unit = {
         notice = null
-        when {
-            profile == null -> notice = Notice(noProfileHint, error = true)
-            candidates.isEmpty() -> notice = Notice(emptyHint, error = true)
-            else -> upload = UploadRequest(
+        if (profile == null) {
+            notice = Notice(noProfileHint, error = true)
+        } else {
+            upload = UploadRequest(
                 candidates = candidates,
-                // What the reboot already proved, or everything when it proved nothing yet.
-                preselected = verifiedPackages.ifEmpty { candidates.map { it.packageName }.toSet() },
+                // Nothing is ticked by default except what passed the boot check: an unverified
+                // package is listed to be explained, never to be part of the plan.
+                preselected = verifiedPackages,
             )
         }
     }
+    // The way in is closed while nothing passed the check: the button then says the order of the
+    // work instead of opening a sheet that could only say "nothing to upload yet".
+    val canUpload = confirmed > 0
+    val blockedHint = stringResource(Res.string.plans_upload_gate_none)
     val vote: (CommunityPlan) -> Unit = { plan ->
         if (plan.id !in liked) {
             liked = liked + plan.id
@@ -433,30 +439,45 @@ fun SafetyRulesScreen(
             // Only the plans page publishes, and only for this phone: another model's list is
             // something to read, not somewhere to upload this phone's packages.
             if (tab == 1 && planScope == PlanScope.ThisPhone) {
-                ExtendedFloatingActionButton(
-                    onClick = openUpload,
-                    // The page's own floating dock sits at the bottom centre: the button has to
-                    // stand above it or it lands under a bar it cannot be tapped through.
-                    modifier = Modifier
-                        .navigationBarsPadding()
-                        .padding(bottom = DOCK_CLEARANCE),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    icon = {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    },
-                    text = {
+                Column(horizontalAlignment = Alignment.End) {
+                    ExtendedFloatingActionButton(
+                        onClick = openUpload,
+                        // The page's own floating dock sits at the bottom centre: the button has to
+                        // stand above it or it lands under a bar it cannot be tapped through.
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            .padding(bottom = DOCK_CLEARANCE),
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        icon = {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = stringResource(Res.string.plans_upload_cta),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        },
+                    )
+                    // Nothing passed the check: the line under the button is the whole explanation,
+                    // so the tap is not wasted on a sheet that has nothing to offer yet.
+                    if (!canUpload) {
                         Text(
-                            text = stringResource(Res.string.plans_upload_cta),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = blockedHint,
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .navigationBarsPadding()
+                                .padding(top = 2.dp, end = 4.dp),
                         )
-                    },
-                )
+                    }
+                }
             }
         },
     ) { padding ->
@@ -532,9 +553,11 @@ fun SafetyRulesScreen(
             profile = profile,
             publishing = uploading,
             onDismiss = { if (!uploading) upload = null },
-            onSubmit = { title, note, packages, test ->
+            onSubmit = { title, note, packages ->
                 val target = profile
-                if (target != null) {
+                // The sheet only hands over packages that passed the boot check, so the upload is
+                // a verified one by construction: there is no second way in any more.
+                if (target != null && packages.isNotEmpty()) {
                     scope.launch {
                         uploading = true
                         // Uploading the same set again is a retry, not a second plan: the earlier
@@ -548,7 +571,6 @@ fun SafetyRulesScreen(
                             rebootedAt = Clock.System.now().toString(),
                             reporter = owner,
                             owner = owner,
-                            test = test,
                         )
                         uploading = false
                         upload = null

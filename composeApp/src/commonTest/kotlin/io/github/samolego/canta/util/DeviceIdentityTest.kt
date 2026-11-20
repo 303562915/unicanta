@@ -69,16 +69,6 @@ class DeviceIdentityTest {
     }
 
     @Test
-    fun onlyTheExactPasswordUnlocks() {
-        assertTrue(DeviceIdentity.isTestPassword("369369"))
-        assertTrue(DeviceIdentity.isTestPassword(" 369369\n"))
-        assertFalse(DeviceIdentity.isTestPassword("3693690"))
-        assertFalse(DeviceIdentity.isTestPassword("36936"))
-        assertFalse(DeviceIdentity.isTestPassword(""))
-        assertFalse(DeviceIdentity.isTestPassword("936936"))
-    }
-
-    @Test
     fun ensureKeepsTheTokenItGenerated() = runTest {
         val settings = CantaSettings(MemoryStorage())
 

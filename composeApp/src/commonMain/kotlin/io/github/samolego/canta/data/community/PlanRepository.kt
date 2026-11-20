@@ -41,7 +41,7 @@ data class CommunityPlan(
     val rebootedAt: String,
     /** Identity of the uploader; only that identity may delete the plan. */
     val owner: String = "",
-    /** True for a plan uploaded with the test password: no reboot proof behind it. */
+    /** True for a plan uploaded without a reboot proof: older rows, kept and labelled as such. */
     val isTest: Boolean = false,
     /** The name the uploader uses today; empty when the backend does not send it (old deployment). */
     val uploader: String = "",
@@ -373,9 +373,9 @@ class PlanRepository(
     /**
      * Uploads [packages] as a plan.
      *
-     * A normal upload is only ever called with a verified reboot. A [test] upload comes from the
-     * test password: it still sends a reboot time (the server rejects anything else) but is
-     * stored flagged as a test, so the list can label it for what it is.
+     * The app only calls this with a batch the restart check proved, so [test] is false on every
+     * upload this build makes; the flag is kept because the server still understands and stores it
+     * for rows that older builds sent, and the list has to label those for what they are.
      */
     suspend fun submit(
         profile: DeviceProfile,

@@ -5,16 +5,6 @@ import kotlinx.coroutines.flow.first
 import kotlin.random.Random
 
 /**
- * The password that turns an upload into a test upload: no reboot verification.
- *
- * It is deliberately a constant in the app, not a server secret: the point is to be able to try
- * the plan flow (and upload a draft) on a phone that has not been rebooted yet. Every plan
- * uploaded this way is stored and shown with the "test" mark, so nobody mistakes it for a scheme
- * that was proven to boot.
- */
-const val TEST_UPLOAD_PASSWORD: String = "369369"
-
-/**
  * Who this install is, without an account.
  *
  * The phone keeps a random token in its settings and asks the backend which row that token owns;
@@ -44,9 +34,6 @@ object DeviceIdentity {
                 append(random.nextInt().toUInt().toString(16).padStart(8, '0'))
             }
         }
-
-    /** True when [input] is the test password; surrounding whitespace is forgiven. */
-    fun isTestPassword(input: String): Boolean = input.trim() == TEST_UPLOAD_PASSWORD
 
     /** "A1B2C-3D4E5": the token's readable head, used before a number is known. */
     fun codeOf(token: String): String {

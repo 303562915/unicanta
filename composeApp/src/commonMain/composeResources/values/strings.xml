@@ -451,9 +451,6 @@
     <string name="plans_empty_title">Nobody has uploaded a plan for %1$s yet</string>
     <string name="plans_empty_body">Yours would be the first. This list is also empty while offline.</string>
     <string name="plans_mine">Mine</string>
-    <string name="plans_test_entry_title">Test plan · no reboot</string>
-    <string name="plans_test_entry_body">No reboot needed: unlock the upload with the test password</string>
-    <string name="plans_test_entry_count">%1$d packages to try</string>
     <string name="plan_vote">Helpful</string>
     <string name="plan_verified_chip">Reboot-verified</string>
     <string name="plan_test_chip">Test</string>
@@ -472,11 +469,16 @@
     <string name="plan_detail_uploader">by %1$s</string>
     <string name="plan_detail_missing">This plan is gone (deleted, or only visible to the model that uploaded it)</string>
     <string name="plan_detail_no_comments">No comments yet — say something useful</string>
-    <string name="plan_upload_step_packages">Pick packages</string>
-    <string name="plan_upload_step_details">Describe it</string>
-    <string name="plan_upload_step_of">Step %1$d of %2$d</string>
-    <string name="plan_upload_next">Next</string>
-    <string name="plan_upload_back">Back</string>
+    <string name="plan_upload_sheet_title">Upload this phone's plan</string>
+    <string name="plan_upload_state_ready">Reboot verified</string>
+    <string name="plan_upload_state_partial">Partly verified</string>
+    <string name="plan_upload_state_blocked">Waiting for a reboot check</string>
+    <string name="plan_upload_state_ready_body">Every package here passed the reboot check: they can go up as they are ticked.</string>
+    <string name="plan_upload_state_partial_body">%1$d packages have not passed the reboot check: they are listed, but cannot be ticked until the phone restarts and the check passes.</string>
+    <string name="plan_upload_state_blocked_body">No package has passed the reboot check yet, so there is nothing to upload.</string>
+    <string name="plan_upload_flow_hint">The order is: remove the packages → restart the phone → pass the reboot check → upload.</string>
+    <string name="plan_upload_row_verified">verified</string>
+    <string name="plan_upload_row_awaiting">awaiting reboot</string>
     <string name="plan_upload_selected">%1$d of %2$d selected</string>
     <string name="plan_upload_select_all">All</string>
     <string name="plan_upload_clear">None</string>
@@ -484,15 +486,10 @@
     <string name="plan_upload_still_installed">installed</string>
     <string name="plan_upload_name_label">Plan name</string>
     <string name="plan_upload_note_label">Notes (optional)</string>
-    <string name="plan_upload_password_label">Password</string>
-    <string name="plan_upload_password_condition">Without a reboot check, this password uploads the plan as a test.</string>
     <string name="plan_upload_device_label">Device</string>
     <string name="plan_upload_publishing">Uploading…</string>
     <string name="plan_upload_ok">Uploaded</string>
     <string name="plan_upload_fail">Upload failed — check the connection and retry</string>
-    <string name="plan_upload_test_note">Password accepted: this uploads as a test plan and is labelled as one.</string>
-    <string name="plan_upload_test_hint">This batch has no reboot proof, so it needs the test password.</string>
-    <string name="plan_upload_password_optional">The test password is optional; it skips the reboot requirement.</string>
     <string name="plan_upload_reboot_ok">This batch survived a reboot and can be uploaded directly.</string>
     <string name="tweaks_title">Tools</string>
     <string name="tweaks_your_rom">Your system</string>
@@ -537,4 +534,6 @@
     <string name="recommend_detail_hint">The button opens the project page in your browser. Canta only keeps the link and installs nothing from here.</string>
     <string name="recommend_switch_grid">Switch to grid layout</string>
     <string name="recommend_switch_list">Switch to list layout</string>
+    <string name="plan_upload_candidate_count">%1$d candidates on this phone</string>
+    <string name="plans_upload_gate_none">Nothing removed yet: remove apps, restart, then pass the check before uploading</string>
 </resources>
