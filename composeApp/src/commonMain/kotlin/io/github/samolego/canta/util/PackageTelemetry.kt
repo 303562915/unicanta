@@ -226,7 +226,7 @@ class PackageTelemetry(
         val fingerprint = handler.buildFingerprint().orEmpty()
         val week = cohortWeekOf(now)
         val bucket = batchBucketOf(uninstalled.size)
-        pendingLock.withLock {
+        return pendingLock.withLock {
             val existing = settings.pendingRebootFlow.first()
             val known = existing.filter { it.deviceKey.isEmpty() || it.deviceKey == deviceKey }.map { it.pkg }.toSet()
             val baseline = uninstalled.filterNot { app ->

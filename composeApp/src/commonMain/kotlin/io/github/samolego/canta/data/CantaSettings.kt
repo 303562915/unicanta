@@ -80,12 +80,24 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setOnboardingVersion(version: Int) = update { it.copy(onboardingVersion = version) }
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
-    suspend fun seedPendingReboot(packages: List<PendingUninstallProto>): Boolean = update {
+    /**
+     * Adds [packages] to the pending list and answers whether any of them was new. [update] only
+     * returns Unit, so the answer is taken from inside the transform: "already pending" must not
+     * be counted as a fresh baseline by the caller.
+     */
+    suspend fun seedPendingReboot(packages: List<PendingUninstallProto>): Boolean {
+        if (packages.isEmpty()) return false
         val deviceKey = packages.firstOrNull()?.deviceKey.orEmpty()
-        val known = it.pendingReboot.filter { entry ->
-            entry.deviceKey.isEmpty() || entry.deviceKey == deviceKey
-        }.map { entry -> entry.pkg }.toSet()
-        it.copy(pendingReboot = it.pendingReboot + packages.filterNot { entry -> entry.pkg in known })
+        var added = false
+        update { current ->
+            val known = current.pendingReboot.filter { entry ->
+                entry.deviceKey.isEmpty() || entry.deviceKey == deviceKey
+            }.map { entry -> entry.pkg }.toSet()
+            val fresh = packages.filterNot { entry -> entry.pkg in known }
+            added = fresh.isNotEmpty()
+            current.copy(pendingReboot = current.pendingReboot + fresh)
+        }
+        return added
     }
     suspend fun setLastConfirmedPackages(packages: List<String>) = update { it.copy(lastConfirmedPackages = packages) }
     suspend fun setRestoreSuspects(packages: List<String>) = update { it.copy(restoreSuspects = packages) }
