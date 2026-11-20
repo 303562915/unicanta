@@ -211,14 +211,19 @@ class AppNoteStore(private val storage: AppBlobStorage) {
      *
      * It only ever moves forwards: the stamps are the backend's own UTC strings, so they compare in
      * order, and a slow answer from an earlier visit must not un-read what arrived after it.
+     *
+     * Answers whether the cursor actually moved. The red dot must only be cleared when it did: a
+     * backend that answers no `checked_at` leaves the cursor where it was, so counting again from
+     * nothing would put the same number straight back and the dot would blink.
      */
-    suspend fun markInboxSeen(at: String) {
-        if (at.isEmpty()) return
+    suspend fun markInboxSeen(at: String): Boolean {
+        if (at.isEmpty()) return false
         ensureLoaded()
-        mutex.withLock {
-            if (at <= _inboxSeenAt.value) return@withLock
+        return mutex.withLock {
+            if (at <= _inboxSeenAt.value) return@withLock false
             _inboxSeenAt.value = at
             persistLocked()
+            true
         }
     }
 

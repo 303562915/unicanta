@@ -4,6 +4,8 @@ import io.github.samolego.canta.testing.MemoryStorage
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * The stored read cursor: the instant the inbox was last opened, which the backend counts from.
@@ -41,5 +43,18 @@ class AppNoteStoreInboxCursorTest {
         store.markInboxSeen("2026-11-20T10:00:00.000000Z")
         store.markInboxSeen("")
         assertEquals("2026-11-20T10:00:00.000000Z", store.inboxSeenAt.value)
+    }
+
+    @Test
+    fun onlyARealAdvanceSaysTheDotMayBeCleared() = runTest {
+        val store = AppNoteStore(MemoryStorage())
+
+        // The red dot is only cleared when this answers true: false means "the cursor did not
+        // move", so the next count would put the same number back and the dot would blink.
+        assertTrue(store.markInboxSeen("2026-11-20T10:00:00.000000Z"), "the first stamp moves it")
+        assertFalse(store.markInboxSeen("2026-11-20T10:00:00.000000Z"), "the same stamp changes nothing")
+        assertFalse(store.markInboxSeen(""), "no stamp at all changes nothing")
+        assertFalse(store.markInboxSeen("2026-11-20T09:00:00.000000Z"), "an older stamp never un-reads")
+        assertTrue(store.markInboxSeen("2026-11-20T11:00:00.000000Z"), "a newer one moves it again")
     }
 }

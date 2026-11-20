@@ -264,7 +264,11 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         lastSeenReplyId = deps.notes.lastSeenReplyId.value
         inboxSeenAt = deps.notes.inboxSeenAt.value
     }
-    LaunchedEffect(currentRoute) {
+    // Counting again when the app comes back is what keeps the dot honest: replies arriving while
+    // the phone was in a pocket would otherwise wait for a page change that may never come.
+    var countTick by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { countTick++ }
+    LaunchedEffect(currentRoute, countTick) {
         if (currentRoute != Screen.Main.route && currentRoute != Screen.MyComments.route) return@LaunchedEffect
         deps.notes.ensureReady()
         val identity = DeviceIdentity.current(deps.settings)
@@ -610,10 +614,13 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                         coroutineScope.launch {
                             // The ids this visit came in with stay as they are: the rows the reader
                             // has not reached yet keep their marker until the page is opened again.
-                            deps.notes.markInboxSeen(checkedAt)
+                            val moved = deps.notes.markInboxSeen(checkedAt)
                             deps.notes.markRepliesSeen(newest)
                             inboxSeenAt = deps.notes.inboxSeenAt.value
-                            unreadReplies = 0
+                            // Only when the cursor really moved. A backend that sends no
+                            // `checked_at` leaves it where it was, so clearing here would hide a
+                            // count that comes back on the next look — the dot blinking.
+                            if (moved) unreadReplies = 0
                         }
                     },
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
