@@ -31,6 +31,7 @@ import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.LOCAL_PROP_KEYS
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.deviceContextOf
+import io.github.samolego.canta.util.marketNameFallback
 import io.github.samolego.canta.util.marketNameOf
 import io.github.samolego.canta.util.parseGetprop
 import kotlinx.coroutines.CompletableDeferred
@@ -232,8 +233,10 @@ class AndroidCantaHandler(
             romVersion = ctx?.romVersion ?: 0,
             fingerprint = Build.FINGERPRINT.orEmpty(),
             // The market name is the only field Build does not expose: MIUI/HyperOS keeps the
-            // retail number in MODEL and the name people know in ro.product.marketname.
-            marketName = marketNameOf(props),
+            // retail number in MODEL and the name people know in ro.product.marketname. When the
+            // one bulk read came back without it, ask for the handful of keys directly — a plan
+            // uploaded with an empty name shows the retail number to every reader.
+            marketName = marketNameOf(props).ifBlank { marketNameFallback { key -> getpropOne(key) } },
         ).also { profile = it }
     }
 
@@ -282,6 +285,21 @@ class AndroidCantaHandler(
             putIfAbsent("ro.product.manufacturer", android.os.Build.MANUFACTURER)
             putIfAbsent("ro.build.version.sdk", android.os.Build.VERSION.SDK_INT.toString())
         }.also { localProps = it }
+    }
+
+    /**
+     * One property, read on its own. Used only as the fallback when the bulk [localProps] read
+     * came back without the market name: one short `getprop <key>` per candidate key, no shell.
+     */
+    private suspend fun getpropOne(key: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val process = Runtime.getRuntime().exec(arrayOf("getprop", key))
+            try {
+                process.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                process.destroy()
+            }
+        }.onFailure { LogUtils.w(TAG, "getprop $key failed: $it") }.getOrNull()
     }
 
     /** The ROM family and version of this phone, from the same `getprop` read as [deviceProfile]. */

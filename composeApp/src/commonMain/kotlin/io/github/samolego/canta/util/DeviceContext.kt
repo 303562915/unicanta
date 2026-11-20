@@ -77,6 +77,25 @@ fun marketNameOf(props: Map<String, String>): String =
     }.orEmpty()
 
 /**
+ * The market name, asked for one property at a time when a bulk `getprop` read came back without it.
+ *
+ * The bulk read is one process and usually enough, but it is also the first thing to come back empty
+ * on a locked-down ROM, on a helper that truncates long output, or after a read that failed and left
+ * an empty map behind. That is how a plan ends up stored with the retail number ("M2006J10C") and no
+ * name people recognise ("Redmi K30 Ultra") — the model chips then show the number to everybody.
+ * Asking for the handful of keys directly costs one short read each and only happens when the first
+ * answer was empty.
+ *
+ * [read] is the platform's own "get this property" call: a process on Android, a shell line over ADB.
+ */
+suspend fun marketNameFallback(read: suspend (String) -> String?): String =
+    MARKET_NAME_PROP_KEYS.firstNotNullOfOrNull { key ->
+        runCatching { read(key)?.trim() }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() && !it.equals("unknown", ignoreCase = true) }
+    }.orEmpty()
+
+/**
  * Properties that identify this exact phone. They are read locally only, for matching plans and
  * safety rules; none of them is ever sent as telemetry.
  */

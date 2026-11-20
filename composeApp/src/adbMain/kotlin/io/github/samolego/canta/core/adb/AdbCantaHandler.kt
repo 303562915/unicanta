@@ -15,6 +15,7 @@ import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.LOCAL_PROP_KEYS
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.deviceContextOf
+import io.github.samolego.canta.util.marketNameFallback
 import io.github.samolego.canta.util.marketNameOf
 import io.github.samolego.canta.util.parseGetprop
 import io.github.samolego.canta.util.payloadHash
@@ -203,7 +204,10 @@ abstract class AdbCantaHandler(private val transport: AdbTransport) : CantaHandl
             rom = ctx.rom,
             romVersion = ctx.romVersion,
             fingerprint = prop("ro.build.fingerprint"),
-            marketName = marketNameOf(props),
+            // Same fallback as the Android handler: the bulk `getprop` can come back without the
+            // market name, and a plan stored under the retail number shows that number to everyone.
+            marketName = marketNameOf(props)
+                .ifBlank { marketNameFallback { key -> shellLine("getprop $key", "market name of $key") } },
         ).also { profile = it }
     }
 
