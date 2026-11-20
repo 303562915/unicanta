@@ -127,7 +127,7 @@
     <string name="onboarding_about_original_sub">samolego · upstream Canta</string>
     <string name="onboarding_about_original_title">Credit to upstream</string>
     <string name="onboarding_about_repo_title">Source code</string>
-    <string name="onboarding_about_subtitle">A good product is one people actually use; good code is everyone adding firewood.</string>
+    <string name="onboarding_about_subtitle">It only counts if it actually helps you; what it gets wrong, we fix together.</string>
     <string name="onboarding_about_tile_chinese_body">App name, settings and onboarding are all in Chinese, not machine translated.</string>
     <string name="onboarding_about_tile_chinese_title">Chinese first</string>
     <string name="onboarding_about_tile_rescue_body">Rescues are scored separately, and one tap reinstalls what you removed.</string>

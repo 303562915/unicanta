@@ -272,7 +272,7 @@
     <string name="onboarding_about_original_sub">samolego · 上游 Canta</string>
     <string name="onboarding_about_original_title">致敬原作者</string>
     <string name="onboarding_about_repo_title">开源地址</string>
-    <string name="onboarding_about_subtitle">好的产品，是用户真的用得上；好的代码，是大家添柴加火。</string>
+    <string name="onboarding_about_subtitle">能真帮上你的忙，才算数；做得不够的地方，一起改。</string>
     <string name="onboarding_about_tile_chinese_body">应用名、设置项、引导全是中文，不是机翻。</string>
     <string name="onboarding_about_tile_chinese_title">中文优先</string>
     <string name="onboarding_about_tile_rescue_body">救砖信号单独计数，一键把删掉的装回来。</string>
