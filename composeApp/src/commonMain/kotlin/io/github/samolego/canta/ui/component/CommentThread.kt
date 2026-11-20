@@ -5,16 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -56,7 +53,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.PlanComment
@@ -583,28 +579,13 @@ fun CommentComposer(
     LaunchedEffect(replyToName) {
         if (replyToName.isNotEmpty()) focusRequester.requestFocus()
     }
-    Surface(tonalElevation = 3.dp) {
-        // The bottom clearance is measured against the window, not trusted from the IME inset
-        // alone: some ROMs report the whole window as the IME inset while the keyboard is down,
-        // which is what made this bar a screen tall with the field sitting at its top. A keyboard
-        // is never more than 70% of the window — anything larger is that broken value, and the bar
-        // only clears the navigation bar then. Focus is no substitute for the inset either: a field
-        // keeps focus after the keyboard was dismissed with the back gesture, and the bar would
-        // then clear a keyboard that is not there.
-        BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-            val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-            val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            // The bar can be measured against an unbounded height, and an unbounded bound would
-            // make the check below always pass — which is the same as not having one. Bound the
-            // room first, then believe the IME inset only when it can be a keyboard.
-            val room = if (maxHeight.value.isFinite() && maxHeight > 0.dp) maxHeight else 800.dp
-            val keyboard = if (imeBottom.isSpecified && imeBottom < room * 0.6f) imeBottom else 0.dp
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = maxOf(navBottom, keyboard))
-                    .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
-            ) {
+    Surface(modifier = modifier.fillMaxWidth().imePadding(), tonalElevation = 3.dp) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+        ) {
                 if (replyToName.isNotEmpty()) {
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
@@ -689,7 +670,6 @@ fun CommentComposer(
                     )
                 }
             }
-        }
     }
 }
 

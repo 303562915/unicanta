@@ -72,6 +72,9 @@ abstract class GenerateBuildInfo : DefaultTask() {
     @get:Input
     abstract val versionCode: Property<Int>
 
+    @get:Input
+    abstract val developmentBuildNumber: Property<Int>
+
     @get:OutputDirectory
     abstract val sourcesDirectory: DirectoryProperty
 
@@ -88,6 +91,7 @@ abstract class GenerateBuildInfo : DefaultTask() {
                 |object BuildInfo {
                 |    const val VERSION_NAME = "${versionName.get()}"
                 |    const val VERSION_CODE = ${versionCode.get()}
+                |    const val DEVELOPMENT_BUILD_NUMBER = ${developmentBuildNumber.get()}
                 |}
                 |""".trimMargin()
             )
@@ -149,6 +153,11 @@ abstract class GenerateBuildFlags : DefaultTask() {
 val generateBuildInfo = tasks.register<GenerateBuildInfo>("generateBuildInfo") {
     versionName.set(providers.gradleProperty("version_name"))
     versionCode.set(providers.gradleProperty("version_code").map(String::toInt))
+    developmentBuildNumber.set(
+        providers.environmentVariable("CANTA_DEVELOPMENT_BUILD_NUMBER")
+            .map { it.toIntOrNull() ?: 0 }
+            .orElse(0)
+    )
     sourcesDirectory.set(layout.buildDirectory.dir("generated/buildInfo/kotlin"))
 }
 

@@ -70,7 +70,8 @@ import io.github.samolego.canta.ui.screen.RecommendationsScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.downloadRelease
-import io.github.samolego.canta.ui.screen.isNewerVersion
+import io.github.samolego.canta.ui.screen.UpdateChannel
+import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestRelease
 import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
@@ -92,6 +93,7 @@ import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
@@ -153,23 +155,34 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     // A release found at start-up is downloaded without asking; installing it still asks,
     // because it replaces the running app and closes it.
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
+    val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
     var autoUpdate by remember { mutableStateOf<UpdateState?>(null) }
     var autoInstallAsked by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     val updateClient = remember { HttpClient() }
 
-    LaunchedEffect(autoInstallUpdates) {
-        if (!autoInstallUpdates) return@LaunchedEffect
-        val tag = runCatching { latestRelease(updateClient) }.getOrNull() ?: return@LaunchedEffect
-        if (!isNewerVersion(tag, BuildInfo.VERSION_NAME)) return@LaunchedEffect
+    LaunchedEffect(autoInstallUpdates, updateChannel) {
+        autoUpdate = null
+        autoInstallAsked = null
+        if (!autoInstallUpdates || updateChannel == null) return@LaunchedEffect
+        val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
+        val release = try {
+            latestRelease(updateClient, channel)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@LaunchedEffect
+        }
+        if (!release.isNewerThanInstalled()) return@LaunchedEffect
 
-        autoUpdate = UpdateState.Downloading(tag, 0)
-        val path = downloadRelease(platform, tag) { percent ->
-            autoUpdate = UpdateState.Downloading(tag, percent)
+        val label = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
+        autoUpdate = UpdateState.Downloading(label, 0)
+        val path = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
+            autoUpdate = UpdateState.Downloading(label, percent)
         }
         autoUpdate = if (path == null) {
             null
         } else {
-            UpdateState.ReadyToInstall(tag, path).also { autoInstallAsked = it }
+            UpdateState.ReadyToInstall(label, path).also { autoInstallAsked = it }
         }
     }
 
@@ -196,7 +209,8 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     autoInstallAsked = null
                     coroutineScope.launch {
                         val failure = platform.installUpdate(ready.path)
-                        if (failure == null) platform.exitApp() else platform.showMessage(failure)
+                        if (failure == null) platform.exitApp()
+                        else if (!platform.requestInstall(ready.path)) platform.showMessage(failure)
                     }
                 }) { Text(stringResource(Res.string.about_install_confirm)) }
             },
@@ -495,6 +509,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     profile = appProfile,
                     notes = deps.notes,
                     author = appAuthor,
+                    onOpenUrl = { platform.openUrl(it) },
                     onNavigateBack = { navController.navigateUp() },
                     repository = communityRepository,
                     voter = appVoter,

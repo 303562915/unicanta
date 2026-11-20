@@ -9,6 +9,8 @@ import io.ktor.http.HttpHeaders
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import io.github.samolego.canta.BuildInfo
 
 /*
  * Everything the app needs to know about releases: where they are, whether one is newer than
@@ -23,6 +25,12 @@ internal const val UPDATE_REPO_URL = "https://github.com/303562915/unicanta"
 internal const val DOWNLOAD_PAGE_URL = "https://303562915.github.io/unicanta/"
 
 private const val LATEST_RELEASE_API = "https://api.github.com/repos/303562915/unicanta/releases/latest"
+private const val DEVELOPMENT_RELEASE_API = "https://api.github.com/repos/303562915/unicanta/releases/tags/dev"
+private const val DEVELOPMENT_TAG = "dev"
+
+internal enum class UpdateChannel { STABLE, DEVELOPMENT }
+
+internal data class UpdateRelease(val tag: String, val version: String, val buildNumber: Int = 0)
 
 /** GitHub rejects anonymous API calls without one. */
 private const val USER_AGENT = "Canta-Android (+$UPDATE_REPO_URL)"
@@ -32,7 +40,7 @@ internal sealed interface UpdateState {
     data object Idle : UpdateState
     data object Checking : UpdateState
     data object Latest : UpdateState
-    data class Available(val version: String) : UpdateState
+    data class Available(val version: String, val release: UpdateRelease) : UpdateState
     data object Failed : UpdateState
 
     /** The APK is being fetched; [progress] is 0-100. */
@@ -51,26 +59,43 @@ internal sealed interface UpdateState {
     data class FailedWith(val reason: String) : UpdateState
 }
 
-/** `tag_name` of the latest release, e.g. `v4.2.0`; throws when GitHub cannot be reached. */
-internal suspend fun latestRelease(client: HttpClient): String {
-    val body = client.get(LATEST_RELEASE_API) {
+/** Reads the selected published release and its immutable build identity. */
+internal suspend fun latestRelease(client: HttpClient, channel: UpdateChannel): UpdateRelease {
+    val body = client.get(if (channel == UpdateChannel.DEVELOPMENT) DEVELOPMENT_RELEASE_API else LATEST_RELEASE_API) {
         header(HttpHeaders.UserAgent, USER_AGENT)
         header(HttpHeaders.Accept, "application/vnd.github+json")
     }.bodyAsText()
-    return Json.parseToJsonElement(body)
-        .jsonObject["tag_name"]
-        ?.jsonPrimitive
-        ?.content
-        ?.takeIf { it.isNotBlank() }
+    val payload = Json.parseToJsonElement(body).jsonObject
+    val tag = payload["tag_name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
         ?: error("no tag in the release payload")
+    if (channel == UpdateChannel.STABLE) return UpdateRelease(tag, tag)
+    require(tag == DEVELOPMENT_TAG && payload["prerelease"]?.jsonPrimitive?.content == "true")
+    val notes = payload["body"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    fun field(name: String): String? = notes.lineSequence()
+        .firstOrNull { it.startsWith("$name:") }
+        ?.substringAfter(':')?.trim()?.takeIf { it.isNotEmpty() }
+    val version = field("version")?.takeIf { Regex("[vV]?\\d+(\\.\\d+)+([+-][0-9A-Za-z.-]+)?").matches(it) }
+        ?: error("no development version in release notes")
+    val buildNumber = field("development-build")?.toIntOrNull()?.takeIf { it > 0 }
+        ?: error("no development build number in release notes")
+    return UpdateRelease(tag, version, buildNumber)
+}
+
+internal fun UpdateRelease.isNewerThanInstalled(): Boolean {
+    if (isNewerVersion(version, BuildInfo.VERSION_NAME)) return true
+    if (isNewerVersion(BuildInfo.VERSION_NAME, version)) return false
+    return if (tag == DEVELOPMENT_TAG) buildNumber > BuildInfo.DEVELOPMENT_BUILD_NUMBER
+    else BuildInfo.DEVELOPMENT_BUILD_NUMBER > 0
 }
 
 /**
  * Where the APK of [tag] lives. Published releases carry exactly one APK, named after the
  * module, so the URL is stable enough to build without asking the API for the asset list.
  */
-internal fun apkUrl(tag: String): String =
-    "$UPDATE_REPO_URL/releases/download/$tag/androidApp-release.apk"
+internal fun apkUrl(tag: String, buildNumber: Int = 0): String {
+    val asset = if (tag == DEVELOPMENT_TAG) "androidApp-release-$buildNumber.apk" else "androidApp-release.apk"
+    return "$UPDATE_REPO_URL/releases/download/$tag/$asset"
+}
 
 /**
  * Whether [remote] (e.g. `v4.3.0`) is strictly newer than [local] (e.g. `4.2.0`).
@@ -106,5 +131,6 @@ internal fun isNewerVersion(remote: String, local: String): Boolean {
 internal suspend fun downloadRelease(
     platform: CantaPlatform,
     tag: String,
+    buildNumber: Int = 0,
     onProgress: (Int) -> Unit,
-): String? = platform.downloadUpdate(apkUrl(tag), "canta-$tag.apk", onProgress)
+): String? = platform.downloadUpdate(apkUrl(tag, buildNumber), "canta-$tag-$buildNumber.apk", onProgress)

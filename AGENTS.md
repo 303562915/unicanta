@@ -8,7 +8,7 @@
 
 ## 0. 铁律：只改代码，构建全部交给 GitHub Actions
 
-本仓库**不提供也不支持本地构建**。你（agent）在本地只做一件事：改源码、提交、推送，然后等云端出结果。
+本仓库**不提供也不支持本地构建**。每次完成用户要求的修改后，检查改动、提交并推送到远端，推送完成后直接结束，不等待或跟踪 GitHub Actions 的运行结果。用户明确要求查看或排查构建时再查询。
 
 **绝对不做：**
 
@@ -42,6 +42,10 @@
 Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopApp`、`:webApp`（wasmJs）、`:packages`、`:helper`、`:hiddenApiStubs`。
 版本号在 `gradle.properties`：`version_code=229` / `version_name=4.2.0`。
 
+### Supabase 本地入口
+
+涉及 Supabase API、数据库访问或迁移时，先查阅仓库根目录的 `SUPABASE.local.md`。该文档仅保留在本地，已由 `.gitignore` 排除；其他检出中缺少该文件是正常的。操作所需凭据从环境变量或密钥管理器获取，避免写入文档、源码或日志。
+
 ---
 
 ## 2. 工作流清单（唯一的构建入口）
@@ -50,6 +54,7 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 
 | 文件 | 触发 | 干什么 | 产物 artifact |
 |---|---|---|---|
+| `development-release.yml` 🧪 Development APK | `push` 到 `master` | 构建签名 APK 并发布滚动开发版 | GitHub prerelease `dev` |
 | `build.yml` 🏗️ Push Build | `push`（任意分支）、`workflow_dispatch` | 测试 → debug APK → release APK（有签名 secret 才做） | `test-reports`、`app-debug`、`app-release` |
 | `fork-ci.yml` 🔧 Fork CI | `push`（任意分支）、`workflow_dispatch` | 先跑 `composeApp/util` 测试，再全量 desktopTest，然后 debug + minified release | `test-reports`、`app-debug`、`app-release` |
 | `pull_request_build.yml` 🔍 PR Check | `pull_request` → `master`（opened / synchronize / reopened） | `:packages:desktopTest` + `:composeApp:desktopTest`，再 assembleDebug、desktopJar、wasm 分发 | `app-debug` |
@@ -65,7 +70,7 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 
 ---
 
-## 3. 标准工作流：改完就推，等云端
+## 3. 标准工作流：改完就推，推送后直接结束
 
 ```bash
 cd /sdcard/Aaaa/unicanta/Canta
@@ -130,7 +135,7 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
 - [ ] 没有删/跳过测试，没有 `|| true`。
 - [ ] 如果改了 `.github/workflows/*.yml`，确认 YAML 可直接解析、`needs` 依赖的 job 名存在、artifact 名与第 2 节表格一致。
 - [ ] 如果改了 `gradle.properties` 版本号，说明这是有意的发版动作。
-- [ ] 推送后盯到 run 结束，把结论（成功/失败 + run 链接）写进汇报，而不是"应该没问题"。
+- [ ] 推送成功后直接汇报提交和推送结果，GitHub Actions 构建结果尚未确认时如实说明。
 
 ---
 

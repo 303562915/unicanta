@@ -172,6 +172,9 @@
     <string name="about_update_available">发现新版本 %1$s，点击前往下载</string>
     <string name="about_update_failed">检查失败，请稍后再试</string>
     <string name="about_auto_install">自动下载更新包</string>
+    <string name="update_channel">更新渠道</string>
+    <string name="update_channel_stable">稳定版</string>
+    <string name="update_channel_dev">开发版</string>
     <string name="about_downloading">正在下载… %1$d%%</string>
     <string name="about_ready_to_install">%1$s 已下载，点击安装</string>
     <string name="about_installing">正在安装…完成后应用会退出</string>

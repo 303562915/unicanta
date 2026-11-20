@@ -28,7 +28,11 @@ import io.ktor.client.plugins.onDownload
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
@@ -262,30 +266,21 @@ class AndroidCantaPlatform(
     }
 
     /**
-     * Downloads the APK into the app's own external files directory — the download's staging area,
-     * cleaned of stale APKs on every new download. Where the privileged shell may actually read
-     * the file from is decided at install time; see [installUpdate].
+     * Downloads the APK into a unique file in the app's external files directory.
+     * Where the privileged shell may read it is decided at install time; see [installUpdate].
      */
     override suspend fun downloadUpdate(
         url: String,
         fileName: String,
         onProgress: (Int) -> Unit,
     ): String? = withContext(Dispatchers.IO) {
+        var target: File? = null
         try {
             val directory = context.getExternalFilesDir("updates") ?: context.filesDir
-            if (!directory.exists() && !directory.mkdirs()) {
+            if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
                 LogUtils.e(TAG, "Could not create ${directory.absolutePath}")
                 return@withContext null
             }
-            // One update at a time: an APK that was downloaded and never installed (the dialog was
-            // dismissed, or the install failed) would otherwise stay in this folder forever, and a
-            // folder of 30–70 MB APKs is the largest thing this app can leave on a phone.
-            directory.listFiles()?.forEach { stale ->
-                if (stale.isFile && runCatching { stale.delete() }.getOrDefault(false)) {
-                    LogUtils.i(TAG, "Removed the previous update ${stale.name}")
-                }
-            }
-
             val client = HttpClient(OkHttp)
             val bytes = try {
                 client.get(url) {
@@ -300,12 +295,19 @@ class AndroidCantaPlatform(
                 client.close()
             }
 
-            val target = File(directory, fileName)
-            target.writeBytes(bytes)
+            coroutineContext.ensureActive()
+            val downloaded = File.createTempFile("canta-update-", ".apk", directory)
+            target = downloaded
+            downloaded.writeBytes(bytes)
+            coroutineContext.ensureActive()
             onProgress(100)
-            LogUtils.i(TAG, "Downloaded ${bytes.size} bytes to ${target.absolutePath}")
-            target.absolutePath
+            LogUtils.i(TAG, "Downloaded ${bytes.size} bytes to ${downloaded.absolutePath}")
+            downloaded.absolutePath
+        } catch (e: CancellationException) {
+            target?.delete()
+            throw e
         } catch (e: Exception) {
+            target?.delete()
             LogUtils.e(TAG, "Could not download the update", e)
             null
         }

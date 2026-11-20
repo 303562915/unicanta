@@ -1,0 +1,115 @@
+name: 🧪 Development APK
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: development-release-master
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build and publish signed development APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: gradle
+
+      - name: Check signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CANTA_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || { echo "CANTA_KEYSTORE_BASE64 is required" >&2; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo "KEYSTORE_PASSWORD is required" >&2; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "KEY_ALIAS is required" >&2; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo "KEY_PASSWORD is required" >&2; exit 1; }
+
+      - name: Write signing files
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CANTA_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/release.jks"
+          {
+            echo "storeFile=$GITHUB_WORKSPACE/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > "$GITHUB_WORKSPACE/key.properties"
+
+      - name: Build signed release APK
+        env:
+          CANTA_DEVELOPMENT_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :androidApp:assembleRelease --stacktrace --no-daemon
+
+      - name: Prepare APK and checksums
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp androidApp/build/outputs/apk/release/*.apk "dist/androidApp-release-${RUN_NUMBER}.apk"
+          cd dist
+          sha256sum "androidApp-release-${RUN_NUMBER}.apk" > "SHA256SUMS-${RUN_NUMBER}.txt"
+
+      - name: Skip publication if this is no longer master HEAD
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin master
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/master)" ]; then
+            echo "is_head=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_head=false" >> "$GITHUB_OUTPUT"
+            echo "A newer master commit exists; skipping this publication."
+          fi
+
+      - name: Publish rolling prerelease
+        if: steps.current.outputs.is_head == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          VERSION_NAME=$(sed -n 's/^version_name=//p' gradle.properties)
+          test -n "$VERSION_NAME" || { echo "version_name is missing from gradle.properties" >&2; exit 1; }
+          test "$(printf '%s\n' "$VERSION_NAME" | wc -l)" -eq 1 || { echo "version_name must be unique in gradle.properties" >&2; exit 1; }
+          printf 'Development build\n\nversion: %s\ndevelopment-build: %s\n\nCommit: %s\n\nSigned with the same release key as stable APKs.\n' \
+            "$VERSION_NAME" "$RUN_NUMBER" "$COMMIT" > RELEASE_NOTES.md
+          if ! gh release view dev >/dev/null 2>&1; then
+            gh release create dev \
+              --target "$COMMIT" \
+              --title "Canta development builds" \
+              --notes "Preparing the first development build." \
+              --prerelease
+          fi
+          gh release upload dev \
+            "dist/androidApp-release-${RUN_NUMBER}.apk" \
+            "dist/SHA256SUMS-${RUN_NUMBER}.txt"
+          gh release edit dev \
+            --title "Canta development build $RUN_NUMBER" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease

@@ -70,6 +70,9 @@ import io.github.samolego.canta.generated.resources.auth_required
 import io.github.samolego.canta.generated.resources.auth_required_description
 import io.github.samolego.canta.generated.resources.auto_update_bloat_list
 import io.github.samolego.canta.generated.resources.auto_update_bloat_list_description
+import io.github.samolego.canta.generated.resources.update_channel
+import io.github.samolego.canta.generated.resources.update_channel_stable
+import io.github.samolego.canta.generated.resources.update_channel_dev
 import io.github.samolego.canta.generated.resources.bloat_list_url
 import io.github.samolego.canta.generated.resources.bloat_list_url_description
 import io.github.samolego.canta.generated.resources.cancel
@@ -142,6 +145,7 @@ fun SettingsScreen(
     val userName by settingsViewModel.userName.collectAsStateWithLifecycle()
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
+    val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
     var showRename by rememberSaveable { mutableStateOf(false) }
     var advancedSettingsExpanded by rememberSaveable { mutableStateOf(false) }
     val authRequiredTitle = stringResource(Res.string.auth_required)
@@ -183,6 +187,25 @@ fun SettingsScreen(
             }
 
             SettingsGroup(title = stringResource(Res.string.settings_group_general)) {
+                var channelMenuExpanded by remember { mutableStateOf(false) }
+                SettingsItem(
+                    title = stringResource(Res.string.update_channel),
+                    icon = Icons.Default.Update,
+                    onClick = { channelMenuExpanded = true },
+                    trailing = {
+                        Text(stringResource(if (updateChannel == "dev") Res.string.update_channel_dev else Res.string.update_channel_stable))
+                        DropdownMenu(expanded = channelMenuExpanded, onDismissRequest = { channelMenuExpanded = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(Res.string.update_channel_stable)) }, onClick = {
+                                channelMenuExpanded = false
+                                settingsViewModel.saveUpdateChannel("stable")
+                            })
+                            DropdownMenuItem(text = { Text(stringResource(Res.string.update_channel_dev)) }, onClick = {
+                                channelMenuExpanded = false
+                                settingsViewModel.saveUpdateChannel("dev")
+                            })
+                        }
+                    },
+                )
                 SwitchSettingsItem(
                     title = stringResource(Res.string.auto_update_bloat_list),
                     description = stringResource(Res.string.auto_update_bloat_list_description),

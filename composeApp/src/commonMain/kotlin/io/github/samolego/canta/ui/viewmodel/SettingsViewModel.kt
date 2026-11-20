@@ -61,6 +61,7 @@ class SettingsViewModel(
 
     /** Downloads a found release on its own; the install still asks first. */
     val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(false)
+    val updateChannel = settingsStore.updateChannelFlow.state<String?>(null)
 
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */
     val onboardingVersion: StateFlow<Int?> = settingsStore.onboardingVersionFlow.state<Int?>(null)
@@ -113,6 +114,7 @@ class SettingsViewModel(
     fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
     fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
+    fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
 
     /**
      * Renames this install: the value is stored at once, so the page and the next review use it

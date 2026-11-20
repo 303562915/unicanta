@@ -87,6 +87,8 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import org.jetbrains.compose.resources.stringResource
 
 /** Where the app is published and where it came from. */
@@ -144,21 +146,28 @@ fun AboutScreen(
     val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
 
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
+    val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
     val client = remember { HttpClient() }
-    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var updateState by remember(updateChannel) { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var pendingInstall by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
+    var updateJob by remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(updateChannel) {
+        updateJob?.cancel()
+        updateJob = null
+        pendingInstall = null
+    }
     // Read here, not in the tap handler: `getString` suspends, and a click is not a suspend call.
     val qqGroupCopied = stringResource(Res.string.about_qq_group_copied)
 
     val downloadFailed = stringResource(Res.string.about_download_failed)
 
-    /** Fetches the package behind [version] and parks it in [UpdateState.ReadyToInstall]. */
-    val download: (String) -> Unit = { version ->
+    val download: (UpdateRelease) -> Unit = { release ->
+        val version = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
         updateState = UpdateState.Downloading(version, 0)
-        scope.launch {
-            val path = downloadRelease(platform, version) { percent ->
+        updateJob = scope.launch {
+            val path = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
                 updateState = UpdateState.Downloading(version, percent)
             }
             updateState = if (path == null) {
@@ -170,18 +179,28 @@ fun AboutScreen(
     }
 
     val checkUpdate: () -> Unit = {
-        if (updateState !is UpdateState.Checking) {
+        if (updateState !is UpdateState.Checking && updateState !is UpdateState.Downloading && updateState !is UpdateState.Installing) {
             updateState = UpdateState.Checking
-            scope.launch {
-                val tag = runCatching { latestRelease(client) }.getOrNull()
+            updateJob = scope.launch {
+                val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
+                val release = try {
+                    latestRelease(client, channel)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+                val label = release?.let {
+                    if (it.buildNumber > 0) "${it.version} (dev ${it.buildNumber})" else it.version
+                }
                 updateState = when {
-                    tag == null -> UpdateState.Failed
-                    !isNewerVersion(tag, BuildInfo.VERSION_NAME) -> UpdateState.Latest
+                    release == null || label == null -> UpdateState.Failed
+                    !release.isNewerThanInstalled() -> UpdateState.Latest
                     autoInstallUpdates -> {
-                        download(tag)
-                        UpdateState.Downloading(tag, 0)
+                        download(release)
+                        UpdateState.Downloading(label, 0)
                     }
-                    else -> UpdateState.Available(tag)
+                    else -> UpdateState.Available(label, release)
                 }
             }
         }
@@ -211,7 +230,9 @@ fun AboutScreen(
             UpdateCard(
                 state = updateState,
                 onCheck = checkUpdate,
-                onOpenRelease = { platform.openUrl(DOWNLOAD_PAGE_URL) },
+                onOpenRelease = {
+                    (updateState as? UpdateState.Available)?.let { download(it.release) }
+                },
             )
             Spacer(Modifier.height(10.dp))
 
@@ -223,7 +244,7 @@ fun AboutScreen(
                     settingsViewModel.saveAutoInstallUpdates(enabled)
                     // Turning it on with a release already waiting starts the download right away.
                     val pending = updateState
-                    if (enabled && pending is UpdateState.Available) download(pending.version)
+                    if (enabled && pending is UpdateState.Available) download(pending.release)
                 },
             )
             Spacer(Modifier.height(10.dp))

@@ -49,6 +49,7 @@ class CantaSettings(storage: AppBlobStorage) {
     val showDevicePhotoFlow = field { it.showDevicePhoto }
     /** Downloads a found release on its own and offers the Shizuku install; see [AppSettingsProto.autoInstallUpdates]. */
     val autoInstallUpdatesFlow = field { it.autoInstallUpdates }
+    val updateChannelFlow = field { it.updateChannel.ifBlank { "stable" } }
     val onboardingVersionFlow = field { it.onboardingVersion }
     val pendingRebootFlow: Flow<List<PendingUninstallProto>> = field { it.pendingReboot }
     val lastConfirmedPackagesFlow: Flow<List<String>> = field { it.lastConfirmedPackages }
@@ -74,6 +75,9 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setShowRecommendTab(show: Boolean) = update { it.copy(showRecommendTab = show) }
     suspend fun setShowDevicePhoto(show: Boolean) = update { it.copy(showDevicePhoto = show) }
     suspend fun setAutoInstallUpdates(auto: Boolean) = update { it.copy(autoInstallUpdates = auto) }
+    suspend fun setUpdateChannel(channel: String) = update {
+        it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
+    }
     suspend fun setOnboardingVersion(version: Int) = update { it.copy(onboardingVersion = version) }
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
     suspend fun setLastConfirmedPackages(packages: List<String>) = update { it.copy(lastConfirmedPackages = packages) }
