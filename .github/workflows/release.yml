@@ -133,3 +133,9 @@ jobs:
           gh release upload "$TAG" androidApp/build/outputs/apk/release/*.apk
           gh release upload "$TAG" androidApp/build/outputs/apk/release/SHA256SUMS.txt
           gh release upload "$TAG" "${{ steps.attest.outputs.bundle-path }}"
+
+      - name: 🌐 Update download page
+        if: inputs.keep_draft != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pages.yml --ref master

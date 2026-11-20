@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -76,6 +78,9 @@ import io.github.samolego.canta.generated.resources.tab_apps
 import io.github.samolego.canta.generated.resources.tab_recommend
 import io.github.samolego.canta.generated.resources.tab_rules
 import io.github.samolego.canta.generated.resources.tab_tweaks
+import io.github.samolego.canta.generated.resources.update_channel
+import io.github.samolego.canta.generated.resources.update_channel_dev
+import io.github.samolego.canta.generated.resources.update_channel_stable
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.SettingsSwitch
@@ -179,7 +184,7 @@ fun AboutScreen(
     }
 
     val checkUpdate: () -> Unit = {
-        if (updateState !is UpdateState.Checking && updateState !is UpdateState.Downloading && updateState !is UpdateState.Installing) {
+        if (updateChannel != null && updateState !is UpdateState.Checking && updateState !is UpdateState.Downloading && updateState !is UpdateState.Installing) {
             updateState = UpdateState.Checking
             updateJob = scope.launch {
                 val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
@@ -233,6 +238,11 @@ fun AboutScreen(
                 onOpenRelease = {
                     (updateState as? UpdateState.Available)?.let { download(it.release) }
                 },
+            )
+            Spacer(Modifier.height(10.dp))
+            UpdateChannelCard(
+                channel = updateChannel,
+                onChannelSelected = { settingsViewModel.saveUpdateChannel(it) },
             )
             Spacer(Modifier.height(10.dp))
 
@@ -461,6 +471,52 @@ private fun UpdateCard(
                 style = FlText.caption1,
                 color = scheme.primary,
             )
+        }
+    }
+}
+
+@Composable
+private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = CardInset)
+            .clip(RoundedCornerShape(CardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .clickable(enabled = channel != null) { expanded = true }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(Res.string.update_channel),
+            style = FlText.subheadline,
+            color = scheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Box {
+            Text(
+                text = stringResource(if (channel == "dev") Res.string.update_channel_dev else Res.string.update_channel_stable),
+                style = FlText.subheadline,
+                color = scheme.onSurfaceVariant,
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(Res.string.update_channel_stable)) },
+                    onClick = {
+                        expanded = false
+                        onChannelSelected("stable")
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(Res.string.update_channel_dev)) },
+                    onClick = {
+                        expanded = false
+                        onChannelSelected("dev")
+                    },
+                )
+            }
         }
     }
 }

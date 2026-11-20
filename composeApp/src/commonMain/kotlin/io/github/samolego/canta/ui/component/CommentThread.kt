@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -178,9 +177,8 @@ internal fun replyHideKey(key: Long, reply: PlanComment, replyIndex: Int): Long 
  *
  * [onLike] taps a comment's heart; the heart and its count are read off the comment itself, so the
  * page only has to write the new state back into its list. [hidden] holds the hide keys of
- * comments this install put away with the broken heart — a personal, session-long hide: a hidden
- * answer leaves its thread, a hidden first-level comment takes its whole thread with it.
- * [onHide] records one key.
+ * comments this install folded with the broken heart for this session. A folded first-level
+ * comment also conceals its replies. [onHide] toggles one key.
  */
 fun LazyListScope.commentThreads(
     threads: List<CommentThread>,
@@ -198,15 +196,10 @@ fun LazyListScope.commentThreads(
     threads.forEachIndexed { index, thread ->
         val starter = thread.comment
         val key = threadKey(starter, index)
-        // A hidden first-level comment takes its answers with it: nobody hides a comment but still
-        // wants the conversation under it on the page.
-        if (hideKey(starter, key) in hidden) return@forEachIndexed
-        // A thread's answers only ever show once the reader asked for them.
+        val starterHidden = hideKey(starter, key) in hidden
+        // A folded first-level comment conceals its answers until it is expanded again.
         val open = thread.replies.isEmpty() || key in expanded
-        val kept = thread.replies
-            .withIndex()
-            .filter { (replyIndex, answer) -> replyHideKey(key, answer, replyIndex) !in hidden }
-        val shown = if (open) kept else emptyList()
+        val shown = if (open && !starterHidden) thread.replies.withIndex() else emptyList()
         item(key = "comment-${starter.id}-$index") {
             CommentRow(
                 comment = starter,
@@ -215,6 +208,7 @@ fun LazyListScope.commentThreads(
                 onReply = onReply,
                 onDelete = onDelete,
                 onLike = { onLike(starter) },
+                folded = starterHidden,
                 onHide = { onHide(hideKey(starter, key)) },
             )
         }
@@ -229,11 +223,12 @@ fun LazyListScope.commentThreads(
                     onReply = onReply,
                     onDelete = onDelete,
                     onLike = { onLike(answer) },
+                    folded = replyHideKey(key, answer, replyIndex) in hidden,
                     onHide = { onHide(replyHideKey(key, answer, replyIndex)) },
                 )
             }
         }
-        if (thread.replies.isNotEmpty()) {
+        if (thread.replies.isNotEmpty() && !starterHidden) {
             item(key = "thread-more-$key") {
                 ThreadToggle(
                     expanded = open,
@@ -342,10 +337,37 @@ fun CommentRow(
     onDelete: (PlanComment) -> Unit = {},
     /** Taps the heart on this comment. */
     onLike: () -> Unit = {},
-    /** Puts this comment away for this reader, this session only. */
+    /** Folds this comment for this reader, this session only. */
     onHide: () -> Unit = {},
+    folded: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
+    if (folded) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = if (indented) 48.dp else 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "评论已折叠",
+                modifier = Modifier.weight(1f),
+                fontSize = 11.sp,
+                color = colors.outline,
+            )
+            Icon(
+                imageVector = Icons.Default.HeartBroken,
+                contentDescription = "展开这条评论",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onHide)
+                    .padding(6.dp)
+                    .size(16.dp),
+                tint = colors.outline,
+            )
+        }
+        return
+    }
     val mine = me.isNotEmpty() &&
         (comment.author == me || comment.author == "#$me" || comment.authorId == me)
     var sheet by remember(comment.id, comment.author, comment.body) { mutableStateOf(false) }
@@ -579,7 +601,7 @@ fun CommentComposer(
     LaunchedEffect(replyToName) {
         if (replyToName.isNotEmpty()) focusRequester.requestFocus()
     }
-    Surface(modifier = modifier.fillMaxWidth().imePadding(), tonalElevation = 3.dp) {
+    Surface(modifier = modifier.fillMaxWidth(), tonalElevation = 3.dp) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

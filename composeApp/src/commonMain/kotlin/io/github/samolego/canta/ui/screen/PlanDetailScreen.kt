@@ -228,7 +228,7 @@ fun PlanDetailScreen(
     }
 
     val hideComment: (Long) -> Unit = { key ->
-        hiddenComments = hiddenComments + key
+        hiddenComments = if (key in hiddenComments) hiddenComments - key else hiddenComments + key
     }
 
     val likeComment: (PlanComment) -> Unit = { comment ->

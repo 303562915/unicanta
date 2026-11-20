@@ -76,12 +76,11 @@ jobs:
           cp -r site/. _site/
           : > _site/.nojekyll
 
-          VERSION_CODE=$(grep '^version_code=' gradle.properties | cut -d'=' -f2)
-          export VERSION_CODE
-
           if [ "${{ steps.release.outputs.found }}" = "true" ]; then
             TAG=$(python3 -c "import json;print(json.load(open('release.json'))['tagName'])")
             export TAG
+            VERSION_CODE=$(gh api "repos/$REPO/contents/gradle.properties" -f "ref=$TAG" --method GET --jq .content | base64 -d | grep '^version_code=' | cut -d'=' -f2)
+            export VERSION_CODE
 
             # 校验和文件是可选的，取不到就留空
             if gh release download "$TAG" --repo "$REPO" \
