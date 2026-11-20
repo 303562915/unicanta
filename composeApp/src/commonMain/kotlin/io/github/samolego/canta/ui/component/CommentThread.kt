@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -52,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -591,13 +591,21 @@ fun CommentComposer(
     // ROMs that report the entire window as the IME inset while the keyboard is hidden — the field
     // then sat at the very top of an empty full-height bar, and only fell back into place once the
     // keyboard opened and the inset became a real keyboard height.
-    val imeVisible = WindowInsets.isImeVisible
-    val bottomInset = if (imeVisible) WindowInsets.ime else WindowInsets.navigationBars
+    //
+    // Whether the keyboard is up is asked of the focus system, not of `WindowInsets.isImeVisible`,
+    // which this Compose line no longer carries. The field in this bar is the only thing here that
+    // can raise a keyboard, and it holds focus for exactly as long as that keyboard is up — so with
+    // nothing focused the bar clears the navigation bar alone, and a ROM that overstates the IME
+    // inset while the keyboard is down can no longer push it up.
+    var keyboardUp by remember { mutableStateOf(false) }
     Surface(tonalElevation = 3.dp) {
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .windowInsetsPadding(bottomInset.only(WindowInsetsSides.Bottom))
+                .windowInsetsPadding(
+                    (if (keyboardUp) WindowInsets.ime else WindowInsets.navigationBars)
+                        .only(WindowInsetsSides.Bottom),
+                )
                 .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
         ) {
             if (replyToName.isNotEmpty()) {
@@ -623,7 +631,8 @@ fun CommentComposer(
                         onValueChange = onDraftChange,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .focusRequester(focusRequester),
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { keyboardUp = it.isFocused },
                         textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
