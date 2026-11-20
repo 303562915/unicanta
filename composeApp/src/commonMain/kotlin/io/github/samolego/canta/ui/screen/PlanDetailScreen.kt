@@ -57,8 +57,10 @@ import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.AppNoteStore
+import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.inOrder
 import io.github.samolego.canta.data.community.keyed
 import io.github.samolego.canta.data.community.rankPackages
 import io.github.samolego.canta.data.community.threads
@@ -81,6 +83,7 @@ import io.github.samolego.canta.generated.resources.plan_upload_failed
 import io.github.samolego.canta.generated.resources.plan_verified_chip
 import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
@@ -168,6 +171,11 @@ fun PlanDetailScreen(
     var hiddenComments by remember { mutableStateOf(setOf<Long>()) }
     /** The "use this plan" tap that has to be confirmed, because the plan is for another phone. */
     var confirmForeign by remember { mutableStateOf(false) }
+    /**
+     * How the comment threads are ordered. A reading preference, not a stored one: the page opens
+     * on newest every time, because that is what "what did people say about this plan" means.
+     */
+    var order by remember { mutableStateOf(CommentOrder.NEWEST) }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -387,6 +395,8 @@ fun PlanDetailScreen(
                     onLikeComment = likeComment,
                     hiddenComments = hiddenComments,
                     onHideComment = hideComment,
+                    order = order,
+                    onOrderChange = { order = it },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -468,6 +478,9 @@ private fun PlanDetailContent(
     /** Hide keys of the comments this install put away with the broken heart, this session only. */
     hiddenComments: Set<Long> = emptySet(),
     onHideComment: (Long) -> Unit = {},
+    /** How the threads are ordered; see [CommentOrder]. */
+    order: CommentOrder = CommentOrder.NEWEST,
+    onOrderChange: (CommentOrder) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -475,7 +488,7 @@ private fun PlanDetailContent(
     val ranked = plan.packages
         .map { pkg -> pkg to ranking[pkg] }
         .sortedWith(compareBy(nullsLast()) { (_, rank) -> rank?.rank })
-    val threads = remember(comments) { comments.threads() }
+    val threads = remember(comments, order) { comments.threads().inOrder(order) }
     // The uploader's current name (or the identity number before names were synced), in the form the
     // rest of the app shows: the plan card and this header must read the same.
     val uploaderName = plan.authorName
@@ -513,6 +526,11 @@ private fun PlanDetailContent(
                 title = "共 ${comments.size} 条评论",
                 subtitle = null,
             )
+        }
+        if (comments.isNotEmpty()) {
+            item(key = "comment-order") {
+                CommentOrderRow(order = order, onOrderChange = onOrderChange)
+            }
         }
         if (comments.isEmpty()) {
             item {

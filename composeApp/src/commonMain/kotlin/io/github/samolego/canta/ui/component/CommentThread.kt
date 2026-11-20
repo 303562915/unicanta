@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.PlanComment
 import kotlin.math.absoluteValue
@@ -180,6 +181,46 @@ internal fun hideKey(comment: PlanComment, key: Long): Long = if (comment.id > 0
  */
 internal fun replyHideKey(key: Long, reply: PlanComment, replyIndex: Int): Long =
     if (reply.id > 0L) reply.id else key * 4096L - 1L - replyIndex
+
+/**
+ * The switcher above a comment list: newest, most hearted, or most useful.
+ *
+ * Three taps is all this is, so it is drawn as plain text buttons rather than a dropdown: a
+ * dropdown for three fixed options hides two of them behind an extra tap, and the current order is
+ * exactly what a reader wants to see at a glance.
+ */
+@Composable
+fun CommentOrderRow(order: CommentOrder, onOrderChange: (CommentOrder) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CommentOrder.entries.forEach { option ->
+            val selected = option == order
+            Text(
+                text = option.label,
+                fontSize = 11.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.surfaceContainerHighest
+                        else Color.Transparent
+                    )
+                    .clickable { if (!selected) onOrderChange(option) }
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
 
 /**
  * The rows of one comment thread, for a `LazyColumn` that already has its own sections: every
