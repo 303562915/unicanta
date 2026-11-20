@@ -6,6 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -32,7 +33,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEmotions
@@ -58,7 +58,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
@@ -67,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.CommentThread
@@ -287,6 +292,61 @@ private fun ThreadToggle(expanded: Boolean, count: Int, onClick: () -> Unit) {
                 tint = colors.outline,
             )
         }
+    }
+}
+
+/**
+ * A heart outline with one thin crack through it: the "not for me, fold this" reaction.
+ *
+ * Drawn rather than picked from the icon set, because neither glyph in the set is this: `Bolt` is a
+ * lightning strike (a different idea altogether) and `HeartBroken` tears the heart into two halves
+ * with a gap wide enough that it reads as "destroyed" instead of "put away". This is one closed
+ * outline — the same silhouette as the like button next to it — plus a narrow zigzag stroke down the
+ * middle, which is what the cracked heart in a short-video comment list looks like.
+ *
+ * Everything is measured against the canvas box, so the shape holds at 16dp beside a heart and at
+ * any other size it may be asked for later.
+ */
+@Composable
+internal fun CrackedHeart(
+    tint: Color,
+    modifier: Modifier = Modifier,
+    /** Hairline by intent: a heavier stroke turns the crack into a slash. */
+    strokeWidth: Dp = 1.1.dp,
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = strokeWidth.toPx()
+        val outline = Path().apply {
+            moveTo(w * 0.50f, h * 0.31f)
+            cubicTo(w * 0.50f, h * 0.20f, w * 0.41f, h * 0.06f, w * 0.28f, h * 0.06f)
+            cubicTo(w * 0.13f, h * 0.06f, w * 0.03f, h * 0.19f, w * 0.03f, h * 0.33f)
+            cubicTo(w * 0.03f, h * 0.53f, w * 0.23f, h * 0.70f, w * 0.50f, h * 0.94f)
+            cubicTo(w * 0.77f, h * 0.70f, w * 0.97f, h * 0.53f, w * 0.97f, h * 0.33f)
+            cubicTo(w * 0.97f, h * 0.19f, w * 0.87f, h * 0.06f, w * 0.72f, h * 0.06f)
+            cubicTo(w * 0.59f, h * 0.06f, w * 0.50f, h * 0.20f, w * 0.50f, h * 0.31f)
+            close()
+        }
+        drawPath(
+            path = outline,
+            color = tint,
+            style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+        // One crack, starting in the notch at the top and running down past the middle. The kinks
+        // are sharp (Miter) so it reads as a fracture rather than as a curve.
+        val crack = Path().apply {
+            moveTo(w * 0.58f, h * 0.13f)
+            lineTo(w * 0.43f, h * 0.38f)
+            lineTo(w * 0.58f, h * 0.53f)
+            lineTo(w * 0.44f, h * 0.73f)
+            lineTo(w * 0.50f, h * 0.90f)
+        }
+        drawPath(
+            path = crack,
+            color = tint,
+            style = Stroke(width = stroke * 0.85f, cap = StrokeCap.Round, join = StrokeJoin.Miter),
+        )
     }
 }
 
@@ -537,12 +597,12 @@ fun CommentRow(
                 }
             }
             Spacer(Modifier.width(4.dp))
-            // One stroke, not a broken heart: the bolt is the "put this away" mark, and it is the
-            // same 16dp as the heart beside it — the two are a pair, and a smaller one reads as a
-            // lesser action instead of the other half of the same choice.
-            Icon(
-                imageVector = Icons.Default.Bolt,
-                contentDescription = if (folded) "展开这条评论" else "折叠这条评论",
+            // A heart with a thin crack down it, not a bolt and not Material's HeartBroken: that
+            // glyph splits the heart into two halves with a wide gap, which reads as "broken
+            // forever", while this one is the same outline heart as the like button beside it with
+            // one narrow zigzag stroke through the middle. The two are a pair — same 16dp, same
+            // weight — so they read as two reactions rather than as a reaction and a warning.
+            CrackedHeart(
                 modifier = Modifier
                     .padding(4.dp)
                     .size(16.dp)
