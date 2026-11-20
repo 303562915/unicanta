@@ -65,6 +65,8 @@ import io.github.samolego.canta.data.community.NOTE_MAX_LENGTH
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.inOrder
+import io.github.samolego.canta.data.community.threadOf
+import io.github.samolego.canta.data.community.withAnchorFirst
 import io.github.samolego.canta.data.community.keyed
 import io.github.samolego.canta.data.community.rankPackages
 import io.github.samolego.canta.data.community.threads
@@ -144,6 +146,11 @@ fun PlanDetailScreen(
     onUsePlan: (List<String>) -> Unit = {},
     /** Shares this plan: copies its code to the clipboard. */
     onShare: (CommunityPlan) -> Unit = {},
+    /**
+     * The comment this page was opened on, from the inbox: its thread is put first and opened, so
+     * "somebody answered you" leads to the answer rather than to the top of the page.
+     */
+    anchorCommentId: Long = 0L,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -472,6 +479,7 @@ fun PlanDetailScreen(
                     onHideComment = hideComment,
                     order = order,
                     onOrderChange = { order = it },
+                    anchorCommentId = anchorCommentId,
                     onEditNote = { currentNote ->
                         noteDraft = currentNote
                         editingNote = true
@@ -560,6 +568,11 @@ private fun PlanDetailContent(
     /** How the threads are ordered; see [CommentOrder]. */
     order: CommentOrder = CommentOrder.NEWEST,
     onOrderChange: (CommentOrder) -> Unit = {},
+    /**
+     * The comment this page was opened on, from a mention or a reply in the inbox. Its thread is put
+     * first and opened, so the row the reader came for is the first thing under the title.
+     */
+    anchorCommentId: Long = 0L,
     /** The uploader's tap on "补一句说明 / 改说明"; null on a plan this install did not upload. */
     onEditNote: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -569,7 +582,16 @@ private fun PlanDetailContent(
     val ranked = plan.packages
         .map { pkg -> pkg to ranking[pkg] }
         .sortedWith(compareBy(nullsLast()) { (_, rank) -> rank?.rank })
-    val threads = remember(comments, order) { comments.threads().inOrder(order) }
+    val threads = remember(comments, order, anchorCommentId) {
+        comments.threads().inOrder(order).withAnchorFirst(anchorCommentId)
+    }
+    // The thread the reader came for is open when the page opens on it: an answer reached from the
+    // inbox is behind "展开 N 条回复", and a reader who has to open it again was not really taken
+    // there.
+    LaunchedEffect(anchorCommentId) {
+        val anchored = threads.threadOf(anchorCommentId) ?: return@LaunchedEffect
+        onToggleThread(anchored.comment.id)
+    }
     // The uploader's current name (or the identity number before names were synced), in the form the
     // rest of the app shows: the plan card and this header must read the same.
     val uploaderName = plan.authorName

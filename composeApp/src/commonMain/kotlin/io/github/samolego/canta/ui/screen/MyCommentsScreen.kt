@@ -101,6 +101,10 @@ fun MyCommentsScreen(
     token: String = "",
     onOpenPlan: (Long) -> Unit = {},
     onOpenApp: (String) -> Unit = {},
+    /** Opens a plan page on one of its comments (an inbox row that has a comment behind it). */
+    onOpenPlanComment: (planId: Long, commentId: Long) -> Unit = { id, _ -> onOpenPlan(id) },
+    /** Opens an app page on one of its comments. */
+    onOpenAppComment: (packageName: String, commentId: Long) -> Unit = { pkg, _ -> onOpenApp(pkg) },
     /** This phone: what "my plans" falls back to when the deployment has no `plans_by_owner`. */
     profile: DeviceProfile? = null,
     onNavigateBack: () -> Unit,
@@ -220,10 +224,17 @@ fun MyCommentsScreen(
         }
     }
 
-    val open: (String, String) -> Unit = { kind, target ->
+    /**
+     * Opens what a row is about. A row with a comment behind it also hands that comment id along, so
+     * the page can lead with it: "somebody answered you" should land on the answer, not on the top
+     * of a page that may be forty comments long.
+     */
+    val open: (String, String, Long) -> Unit = { kind, target, commentId ->
         val plan = if (kind == COMMENT_KIND_APP) null else target.toLongOrNull()
         val pkg = if (kind == COMMENT_KIND_APP) target else null
         when {
+            plan != null && commentId > 0L -> onOpenPlanComment(plan, commentId)
+            pkg != null && commentId > 0L -> onOpenAppComment(pkg, commentId)
             plan != null -> onOpenPlan(plan)
             pkg != null -> onOpenApp(pkg)
         }
@@ -418,7 +429,7 @@ fun MyCommentsScreen(
                                     InboxRow(
                                         item = row,
                                         isNew = row.commentIdOrZero > unreadSince,
-                                        onOpen = { open(row.targetKind, row.target) },
+                                        onOpen = { open(row.targetKind, row.target, row.commentIdOrZero) },
                                     )
                                 }
                                 if (loadingMore) {
@@ -454,7 +465,7 @@ fun MyCommentsScreen(
                             createdAt = comment.createdAt,
                             replies = comment.replies,
                             likes = comment.likes,
-                            onOpen = { open(comment.kind, comment.target) },
+                            onOpen = { open(comment.kind, comment.target, comment.id) },
                             onDelete = { pendingDelete = comment },
                         )
                     }

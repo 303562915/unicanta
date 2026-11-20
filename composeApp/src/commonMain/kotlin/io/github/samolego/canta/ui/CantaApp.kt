@@ -34,6 +34,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.github.samolego.canta.core.CantaAppDependencies
+import io.github.samolego.canta.core.CantaHandler
+import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.data.community.PlanRepository
@@ -465,6 +467,28 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     appListViewModel = appListViewModel,
                 )
             }
+            composable(route = Screen.PlanComment.route) { entry ->
+                // A plan opened on one of its comments: the same page, plus the thread to lead with.
+                val args = entry.arguments
+                val planId = args?.let { a ->
+                    runCatching { a.read { if (contains("planId")) getString("planId").toLongOrNull() else null } }
+                        .getOrNull()
+                } ?: 0L
+                val commentId = args?.let { a ->
+                    runCatching { a.read { if (contains("commentId")) getString("commentId").toLongOrNull() else null } }
+                        .getOrNull()
+                } ?: 0L
+                PlanDetailRoute(
+                    planId = planId,
+                    anchorCommentId = commentId,
+                    navController = navController,
+                    handler = handler,
+                    deps = deps,
+                    communityRepository = communityRepository,
+                    appListViewModel = appListViewModel,
+                    platform = platform,
+                )
+            }
             composable(route = Screen.PlanDetail.route) { entry ->
                 // Navigation 2.10 hands out a SavedState, not a Bundle: read it the same way the
                 // navigation library itself does. The id is an undeclared path argument, so it
@@ -475,47 +499,37 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                             args.read { if (contains("planId")) getString("planId").toLongOrNull() else null }
                         }.getOrNull()
                     } ?: 0L
-                var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
-                // Comments are posted under this install's own code: no account, no login.
-                var planAuthor by remember { mutableStateOf("") }
-                // The identity number and its secret: what a comment of this install is deleted with.
-                var planIdentity by remember { mutableStateOf(Identity("")) }
-                // The plan's packages are shown with their icons and their device rules, the same
-                // way the app list shows them.
-                var planRules by remember { mutableStateOf<SafetyRules?>(null) }
-                LaunchedEffect(Unit) {
-                    planProfile = handler.deviceProfile()
-                    // The name from the settings, or "#10000" while none was picked.
-                    planAuthor = DeviceIdentity.displayName(deps.settings)
-                    planIdentity = DeviceIdentity.current(deps.settings)
-                    planRules = SafetyRules.bundled()
-                }
-                PlanDetailScreen(
+                PlanDetailRoute(
                     planId = planId,
-                    repository = communityRepository,
-                    profile = planProfile,
-                    onNavigateBack = { navController.navigateUp() },
-                    author = planAuthor,
-                    apps = appListViewModel.apps,
-                    rules = planRules,
-                    notes = deps.notes,
-                    owner = planIdentity.owner.ifEmpty { planIdentity.token },
-                    token = planIdentity.token,
-                    onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
-                    // "Use this plan": select its packages on the app list and go there, so the
-                    // uninstall action is one tap away.
-                    onUsePlan = { packages ->
-                        appListViewModel.selectedApps.clear()
-                        appListViewModel.selectedApps.addAll(packages)
-                        navController.navigate(Screen.Main.route) { launchSingleTop = true }
-                    },
-                    // Sharing hands the plan to the clipboard as a code; the receiver's app reads
-                    // it at launch and opens this same page.
-                    onShare = { plan ->
-                        val code = ShareCode.of(plan.id)
-                        platform.copyToClipboard(ShareCode.message(plan.id, plan.title))
-                        platform.showMessage("分享码已复制：$code")
-                    },
+                    anchorCommentId = 0L,
+                    navController = navController,
+                    handler = handler,
+                    deps = deps,
+                    communityRepository = communityRepository,
+                    appListViewModel = appListViewModel,
+                    platform = platform,
+                )
+            }
+            composable(route = Screen.AppComment.route) { entry ->
+                // An app page opened on one of its comments: the same page plus the comment to lead
+                // with. Both segments are undeclared path arguments, read the way navigation does.
+                val args = entry.arguments
+                val packageName = args?.let { a ->
+                    runCatching { a.read { if (contains("package")) getString("package") else null } }.getOrNull()
+                }.orEmpty()
+                val commentId = args?.let { a ->
+                    runCatching { a.read { if (contains("commentId")) getString("commentId").toLongOrNull() else null } }
+                        .getOrNull()
+                } ?: 0L
+                AppDetailRoute(
+                    packageName = packageName,
+                    anchorCommentId = commentId,
+                    navController = navController,
+                    handler = handler,
+                    deps = deps,
+                    communityRepository = communityRepository,
+                    appListViewModel = appListViewModel,
+                    platform = platform,
                 )
             }
             composable(route = Screen.AppDetail.route) { entry ->
@@ -527,36 +541,15 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                             args.read { if (contains("package")) getString("package") else null }
                         }.getOrNull()
                     }.orEmpty()
-                var appProfile by remember { mutableStateOf<DeviceProfile?>(null) }
-                var appAuthor by remember { mutableStateOf("") }
-                // Who the vote and the comments are recorded under: the number this install owns,
-                // or the token itself before the backend has given it one. The full token, not a
-                // slice: "my comments" is looked up by the same value, and a slice matches nothing
-                // the backend stores.
-                var appVoter by remember { mutableStateOf("") }
-                // The secret that proves the number, needed to delete a comment of this install.
-                var appToken by remember { mutableStateOf("") }
-                LaunchedEffect(Unit) {
-                    appProfile = handler.deviceProfile()
-                    appAuthor = DeviceIdentity.displayName(deps.settings)
-                    val identity = DeviceIdentity.current(deps.settings)
-                    appVoter = identity.owner.ifEmpty { identity.token }
-                    appToken = identity.token
-                }
-                AppDetailScreen(
+                AppDetailRoute(
                     packageName = packageName,
-                    app = appListViewModel.apps.firstOrNull { it.packageName == packageName },
-                    profile = appProfile,
-                    notes = deps.notes,
-                    author = appAuthor,
-                    onOpenUrl = { platform.openUrl(it) },
-                    onNavigateBack = { navController.navigateUp() },
-                    repository = communityRepository,
-                    voter = appVoter,
-                    token = appToken,
-                    onOpenDescriptionFixes = { pkg ->
-                        navController.navigate(Screen.DescriptionFix.routeForApp(pkg))
-                    },
+                    anchorCommentId = 0L,
+                    navController = navController,
+                    handler = handler,
+                    deps = deps,
+                    communityRepository = communityRepository,
+                    appListViewModel = appListViewModel,
+                    platform = platform,
                 )
             }
             composable(route = Screen.DescriptionFix.route) { entry ->
@@ -625,6 +618,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     },
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    // A row with a comment behind it opens the page on that comment, so "somebody
+                    // answered you" lands on the answer instead of the top of a long page.
+                    onOpenPlanComment = { id, commentId ->
+                        navController.navigate(Screen.PlanComment.routeFor(id, commentId))
+                    },
+                    onOpenAppComment = { pkg, commentId ->
+                        navController.navigate(Screen.AppComment.routeFor(pkg, commentId))
+                    },
                     profile = myProfile,
                     onNavigateBack = { navController.navigateUp() },
                 )
@@ -729,4 +730,116 @@ private fun onBottomBarSelect(
 private fun NavHostController.navigateSingleTop(route: String) {
     if (currentDestination?.route == route) return
     navigate(route) { launchSingleTop = true }
+}
+
+/**
+ * The plan page itself, in one place: the plain plan route and the comment-anchored one are the same
+ * page with one extra argument, so they share this rather than two copies of the wiring.
+ *
+ * @param anchorCommentId the comment to lead with, 0 for "top of the page".
+ */
+@Composable
+private fun PlanDetailRoute(
+    planId: Long,
+    anchorCommentId: Long,
+    navController: NavHostController,
+    handler: CantaHandler,
+    deps: CantaAppDependencies,
+    communityRepository: PlanRepository,
+    appListViewModel: AppListViewModel,
+    platform: CantaPlatform,
+) {
+    var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
+    // Comments are posted under this install's own code: no account, no login.
+    var planAuthor by remember { mutableStateOf("") }
+    // The identity number and its secret: what a comment of this install is deleted with.
+    var planIdentity by remember { mutableStateOf(Identity("")) }
+    // The plan's packages are shown with their icons and their device rules, the same way the app
+    // list shows them.
+    var planRules by remember { mutableStateOf<SafetyRules?>(null) }
+    LaunchedEffect(Unit) {
+        planProfile = handler.deviceProfile()
+        // The name from the settings, or "#10000" while none was picked.
+        planAuthor = DeviceIdentity.displayName(deps.settings)
+        planIdentity = DeviceIdentity.current(deps.settings)
+        planRules = SafetyRules.bundled()
+    }
+    PlanDetailScreen(
+        planId = planId,
+        repository = communityRepository,
+        profile = planProfile,
+        onNavigateBack = { navController.navigateUp() },
+        author = planAuthor,
+        apps = appListViewModel.apps,
+        rules = planRules,
+        notes = deps.notes,
+        owner = planIdentity.owner.ifEmpty { planIdentity.token },
+        token = planIdentity.token,
+        onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+        // "Use this plan": select its packages on the app list and go there, so the uninstall action
+        // is one tap away.
+        onUsePlan = { packages ->
+            appListViewModel.selectedApps.clear()
+            appListViewModel.selectedApps.addAll(packages)
+            navController.navigate(Screen.Main.route) { launchSingleTop = true }
+        },
+        // Sharing hands the plan to the clipboard as a code; the receiver's app reads it at launch
+        // and opens this same page.
+        onShare = { plan ->
+            val code = ShareCode.of(plan.id)
+            platform.copyToClipboard(ShareCode.message(plan.id, plan.title))
+            platform.showMessage("分享码已复制：$code")
+        },
+        anchorCommentId = anchorCommentId,
+    )
+}
+
+/**
+ * The app page itself, in one place: the plain route and the comment-anchored one differ by one
+ * argument, so the wiring lives here once.
+ *
+ * @param anchorCommentId the comment to lead with, 0 for "top of the page".
+ */
+@Composable
+private fun AppDetailRoute(
+    packageName: String,
+    anchorCommentId: Long,
+    navController: NavHostController,
+    handler: CantaHandler,
+    deps: CantaAppDependencies,
+    communityRepository: PlanRepository,
+    appListViewModel: AppListViewModel,
+    platform: CantaPlatform,
+) {
+    var appProfile by remember { mutableStateOf<DeviceProfile?>(null) }
+    var appAuthor by remember { mutableStateOf("") }
+    // Who the vote and the comments are recorded under: the number this install owns, or the token
+    // itself before the backend has given it one. The full token, not a slice: "my comments" is
+    // looked up by the same value, and a slice matches nothing the backend stores.
+    var appVoter by remember { mutableStateOf("") }
+    // The secret that proves the number, needed to delete a comment of this install.
+    var appToken by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        appProfile = handler.deviceProfile()
+        appAuthor = DeviceIdentity.displayName(deps.settings)
+        val identity = DeviceIdentity.current(deps.settings)
+        appVoter = identity.owner.ifEmpty { identity.token }
+        appToken = identity.token
+    }
+    AppDetailScreen(
+        packageName = packageName,
+        app = appListViewModel.apps.firstOrNull { it.packageName == packageName },
+        profile = appProfile,
+        notes = deps.notes,
+        author = appAuthor,
+        onOpenUrl = { platform.openUrl(it) },
+        onNavigateBack = { navController.navigateUp() },
+        repository = communityRepository,
+        voter = appVoter,
+        token = appToken,
+        onOpenDescriptionFixes = { pkg ->
+            navController.navigate(Screen.DescriptionFix.routeForApp(pkg))
+        },
+        anchorCommentId = anchorCommentId,
+    )
 }

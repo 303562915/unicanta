@@ -1,7 +1,6 @@
 package io.github.samolego.canta.ui.navigation
 
-sealed class Screen(val route: String) {
-    data object Main : Screen("main")
+sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Logs : Screen("logs")
     data object Settings : Screen("settings")
 
@@ -41,6 +40,23 @@ sealed class Screen(val route: String) {
     data object AppDetail : Screen("app/{package}") {
         /** Concrete route for [packageName]; pairs with the `package` argument of [route]. */
         fun routeForApp(packageName: String) = "app/$packageName"
+    }
+
+    /**
+     * One app's page, opened on one comment: what a mention in the inbox leads to.
+     *
+     * A separate route rather than an argument on [AppDetail], because a package name is a path
+     * segment with dots in it and an optional query on top of that is a URL a reader cannot read.
+     */
+    data object AppComment : Screen("app/{package}/comment/{commentId}") {
+        fun routeFor(packageName: String, commentId: Long) = "app/$packageName/comment/$commentId"
+    }
+
+    /**
+     * One plan's page, opened on one comment: the other half of what a mention leads to.
+     */
+    data object PlanComment : Screen("plan/{planId}/comment/{commentId}") {
+        fun routeFor(planId: Long, commentId: Long) = "plan/$planId/comment/$commentId"
     }
 
     /**

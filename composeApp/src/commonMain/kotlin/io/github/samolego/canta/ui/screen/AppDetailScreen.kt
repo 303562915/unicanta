@@ -61,7 +61,9 @@ import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PackageVotes
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.threadOf
 import io.github.samolego.canta.data.community.threads
+import io.github.samolego.canta.data.community.withAnchorFirst
 import io.github.samolego.canta.data.community.updatedComment
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
@@ -123,6 +125,11 @@ fun AppDetailScreen(
     token: String = "",
     /** Opens the page where this app's description can be corrected and voted on. */
     onOpenDescriptionFixes: (String) -> Unit = {},
+    /**
+     * The comment this page was opened on, from the inbox: its thread is put first and opened, so
+     * "somebody answered you" lands on the answer rather than on the top of the page.
+     */
+    anchorCommentId: Long = 0L,
 ) {
     val scope = rememberCoroutineScope()
     var reviews by remember { mutableStateOf<List<AppReview>>(emptyList()) }
@@ -336,7 +343,16 @@ fun AppDetailScreen(
         val visibleComments = remember(comments, voteScope, selectedSystem, profile?.displayModel) {
             scopedToDevice(comments, voteScope, selectedSystem, profile?.displayModel.orEmpty())
         }
-        val threads = remember(visibleComments) { visibleComments.threads() }
+        val threads = remember(visibleComments, anchorCommentId) {
+            visibleComments.threads().withAnchorFirst(anchorCommentId)
+        }
+        // The thread the reader came for is opened, not folded: an answer reached from the inbox is
+        // behind "展开 N 条回复", and having to open it again means the tap did not really take them
+        // there.
+        LaunchedEffect(anchorCommentId) {
+            val anchored = threads.threadOf(anchorCommentId) ?: return@LaunchedEffect
+            expandedThreads = expandedThreads + anchored.comment.id
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
