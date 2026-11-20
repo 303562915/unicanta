@@ -86,7 +86,15 @@ fun resolvePending(
             continue
         }
         if (entry.baseline) {
-            if (state.uninstalled && countBaselinesAsSurvived) remaining += entry.copy(survived = true)
+            // A baseline is a removal that was already there when this build first looked: it is
+            // proved by a later boot that still finds the package gone, and only when the caller
+            // asked for that proof. Until then it has to stay pending — dropping it here would
+            // mean it can never be proved. One that is back on the phone proves nothing at all.
+            when {
+                !state.uninstalled -> {}
+                countBaselinesAsSurvived -> remaining += entry.copy(survived = true)
+                else -> remaining += entry
+            }
             continue
         }
         fun report(type: TelemetryEventType) = events.add(TelemetryEvent.ofPending(entry, type))
