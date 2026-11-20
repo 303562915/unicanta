@@ -552,6 +552,21 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     platform = platform,
                 )
             }
+            composable(route = Screen.Uploader.route) { entry ->
+                // The identity number is an undeclared path argument, like every other page's key.
+                val owner = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("owner")) getString("owner") else null }
+                        }.getOrNull()
+                    }.orEmpty()
+                UploaderProfileScreen(
+                    owner = owner,
+                    repository = communityRepository,
+                    onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
             composable(route = Screen.DescriptionFix.route) { entry ->
                 // The package name is the same undeclared path argument the app page reads.
                 val packageName = entry.arguments
@@ -791,6 +806,11 @@ private fun PlanDetailRoute(
             platform.showMessage("分享码已复制：$code")
         },
         anchorCommentId = anchorCommentId,
+        // The page knows whose plan it is; handing that back keeps this call from guessing that the
+        // uploader is this install.
+        onOpenUploader = { owner ->
+            if (owner.isNotEmpty()) navController.navigate(Screen.Uploader.routeFor(owner))
+        },
     )
 }
 

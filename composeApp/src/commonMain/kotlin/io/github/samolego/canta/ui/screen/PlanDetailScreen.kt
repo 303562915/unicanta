@@ -152,6 +152,8 @@ fun PlanDetailScreen(
      * "somebody answered you" leads to the answer rather than to the top of the page.
      */
     anchorCommentId: Long = 0L,
+    /** Opens this uploader's own page; null when this install has no identity to open. */
+    onOpenUploader: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -470,6 +472,7 @@ fun PlanDetailScreen(
                     rules = rules,
                     profile = profile,
                     coverage = coverage,
+                    onOpenUploader = onOpenUploader,
                     comments = comments,
                     loadError = loadError,
                     me = commentAuthor,
@@ -568,6 +571,8 @@ private fun PlanDetailContent(
     foreign: Boolean = false,
     /** The other phones this package set was proven on, most-proven first. */
     coverage: List<DeviceCoverage> = emptyList(),
+    /** Opens this uploader's own page; null when there is no identity to open. */
+    onOpenUploader: ((String) -> Unit)? = null,
     comments: List<PlanComment>,
     loadError: String? = null,
     me: String,
@@ -622,7 +627,7 @@ private fun PlanDetailContent(
         FlTopBarCompactHeight
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
-        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, coverage = coverage, onEditNote = onEditNote) }
+        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, coverage = coverage, onOpenUploader = onOpenUploader, onEditNote = onEditNote) }
 
         item {
             SectionTitle(
@@ -713,6 +718,8 @@ private fun PlanHero(
     onUsePlan: () -> Unit,
     /** The other phones this package set was proven on, most-proven first; empty when unknown. */
     coverage: List<DeviceCoverage> = emptyList(),
+    /** Opens this uploader's own page; null when there is no identity to open. */
+    onOpenUploader: ((String) -> Unit)? = null,
     /** Only offered to the uploader: rewriting somebody else's note is what [saveNote] refuses.
      *  Handed the note as it stands, so the editor opens with the current text in it. */
     onEditNote: ((String) -> Unit)? = null,
@@ -734,8 +741,20 @@ private fun PlanHero(
         ) {
             // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
             // first character of that person's name, like everywhere else. The name leads the line;
-            // the badge, if there is one, stands at the end of it.
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // the badge, if there is one, stands at the end of it. Tapping it opens the uploader's
+            // other plans, which is the next question after one of them worked.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .then(
+                        if (onOpenUploader != null) {
+                            Modifier.clickable { onOpenUploader(plan.owner) }
+                        } else {
+                            Modifier
+                        }
+                    ),
+            ) {
                 LetterAvatar(
                     name = uploaderName,
                     size = 22.dp,

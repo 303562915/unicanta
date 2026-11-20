@@ -60,6 +60,16 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     }
 
     /**
+     * One uploader and everything they put up: the answer to "should I trust their other plans too",
+     * which is what a reader wonders after one of them worked.
+     *
+     * The owner is an identity number, a path argument like every other page's key.
+     */
+    data object Uploader : Screen("user/{owner}") {
+        fun routeFor(owner: String) = "user/$owner"
+    }
+
+    /**
      * The corrected descriptions of one app: what people proposed, how the votes stand, and the two
      * numbers a rewrite has to reach before the page shows it instead of the published line.
      *
