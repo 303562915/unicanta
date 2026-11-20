@@ -58,6 +58,7 @@ import io.github.samolego.canta.ui.dialog.RestoreSuspectsDialog
 import io.github.samolego.canta.ui.dialog.ShizukuRequirementDialog
 import io.github.samolego.canta.ui.dialog.UnsafeSelectionDialog
 import io.github.samolego.canta.ui.dialog.FailureDialog
+import io.github.samolego.canta.ui.dialog.ResumeBatchDialog
 import io.github.samolego.canta.ui.dialog.SuccessDialog
 import io.github.samolego.canta.ui.dialog.UninstallAppsDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
@@ -320,6 +321,11 @@ private fun MainDialogs(
             packages = dialog.packages,
             onRevert = mainViewModel::onRestoreSuspectsReverted,
             onDismiss = mainViewModel::onRestoreSuspectsDismissed,
+        )
+        is MainDialog.ResumeBatch -> ResumeBatchDialog(
+            packages = dialog.packages,
+            onResume = mainViewModel::onResumeBatchConfirmed,
+            onDismiss = mainViewModel::onResumeBatchDismissed,
         )
         is MainDialog.Success -> SuccessDialog(
             platform = platform,

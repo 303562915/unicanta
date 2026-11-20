@@ -13,6 +13,7 @@ import io.github.samolego.canta.CANTA_PACKAGE_NAME
 import io.github.samolego.canta.BuildFlags
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.explainFailure
+import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.app.PackageSnapshot
@@ -21,6 +22,8 @@ import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.history.OperationRecord
+import io.github.samolego.canta.data.history.ResumeCandidate
+import io.github.samolego.canta.data.history.resumeCandidate
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.canta_description
@@ -48,6 +51,8 @@ class AppListViewModel(
     private val telemetry: PackageTelemetry? = null,
     /** The record of what was removed and put back; null when there is none (tests). */
     private val history: OperationLogStore? = null,
+    /** Where an interrupted batch is remembered so it can be finished later; null in tests. */
+    private val settings: CantaSettings? = null,
 ) : ViewModel() {
 
     companion object {
@@ -324,6 +329,12 @@ class AppListViewModel(
     ): Int {
         if (packageNames.isEmpty()) return 0
         _lastFailures.value = emptyList()
+        // Written before the first app is touched: if the app dies on the second one, this is
+        // what tells the next start which apps the batch never reached.
+        val batchId = currentTimeMillis()
+        if (kind == OperationKind.UNINSTALL) {
+            runCatching { settings?.startPendingBatch(packageNames, batchId) }
+        }
         val before = _apps.associateBy { it.packageName }
         val results = when (kind) {
             OperationKind.UNINSTALL -> cantaHandler.uninstallApps(packageNames, resetToFactory)
@@ -331,7 +342,6 @@ class AppListViewModel(
         }
         val succeededApps = mutableListOf<AppInfo>()
         val failed = mutableListOf<OperationRecord>()
-        val batchId = currentTimeMillis()
         val log = mutableListOf<OperationRecord>()
         var succeeded = 0
         results.collect { result ->
@@ -363,6 +373,12 @@ class AppListViewModel(
         }
         _lastFailures.value = failed
         recordOperations(log)
+        // The batch is over: every app has an answer, so there is nothing left to resume. This
+        // runs even when some apps failed — a refusal is an answer, and asking again would only
+        // produce the same refusal twice.
+        if (kind == OperationKind.UNINSTALL) {
+            runCatching { settings?.clearPendingBatch() }
+        }
         if (succeededApps.isNotEmpty()) {
             when (kind) {
                 OperationKind.UNINSTALL ->
@@ -379,6 +395,32 @@ class AppListViewModel(
      */
     suspend fun reinstallPackages(packageNames: List<String>): Int =
         applyPackages(packageNames, OperationKind.REINSTALL)
+
+    /**
+     * What is left of an uninstall batch that was cut short, or null when nothing is. Called once
+     * at start: the batch is the one the user was in the middle of when the app went away.
+     */
+    suspend fun interruptedBatch(): ResumeCandidate? {
+        val current = settings ?: return null
+        val interrupted = runCatching { current.interruptedBatchFlow.first() }.getOrNull().orEmpty()
+        if (interrupted.isEmpty()) return null
+        val startedAt = runCatching { current.interruptedBatchStartedAtFlow.first() }.getOrNull() ?: 0
+        val records = history?.records?.value.orEmpty()
+        return resumeCandidate(interrupted, startedAt, records)
+    }
+
+    /**
+     * Finishes the interrupted batch. The packages already answered are skipped by [applyPackages]
+     * asking the device for each one's state, so nothing that was already removed is attempted a
+     * second time.
+     */
+    suspend fun resumeInterruptedBatch(packages: List<String>, resetToFactory: Boolean = false): Int =
+        applyPackages(packages, OperationKind.UNINSTALL, resetToFactory)
+
+    /** The interrupted batch was abandoned: stop offering it at every start. */
+    suspend fun forgetInterruptedBatch() {
+        runCatching { settings?.clearPendingBatch() }
+    }
 
     /** One line of the records tab for [result]; the phone's own model is asked once per batch. */
     private suspend fun operationRecord(

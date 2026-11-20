@@ -128,7 +128,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     val coroutineScope = rememberCoroutineScope()
 
     val appListViewModel: AppListViewModel = viewModel {
-        AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry, deps.history)
+        AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry, deps.history, deps.settings)
     }
     // One client for the community pages: plans, comments, and the identity in settings.
     val communityRepository = remember { PlanRepository(HttpClient()) }

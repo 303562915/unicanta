@@ -56,6 +56,10 @@ class CantaSettings(storage: AppBlobStorage) {
     val lastConfirmedPackagesFlow: Flow<List<String>> = field { it.lastConfirmedPackages }
     val restoreSuspectsFlow: Flow<List<String>> = field { it.restoreSuspects }
 
+    /** The packages of an interrupted uninstall batch that never got an answer. */
+    val interruptedBatchFlow: Flow<List<String>> = field { it.interruptedBatch }
+    val interruptedBatchStartedAtFlow: Flow<Long> = field { it.interruptedBatchStartedAt }
+
     /** This install's identity token; empty until the plans page has created one. */
     val identityTokenFlow: Flow<String> = field { it.identityToken }
 
@@ -102,6 +106,23 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setLastConfirmedPackages(packages: List<String>) = update { it.copy(lastConfirmedPackages = packages) }
     suspend fun setRestoreSuspects(packages: List<String>) = update { it.copy(restoreSuspects = packages) }
+
+    /**
+     * Remembers that an uninstall batch is running, so a batch cut short by the app dying still
+     * knows which apps it never reached. [packages] is the whole list; the finished ones are
+     * dropped as their answers arrive.
+     */
+    suspend fun startPendingBatch(packages: List<String>, startedAt: Long) = update {
+        it.copy(interruptedBatch = packages, interruptedBatchStartedAt = startedAt)
+    }
+
+    /** Narrows the running batch to the packages still waiting for an answer. */
+    suspend fun setPendingBatch(packages: List<String>) = update { it.copy(interruptedBatch = packages) }
+
+    /** The batch finished (or was abandoned): nothing is left to resume. */
+    suspend fun clearPendingBatch() = update {
+        it.copy(interruptedBatch = emptyList(), interruptedBatchStartedAt = 0)
+    }
     suspend fun setIdentityToken(token: String) = update { it.copy(identityToken = token) }
     suspend fun setIdentityUserId(id: Long) = update { it.copy(identityUserId = id) }
 

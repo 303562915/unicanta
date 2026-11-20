@@ -84,6 +84,14 @@ data class AppSettingsProto(
     @ProtoNumber(22) val showDevicePhoto: Boolean = false,
     /** Update channel: empty defaults to the dev stream; "stable" keeps an explicit stable choice. */
     @ProtoNumber(23) val updateChannel: String = "",
+    /**
+     * The uninstall batch that was running when the app last stopped, if it was interrupted: the
+     * packages that never got an answer. The next start offers to finish the list instead of
+     * making the user find the same forty apps again. Empty when no batch was interrupted.
+     */
+    @ProtoNumber(24) val interruptedBatch: List<String> = emptyList(),
+    /** When that batch started, epoch milliseconds; 0 when nothing is pending. */
+    @ProtoNumber(25) val interruptedBatchStartedAt: Long = 0,
 )
 
 /**

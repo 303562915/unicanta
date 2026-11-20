@@ -51,6 +51,12 @@ sealed interface MainDialog {
     data class RestoreSuspects(val packages: List<String>) : MainDialog
 
     /**
+     * The uninstall batch that was cut short: [packages] never got an answer. Offered once at
+     * start, so the list does not have to be found and selected again.
+     */
+    data class ResumeBatch(val packages: List<String>) : MainDialog
+
+    /**
      * Removing these is known to strand *this* device (model/ROM specific rules), so they are
      * held back unless unsafe removals are allowed in the settings.
      */
@@ -100,8 +106,40 @@ class MainViewModel(
     /** Tells the user once per start that the last batch had to be put back by hand. */
     private suspend fun showRestoreSuspects() {
         val suspects = settings.restoreSuspectsFlow.first()
-        if (suspects.isEmpty() || dialog != null) return
-        dialog = MainDialog.RestoreSuspects(suspects)
+        if (suspects.isNotEmpty() && dialog == null) {
+            dialog = MainDialog.RestoreSuspects(suspects)
+            return
+        }
+        showInterruptedBatch()
+    }
+
+    /**
+     * Offers to finish the batch that was cut short. A device that had to be rescued comes first:
+     * that prompt says the phone may be broken, while this one only says there is work left.
+     */
+    private suspend fun showInterruptedBatch() {
+        if (dialog != null) return
+        val candidate = appList.interruptedBatch() ?: return
+        dialog = MainDialog.ResumeBatch(candidate.packages)
+    }
+
+    /** [MainDialog.ResumeBatch] confirmed: finish the list, which is read off the device again. */
+    fun onResumeBatchConfirmed() {
+        val packages = (dialog as? MainDialog.ResumeBatch)?.packages ?: return
+        dialog = null
+        viewModelScope.launch {
+            val done = appList.resumeInterruptedBatch(packages)
+            appList.loadApps()
+            if (done > 0 && !settings.hideSuccessDialogFlow.first()) {
+                dialog = MainDialog.Success(count = done, isReinstall = false)
+            }
+        }
+    }
+
+    /** [MainDialog.ResumeBatch] dismissed: do not ask again for this batch. */
+    fun onResumeBatchDismissed() {
+        dialog = null
+        viewModelScope.launch { appList.forgetInterruptedBatch() }
     }
 
     /** [MainDialog.RestoreSuspects] dismissed: keep believing it (the batch is already uninstalled). */
