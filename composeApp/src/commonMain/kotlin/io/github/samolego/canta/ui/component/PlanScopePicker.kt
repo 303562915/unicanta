@@ -3,7 +3,6 @@ package io.github.samolego.canta.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,9 +20,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
@@ -37,20 +33,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -100,8 +89,7 @@ fun PlanScope.buildLabel(): String? = when (this) {
 /**
  * The two chips under the page switch: which phone, and which of its builds — the state the list
  * below is drawn from. Tapping either opens the picker; the chevron says so. The search button on
- * the right opens the same picker with the model search already focused, for the phone whose name
- * the reader would otherwise scroll a long list of families to find.
+ * the right belongs to the list under the switch, not to the phone: it filters rows by package.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -110,14 +98,16 @@ fun PlanScopeBar(
     ownLabel: String,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Null hides the button: a page with no package list under it has nothing to filter. */
     onSearch: (() -> Unit)? = null,
+    searching: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen)
-            .padding(start = 16.dp, end = 6.dp, top = 2.dp, bottom = 2.dp),
+            .padding(start = 16.dp, end = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The chips flow rather than share one line under an ellipsis: a system version is a long
@@ -144,12 +134,12 @@ fun PlanScopeBar(
             color = colors.primary,
         )
         if (onSearch != null) {
-            // Its own tap target: the row opens the picker at the model list, this opens it at the
-            // field, so the button is the fast way in and never shadows the 切换 label beside it.
+            // Its own tap target: the row switches the phone, this narrows the list, so one never
+            // shadows the other.
             IconButton(onClick = onSearch) {
                 Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "搜索机型",
+                    imageVector = if (searching) Icons.Default.Close else Icons.Default.Search,
+                    contentDescription = if (searching) "关闭搜索" else "搜索包名",
                     modifier = Modifier.size(18.dp),
                     tint = colors.primary,
                 )
@@ -178,12 +168,8 @@ fun PlanScopeDialog(
     onSelect: (PlanScope) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
-    /** Opens with the model search field already on and focused, for the 搜索 button on the bar. */
-    startSearch: Boolean = false,
 ) {
     var opened by remember { mutableStateOf<CatalogModel?>(null) }
-    var searching by remember { mutableStateOf(startSearch) }
-    var query by remember { mutableStateOf("") }
     val current = opened
 
     BasicAlertDialog(
@@ -223,32 +209,9 @@ fun PlanScopeDialog(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    if (current == null) {
-                        // The button the page bar points at: a model list that grows by the month is
-                        // read by typing a name, not by scrolling family blocks.
-                        IconButton(onClick = {
-                            searching = !searching
-                            if (!searching) query = ""
-                        }) {
-                            Icon(
-                                imageVector = if (searching) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = if (searching) "收起搜索" else "搜索机型",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
                     TextButton(onClick = onDismiss) { Text("取消") }
                 }
                 HorizontalDivider()
-
-                if (current == null && searching) {
-                    ModelSearchField(
-                        query = query,
-                        onQueryChange = { query = it },
-                        modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 10.dp),
-                    )
-                }
 
                 if (current == null) {
                     ModelPicker(
@@ -256,7 +219,6 @@ fun PlanScopeDialog(
                         ownLabel = ownLabel,
                         loading = loading,
                         scope = scope,
-                        query = query,
                         onOpenModel = { opened = it },
                         onRetry = onRetry,
                         onSelectAll = { onSelect(PlanScope.All) },
@@ -283,7 +245,6 @@ private fun ModelPicker(
     ownLabel: String,
     loading: Boolean,
     scope: PlanScope,
-    query: String,
     onOpenModel: (CatalogModel) -> Unit,
     onRetry: () -> Unit,
     onSelectAll: () -> Unit,
@@ -291,8 +252,6 @@ private fun ModelPicker(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val needle = query.trim()
-    val filtered = if (needle.isEmpty()) models else models.filter { it.matchesModel(needle) }
     Column(modifier = modifier) {
         Text(
             // The one thing a visitor must know before the list: choosing a phone here only changes
@@ -355,20 +314,7 @@ private fun ModelPicker(
                 contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (filtered.isEmpty() && needle.isNotEmpty()) {
-                    // Typing a name the backend has no plans for is not an error: say so, and say
-                    // what it would take for the phone to appear.
-                    item(key = "no-match") {
-                        Text(
-                            text = "没有匹配「$needle」的机型。后端只收录过有方案的机型，没人上传过就没有这一项。",
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
-                            color = colors.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                }
-                items(filtered.groupedByFamily(), key = { it.family.name }) { group ->
+                items(models.groupedByFamily(), key = { it.family.name }) { group ->
                     FamilyBlock(
                         group = group,
                         scope = scope,
@@ -457,84 +403,6 @@ private fun BuildPicker(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp),
         )
-    }
-}
-
-/**
- * Whether [needle] names this model. Matching is by substring on the marketing name, the retail
- * model number and the brand, so "k70", "23113RKC6C" and "redmi k70" all land on the same chip; a
- * query with spaces must match every word.
- */
-private fun CatalogModel.matchesModel(needle: String): Boolean {
-    val haystack = (label + " " + model + " " + brand).lowercase()
-    return needle.lowercase().split(' ', '　').filter { it.isNotBlank() }.all { it in haystack }
-}
-
-/**
- * The model search field: the list below is filtered as the reader types, so there is no submit
- * button and no separate result page. Focused on open when the bar's search button started it.
- */
-@Composable
-private fun ModelSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(percent = 50))
-            .background(scheme.surfaceContainerHighest)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = scheme.onSurfaceVariant,
-            )
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 8.dp)
-                    .focusRequester(focus),
-                textStyle = TextStyle(fontSize = 12.sp, color = scheme.onSurface),
-                singleLine = true,
-                cursorBrush = SolidColor(scheme.primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {}),
-                decorationBox = { inner ->
-                    if (query.isEmpty()) {
-                        Text(
-                            text = "搜索机型，如 Redmi K70 / 23113RKC6C",
-                            fontSize = 12.sp,
-                            color = scheme.onSurfaceVariant,
-                        )
-                    }
-                    inner()
-                },
-            )
-            if (query.isNotEmpty()) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "清空",
-                    modifier = Modifier
-                        .size(16.dp)
-                        .clickable { onQueryChange("") },
-                    tint = scheme.onSurfaceVariant,
-                )
-            }
-        }
     }
 }
 

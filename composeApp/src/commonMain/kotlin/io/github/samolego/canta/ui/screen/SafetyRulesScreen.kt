@@ -20,9 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,9 +52,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -183,9 +193,11 @@ fun SafetyRulesScreen(
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
     var catalogLoading by remember { mutableStateOf(true) }
     var pickerOpen by remember { mutableStateOf(false) }
-    // The picker opened from the bar's search button: the model filter is on and focused from the
-    // first frame, instead of the reader scrolling families to type a name.
-    var pickerSearch by remember { mutableStateOf(false) }
+    // The package filter of the list under the switch: the switch says which phone, this says
+    // which package in it. Not remembered across a reload — a stale filter looks like a shorter
+    // list, not like a search that is still on.
+    var searchPackages by remember { mutableStateOf(false) }
+    var packageQuery by remember { mutableStateOf("") }
 
     // The photo at the top is decoration: the About page can turn it off, and the page then keeps
     // the band with the phone's name and the switch but not the picture under it. A plain `Flow`,
@@ -486,10 +498,14 @@ fun SafetyRulesScreen(
                     PlanScopeBar(
                         scope = planScope,
                         ownLabel = ownLabel,
-                        onOpen = { pickerSearch = false; pickerOpen = true },
-                        // The same picker, one tap shorter: the search field is what the button is
-                        // for, so it opens straight into it.
-                        onSearch = { pickerSearch = true; pickerOpen = true },
+                        onOpen = { pickerOpen = true },
+                        // On the switch bar because that is where the list it filters is read from,
+                        // and because the switch itself already owns the taps on the chips.
+                        searching = searchPackages,
+                        onSearch = {
+                            searchPackages = !searchPackages
+                            if (!searchPackages) packageQuery = ""
+                        },
                     )
                 },
             )
@@ -551,6 +567,17 @@ fun SafetyRulesScreen(
                 )
             }
             HorizontalDivider()
+            if (searchPackages) {
+                PackageSearchField(
+                    query = packageQuery,
+                    onQueryChange = { packageQuery = it },
+                    // The list is filtered as the reader types, so leaving is one tap on the ×.
+                    onClose = {
+                        searchPackages = false
+                        packageQuery = ""
+                    },
+                )
+            }
             if (tab == 0) {
                 RankingTab(
                     plans = plans,
@@ -561,6 +588,7 @@ fun SafetyRulesScreen(
                     deviceLabel = listLabel,
                     otherDevice = opened != null,
                     offline = offline,
+                    query = packageQuery,
                     onOpenApp = onOpenApp,
                     onRetry = { reloads++ },
                 )
@@ -574,6 +602,7 @@ fun SafetyRulesScreen(
                     liked = liked,
                     offline = offline,
                     widerScope = opened != null || allModels,
+                    query = packageQuery,
                     onOpenPlan = onOpenPlan,
                     onVote = vote,
                     onDelete = { pendingDelete = it },
@@ -602,7 +631,6 @@ fun SafetyRulesScreen(
             },
             onRetry = { reloads++ },
             onDismiss = { pickerOpen = false },
-            startSearch = pickerSearch,
         )
     }
 
@@ -740,6 +768,71 @@ private fun romLine(profile: DeviceProfile): String {
 }
 
 /**
+ * The package filter of the list under the switch: it searches what the rows are, not which phone
+ * they belong to. The list filters as the reader types — there is no submit step and no separate
+ * result page — so the only control next to the field is the way out.
+ */
+@Composable
+private fun PackageSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(scheme.surfaceContainerHighest)
+            .padding(start = 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = scheme.onSurfaceVariant,
+        )
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp, top = 8.dp, bottom = 8.dp)
+                .focusRequester(focus),
+            textStyle = TextStyle(fontSize = 12.sp, color = scheme.onSurface),
+            singleLine = true,
+            cursorBrush = SolidColor(scheme.primary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = {}),
+            decorationBox = { inner ->
+                if (query.isEmpty()) {
+                    Text(
+                        // The rows print the package under the app's name, so this is the string
+                        // people already have in front of them.
+                        text = "搜索包名，如 com.miui.daemon",
+                        fontSize = 12.sp,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                inner()
+            },
+        )
+        IconButton(onClick = onClose) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "关闭搜索",
+                modifier = Modifier.size(16.dp),
+                tint = scheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
  * Packages ranked by the likes their plans got on this model and ROM version. Votes come from the
  * plans, so a package nobody put in a verified plan does not appear at all.
  */
@@ -754,11 +847,24 @@ private fun RankingTab(
     /** True when the list belongs to another model: the verdicts below are this phone's, not its. */
     otherDevice: Boolean,
     offline: Boolean,
+    /** Package filter from the switch bar: matched against the package name and the app's label. */
+    query: String = "",
     onOpenApp: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
     val ranking = remember(plans) { rankPackages(plans) }
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
+    val needle = query.trim()
+    val rows = if (needle.isEmpty()) {
+        ranking
+    } else {
+        // A filter over the ranking keeps the vote order it was ranked in: a search narrows the
+        // list, it does not re-rank it.
+        ranking.filter { row ->
+            row.pkg.contains(needle, ignoreCase = true) ||
+                byPackage[row.pkg]?.name.orEmpty().contains(needle, ignoreCase = true)
+        }
+    }
 
     when {
         loading -> Text(
@@ -772,11 +878,18 @@ private fun RankingTab(
             onRetry = onRetry,
             retryHint = offline,
         )
+        rows.isEmpty() -> Text(
+            text = "这个机型下没有包名包含「$needle」的方案。",
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        )
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 4.dp),
         ) {
-            itemsIndexed(ranking, key = { _, row -> row.pkg }) { _, row ->
+            itemsIndexed(rows, key = { _, row -> row.pkg }) { _, row ->
                 RankRowView(
                     rank = row,
                     app = byPackage[row.pkg],
@@ -913,11 +1026,19 @@ private fun PlansTab(
     offline: Boolean,
     /** True when the list is not this phone's: uploading only ever happens for the phone in hand. */
     widerScope: Boolean = false,
+    /** Package filter from the switch bar: a plan is kept when it holds a package that matches. */
+    query: String = "",
     onOpenPlan: (Long) -> Unit,
     onVote: (CommunityPlan) -> Unit,
     onDelete: (CommunityPlan) -> Unit,
     onRetry: () -> Unit,
 ) {
+    val needle = query.trim()
+    val shown = if (needle.isEmpty()) {
+        plans
+    } else {
+        plans.filter { plan -> plan.packages.any { it.contains(needle, ignoreCase = true) } }
+    }
     when {
         loading -> Text(
             "…",
@@ -929,6 +1050,13 @@ private fun PlansTab(
             body = stringResource(Res.string.plans_empty_body),
             onRetry = onRetry,
             retryHint = offline,
+        )
+        shown.isEmpty() -> Text(
+            text = "这个范围内没有包含「$needle」的方案。",
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
         )
         else -> Column(modifier = Modifier.fillMaxSize()) {
             // The floating upload button is absent here on purpose; the line says why, so the page
@@ -954,7 +1082,7 @@ private fun PlansTab(
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                itemsIndexed(plans, key = { _, plan -> plan.id }) { index, plan ->
+                itemsIndexed(shown, key = { _, plan -> plan.id }) { index, plan ->
                     PlanCard(
                         plan = plan,
                         mine = owner.isNotEmpty() && plan.owner == owner,
