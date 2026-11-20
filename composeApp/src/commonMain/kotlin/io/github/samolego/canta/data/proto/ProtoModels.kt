@@ -82,7 +82,7 @@ data class AppSettingsProto(
      * same without it — the band, the counters and the page switch stay exactly where they were.
      */
     @ProtoNumber(22) val showDevicePhoto: Boolean = false,
-    /** Update channel: empty/stable keeps existing installs on the stable release stream. */
+    /** Update channel: empty defaults to the dev stream; "stable" keeps an explicit stable choice. */
     @ProtoNumber(23) val updateChannel: String = "",
 )
 
