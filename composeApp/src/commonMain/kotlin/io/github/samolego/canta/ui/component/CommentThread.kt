@@ -60,6 +60,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -658,12 +659,21 @@ fun CommentComposer(
             val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             val room = if (maxHeight.value.isFinite() && maxHeight > 0.dp) maxHeight else 800.dp
             val keyboard = if (imeBottom > navBottom && imeBottom < room * 0.75f) imeBottom else 0.dp
+            // The row of controls and the sticker panel are stacked, not overlaid. A Box lays its
+            // children on top of each other, which is what put the panel over the field and made
+            // the input box disappear the moment the stickers opened: the field was still there,
+            // under an opaque grid. The outer column clears the bottom inset once, and the inner
+            // one keeps the row off the edges; the panel runs edge to edge under both.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = maxOf(navBottom, keyboard))
-                    .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+                    .padding(bottom = maxOf(navBottom, keyboard)),
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+                ) {
                 if (replyToName.isNotEmpty()) {
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
@@ -682,9 +692,21 @@ fun CommentComposer(
                             .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
+                        // The field shows the stickers, not the tokens: "[偷笑]" is how a comment
+                        // travels through the clipboard and the backend, but a person typing sees
+                        // the sticker itself. So the editor draws an annotated string with inline
+                        // pictures, and the tokens only exist in the string the field reports.
+                        val draftSpans = remember(draft) { parseEmotionBody(draft) }
+                        val draftDocument = rememberEmotionDocument(draftSpans)
                         BasicTextField(
-                            value = draft,
-                            onValueChange = onDraftChange,
+                            value = draftDocument.annotated,
+                            onValueChange = { typed ->
+                                // What the field reports is flattened back to tokens: the pictures
+                                // are its own rendering, the string it hands over is what a comment
+                                // is made of. A sticker the reader backspaced over disappears with
+                                // the picture it was drawn as.
+                                onDraftChange(draftFromTyped(typed, shown = draft))
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester),
@@ -692,6 +714,9 @@ fun CommentComposer(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                             keyboardActions = KeyboardActions(onSend = { onSend() }),
+                            // Pasting "[偷笑]" out of somebody else's comment turns straight into
+                            // the sticker: the body is re-read with the same parser the thread uses.
+                            inlineContent = draftDocument.inline,
                         )
                         if (draft.isEmpty()) {
                             Text(
@@ -776,19 +801,23 @@ fun CommentComposer(
                     )
                 }
             }
-            // The panel lives outside the padded column so it can sit edge to edge under the bar.
-            if (pickerOpen) {
-                EmotionPicker(
-                    onPick = { emotion ->
-                        rememberEmotionPick(emotion.key)
-                        onDraftChange(draft + emotion.token)
-                    },
-                    onDelete = { onDraftChange(dropLastSticker(draft)) },
-                    onKeyboard = {
-                        pickerOpen = false
-                        focusRequester.requestFocus()
-                    },
-                )
+
+                // Below the field, never over it: the panel is a second row of the same stack, so
+                // the input box stays on screen while the stickers are open.
+                if (pickerOpen) {
+                    EmotionPicker(
+                        onPick = { emotion ->
+                            rememberEmotionPick(emotion.name)
+                            onDraftChange(draft + emotion.token)
+                        },
+                        onDelete = { onDraftChange(dropLastSticker(draft)) },
+                        onKeyboard = {
+                            pickerOpen = false
+                            focusRequester.requestFocus()
+                        },
+                        panelHeight = (maxHeight * 0.42f).coerceIn(180.dp, 260.dp),
+                    )
+                }
             }
         }
     }
@@ -805,12 +834,49 @@ internal fun dropLastSticker(draft: String): String {
     if (trimmed.endsWith("]")) {
         val open = trimmed.lastIndexOf('[')
         if (open >= 0) {
-            val key = trimmed.substring(open + 1, trimmed.length - 1)
-            if (emotionOf(key) != null) return trimmed.substring(0, open)
+            val name = trimmed.substring(open + 1, trimmed.length - 1)
+            if (emotionOf(name) != null) return trimmed.substring(0, open)
         }
     }
     return if (draft.isEmpty()) draft else draft.dropLast(1)
 }
+
+/**
+ * The draft behind what the field reports, with every sticker put back as its token.
+ *
+ * The field is handed an annotated string whose stickers are inline pictures, so what comes back out
+ * of it is a paragraph of words and U+FFFC placeholders — the object-replacement character Compose
+ * writes where an inline image stands. That character is not something a comment can carry: the
+ * backend stores text, and a placeholder would arrive as an empty box. Each one is therefore turned
+ * back into the token of the sticker [shown] had at that spot, and a placeholder with no sticker
+ * behind it — the reader selected one away — is dropped rather than kept.
+ *
+ * [shown] is the draft the field was drawn from, which is why an edit is mapped against it rather
+ * than against a copy kept somewhere else.
+ */
+internal fun draftFromTyped(typed: AnnotatedString, shown: String): String {
+    val text = typed.text
+    if (text.indexOf(EmotionPlaceholderChar) < 0) return text
+    // The field drew its stickers in the order [shown] had them, so the Nth placeholder belongs to
+    // the Nth sticker of that draft.
+    val stickerTokens = parseEmotionBody(shown).mapNotNull { span ->
+        (span as? EmotionSpan.Sticker)?.emotion?.token
+    }
+    var stickerIndex = 0
+    val out = StringBuilder(text.length)
+    text.forEach { char ->
+        if (char == EmotionPlaceholderChar) {
+            stickerTokens.getOrNull(stickerIndex++)?.let(out::append)
+        } else {
+            out.append(char)
+        }
+    }
+    return out.toString()
+}
+
+/** The character Compose leaves where an inline image stands in an annotated string. */
+private const val EmotionPlaceholderChar: Char = '\uFFFC'
+
 
 
 /** "回复 @name" over the field, with the cross that turns the answer back into a plain comment. */

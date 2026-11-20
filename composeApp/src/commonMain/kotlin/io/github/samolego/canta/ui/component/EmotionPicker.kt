@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
@@ -40,15 +41,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.painterResource
-
-/** One sticker's side inside a comment: the line it sits on is 19sp tall, so it fits with room. */
-private val InlineStickerSize = 17.dp
-
-/**
- * The same side as a text unit: an inline placeholder is measured like a character, so its box is
- * given in sp even though the picture inside it is drawn at [InlineStickerSize].
- */
-private val InlineStickerSp = 17.sp
 
 /**
  * The last few stickers this install picked, newest first.
@@ -121,6 +113,58 @@ fun parseEmotionBody(body: String): List<EmotionSpan> {
     return spans
 }
 
+/** The id one sticker occurrence is drawn under: its span index, not its name — a body may carry the
+ * same sticker twice, and two inline contents cannot share an id. */
+internal fun EmotionInlineId(index: Int): String = "emotion-$index"
+
+/**
+ * The body as text with its stickers replaced by inline pictures: what every place that shows a
+ * comment draws, from the thread to the field it is typed into.
+ *
+ * The tokens are what the string carries — [an annotated string] keeps them as the placeholder's
+ * alternative text, and the caller that needs the tokens back (an editor) reads them from there.
+ */
+@Composable
+internal fun rememberEmotionDocument(spans: List<EmotionSpan>): EmotionDocument {
+    val inline = remember(spans) {
+        spans.mapIndexedNotNull { index, span ->
+            if (span !is EmotionSpan.Sticker) return@mapIndexedNotNull null
+            EmotionInlineId(index) to androidx.compose.foundation.text.InlineTextContent(
+                // A placeholder is measured in text units, not dp: it stands where a character of
+                // the paragraph would, so the line it is on keeps its height.
+                placeholder = Placeholder(
+                    width = EmotionInlineSizeSp,
+                    height = EmotionInlineSizeSp,
+                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+                ),
+            ) {
+                Image(
+                    painter = painterResource(span.emotion.resource),
+                    contentDescription = span.emotion.name,
+                    modifier = Modifier.size(EmotionInlineSize),
+                )
+            }
+        }.toMap()
+    }
+    val annotated = remember(spans) {
+        buildAnnotatedString {
+            spans.forEachIndexed { index, span ->
+                when (span) {
+                    is EmotionSpan.Words -> append(span.text)
+                    is EmotionSpan.Sticker -> appendInlineContent(EmotionInlineId(index), span.emotion.token)
+                }
+            }
+        }
+    }
+    return EmotionDocument(annotated = annotated, inline = inline)
+}
+
+/** What [rememberEmotionDocument] hands back: the paragraph, and the pictures it refers to. */
+internal data class EmotionDocument(
+    val annotated: AnnotatedString,
+    val inline: Map<String, androidx.compose.foundation.text.InlineTextContent>,
+)
+
 /**
  * A comment body with its stickers drawn as pictures.
  *
@@ -152,39 +196,10 @@ fun EmotionText(
         )
         return
     }
-    // Inline content is keyed per sticker occurrence, and the same sticker may appear twice in one
-    // body, so the ids are span indices rather than keys.
-    val inline = mutableMapOf<String, androidx.compose.foundation.text.InlineTextContent>()
-    val annotated = buildAnnotatedString {
-        spans.forEachIndexed { index, span ->
-            when (span) {
-                is EmotionSpan.Words -> append(span.text)
-                is EmotionSpan.Sticker -> {
-                    val id = "emotion-$index"
-                    inline[id] = androidx.compose.foundation.text.InlineTextContent(
-                        // A placeholder is measured in text units, not dp: it stands where a
-                        // character of the paragraph would, so the line it is on keeps its height and
-                        // the text after a sticker starts where it should.
-                        placeholder = Placeholder(
-                            width = InlineStickerSp,
-                            height = InlineStickerSp,
-                            placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
-                        ),
-                    ) {
-                        Image(
-                            painter = painterResource(span.emotion.resource),
-                            contentDescription = span.emotion.key,
-                            modifier = Modifier.size(InlineStickerSize),
-                        )
-                    }
-                    appendInlineContent(id, span.emotion.token)
-                }
-            }
-        }
-    }
+    val document = rememberEmotionDocument(spans)
     Text(
-        text = annotated,
-        inlineContent = inline,
+        text = document.annotated,
+        inlineContent = document.inline,
         fontSize = fontSize.sp,
         lineHeight = lineHeight.sp,
         color = color,
@@ -208,13 +223,19 @@ fun EmotionPicker(
     onDelete: () -> Unit,
     onKeyboard: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * How tall the grid gets. The caller passes a share of the room it has rather than a constant:
+     * the panel sits under the field in the same column, and a fixed height would push the field
+     * off the top of a short screen — which is the bug that made the input box disappear.
+     */
+    panelHeight: androidx.compose.ui.unit.Dp = 236.dp,
 ) {
     val colors = MaterialTheme.colorScheme
     val recent = recentEmotions.toList()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(236.dp)
+            .height(panelHeight)
             .background(colors.surfaceContainerLow),
     ) {
         if (recent.isNotEmpty()) {
@@ -309,7 +330,7 @@ private fun EmotionCell(emotion: Emotion, onPick: () -> Unit) {
     ) {
         Image(
             painter = painterResource(emotion.resource),
-            contentDescription = emotion.key,
+            contentDescription = emotion.name,
             modifier = Modifier.size(30.dp),
         )
     }
