@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,12 +50,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import io.github.samolego.canta.data.community.COMMENT_KIND_APP
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.INBOX_PAGE_SIZE
+import io.github.samolego.canta.data.community.InboxFilter
 import io.github.samolego.canta.data.community.InboxItem
 import io.github.samolego.canta.data.community.InboxKind
 import io.github.samolego.canta.data.community.InboxSummary
 import io.github.samolego.canta.data.community.MyComment
 import io.github.samolego.canta.data.community.Page
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.matching
 import io.github.samolego.canta.data.community.newestInboxCommentId
 import io.github.samolego.canta.ui.component.EmotionText
 import io.github.samolego.canta.ui.component.LetterAvatar
@@ -132,6 +135,8 @@ fun MyCommentsScreen(
     var pendingDeletePlan by remember { mutableStateOf<CommunityPlan?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    /** Which group of news the inbox is showing; see [InboxFilter]. */
+    var inboxFilter by remember { mutableStateOf(InboxFilter.ALL) }
 
     /** The rows one inbox request takes from each of its four sources. */
     val perSource = INBOX_PAGE_SIZE / 2
@@ -381,21 +386,45 @@ fun MyCommentsScreen(
                         warning = null,
                     )
                 } else {
-                    LazyColumn(
-                        state = inboxListState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        items(inbox.items, key = { row -> "${row.kind}-${row.id}-${row.createdAt}" }) { row ->
-                            InboxRow(
-                                item = row,
-                                isNew = row.commentIdOrZero > unreadSince,
-                                onOpen = { open(row.targetKind, row.target) },
+                    // The four kinds of news are counted apart by the backend, so they are read
+                    // apart too: "回复 2 · 赞 5" is a truer picture than one number that lumps
+                    // somebody answering me together with somebody hearting an old comment.
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        InboxFilterRow(
+                            filter = inboxFilter,
+                            summary = summary,
+                            onFilterChange = { inboxFilter = it },
+                        )
+                        val shown = remember(inbox.items, inboxFilter) { inbox.items.matching(inboxFilter) }
+                        if (shown.isEmpty()) {
+                            EmptyNotice(
+                                title = if (inboxFilter == InboxFilter.ALL) {
+                                    "还没有人理你的评论和方案。"
+                                } else {
+                                    "这一栏还没有新消息。"
+                                },
+                                hint = "有人回复你、赞了你的评论，或者赞了你上传的方案时，会出现在这里。",
+                                loadError = null,
+                                warning = null,
                             )
-                        }
-                        if (loadingMore) {
-                            item(key = "inbox-more") { LoadingMore() }
+                        } else {
+                            LazyColumn(
+                                state = inboxListState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                items(shown, key = { row -> "${row.kind}-${row.id}-${row.createdAt}" }) { row ->
+                                    InboxRow(
+                                        item = row,
+                                        isNew = row.commentIdOrZero > unreadSince,
+                                        onOpen = { open(row.targetKind, row.target) },
+                                    )
+                                }
+                                if (loadingMore) {
+                                    item(key = "inbox-more") { LoadingMore() }
+                                }
+                            }
                         }
                     }
                 }
@@ -441,6 +470,48 @@ fun MyCommentsScreen(
 /** "消息 · 7" while something is waiting, "消息" when nothing is: the dot already says it. */
 private fun inboxLabel(summary: InboxSummary): String =
     if (summary.total > 0) "消息 · ${summary.total}" else "消息"
+
+/**
+ * The row above the inbox: one chip per group, carrying that group's own unread count.
+ *
+ * A chip with nothing new is still there — the group exists whether or not it has news, and hiding
+ * it would make the row jump around — but it is quiet and drops its number.
+ */
+@Composable
+private fun InboxFilterRow(
+    filter: InboxFilter,
+    summary: InboxSummary,
+    onFilterChange: (InboxFilter) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        InboxFilter.entries.forEach { option ->
+            val unread = option.unreadIn(summary)
+            val selected = option == filter
+            Text(
+                text = if (unread > 0 && option != InboxFilter.ALL) {
+                    "${option.label} $unread"
+                } else {
+                    option.label
+                },
+                fontSize = 11.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) colors.onSurface else colors.onSurfaceVariant,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) colors.surfaceContainerHighest else Color.Transparent)
+                    .clickable { if (!selected) onFilterChange(option) }
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
 
 /**
  * Calls [onEnd] once the list's last row is visible, which is the moment the next page is worth
