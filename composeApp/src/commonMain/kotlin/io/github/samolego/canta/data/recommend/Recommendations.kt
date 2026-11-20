@@ -27,6 +27,7 @@ data class RecommendedApp(
     val mark: String = "",
     val accent: String = "",
     val featured: Boolean = false,
+    val replacesPackages: List<String> = emptyList(),
 ) {
     /** What to draw in the tile: the catalog's mark, or the first character of the name. */
     val tileMark: String

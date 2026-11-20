@@ -3,6 +3,18 @@
  "updated": "2026-11-18",
  "apps": [
   {
+   "id": "via",
+   "name": "Via 浏览器",
+   "author": "Tu Yafeng",
+   "category": "privacy",
+   "license": "GPL-3.0",
+   "mark": "V",
+   "accent": "#16A34A",
+   "url": "https://viayoo.com/",
+   "replacesPackages": ["com.android.browser", "com.mi.globalbrowser"],
+   "summary": "轻量、简洁的 Android 浏览器，可替代部分系统自带浏览器。"
+  },
+  {
    "id": "scene-shizukux",
    "name": "星野Scene",
    "author": "qianyumeng0228",

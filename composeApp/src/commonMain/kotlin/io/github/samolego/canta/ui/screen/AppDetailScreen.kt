@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -20,6 +21,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -28,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,6 +54,8 @@ import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.data.community.updatedComment
+import io.github.samolego.canta.data.recommend.RecommendedApp
+import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentComposer
@@ -98,6 +104,7 @@ fun AppDetailScreen(
     profile: DeviceProfile?,
     notes: AppNoteStore,
     author: String,
+    onOpenUrl: (String) -> Unit,
     onNavigateBack: () -> Unit,
     /** The community backend; null keeps the vote and the reviews local. */
     repository: PlanRepository? = null,
@@ -119,10 +126,12 @@ fun AppDetailScreen(
     var mine by remember { mutableStateOf<Boolean?>(null) }
     var votes by remember { mutableStateOf(PackageVotes.EMPTY) }
     var voting by remember { mutableStateOf(false) }
-    // 0 = this phone only, 1 = every device.
-    var voteScope by remember { mutableIntStateOf(0) }
-    // A vote is confirmed before it is sent: one phone casts one vote, so a mistap is a real change.
-    var pendingVote by remember { mutableStateOf<Boolean?>(null) }
+    var voteScope by remember(packageName) { mutableIntStateOf(0) }
+    var systemsExpanded by remember(packageName) { mutableStateOf(false) }
+    val selectedSystemState = remember(packageName) { mutableStateOf("") }
+    val selectedSystem = selectedSystemState.value
+    val onSystemChange: (String) -> Unit = { selectedSystemState.value = it }
+    var recommendations by remember { mutableStateOf<Recommendations?>(null) }
     // Why the last vote or comment did not go through, when the backend said something.
     var voteError by remember { mutableStateOf<String?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
@@ -133,6 +142,10 @@ fun AppDetailScreen(
      * nothing on the server changes, and the page forgets it on the way out.
      */
     var hiddenComments by remember { mutableStateOf(setOf<Long>()) }
+
+    LaunchedEffect(packageName) {
+        recommendations = Recommendations.bundled()
+    }
 
     LaunchedEffect(packageName, voter) {
         reviews = notes.reviewsOf(packageName)
@@ -259,33 +272,6 @@ fun AppDetailScreen(
         }
     }
 
-    // The vote a tap asked for, waiting for a yes: the counts are public, so a vote is a statement.
-    pendingVote?.let { wanted ->
-        CantaDialog(
-            onDismissRequest = { pendingVote = null },
-            title = "确认投票",
-            buttons = {
-                TextButton(onClick = { pendingVote = null }) { Text("再想想") }
-                TextButton(onClick = {
-                    pendingVote = null
-                    castVote(wanted)
-                }) {
-                    Text("确认", fontWeight = FontWeight.Bold)
-                }
-            },
-        ) {
-            Text(
-                text = if (wanted) {
-                    "投「可以删」：告诉别人你的${profile?.displayModel ?: "机型"}上删掉它没问题。\n每台设备只有一票，投了以后可以改。"
-                } else {
-                    "投「不可以删」：告诉别人删掉它会让你的${profile?.displayModel ?: "机型"}出问题。\n每台设备只有一票，投了以后可以改。"
-                },
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-            )
-        }
-    }
-
     Scaffold(
         // The title bar floats over the content as a transparent layer, like the plan page: what
         // scrolls up under it stays readable through it, and the page's first card starts just
@@ -316,7 +302,7 @@ fun AppDetailScreen(
                 modifier = Modifier.fillMaxSize(),
                 // The slim bar's height is exactly the content's top edge: no gap of its own.
                 contentPadding = PaddingValues(
-                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + FlTopBarCompactHeight,
+                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + FlTopBarCompactHeight - 8.dp,
                     bottom = 16.dp,
                 ),
             ) {
@@ -324,6 +310,12 @@ fun AppDetailScreen(
                 AppHero(
                     app = app,
                     packageName = packageName,
+                    recommendations = recommendations,
+                    onOpenRecommendation = { onOpenUrl(it.url) },
+                    selectedSystem = selectedSystem,
+                    onSystemChange = onSystemChange,
+                    systemsExpanded = systemsExpanded,
+                    onSystemsExpandedChange = { systemsExpanded = it },
                     votes = votes,
                     scope = voteScope,
                     onScopeChange = { voteScope = it },
@@ -331,7 +323,7 @@ fun AppDetailScreen(
                     mine = mine,
                     voting = voting,
                     voteError = voteError,
-                    onVote = { wanted -> pendingVote = wanted },
+                    onVote = castVote,
                 )
             }
             item { SectionHeading("评论 · ${comments.size}") }
@@ -351,7 +343,9 @@ fun AppDetailScreen(
                     onDelete = { comment -> pendingDelete = comment },
                     onLike = likeComment,
                     hidden = hiddenComments,
-                    onHide = { key -> hiddenComments = hiddenComments + key },
+                    onHide = { key ->
+                        hiddenComments = if (key in hiddenComments) hiddenComments - key else hiddenComments + key
+                    },
                 )
 
                 // Nothing from the community: what this install wrote itself is still worth
@@ -393,6 +387,12 @@ fun AppDetailScreen(
 private fun AppHero(
     app: AppInfo?,
     packageName: String,
+    recommendations: Recommendations?,
+    onOpenRecommendation: (RecommendedApp) -> Unit,
+    selectedSystem: String,
+    onSystemChange: (String) -> Unit,
+    systemsExpanded: Boolean,
+    onSystemsExpandedChange: (Boolean) -> Unit,
     votes: PackageVotes,
     scope: Int,
     onScopeChange: (Int) -> Unit,
@@ -403,7 +403,10 @@ private fun AppHero(
     onVote: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    val recommended = remember(recommendations, packageName) {
+        recommendations?.apps?.firstOrNull { packageName in it.replacesPackages }
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (app != null) {
                 AppIconImage(app, size = 56.dp)
@@ -435,13 +438,30 @@ private fun AppHero(
                     app?.let { add("v${it.versionName}") }
                     app?.apkSize?.let { add(formatSize(it)) }
                     if (app?.isSystemApp == true) add("系统应用")
-                    if (app?.isUninstalled == true) add("已卸载")
                 }
                 if (facts.isNotEmpty()) {
                     Text(
                         text = facts.joinToString(" · "),
                         style = FlText.caption1,
                         color = scheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = if (app?.isUninstalled == true) "已卸载" else "未卸载",
+                    style = FlText.caption2.copy(fontWeight = FontWeight.W600),
+                    color = if (app?.isUninstalled == true) scheme.error else CAN_REMOVE,
+                    maxLines = 1,
+                )
+                recommended?.let { suggestion ->
+                    Text(
+                        text = "推荐 ${suggestion.name}",
+                        style = FlText.caption2.copy(fontWeight = FontWeight.W600),
+                        color = scheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier.clickable { onOpenRecommendation(suggestion) },
                     )
                 }
             }
@@ -462,7 +482,10 @@ private fun AppHero(
 
         app?.description?.takeIf { it.isNotBlank() }?.let { text ->
             Spacer(Modifier.height(8.dp))
-            Text(text = text, style = FlText.footnote, color = scheme.onSurface)
+            io.github.samolego.canta.ui.component.text.UrlText(
+                text = text,
+                style = FlText.footnote,
+            )
             // The bloat list is published in English only. Say where the words came from: either
             // "upstream English" or "translated by this build", never an unlabelled block.
             Spacer(Modifier.height(3.dp))
@@ -482,6 +505,10 @@ private fun AppHero(
             scope = scope,
             onScopeChange = onScopeChange,
             profile = profile,
+            selectedSystem = selectedSystem,
+            onSystemChange = onSystemChange,
+            systemsExpanded = systemsExpanded,
+            onSystemsExpandedChange = onSystemsExpandedChange,
             mine = mine,
             voting = voting,
             voteError = voteError,
@@ -501,6 +528,10 @@ private fun AppHero(
 private fun VoteBlock(
     votes: PackageVotes,
     scope: Int,
+    selectedSystem: String,
+    onSystemChange: (String) -> Unit,
+    systemsExpanded: Boolean,
+    onSystemsExpandedChange: (Boolean) -> Unit,
     onScopeChange: (Int) -> Unit,
     profile: DeviceProfile?,
     mine: Boolean?,
@@ -509,8 +540,17 @@ private fun VoteBlock(
     onVote: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val canRemove = if (scope == 0) votes.canRemove else votes.allCanRemove
-    val cannotRemove = if (scope == 0) votes.cannotRemove else votes.allCannotRemove
+    val systemVotes = votes.bySystem[selectedSystem]
+    val canRemove = when (scope) {
+        1 -> votes.allCanRemove
+        2 -> systemVotes?.first ?: 0
+        else -> votes.canRemove
+    }
+    val cannotRemove = when (scope) {
+        1 -> votes.allCannotRemove
+        2 -> systemVotes?.second ?: 0
+        else -> votes.cannotRemove
+    }
     val total = canRemove + cannotRemove
     val share = if (total == 0) 0f else canRemove.toFloat() / total
 
@@ -529,6 +569,36 @@ private fun VoteBlock(
                 selected = scope == 1,
                 onClick = { onScopeChange(1) },
             )
+            Spacer(Modifier.width(8.dp))
+            Box {
+                ScopePill(
+                    label = if (scope == 2) selectedSystem else "系统版本",
+                    selected = scope == 2,
+                    onClick = { onSystemsExpandedChange(true) },
+                )
+                DropdownMenu(
+                    expanded = systemsExpanded,
+                    onDismissRequest = { onSystemsExpandedChange(false) },
+                ) {
+                    if (votes.bySystem.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("暂无系统版本数据") },
+                            onClick = { onSystemsExpandedChange(false) },
+                            enabled = false,
+                        )
+                    }
+                    votes.bySystem.keys.sorted().forEach { system ->
+                        DropdownMenuItem(
+                            text = { Text(system) },
+                            onClick = {
+                                onSystemChange(system)
+                                onSystemsExpandedChange(false)
+                                onScopeChange(2)
+                            },
+                        )
+                    }
+                }
+            }
         }
 
         // The bar: one track, split by what people said. Green is left, red is right, and the
@@ -583,7 +653,13 @@ private fun VoteBlock(
         // Which phone the counts above are for, and how many votes are behind them.
         Text(
             text = buildString {
-                append(if (scope == 0) (profile?.shortLabel() ?: "本机") else "所有机型")
+                append(
+                    when (scope) {
+                        1 -> "所有机型"
+                        2 -> selectedSystem.ifBlank { "系统版本" }
+                        else -> profile?.shortLabel() ?: "本机"
+                    }
+                )
                 append(" · 共 ")
                 append(total)
                 append(" 票")
@@ -599,7 +675,7 @@ private fun VoteBlock(
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             VoteButton(
-                label = if (mine == true) "我选：可以删" else "可以删",
+                label = "可以删",
                 color = CAN_REMOVE,
                 selected = mine == true,
                 enabled = !voting,
@@ -607,7 +683,7 @@ private fun VoteBlock(
             )
             Spacer(Modifier.width(10.dp))
             VoteButton(
-                label = if (mine == false) "我选：不可以删" else "不可以删",
+                label = "不可以删",
                 color = CANNOT_REMOVE,
                 selected = mine == false,
                 enabled = !voting,
@@ -619,7 +695,7 @@ private fun VoteBlock(
                 voting -> "正在投票…"
                 voteError != null -> voteError
                 mine != null -> "本机已投：${if (mine) "可以删" else "不可以删"}（再投一次就是改票）"
-                else -> "投票前会再确认一次"
+                else -> "点选你的判断"
             },
             style = FlText.caption2,
             color = if (voteError != null) scheme.error else scheme.onSurfaceVariant,
@@ -661,14 +737,13 @@ private fun VoteButton(
             .clip(RoundedCornerShape(percent = 50))
             .background(if (selected) color else FlSurfaceLevel.Page.raised.colorOf(scheme))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+            .padding(horizontal = 11.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FlGlyphIconInline(
-            glyph = if (selected) FlGlyphs.checkCircle else FlGlyphs.check,
-            tint = if (selected) Color.White else color,
-        )
-        Spacer(Modifier.width(6.dp))
+        if (selected) {
+            FlGlyphIconInline(glyph = FlGlyphs.checkCircle, tint = Color.White)
+            Spacer(Modifier.width(6.dp))
+        }
         Text(
             text = label,
             style = FlText.footnote.copy(fontWeight = FlText.emphasized),

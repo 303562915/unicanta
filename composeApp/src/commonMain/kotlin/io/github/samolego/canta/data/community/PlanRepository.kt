@@ -151,6 +151,7 @@ data class PackageVotes(
     val cannotRemove: Int = 0,
     val allCanRemove: Int = 0,
     val allCannotRemove: Int = 0,
+    val bySystem: Map<String, Pair<Int, Int>> = emptyMap(),
 ) {
     /** Votes on this device. */
     val total: Int get() = canRemove + cannotRemove
@@ -567,11 +568,17 @@ class PlanRepository(
 
     private fun parseVotes(text: String): PackageVotes? = runCatching {
         val o = json.parseToJsonElement(text).jsonObject
+        val systems = o["systems"]?.jsonObject.orEmpty().mapValues { (_, value) ->
+            val counts = value.jsonObject
+            (counts["yes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0) to
+                (counts["no"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0)
+        }
         PackageVotes(
             canRemove = o["yes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             cannotRemove = o["no"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             allCanRemove = o["all_yes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             allCannotRemove = o["all_no"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            bySystem = systems,
         )
     }.getOrNull()
 

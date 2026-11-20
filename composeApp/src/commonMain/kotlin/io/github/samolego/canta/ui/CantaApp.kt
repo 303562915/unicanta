@@ -509,6 +509,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     profile = appProfile,
                     notes = deps.notes,
                     author = appAuthor,
+                    onOpenUrl = { platform.openUrl(it) },
                     onNavigateBack = { navController.navigateUp() },
                     repository = communityRepository,
                     voter = appVoter,
