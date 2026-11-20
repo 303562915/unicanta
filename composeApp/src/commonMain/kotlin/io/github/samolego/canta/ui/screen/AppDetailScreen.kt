@@ -200,7 +200,7 @@ fun AppDetailScreen(
         } else {
             notes.packageVerdict(packageName)
         }
-        comments = repository?.appComments(packageName).orEmpty()
+        comments = repository?.appComments(packageName, voter).orEmpty()
         descriptionFixes = repository?.descriptionFixes(packageName, voter).orEmpty()
     }
 
@@ -267,7 +267,7 @@ fun AppDetailScreen(
                     sendError = null
                     draft = ""
                     replyTo = null
-                    comments = repository?.appComments(packageName).orEmpty()
+                    comments = repository?.appComments(packageName, voter).orEmpty()
                 }
                 sending = false
             }
@@ -302,7 +302,7 @@ fun AppDetailScreen(
                     pendingDelete = null
                     scope.launch {
                         repository?.deleteComment(comment.id, voter, token)
-                        comments = repository?.appComments(packageName).orEmpty()
+                        comments = repository?.appComments(packageName, voter).orEmpty()
                     }
                 }) {
                     Text("删除", color = MaterialTheme.colorScheme.error)
