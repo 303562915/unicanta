@@ -5,12 +5,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -602,12 +606,24 @@ fun CommentComposer(
         if (replyToName.isNotEmpty()) focusRequester.requestFocus()
     }
     Surface(modifier = modifier.fillMaxWidth(), tonalElevation = 3.dp) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
-        ) {
+        // What the bar has to clear at the bottom is whichever wins: the keyboard while it is up,
+        // the navigation bar while it is down. The IME inset is measured, not trusted — ROMs that
+        // report the whole window as the IME inset are what once made this bar a screen tall with
+        // the field sitting at its top, and a keyboard is never that tall, so anything above 75%
+        // of the room is that broken value and only the navigation bar is cleared. The room is
+        // bounded first: an unbounded measure would let every value pass that check, which is the
+        // same as not having one.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+            val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            val room = if (maxHeight.value.isFinite() && maxHeight > 0.dp) maxHeight else 800.dp
+            val keyboard = if (imeBottom > navBottom && imeBottom < room * 0.75f) imeBottom else 0.dp
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = maxOf(navBottom, keyboard))
+                    .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+            ) {
                 if (replyToName.isNotEmpty()) {
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
@@ -692,6 +708,7 @@ fun CommentComposer(
                     )
                 }
             }
+        }
     }
 }
 
