@@ -28,8 +28,8 @@ class CommunityInboxFeedTest {
     fun aFullSourceMeansThereIsAnotherPage() {
         // Ten rows from each of four sources, taken per_source = 10: every source filled its
         // window, so any of them may have history left.
-        val page = List(10) { item(InboxKind.REPLY, it) } +
-            List(10) { item(InboxKind.COMMENT_HEART, it, likes = 2) }
+        val page = List(10) { item(InboxKind.REPLY, it.toLong()) } +
+            List(10) { item(InboxKind.COMMENT_HEART, it.toLong(), likes = 2) }
         assertTrue(pageHasMore(page, perSource = 10))
     }
 
@@ -37,7 +37,7 @@ class CommunityInboxFeedTest {
     fun aShortSourceAndAnEmptyOneDoNotCountAsMore() {
         // Three replies and nothing else: the reply source ran out at three, so a next offset would
         // hand back the same rows again.
-        val page = List(3) { item(InboxKind.REPLY, it) }
+        val page = List(3) { item(InboxKind.REPLY, it.toLong()) }
         assertFalse(pageHasMore(page, perSource = 10))
     }
 
@@ -45,8 +45,8 @@ class CommunityInboxFeedTest {
     fun oneExhaustedSourceDoesNotHideAWholeOne() {
         // Replies ran out at two, hearts filled their window: stopping here would silently drop the
         // rest of the hearts, which is why "more" is per source rather than per page.
-        val page = List(2) { item(InboxKind.REPLY, it) } +
-            List(10) { item(InboxKind.COMMENT_HEART, it, likes = 1) }
+        val page = List(2) { item(InboxKind.REPLY, it.toLong()) } +
+            List(10) { item(InboxKind.COMMENT_HEART, it.toLong(), likes = 1) }
         assertTrue(pageHasMore(page, perSource = 10))
     }
 
