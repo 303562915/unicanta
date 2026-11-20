@@ -107,7 +107,7 @@ fun PlanScopeBar(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen)
-            .padding(start = 16.dp, end = 6.dp, vertical = 2.dp),
+            .padding(start = 16.dp, top = 2.dp, end = 6.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The chips flow rather than share one line under an ellipsis: a system version is a long
