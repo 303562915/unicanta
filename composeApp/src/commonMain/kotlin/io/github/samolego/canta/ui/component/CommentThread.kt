@@ -58,12 +58,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -657,8 +659,12 @@ fun CommentComposer(
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
             val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            val room = if (maxHeight.value.isFinite() && maxHeight > 0.dp) maxHeight else 800.dp
-            val keyboard = if (imeBottom > navBottom && imeBottom < room * 0.75f) imeBottom else 0.dp
+            // Read here, in the BoxWithConstraints scope, and carried into the columns below: the
+            // panel's share of the room is a fact about this box, and the inner scope cannot reach
+            // its receiver.
+            val roomHeight = if (maxHeight.value.isFinite() && maxHeight > 0.dp) maxHeight else 800.dp
+            val panelHeight = (roomHeight * 0.42f).coerceIn(180.dp, 260.dp)
+            val keyboard = if (imeBottom > navBottom && imeBottom < roomHeight * 0.75f) imeBottom else 0.dp
             // The row of controls and the sticker panel are stacked, not overlaid. A Box lays its
             // children on top of each other, which is what put the panel over the field and made
             // the input box disappear the moment the stickers opened: the field was still there,
@@ -694,29 +700,54 @@ fun CommentComposer(
                     ) {
                         // The field shows the stickers, not the tokens: "[偷笑]" is how a comment
                         // travels through the clipboard and the backend, but a person typing sees
-                        // the sticker itself. So the editor draws an annotated string with inline
-                        // pictures, and the tokens only exist in the string the field reports.
-                        val draftSpans = remember(draft) { parseEmotionBody(draft) }
-                        val draftDocument = rememberEmotionDocument(draftSpans)
+                        // the sticker itself.
+                        //
+                        // A text field cannot draw a picture inside its own line — BasicTextField
+                        // has no inline content — so the picture is drawn by a Text underneath and
+                        // the field on top keeps its text fully transparent with only its caret
+                        // painted. What the reader sees is the Text; what receives the keystrokes,
+                        // the selection and the paste is the field.
+                        var fieldValue by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
+                        LaunchedEffect(draft) {
+                            // A sticker from the panel, or a send that cleared the draft, arrives
+                            // from outside the field: move the caret to the end so the next
+                            // keystroke lands after what was just added.
+                            if (fieldValue.text != draft) {
+                                fieldValue = TextFieldValue(draft, TextRange(draft.length))
+                            }
+                        }
+                        if (draft.isNotEmpty()) {
+                            EmotionText(
+                                body = draft,
+                                fontSize = 13,
+                                lineHeight = 18,
+                                maxLines = 1,
+                                color = colors.onSurface,
+                            )
+                        }
                         BasicTextField(
-                            value = draftDocument.annotated,
+                            value = fieldValue,
                             onValueChange = { typed ->
-                                // What the field reports is flattened back to tokens: the pictures
-                                // are its own rendering, the string it hands over is what a comment
-                                // is made of. A sticker the reader backspaced over disappears with
-                                // the picture it was drawn as.
-                                onDraftChange(draftFromTyped(typed, shown = draft))
+                                // Backspace over a sticker takes the whole sticker: half a token on
+                                // screen would be a bracket the reader never typed.
+                                val next = backspaceEmotionAware(draft, typed.text)
+                                fieldValue = if (next == typed.text) {
+                                    typed
+                                } else {
+                                    TextFieldValue(next, TextRange(next.length))
+                                }
+                                if (next != draft) onDraftChange(next)
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester),
-                            textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
+                            // Same size as the line drawn under it, so the caret lands where the
+                            // words are; only the caret is visible.
+                            textStyle = TextStyle(fontSize = 13.sp, color = Color.Transparent),
+                            cursorBrush = SolidColor(colors.primary),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                             keyboardActions = KeyboardActions(onSend = { onSend() }),
-                            // Pasting "[偷笑]" out of somebody else's comment turns straight into
-                            // the sticker: the body is re-read with the same parser the thread uses.
-                            inlineContent = draftDocument.inline,
                         )
                         if (draft.isEmpty()) {
                             Text(
@@ -815,7 +846,7 @@ fun CommentComposer(
                             pickerOpen = false
                             focusRequester.requestFocus()
                         },
-                        panelHeight = (maxHeight * 0.42f).coerceIn(180.dp, 260.dp),
+                        panelHeight = panelHeight,
                     )
                 }
             }
@@ -842,40 +873,15 @@ internal fun dropLastSticker(draft: String): String {
 }
 
 /**
- * The draft behind what the field reports, with every sticker put back as its token.
+ * What the draft becomes when the field reports [typed] after the reader deleted one character.
  *
- * The field is handed an annotated string whose stickers are inline pictures, so what comes back out
- * of it is a paragraph of words and U+FFFC placeholders — the object-replacement character Compose
- * writes where an inline image stands. That character is not something a comment can carry: the
- * backend stores text, and a placeholder would arrive as an empty box. Each one is therefore turned
- * back into the token of the sticker [shown] had at that spot, and a placeholder with no sticker
- * behind it — the reader selected one away — is dropped rather than kept.
- *
- * [shown] is the draft the field was drawn from, which is why an edit is mapped against it rather
- * than against a copy kept somewhere else.
+ * Backspace is the one edit that has to know about stickers: a token is written as "[偷笑]", and
+ * deleting its last character would leave "[偷笑" on screen — a bracket the reader never typed and
+ * cannot see the end of. So a deletion that removes exactly the last character removes the whole
+ * token when the draft ends with one, and the ordinary character when it does not.
  */
-internal fun draftFromTyped(typed: AnnotatedString, shown: String): String {
-    val text = typed.text
-    if (text.indexOf(EmotionPlaceholderChar) < 0) return text
-    // The field drew its stickers in the order [shown] had them, so the Nth placeholder belongs to
-    // the Nth sticker of that draft.
-    val stickerTokens = parseEmotionBody(shown).mapNotNull { span ->
-        (span as? EmotionSpan.Sticker)?.emotion?.token
-    }
-    var stickerIndex = 0
-    val out = StringBuilder(text.length)
-    text.forEach { char ->
-        if (char == EmotionPlaceholderChar) {
-            stickerTokens.getOrNull(stickerIndex++)?.let(out::append)
-        } else {
-            out.append(char)
-        }
-    }
-    return out.toString()
-}
-
-/** The character Compose leaves where an inline image stands in an annotated string. */
-private const val EmotionPlaceholderChar: Char = '\uFFFC'
+internal fun backspaceEmotionAware(shown: String, typed: String): String =
+    if (typed == shown.dropLast(1)) dropLastSticker(shown) else typed
 
 
 
