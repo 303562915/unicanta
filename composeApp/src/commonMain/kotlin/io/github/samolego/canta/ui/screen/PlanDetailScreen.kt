@@ -268,16 +268,19 @@ fun PlanDetailScreen(
      * the only alternative was deleting the plan and losing its votes and comments with it.
      */
     val saveNote: (String) -> Unit = { text ->
+        val current = plan
         scope.launch {
+            if (current == null) return@launch
             editingNote = false
             val ok = repository.setNote(
                 planId = planId,
-                owner = plan.owner.ifEmpty { owner },
+                // The plan's own owner, or this install's identity on a backend that sends none.
+                owner = current.owner.ifEmpty { owner },
                 token = token,
                 note = text.trim(),
             )
             if (ok) {
-                plan = plan?.copy(note = text.trim())
+                plan = current.copy(note = text.trim())
                 noteDraft = text.trim()
             } else {
                 // The composer's own error line is the page's one place for "that call did not go
@@ -469,6 +472,10 @@ fun PlanDetailScreen(
                     onHideComment = hideComment,
                     order = order,
                     onOrderChange = { order = it },
+                    onEditNote = { currentNote ->
+                        noteDraft = currentNote
+                        editingNote = true
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -553,6 +560,8 @@ private fun PlanDetailContent(
     /** How the threads are ordered; see [CommentOrder]. */
     order: CommentOrder = CommentOrder.NEWEST,
     onOrderChange: (CommentOrder) -> Unit = {},
+    /** The uploader's tap on "补一句说明 / 改说明"; null on a plan this install did not upload. */
+    onEditNote: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -572,10 +581,7 @@ private fun PlanDetailContent(
         FlTopBarCompactHeight
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
-        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, onEditNote = {
-            noteDraft = plan.note
-            editingNote = true
-        }) }
+        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, onEditNote = onEditNote) }
 
         item {
             SectionTitle(
@@ -785,6 +791,7 @@ private fun PlanHero(
             // The uploader's own tap: a note written a week after the plan, once use has shown what
             // the upload could not. Shown even with an empty note — that is the case it is for.
             if (mine && onEditNote != null) {
+                val edit = onEditNote
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = if (plan.note.isEmpty()) "补一句说明" else "改说明",
@@ -794,7 +801,7 @@ private fun PlanHero(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(colors.onPrimaryContainer.copy(alpha = 0.10f))
-                        .clickable(onClick = onEditNote)
+                        .clickable { edit(plan.note) }
                         .padding(horizontal = 9.dp, vertical = 4.dp),
                 )
             }
