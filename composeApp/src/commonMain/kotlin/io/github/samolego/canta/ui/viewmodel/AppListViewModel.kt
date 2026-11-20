@@ -40,6 +40,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 
@@ -402,9 +403,9 @@ class AppListViewModel(
      */
     suspend fun interruptedBatch(): ResumeCandidate? {
         val current = settings ?: return null
-        val interrupted = runCatching { current.interruptedBatchFlow.first() }.getOrNull().orEmpty()
+        val interrupted = current.interruptedBatchFlow.first()
         if (interrupted.isEmpty()) return null
-        val startedAt = runCatching { current.interruptedBatchStartedAtFlow.first() }.getOrNull() ?: 0
+        val startedAt = current.interruptedBatchStartedAtFlow.first()
         val records = history?.records?.value.orEmpty()
         return resumeCandidate(interrupted, startedAt, records)
     }
@@ -419,7 +420,7 @@ class AppListViewModel(
 
     /** The interrupted batch was abandoned: stop offering it at every start. */
     suspend fun forgetInterruptedBatch() {
-        runCatching { settings?.clearPendingBatch() }
+        settings?.clearPendingBatch()
     }
 
     /** One line of the records tab for [result]; the phone's own model is asked once per batch. */

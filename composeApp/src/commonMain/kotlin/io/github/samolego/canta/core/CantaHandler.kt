@@ -158,6 +158,21 @@ interface CantaHandler {
     fun reinstallApps(packageNames: List<String>): Flow<OperationResult>
 
     /**
+     * Freezes ([disabled] = true) or unfreezes ([disabled] = false) apps for the user, one result
+     * per package.
+     *
+     * This is the reversible half of the two: the package stays on the device, keeps its data and
+     * its place in the system, and comes back with another tap — which is what makes it the right
+     * answer for anything that might be needed again. Nothing here is offered when the connected
+     * device cannot do it, see [supportsDisabling].
+     */
+    fun setDisabledApps(packageNames: List<String>, disabled: Boolean): Flow<OperationResult> =
+        emptyFlow()
+
+    /** Whether this device can freeze and unfreeze packages; false where only removal exists. */
+    val supportsDisabling: Boolean get() = false
+
+    /**
      * Whether [runTweakCommand] can do anything here. The Android app has Shizuku's shell, the
      * ADB targets have the device's own; a desktop with no phone connected has neither.
      */
