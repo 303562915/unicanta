@@ -1,0 +1,56 @@
+name: 📤 APK Handoff
+
+# Delivery only: copy an existing run's APK onto a release asset, because the
+# phone's container cannot reach GitHub's artifact blob host (the gh CONNECT
+# proxy only allows github.com / api.github.com / codeload / uploads /
+# *.githubusercontent.com), while release assets are served from
+# objects.githubusercontent.com and therefore download fine.
+#
+# Nothing is built here and nothing in the app changes: it takes the `app-debug`
+# artifact of `run_id` and publishes it as the "ci-debug" pre-release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Run id whose app-debug artifact to publish'
+        required: true
+        type: string
+      tag:
+        description: 'Release tag to publish under'
+        required: false
+        default: 'ci-debug'
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the artifact from that run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n app-debug -D handoff
+
+      - name: Publish it as a pre-release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          apk=$(find handoff -name '*.apk' | head -1)
+          test -n "$apk"
+          sha256sum "$apk" > handoff/SHA256SUMS.txt
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$apk" handoff/SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$apk" handoff/SHA256SUMS.txt \
+              -R "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --title "CI debug build" \
+              --notes "Rolling pre-release for CI debug APKs. Not a release."
+          fi
