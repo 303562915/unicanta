@@ -90,6 +90,11 @@
   .tagline{margin:.9rem 0 0;font-size:clamp(1rem,3.6vw,1.2rem);color:var(--muted);max-width:34ch}
   .tagline strong{color:var(--fg);font-weight:600}
 
+  .channels{display:flex;gap:.6rem;margin-top:2.2rem;flex-wrap:wrap}
+  .channels button{padding:.6rem .9rem;border:1px solid var(--line-strong);border-radius:10px;background:var(--panel);color:var(--muted);font:inherit;cursor:pointer}
+  .channels button[aria-pressed="true"]{border-color:rgba(255,68,68,.5);color:var(--fg);background:var(--red-soft)}
+  .channels small{display:block;font-size:.75rem;color:var(--muted)}
+
   /* 下载按钮 */
   .dl{
     display:flex;align-items:center;gap:1rem;
@@ -236,6 +241,11 @@
     <h1>unicanta</h1>
     <p class="tagline">不用 root，<strong>卸载任何 Android 应用</strong>。基于 Shizuku，直连系统包管理器。</p>
 
+    <div class="channels" role="group" aria-label="选择版本渠道">
+      <button id="stableBtn" type="button" aria-pressed="true">稳定版 <small id="stableVersion">正在获取…</small></button>
+      <button id="developmentBtn" type="button" aria-pressed="false">开发版 <small id="developmentVersion">正在获取…</small></button>
+    </div>
+
     <a class="dl" id="dl" href="#" aria-disabled="true" download>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/>
@@ -318,7 +328,10 @@
 (function () {
   "use strict";
 
-  var state = { data: null, sha: "" };
+  var state = { channel: "stable", sha: "", channels: {
+    stable: { label: "稳定版", status: "loading", data: null },
+    development: { label: "开发版", status: "loading", data: null }
+  } };
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -344,22 +357,33 @@
     t._timer = setTimeout(function () { t.classList.remove("on"); }, 1800);
   }
 
-  function render(data) {
-    state.data = data;
-    state.sha = data.sha256 || "";
+  function render() {
+    var channel = state.channels[state.channel];
+    var data = channel.data;
+    state.sha = data && data.sha256 || "";
+    var dl = $("dl");
+    dl.setAttribute("aria-disabled", "true");
+    dl.removeAttribute("href");
+    dl.removeAttribute("download");
+    $("checksumLink").hidden = true;
+    $("checksumLink").removeAttribute("href");
+    $("history").innerHTML = "";
+    $("history").classList.remove("on");
+    $("notesBody").textContent = "";
+    $("notes").classList.remove("on");
+    $("mVersion").textContent = "—";
+    $("mSize").textContent = "—";
+    $("mDate").textContent = "—";
+    $("mSha").textContent = "—";
+    $("mSha").title = "";
 
-    // 还没有任何 published release：保持按钮禁用，只显示骨架
-    if (!data.version_name || !data.file) {
-      $("pillText").textContent = "暂无发布版本";
-      $("dlSub").textContent = "等待首次发版";
-      $("mVersion").textContent = "—";
-      $("mSize").textContent = "—";
-      $("mDate").textContent = "—";
-      $("mSha").textContent = "—";
+    if (!data || !data.version_name || !data.file) {
+      $("pillText").textContent = channel.status === "loading" ? "正在读取" + channel.label + "…" : channel.label + "暂无可下载版本";
+      $("dlSub").textContent = channel.status === "loading" ? "正在获取…" : "请稍后再试";
       return;
     }
 
-    $("pillText").innerHTML = "最新版 <b>v" + data.version_name + "</b>";
+    $("pillText").textContent = channel.label + "最新版 v" + data.version_name;
     $("mVersion").textContent = "v" + data.version_name + " (" + data.version_code + ")";
     $("mSize").textContent = fmtSize(data.size);
     $("mDate").textContent = fmtDate(data.published_at);
@@ -369,7 +393,6 @@
     var sub = [data.file_name, fmtSize(data.size)].filter(Boolean).join(" · ");
     $("dlSub").textContent = sub;
 
-    var dl = $("dl");
     dl.href = data.file;
     dl.setAttribute("download", data.file_name || "");
     dl.removeAttribute("aria-disabled");
@@ -408,20 +431,37 @@
     }
   }
 
-  function fail(err) {
-    $("pillText").textContent = "暂时无法读取版本信息";
-    $("dlSub").textContent = "请稍后刷新页面";
-    $("mVersion").textContent = "—";
-    if (window.console) console.warn("[canta] latest.json:", err);
+  function loadChannel(name, file) {
+    var channel = state.channels[name];
+    fetch(file, { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        channel.data = data;
+        channel.status = "loaded";
+        $(name + "Version").textContent = data.version_name && data.file ? "v" + data.version_name : "暂无版本";
+        if (state.channel === name) render();
+      })
+      .catch(function (err) {
+        channel.status = "error";
+        $(name + "Version").textContent = "暂不可用";
+        if (state.channel === name) render();
+        if (window.console) console.warn("[canta] " + file + ":", err);
+      });
   }
 
-  fetch("latest.json", { cache: "no-store" })
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
-    .then(render)
-    .catch(fail);
+  ["stable", "development"].forEach(function (name) {
+    $(name + "Btn").addEventListener("click", function () {
+      state.channel = name;
+      $("stableBtn").setAttribute("aria-pressed", String(name === "stable"));
+      $("developmentBtn").setAttribute("aria-pressed", String(name === "development"));
+      render();
+    });
+  });
+  loadChannel("stable", "latest.json");
+  loadChannel("development", "development.json");
 
   $("shaBtn").addEventListener("click", function () {
     if (!state.sha) { toast("该版本未提供校验值"); return; }

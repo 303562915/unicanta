@@ -17,6 +17,10 @@ on:
     paths:
       - "site/**"
       - ".github/workflows/pages.yml"
+  workflow_run:
+    workflows: ["🧪 Development APK"]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
     inputs:
       tag:
@@ -26,6 +30,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: pages
@@ -36,17 +41,44 @@ env:
 
 jobs:
   publish:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
+      - name: Check development publication
+        id: development_publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != workflow_run ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" \
+              --jq '.jobs[] | select(.name == "Build and publish signed development APK") | .steps[] | select(.name == "Publish rolling prerelease" and .conclusion == "success") | .name')
+            if [ "$jobs" = 'Publish rolling prerelease' ]; then
+              echo "proceed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "Development publication was skipped."
+            fi
+          fi
+
       - name: ⬇️ Checkout
+        if: steps.development_publication.outputs.proceed == 'true'
         uses: actions/checkout@v4
 
       - name: 🏷️ Resolve release
+        if: steps.development_publication.outputs.proceed == 'true'
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.tag || github.event.release.tag_name }}"
+          if [ "$TAG" = "dev" ]; then
+            TAG=""
+          fi
 
           if [ -z "$TAG" ]; then
             TAG=$(gh release view --repo "$REPO" --json tagName --jq '.tagName' 2>/dev/null || echo "")
@@ -66,7 +98,24 @@ jobs:
           echo "解析到 $TAG"
           cat release.json
 
+      - name: Resolve development release
+        if: steps.development_publication.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$REPO/releases?per_page=100" > releases.json
+          python3 - <<'PY'
+          import json, pathlib
+          releases = json.loads(pathlib.Path('releases.json').read_text(encoding='utf-8'))
+          matches = [release for page in releases for release in page if release['tag_name'] == 'dev' and not release['draft']]
+          if len(matches) > 1:
+              raise SystemExit('Multiple dev releases found')
+          pathlib.Path('development-release.json').write_text(json.dumps(matches[0] if matches else None), encoding='utf-8')
+          PY
+
       - name: 🧬 Assemble site
+        if: steps.development_publication.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ env.REPO }}
@@ -151,10 +200,59 @@ jobs:
           JSON
           fi
 
+          python3 - <<'PY'
+          import json, os, pathlib, re, subprocess
+
+          rel = json.loads(pathlib.Path('development-release.json').read_text(encoding='utf-8'))
+          if rel is None or (rel.get('body') or '').strip() == 'Preparing the first development build.':
+              data = {'version_name': None, 'version_code': 0, 'build_number': None, 'tag': None,
+                      'published_at': None, 'file': None, 'file_name': None, 'size': 0,
+                      'sha256': '', 'checksum_file': None, 'notes': '', 'history': []}
+          else:
+              body = rel.get('body') or ''
+              def field(name, pattern):
+                  matches = re.findall(rf'(?m)^{re.escape(name)}: ({pattern})\s*$', body)
+                  if len(matches) != 1:
+                      raise SystemExit(f'Invalid development release {name}')
+                  return matches[0]
+              version = field('version', r'[^\s]+')
+              build = int(field('development-build', r'[1-9][0-9]*'))
+              commit = field('Commit', r'[0-9a-fA-F]{40}')
+              name = f'androidApp-release-{build}.apk'
+              sums_name = f'SHA256SUMS-{build}.txt'
+              assets = rel.get('assets', [])
+              apks = [asset for asset in assets if asset['name'] == name]
+              sums = [asset for asset in assets if asset['name'] == sums_name]
+              if len(apks) != 1 or len(sums) != 1:
+                  raise SystemExit('Development release must contain exactly one matching APK and checksum')
+              subprocess.run(['gh', 'release', 'download', 'dev', '--repo', os.environ['REPO'],
+                              '--pattern', sums_name, '--dir', '.', '--clobber'], check=True)
+              lines = pathlib.Path(sums_name).read_text(encoding='utf-8').splitlines()
+              digests = [parts[0] for line in lines if len(parts := line.split()) == 2
+                         and parts[1].lstrip('*') == name and re.fullmatch(r'[0-9a-fA-F]{64}', parts[0])]
+              if len(digests) != 1:
+                  raise SystemExit('Invalid development APK checksum')
+              props = subprocess.check_output(['gh', 'api', f"repos/{os.environ['REPO']}/contents/gradle.properties?ref={commit}",
+                                               '--jq', '.content'], text=True)
+              import base64
+              codes = re.findall(r'(?m)^version_code=([0-9]+)\s*$', base64.b64decode(props).decode('utf-8'))
+              if len(codes) != 1:
+                  raise SystemExit('Invalid development version_code')
+              apk, checksum = apks[0], sums[0]
+              entry = {'version_name': version, 'version_code': int(codes[0]), 'build_number': build,
+                       'tag': 'dev', 'published_at': rel.get('published_at'),
+                       'file': apk['browser_download_url'], 'file_name': name, 'size': apk.get('size', 0),
+                       'sha256': digests[0], 'checksum_file': checksum['browser_download_url'],
+                       'notes': body.strip()}
+              data = dict(entry, history=[entry])
+          pathlib.Path('_site/development.json').write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+
           echo "--- _site ---"
           ls -la _site
 
       - name: 🚀 Push to gh-pages
+        if: steps.development_publication.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           cd _site
@@ -168,6 +266,7 @@ jobs:
             HEAD:gh-pages
 
       - name: 🧾 Summary
+        if: steps.development_publication.outputs.proceed == 'true'
         run: |
           {
             echo "### 已发布 ${{ steps.release.outputs.tag || '（无 release，仅骨架）' }}"
