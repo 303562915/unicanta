@@ -5,21 +5,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,7 +49,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -567,7 +564,6 @@ private fun CommentActions(
  * one was picked, the way a short-video composer does it. Picking a comment brings the field up
  * focused, so the answer starts where the thumb landed.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CommentComposer(
     draft: String,
@@ -586,115 +582,112 @@ fun CommentComposer(
     LaunchedEffect(replyToName) {
         if (replyToName.isNotEmpty()) focusRequester.requestFocus()
     }
-    // What the bar must clear at the bottom: the keyboard while it is up, the navigation bar while
-    // it is down. Reading the IME inset unconditionally is what made the bar a whole window tall on
-    // ROMs that report the entire window as the IME inset while the keyboard is hidden — the field
-    // then sat at the very top of an empty full-height bar, and only fell back into place once the
-    // keyboard opened and the inset became a real keyboard height.
-    //
-    // Whether the keyboard is up is asked of the focus system, not of `WindowInsets.isImeVisible`,
-    // which this Compose line no longer carries. The field in this bar is the only thing here that
-    // can raise a keyboard, and it holds focus for exactly as long as that keyboard is up — so with
-    // nothing focused the bar clears the navigation bar alone, and a ROM that overstates the IME
-    // inset while the keyboard is down can no longer push it up.
-    var keyboardUp by remember { mutableStateOf(false) }
     Surface(tonalElevation = 3.dp) {
-        Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(
-                    (if (keyboardUp) WindowInsets.ime else WindowInsets.navigationBars)
-                        .only(WindowInsetsSides.Bottom),
-                )
-                .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
-        ) {
-            if (replyToName.isNotEmpty()) {
-                ReplyChip(name = replyToName, onCancel = onCancelReply)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // The pill field: a quiet grey capsule, exactly 36dp tall whether it is empty or
-                // carrying text — the placeholder and the text share the same line box, so the
-                // field never grows or shrinks under the reader's thumb. The person being answered
-                // names itself inside it once one was picked.
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(colors.surfaceContainerHigh)
-                        .clickable { focusRequester.requestFocus() }
-                        .padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = onDraftChange,
+        // The bottom clearance is measured against the window, not trusted from the IME inset
+        // alone: some ROMs report the whole window as the IME inset while the keyboard is down,
+        // which is what made this bar a screen tall with the field sitting at its top. A keyboard
+        // is never more than 70% of the window — anything larger is that broken value, and the bar
+        // only clears the navigation bar then. Focus is no substitute for the inset either: a field
+        // keeps focus after the keyboard was dismissed with the back gesture, and the bar would
+        // then clear a keyboard that is not there.
+        BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+            val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+            val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            val keyboard = if (imeBottom < maxHeight * 0.7f) imeBottom else 0.dp
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = maxOf(navBottom, keyboard))
+                    .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+            ) {
+                if (replyToName.isNotEmpty()) {
+                    ReplyChip(name = replyToName, onCancel = onCancelReply)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The pill field: a quiet grey capsule, exactly 36dp tall whether it is empty
+                    // or carrying text — the placeholder and the text share the same line box, so
+                    // the field never grows or shrinks under the reader's thumb. The person being
+                    // answered names itself inside it once one was picked.
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                            .onFocusChanged { keyboardUp = it.isFocused },
-                        textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { onSend() }),
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(colors.surfaceContainerHigh)
+                            .clickable { focusRequester.requestFocus() }
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        BasicTextField(
+                            value = draft,
+                            onValueChange = onDraftChange,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                            textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { onSend() }),
+                        )
+                        if (draft.isEmpty()) {
+                            Text(
+                                text = if (replyToName.isNotEmpty()) {
+                                    "回复 @$replyToName"
+                                } else {
+                                    "发条评论，说说你的感受"
+                                },
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = colors.outline,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // The send pill: not a Material button — its minimum touch target would prop
+                    // the whole bar up higher than a comment bar needs to be. A capsule, lit when
+                    // there is something to send, dim when there is not.
+                    val canSend = draft.isNotBlank() && !sending
+                    Box(
+                        modifier = Modifier
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(if (canSend) colors.primary else colors.surfaceContainerHighest)
+                            .clickable(enabled = canSend, onClick = onSend)
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = sendLabel,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (failed) {
+                    Text(
+                        text = failLabel,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 3.dp),
                     )
-                    if (draft.isEmpty()) {
-                        Text(
-                            text = if (replyToName.isNotEmpty()) {
-                                "回复 @$replyToName"
-                            } else {
-                                "发条评论，说说你的感受"
-                            },
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = colors.outline,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
-                Spacer(Modifier.width(8.dp))
-                // The send pill: not a Material button — its minimum touch target would prop the
-                // whole bar up higher than a comment bar needs to be. A capsule, lit when there is
-                // something to send, dim when there is not.
-                val canSend = draft.isNotBlank() && !sending
-                Box(
-                    modifier = Modifier
-                        .height(36.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(if (canSend) colors.primary else colors.surfaceContainerHighest)
-                        .clickable(enabled = canSend, onClick = onSend)
-                        .padding(horizontal = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = sendLabel,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-            if (failed) {
-                Text(
-                    text = failLabel,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
             }
         }
     }
 }
+
 
 /** "回复 @name" over the field, with the cross that turns the answer back into a plain comment. */
 @Composable
