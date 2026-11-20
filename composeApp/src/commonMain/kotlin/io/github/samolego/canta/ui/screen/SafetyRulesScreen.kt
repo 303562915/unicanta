@@ -1045,11 +1045,19 @@ private fun PlanCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    // "12 包 · 3 评论 · 2026-11-18 · @李雷": the author closes the line, so who wrote
-                    // it reads after when it was written.
+                    // "12 包 · 3 评论 · 2026-11-18 · @李雷（Redmi K70）": the author closes the line,
+                    // so who wrote it reads after when it was written — and the phone follows the
+                    // name, because "does this plan fit mine?" is the question the row is read for,
+                    // and a name alone does not answer it.
+                    //
+                    // The model is the marketing name ("Redmi K70"), never the code the ROM reports
+                    // in `ro.product.model` ("23113RKC6C"): nobody recognises the code, and it is
+                    // what the uploader's own settings show as blank on the older rows.
                     text = buildString {
                         append("${plan.packages.size} 包 · ${plan.comments} 评论 · ${plan.rebootedAt.take(10)}")
                         if (author.isNotEmpty()) append(" · @$author")
+                        val phone = plan.marketName.ifBlank { plan.model }
+                        if (phone.isNotBlank()) append("（$phone）")
                     },
                     fontSize = 9.sp,
                     color = colors.outline,

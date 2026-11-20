@@ -1,6 +1,12 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,11 +57,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.BuildFlags
 import io.github.samolego.canta.BuildInfo
@@ -140,6 +148,7 @@ fun SettingsScreen(
     val bloatListUrl by settingsViewModel.bloatListUrl.collectAsStateWithLifecycle()
     val commitsUrl by settingsViewModel.commitsUrl.collectAsStateWithLifecycle()
     val userName by settingsViewModel.userName.collectAsStateWithLifecycle()
+    val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -171,7 +180,11 @@ fun SettingsScreen(
                 .padding(top = 8.dp, bottom = FloatingBarRoom)
         ) {
             SettingsGroup {
-                UserCard(name = userName, onEdit = { showRename = true })
+                UserCard(
+                    name = userName,
+                    identityUserId = identityUserId,
+                    onEdit = { showRename = true },
+                )
             }
             Spacer(modifier = Modifier.height(GroupGap))
 
@@ -312,39 +325,100 @@ fun SettingsScreen(
  * no picture to show — the name itself, and a tap that renames it.
  */
 @Composable
-private fun UserCard(name: String, onEdit: () -> Unit) {
+private fun UserCard(name: String, identityUserId: Long = 0L, onEdit: () -> Unit) {
     val defaultName = stringResource(Res.string.profile_default_name)
-    val shown = name.trim().ifEmpty { defaultName }
+    // What this install is called when nobody picked a name: the number the backend gave it —
+    // "#10134" — which is also what every other reader sees beside its plans and comments. It is
+    // not a name, and showing it back is the point of the pulse below.
+    val identityTag = if (identityUserId > 0L) "#$identityUserId" else ""
+    val shown = name.trim().ifEmpty { identityTag.ifEmpty { defaultName } }
+    val unnamed = isDefaultIdentityName(name) || (name.isBlank() && identityTag.isNotEmpty())
+    // The pulse: pale yellow fading in and out for as long as the name is a number. Slow on
+    // purpose — a fast blink reads as an error to dismiss, while this is a request the page makes
+    // until it is answered, and nothing but picking a name switches it off.
+    val transition = rememberInfiniteTransition(label = "rename-pulse")
+    val glow by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "rename-glow",
+    )
+    // Kept inside 0.10..0.20 alpha: enough to notice out of the corner of an eye, soft enough that
+    // the row stays readable — a wall of colour would read as a warning, and this is a nudge.
+    val highlight = if (unnamed) 0.10f + 0.10f * glow else 0f
+    val glowText = Color(0xFF8A6D00)
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (unnamed) Color(0xFFFFE96B).copy(alpha = highlight) else Color.Transparent)
             .clickable(onClick = onEdit)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LetterAvatar(name = shown, size = 38.dp)
         Spacer(modifier = Modifier.width(11.dp))
         Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = shown,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = if (unnamed) glowText else Color.Unspecified,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (unnamed) {
+                    Spacer(Modifier.width(6.dp))
+                    // The one place the page says why it keeps pulsing, instead of a dialog the
+                    // reader would dismiss without reading.
+                    Text(
+                        text = "还没起名字",
+                        fontSize = 9.sp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(0xFFFFE96B).copy(alpha = 0.45f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                        color = Color(0xFF6B5400),
+                    )
+                }
+            }
             Text(
-                text = shown,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = stringResource(Res.string.profile_edit_name),
+                text = if (unnamed) {
+                    // The number is quoted back, so the request is about something the reader can
+                    // see on screen rather than an abstract "rename yourself".
+                    "点这里起个名字，别拿 $shown 当名字"
+                } else {
+                    stringResource(Res.string.profile_edit_name)
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (unnamed) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Icon(
             imageVector = Icons.Default.Edit,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (unnamed) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * Whether [name] is still the identity the backend handed out rather than a name somebody picked.
+ *
+ * Empty and "#10134" both mean "no name": the first is an install that never opened the dialog, the
+ * second is one that saved the number it was shown. Nothing else counts — a user who calls
+ * themselves "用户" made a choice, and telling them otherwise would be wrong.
+ */
+internal fun isDefaultIdentityName(name: String): Boolean {
+    val trimmed = name.trim()
+    if (trimmed.isEmpty()) return true
+    return trimmed.length > 1 && trimmed.startsWith("#") && trimmed.drop(1).all { it.isDigit() }
 }
 
 /** The first character of [name] is drawn by [LetterAvatar]; this dialog only edits the text. */

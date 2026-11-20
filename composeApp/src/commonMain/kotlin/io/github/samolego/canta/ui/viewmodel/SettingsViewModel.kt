@@ -52,6 +52,15 @@ class SettingsViewModel(
     /** The display name reviews and comments are signed with; the avatar is its first character. */
     val userName = settingsStore.userNameFlow.state("")
 
+    /**
+     * The number the backend handed this install, or 0 before it has one.
+     *
+     * The settings page shows it as "#10134" while no name has been picked: that number is what
+     * everybody else sees this install as, which is the reason the page keeps asking them to pick
+     * something better.
+     */
+    val identityUserId = settingsStore.identityUserIdFlow.state(0L)
+
     /** The optional bar entries: off by default, turned on in the settings. */
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
