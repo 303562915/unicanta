@@ -157,6 +157,8 @@ fun MainScreen(
                                 val reverse = when (record.kind) {
                                     OperationKind.UNINSTALL -> OperationKind.REINSTALL
                                     OperationKind.REINSTALL -> OperationKind.UNINSTALL
+                                    OperationKind.DISABLE -> OperationKind.ENABLE
+                                    OperationKind.ENABLE -> OperationKind.DISABLE
                                 }
                                 val done = appListViewModel.applyPackages(
                                     packageNames = listOf(record.packageName),
@@ -164,8 +166,12 @@ fun MainScreen(
                                 )
                                 if (done > 0) {
                                     val action = getString(
-                                        if (reverse == OperationKind.UNINSTALL) Res.string.uninstall
-                                        else Res.string.reinstall
+                                        when (reverse) {
+                                            OperationKind.UNINSTALL -> Res.string.uninstall
+                                            OperationKind.REINSTALL -> Res.string.reinstall
+                                            OperationKind.DISABLE -> Res.string.records_action_disable
+                                            OperationKind.ENABLE -> Res.string.records_action_enable
+                                        }
                                     )
                                     platform.showMessage("$action · ${record.label}")
                                 }
@@ -306,8 +312,10 @@ private fun MainDialogs(
             canResetToFactory = dialog.canResetToFactory,
             bootloopRisk = dialog.bootloopRisk,
             newPackages = dialog.newPackages,
+            canFreeze = dialog.canFreeze,
             onDismiss = mainViewModel::dismissDialog,
             onAgree = mainViewModel::onUninstallConfirmed,
+            onFreeze = mainViewModel::onFreezeConfirmed,
         )
         is MainDialog.UnsafeSelection -> UnsafeSelectionDialog(
             blocked = dialog.blocked,

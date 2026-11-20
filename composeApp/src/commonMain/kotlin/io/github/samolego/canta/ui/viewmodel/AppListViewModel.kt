@@ -340,6 +340,8 @@ class AppListViewModel(
         val results = when (kind) {
             OperationKind.UNINSTALL -> cantaHandler.uninstallApps(packageNames, resetToFactory)
             OperationKind.REINSTALL -> cantaHandler.reinstallApps(packageNames)
+            OperationKind.DISABLE -> cantaHandler.setDisabledApps(packageNames, disabled = true)
+            OperationKind.ENABLE -> cantaHandler.setDisabledApps(packageNames, disabled = false)
         }
         val succeededApps = mutableListOf<AppInfo>()
         val failed = mutableListOf<OperationRecord>()
@@ -364,8 +366,14 @@ class AppListViewModel(
                 succeeded++
                 before[result.packageName]?.let(succeededApps::add)
                 // The list follows the batch in the direction it was applied, so a restore from
-                // the records tab moves the app back to the installed list.
-                setUninstalled(result.packageName, kind == OperationKind.UNINSTALL)
+                // the records tab moves the app back to the installed list, and a freeze marks
+                // the app without moving it: it is still there, just stopped.
+                when (kind) {
+                    OperationKind.UNINSTALL -> setUninstalled(result.packageName, true)
+                    OperationKind.REINSTALL -> setUninstalled(result.packageName, false)
+                    OperationKind.DISABLE -> setDisabled(result.packageName, true)
+                    OperationKind.ENABLE -> setDisabled(result.packageName, false)
+                }
                 selectedApps.remove(result.packageName)
             } else {
                 failed += record
@@ -385,6 +393,9 @@ class AppListViewModel(
                 OperationKind.UNINSTALL ->
                     telemetry?.recordUninstalls(succeededApps, batchSize = packageNames.size)
                 OperationKind.REINSTALL -> telemetry?.recordReinstalls(succeededApps)
+                // Freezing is not reported: the app is still installed, so none of the survival
+                // evidence the telemetry collects applies to it.
+                OperationKind.DISABLE, OperationKind.ENABLE -> Unit
             }
         }
         return succeeded
@@ -479,5 +490,13 @@ class AppListViewModel(
         if (index < 0) return
         val current = _apps[index]
         if (current.isUninstalled != uninstalled) _apps[index] = current.withUninstalled(uninstalled)
+    }
+
+    /** Marks one app as frozen or back, leaving the others alone. */
+    private fun setDisabled(packageName: String, disabled: Boolean) {
+        val index = _apps.indexOfFirst { it.packageName == packageName }
+        if (index < 0) return
+        val current = _apps[index]
+        if (current.isDisabled != disabled) _apps[index] = current.withDisabled(disabled)
     }
 }

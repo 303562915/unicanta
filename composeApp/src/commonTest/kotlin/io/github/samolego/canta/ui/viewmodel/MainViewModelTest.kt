@@ -154,7 +154,20 @@ class MainViewModelTest {
     }
 
     @Test
-    fun aPartlyFailedBatchStillReportsTheSuccesses() = runVmTest {
+    fun freezingKeepsTheAppsAndSaysSoSeparatelyFromRemoval() = runVmTest {
+        val (main, appList) = mainViewModel()
+        appList.selectedApps.addAll(listOf("com.a", "com.b"))
+
+        main.applyToSelected(AppsType.INSTALLED)
+        main.onFreezeConfirmed()
+
+        assertEquals(listOf(listOf("com.a", "com.b") to true), handler.disableCalls)
+        assertTrue(handler.uninstallCalls.isEmpty(), "freezing is not removing")
+        assertTrue(appList.apps.none { it.isUninstalled }, "a frozen app is still installed")
+    }
+
+    @Test
+    fun aPartialFailedBatchStillReportsTheSuccesses() = runVmTest {
         handler.failing += "com.b"
         val (main, appList) = mainViewModel()
         appList.selectedApps.addAll(listOf("com.a", "com.b"))

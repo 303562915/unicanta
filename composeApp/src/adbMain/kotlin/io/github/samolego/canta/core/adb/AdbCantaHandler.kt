@@ -113,6 +113,12 @@ abstract class AdbCantaHandler(private val transport: AdbTransport) : CantaHandl
     override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> =
         if (isConnected) helper.reinstall(packageNames) else emptyFlow()
 
+    /** The helper's shell is the package service's peer here, so freezing works the same way. */
+    override fun setDisabledApps(packageNames: List<String>, disabled: Boolean): Flow<OperationResult> =
+        if (isConnected) helper.setDisabled(packageNames, disabled) else emptyFlow()
+
+    override val supportsDisabling: Boolean get() = isConnected
+
     /** The device shell is already at hand, so the tools page's scripts can run there too. */
     override val supportsTweakCommands: Boolean get() = true
 

@@ -72,4 +72,6 @@ data class AppInfo(
     fun withIcon(newIcon: ImageBitmap?): AppInfo = copy(icon = newIcon)
     fun withUninstalled(uninstalled: Boolean): AppInfo =
         copy(details = details.copy(installed = !uninstalled))
+    fun withDisabled(disabled: Boolean): AppInfo =
+        copy(details = details.copy(disabled = disabled))
 }

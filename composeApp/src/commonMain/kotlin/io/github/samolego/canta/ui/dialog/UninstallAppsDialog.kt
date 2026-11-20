@@ -32,8 +32,12 @@ fun UninstallAppsDialog(
     canResetToFactory: Boolean = false,
     bootloopRisk: Boolean = false,
     newPackages: List<String> = emptyList(),
+    /** Whether this device can freeze apps; the reversible way out is hidden when it cannot. */
+    canFreeze: Boolean = false,
     onDismiss: () -> Unit,
     onAgree: (resetToFactory: Boolean) -> Unit,
+    /** Freeze instead of removing: same packages, but everything stays on the device. */
+    onFreeze: () -> Unit = {},
 ) {
     var resetToFactory by rememberSaveable { mutableStateOf(false) }
     val largeBatch = isLargeBatch(appCount)
@@ -43,10 +47,23 @@ fun UninstallAppsDialog(
         onDismissRequest = onDismiss,
         buttons = {
             TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+            // The two ways out are both on screen, and named after what they cost: freezing is
+            // undoable without a copy of the app, removing is not.
+            if (canFreeze) {
+                TextButton(onClick = onFreeze) { Text(stringResource(Res.string.records_action_disable)) }
+            }
             TextButton(onClick = { onAgree(resetToFactory) }) { Text(stringResource(Res.string.ok)) }
         },
     ) {
         Text(stringResource(Res.string.are_you_sure_to_uninstall_apps, appCount))
+        if (canFreeze) {
+            // Said plainly, because this is the one place the user chooses between a pause and a
+            // removal, and the difference is not visible afterwards.
+            Text(
+                text = stringResource(Res.string.uninstall_or_freeze_hint),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (bootloopRisk) {
             Text(
                 text = stringResource(Res.string.community_bootloop_warning),

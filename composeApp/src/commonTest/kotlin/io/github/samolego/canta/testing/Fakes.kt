@@ -60,6 +60,15 @@ class FakeHandler(
         return results(packageNames)
     }
 
+    val disableCalls = mutableListOf<Pair<List<String>, Boolean>>()
+
+    override fun setDisabledApps(packageNames: List<String>, disabled: Boolean): Flow<OperationResult> {
+        disableCalls += packageNames to disabled
+        return results(packageNames)
+    }
+
+    override val supportsDisabling: Boolean = true
+
     private fun results(packageNames: List<String>) =
         packageNames.map { name ->
             if (name in failing) {

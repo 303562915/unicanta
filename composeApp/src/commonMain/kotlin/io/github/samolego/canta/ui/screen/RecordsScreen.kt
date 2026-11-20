@@ -41,6 +41,8 @@ import io.github.samolego.canta.data.history.OperationRecord
 import io.github.samolego.canta.data.history.OperationTime
 import io.github.samolego.canta.data.history.rollbackCandidate
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.records_action_disable
+import io.github.samolego.canta.generated.resources.records_action_enable
 import io.github.samolego.canta.generated.resources.records_action_reinstall
 import io.github.samolego.canta.generated.resources.records_action_uninstall
 import io.github.samolego.canta.generated.resources.records_batch
@@ -222,11 +224,23 @@ private fun DayHeader(day: String) {
 @Composable
 private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val isFrozen = record.kind == OperationKind.DISABLE
     val isUninstall = record.kind == OperationKind.UNINSTALL
-    val actionColor = if (isUninstall) scheme.error else scheme.primary
-    // The reverse of what the row says: a restore undoes an uninstall, and the other way round.
+    // A removal is the loud one (error); a freeze is a pause (tertiary), because the app is still
+    // on the device and one tap brings it back.
+    val actionColor = when {
+        isUninstall -> scheme.error
+        isFrozen -> scheme.tertiary
+        else -> scheme.primary
+    }
+    // The reverse of what the row says: what was removed is put back, what was frozen is thawed.
     val reverseLabel = stringResource(
-        if (isUninstall) Res.string.records_action_reinstall else Res.string.records_action_uninstall
+        when (record.kind) {
+            OperationKind.UNINSTALL -> Res.string.records_action_reinstall
+            OperationKind.REINSTALL -> Res.string.records_action_uninstall
+            OperationKind.DISABLE -> Res.string.records_action_enable
+            OperationKind.ENABLE -> Res.string.records_action_disable
+        }
     )
     val reverseColor = if (isUninstall) scheme.primary else scheme.error
 
@@ -265,8 +279,12 @@ private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> U
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = stringResource(
-                                if (isUninstall) Res.string.records_action_uninstall
-                                else Res.string.records_action_reinstall
+                                when (record.kind) {
+                                    OperationKind.UNINSTALL -> Res.string.records_action_uninstall
+                                    OperationKind.REINSTALL -> Res.string.records_action_reinstall
+                                    OperationKind.DISABLE -> Res.string.records_action_disable
+                                    OperationKind.ENABLE -> Res.string.records_action_enable
+                                }
                             ),
                             style = FlText.caption2,
                             color = actionColor,

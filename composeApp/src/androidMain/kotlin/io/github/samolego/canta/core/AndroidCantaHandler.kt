@@ -186,6 +186,12 @@ class AndroidCantaHandler(
     override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> =
         flow { packageNames.forEach { emit(operations.reinstall(it)) } }.flowOn(Dispatchers.IO)
 
+    /** Shizuku's package service can freeze and unfreeze apps, so both halves are available. */
+    override fun setDisabledApps(packageNames: List<String>, disabled: Boolean): Flow<OperationResult> =
+        flow { packageNames.forEach { emit(operations.setDisabled(it, disabled)) } }.flowOn(Dispatchers.IO)
+
+    override val supportsDisabling: Boolean get() = true
+
     /** The tools page's scripts need a shell; Shizuku's user service is the only one Canta has. */
     private val shell by lazy { ShizukuShell(context) }
 

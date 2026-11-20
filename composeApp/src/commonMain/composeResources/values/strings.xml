@@ -26,6 +26,8 @@
     <string name="tab_uninstalled">Uninstalled apps</string>
     <string name="records_action_uninstall">Uninstall</string>
     <string name="records_action_reinstall">Restore</string>
+    <string name="records_action_disable">Freeze</string>
+    <string name="records_action_enable">Unfreeze</string>
     <string name="records_success">Success</string>
     <string name="records_failed">Failed</string>
     <string name="records_batch">%1$d/%2$d</string>
@@ -199,6 +201,7 @@
     <string name="community_bootloop_warning">Community reports say at least one of these apps can cause a bootloop.</string>
     <string name="uninstall_large_batch_warning">That is a large batch. Uninstall a few apps at a time and reboot in between, so you can tell which package caused a problem.</string>
     <string name="uninstall_recovery_hint">Make sure you can recover first: keep USB debugging enabled, write down the package names, and back up what matters. A wrong package can stop the phone from booting.</string>
+    <string name="uninstall_or_freeze_hint">Freezing keeps the app on the device, data included, and undoes with one tap. Uninstalling saves the space and cannot be undone without a copy of the app.</string>
     <string name="safety_tab_apps">Top removed</string>
     <string name="safety_tab_plans">Plans</string>
     <string name="rules_title">Device safety</string>
@@ -381,7 +384,7 @@
     <string name="about_qq_group_hint">Group 913795959</string>
     <string name="about_qq_group_copied">Group number 913795959 copied</string>
     <string name="about_contributors">Contributors</string>
-    <string name="about_original_project">Original project</string>
+    <string name="about_source_repo">Source code</string>
     <string name="description_source">Description from the UAD list, published in English</string>
     <string name="description_translated_source">Description translated by Canta from the UAD list</string>
     <string name="bloat_description_language">en</string>

@@ -95,6 +95,48 @@ class PackageOperations(
         if (result.status == STATUS_NO_RESULT && !isInstalled(packageName)) result.copy(success = true) else result
     }
 
+    /**
+     * Freezes ([disabled] = true) or unfreezes ([disabled] = false) [packageName] for the user.
+     *
+     * This is the reversible half: the package keeps its data, its place in the system and its
+     * permissions, and comes back with another call. Unfreezing sets the state back to *default*
+     * rather than *enabled*, so an app that the ROM ships disabled stays the way the ROM wanted it
+     * — "undo what was done here", not "turn it on".
+     */
+    fun setDisabled(packageName: String, disabled: Boolean): OperationResult = reportingFailure(packageName) {
+        val state = if (disabled) {
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+        } else {
+            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+        }
+        Log.i(TAG, "${if (disabled) "Freezing" else "Unfreezing"} '$packageName'")
+        try {
+            allowHiddenApis()
+            IPackageManager::class.java
+                .getMethod(
+                    "setApplicationEnabledSetting",
+                    String::class.java, // packageName
+                    Int::class.javaPrimitiveType, // newState
+                    Int::class.javaPrimitiveType, // flags
+                    Int::class.javaPrimitiveType, // userId
+                    String::class.java, // callingPackage
+                )
+                .invoke(privilegedPackageManager, packageName, state, 0, services.userId, "android")
+            OperationResult(packageName, success = true, status = PackageInstaller.STATUS_SUCCESS)
+        } catch (e: Exception) {
+            // A ROM that refuses returns here rather than reporting asynchronously, so there is
+            // no status to wait for: the message is the whole answer.
+            val cause = (e as? InvocationTargetException)?.targetException ?: e
+            Log.w(TAG, "Could not change '$packageName' to $state: $cause")
+            OperationResult(
+                packageName,
+                success = false,
+                status = STATUS_NEGATIVE_RESPONSE,
+                message = cause.toString(),
+            )
+        }
+    }
+
     /** Reinstalls [packageName] for the user, from the copy still on the device. */
     fun reinstall(packageName: String): OperationResult = reportingFailure(packageName) {
         Log.i(TAG, "Reinstalling '$packageName'")

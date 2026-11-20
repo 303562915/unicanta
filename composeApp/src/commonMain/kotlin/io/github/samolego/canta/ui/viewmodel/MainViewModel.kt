@@ -11,6 +11,7 @@ import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceDiscovery
 import io.github.samolego.canta.data.CantaSettings
+import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.auth_required
 import io.github.samolego.canta.generated.resources.auth_required_description
@@ -35,6 +36,8 @@ sealed interface MainDialog {
         val bootloopRisk: Boolean = false,
         /** Selected packages that were not in the last confirmed batch: a list pasted from elsewhere. */
         val newPackages: List<String> = emptyList(),
+        /** Whether freezing is on the table here; a device without it only has removal. */
+        val canFreeze: Boolean = false,
     ) : MainDialog
     data class Success(val count: Int, val isReinstall: Boolean) : MainDialog
     /**
@@ -230,6 +233,7 @@ class MainViewModel(
                 bootloopRisk = selected.any { appList.scores.value[it]?.verdict == Verdict.BOOTLOOP },
                 // With no batch confirmed yet everything is new, which would flag every first run.
                 newPackages = if (known.isEmpty()) emptyList() else selected.filterNot { it in known },
+                canFreeze = handler.supportsDisabling,
             )
         } else {
             authenticateAndApply(type, resetToFactory = false)
@@ -251,6 +255,42 @@ class MainViewModel(
     fun onUninstallConfirmed(resetToFactory: Boolean) {
         dialog = null
         viewModelScope.launch { authenticateAndApply(AppsType.INSTALLED, resetToFactory) }
+    }
+
+    /**
+     * Freeze the selection instead of removing it: the same packages, the same login and data,
+     * and an undo that needs no copy of anything.
+     */
+    fun onFreezeConfirmed() {
+        dialog = null
+        viewModelScope.launch {
+            if (settings.authEnabledFlow.first()) {
+                platform.requireBiometric(
+                    title = getString(Res.string.auth_required),
+                    subtitle = getString(Res.string.auth_required_description),
+                ) { viewModelScope.launch { freezeSelected() } }
+            } else {
+                freezeSelected()
+            }
+        }
+    }
+
+    private suspend fun freezeSelected() {
+        val attempted = appList.selectedApps.toList()
+        val count = appList.applyPackages(attempted, OperationKind.DISABLE)
+        if (count > 0 && !settings.hideSuccessDialogFlow.first()) {
+            // Reported as a freeze, not as a removal: "1 app uninstalled" would be a lie.
+            dialog = MainDialog.Success(count = count, isReinstall = true)
+        } else if (count == 0) {
+            val failures = appList.lastFailures.value
+            if (failures.isNotEmpty()) {
+                dialog = MainDialog.Failure(
+                    attempts = failures.size,
+                    reasons = failures.map { it.reason.ifEmpty { it.message } to it.advice }.distinct(),
+                    isReinstall = true,
+                )
+            }
+        }
     }
 
     private suspend fun authenticateAndApply(type: AppsType, resetToFactory: Boolean) {

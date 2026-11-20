@@ -69,7 +69,7 @@ import io.github.samolego.canta.generated.resources.about_checking
 import io.github.samolego.canta.generated.resources.about_contributors
 import io.github.samolego.canta.generated.resources.about_coolapk
 import io.github.samolego.canta.generated.resources.about_coolapk_hint
-import io.github.samolego.canta.generated.resources.about_original_project
+import io.github.samolego.canta.generated.resources.about_source_repo
 import io.github.samolego.canta.generated.resources.about_qq_group
 import io.github.samolego.canta.generated.resources.about_qq_group_copied
 import io.github.samolego.canta.generated.resources.about_qq_group_hint
@@ -117,10 +117,9 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-/** Where the app is published and where it came from. */
+/** Where the app is published: the only repository the page points at. */
 private const val REPO_URL = "https://github.com/303562915/unicanta"
 private const val CONTRIBUTORS_URL = "$REPO_URL/graphs/contributors"
-private const val ORIGINAL_URL = "https://github.com/samolego/Canta"
 /** The author's Coolapk page, and the number at the end of it. */
 private const val COOLAPK_UID = "43186862"
 private const val COOLAPK_URL = "https://www.coolapk.com/u/$COOLAPK_UID"
@@ -401,8 +400,9 @@ fun AboutScreen(
             )
             LinkCard(
                 glyph = FlGlyphs.link,
-                title = stringResource(Res.string.about_original_project),
-                onClick = { platform.openUrl(ORIGINAL_URL) },
+                title = stringResource(Res.string.about_source_repo),
+                subtitle = REPO_URL,
+                onClick = { platform.openUrl(REPO_URL) },
             )
         }
 

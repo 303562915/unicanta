@@ -45,6 +45,8 @@ import kotlin.system.exitProcess
  *    display order (see [inDisplayOrder]), streamed as each one is ready
  *  - `uninstall [--reset] <package>...` / `reinstall <package>...`: one
  *    [OperationResult] line per package, as each operation completes
+ *  - `disable <package>...` / `enable <package>...`: freeze or unfreeze the
+ *    packages for the user, same one-line-per-package format
  *  - `version`: the [PROTOCOL_VERSION]
  */
 object Main {
@@ -96,6 +98,14 @@ object Main {
                 val operations = PackageOperations(DirectServices(userId), userContext(userId))
                 args.drop(1).forEach { writeResult(operations.reinstall(it)) }
             }
+            "disable" -> {
+                val operations = PackageOperations(DirectServices(userId), userContext(userId))
+                args.drop(1).forEach { writeResult(operations.setDisabled(it, disabled = true)) }
+            }
+            "enable" -> {
+                val operations = PackageOperations(DirectServices(userId), userContext(userId))
+                args.drop(1).forEach { writeResult(operations.setDisabled(it, disabled = false)) }
+            }
 
             else -> return usage()
         }
@@ -104,7 +114,7 @@ object Main {
 
     private fun usage(): Int {
         System.err.println(
-            "usage: canta-helper [--user <id>] (info | icons <sizePx> | uninstall [--reset] <package>... | reinstall <package>... | version)"
+            "usage: canta-helper [--user <id>] (info | icons <sizePx> | uninstall [--reset] <package>... | reinstall <package>... | disable <package>... | enable <package>... | version)"
         )
         return 2
     }

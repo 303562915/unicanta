@@ -22,5 +22,12 @@ data class OperationResult(
     companion object {
         /** No status arrived in time (or the call failed before running). */
         const val STATUS_NO_RESULT = -1000
+
+        /**
+         * The device refused outright, without going through the installer: a hidden call that
+         * threw, a policy that said no. Distinct from [STATUS_NO_RESULT] because nothing is
+         * pending — the answer was simply negative, and [OperationResult.message] says why.
+         */
+        const val STATUS_NEGATIVE_RESPONSE = -1001
     }
 }

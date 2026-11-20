@@ -22,6 +22,8 @@
     <string name="tab_uninstalled">已卸载</string>
     <string name="records_action_uninstall">卸载</string>
     <string name="records_action_reinstall">恢复</string>
+    <string name="records_action_disable">停用</string>
+    <string name="records_action_enable">启用</string>
     <string name="records_success">成功</string>
     <string name="records_failed">失败</string>
     <string name="records_batch">%1$d/%2$d</string>
@@ -204,7 +206,7 @@
     <string name="about_qq_group_hint">群号 913795959</string>
     <string name="about_qq_group_copied">群号 913795959 已复制</string>
     <string name="about_contributors">贡献者</string>
-    <string name="about_original_project">原开源项目</string>
+    <string name="about_source_repo">开源项目</string>
     <string name="description_source">描述来自 UAD 标注库，原文为英文</string>
     <string name="description_translated_source">描述由本应用译自 UAD 标注库</string>
     <string name="bloat_description_language">zh</string>
@@ -255,6 +257,7 @@
     <string name="app_list_restricted_dismiss">知道了</string>
     <string name="uninstall_large_batch_warning">一次卸这么多太多：建议分小批卸载，中间重启一次，出问题时才知道是哪个包。</string>
     <string name="uninstall_recovery_hint">先留好退路：保持 USB 调试开启，记下包名，并备份重要数据。卸错包可能让手机开不了机。</string>
+    <string name="uninstall_or_freeze_hint">停用只是把它冻住，应用和数据都还在设备上，点一下就能解冻；卸载会腾出空间，但没有副本就装不回来。</string>
     <string name="uninstall_new_packages">这些包不在你上次确认的批次里，确认你认识它们：%1$s</string>
     <string name="uninstall_new_packages_more">另有 %1$d 个</string>
     <string name="restore_suspects_title">有包被手动装回来了</string>

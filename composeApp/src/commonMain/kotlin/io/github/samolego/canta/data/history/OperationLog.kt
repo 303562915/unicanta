@@ -17,9 +17,13 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Instant
 
-/** What Canta did to a package: the only two things it can do. */
+/**
+ * What Canta did to a package. The first two remove and put back; the last two freeze and
+ * unfreeze, which is the same intent with a reachable way out — the package is still there, so
+ * undoing needs no copy of it.
+ */
 @Serializable
-enum class OperationKind { UNINSTALL, REINSTALL }
+enum class OperationKind { UNINSTALL, REINSTALL, DISABLE, ENABLE }
 
 /**
  * One operation on one package, as it happened: what was done, to which app, when, whether it
