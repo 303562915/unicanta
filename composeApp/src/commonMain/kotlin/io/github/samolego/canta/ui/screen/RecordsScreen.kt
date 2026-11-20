@@ -239,16 +239,29 @@ private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> U
                 }
             }
 
-            if (record.message.isNotEmpty()) {
+            // The failure, said in two parts: what the device refused, and what to try next.
+            // Records written before the explanation existed still have their raw message, so
+            // that is what they fall back to.
+            if (record.reason.isNotEmpty() || record.message.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = record.message,
+                    text = record.reason.ifEmpty { record.message },
                     style = FlText.caption2,
                     color = scheme.error,
-                    maxLines = 2,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = ROW_ICON + 10.dp),
                 )
+                if (record.advice.isNotEmpty()) {
+                    Text(
+                        text = record.advice,
+                        style = FlText.caption2,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = ROW_ICON + 10.dp, top = 1.dp),
+                    )
+                }
             }
 
             // Anything beyond "one app, done" only shows when it is actually there.

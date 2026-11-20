@@ -31,6 +31,11 @@ class FakeHandler(
     var iconLoads = 0
         private set
     val failing = mutableSetOf<String>()
+
+    /** Status code a failing package reports; the default is what a real refusal looks like. */
+    var failureStatus = 1
+    /** The device's own wording, which is what carries a vendor's specific reason. */
+    var failureMessage = ""
     val resettable = mutableSetOf<String>()
     val uninstallCalls = mutableListOf<Pair<List<String>, Boolean>>()
     val reinstallCalls = mutableListOf<List<String>>()
@@ -56,7 +61,13 @@ class FakeHandler(
     }
 
     private fun results(packageNames: List<String>) =
-        packageNames.map { OperationResult(it, success = it !in failing) }.asFlow()
+        packageNames.map { name ->
+            if (name in failing) {
+                OperationResult(name, success = false, status = failureStatus, message = failureMessage)
+            } else {
+                OperationResult(name, success = true)
+            }
+        }.asFlow()
 
     override suspend fun availableDevices() = devices
 

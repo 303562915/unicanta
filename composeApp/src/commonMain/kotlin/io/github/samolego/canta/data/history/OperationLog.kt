@@ -38,6 +38,14 @@ data class OperationRecord(
     val success: Boolean,
     /** The handler's own words when it failed; empty on success. */
     val message: String = "",
+    /**
+     * What the failure means, in the user's language, worked out from the status code and
+     * [message] at the moment it happened. Empty on success, and empty for records written
+     * before this was added — the row falls back to [message] for those.
+     */
+    val reason: String = "",
+    /** What to try next, when there is something worth trying. */
+    val advice: String = "",
     val batchId: Long = 0L,
     val batchIndex: Int = 0,
     val batchSize: Int = 1,
@@ -75,7 +83,7 @@ class OperationLogStore(
         const val FILE_NAME = "canta-operations.csv"
 
         private const val CSV_HEADER =
-            "time,action,result,package,label,batch_index,batch_size,reset_to_factory,device,user,message"
+            "time,action,result,package,label,batch_index,batch_size,reset_to_factory,device,user,message,reason,advice"
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -180,6 +188,10 @@ class OperationLogStore(
             append(record.user?.toString().orEmpty())
             append(',')
             append(record.message.csvCell())
+            append(',')
+            append(record.reason.csvCell())
+            append(',')
+            append(record.advice.csvCell())
             append('\n')
         }
     }

@@ -136,6 +136,36 @@ class MainViewModelTest {
     }
 
     @Test
+    fun aBatchThatAllFailedIsExplainedInsteadOfSilent() = runVmTest {
+        handler.failing += "com.a"
+        handler.failureStatus = 1
+        handler.failureMessage = "not allowed to disable this package"
+        val (main, appList) = mainViewModel()
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+        main.onUninstallConfirmed(resetToFactory = false)
+
+        val dialog = assertIs<MainDialog.Failure>(main.dialog)
+        assertEquals(1, dialog.attempts)
+        assertFalse(dialog.isReinstall)
+        assertEquals(1, dialog.reasons.size, "one cause, said once")
+        assertTrue("厂商" in dialog.reasons.single().first, dialog.reasons.single().first)
+    }
+
+    @Test
+    fun aPartlyFailedBatchStillReportsTheSuccesses() = runVmTest {
+        handler.failing += "com.b"
+        val (main, appList) = mainViewModel()
+        appList.selectedApps.addAll(listOf("com.a", "com.b"))
+
+        main.applyToSelected(AppsType.INSTALLED)
+        main.onUninstallConfirmed(resetToFactory = false)
+
+        assertEquals(MainDialog.Success(count = 1, isReinstall = false), main.dialog)
+    }
+
+    @Test
     fun reinstallSkipsConfirmationAndHiddenSuccessDialogStaysHidden() = runVmTest {
         settings.setHideSuccessDialog(true)
         val (main, appList) = mainViewModel()

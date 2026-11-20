@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.samolego.canta.CANTA_PACKAGE_NAME
 import io.github.samolego.canta.BuildFlags
 import io.github.samolego.canta.core.CantaHandler
+import io.github.samolego.canta.core.explainFailure
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.bloat.BloatData
@@ -303,6 +304,14 @@ class AppListViewModel(
         applyPackages(selectedApps.toList(), type.operationKind, resetToFactory)
 
     /**
+     * The failures of the batch that just ran, as they were recorded: newest batch only, cleared
+     * when the next one starts. The dialog that says "that did not work" reads this, so the reason
+     * is on screen at the moment it matters instead of only in the records tab afterwards.
+     */
+    private val _lastFailures = MutableStateFlow<List<OperationRecord>>(emptyList())
+    val lastFailures: StateFlow<List<OperationRecord>> = _lastFailures
+
+    /**
      * Runs one batch of [kind] over [packageNames] without touching the selection: the rescue
      * prompt reinstalls a whole batch this way, and the records tab reverses one operation.
      * Returns how many succeeded.
@@ -313,17 +322,19 @@ class AppListViewModel(
         resetToFactory: Boolean = false,
     ): Int {
         if (packageNames.isEmpty()) return 0
+        _lastFailures.value = emptyList()
         val before = _apps.associateBy { it.packageName }
         val results = when (kind) {
             OperationKind.UNINSTALL -> cantaHandler.uninstallApps(packageNames, resetToFactory)
             OperationKind.REINSTALL -> cantaHandler.reinstallApps(packageNames)
         }
         val succeededApps = mutableListOf<AppInfo>()
+        val failed = mutableListOf<OperationRecord>()
         val batchId = currentTimeMillis()
         val log = mutableListOf<OperationRecord>()
         var succeeded = 0
         results.collect { result ->
-            log += operationRecord(
+            val record = operationRecord(
                 result = result,
                 kind = kind,
                 label = before[result.packageName]?.name ?: result.packageName,
@@ -332,6 +343,7 @@ class AppListViewModel(
                 batchSize = packageNames.size,
                 resetToFactory = resetToFactory,
             )
+            log += record
             if (result.success) {
                 succeeded++
                 before[result.packageName]?.let(succeededApps::add)
@@ -340,9 +352,11 @@ class AppListViewModel(
                 setUninstalled(result.packageName, kind == OperationKind.UNINSTALL)
                 selectedApps.remove(result.packageName)
             } else {
+                failed += record
                 LogUtils.w(TAG, "${kind.name.lowercase()} '${result.packageName}' failed: ${result.message} (${result.status})")
             }
         }
+        _lastFailures.value = failed
         recordOperations(log)
         if (succeededApps.isNotEmpty()) {
             when (kind) {
@@ -377,6 +391,7 @@ class AppListViewModel(
             batchDevice
         }
         if (batchIndex == 1) batchDevice = device
+        val explanation = result.explainFailure()
         return OperationRecord(
             timestamp = currentTimeMillis(),
             kind = kind,
@@ -384,6 +399,8 @@ class AppListViewModel(
             label = label,
             success = result.success,
             message = if (result.success) "" else result.message,
+            reason = explanation?.reason.orEmpty(),
+            advice = explanation?.advice.orEmpty(),
             batchId = batchId,
             batchIndex = batchIndex,
             batchSize = batchSize,

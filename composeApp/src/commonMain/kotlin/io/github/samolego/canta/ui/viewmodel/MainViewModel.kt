@@ -37,6 +37,15 @@ sealed interface MainDialog {
         val newPackages: List<String> = emptyList(),
     ) : MainDialog
     data class Success(val count: Int, val isReinstall: Boolean) : MainDialog
+    /**
+     * Nothing in the batch went through: instead of staying silent, name what the device refused
+     * and what to try next, one line per distinct reason.
+     */
+    data class Failure(
+        val attempts: Int,
+        val reasons: List<Pair<String, String>>,
+        val isReinstall: Boolean,
+    ) : MainDialog
 
     /** Packages that came back although the build did not change: a rescue of the last batch. */
     data class RestoreSuspects(val packages: List<String>) : MainDialog
@@ -222,9 +231,22 @@ class MainViewModel(
         val attempted = if (type == AppsType.INSTALLED) appList.selectedApps.toList() else emptyList()
         val count = appList.applyToSelected(type, resetToFactory)
         if (attempted.isNotEmpty()) settings.setLastConfirmedPackages(attempted)
-        if (count > 0 && !settings.hideSuccessDialogFlow.first()) {
-            dialog = MainDialog.Success(count = count, isReinstall = type == AppsType.UNINSTALLED)
+        val isReinstall = type == AppsType.UNINSTALLED
+        if (count > 0) {
+            if (!settings.hideSuccessDialogFlow.first()) {
+                dialog = MainDialog.Success(count = count, isReinstall = isReinstall)
+            }
+            return
         }
+        // Nothing went through. Staying silent here is the worst case: the user tapped, nothing
+        // happened, and only the records tab would ever say why. Name the reasons instead, one
+        // line per distinct one, since a whole batch usually fails for the same cause.
+        val failures = appList.lastFailures.value
+        if (failures.isEmpty()) return
+        val reasons = failures
+            .map { it.reason.ifEmpty { it.message } to it.advice }
+            .distinct()
+        dialog = MainDialog.Failure(attempts = failures.size, reasons = reasons, isReinstall = isReinstall)
     }
 
     // Device selection (desktop, web).
