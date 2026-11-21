@@ -36,6 +36,9 @@
     <string name="records_empty">No records yet</string>
     <string name="records_save">Save log</string>
     <string name="records_saved">Log saved to the download folder</string>
+    <string name="records_clear_after_boot">Delete records at system start</string>
+    <string name="records_clear_after_boot_desc">When on, the log is gone the first time the app opens after the phone restarts. When off, it is kept for good.</string>
+    <string name="records_cleared_after_reboot">The system restarted, so the records were cleared</string>
     <string name="cannot_uninstall_canta">Can'ta ouch this!</string>
     <string name="device_unreachable">Failed to reach the device. Check that it is connected and authorized.</string>
     <string name="app_size">Size: %1$s</string>
@@ -341,6 +344,11 @@
     <string name="settings_privilege_root">root</string>
     <string name="settings_privilege_shizuku">Stellar / Shizuku</string>
     <string name="settings_privilege_none">Not detected</string>
+    <string name="privilege_chooser_title">Choose the privilege</string>
+    <string name="privilege_chooser_root_title">root (Magisk / KernelSU / built-in su)</string>
+    <string name="privilege_chooser_no_root">No su on this phone, so root is not an option.</string>
+    <string name="privilege_chooser_open_manager">Open Stellar / Shizuku</string>
+    <string name="privilege_chooser_download">Download</string>
     <string name="settings_group_interface">Interface</string>
     <string name="settings_show_tweaks">Show Tools in the bar</string>
     <string name="settings_show_tweaks_description">The ROM tweaks page.</string>

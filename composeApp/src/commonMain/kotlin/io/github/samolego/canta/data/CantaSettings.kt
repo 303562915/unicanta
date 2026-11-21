@@ -53,6 +53,10 @@ class CantaSettings(storage: AppBlobStorage) {
     val autoInstallUpdatesFlow = field { it.autoInstallUpdates }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
+    /** Whether the records tab empties itself at the next system start; off by default. */
+    val clearRecordsAfterBootFlow = field { it.clearRecordsAfterBoot }
+    /** The boot the records check last ran on; see [AppSettingsProto.recordsBootId]. */
+    val recordsBootIdFlow = field { it.recordsBootId }
     val onboardingVersionFlow = field { it.onboardingVersion }
     val pendingRebootFlow: Flow<List<PendingUninstallProto>> = field { it.pendingReboot }
     val lastConfirmedPackagesFlow: Flow<List<String>> = field { it.lastConfirmedPackages }
@@ -86,6 +90,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }
+    suspend fun setClearRecordsAfterBoot(clear: Boolean) = update { it.copy(clearRecordsAfterBoot = clear) }
+    suspend fun setRecordsBootId(bootId: String) = update { it.copy(recordsBootId = bootId) }
     suspend fun setOnboardingVersion(version: Int) = update { it.copy(onboardingVersion = version) }
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
     /**

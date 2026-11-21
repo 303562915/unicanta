@@ -32,6 +32,9 @@
     <string name="records_empty">还没有记录</string>
     <string name="records_save">保存日志</string>
     <string name="records_saved">日志已保存到下载目录</string>
+    <string name="records_clear_after_boot">系统启动后删除记录</string>
+    <string name="records_clear_after_boot_desc">打开后，手机重启再进入应用，记录就清空；关闭则一直保留。</string>
+    <string name="records_cleared_after_reboot">系统已重启，记录已清空</string>
     <string name="cannot_uninstall_canta">Can'ta ouch this!</string>
     <string name="device_unreachable">Failed to reach the device. Check that it is connected and authorized.</string>
     <string name="app_size">Size: %1$s</string>
@@ -158,6 +161,11 @@
     <string name="settings_privilege_root">root</string>
     <string name="settings_privilege_shizuku">Stellar / Shizuku</string>
     <string name="settings_privilege_none">没检测到</string>
+    <string name="privilege_chooser_title">选择用哪种特权</string>
+    <string name="privilege_chooser_root_title">root（Magisk / KernelSU / 自带 su）</string>
+    <string name="privilege_chooser_no_root">这台手机没有 su，用不了 root。</string>
+    <string name="privilege_chooser_open_manager">打开 Stellar / Shizuku</string>
+    <string name="privilege_chooser_download">下载</string>
     <string name="settings_group_interface">界面</string>
     <string name="settings_show_tweaks">在底栏显示「工具」</string>
     <string name="settings_show_tweaks_description">系统调整那一页。</string>

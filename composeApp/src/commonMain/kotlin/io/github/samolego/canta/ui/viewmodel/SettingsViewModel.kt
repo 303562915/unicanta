@@ -78,6 +78,9 @@ class SettingsViewModel(
     /** Whether the safety page names this phone and opens on its picture; off unless turned on. */
     val showDevicePhoto = settingsStore.showDevicePhotoFlow.state(false)
 
+    /** Whether the records tab empties itself at the next system start; off unless turned on. */
+    val clearRecordsAfterBoot = settingsStore.clearRecordsAfterBootFlow.state(false)
+
     /** Downloads a found release on its own; the install still asks first. */
     val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(true)
     val updateChannel = settingsStore.updateChannelFlow.state<String?>(null)
@@ -136,6 +139,7 @@ class SettingsViewModel(
     fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
     fun saveRecommendationsListMode(list: Boolean) = save { setRecommendationsListMode(list) }
     fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
+    fun saveClearRecordsAfterBoot(clear: Boolean) = save { setClearRecordsAfterBoot(clear) }
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
 

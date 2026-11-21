@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -46,11 +48,14 @@ import io.github.samolego.canta.generated.resources.records_action_enable
 import io.github.samolego.canta.generated.resources.records_action_reinstall
 import io.github.samolego.canta.generated.resources.records_action_uninstall
 import io.github.samolego.canta.generated.resources.records_batch
+import io.github.samolego.canta.generated.resources.records_clear_after_boot
+import io.github.samolego.canta.generated.resources.records_clear_after_boot_desc
 import io.github.samolego.canta.generated.resources.records_empty
 import io.github.samolego.canta.generated.resources.records_failed
 import io.github.samolego.canta.generated.resources.records_reset_to_factory
 import io.github.samolego.canta.generated.resources.records_success
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.SettingsSwitch
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
@@ -83,6 +88,9 @@ fun RecordsScreen(
     modifier: Modifier = Modifier,
     /** Undoes a whole batch in one tap: the newest removal or freeze that is still in effect. */
     onRollbackBatch: (BatchRollback) -> Unit = {},
+    /** Whether the log is dropped at the next system start; the switch at the top of the page. */
+    clearRecordsAfterBoot: Boolean = false,
+    onClearRecordsAfterBootChange: (Boolean) -> Unit = {},
 ) {
     val records by history.records.collectAsStateWithLifecycle()
 
@@ -97,11 +105,6 @@ fun RecordsScreen(
     // Newest first already, so the first record of a package is the one that describes it now.
     val latest = remember(records) { records.distinctBy { it.packageName } }
 
-    if (latest.isEmpty()) {
-        EmptyRecords(modifier = modifier.fillMaxSize())
-        return
-    }
-
     // Whether a package is gone right now, asked of the list rather than of the log: a later
     // operation on the same package is what decides, and the log does not say which came last.
     val gone = remember(apps) { apps.filter { it.isUninstalled }.map { it.packageName }.toSet() }
@@ -114,30 +117,83 @@ fun RecordsScreen(
 
     // One flat list of day headers and rows: a lazy list cannot nest one inside another.
     val entries = remember(latest) { flattenByDay(latest) }
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = 13.dp,
-            end = 13.dp,
-            top = 6.dp,
-            bottom = FLOATING_BAR_ROOM,
-        ),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        rollback?.let { batch ->
-            item(key = "rollback-${batch.batchId}") {
-                RollbackBanner(batch = batch, onRollback = { onRollbackBatch(batch) })
+
+    Column(modifier = modifier.fillMaxSize()) {
+        // Above the log and outside the empty check on purpose: with the switch inside the list it
+        // would disappear the moment it emptied the page, leaving no way to turn it off again.
+        ClearAfterBootSwitch(
+            checked = clearRecordsAfterBoot,
+            onCheckedChange = onClearRecordsAfterBootChange,
+        )
+        if (latest.isEmpty()) {
+            EmptyRecords(modifier = Modifier.weight(1f).fillMaxWidth())
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(
+                    start = 13.dp,
+                    end = 13.dp,
+                    top = 6.dp,
+                    bottom = FLOATING_BAR_ROOM,
+                ),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                rollback?.let { batch ->
+                    item(key = "rollback-${batch.batchId}") {
+                        RollbackBanner(batch = batch, onRollback = { onRollbackBatch(batch) })
+                    }
+                }
+                items(entries, key = RecordEntry::key) { entry ->
+                    when (entry) {
+                        is RecordEntry.Day -> DayHeader(entry.day)
+                        is RecordEntry.Operation -> RecordRow(
+                            record = entry.record,
+                            app = byPackage[entry.record.packageName],
+                            onReverse = { onReverse(entry.record) },
+                        )
+                    }
+                }
             }
         }
-        items(entries, key = RecordEntry::key) { entry ->
-            when (entry) {
-                is RecordEntry.Day -> DayHeader(entry.day)
-                is RecordEntry.Operation -> RecordRow(
-                    record = entry.record,
-                    app = byPackage[entry.record.packageName],
-                    onReverse = { onReverse(entry.record) },
+    }
+}
+
+/**
+ * The page's one setting: whether the log is thrown away at the next system start.
+ *
+ * Off is the default, and off means the log is kept for good — a record of what was removed is the
+ * only way back to it, so emptying it is something to ask for, not something to start with.
+ */
+@Composable
+private fun ClearAfterBootSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 13.dp, end = 13.dp, top = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+        shape = RoundedCornerShape(12.dp),
+        color = FlSurfaceLevel.Card.colorOf(scheme),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(Res.string.records_clear_after_boot),
+                    style = FlText.subheadline,
+                    color = scheme.onSurface,
+                )
+                Text(
+                    text = stringResource(Res.string.records_clear_after_boot_desc),
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
                 )
             }
+            Spacer(Modifier.width(8.dp))
+            SettingsSwitch(checked)
         }
     }
 }

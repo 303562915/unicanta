@@ -22,6 +22,7 @@ import io.github.samolego.canta.generated.resources.occupied_accessibility
 import io.github.samolego.canta.generated.resources.occupied_device_admin
 import io.github.samolego.canta.generated.resources.occupied_input_method
 import io.github.samolego.canta.generated.resources.occupied_launcher
+import io.github.samolego.canta.generated.resources.records_cleared_after_reboot
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.message
 import io.github.samolego.canta.util.SafetyRules
@@ -112,7 +113,22 @@ class MainViewModel(
         } else {
             appList.loadApps()
         }
-        viewModelScope.launch { showRestoreSuspects() }
+        viewModelScope.launch {
+            // First, because a reboot with the switch on means the log is gone by design — and the
+            // prompts below read that log.
+            clearRecordsAfterReboot()
+            showRestoreSuspects()
+        }
+    }
+
+    /**
+     * Honours the records tab's "delete records at system start" switch, before anything below
+     * reads the log the switch is about: the list owns the log, and this only says it happened.
+     */
+    private suspend fun clearRecordsAfterReboot() {
+        if (appList.clearRecordsIfRebooted()) {
+            platform.showMessage(getString(Res.string.records_cleared_after_reboot))
+        }
     }
 
     /** Tells the user once per start that the last batch had to be put back by hand. */

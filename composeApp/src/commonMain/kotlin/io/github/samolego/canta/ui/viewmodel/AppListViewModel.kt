@@ -408,6 +408,32 @@ class AppListViewModel(
         applyPackages(packageNames, OperationKind.REINSTALL)
 
     /**
+     * Honours the records tab's "delete records at system start" switch: on, the log is dropped the
+     * first time the app runs after a reboot; off, it stays for good. Returns whether it cleared.
+     *
+     * The boot id is remembered on every start, switch or no switch, so turning the switch on while
+     * the app is open never wipes the log being read — only the next reboot does. A platform that
+     * reports no boot id (desktop, web) never clears on its own: a fresh process is not a boot.
+     *
+     * Called once at start, before the resume prompt reads the log.
+     */
+    suspend fun clearRecordsIfRebooted(): Boolean {
+        val store = history ?: return false
+        val currentSettings = settings ?: return false
+        val bootId = cantaHandler.bootId()?.takeIf { it.isNotEmpty() } ?: return false
+        val lastBoot = currentSettings.recordsBootIdFlow.first()
+        if (lastBoot == bootId) return false
+        // A stored id is what makes this a restart rather than the first start after an install.
+        val cleared = lastBoot.isNotEmpty() && currentSettings.clearRecordsAfterBootFlow.first()
+        if (cleared) {
+            store.clear()
+            LogUtils.i(TAG, "System start with the switch on: the operation log was cleared")
+        }
+        currentSettings.setRecordsBootId(bootId)
+        return cleared
+    }
+
+    /**
      * What is left of a batch that was cut short, or null when nothing is. Called once at start:
      * the batch is the one the user was in the middle of when the app went away, whatever it was
      * doing — an uninstall, a freeze or a thaw.

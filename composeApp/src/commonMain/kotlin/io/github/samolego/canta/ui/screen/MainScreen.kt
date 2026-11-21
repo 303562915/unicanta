@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.app.Filter
@@ -95,6 +96,9 @@ fun MainScreen(
 ) {
     // Reversing a record runs on the page's own scope: the dialog is already closed by then.
     val reverseScope = rememberCoroutineScope()
+
+    // The records tab's switch: whether the log is dropped the next time the app opens after a reboot.
+    val clearRecordsAfterBoot by settingsViewModel.clearRecordsAfterBoot.collectAsStateWithLifecycle()
 
     // Pager state is hoisted to CantaNavigation so preset-applying knows the tab.
     val currentTab = AppsTab.entries[pagerState.currentPage]
@@ -189,6 +193,9 @@ fun MainScreen(
                                 }
                             }
                         },
+                        // Off by default: unasked-for, the log stays until it is cleared by hand.
+                        clearRecordsAfterBoot = clearRecordsAfterBoot,
+                        onClearRecordsAfterBootChange = settingsViewModel::saveClearRecordsAfterBoot,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

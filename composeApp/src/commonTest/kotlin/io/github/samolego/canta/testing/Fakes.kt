@@ -76,6 +76,11 @@ class FakeHandler(
 
     override val supportsDisabling: Boolean = true
 
+    /** The boot this fake device reports; null is a platform that cannot tell one boot from another. */
+    var boot: String? = null
+
+    override suspend fun bootId(): String? = boot
+
     private fun results(packageNames: List<String>) =
         packageNames.map { name ->
             if (name in failing) {

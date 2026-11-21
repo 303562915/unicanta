@@ -99,6 +99,18 @@ data class AppSettingsProto(
      * as soon as it left the composition.
      */
     @ProtoNumber(26) val recommendationsListMode: Boolean = false,
+    /**
+     * Whether the record of uninstalls and restores is dropped at the next system start. Off by
+     * default: a log that empties itself is a surprise unless someone asked for it, and the log is
+     * the only way back to what was removed for anyone who did not write it down.
+     */
+    @ProtoNumber(27) val clearRecordsAfterBoot: Boolean = false,
+    /**
+     * The boot this install last ran on (see `CantaHandler.bootId`), so "the phone was restarted"
+     * can be told apart from "the app was opened again". Empty until a start reports one, and left
+     * empty on platforms that cannot report a boot id.
+     */
+    @ProtoNumber(28) val recordsBootId: String = "",
 )
 
 /**
