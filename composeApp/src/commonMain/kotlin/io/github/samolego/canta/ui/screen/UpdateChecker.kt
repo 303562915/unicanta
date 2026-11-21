@@ -218,9 +218,13 @@ private suspend fun fetchFromPage(client: HttpClient, channel: UpdateChannel): U
         if (channel == UpdateChannel.DEVELOPMENT) DEVELOPMENT_RELEASE_PAGE else LATEST_RELEASE_PAGE,
         "text/html",
     )
-    // `/releases/latest` redirects to the newest tag, and the page links to it.
-    val tag = Regex("/releases/tag/([^\"'#?<>\\s]+)").find(page)?.groupValues?.get(1)
-        ?.takeIf { it.isNotBlank() && it != "latest" }
+    // `/releases/latest` redirects to the newest tag, and the page links to it. The page's own
+    // navigation links to tags too, and one of them is the wildcard `*name`; only a tag that starts
+    // like a version counts, or that link would parse as version `0` and read as "nothing new".
+    val tag = Regex("/releases/tag/([0-9A-Za-z][0-9A-Za-z._-]*)")
+        .findAll(page)
+        .map { it.groupValues[1] }
+        .firstOrNull { it != "latest" }
         ?: throw UpdateCheckException(UpdateFailure.MALFORMED)
     if (channel == UpdateChannel.STABLE) return UpdateRelease(tag, tag)
     // The development release body is the only place its version and build number live.
@@ -232,6 +236,18 @@ private suspend fun fetchFromPage(client: HttpClient, channel: UpdateChannel): U
         ?: throw UpdateCheckException(UpdateFailure.MALFORMED)
     return UpdateRelease(DEVELOPMENT_TAG, version, buildNumber)
 }
+
+/**
+ * [latestRelease] as the automatic poll sees it: the release page, never the API.
+ *
+ * The about page answers a person who asked, and a clean answer there is worth the API; the poll
+ * runs for the whole session, and GitHub counts anonymous API calls per exit IP at 60 an hour. A
+ * poll every half minute would burn that budget before anyone opened the page, so it reads the
+ * same release off its HTML, which carries no quota. A failure is not retried here: the next poll
+ * is the retry.
+ */
+internal suspend fun latestReleaseFromPage(client: HttpClient, channel: UpdateChannel): UpdateRelease =
+    fetchFromPage(client, channel)
 
 /**
  * One bounded GET; the status decides which failure the caller reports. The body is read inside
