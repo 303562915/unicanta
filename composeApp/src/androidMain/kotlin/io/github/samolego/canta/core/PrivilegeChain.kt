@@ -1,5 +1,6 @@
 package io.github.samolego.canta.core
 
+import android.content.pm.PackageManager
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.core.root.RootCantaHandler
 import io.github.samolego.canta.core.root.suBinaryPath
@@ -28,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 class PrivilegeChain(
     private val root: RootCantaHandler?,
     private val shizuku: AndroidCantaHandler,
+    private val packageManager: PackageManager,
 ) : CantaHandler {
 
     /** Starts on root when the phone has a su binary: that is the privilege to try first. */
@@ -38,6 +40,14 @@ class PrivilegeChain(
     private var settled: Boolean = root == null
 
     private val settleLock = Mutex()
+
+    /**
+     * Whether a root manager's app is on the phone. Its `su` is mounted by that manager's daemon, so
+     * "manager installed" is the case where asking is still worth it even if no `su` file is visible
+     * from this process right now.
+     */
+    private fun rootManagerInstalled(): Boolean =
+        ROOT_MANAGERS.any { packageManager.getLaunchIntentForPackage(it) != null }
 
     /**
      * The privilege to use, decided once: root if it answers, Shizuku if it does not.
@@ -51,7 +61,11 @@ class PrivilegeChain(
         settleLock.withLock {
             if (!settled) {
                 val candidate = root
-                active = if (candidate != null && candidate.prepare()) candidate else shizuku
+                // Worth one attempt without a su file: Magisk, KernelSU and APatch mount `su` only
+                // while their daemon runs, and a phone whose manager app is installed but whose `su`
+                // is not there yet is exactly the phone that would otherwise never see a prompt.
+                val worthTrying = suBinaryPath() != null || rootManagerInstalled()
+                active = if (candidate != null && worthTrying && candidate.prepare()) candidate else shizuku
                 settled = true
             }
         }
@@ -76,7 +90,9 @@ class PrivilegeChain(
         val rootChoice = root?.let { handler ->
             // Checked again rather than trusted from construction: root can be taken away (the
             // manager was uninstalled, the ROM was updated) between two starts of this process.
-            val hasSu = suBinaryPath() != null
+            // A manager app with no visible `su` still counts as available: its daemon mounts the
+            // binary, and that is the case where the user needs the grant button most.
+            val hasSu = suBinaryPath() != null || rootManagerInstalled()
             PrivilegeChoice(
                 kind = PrivilegeKind.ROOT,
                 status = when {
@@ -212,3 +228,15 @@ class PrivilegeChain(
 
     override val lastConnectionFailure: DeviceConnectionFailure? get() = active.lastConnectionFailure
 }
+
+/**
+ * Package names of the root managers this build knows. Magisk is the one most phones carry; the
+ * second entry is the alpha build, which ships under its own id; KernelSU and APatch are the
+ * kernel-side ones. Any of them means "ask for root", file on disk or not.
+ */
+private val ROOT_MANAGERS = listOf(
+    "com.topjohnwu.magisk",
+    "io.github.vvb2060.magisk",
+    "me.weishu.kernelsu",
+    "me.bmax.apatch",
+)

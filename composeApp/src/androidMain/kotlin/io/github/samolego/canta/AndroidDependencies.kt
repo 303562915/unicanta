@@ -40,12 +40,12 @@ fun provideAndroidDependencies(context: Context, platform: AndroidCantaPlatform)
             // a probe at startup would put a root prompt over the splash screen, and a refusal
             // there would decide the whole session before the user saw what it was for.
             PrivilegeChain(
-                root = if (hasSuBinary()) {
-                    RootCantaHandler(RootTransport(appContext.cacheDir), appContext)
-                } else {
-                    null
-                },
+                // Built even when no `su` file is visible: a manager mounts the binary from its own
+                // daemon, so "not there yet" is not the same as "not rooted", and asking is the only
+                // way to find out. An unrooted phone gets one failed exec and then Shizuku.
+                root = RootCantaHandler(RootTransport(appContext.cacheDir), appContext),
                 shizuku = AndroidCantaHandler(appContext),
+                packageManager = appContext.packageManager,
             )
         },
     )
