@@ -231,12 +231,17 @@ class PrivilegeChain(
 
 /**
  * Package names of the root managers this build knows. Magisk is the one most phones carry; the
- * second entry is the alpha build, which ships under its own id; KernelSU and APatch are the
+ * alpha and delta builds ship under their own ids; KernelSU, its Next fork and APatch are the
  * kernel-side ones. Any of them means "ask for root", file on disk or not.
  */
 private val ROOT_MANAGERS = listOf(
+    // Magisk: stable, alpha and delta all ship as separate packages.
     "com.topjohnwu.magisk",
     "io.github.vvb2060.magisk",
+    "io.github.huskydg.magisk",
+    // KernelSU and its Next fork.
     "me.weishu.kernelsu",
+    "com.rifsxd.ksunext",
+    // APatch.
     "me.bmax.apatch",
 )
