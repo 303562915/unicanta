@@ -88,7 +88,7 @@ import io.github.samolego.canta.ui.screen.DOWNLOAD_PROGRESS_UNKNOWN
 import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
 import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
-import io.github.samolego.canta.ui.screen.latestRelease
+import io.github.samolego.canta.ui.screen.latestReleaseFromPage
 import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
 import io.github.samolego.canta.generated.resources.about_install_cancel
@@ -111,6 +111,7 @@ import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
@@ -128,6 +129,13 @@ private const val PAGE_SLIDE_MS = 260
 
 /** Taps after which the remaining count is hinted. */
 private const val SECRET_TAPS_HINT_AFTER = 3
+
+/**
+ * How often the running app asks for a release again. One poll is a single HTML read of the
+ * release page and no GitHub API quota, so half a minute costs nothing; it runs only while the app
+ * is on screen, because a check the person cannot see the result of is just traffic.
+ */
+private const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
 
 /**
  * Where the manager behind Stellar/Shizuku comes from. The app points at the fork it recommends,
@@ -204,6 +212,12 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
     var autoInstallAsked by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     val updateClient = remember { HttpClient() }
 
+    // The poll below only asks while the app is visible: in the background nobody is reading the
+    // answer, and a check every half minute is a request the person never asked for.
+    var appVisible by remember { mutableStateOf(true) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { appVisible = true }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { appVisible = false }
+
     LaunchedEffect(autoInstallUpdates, updateChannel) {
         autoUpdate = null
         autoInstallAsked = null
@@ -211,39 +225,71 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         // F-Droid signs its own builds; downloading this repo's APK over one of them cannot work.
         if (platform.isInstalledFromFdroid()) return@LaunchedEffect
         val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
-        val release = try {
-            latestRelease(updateClient, channel)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // A silently skipped check is right here: the about page is where a failure is reported,
-            // and this pass runs on every start.
-            return@LaunchedEffect
-        }
-        if (!release.isNewerThanInstalled()) return@LaunchedEffect
 
-        val label = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
-        autoUpdate = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
-        // The download runs behind whatever page is open, so a notice in the theme colour is the
-        // only signal that something new is on its way. It runs alongside: the download starts at once.
-        coroutineScope.launch {
-            snackbarHostState.showSnackbar(getString(Res.string.about_update_download_toast, label))
-        }
-        val result = downloadReleaseWithRetries(
-            platform = platform,
-            tag = release.tag,
-            buildNumber = release.buildNumber,
-            onRound = { attempt ->
-                if (attempt > 1) autoUpdate = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
-            },
-            onProgress = { percent -> autoUpdate = UpdateState.Downloading(label, percent) },
-        )
-        // A failed start-up download is dropped in silence: the about page is where a failure is
-        // named and where the download page is offered as the way out.
-        autoUpdate = when (result) {
-            is UpdateDownload.Done ->
-                UpdateState.ReadyToInstall(label, result.path).also { autoInstallAsked = it }
-            is UpdateDownload.Failed -> null
+        // One look at start-up misses every release published while the app stays open, so the
+        // check repeats for the rest of the session — a person who keeps the app running in the
+        // background is exactly the one who wants the new build without a restart. The poll reads
+        // the release page, not the API: half a minute cannot spend the anonymous quota the about
+        // page needs for a clean answer. A failing poll says nothing, because the next one is the
+        // retry; a poll that found a build stops the loop, since asking again cannot make the APK
+        // that is already here fresher.
+        while (true) {
+            if (appVisible) {
+                val release = try {
+                    latestReleaseFromPage(updateClient, channel)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The about page is where a failure is named and what to do about it; a poll
+                    // that failed in the background has no one to tell and nothing to say.
+                    null
+                }
+                if (release != null && release.isNewerThanInstalled()) {
+                    val label = if (release.buildNumber > 0) {
+                        "${release.version} (dev ${release.buildNumber})"
+                    } else {
+                        release.version
+                    }
+                    autoUpdate = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
+                    // The download runs behind whatever page is open, so a notice in the theme
+                    // colour is the only signal that something new is on its way. It runs
+                    // alongside: the download starts at once.
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(
+                            getString(Res.string.about_update_download_toast, label),
+                        )
+                    }
+                    val result = downloadReleaseWithRetries(
+                        platform = platform,
+                        tag = release.tag,
+                        buildNumber = release.buildNumber,
+                        onRound = { attempt ->
+                            if (attempt > 1) {
+                                autoUpdate = UpdateState.Downloading(
+                                    label,
+                                    DOWNLOAD_PROGRESS_UNKNOWN,
+                                )
+                            }
+                        },
+                        onProgress = { percent ->
+                            autoUpdate = UpdateState.Downloading(label, percent)
+                        },
+                    )
+                    // A failed automatic download is dropped in silence: the about page is where
+                    // a failure is named and where the download page is offered as the way out.
+                    // Success or failure, this session stops asking for the same version again —
+                    // a retry loop would be a download every half minute.
+                    autoUpdate = when (result) {
+                        is UpdateDownload.Done ->
+                            UpdateState.ReadyToInstall(label, result.path).also {
+                                autoInstallAsked = it
+                            }
+                        is UpdateDownload.Failed -> null
+                    }
+                    return@LaunchedEffect
+                }
+            }
+            delay(UPDATE_CHECK_INTERVAL_MILLIS)
         }
     }
 
