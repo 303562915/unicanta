@@ -47,33 +47,33 @@ class SuggestedAppTest {
     }
 
     @Test
-    fun ruleIsFiftyVotesAndEightyPercent() {
-        assertEquals(50, SuggestedApp.VOTES_NEEDED)
+    fun ruleIsFortyFiveVotesAndEightyPercent() {
+        assertEquals(45, SuggestedApp.VOTES_NEEDED)
         assertEquals(0.8f, SuggestedApp.SHARE_NEEDED)
         // The defaults a row from a backend that names no rule falls back to are the same rule.
-        assertEquals(50, SuggestedApp().needed)
+        assertEquals(45, SuggestedApp().needed)
         assertEquals(0.8f, SuggestedApp().shareNeeded)
     }
 
     @Test
-    fun fortyOfFiftyIsInButFortyOfFiftyOneIsNot() {
-        // Fifty votes with forty approving is exactly 80%: it clears the rule with no vote to spare.
-        val passes = SuggestedApp(agrees = 40, disagrees = 10, needed = 50, shareNeeded = 0.8f)
-        assertEquals(50, passes.votes)
-        assertEquals(40, passes.agrees)
+    fun thirtySixOfFortyFiveIsInButThirtySixOfFortySixIsNot() {
+        // Forty-five votes with thirty-six approving is exactly 80%: it clears with no vote to spare.
+        val passes = SuggestedApp(agrees = 36, disagrees = 9, needed = 45, shareNeeded = 0.8f)
+        assertEquals(45, passes.votes)
+        assertEquals(36, passes.agrees)
         assertEquals(0, passes.missingVotes)
         assertTrue(passes.satisfied)
 
-        // The same forty approvals among fifty-one votes is 78%: the bar has to be missed somewhere.
-        val fails = SuggestedApp(agrees = 40, disagrees = 11, needed = 50, shareNeeded = 0.8f)
+        // The same thirty-six approvals among forty-six votes is 78%: the bar has to be missed.
+        val fails = SuggestedApp(agrees = 36, disagrees = 10, needed = 45, shareNeeded = 0.8f)
         assertEquals(0, fails.missingVotes)
         assertFalse(fails.satisfied)
 
-        val barely = SuggestedApp(agrees = 50, disagrees = 12, needed = 50, shareNeeded = 0.8f)
+        val barely = SuggestedApp(agrees = 45, disagrees = 11, needed = 45, shareNeeded = 0.8f)
         assertTrue(barely.satisfied)
 
-        val short = SuggestedApp(agrees = 20, disagrees = 10, needed = 50, shareNeeded = 0.8f)
-        assertEquals(20, short.missingVotes)
+        val short = SuggestedApp(agrees = 20, disagrees = 10, needed = 45, shareNeeded = 0.8f)
+        assertEquals(15, short.missingVotes)
         assertFalse(short.satisfied)
     }
 

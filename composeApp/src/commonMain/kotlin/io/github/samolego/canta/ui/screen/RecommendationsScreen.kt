@@ -162,8 +162,8 @@ private val FallbackAccents = listOf(
  * next step with it — see [installedReplacements][RecommendedApp.installedReplacements].
  *
  * The second half is the community's queue: anybody may put an app up, provided it is open source
- * and lives on GitHub, and the votes decide whether it joins the list — fifty votes in all, of which
- * eighty per cent have to agree. Those rows are one line tall with the two counts in them, because
+ * and lives on GitHub, and the votes decide whether it joins the list — forty-five votes in all, of
+ * which eighty per cent have to agree. Those rows are one line tall with the two counts in them, because
  * the queue is a list to work through, not a page of essays: the summary and the proposer are in the
  * sheet a tap opens.
  *

@@ -6,8 +6,8 @@ package io.github.samolego.canta.data.recommend
  * The shipped catalog is written by the maintainers; this is the other half — anybody can put an
  * app up, as long as it is open source and lives on GitHub, and everybody else votes on whether it
  * belongs. The rule is the one the description corrections use: [needed] votes in all, of which
- * [shareNeeded] have to agree — fifty votes with forty of them approving is the bar, and forty out
- * of fifty-one is not. Until both hold, the entry waits with its counts showing.
+ * [shareNeeded] have to agree — forty-five votes with thirty-six of them approving is the bar, and
+ * thirty-six out of forty-six is not. Until both hold, the entry waits with its counts showing.
  *
  * @param url the GitHub project page, normalized by [githubProjectUrl]; the backend refuses
  *   anything else, because "open source and on GitHub" is the only thing this list promises.
@@ -55,9 +55,9 @@ data class SuggestedApp(
 
     companion object {
         /** Votes an entry needs, counting both sides, before it can join the page. */
-        const val VOTES_NEEDED = 50
+        const val VOTES_NEEDED = 45
 
-        /** Share of those votes that has to agree: 40 of 50 clears it, 40 of 51 does not. */
+        /** Share of those votes that has to agree: 36 of 45 clears it, 36 of 46 does not. */
         const val SHARE_NEEDED = 0.8f
     }
 }

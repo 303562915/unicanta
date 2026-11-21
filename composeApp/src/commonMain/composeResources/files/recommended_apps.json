@@ -6,10 +6,11 @@
    "id": "via",
    "name": "Via 浏览器",
    "author": "Tu Yafeng",
-   "category": "privacy",
+   "category": "tools",
    "license": "GPL-3.0",
    "mark": "V",
    "accent": "#16A34A",
+   "featured": true,
    "url": "https://viayoo.com/",
    "replacesPackages": ["com.android.browser", "com.mi.globalbrowser"],
    "summary": "轻量、简洁的 Android 浏览器，可替代部分系统自带浏览器。"
@@ -78,6 +79,7 @@
    "license": "GPL-3.0",
    "mark": "O",
    "accent": "#14B8A6",
+   "featured": true,
    "url": "https://github.com/ImranR98/Obtainium",
    "summary": "直接从 GitHub、GitLab、F-Droid 这些源头跟踪更新，装完一个版本就不用再回来手动升级。"
   },
@@ -111,6 +113,7 @@
    "license": "Apache-2.0",
    "mark": "S",
    "accent": "#6366F1",
+   "featured": true,
    "url": "https://github.com/HSSkyBoy/AppMarket",
    "summary": "多源的应用商店：F-Droid、IzzyOnDroid 这些源放在同一个界面里，搜索、安装、看更新都不用再装一堆客户端。"
   },
@@ -166,8 +169,9 @@
    "license": "MIT",
    "mark": "T",
    "accent": "#059669",
+   "featured": true,
    "url": "https://github.com/Eynnzerr/TelemetryCleaner",
-   "summary": "基于 Shizuku 免 root 清掉国产系统里的 SystemHelper、RegService 这类遥测模块：清数据、禁组件，不用把整套服务卸掉。"
+   "summary": "国产系统自带遥测模块的克星：按机型列出 SystemHelper、RegService、小米统计这类采集组件，用 Shizuku 或 root 直接卸掉，卸不动还能退一步冻结，数据也不用整套清空。"
   },
   {
    "id": "material-files",
@@ -206,7 +210,7 @@
    "id": "seal",
    "name": "Seal",
    "author": "JunkFood02",
-   "category": "files",
+   "category": "media",
    "license": "GPL-3.0",
    "mark": "S",
    "accent": "#7C3AED",
