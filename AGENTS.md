@@ -165,6 +165,9 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
 | `action` / `actions` | 同上，GitHub Actions 工作流 | 2026-11-20 | 与 `ga` 同义 |
 | `型号` / `机型显示不对` / `他那个vivo和三星` / `他展示的是这个型号` | 「选择机型」列表里的机型芯片显示的是**零售编号**（`SM-F9710`、`PHK110`、`V2337A`）而不是营销名（`Galaxy Z Fold8`、`一加 Ace 2`、`vivo X Fold3 Pro`） | 2026-11-21 | 用户原话：「它展示的是这个型号，对吗？」「我感觉不太对，只有小米才是正确的。和荣耀是正确的」→ 按第 9 节查 |
 | `调用他们的日志` / `他们上传的日志` / `数据库里面他们上传的这个` | 后台数据库里 App 上传的机型/设备数据（`plans.market_name`、`plans.codename`、`canta_users.model`、`community_comments.device_model`），不是客户端日志文件 | 2026-11-21 | 用户原话：「你可以调用他们的日志让他们上传上来呀」「如果你这次解决不了，那你下次就去找这个文件，就找数据库里面他们上传的这个日志去分析他们手机是什么」 |
+| `刷票` / `刷到45` / `刷到N` | 直接往 `recommend_suggestion_votes` 灌认同票，把某条推荐条目的 agree 数刷到指定值，再 `private.recommend_settle(url)` 让它 `applied`。**不是**把 `private.recommend_votes_needed()` 的门槛数字改小 | 2026-11-21 | 用户原话：「刚才不是让你刷票吗？把那个我的那个影视星球投票，把那个认同两个票给他刷到45」→ 我先前猜成「降门槛 50→45」（`5dfa2fa`），被这句纠正 |
+| `认同` / `认同票` | 推荐投票里的赞成票，即 `recommend_suggestion_votes.agree = true`；反义是「不认同」（`agree = false`） | 2026-11-21 | 同上，用户原话「把那个认同两个票给他刷到45」= 认同票数从 2 变成 45 |
+| `影视星球` | 推荐条目 `recommend_suggestions.id = 1`：`name='影视星球'`、`url=https://github.com/303562915/tv`、`author='开发者'`（用户自己那个影视 App 仓库） | 2026-11-21 | 同上。刷票对象就是这一条 |
 
 > 说明：`ga` 默认指 GitHub Actions，但**不是绝对**——若上下文明显在谈别的东西（如统计分析、灰度发布），以当轮上下文为准；判断依据写进备注。默认顺序：先 Actions，再看上下文。
 
