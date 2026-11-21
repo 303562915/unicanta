@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -257,7 +256,9 @@ private fun MainFab(
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut()
+        // Fades where it stands: it must not shrink towards the middle of the page as it goes,
+        // which is the dismissal the dialogs use.
+        exit = fadeOut()
     ) {
         if (presetEditMode) {
             PresetEditFAB(onPresetEditFinish = onPresetEditFinish)
