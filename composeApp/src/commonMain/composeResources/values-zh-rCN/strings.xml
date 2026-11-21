@@ -445,7 +445,7 @@
     <string name="plan_upload_fail">上传失败，检查网络后重试</string>
     <string name="plan_upload_reboot_ok">这一批已经过重启验证，可以直接上传。</string>
     <string name="tweaks_title">工具</string>
-    <string name="tweaks_your_rom">你的系统</string>
+    <string name="tweaks_this_device">本机可用</string>
     <string name="tweaks_copy_command">复制命令</string>
     <string name="tweaks_copied">已复制</string>
     <string name="tweaks_restore_button">恢复所有已卸载的应用</string>

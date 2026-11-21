@@ -505,7 +505,7 @@
     <string name="plan_upload_fail">Upload failed — check the connection and retry</string>
     <string name="plan_upload_reboot_ok">This batch survived a reboot and can be uploaded directly.</string>
     <string name="tweaks_title">Tools</string>
-    <string name="tweaks_your_rom">Your system</string>
+    <string name="tweaks_this_device">Available on this device</string>
     <string name="tweaks_copy_command">Copy command</string>
     <string name="tweaks_copied">Copied</string>
     <string name="tweaks_restore_button">Restore all uninstalled apps</string>

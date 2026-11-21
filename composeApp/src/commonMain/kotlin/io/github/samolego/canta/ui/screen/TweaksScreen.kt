@@ -74,8 +74,8 @@ import io.github.samolego.canta.generated.resources.tweaks_run_timeout
 import io.github.samolego.canta.generated.resources.tweaks_run_unsupported
 import io.github.samolego.canta.generated.resources.tweaks_running
 import io.github.samolego.canta.generated.resources.tweaks_splash_needs_service
+import io.github.samolego.canta.generated.resources.tweaks_this_device
 import io.github.samolego.canta.generated.resources.tweaks_title
-import io.github.samolego.canta.generated.resources.tweaks_your_rom
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
@@ -311,23 +311,19 @@ private fun iconOf(tweak: RomTweak): ImageVector = when (tweak.action) {
     else -> Icons.Default.Info
 }
 
-/** Vendor heading, marked as this phone's own ROM when it is. */
+/**
+ * Heading above a vendor group. The phone's own group is headed by what that means for the user —
+ * "本机可用" — instead of the vendor string plus a second "你的系统" line, so the section says at a
+ * glance that these are the tools that can actually run here.
+ */
 @Composable
 private fun GroupHeading(family: String, mine: Boolean) {
-    Column(modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 4.dp)) {
-        Text(
-            text = familyLabel(family),
-            style = MaterialTheme.typography.titleSmall,
-            color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (mine) {
-            Text(
-                text = stringResource(Res.string.tweaks_your_rom),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-    }
+    Text(
+        text = if (mine) stringResource(Res.string.tweaks_this_device) else familyLabel(family),
+        style = MaterialTheme.typography.titleSmall,
+        color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 4.dp),
+    )
 }
 
 /**
