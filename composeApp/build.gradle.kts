@@ -334,6 +334,9 @@ kotlin {
         named("desktopTest").dependencies {
             // Skia's native library, for tests that decode images.
             implementation(compose.desktop.currentOs)
+            // Lays composables out for real, which is the only way to assert what the comment
+            // composer's field does with a long line: it has to wrap and the box has to grow.
+            implementation(compose.uiTest)
         }
         wasmJsMain.dependencies {
             implementation(npm("@yume-chan/adb", "2.6.4"))
