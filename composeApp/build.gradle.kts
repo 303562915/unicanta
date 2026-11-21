@@ -259,9 +259,14 @@ kotlin {
                 withCompilations { it.target.platformType == KotlinPlatformType.androidJvm }
                 withJvm()
             }
-            // Targets that manage a device over ADB (desktop via dadb, web via
-            // WebUSB) rather than in-process.
+            // Targets that reach a device through a shell rather than in-process: desktop over
+            // dadb, web over WebUSB, and Android over `su` when the phone is rooted. The last one
+            // runs the same on-device helper the cable does, so it shares this source set — the
+            // only thing that differs is who the shell belongs to.
             group("adb") {
+                // No dedicated matcher exists for the
+                // com.android.kotlin.multiplatform.library target yet.
+                withCompilations { it.target.platformType == KotlinPlatformType.androidJvm }
                 withJvm()
                 withWasmJs()
             }
