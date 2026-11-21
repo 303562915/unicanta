@@ -48,13 +48,25 @@ class RootTransport(
     /** True when `su` exists and handed this app a root shell. Probed once. */
     suspend fun isRootAvailable(): Boolean = withContext(Dispatchers.IO) {
         if (rootChecked) return@withContext rootGranted
+        val binary = suBinaryPath()
         val granted = runCatching {
             val result = runSu("id")
             result.exitCode == 0 && result.stdout.contains("uid=0")
         }.onFailure { LogUtils.w(TAG, "Could not probe for root: $it") }.getOrDefault(false)
         rootChecked = true
         rootGranted = granted
-        if (!granted) LogUtils.i(TAG, "No root shell available")
+        if (!granted) {
+            // Which of the three it was matters: no binary at all (never rooted), a binary that
+            // refused (the manager said no, or it only trusts shell), or one that could not be
+            // executed (SELinux). "No root shell available" alone sends people to the wrong fix.
+            LogUtils.i(
+                TAG,
+                when {
+                    binary == null -> "No su binary on this phone; root is not an option here"
+                    else -> "su at $binary did not grant root (refused, or not allowed for this uid)"
+                },
+            )
+        }
         granted
     }
 
@@ -133,6 +145,12 @@ private val SU_PATHS = listOf(
     "/sbin/su",
     "/su/bin/su",
     "/debug_ramdisk/su",
+    // Partition layouts some OEM builds ship their own su in; a ROM that grants root itself keeps
+    // it here rather than in /system, and nothing else would ever find it.
+    "/vendor/bin/su",
+    "/system_ext/bin/su",
+    "/product/bin/su",
+    "/odm/bin/su",
 )
 
 /** The `su` this phone actually has, in the order above and then along `PATH`; null when none. */

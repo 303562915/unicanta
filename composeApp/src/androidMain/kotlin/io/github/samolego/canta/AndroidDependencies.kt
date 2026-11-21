@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.samolego.canta.core.AndroidCantaHandler
 import io.github.samolego.canta.core.AndroidCantaPlatform
 import io.github.samolego.canta.core.CantaAppDependencies
+import io.github.samolego.canta.core.PrivilegeChain
 import io.github.samolego.canta.core.StoredData
 import io.github.samolego.canta.core.cantaAppDependencies
 import io.github.samolego.canta.core.root.RootCantaHandler
@@ -30,17 +31,22 @@ fun provideAndroidDependencies(context: Context, platform: AndroidCantaPlatform)
         platform = platform,
         platformName = "android",
         handler = {
-            // A rooted phone needs no Shizuku: the same on-device helper that the desktop build
-            // pushes over a cable is pushed and run here through `su`, so root is a second
-            // privilege under identical code rather than a second implementation.
+            // One chain over both privileges, in the order they are worth trying: a `su` that
+            // answers (Magisk, KernelSU, APatch, or a build that ships its own) and otherwise
+            // Stellar/Shizuku. Root is only built when a su binary exists, so an unrooted phone
+            // pays one reference and nothing else.
             //
-            // The choice is made on the presence of a `su` binary, not on a live probe: that would
-            // ask for root before there is anything to do with it.
-            if (hasSuBinary()) {
-                RootCantaHandler(RootTransport(appContext.cacheDir), appContext)
-            } else {
-                AndroidCantaHandler(appContext)
-            }
+            // Whether root is granted is asked on the first call that needs a device, not here:
+            // a probe at startup would put a root prompt over the splash screen, and a refusal
+            // there would decide the whole session before the user saw what it was for.
+            PrivilegeChain(
+                root = if (hasSuBinary()) {
+                    RootCantaHandler(RootTransport(appContext.cacheDir), appContext)
+                } else {
+                    null
+                },
+                shizuku = AndroidCantaHandler(appContext),
+            )
         },
     )
 }
