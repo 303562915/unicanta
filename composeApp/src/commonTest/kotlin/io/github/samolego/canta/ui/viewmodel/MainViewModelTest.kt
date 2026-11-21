@@ -15,6 +15,9 @@ import io.github.samolego.canta.testing.FakePlatform
 import io.github.samolego.canta.testing.MemoryStorage
 import io.github.samolego.canta.testing.offlineBloatRepository
 import io.github.samolego.canta.ui.AppsType
+import io.github.samolego.canta.util.SafetyRule
+import io.github.samolego.canta.util.SafetyRuleSet
+import io.github.samolego.canta.util.SafetyRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -63,11 +66,16 @@ class MainViewModelTest {
         body()
     }
 
-    private suspend fun mainViewModel(): Pair<MainViewModel, AppListViewModel> {
+    private suspend fun mainViewModel(
+        loadRules: suspend () -> SafetyRules = { SafetyRules(SafetyRuleSet()) },
+    ): Pair<MainViewModel, AppListViewModel> {
         val appList = AppListViewModel(handler, offlineBloatRepository())
-        val main = MainViewModel(handler, platform, settings, appList)
+        val main = MainViewModel(handler, platform, settings, appList, loadRules)
         return main to appList
     }
+
+    /** Rules written by the test: the shipped set is a resource, and the tests need it to be fixed. */
+    private fun rules(vararg rules: SafetyRule) = SafetyRules(SafetyRuleSet(rules = rules.toList()))
 
     @Test
     fun cantaNeverUninstallsItself() = runVmTest {
@@ -227,5 +235,64 @@ class MainViewModelTest {
 
         assertNull(main.dialog, "chooser closes once connected")
         assertFalse(appList.apps.isEmpty(), "apps load after connecting")
+    }
+
+    @Test
+    fun aPackageThatWouldStrandThePhoneIsBlockedEvenWithConfirmationOff() = runVmTest {
+        settings.setConfirmBeforeUninstall(false)
+        val (main, appList) = mainViewModel { rules(SafetyRule("com.a", "critical", why = "no launcher left")) }
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+
+        val dialog = assertIs<MainDialog.UnsafeSelection>(main.dialog)
+        assertEquals(listOf("com.a"), dialog.blocked.map { it.pkg })
+        assertTrue(handler.uninstallCalls.isEmpty(), "turning the prompt off must not turn the rules off")
+
+        main.dismissDialog()
+        assertNull(main.dialog)
+        assertTrue(handler.uninstallCalls.isEmpty(), "cancelling the rules dialog removes nothing")
+    }
+
+    @Test
+    fun aCostlyPackageGoesThroughWhenConfirmationIsOff() = runVmTest {
+        settings.setConfirmBeforeUninstall(false)
+        val (main, appList) = mainViewModel { rules(SafetyRule("com.a", "risky", why = "some settings are lost")) }
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+
+        assertEquals(listOf(listOf("com.a") to false), handler.uninstallCalls, "risky is not blocked, only mentioned")
+        assertEquals(MainDialog.Success(count = 1, isReinstall = false), main.dialog)
+    }
+
+    @Test
+    fun aCostlyPackageIsAskedAboutAndStillRemovedWhenTheUserContinues() = runVmTest {
+        val (main, appList) = mainViewModel { rules(SafetyRule("com.a", "risky", why = "some settings are lost")) }
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+
+        val dialog = assertIs<MainDialog.UnsafeSelection>(main.dialog)
+        assertTrue(dialog.blocked.isEmpty(), "nothing in this batch strands the phone")
+        assertEquals(listOf("com.a"), dialog.risky.map { it.pkg })
+        assertTrue(handler.uninstallCalls.isEmpty())
+
+        main.onUnsafeSelectionAccepted()
+        assertEquals(listOf(listOf("com.a") to false), handler.uninstallCalls)
+    }
+
+    @Test
+    fun continuingTheRulesDialogDropsOnlyWhatWouldStrandThePhone() = runVmTest {
+        settings.setConfirmBeforeUninstall(false)
+        val (main, appList) = mainViewModel {
+            rules(SafetyRule("com.a", "critical"), SafetyRule("com.b", "risky"))
+        }
+        appList.selectedApps.addAll(listOf("com.a", "com.b"))
+
+        main.applyToSelected(AppsType.INSTALLED)
+        main.onUnsafeSelectionAccepted()
+
+        assertEquals(listOf(listOf("com.b") to false), handler.uninstallCalls)
     }
 }

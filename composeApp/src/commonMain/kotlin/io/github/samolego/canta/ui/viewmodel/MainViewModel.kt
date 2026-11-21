@@ -60,8 +60,10 @@ sealed interface MainDialog {
     data class ResumeBatch(val packages: List<String>) : MainDialog
 
     /**
-     * Removing these is known to strand *this* device (model/ROM specific rules), so they are
-     * held back unless unsafe removals are allowed in the settings.
+     * The device rules stopped something in this selection. [blocked] are packages known to strand
+     * *this* model/ROM and are always held back; [risky] are the ones with a known cost, which are
+     * only shown when the user asked to be asked before uninstalling. [unknownCount] is how many
+     * packages no rule mentions — unknown is not the same as safe.
      */
     data class UnsafeSelection(
         val blocked: List<SafetyVerdict>,
@@ -84,6 +86,8 @@ class MainViewModel(
     private val platform: CantaPlatform,
     private val settings: CantaSettings,
     private val appList: AppListViewModel,
+    /** Where the shipped rules come from; tests hand in their own set. */
+    private val loadRules: suspend () -> SafetyRules = { SafetyRules.bundled() },
 ) : ViewModel() {
 
     var dialog by mutableStateOf<MainDialog?>(null)
@@ -92,7 +96,7 @@ class MainViewModel(
     /** Shipped device-aware rules; loaded once. */
     private var rules: SafetyRules? = null
 
-    private suspend fun safetyRules(): SafetyRules = rules ?: SafetyRules.bundled().also { rules = it }
+    private suspend fun safetyRules(): SafetyRules = rules ?: loadRules().also { rules = it }
 
     /** What to do once the pending connection/authorization succeeds. */
     private var afterConnect: (suspend () -> Unit)? = null
@@ -209,36 +213,59 @@ class MainViewModel(
     }
 
     private suspend fun confirm(type: AppsType) {
-        if (type == AppsType.INSTALLED && settings.confirmBeforeUninstallFlow.first()) {
-            val selected = appList.selectedApps.toList()
-            if (selected.isEmpty()) return
-            // Device-specific safety first: a package that strands *this* model/ROM never reaches
-            // the normal confirmation, whatever the generic badge says.
-            val verdicts = safetyRules().verdicts(selected, handler.deviceProfile())
-            val blocked = verdicts.values.filter { it.status == SafetyStatus.CRITICAL }
-            val risky = verdicts.values.filter { it.status == SafetyStatus.RISKY }
-            if (blocked.isNotEmpty() || risky.isNotEmpty()) {
-                dialog = MainDialog.UnsafeSelection(
-                    blocked = blocked,
-                    risky = risky,
-                    deviceLabel = handler.deviceProfile()?.label().orEmpty(),
-                    unknownCount = selected.count { it !in verdicts },
-                )
-                return
-            }
-            val known = settings.lastConfirmedPackagesFlow.first().toSet()
-            dialog = MainDialog.ConfirmUninstall(
-                appCount = selected.size,
-                canResetToFactory = selected.any { handler.canResetToFactory(it) },
-                bootloopRisk = selected.any { appList.scores.value[it]?.verdict == Verdict.BOOTLOOP },
-                // With no batch confirmed yet everything is new, which would flag every first run.
-                newPackages = if (known.isEmpty()) emptyList() else selected.filterNot { it in known },
-                canFreeze = handler.supportsDisabling,
-            )
-        } else {
+        if (type != AppsType.INSTALLED) {
             authenticateAndApply(type, resetToFactory = false)
+            return
         }
+        val selected = appList.selectedApps.toList()
+        if (selected.isEmpty()) return
+        // The device rules are not the confirmation dialog: they are the thing that stops a package
+        // known to strand *this* model or ROM. They therefore run whether or not the user asked to
+        // be asked twice — turning the "are you sure" prompt off must not turn the safety check off
+        // with it, which is what it used to do.
+        val verdicts = safetyRules().verdicts(selected, handler.deviceProfile())
+        val blocked = verdicts.values.filter { it.status == SafetyStatus.CRITICAL }
+        val risky = verdicts.values.filter { it.status == SafetyStatus.RISKY }
+        if (blocked.isNotEmpty()) {
+            dialog = unsafeSelection(selected, verdicts, blocked, risky)
+            return
+        }
+        if (!settings.confirmBeforeUninstallFlow.first()) {
+            // Confirmation is off, so "有代价" packages go through without a prompt. The route is
+            // the same one the dialog would have taken, which keeps the two paths behaving alike.
+            authenticateAndApply(type, resetToFactory = false)
+            return
+        }
+        if (risky.isNotEmpty()) {
+            dialog = unsafeSelection(selected, verdicts, blocked, risky)
+            return
+        }
+        val known = settings.lastConfirmedPackagesFlow.first().toSet()
+        dialog = MainDialog.ConfirmUninstall(
+            appCount = selected.size,
+            canResetToFactory = selected.any { handler.canResetToFactory(it) },
+            bootloopRisk = selected.any { appList.scores.value[it]?.verdict == Verdict.BOOTLOOP },
+            // With no batch confirmed yet everything is new, which would flag every first run.
+            newPackages = if (known.isEmpty()) emptyList() else selected.filterNot { it in known },
+            canFreeze = handler.supportsDisabling,
+        )
     }
+
+    /**
+     * The one dialog both rule paths show, so a blocked batch and a merely risky one cannot drift
+     * apart in wording: everything the second call would have said is passed in.
+     */
+    private fun unsafeSelection(
+        selected: List<String>,
+        verdicts: Map<String, SafetyVerdict>,
+        blocked: List<SafetyVerdict>,
+        risky: List<SafetyVerdict>,
+    ): MainDialog.UnsafeSelection = MainDialog.UnsafeSelection(
+        blocked = blocked,
+        risky = risky,
+        deviceLabel = handler.deviceProfile()?.label().orEmpty(),
+        unknownCount = selected.count { it !in verdicts },
+    )
 
     /** [MainDialog.UnsafeSelection] accepted: drop the blocked ones and continue with the rest. */
     fun onUnsafeSelectionAccepted() {
