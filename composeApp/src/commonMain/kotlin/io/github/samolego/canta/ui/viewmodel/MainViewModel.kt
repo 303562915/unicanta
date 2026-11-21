@@ -255,7 +255,7 @@ class MainViewModel(
      * The one dialog both rule paths show, so a blocked batch and a merely risky one cannot drift
      * apart in wording: everything the second call would have said is passed in.
      */
-    private fun unsafeSelection(
+    private suspend fun unsafeSelection(
         selected: List<String>,
         verdicts: Map<String, SafetyVerdict>,
         blocked: List<SafetyVerdict>,
