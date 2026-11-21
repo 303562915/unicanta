@@ -239,8 +239,11 @@ jobs:
               if len(codes) != 1:
                   raise SystemExit('Invalid development version_code')
               apk, checksum = apks[0], sums[0]
+              # 滚动 dev release 只创建一次，release 级 published_at 停在首发时刻；
+              # 页面"更新于"要用当前 build APK 资产的上传时间。
               entry = {'version_name': version, 'version_code': int(codes[0]), 'build_number': build,
-                       'tag': 'dev', 'published_at': rel.get('published_at'),
+                       'tag': 'dev',
+                       'published_at': apk.get('created_at') or apk.get('updated_at') or rel.get('published_at'),
                        'file': apk['browser_download_url'], 'file_name': name, 'size': apk.get('size', 0),
                        'sha256': digests[0], 'checksum_file': checksum['browser_download_url'],
                        'notes': body.strip()}
