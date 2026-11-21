@@ -1,8 +1,6 @@
 package io.github.samolego.canta.ui
 
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
@@ -120,12 +118,8 @@ import org.jetbrains.compose.resources.stringResource
 /** Taps on the version in settings that unlock "select all" for recommended apps. */
 private const val SECRET_TAPS = 6
 
-/** How long a page takes to fade in or out as it is entered or left. */
-private const val PAGE_ENTER_MS = 220
-private const val PAGE_EXIT_MS = 180
-
-/** How long the page takes to travel; the fade is shorter, so the page is gone before it stops. */
-private const val PAGE_SLIDE_MS = 260
+/** How long a page takes to slide in from, or back out to, the right edge. */
+private const val PAGE_SLIDE_MS = 300
 
 /** Taps after which the remaining count is hinted. */
 private const val SECRET_TAPS_HINT_AFTER = 3
@@ -430,19 +424,22 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            // A page arrives from the right and leaves to the right, on a fade. A page must not
-            // shrink towards the middle of the window as it goes: that reads as a dialog zooming
-            // away (which is what it was doing, the platform's own dialog animation) rather than
-            // a page being left.
+            // The drawer: a page comes in from the right edge over the one it was opened from,
+            // which gives up a quarter of its width and stays put behind it. Leaving does the
+            // same in reverse — the page slides back out to the right and the page under it
+            // returns to the middle. Nothing shrinks towards the centre: that was the platform's
+            // dialog animation, and a page is not a dialog.
             enterTransition = {
-                fadeIn(tween(PAGE_ENTER_MS)) +
-                    slideInHorizontally(tween(PAGE_SLIDE_MS)) { it / 6 }
+                slideInHorizontally(tween(PAGE_SLIDE_MS)) { it }
             },
-            exitTransition = { fadeOut(tween(PAGE_EXIT_MS)) },
-            popEnterTransition = { fadeIn(tween(PAGE_ENTER_MS)) },
+            exitTransition = {
+                slideOutHorizontally(tween(PAGE_SLIDE_MS)) { -it / 4 }
+            },
+            popEnterTransition = {
+                slideInHorizontally(tween(PAGE_SLIDE_MS)) { -it / 4 }
+            },
             popExitTransition = {
-                fadeOut(tween(PAGE_EXIT_MS)) +
-                    slideOutHorizontally(tween(PAGE_SLIDE_MS)) { it / 6 }
+                slideOutHorizontally(tween(PAGE_SLIDE_MS)) { it }
             },
         ) {
             composable(Screen.Onboarding.route) {
