@@ -6,6 +6,7 @@ import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceConnectionFailure
 import io.github.samolego.canta.core.DeviceDiscovery
+import io.github.samolego.canta.core.Occupancy
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.bloat.BloatRepository
@@ -41,6 +42,12 @@ class FakeHandler(
     val reinstallCalls = mutableListOf<List<String>>()
     var devices = emptyList<CantaDevice>()
     var connectFailure: DeviceConnectionFailure? = null
+
+    /** Packages the test says are the home screen, keyboard, an administrator or an a11y service. */
+    var occupied = emptyMap<String, List<Occupancy>>()
+
+    override suspend fun occupiedBy(packageNames: Collection<String>) =
+        occupied.filterKeys { it in packageNames }
 
     override val isAuthorized get() = authorized
     override var lastConnectionFailure: DeviceConnectionFailure? = null

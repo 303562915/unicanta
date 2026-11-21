@@ -250,6 +250,10 @@
     <string name="unsafe_risky_title">这些在你的机型上已知会破坏功能：</string>
     <string name="unsafe_unknown_note">另有 %1$d 个包在本机没有规则，按「未知」处理，不等于安全。</string>
     <string name="unsafe_continue_safe_only">卸载其余的</string>
+    <string name="occupied_launcher">它现在是这台手机的桌面，卸掉就没有桌面可回了</string>
+    <string name="occupied_input_method">它现在是这台手机的键盘，卸掉就没法打字了</string>
+    <string name="occupied_device_admin">它在这台手机上持有设备管理员权限，得先解除才能删</string>
+    <string name="occupied_accessibility">它正在提供无障碍服务，卸掉会让依赖它的功能失效</string>
     <string name="app_list_restricted_title">系统没有把应用列表交给本应用</string>
     <string name="app_list_restricted_description">HyperOS / MIUI 用「获取应用列表」这个权限挡着，默认是关闭的，应用也没法自己申请，只能手动打开；没开之前你只能看到很少几个应用。</string>
     <string name="app_list_restricted_grant">去授权</string>

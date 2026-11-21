@@ -10,6 +10,7 @@ import io.github.samolego.canta.core.CantaDevice
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceDiscovery
+import io.github.samolego.canta.core.Occupancy
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
@@ -17,6 +18,10 @@ import io.github.samolego.canta.generated.resources.auth_required
 import io.github.samolego.canta.generated.resources.auth_required_description
 import io.github.samolego.canta.generated.resources.cannot_uninstall_canta
 import io.github.samolego.canta.generated.resources.device_unreachable
+import io.github.samolego.canta.generated.resources.occupied_accessibility
+import io.github.samolego.canta.generated.resources.occupied_device_admin
+import io.github.samolego.canta.generated.resources.occupied_input_method
+import io.github.samolego.canta.generated.resources.occupied_launcher
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.message
 import io.github.samolego.canta.util.SafetyRules
@@ -224,8 +229,12 @@ class MainViewModel(
         // be asked twice — turning the "are you sure" prompt off must not turn the safety check off
         // with it, which is what it used to do.
         val verdicts = safetyRules().verdicts(selected, handler.deviceProfile())
-        val blocked = verdicts.values.filter { it.status == SafetyStatus.CRITICAL }
+        val ruleBlocked = verdicts.values.filter { it.status == SafetyStatus.CRITICAL }
         val risky = verdicts.values.filter { it.status == SafetyStatus.RISKY }
+        // A package that is the home screen, the keyboard, an administrator or an accessibility
+        // service right now is blocked even when no rule mentions it: the shipped rules cannot know
+        // what this user switched on, and removing it takes the phone's way back with it.
+        val blocked = mergeVerdicts(ruleBlocked, occupancyVerdicts(selected))
         if (blocked.isNotEmpty()) {
             dialog = unsafeSelection(selected, verdicts, blocked, risky)
             return
@@ -249,6 +258,39 @@ class MainViewModel(
             newPackages = if (known.isEmpty()) emptyList() else selected.filterNot { it in known },
             canFreeze = handler.supportsDisabling,
         )
+    }
+
+    /**
+     * Packages in use are turned into the same kind of verdict the rule set produces, so a single
+     * dialog explains both: rules can only guess what the user made their default.
+     */
+    private suspend fun occupancyVerdicts(packageNames: List<String>): List<SafetyVerdict> =
+        handler.occupiedBy(packageNames).map { (pkg, roles) ->
+            val reasons = roles.map { reasonFor(it) }
+            SafetyVerdict(pkg, SafetyStatus.CRITICAL, reasons.joinToString("; "))
+        }
+
+    private suspend fun reasonFor(role: Occupancy): String = when (role) {
+        Occupancy.LAUNCHER -> getString(Res.string.occupied_launcher)
+        Occupancy.INPUT_METHOD -> getString(Res.string.occupied_input_method)
+        Occupancy.DEVICE_ADMIN -> getString(Res.string.occupied_device_admin)
+        Occupancy.ACCESSIBILITY -> getString(Res.string.occupied_accessibility)
+    }
+
+    /** One entry per package: a package both risky by rule and in use would otherwise be listed twice. */
+    private fun mergeVerdicts(rules: List<SafetyVerdict>, inUse: List<SafetyVerdict>): List<SafetyVerdict> {
+        if (inUse.isEmpty()) return rules
+        val busy = inUse.associateBy { it.pkg }
+        val merged = rules.map { verdict ->
+            val extra = busy[verdict.pkg]
+            if (extra == null) {
+                verdict
+            } else {
+                verdict.copy(why = listOf(verdict.why, extra.why).filter { it.isNotBlank() }.joinToString("; "))
+            }
+        }
+        val covered = merged.map { it.pkg }.toSet()
+        return merged + inUse.filterNot { it.pkg in covered }
     }
 
     /**

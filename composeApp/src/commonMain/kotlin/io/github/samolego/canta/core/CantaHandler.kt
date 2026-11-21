@@ -130,6 +130,25 @@ enum class DeviceDiscovery {
  * Operations report their real outcome: they return once the device has
  * answered, not when the command was merely dispatched.
  */
+/**
+ * A job a package is doing on the phone right now. Removing a package that holds one of these
+ * takes the job with it: no home screen to go back to, no keyboard to type with, no way to undo it
+ * from inside the app.
+ */
+enum class Occupancy {
+    /** The home screen (launcher) the phone boots into. */
+    LAUNCHER,
+
+    /** The default input method, or one the user has enabled. */
+    INPUT_METHOD,
+
+    /** Holds device administrator rights, which have to be released before the app can go. */
+    DEVICE_ADMIN,
+
+    /** Providing an accessibility service, which whatever set it up depends on. */
+    ACCESSIBILITY,
+}
+
 interface CantaHandler {
     val isAuthorized: Boolean
 
@@ -248,6 +267,13 @@ interface CantaHandler {
      * device: unlike [deviceContext] nothing here is ever sent anywhere.
      */
     suspend fun deviceProfile(): DeviceProfile? = null
+
+    /**
+     * Which of [packageNames] are doing a job the phone cannot do without right now; packages with
+     * no such job are left out of the map. Empty by default: a desktop or web handler talks to a
+     * phone over ADB and has no way to see its launcher, keyboard or admin lists.
+     */
+    suspend fun occupiedBy(packageNames: Collection<String>): Map<String, List<Occupancy>> = emptyMap()
 
     /** Whether the given package is on the device (installed or uninstalled for the user). */
     suspend fun packageExists(packageName: String): Boolean

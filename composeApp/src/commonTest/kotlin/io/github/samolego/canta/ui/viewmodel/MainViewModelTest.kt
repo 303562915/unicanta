@@ -4,12 +4,17 @@ import io.github.samolego.canta.CANTA_PACKAGE_NAME
 import io.github.samolego.canta.core.CantaDevice
 import io.github.samolego.canta.core.DeviceConnectionFailure
 import io.github.samolego.canta.core.DeviceDiscovery
+import io.github.samolego.canta.core.Occupancy
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.auth_required
 import io.github.samolego.canta.generated.resources.auth_required_description
 import io.github.samolego.canta.generated.resources.cannot_uninstall_canta
 import io.github.samolego.canta.generated.resources.device_no_longer_available
+import io.github.samolego.canta.generated.resources.occupied_accessibility
+import io.github.samolego.canta.generated.resources.occupied_device_admin
+import io.github.samolego.canta.generated.resources.occupied_input_method
+import io.github.samolego.canta.generated.resources.occupied_launcher
 import io.github.samolego.canta.testing.FakeHandler
 import io.github.samolego.canta.testing.FakePlatform
 import io.github.samolego.canta.testing.MemoryStorage
@@ -62,6 +67,10 @@ class MainViewModelTest {
             Res.string.auth_required,
             Res.string.auth_required_description,
             Res.string.device_no_longer_available,
+            Res.string.occupied_launcher,
+            Res.string.occupied_input_method,
+            Res.string.occupied_device_admin,
+            Res.string.occupied_accessibility,
         ).forEach { getString(it) }
         body()
     }
@@ -294,5 +303,20 @@ class MainViewModelTest {
         main.onUnsafeSelectionAccepted()
 
         assertEquals(listOf(listOf("com.b") to false), handler.uninstallCalls)
+    }
+
+    @Test
+    fun aPackageDoingAJobThePhoneNeedsIsHeldBackEvenWithoutARuleAboutIt() = runVmTest {
+        settings.setConfirmBeforeUninstall(false)
+        handler.occupied = mapOf("com.a" to listOf(Occupancy.LAUNCHER))
+        val (main, appList) = mainViewModel()
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+
+        val dialog = assertIs<MainDialog.UnsafeSelection>(main.dialog)
+        assertEquals(listOf("com.a"), dialog.blocked.map { it.pkg })
+        assertTrue(dialog.blocked.single().why.isNotBlank(), "the dialog has to say which job it is")
+        assertTrue(handler.uninstallCalls.isEmpty(), "removing the home screen leaves nothing to go back to")
     }
 }

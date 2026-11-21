@@ -1,6 +1,9 @@
 package io.github.samolego.canta.core
 
 import io.github.samolego.canta.util.BOOT_COUNT_PREFIX
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -9,6 +12,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
+import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import io.github.samolego.canta.core.shizuku.ShizukuPermission
@@ -249,6 +254,69 @@ class AndroidCantaHandler(
             marketName = marketNameOf(props).ifBlank { marketNameFallback { key -> getpropOne(key) } },
         ).also { profile = it }
     }
+
+    /**
+     * The four jobs that make a removal unrecoverable from inside the app. Read on every call
+     * rather than cached: what the user made their home screen or keyboard changes while Canta runs.
+     */
+    override suspend fun occupiedBy(packageNames: Collection<String>): Map<String, List<Occupancy>> =
+        withContext(Dispatchers.IO) {
+            if (packageNames.isEmpty()) return@withContext emptyMap()
+            val home = launcherPackage()
+            val keyboards = inputMethodPackages()
+            val admins = deviceAdminPackages()
+            val accessibility = accessibilityPackages()
+            packageNames.distinct().mapNotNull { pkg ->
+                val roles = buildList {
+                    if (pkg == home) add(Occupancy.LAUNCHER)
+                    if (pkg in keyboards) add(Occupancy.INPUT_METHOD)
+                    if (pkg in admins) add(Occupancy.DEVICE_ADMIN)
+                    if (pkg in accessibility) add(Occupancy.ACCESSIBILITY)
+                }
+                if (roles.isEmpty()) null else pkg to roles
+            }.toMap()
+        }
+
+    /** The package the home button goes to; null when no launcher answers. */
+    private fun launcherPackage(): String? = runCatching {
+        packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )?.activityInfo?.packageName
+    }.getOrNull()
+
+    /** The default keyboard plus the enabled ones: both lose their job when removed. */
+    private fun inputMethodPackages(): Set<String> = runCatching {
+        val enabled = context.getSystemService(InputMethodManager::class.java)
+            ?.enabledInputMethodList
+            ?.mapNotNull { it.packageName }
+            .orEmpty()
+        val default = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+            ?.let { ComponentName.unflattenFromString(it)?.packageName }
+        (enabled + listOfNotNull(default)).toSet()
+    }.getOrDefault(emptySet())
+
+    /** Apps holding device administrator rights, which cannot be removed until they give them up. */
+    private fun deviceAdminPackages(): Set<String> = runCatching {
+        context.getSystemService(DevicePolicyManager::class.java)
+            ?.activeAdmins
+            ?.map { it.packageName }
+            .orEmpty()
+            .toSet()
+    }.getOrDefault(emptySet())
+
+    /** Accessibility services that are switched on, seen both through the manager and the setting. */
+    private fun accessibilityPackages(): Set<String> = runCatching {
+        val running = context.getSystemService(AccessibilityManager::class.java)
+            ?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            ?.mapNotNull { it.resolveInfo?.serviceInfo?.packageName }
+            .orEmpty()
+        val configured = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            ?.split(':')
+            ?.mapNotNull { ComponentName.unflattenFromString(it)?.packageName }
+            .orEmpty()
+        (running + configured).toSet()
+    }.getOrDefault(emptySet())
 
     override suspend fun buildFingerprint(): String? = android.os.Build.FINGERPRINT.takeIf { it.isNotEmpty() }
 

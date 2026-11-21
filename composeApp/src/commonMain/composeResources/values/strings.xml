@@ -220,6 +220,10 @@
     <string name="unsafe_risky_title">These are known to break something here:</string>
     <string name="unsafe_unknown_note">%1$d package(s) have no rule for this device; they are treated as unknown, not safe.</string>
     <string name="unsafe_continue_safe_only">Remove the rest</string>
+    <string name="occupied_launcher">it is the home screen of this phone; removing it leaves nothing to go back to</string>
+    <string name="occupied_input_method">it is the keyboard of this phone; removing it leaves no way to type</string>
+    <string name="occupied_device_admin">it holds device administrator rights here; they have to be released first</string>
+    <string name="occupied_accessibility">it is serving accessibility; removing it breaks whatever depends on it</string>
     <string name="app_list_restricted_title">The system hides the app list from Canta</string>
     <string name="app_list_restricted_description">HyperOS and MIUI keep a "get installed apps" permission for this. It is off by default, cannot be requested by the app, and has to be switched on by hand; until then only a handful of apps are listed.</string>
     <string name="app_list_restricted_grant">Grant access</string>
