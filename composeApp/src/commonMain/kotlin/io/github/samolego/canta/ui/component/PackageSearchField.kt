@@ -3,6 +3,7 @@ package io.github.samolego.canta.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,15 +55,19 @@ fun PackageSearchField(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
+            // The same soft grey pill the comment composer uses: both are "somewhere to type" on
+            // this app, and two different-looking input boxes on one page read as two components
+            // that came from different apps.
             .clip(RoundedCornerShape(percent = 50))
             .background(scheme.surfaceContainerHighest)
-            .padding(start = 12.dp, end = 4.dp),
+            .heightIn(min = 44.dp)
+            .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Default.Search,
             contentDescription = null,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(17.dp),
             tint = scheme.onSurfaceVariant,
         )
         BasicTextField(
@@ -70,9 +75,9 @@ fun PackageSearchField(
             onValueChange = onQueryChange,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 8.dp, top = 8.dp, bottom = 8.dp)
+                .padding(start = 8.dp, top = 11.dp, bottom = 11.dp)
                 .focusRequester(focus),
-            textStyle = TextStyle(fontSize = 12.sp, color = scheme.onSurface),
+            textStyle = TextStyle(fontSize = 14.sp, color = scheme.onSurface),
             singleLine = true,
             cursorBrush = SolidColor(scheme.primary),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -81,7 +86,7 @@ fun PackageSearchField(
                 if (query.isEmpty()) {
                     Text(
                         text = placeholder,
-                        fontSize = 12.sp,
+                        fontSize = 14.sp,
                         color = scheme.onSurfaceVariant,
                     )
                 }

@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,14 +38,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -912,20 +910,22 @@ fun CommentComposer(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            // One line's height at the least — the same 54dp the send pill and the
-                            // sticker key are, so an empty bar still looks like a bar — and a
-                            // palm's worth at most, past which the box scrolls instead of growing.
-                            .heightIn(min = 52.dp, max = 132.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(colors.surface)
-                            .border(1.dp, colors.outlineVariant, RoundedCornerShape(10.dp))
+                            // One line's height at the least — a soft grey pill the height of the
+                            // sticker key, so an empty bar still reads as a bar — and a palm's worth
+                            // at most, past which the box scrolls instead of growing.
+                            .heightIn(min = 48.dp, max = 132.dp)
+                            // A full pill on a soft grey, with no outline: the box is a place to
+                            // write, not a control with an edge, and the grey is the tone the rest
+                            // of the app already uses for "somewhere to put text".
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(colors.surfaceContainerHighest)
                             .clickable { focusRequester.requestFocus() },
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .verticalScroll(fieldScroll)
-                                .padding(horizontal = 12.dp, vertical = 16.dp),
+                                .padding(horizontal = 16.dp, vertical = 13.dp),
                         ) {
                             // The field shows the stickers, not the tokens: "[偷笑]" is how a
                             // comment travels through the clipboard and the backend, but a person
@@ -1007,8 +1007,8 @@ fun CommentComposer(
                                     // count is unbounded, so a comment that reaches the edge of the
                                     // box continues on the next line instead of running off it.
                                     textStyle = TextStyle(
-                                        fontSize = 13.sp,
-                                        lineHeight = 20.sp,
+                                        fontSize = 14.sp,
+                                        lineHeight = 21.sp,
                                         color = colors.onSurface,
                                     ),
                                     cursorBrush = SolidColor(colors.primary),
@@ -1029,9 +1029,9 @@ fun CommentComposer(
                                         } else {
                                             "发条评论，说说你的感受"
                                         },
-                                        fontSize = 12.sp,
-                                        lineHeight = 16.sp,
-                                        color = colors.outline,
+                                        fontSize = 14.sp,
+                                        lineHeight = 19.sp,
+                                        color = colors.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -1040,17 +1040,19 @@ fun CommentComposer(
                         }
                     }
                     Spacer(Modifier.width(8.dp))
-                    // The sticker key, between the field and send: the one action this bar has that
-                    // is not text. Lit while the panel is up, so the bar says where the taps go.
+                    // The sticker key, beside the field: a bare glyph the size of a thumb, the way a
+                    // short-video composer draws its row of keys — no disc behind it, so the bar
+                    // reads as one line and not as three buttons. Lit while the panel is up, so the
+                    // bar says where the taps go.
                     Icon(
                         imageVector = if (pickerOpen) {
-                            Icons.Default.Keyboard
+                            Icons.Outlined.Keyboard
                         } else {
-                            Icons.Default.EmojiEmotions
+                            Icons.Outlined.EmojiEmotions
                         },
                         contentDescription = if (pickerOpen) "收起表情" else "表情",
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(34.dp)
                             .clip(RoundedCornerShape(50))
                             .clickable {
                                 if (pickerOpen) {
@@ -1064,34 +1066,27 @@ fun CommentComposer(
                                     onPickerOpenChange(true)
                                 }
                             }
-                            .padding(6.dp),
+                            .padding(5.dp),
                         tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
                     )
-                    Spacer(Modifier.width(6.dp))
+                    // The send pill appears with the first character, exactly as a short-video
+                    // composer only offers "发送" once there is something to send: an empty bar is a
+                    // field and a sticker key, nothing that reads as a dead button.
                     val canSend = draft.isNotBlank() && !sending
-                    // The send pill: not a Material button — its minimum touch target would prop
-                    // the whole bar up higher than a comment bar needs to be. A capsule, lit when
-                    // there is something to send, dim when there is not.
-                    Box(
-                        modifier = Modifier
-                            .height(54.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (canSend) colors.primary else colors.surfaceContainerHighest)
-                            .clickable(enabled = canSend, onClick = onSend)
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.width(4.dp))
+                    AnimatedVisibility(visible = draft.isNotBlank() || sending) {
+                        Row(
+                            modifier = Modifier
+                                .padding(start = 6.dp)
+                                .height(34.dp)
+                                .clip(RoundedCornerShape(percent = 50))
+                                .background(if (canSend) colors.primary else colors.surfaceContainerHighest)
+                                .clickable(enabled = canSend, onClick = onSend)
+                                .padding(horizontal = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(
                                 text = sendLabel,
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
                             )

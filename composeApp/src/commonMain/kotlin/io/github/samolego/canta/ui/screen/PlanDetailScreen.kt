@@ -18,16 +18,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -113,10 +118,10 @@ import org.jetbrains.compose.resources.stringResource
 private val PACKAGE_ICON = 34.dp
 
 /**
- * How much room the package filter takes under the bar while it is open: the list starts below it
- * rather than scrolling under it, so no row is ever half-hidden by the field.
+ * The filter's place in the list: the header is 0, the packages' section title is 1, and the field
+ * follows it. Opening the filter scrolls to this index.
  */
-private val SEARCH_BAR_SPACE = 46.dp
+private const val PACKAGE_FILTER_INDEX = 2
 
 /**
  * One community plan, opened from the plans list — or from a share code somebody pasted.
@@ -217,6 +222,8 @@ fun PlanDetailScreen(
      */
     var searchOpen by remember(planId) { mutableStateOf(false) }
     var query by remember(planId) { mutableStateOf("") }
+    /** The scroll of the page's list: opening the filter scrolls the packages into view. */
+    val listState = rememberLazyListState()
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -429,31 +436,39 @@ fun PlanDetailScreen(
         }
     }
 
-    // Where the filter field lands while it is open: the bar's own top edge, so the field reads as
-    // a second line of the bar rather than as something floating in the middle of the page.
-    val searchTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-        FlTopBarCompactHeight
-
     Scaffold(
         // The title bar is not a Scaffold topBar: it floats over the content as a transparent
         // layer, so what scrolls up under it stays readable through it.
         bottomBar = {
-            CommentComposer(
-                draft = draft,
-                onDraftChange = { changed ->
-                    draft = changed
-                    if (submitFailed) submitFailed = false
-                },
-                onSend = sendComment,
-                replyToName = replyTo?.author.orEmpty(),
-                onCancelReply = { replyTo = null },
-                sending = sending,
-                failed = submitFailed,
-                sendLabel = stringResource(Res.string.plan_comment_send),
-                failLabel = sendError ?: stringResource(Res.string.plan_upload_failed),
-                pickerOpen = pickerOpen,
-                onPickerOpenChange = { pickerOpen = it },
-            )
+            // The composer gives way to the search: a filter and a comment box are two different
+            // things to do with the same page, and the bar at the foot can only be one of them. A
+            // slim "评论" entry takes its place, so the way back is one tap and always visible.
+            if (searchOpen) {
+                CommentTabBar(
+                    count = comments.size,
+                    onOpen = {
+                        searchOpen = false
+                        query = ""
+                    },
+                )
+            } else {
+                CommentComposer(
+                    draft = draft,
+                    onDraftChange = { changed ->
+                        draft = changed
+                        if (submitFailed) submitFailed = false
+                    },
+                    onSend = sendComment,
+                    replyToName = replyTo?.author.orEmpty(),
+                    onCancelReply = { replyTo = null },
+                    sending = sending,
+                    failed = submitFailed,
+                    sendLabel = stringResource(Res.string.plan_comment_send),
+                    failLabel = sendError ?: stringResource(Res.string.plan_upload_failed),
+                    pickerOpen = pickerOpen,
+                    onPickerOpenChange = { pickerOpen = it },
+                )
+            }
         },
     ) { padding ->
         Box(
@@ -498,6 +513,14 @@ fun PlanDetailScreen(
                     coverage = coverage,
                     query = query,
                     searchOpen = searchOpen,
+                    listState = listState,
+                    onQueryChange = { query = it },
+                    // Closing drops the filter with the field: a narrowed list with nothing on
+                    // screen saying why it is narrow is the one state this page must not keep.
+                    onSearchClose = {
+                        searchOpen = false
+                        query = ""
+                    },
                     onOpenUploader = onOpenUploader,
                     comments = comments,
                     loadError = loadError,
@@ -542,24 +565,6 @@ fun PlanDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            // The filter sits under the bar, over the page rather than in the scroll: it is open
-            // only while it is wanted, and a row scrolling behind a field that stays put is what
-            // makes a filter feel like a lens instead of another line of the text.
-            if (searchOpen && plan != null) {
-                PackageSearchField(
-                    query = query,
-                    onQueryChange = { query = it },
-                    // Closing drops the filter with the field: a narrowed list with nothing on
-                    // screen saying why it is narrow is the one state this page must not keep.
-                    onClose = {
-                        searchOpen = false
-                        query = ""
-                    },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = searchTop),
-                )
-            }
             // The floating title bar, drawn last so it sits over the scroll: a layer of nothing —
             // no background of its own — with the page's name and its way out.
             ScreenTopBar(
@@ -571,7 +576,14 @@ fun PlanDetailScreen(
                         IconButton(
                             onClick = {
                                 searchOpen = !searchOpen
-                                if (!searchOpen) query = ""
+                                if (searchOpen) {
+                                    // The sticker panel belongs to the composer, which steps out
+                                    // while the filter is open: leaving it up would put a grid of
+                                    // stickers under a box the reader is not writing in.
+                                    pickerOpen = false
+                                } else {
+                                    query = ""
+                                }
                             },
                             modifier = Modifier.size(36.dp),
                         ) {
@@ -642,10 +654,14 @@ private fun PlanDetailContent(
     foreign: Boolean = false,
     /** The other phones this package set was proven on, most-proven first. */
     coverage: List<DeviceCoverage> = emptyList(),
-    /** The package filter typed under the bar: rows are narrowed to the packages that match. */
+    /** The package filter typed above the rows, and the handle that scrolls it into view. */
     query: String = "",
-    /** True while the filter field is on screen, so the list starts below it instead of under it. */
+    /** True while the filter field is in the list, above the package rows. */
     searchOpen: Boolean = false,
+    /** The page's own scroll, so opening the filter can bring it on screen wherever the reader is. */
+    listState: LazyListState = rememberLazyListState(),
+    onQueryChange: (String) -> Unit = {},
+    onSearchClose: () -> Unit = {},
     /** Opens this uploader's own page; null when there is no identity to open. */
     onOpenUploader: ((String) -> Unit)? = null,
     comments: List<PlanComment>,
@@ -713,14 +729,16 @@ private fun PlanDetailContent(
     val topSpace = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
         FlTopBarCompactHeight
 
+    // Opening the filter brings it on screen: it lives in the list above the rows, so a reader who
+    // is halfway down the page would otherwise tap the glyph and see nothing happen.
+    LaunchedEffect(searchOpen) {
+        if (searchOpen) listState.animateScrollToItem(PACKAGE_FILTER_INDEX)
+    }
+
     LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(
-            // Open, the filter takes its room out of the top: the card starts below the field, so
-            // nothing slides under a field that is still being typed in.
-            top = topSpace + if (searchOpen) SEARCH_BAR_SPACE else 0.dp,
-            bottom = 16.dp,
-        ),
+        state = listState,
+        contentPadding = PaddingValues(top = topSpace, bottom = 16.dp),
     ) {
         item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, coverage = coverage, onOpenUploader = onOpenUploader, onEditNote = onEditNote) }
 
@@ -738,6 +756,17 @@ private fun PlanDetailContent(
                     "${ranked.size}/${plan.packages.size} 个包匹配「$needle」"
                 },
             )
+        }
+        if (searchOpen) {
+            // Above the rows, where the packages are: the filter is about them, so it sits with
+            // them instead of floating over the plan's header.
+            item(key = "package-filter") {
+                PackageSearchField(
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    onClose = onSearchClose,
+                )
+            }
         }
         if (needle.isNotEmpty() && ranked.isEmpty()) {
             item(key = "package-filter-empty") {
@@ -1271,5 +1300,56 @@ private fun SectionTitle(title: String, subtitle: String?) {
             )
         }
         HorizontalDivider(modifier = Modifier.padding(top = 6.dp))
+    }
+}
+
+/**
+ * What the foot of the page shows while the package filter is open: a slim entry to the comments.
+ *
+ * The composer is the bar the page normally ends with, but a filter and a comment box are two
+ * different things to do on the same page and only one of them can own the foot — a keyboard popping
+ * up under a field that was just opened to type a package name is the wrong half of the page
+ * fighting for the caret. So the foot becomes this: the thread's own count, and one tap that closes
+ * the filter and brings the composer back.
+ */
+@Composable
+private fun CommentTabBar(count: Int, onOpen: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(modifier = Modifier.fillMaxWidth(), tonalElevation = 3.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                // The bar clears the navigation bar itself: the composer does, and this stands in
+                // for the composer.
+                .padding(
+                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+                )
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(colors.surfaceContainerHighest)
+                .clickable(onClick = onOpen)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ChatBubbleOutline,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = colors.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (count > 0) "评论 · $count 条" else "评论",
+                fontSize = 13.sp,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.Outlined.Edit,
+                contentDescription = "写评论",
+                modifier = Modifier.size(16.dp),
+                tint = colors.onSurfaceVariant,
+            )
+        }
     }
 }
