@@ -483,6 +483,10 @@
     <string name="recommend_detail_hint">这个按钮会在浏览器里打开项目主页。Canta 只存链接，不会从这里装任何东西。</string>
     <string name="recommend_switch_grid">切换成网格排列</string>
     <string name="recommend_switch_list">切换成列表排列</string>
+    <string name="recommend_tab_list">列表</string>
+    <string name="recommend_tab_vote">投票</string>
+    <string name="recommend_uninstall_hint">这台手机还装着这些，点开就能处理：</string>
+    <string name="recommend_uninstall_short">去卸载</string>
     <string name="plan_upload_candidate_count">本机可上传候选 %1$d 个</string>
     <string name="plans_upload_gate_none">还没有已卸载的应用：先卸载，再重启，验证通过后才能上传</string>
     <string name="plan_upload_net_ok">网络正常，可以上传</string>

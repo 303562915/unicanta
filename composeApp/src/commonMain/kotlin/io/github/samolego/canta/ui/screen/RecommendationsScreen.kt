@@ -17,16 +17,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
@@ -93,10 +98,16 @@ import io.github.samolego.canta.generated.resources.recommend_intro
 import io.github.samolego.canta.generated.resources.recommend_open_browser
 import io.github.samolego.canta.generated.resources.recommend_switch_grid
 import io.github.samolego.canta.generated.resources.recommend_switch_list
+import io.github.samolego.canta.generated.resources.recommend_tab_list
+import io.github.samolego.canta.generated.resources.recommend_tab_vote
 import io.github.samolego.canta.generated.resources.recommend_title
+import io.github.samolego.canta.generated.resources.recommend_uninstall_hint
+import io.github.samolego.canta.generated.resources.recommend_uninstall_short
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
@@ -117,6 +128,12 @@ private val RowTileSize = 30.dp
 /** Narrowest cell the grid will lay out, which settles on four columns on a phone. */
 private val MinCellWidth = 76.dp
 
+/** The first half of the page: everything the catalog lists, pinned entries and categories alike. */
+private const val TAB_LIST = 0
+
+/** The second half: the community's queue — the form that files one, and the votes it collects. */
+private const val TAB_VOTE = 1
+
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
 private val SuggestAgree = Color(0xFF2FA84F)
 
@@ -133,24 +150,34 @@ private val FallbackAccents = listOf(
 )
 
 /**
- * The recommendations page: one page, read top to bottom.
+ * The recommendations page, in two halves kept apart on purpose, because they answer two different
+ * questions: what is worth installing, and what other people want added to that.
  *
- * It opens on what the maintainers keep: a wall of icons by default — a name under each tile, four
- * to a row, the way an app store shows them — and the toolbar button switches it to one card per
- * app with the summary spelled out. The author is not printed under the name: a tap opens the sheet
- * where the whole entry is, and a name written twice on two lines reads as a bug, not as credit.
- * The arrangement is a stored setting, not a per-visit whim: coming back shows what was chosen.
+ * The first half is the list: a wall of icons by default — a name under each tile, four to a row,
+ * the way an app store shows them — and the toolbar button switches it to one card per app with the
+ * summary spelled out. The author is not printed under the name: a tap opens the sheet where the
+ * whole entry is, and a name written twice on two lines reads as a bug, not as credit. The
+ * arrangement is a stored setting, not a per-visit whim: coming back shows what was chosen. An entry
+ * that names the packages it can replace, and finds some of them still on this phone, carries the
+ * next step with it — see [installedReplacements][RecommendedApp.installedReplacements].
  *
- * Under the intro sits the open half: a row that files one more app, and the queue of what others
- * already filed. Anybody may put an app up, provided it is open source and lives on GitHub, and the
- * votes decide whether it joins the list below — fifty votes in all, of which eighty per cent have
- * to agree. Those rows are one line tall with the two counts in them, because the queue is a list
- * to work through, not a page of essays: the summary and the proposer are in the sheet a tap opens.
+ * The second half is the community's queue: anybody may put an app up, provided it is open source
+ * and lives on GitHub, and the votes decide whether it joins the list — fifty votes in all, of which
+ * eighty per cent have to agree. Those rows are one line tall with the two counts in them, because
+ * the queue is a list to work through, not a page of essays: the summary and the proposer are in the
+ * sheet a tap opens.
  *
- * @param repository the community backend, for the queue; null leaves it out.
+ * Both halves are read from the state of this one composable, so switching between them costs
+ * nothing: the catalog is read once, the queue once, and the scroll position of each half is its own.
+ *
+ * @param repository the community backend, for the second half; null leaves it out.
  * @param author the name this install's submissions are signed with.
  * @param authorId the identity number behind [author]: what "mine" and one vote per identity key on.
- * @param asGrid false for the one-card-per-app arrangement of the catalog.
+ * @param asGrid false for the one-card-per-app arrangement of the first half.
+ * @param installedPackages the packages this device has, so an entry can say which of the packages
+ *   it replaces are still here; empty hides that guidance rather than guessing.
+ * @param onOpenApp opens the app detail page of a package, which is where the removal controls are;
+ *   nothing is uninstalled from this page itself.
  */
 @Composable
 fun RecommendationsScreen(
@@ -160,12 +187,21 @@ fun RecommendationsScreen(
     authorId: String = "",
     asGrid: Boolean = true,
     onToggleLayout: () -> Unit = {},
+    installedPackages: Set<String> = emptySet(),
+    onOpenApp: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var catalog by remember { mutableStateOf<Recommendations?>(null) }
     var detail by remember { mutableStateOf<RecommendedApp?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
     var query by rememberSaveable { mutableStateOf("") }
+    /** Which half is showing. The list is what the bar leads here for, so it opens first. */
+    var tab by rememberSaveable { mutableIntStateOf(TAB_LIST) }
+    // One scroll position per half, kept here rather than inside the tab: rebuilt on every switch,
+    // a list would come back to its top and lose the row the reader was on.
+    val listGridState = rememberLazyGridState()
+    val listColumnState = rememberLazyListState()
+    val voteQueueState = rememberLazyListState()
 
     // The open half: the queue of proposed apps, how the votes stand, and the form that files one.
     var suggested by remember { mutableStateOf<List<SuggestedApp>>(emptyList()) }
@@ -257,24 +293,41 @@ fun RecommendationsScreen(
     }
 
     val openSuggest: () -> Unit = { composerOpen = true }
+    val listTabLabel = stringResource(Res.string.recommend_tab_list)
+    val voteTabLabel = stringResource(Res.string.recommend_tab_vote)
 
     Scaffold(
         topBar = {
-            // A page the bottom bar leads to: no chevron. The layout button belongs to the picks:
-            // the queue is a list of rows, and there is nothing to rearrange there.
-            ScreenTopBar(
-                title = stringResource(Res.string.recommend_title),
-                actions = {
-                    IconButton(onClick = onToggleLayout) {
-                        Icon(
-                            imageVector = if (asGrid) Icons.Default.ViewList else Icons.Default.GridView,
-                            contentDescription = stringResource(
-                                if (asGrid) Res.string.recommend_switch_list else Res.string.recommend_switch_grid,
-                            ),
-                        )
-                    }
-                },
-            )
+            Column {
+                // A page the bottom bar leads to: no chevron. The layout button belongs to the list
+                // half: the queue is a list of rows, and there is nothing to rearrange there.
+                ScreenTopBar(
+                    title = stringResource(Res.string.recommend_title),
+                    actions = {
+                        if (tab == TAB_LIST) {
+                            IconButton(onClick = onToggleLayout) {
+                                Icon(
+                                    imageVector = if (asGrid) Icons.Default.ViewList else Icons.Default.GridView,
+                                    contentDescription = stringResource(
+                                        if (asGrid) Res.string.recommend_switch_list else Res.string.recommend_switch_grid,
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                )
+                // The two halves as one control, the way the other two-list pages of this app switch:
+                // the counts sit in the labels, so the queue says how much is waiting for a vote
+                // without being opened first.
+                FlSegmentedControl(
+                    segments = listOf(
+                        FlSegment("list", if (loaded == null) listTabLabel else "$listTabLabel ${loaded.apps.size}"),
+                        FlSegment("vote", if (suggested.isEmpty()) voteTabLabel else "$voteTabLabel ${suggested.size}"),
+                    ),
+                    selectedIndex = tab,
+                    onSelect = { tab = it },
+                )
+            }
         },
     ) { padding ->
         if (loaded == null) {
@@ -287,10 +340,42 @@ fun RecommendationsScreen(
         val openDetails: (RecommendedApp) -> Unit = { detail = it }
         val openSuggestion: (SuggestedApp) -> Unit = { suggestionDetail = it }
 
-        if (asGrid) {
+        if (tab == TAB_VOTE) {
+            // The queue on its own page: what others filed, one line each, and the form that adds
+            // one. Nothing of the catalog here — this half is a list to work through.
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                state = voteQueueState,
+                contentPadding = PaddingValues(bottom = BarRoom),
+            ) {
+                item(key = "suggest-new") { SuggestEntryRow(onClick = openSuggest, inset = 16.dp) }
+                if (suggested.isNotEmpty()) {
+                    item(key = "community-head") {
+                        SectionHeader(label = "大家推荐的", count = suggested.size, inset = 16.dp)
+                    }
+                    items(suggested.size, key = { "suggest-$it" }) { index ->
+                        val entry = suggested[index]
+                        SuggestedRow(
+                            app = entry,
+                            voting = votingId == entry.id,
+                            canVote = canVote,
+                            inset = 16.dp,
+                            onVote = { agree -> vote(entry, agree) },
+                            onOpen = { openSuggestion(entry) },
+                        )
+                    }
+                } else if (suggestError != null) {
+                    item(key = "suggest-error") {
+                        CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 16.dp)
+                    }
+                }
+                item(key = "community-foot") { CommunityFoot(inset = 16.dp) }
+            }
+        } else if (asGrid) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = MinCellWidth),
                 modifier = Modifier.fillMaxSize().padding(padding),
+                state = listGridState,
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, bottom = BarRoom),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -299,39 +384,6 @@ fun RecommendationsScreen(
                     CatalogSearchField(query = query, onQueryChange = { query = it })
                 }
                 item(key = "intro", span = { GridItemSpan(maxLineSpan) }) { IntroNote() }
-
-                // The open half sits right under the intro and above the picks: one page, read top
-                // to bottom — here is what you may add, here is where the votes stand, and below
-                // that the list the maintainers keep.
-                if (!searching) {
-                    item(key = "suggest-new", span = { GridItemSpan(maxLineSpan) }) {
-                        SuggestEntryRow(onClick = openSuggest, inset = 10.dp)
-                    }
-                    if (suggested.isNotEmpty()) {
-                        item(key = "community-head", span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(label = "大家推荐的", count = suggested.size, inset = 10.dp)
-                        }
-                        suggested.forEachIndexed { index, entry ->
-                            item(key = "suggest-$index-${entry.id}", span = { GridItemSpan(maxLineSpan) }) {
-                                SuggestedRow(
-                                    app = entry,
-                                    voting = votingId == entry.id,
-                                    canVote = canVote,
-                                    inset = 10.dp,
-                                    onVote = { agree -> vote(entry, agree) },
-                                    onOpen = { openSuggestion(entry) },
-                                )
-                            }
-                        }
-                    } else if (suggestError != null) {
-                        item(key = "suggest-error", span = { GridItemSpan(maxLineSpan) }) {
-                            CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 10.dp)
-                        }
-                    }
-                    item(key = "community-foot", span = { GridItemSpan(maxLineSpan) }) {
-                        CommunityFoot(inset = 10.dp)
-                    }
-                }
 
                 if (loaded.apps.isEmpty()) {
                     item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
@@ -379,41 +431,13 @@ fun RecommendationsScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
+                state = listColumnState,
                 contentPadding = PaddingValues(bottom = BarRoom),
             ) {
                 item(key = "search") {
                     CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp)
                 }
                 item(key = "intro") { IntroNote() }
-
-                // One page, read top to bottom: what you may add, where the votes stand, and below
-                // that the list the maintainers keep.
-                if (!searching) {
-                    item(key = "suggest-new") {
-                        SuggestEntryRow(onClick = openSuggest, inset = 16.dp)
-                    }
-                    if (suggested.isNotEmpty()) {
-                        item(key = "community-head") {
-                            SectionHeader(label = "大家推荐的", count = suggested.size, inset = 16.dp)
-                        }
-                        items(suggested.size, key = { "suggest-$it" }) { index ->
-                            val entry = suggested[index]
-                            SuggestedRow(
-                                app = entry,
-                                voting = votingId == entry.id,
-                                canVote = canVote,
-                                inset = 16.dp,
-                                onVote = { agree -> vote(entry, agree) },
-                                onOpen = { openSuggestion(entry) },
-                            )
-                        }
-                    } else if (suggestError != null) {
-                        item(key = "suggest-error") {
-                            CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 16.dp)
-                        }
-                    }
-                    item(key = "community-foot") { CommunityFoot(inset = 16.dp) }
-                }
 
                 if (loaded.apps.isEmpty()) {
                     item(key = "empty") { EmptyNote() }
@@ -459,10 +483,15 @@ fun RecommendationsScreen(
     detail?.let { app ->
         RecommendationDetailDialog(
             app = app,
+            stillInstalled = app.installedReplacements(installedPackages),
             onDismiss = { detail = null },
             onOpen = {
                 detail = null
                 platform.openUrl(app.url)
+            },
+            onOpenApp = { pkg ->
+                detail = null
+                onOpenApp(pkg)
             },
         )
     }
@@ -1116,8 +1145,11 @@ private fun SuggestComposerDialog(
 @Composable
 private fun RecommendationDetailDialog(
     app: RecommendedApp,
+    /** Packages from `app.replacesPackages` this phone still has: what the entry can point at. */
+    stillInstalled: List<String>,
     onDismiss: () -> Unit,
     onOpen: () -> Unit,
+    onOpenApp: (String) -> Unit,
 ) {
     val accent = remember(app.accent, app.id) { accentOf(app.accent, app.id) }
     val meta = listOfNotNull(
@@ -1183,6 +1215,35 @@ private fun RecommendationDetailDialog(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 12.dp),
         )
+
+        if (stillInstalled.isNotEmpty()) {
+            // "Install this and drop those" is only an instruction while those packages are still
+            // here: once they are gone there is no next step, and the sheet keeps quiet.
+            Column(
+                modifier = Modifier.padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.recommend_uninstall_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                stillInstalled.forEach { pkg ->
+                    TextButton(
+                        onClick = { onOpenApp(pkg) },
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+                    ) {
+                        Text(text = pkg, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            text = stringResource(Res.string.recommend_uninstall_short),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -44,6 +44,17 @@ data class RecommendedApp(
         return has(name) || has(author) || has(summary) || has(license) ||
             replacesPackages.any(::has) || has(category)
     }
+
+    /**
+     * Which of [replacesPackages] this phone still has, in the order the entry lists them.
+     *
+     * "Install this and you can drop those" is only an instruction while those packages are still
+     * installed: once they are gone there is no next step left to point at, and the page keeps the
+     * entry quiet. The match is exact — package names are lower-case and case-sensitive — because a
+     * near miss here would send the reader to the detail page of an app that is not there.
+     */
+    fun installedReplacements(installed: Set<String>): List<String> =
+        replacesPackages.filter { it in installed }
 }
 
 @Serializable

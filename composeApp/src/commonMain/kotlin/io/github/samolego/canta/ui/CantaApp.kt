@@ -407,6 +407,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     authorId = recommendIdentity,
                     asGrid = !listMode,
                     onToggleLayout = { settingsViewModel.saveRecommendationsListMode(!listMode) },
+                    // What this phone has, so an entry can point at the packages it replaces and
+                    // take the reader to the page where they are removed.
+                    installedPackages = appListViewModel.apps.map { it.packageName }.toSet(),
+                    onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                 )
             }
             composable(route = Screen.Logs.route) {
