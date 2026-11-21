@@ -37,7 +37,7 @@ fun provideAndroidDependencies(context: Context, platform: AndroidCantaPlatform)
             // The choice is made on the presence of a `su` binary, not on a live probe: that would
             // ask for root before there is anything to do with it.
             if (hasSuBinary()) {
-                RootCantaHandler(RootTransport(appContext.cacheDir))
+                RootCantaHandler(RootTransport(appContext.cacheDir), appContext)
             } else {
                 AndroidCantaHandler(appContext)
             }

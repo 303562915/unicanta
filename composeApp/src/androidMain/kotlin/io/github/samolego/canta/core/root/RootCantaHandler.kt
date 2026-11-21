@@ -1,5 +1,8 @@
 package io.github.samolego.canta.core.root
 
+import android.content.Context
+import io.github.samolego.canta.core.Occupancy
+import io.github.samolego.canta.core.OccupancyProbe
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.adb.AdbCantaHandler
 import io.github.samolego.canta.util.LogUtils
@@ -18,7 +21,11 @@ import kotlinx.coroutines.sync.withLock
  */
 class RootCantaHandler(
     private val rootTransport: RootTransport,
+    private val context: Context,
 ) : AdbCantaHandler(rootTransport) {
+
+    /** What the phone is currently using; the same probe the Shizuku handler reads. */
+    private val occupancyProbe = OccupancyProbe(context)
 
     private companion object {
         const val TAG = "RootCantaHandler"
@@ -57,6 +64,13 @@ class RootCantaHandler(
 
     override val requiresDeviceSelection: Boolean
         get() = false
+
+    /**
+     * Root can uninstall a system app, so the four jobs in use are read here as well: the helper is
+     * a shell and has no opinion about what the phone needs to come back from a removal.
+     */
+    override suspend fun occupiedBy(packageNames: Collection<String>): Map<String, List<Occupancy>> =
+        occupancyProbe.rolesOf(packageNames)
 
     /**
      * Sets up the helper once. Returns whether the device is usable.
