@@ -33,12 +33,15 @@ class RootCantaHandler(
     @Volatile
     private var setupTried = false
 
-    /** Whether a `su` binary was there at construction; the app only builds this handler when it is. */
-    private val suDetected = hasSuBinary()
-
-    /** Whether root has answered; false until [prepare] has run at least once. */
+    /**
+     * Whether root has actually answered — not whether it might.
+     *
+     * Reporting "authorized" as soon as a `su` binary exists would let the app claim it is ready
+     * and then fail the first real operation with "root not granted". Saying no until [prepare] has
+     * succeeded is what routes the user to the grant step instead.
+     */
     override val isAuthorized: Boolean
-        get() = ready || suDetected
+        get() = ready
 
     /** Whether root has answered; false until [prepare] has run at least once. */
     override val isConnected: Boolean
