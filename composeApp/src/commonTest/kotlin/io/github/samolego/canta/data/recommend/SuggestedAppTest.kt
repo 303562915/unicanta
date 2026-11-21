@@ -82,7 +82,7 @@ class SuggestedAppTest {
         val fresh = SuggestedApp()
         assertEquals(0, fresh.votes)
         assertNull(fresh.share)
-        assertEquals(50, fresh.missingVotes)
+        assertEquals(45, fresh.missingVotes)
         assertFalse(fresh.satisfied)
         assertEquals("?", fresh.tileMark)
         assertEquals("O", SuggestedApp(name = "Obtainium").tileMark)
