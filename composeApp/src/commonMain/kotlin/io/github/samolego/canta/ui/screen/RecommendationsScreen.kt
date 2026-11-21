@@ -80,6 +80,7 @@ import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.data.recommend.SuggestedApp
 import io.github.samolego.canta.data.recommend.githubOwnerOf
 import io.github.samolego.canta.data.recommend.githubProjectUrl
+import io.github.samolego.canta.data.recommend.voteQueueFingerprint
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.recommend_by
 import io.github.samolego.canta.generated.resources.recommend_cat_files
@@ -177,6 +178,8 @@ private val FallbackAccents = listOf(
  *   it replaces are still here; empty hides that guidance rather than guessing.
  * @param onOpenApp opens the app detail page of a package, which is where the removal controls are;
  *   nothing is uninstalled from this page itself.
+ * @param onVoteQueueSeen the queue as it stood when the vote tab was opened, so the caller can
+ *   store it and put out the red dot that said somebody had voted.
  */
 @Composable
 fun RecommendationsScreen(
@@ -188,6 +191,7 @@ fun RecommendationsScreen(
     onToggleLayout: () -> Unit = {},
     installedPackages: Set<String> = emptySet(),
     onOpenApp: (String) -> Unit = {},
+    onVoteQueueSeen: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var catalog by remember { mutableStateOf<Recommendations?>(null) }
@@ -231,6 +235,12 @@ fun RecommendationsScreen(
     }
 
     val loaded = catalog
+    // Looking at the queue is what makes it read: the fingerprint goes back to the caller, which
+    // stores it and takes the dot off the tab. Opening the page is not enough — the list half says
+    // nothing about votes — so this waits for the vote half and for the queue to have arrived.
+    LaunchedEffect(tab, suggested) {
+        if (tab == TAB_VOTE && suggested.isNotEmpty()) onVoteQueueSeen(voteQueueFingerprint(suggested))
+    }
     val groups = remember(loaded) { loaded?.grouped().orEmpty() }
     // The pinned group is the shipped featured entries plus every proposal that cleared the bar:
     // the queue already badges those as 上榜, so they have to be findable under the same heading.

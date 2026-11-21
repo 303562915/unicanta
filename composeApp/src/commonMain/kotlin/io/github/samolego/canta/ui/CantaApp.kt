@@ -42,6 +42,7 @@ import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.unreadSince
+import io.github.samolego.canta.data.recommend.hasNewVotes
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.about_update_download_toast
@@ -105,6 +106,7 @@ import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -323,6 +325,23 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         }
     }
 
+    // The vote queue's news, on the same principle as the inbox count above: a red dot on the
+    // recommendations entry while somebody has voted since this install last looked at the queue.
+    // What "last looked" means is stored as the queue's own shape (see `voteQueueFingerprint`), so
+    // the dot is a comparison rather than a countdown, and it goes out when the vote tab is opened
+    // — not when the page is left, which is what made the old counters feel like a tally.
+    //
+    // The queue is fetched here rather than only inside the page because the dot has to be there
+    // before the page is: an entry that waits to be visited before it says there is something to
+    // visit is not a notification. One call per resume, and failures leave the dot as it was.
+    var newVotes by remember { mutableStateOf(false) }
+    LaunchedEffect(countTick) {
+        val identity = DeviceIdentity.current(deps.settings)
+        val voter = identity.owner.ifEmpty { identity.token }
+        val queue = communityRepository.suggestedApps(voter) ?: return@LaunchedEffect
+        newVotes = hasNewVotes(deps.settings.votesSeenFlow.first(), queue)
+    }
+
     // A share code pasted into the clipboard before the app was opened: read it once, then open
     // that plan as soon as the app itself is on screen (not over onboarding).
     //
@@ -440,6 +459,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     // take the reader to the page where they are removed.
                     installedPackages = appListViewModel.apps.map { it.packageName }.toSet(),
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    // The queue has been read: remember the counts it showed and put the dot out.
+                    // Stored, not just cleared in memory, so a restart with no new votes stays quiet.
+                    onVoteQueueSeen = { fingerprint ->
+                        coroutineScope.launch {
+                            deps.settings.setVotesSeen(fingerprint)
+                            newVotes = false
+                        }
+                    },
                 )
             }
             composable(route = Screen.Logs.route) {
@@ -777,7 +804,13 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 modifier = Modifier.align(Alignment.BottomCenter),
             ) {
                 FloatingPillBar(
-                    items = bottomBarItems(route = currentRoute, showTweaks = showTweaksTab, showRecommend = showRecommendTab),
+                    items = bottomBarItems(
+                        route = currentRoute,
+                        showTweaks = showTweaksTab,
+                        showRecommend = showRecommendTab,
+                        // Nothing to point at while the queue itself is open: that page is the dot.
+                        showVoteDot = newVotes && currentRoute != Screen.Recommendations.route,
+                    ),
                     onSelect = { key -> onBottomBarSelect(key, navController) },
                 )
             }
@@ -821,6 +854,7 @@ private fun bottomBarItems(
     route: String?,
     showTweaks: Boolean,
     showRecommend: Boolean,
+    showVoteDot: Boolean = false,
 ): List<BottomBarItem> = buildList {
     // The same glyphs FlClash's own bar leads with — the grid of apps, the rules list,
     // the toolbox, the gear — plus one for the recommendations page.
@@ -830,7 +864,17 @@ private fun bottomBarItems(
         add(BottomBarItem(BarKey.TWEAKS, FlGlyphs.tools, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route))
     }
     if (showRecommend) {
-        add(BottomBarItem(BarKey.RECOMMEND, FlGlyphs.appsList, stringResource(Res.string.tab_recommend), route == Screen.Recommendations.route))
+        // The dot is the vote queue's news, the way the one in Settings is the inbox's: it goes
+        // out when the queue has been looked at, not when the page has been left.
+        add(
+            BottomBarItem(
+                BarKey.RECOMMEND,
+                FlGlyphs.appsList,
+                stringResource(Res.string.tab_recommend),
+                route == Screen.Recommendations.route,
+                dot = showVoteDot,
+            ),
+        )
     }
     add(BottomBarItem(BarKey.SETTINGS, FlGlyphs.settings, stringResource(Res.string.settings), route == Screen.Settings.route))
 }

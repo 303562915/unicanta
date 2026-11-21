@@ -72,6 +72,27 @@ data class SuggestedAppVote(
 }
 
 /**
+ * The whole queue as one string: `id:agrees:disagrees` per entry, in id order.
+ *
+ * It exists so "somebody voted since this install last looked" can be answered with a comparison
+ * instead of a stored timestamp the phone's clock would have to agree with. Only the counts go in:
+ * a vote changed, withdrawn or flipped moves one of them, and a new entry adds a triple. The
+ * exact formatting does not matter — it is only ever compared against another one of these.
+ */
+fun voteQueueFingerprint(apps: List<SuggestedApp>): String =
+    apps.sortedBy { it.id }.joinToString(";") { "${it.id}:${it.agrees}:${it.disagrees}" }
+
+/**
+ * Whether [apps] holds news compared to [seen] — the queue this install last looked at.
+ *
+ * [seen] empty means the queue was never opened, and an install that has not looked yet is not
+ * being paged: the first sight of the page stores the fingerprint without a dot. Otherwise any
+ * difference, in either direction, is news: a vote withdrawn is as much a change as one cast.
+ */
+fun hasNewVotes(seen: String, apps: List<SuggestedApp>): Boolean =
+    seen.isNotEmpty() && seen != voteQueueFingerprint(apps)
+
+/**
  * `owner/repo` of a GitHub project page, or null when [text] is not one.
  *
  * The recommendation list promises exactly one thing — open source, on GitHub — so the submission

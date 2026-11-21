@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.widthIn
@@ -79,6 +80,8 @@ data class BottomBarItem(
     val glyph: FlGlyph,
     val label: String,
     val selected: Boolean,
+    /** Something new is waiting behind this destination: drawn as the red dot over the glyph. */
+    val dot: Boolean = false,
 )
 
 // Geometry of the dock FlClash draws on every mobile view (prism_ui's
@@ -463,13 +466,24 @@ private fun BarEntry(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        FlGlyphIcon(
-            glyph = item.glyph,
-            size = IconSize,
-            tint = color,
-            // FlClash fills every dock glyph and lets the lens tint the one it covers.
-            fill = 1f,
-        )
+        Box(contentAlignment = Alignment.Center) {
+            FlGlyphIcon(
+                glyph = item.glyph,
+                size = IconSize,
+                tint = color,
+                // FlClash fills every dock glyph and lets the lens tint the one it covers.
+                fill = 1f,
+            )
+            // The dot sits on the glyph's top corner rather than beside the label: the label is
+            // already tight in a five-slot bar, and the corner is where every chat app puts it.
+            if (item.dot) {
+                UnreadDot(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-1).dp),
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(LabelGap))
         // Every label stays visible: an icon alone makes people guess which tab
         // they are on.

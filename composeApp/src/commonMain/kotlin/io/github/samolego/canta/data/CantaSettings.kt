@@ -57,6 +57,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val clearRecordsAfterBootFlow = field { it.clearRecordsAfterBoot }
     /** The boot the records check last ran on; see [AppSettingsProto.recordsBootId]. */
     val recordsBootIdFlow = field { it.recordsBootId }
+    /** The vote queue as this install last saw it; see [AppSettingsProto.votesSeen]. */
+    val votesSeenFlow: Flow<String> = field { it.votesSeen }
     val onboardingVersionFlow = field { it.onboardingVersion }
     val pendingRebootFlow: Flow<List<PendingUninstallProto>> = field { it.pendingReboot }
     val lastConfirmedPackagesFlow: Flow<List<String>> = field { it.lastConfirmedPackages }
@@ -92,6 +94,8 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setClearRecordsAfterBoot(clear: Boolean) = update { it.copy(clearRecordsAfterBoot = clear) }
     suspend fun setRecordsBootId(bootId: String) = update { it.copy(recordsBootId = bootId) }
+
+    suspend fun setVotesSeen(fingerprint: String) = update { it.copy(votesSeen = fingerprint) }
     suspend fun setOnboardingVersion(version: Int) = update { it.copy(onboardingVersion = version) }
     suspend fun setPendingReboot(pending: List<PendingUninstallProto>) = update { it.copy(pendingReboot = pending) }
     /**

@@ -111,6 +111,13 @@ data class AppSettingsProto(
      * empty on platforms that cannot report a boot id.
      */
     @ProtoNumber(28) val recordsBootId: String = "",
+    /**
+     * The vote queue as it stood when this install last looked at it: one `id:agrees:disagrees`
+     * triple per suggestion, in id order. Compared against the queue the backend answers now, it
+     * is what lights the red dot on the recommendations tab — "somebody voted since you looked"
+     * rather than "there are votes", which would never go out. Empty until the queue was seen.
+     */
+    @ProtoNumber(29) val votesSeen: String = "",
 )
 
 /**
