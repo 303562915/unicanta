@@ -47,10 +47,10 @@ The client (`util/Telemetry.kt`) speaks exactly four RPCs, so switching backends
 | `package_scores` | `{}` | global aggregate per package |
 | `package_scores_for` | `{p_rom, p_rom_version}` | aggregate for one ROM (`-1` = family-wide) |
 
-Two server implementations behind the same contract:
+Two server implementations behind the same contract. The published repository only ships the
+self-hosted one; **the hosted-database side (schema, migrations, scoring fixture and its deployment
+notes) is kept local and is not published here.**
 
-- **Supabase**: 9 migrations under `server/supabase/migrations/`, one-shot script
-  `server/supabase/apply-all.sql`. Current project ref `axuhfogeovtsbxokqccf` (`ap-northeast-1`).
 - **Single file self-hosting**: `server/node/server.mjs` with embedded SQLite (`node:sqlite`,
   no native modules). Run `node server.mjs`; env: `PORT`, `DB_PATH`, `RETENTION_DAYS`, `POW_K`.
 
@@ -166,15 +166,15 @@ JDK 21 required. Modules: `androidApp` / `desktopApp` / `webApp` / `composeApp`.
 ## Local regression
 
 ```bash
-# Supabase side: PGlite runs a real PostgreSQL, migrations plus protocol/plan assertions
-cd server && npm install && npm test
-
 # single-file self-hosted backend
 cd server/node && node test/e2e.test.mjs
 ```
 
 Covers: normal ingestion, challenge replay rejected, tampered payload fails PoW, invalid event kind,
-all five verdicts, ROM-version and family-wide queries, `purge_raw_events`, plan upload/permissions/comments.
+all five verdicts, ROM-version and family-wide queries, `purge_raw_events`.
+
+The hosted-database migration tests (PGlite plus migrations, plan/comment assertions) run locally
+only; they are not part of this repository.
 
 ## Privacy
 
@@ -182,8 +182,7 @@ all five verdicts, ROM-version and family-wide queries, `purge_raw_events`, plan
 - model, build number, fingerprint and install id are **never** uploaded;
 - raw events are dropped after 35 days by `purge_raw_events()`, only aggregates remain;
 - the raw tables have RLS enabled with **no policy at all**: anon can only call the RPCs, direct
-  table reads return nothing. Internal functions (`pow_space` / `pow_target` / `pow_head` /
-  `verdict_of` / `purge_raw_events`) have EXECUTE revoked from `anon` / `authenticated`.
+  table reads return nothing. Internal functions are not exposed to `anon` / `authenticated`.
 
 ## Layout
 
@@ -192,17 +191,12 @@ all five verdicts, ROM-version and family-wide queries, `purge_raw_events`, plan
 | `composeApp/` | shared UI and business logic (Compose Multiplatform) |
 | `androidApp/` | Android shell, manifest, icons |
 | `desktopApp/` `webApp/` | desktop and web shells |
-| `server/supabase/` | migrations, `apply-all.sql`, scoring test fixture |
 | `server/node/` | single-file self-hosted backend plus e2e test |
 | `docs/` | VitePress documentation site |
 | `packages/` | platform helper packages |
 
 ## Known TODOs
 
-- `SUPABASE_PROJECT_ID` in [`.github/workflows/supabase_migrations.yml`](.github/workflows/supabase_migrations.yml)
-  is still `aahwoixjjlopftjqnner`, which does not match this project's `axuhfogeovtsbxokqccf` —
-  pushing to master would apply migrations to the wrong database;
-- pushing migrations with the CLI needs `SUPABASE_ACCESS_TOKEN` in the repository secrets;
 - this fork has no release signing or distribution; CI only produces debug APKs.
 
 ## Credits

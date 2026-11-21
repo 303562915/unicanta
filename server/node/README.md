@@ -43,8 +43,9 @@ ROM 版本/家族/未知 ROM 查询、保留期清理。当前结果：**ALL PAS
 - debug 清单已放行 cleartext（`androidApp/src/debug/AndroidManifest.xml`），否则 http://127.0.0.1 会被系统拦；
 - 手机和这个容器是同一台机器时，`127.0.0.1:8787` 能直接通。
 
-## 和 Supabase 版的关系
+## 和托管数据库版的关系
 
-- `server/supabase/migrations/*.sql`：同一套协议的 Postgres 实现，用 PGlite 验过，适合托管；
+- 托管那一侧（Postgres schema、迁移、判分 fixture、部署说明）：同一套协议的另一种实现，
+  用 PGlite 验过，适合托管；**这套东西只留在作者本地，不随开源仓库发布**；
 - `server/node/server.mjs`：不依赖任何账号，适合自己一台机器跑或先本地联调；
-- 两边判分阈值一致，`server/README.md` 里有说明。
+- 两边判分阈值一致。

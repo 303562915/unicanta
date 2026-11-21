@@ -45,10 +45,9 @@
 | `package_scores` | `{}` | 每个包的全局聚合 |
 | `package_scores_for` | `{p_rom, p_rom_version}` | 指定 ROM（`-1` = 家族级）的聚合 |
 
-服务器侧两份实现，协议完全一致：
+服务端两种实现，协议完全一致。公开仓库里只发布自托管版本；**托管数据库那一侧（schema、迁移、
+判分 fixture 与部署说明）不随仓库发布**，只保留在作者本地。
 
-- **Supabase**：`server/supabase/migrations/` 共 9 个迁移，一次性等价脚本是
-  `server/supabase/apply-all.sql`。当前线上项目 ref `axuhfogeovtsbxokqccf`（`ap-northeast-1`）。
 - **单文件自托管**：`server/node/server.mjs`，内置 SQLite（`node:sqlite`，不编译原生模块），
   `node server.mjs` 就能起，环境变量 `PORT` / `DB_PATH` / `RETENTION_DAYS` / `POW_K`。
 
@@ -100,7 +99,7 @@ survived >= 50% 且上面 <= 2%                -> SAFE
 
 `data/community/PlanRepository.kt`：方案 = 一台手机删掉的一批包，且已被一次重启验证。
 支持上传、完整阅读、点赞、评论；每次安装有独立身份，只有上传者本人能删自己的方案；
-测试性上传会被标记，不进正常排名。后端对象在 `plans` 相关迁移里（含 `plan_test_and_owner`、`user_numbers`）。
+测试性上传会被标记，不进正常排名。这些对象由服务端数据库提供，其 schema 不随公开仓库发布。
 
 ### 5. 界面重构
 
@@ -162,15 +161,14 @@ JDK 或 Gradle 缓存。
 ## 本地回归
 
 ```bash
-# Supabase 侧：PGlite 起真 PostgreSQL，跑迁移 + 协议/方案断言
-cd server && npm install && npm test
-
 # 自托管单文件后端
 cd server/node && node test/e2e.test.mjs
 ```
 
 覆盖：正常写入、challenge 重放被拒、篡改 payload → PoW 失败、非法事件类型、
-五种 verdict、ROM 版本级与家族级查询、`purge_raw_events`、方案上传/权限/评论。
+五种 verdict、ROM 版本级与家族级查询、`purge_raw_events`。
+
+托管数据库那一侧的迁移测试（PGlite + 迁移 + 方案/评论断言）在本地进行，不随仓库发布。
 
 ## 隐私
 
@@ -178,8 +176,7 @@ cd server/node && node test/e2e.test.mjs
 - 机型、build 号、指纹、安装 ID **一律不上传**；
 - 原始事件 35 天后由 `purge_raw_events()` 丢弃，只留聚合；
 - 原始表开了 RLS 且**没有任何 policy**：anon 只能调 RPC，直读表拿不到数据；
-  内部函数（`pow_space` / `pow_target` / `pow_head` / `verdict_of` / `purge_raw_events`）
-  已从 `anon` / `authenticated` 收回 EXECUTE。
+  内部函数不从 `anon` / `authenticated` 开放。
 
 ## 目录
 
@@ -188,17 +185,12 @@ cd server/node && node test/e2e.test.mjs
 | `composeApp/` | 共享 UI 与业务逻辑（Compose Multiplatform） |
 | `androidApp/` | Android 壳、清单、图标 |
 | `desktopApp/` `webApp/` | 桌面与 web 壳 |
-| `server/supabase/` | 迁移、`apply-all.sql`、判分测试 fixture |
 | `server/node/` | 单文件自托管后端 + e2e 测试 |
 | `docs/` | VitePress 文档站 |
 | `packages/` | 平台相关辅助包 |
 
 ## 已知待办
 
-- [`.github/workflows/supabase_migrations.yml`](.github/workflows/supabase_migrations.yml) 里的
-  `SUPABASE_PROJECT_ID` 仍是 `aahwoixjjlopftjqnner`，与本项目 `axuhfogeovtsbxokqccf` 不一致，
-  推 master 时会把迁移打到错误的库；
-- 用 CLI 推迁移需要在仓库 secrets 里放 `SUPABASE_ACCESS_TOKEN`；
 - 本 fork 未做 release 签名与分发；`build.yml` 已支持配置 `CANTA_KEYSTORE_BASE64` 等
   secrets 后产出 Release APK，未配置时自动跳过该任务。
 

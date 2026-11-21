@@ -39,7 +39,9 @@ Aggregated community scores (per package: a verdict, the number of reports round
 
 You can disable package analytics at any time in Settings. Disabling it also deletes any locally queued data that has not been sent yet.
 
-The server source code, including the exact database logic, is in this repository under [`server/supabase/migrations/`](server/supabase/migrations).
+The protocol this feature uses is documented in this repository, and a standalone implementation of
+it is published under [`server/node/`](server/node). The hosted database that currently serves these
+reports (its schema and migrations) is not published in this repository.
 
 ### Crash reports
 If Canta crashes (Android and desktop), it saves a short report on your device: app version, platform, OS version, time and the stack trace.

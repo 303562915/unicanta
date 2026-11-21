@@ -60,8 +60,11 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | `pull_request_build.yml` 🔍 PR Check | `pull_request` → `master`（opened / synchronize / reopened） | `:packages:desktopTest` + `:composeApp:desktopTest`，再 assembleDebug、desktopJar、wasm 分发 | `app-debug` |
 | `release.yml` 📦🚀 | 仅 `workflow_dispatch` | 签名 release APK → 校验和 → attestation → 建 **draft** GitHub release | 上传到 release（`v$version_name`） |
 | `docs.yml` | `push` 到 `master` 且改 `docs/**`、`release: published`、`workflow_dispatch` | 用最新 `v*` tag 的源码编 WASM，合并 docs 后发 GitHub Pages | `github-pages` |
-| `supabase_migrations.yml` | `push` 到 `master` 且改 `server/supabase/migrations/**`、`workflow_dispatch` | `supabase link` + `db push` | — |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |
+
+> 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`、`supabase_migrations.yml`、
+> `daily-device-report.yml`）**只留在本地**，已在 `.gitignore` 里排除，不进公开仓库；迁移与查库在本地做，
+> 凭据见 `SUPABASE.local.md`。本地备份在 `backups/db-local-only/`。
 
 关键 task（云端跑的，你**不要**在本地跑）：
 `:composeApp:desktopTest`、`:packages:desktopTest`、`:androidApp:assembleDebug`、`:androidApp:assembleRelease`、`:desktopApp:desktopJar`、`:webApp:wasmJsBrowserDistribution`。
@@ -122,7 +125,9 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
 
 1. **重复构建（已修）**：`fork-ci.yml` 的 job 带 `if: github.ref != 'refs/heads/master'`，master 推送只由 `build.yml` 跑一遍，不再双跑。
 2. **`release.yml` 的 secret 名（已对齐）**：它现在读 `CANTA_KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`，与仓库已配置的 secrets 一致，发版不再因 keystore 为空而失败。
-3. **`supabase_migrations.yml`（已可用）**：`SUPABASE_ACCESS_TOKEN` 与 `SUPABASE_DB_PASSWORD` 都已配置，`workflow_dispatch` 实测 `success`。**迁移由 CI 自动应用**：改 `server/supabase/migrations/**` 推到 master 就会 `supabase db push --remote --yes`，不需要本地手动推；本地也没有 `supabase` / `psql`，需要直接查库时走 Management API（见 `SUPABASE.local.md`）。
+3. **数据库那一侧不进仓库（已迁出）**：`server/supabase/**`、`server/test/**`、`server/README.md`、
+   `supabase_migrations.yml`、`daily-device-report.yml` 都只留在本地并已 gitignore。迁移不再由 CI 应用，
+   要改 schema 就在本地推（本机没有 `supabase` / `psql`，直接查库走 Management API，见 `SUPABASE.local.md`）。
 4. **action 版本（已统一）**：所有 workflow 都是 `actions/checkout@v4` + `actions/setup-java@v4` + `distribution: temurin`。
 5. **`::set-output`（已移除）**：仓库里已无该写法，`VERSION_NAME` 走 `$GITHUB_ENV`。
 6. **本地不可构建是刻意的**：`gradlew` 无执行位、无 SDK、`/sdcard` 挂载限制。别提交"修 gradlew 权限""加 local.properties"这类补丁。
@@ -168,6 +173,10 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
 | `刷票` / `刷到45` / `刷到N` | 直接往 `recommend_suggestion_votes` 灌认同票，把某条推荐条目的 agree 数刷到指定值，再 `private.recommend_settle(url)` 让它 `applied`。**不是**把 `private.recommend_votes_needed()` 的门槛数字改小 | 2026-11-21 | 用户原话：「刚才不是让你刷票吗？把那个我的那个影视星球投票，把那个认同两个票给他刷到45」→ 我先前猜成「降门槛 50→45」（`5dfa2fa`），被这句纠正 |
 | `认同` / `认同票` | 推荐投票里的赞成票，即 `recommend_suggestion_votes.agree = true`；反义是「不认同」（`agree = false`） | 2026-11-21 | 同上，用户原话「把那个认同两个票给他刷到45」= 认同票数从 2 变成 45 |
 | `影视星球` | 推荐条目 `recommend_suggestions.id = 1`：`name='影视星球'`、`url=https://github.com/303562915/tv`、`author='开发者'`（用户自己那个影视 App 仓库） | 2026-11-21 | 同上。刷票对象就是这一条 |
+| `方案` / `方案详情` | 社区里用户提交的**精简方案**，即 `public.plans` 的一行（`plans.title` 是方案名）；「方案详情」= 该方案的详情页（`plan_get`） | 2026-11-21 | 用户原话：「方案详情里面有一个…再一次精简他这一个方案」 |
+| `站` / `他现在的站只有两个` / `刷到83` | 方案详情里的**票数**，即 `plan_votes` 里该 `plan_id` 的行数（`plan_get().votes`）；「站只有两个」= 票数很少，「刷到83」= 直接插 votes 行把票数补到 83 | 2026-11-21 | 用户原话：「他现在的站只有两个，帮我刷到83」。与「刷票」同义，但对象是 `plans`/`plan_votes` 而不是 `recommend_suggestion_votes`。本次对象 `plans.id=35`「再一次精简」 |
+| `再一次精简` | 方案 `plans.id = 35`（Redmi K40 / `M2012K11AC`，hyperos 4，109 个包） | 2026-11-21 | 用户原话里的「一个叫再一次精简的这一个方案」 |
+| `修正历史` / `描述修正` | 应用详情页里「描述修正」的列表，即 `description_fixes_for(pkg)` 读的 `public.description_fixes` 行（带 `agrees`/`disagrees`/`applied`）；「拉到50」= 往 `description_fix_votes` 灌 `agree=true` 补到 50，「直接通过」= 调 `private.description_fix_settle(pkg)` 让 `applied=true` | 2026-11-21 | 用户原话：「把修正历史的有一条是只有一条修正历史的，你把他那个票给他拉到50，直接通过」。本次对象 `description_fixes.id=3`（`com.android.browser`，author=开发者） |
 
 > 说明：`ga` 默认指 GitHub Actions，但**不是绝对**——若上下文明显在谈别的东西（如统计分析、灰度发布），以当轮上下文为准；判断依据写进备注。默认顺序：先 Actions，再看上下文。
 
@@ -181,7 +190,7 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
    （[DeviceCatalog.kt](composeApp/src/commonMain/kotlin/io/github/samolego/canta/data/community/DeviceCatalog.kt)）。
 2. **后端** `plan_catalog()`：`plans.market_name` → `private.model_names`（评论区学到的名字）→
    `private.device_names`（人工/迁移种下的名字）→ 同 codename 的别的行借一个 → `''`
-   （[20261121150000_device_name_seed.sql](server/supabase/migrations/20261121150000_device_name_seed.sql)）。
+   （种子迁移 `20261121150000_device_name_seed.sql`，只在本地 `server/supabase/migrations/` 下）。
 3. **上传**：`plans.market_name` 只有上传那台手机自己报才有，由 `marketNameOf(props)` 读系统属性
    （[DeviceContext.kt](composeApp/src/commonMain/kotlin/io/github/samolego/canta/util/DeviceContext.kt) 的 `MARKET_NAME_PROP_KEYS`）。
 4. **各厂属性不同**：
@@ -215,7 +224,5 @@ update plans p set market_name = d.market_name
 
 **日报「总人数 / 有型号」怎么读**：这两个数出自 `canta_users`，不是 `plans`。`canta_users.model`
 以前只有打开「社区/安全规则」页触发 `user_login` 才写，所以 2026-11-21 实测 594 人里 549 人空
-（92%），那个「有型号 45」= 打开过社区页的人数，**不是**识别率。从
-[20261121160000_identity_bind_model.sql](server/supabase/migrations/20261121160000_identity_bind_model.sql)
-起 `identity_bind` 随身份一起收 `model`/`codename`，装机即上报。识别率要看 `plans`：
+（92%），那个「有型号 45」= 打开过社区页的人数，**不是**识别率。从 `20261121160000_identity_bind_model.sql` 起 `identity_bind` 随身份一起收 `model`/`codename`，装机即上报（迁移只在本地）。识别率要看 `plans`：
 `select count(distinct model) filter (where coalesce(market_name,'') <> '')::float / count(distinct model) from plans;`

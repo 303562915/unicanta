@@ -30,8 +30,19 @@ server/node/telemetry.db-journal
 # Local-only Supabase credentials / endpoints (never commit)
 SUPABASE.local.md
 
+# Database project stays local: schema, migrations, fixtures and the deployment notes for it.
+# The published repository ships the client and the standalone node backend only.
+/server/supabase/
+/server/test/
+/server/README.md
+/.github/workflows/supabase_migrations.yml
+/.github/workflows/daily-device-report.yml
+
 # Sticker source files: the copies the app ships live in composeResources/drawable as emo_*.png
 /static/
 
 # Working copies made before a risky edit
 /backups/
+
+# Session handoff notes (local working memory)
+/.dsh-handoff*.md
