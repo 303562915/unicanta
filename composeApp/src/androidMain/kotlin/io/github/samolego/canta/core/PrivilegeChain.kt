@@ -182,6 +182,9 @@ class PrivilegeChain(
     override suspend fun authorize(kind: PrivilegeKind): Boolean = when (kind) {
         PrivilegeKind.ROOT -> {
             val candidate = root ?: return false
+            // The press is a new question: without this the cached "no" from startup answers it
+            // and no `su` runs, so nothing is shown and the button looks broken.
+            candidate.forgetRootAnswer()
             val granted = candidate.prepare()
             if (granted) {
                 settleLock.withLock {

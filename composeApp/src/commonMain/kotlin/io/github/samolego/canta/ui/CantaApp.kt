@@ -47,6 +47,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.recommend.hasNewVotes
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.privilege_root_refused
 import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.generated.resources.preset_save_error
@@ -566,6 +567,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 val reloadPrivilegeChoices: () -> Unit = {
                     coroutineScope.launch { privilegeChoices = handler.privilegeChoices() }
                 }
+                // Said when the manager answers no: a press that changes nothing on screen reads as
+                // a broken button, while the fix (allow it in the manager, or the phone is not
+                // rooted) is somewhere else entirely.
+                val privilegeRefused = stringResource(Res.string.privilege_root_refused)
                 LaunchedEffect(showPrivilegeChooser) {
                     if (showPrivilegeChooser) privilegeChoices = handler.privilegeChoices()
                 }
@@ -582,7 +587,11 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                             // Shizuku now, not wait for the next launch.
                             showPrivilegeChooser = false
                             coroutineScope.launch {
-                                handler.authorize(PrivilegeKind.ROOT)
+                                val granted = handler.authorize(PrivilegeKind.ROOT)
+                                // A press that changes nothing on screen reads as a broken button,
+                                // while the fix (allow it in the manager's Superuser list, or the
+                                // phone is not rooted) is somewhere else entirely.
+                                if (!granted) platform.showMessage(privilegeRefused)
                                 privilegeChoices = handler.privilegeChoices()
                                 appListViewModel.loadApps()
                             }

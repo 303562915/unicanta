@@ -45,6 +45,18 @@ class RootTransport(
     @Volatile
     private var rootGranted = false
 
+    /**
+     * Throws the cached answer away so the next probe runs `su` again.
+     *
+     * The cache exists because a probe spawns a process. It must not survive the user pressing
+     * "grant": that press is a new question, and answering it from the startup probe is why the
+     * button used to do nothing at all.
+     */
+    fun forgetProbe() {
+        rootChecked = false
+        rootGranted = false
+    }
+
     /** True when `su` exists and handed this app a root shell. Probed once. */
     suspend fun isRootAvailable(): Boolean = withContext(Dispatchers.IO) {
         if (rootChecked) return@withContext rootGranted
