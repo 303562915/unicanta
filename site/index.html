@@ -260,21 +260,26 @@
 
   #history{display:none;margin-top:.9rem;border:1px solid var(--line);border-radius:14px;overflow:hidden}
   #history.on{display:block}
-  #history a{
-    display:flex;justify-content:space-between;gap:1rem;padding:.75rem 1rem;
-    font-size:.875rem;color:var(--muted);text-decoration:none;
-    border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;
-  }
-  #history a:last-child{border-bottom:0}
-  #history a:hover{background:rgba(255,255,255,.03);color:var(--fg)}
-  #history time{color:var(--dim);font-size:.78rem}
+  #history details{margin:0;padding:0;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0}
+  #history details+details{margin-top:0}
+  #history details:last-child{border-bottom:0}
+  #history summary{padding:.75rem 1rem;font-size:.875rem;color:var(--muted);font-weight:450;font-variant-numeric:tabular-nums}
+  #history summary:hover{background:rgba(255,255,255,.03);color:var(--fg)}
+  #history .hline{display:flex;align-items:baseline;justify-content:space-between;gap:.8rem;flex:1;padding-right:.5rem;min-width:0}
+  #history .hline>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #history time{color:var(--dim);font-size:.78rem;white-space:nowrap}
+  #history .hbody{padding:.1rem 1rem 1rem;font-size:.85rem;color:var(--muted)}
+  #history .hnotes{margin:0 0 .7rem;white-space:pre-wrap;word-break:break-word;max-height:16rem;overflow:auto}
+  #history .hbody a{color:#ff8f86;text-decoration:none;border-bottom:1px solid rgba(255,143,134,.3)}
+  #history .hbody a:hover{color:#ffb0a8}
+  #history .hbody a+a{margin-left:.8rem}
 
   /* 更新说明 */
   #notes{display:none;margin-top:.9rem;padding:1rem 1.15rem;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
   #notes.on{display:block}
   #notes h3{margin:0 0 .6rem;font-size:.6875rem;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:600}
   #notes .body{font-size:.875rem;color:var(--muted);max-height:18rem;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:inherit}
-  #notes .body:empty::before{content:"该版本没有填写更新说明";color:var(--dim)}
+  #notes .body:empty::before{content:"该版本没有填写更新日志";color:var(--dim)}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -317,7 +322,7 @@
     </a>
 
     <div class="alt">
-      <button id="historyBtn" type="button">历史版本</button>
+      <button id="historyBtn" type="button">历史版本与日志</button>
       <button id="shaBtn" type="button">复制 SHA-256</button>
       <a id="checksumLink" href="#" hidden>校验文件</a>
     </div>
@@ -352,7 +357,7 @@
     <div id="history"></div>
 
     <section id="notes">
-      <h3>更新说明</h3>
+      <h3>更新日志</h3>
       <div class="body" id="notesBody"></div>
     </section>
 
@@ -571,18 +576,49 @@
     if (data.history && data.history.length) {
       var box = $("history");
       box.innerHTML = "";
+      var seen = 0;
       data.history.forEach(function (h) {
-        var a = document.createElement("a");
-        a.href = h.file;
-        a.setAttribute("download", "");
+        // 当前版本已在上面完整显示，历史列表只放旧版本。
+        if (h.tag === data.tag && h.build_number === data.build_number) return;
+        var row = document.createElement("details");
+
+        var sum = document.createElement("summary");
+        var line = document.createElement("span");
+        line.className = "hline";
         var name = document.createElement("span");
         name.textContent = versionLabel(h);
         var tm = document.createElement("time");
         tm.textContent = fmtDate(h.published_at) + " · " + fmtSize(h.size);
-        a.appendChild(name);
-        a.appendChild(tm);
-        box.appendChild(a);
+        line.appendChild(name);
+        line.appendChild(tm);
+        sum.appendChild(line);
+
+        var body = document.createElement("div");
+        body.className = "hbody";
+        var notes = document.createElement("div");
+        notes.className = "hnotes";
+        notes.textContent = (h.notes || "").trim() || "该版本没有填写更新日志";
+        body.appendChild(notes);
+
+        var dl = document.createElement("a");
+        dl.href = h.file;
+        dl.setAttribute("download", "");
+        dl.textContent = "下载该版本 APK";
+        body.appendChild(dl);
+
+        if (h.checksum_file) {
+          var ck = document.createElement("a");
+          ck.href = h.checksum_file;
+          ck.textContent = "校验文件";
+          body.appendChild(ck);
+        }
+
+        row.appendChild(sum);
+        row.appendChild(body);
+        box.appendChild(row);
+        seen++;
       });
+      if (!seen) box.classList.remove("on");
     }
 
     var notes = $("notes");

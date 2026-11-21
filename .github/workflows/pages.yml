@@ -140,6 +140,20 @@ jobs:
             python3 - <<'PY'
           import json, os, pathlib
 
+          import re
+
+          BOILER = ('- 下载页：', '- 包名：', '下载页：', '包名：', '校验和')
+
+          def clean_notes(text):
+              """发布脚本写的样板行不带信息量，日志里只保留真正的更新内容。"""
+              keep = []
+              for line in (text or '').splitlines():
+                  s = line.strip()
+                  if not s or s.startswith(BOILER) or re.fullmatch(r'Canta \d+(\.\d+)*', s):
+                      continue
+                  keep.append(line.rstrip())
+              return '\n'.join(keep).strip()
+
           repo = os.environ["REPO"]
           rel = json.loads(pathlib.Path("release.json").read_text(encoding="utf-8"))
           tag = rel["tagName"]
@@ -172,11 +186,37 @@ jobs:
               "size": apk.get("size", 0),
               "sha256": digest,
               "checksum_file": f"{base}/{sums['name']}" if sums else None,
-              "notes": (rel.get("body") or "").strip(),
+              "notes": clean_notes(rel.get("body")),
           }
 
+          # 近几个稳定版一起输出，页面可逐版本展开看日志。
+          pages = json.loads(pathlib.Path("releases.json").read_text(encoding="utf-8"))
+          releases_all = [r for page in pages for r in page]
+          stable = [r for r in releases_all
+                    if not r["draft"] and not r["prerelease"] and r["tag_name"].startswith("v")
+                    and any(a["name"].lower().endswith(".apk") for a in r["assets"])]
+          stable.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+
+          history = []
+          for r in stable[:6]:
+              r_tag = r["tag_name"]
+              r_apk = next(a for a in r["assets"] if a["name"].lower().endswith(".apk"))
+              r_sums = next((a for a in r["assets"] if a["name"] == "SHA256SUMS.txt"), None)
+              history.append({
+                  "version_name": r_tag[1:] if r_tag.startswith("v") else r_tag,
+                  "version_code": entry["version_code"] if r_tag == tag else 0,
+                  "tag": r_tag,
+                  "published_at": r.get("published_at"),
+                  "file": r_apk["browser_download_url"],
+                  "file_name": r_apk["name"],
+                  "size": r_apk.get("size", 0),
+                  "sha256": entry["sha256"] if r_tag == tag else "",
+                  "checksum_file": r_sums["browser_download_url"] if r_sums else None,
+                  "notes": clean_notes(r.get("body")),
+              })
+
           data = dict(entry)
-          data["history"] = [entry]
+          data["history"] = history
           pathlib.Path("_site/latest.json").write_text(
               json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
           )
@@ -241,13 +281,29 @@ jobs:
               apk, checksum = apks[0], sums[0]
               # 滚动 dev release 只创建一次，release 级 published_at 停在首发时刻；
               # 页面"更新于"要用当前 build APK 资产的上传时间。
+              dev_notes = '\n'.join(ln for ln in body.splitlines()
+                                    if ln.strip() and not ln.strip().startswith('Signed with'))
+              dev_notes += f"\n提交：https://github.com/{os.environ['REPO']}/commit/{commit}"
               entry = {'version_name': version, 'version_code': int(codes[0]), 'build_number': build,
                        'tag': 'dev',
                        'published_at': apk.get('created_at') or apk.get('updated_at') or rel.get('published_at'),
                        'file': apk['browser_download_url'], 'file_name': name, 'size': apk.get('size', 0),
                        'sha256': digests[0], 'checksum_file': checksum['browser_download_url'],
-                       'notes': body.strip()}
-              data = dict(entry, history=[entry])
+                       'notes': dev_notes}
+              # 滚动 release 里每个 build 都是一个资产，历史列表取最近 8 个。
+              hist = []
+              apk_assets = [a for a in assets if re.fullmatch(r'androidApp-release-[0-9]+\.apk', a['name'])]
+              apk_assets.sort(key=lambda a: a.get('created_at') or '', reverse=True)
+              for a in apk_assets[:8]:
+                  b = int(re.fullmatch(r'androidApp-release-([0-9]+)\.apk', a['name']).group(1))
+                  sums_b = next((s for s in assets if s['name'] == f'SHA256SUMS-{b}.txt'), None)
+                  hist.append({'version_name': version, 'version_code': int(codes[0]), 'build_number': b,
+                               'tag': 'dev', 'published_at': a.get('created_at'),
+                               'file': a['browser_download_url'], 'file_name': a['name'],
+                               'size': a.get('size', 0), 'sha256': digests[0] if b == build else '',
+                               'checksum_file': sums_b['browser_download_url'] if sums_b else None,
+                               'notes': dev_notes if b == build else ''})
+              data = dict(entry, history=hist)
           pathlib.Path('_site/development.json').write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           PY
 
