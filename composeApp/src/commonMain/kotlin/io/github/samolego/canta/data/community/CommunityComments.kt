@@ -17,21 +17,6 @@ const val COMMENT_KIND_APP: String = "app"
 const val INBOX_PAGE_SIZE: Int = 20
 
 /**
- * The longest comment the backend keeps: `plan_comment` stores `left(body, 1000)`.
- *
- * It used to be a silent truncation — a 1200-character comment went up as its first 1000 and
- * nothing said so. The composer counts against this instead, so the limit is visible while typing
- * rather than discovered afterwards.
- */
-const val COMMENT_MAX_LENGTH: Int = 1000
-
-/**
- * How much of [length] is left to type: never negative, because a paste can carry more than the
- * limit and the number beside the field should read 0 rather than -37.
- */
-fun commentCharactersLeft(length: Int): Int = (COMMENT_MAX_LENGTH - length).coerceAtLeast(0)
-
-/**
  * The longest plan note the backend keeps: `plan_set_note` stores `left(p_note, 2000)`, the same
  * cap the upload path has had since the table was created.
  */

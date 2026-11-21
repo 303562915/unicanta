@@ -36,8 +36,12 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.painterResource
@@ -207,6 +211,143 @@ fun EmotionText(
         maxLines = maxLines,
         modifier = modifier,
     )
+}
+
+/**
+ * The character a sticker stands for inside the composer.
+ *
+ * A composer is a text field, and a text field cannot draw a picture on its own line. Given the
+ * token `[偷笑]` it measures five characters, so a caret placed after the sticker lands five
+ * characters to the right of a picture one glyph wide — "the caret runs off" is exactly that.
+ * Substituting one ideographic space per sticker makes the field measure one picture wide, and the
+ * picture is drawn into that measurement, so the caret comes down against its right edge.
+ *
+ * A space rather than a more descriptive replacement character because its advance is the one thing
+ * that is predictable: an ideographic space is one em in every font that carries one.
+ */
+internal const val EmotionFieldCell: Char = '\u3000'
+
+/**
+ * The em the substituted space is given, and therefore the side of the square the sticker is drawn
+ * in. A little larger than the line's own text so the sticker reads as a picture at text size.
+ */
+internal val EmotionFieldCellSize = 18.sp
+
+/** One sticker in the composer's line: which cell of the displayed text it is, and what it shows. */
+internal data class EmotionFieldCellPlace(val index: Int, val emotion: Emotion)
+
+/**
+ * What the composer's field is laid out from: the body with every sticker replaced by one cell, the
+ * cells' positions, and the map that keeps the caret and the selection on the body's own offsets.
+ */
+internal data class EmotionFieldDisplay(
+    /** The body this was made from, so a field reporting the same text can reuse it. */
+    val body: String,
+    val shown: AnnotatedString,
+    val cells: List<EmotionFieldCellPlace>,
+    val mapping: OffsetMapping,
+)
+
+/**
+ * Builds the composer's line out of a body.
+ *
+ * The line is the body with each sticker standing as one [EmotionFieldCell]; everything else is the
+ * body's own words, so the field's measurement of a sticker no longer depends on how long its token
+ * happens to be. Offsets stay the body's: [EmotionFieldDisplay.mapping] answers both directions, and
+ * a caret inside a token's range is pulled to the nearer edge of the cell, because there is no room
+ * in the picture to put a caret in.
+ */
+internal fun emotionFieldDisplayOf(body: String): EmotionFieldDisplay {
+    val spans = parseEmotionBody(body)
+    val builder = AnnotatedString.Builder()
+    val cells = mutableListOf<EmotionFieldCellPlace>()
+    val bodyStarts = IntArray(spans.size)
+    val bodyLengths = IntArray(spans.size)
+    val shownStarts = IntArray(spans.size)
+    val shownLengths = IntArray(spans.size)
+    var bodyAt = 0
+    var shownAt = 0
+    spans.forEachIndexed { index, span ->
+        val words = (span as? EmotionSpan.Words)?.text
+        val sticker = span as? EmotionSpan.Sticker
+        val length = words?.length ?: sticker!!.emotion.token.length
+        bodyStarts[index] = bodyAt
+        bodyLengths[index] = length
+        shownStarts[index] = shownAt
+        if (words != null) {
+            builder.append(words)
+            shownLengths[index] = words.length
+            shownAt += words.length
+        } else {
+            builder.append(EmotionFieldCell.toString())
+            builder.addStyle(SpanStyle(fontSize = EmotionFieldCellSize), shownAt, shownAt + 1)
+            cells += EmotionFieldCellPlace(shownAt, sticker!!.emotion)
+            shownLengths[index] = 1
+            shownAt += 1
+        }
+        bodyAt += length
+    }
+    val shownLength = shownAt
+    val mapping = object : OffsetMapping {
+        override fun originalToTransformed(offset: Int): Int {
+            val at = offset.coerceIn(0, body.length)
+            spans.forEachIndexed { index, span ->
+                val start = bodyStarts[index]
+                val end = start + bodyLengths[index]
+                if (at < start) return shownStarts[index]
+                when (span) {
+                    is EmotionSpan.Words -> if (at <= end) return shownStarts[index] + (at - start)
+                    is EmotionSpan.Sticker -> if (at < end) {
+                        // 光标落在 token 里时贴到图片的一侧：前半在左，后半在右。
+                        val half = bodyLengths[index] / 2
+                        return if (at - start <= half) shownStarts[index] else shownStarts[index] + 1
+                    }
+                }
+            }
+            return shownLength
+        }
+
+        override fun transformedToOriginal(offset: Int): Int {
+            val at = offset.coerceIn(0, shownLength)
+            spans.forEachIndexed { index, span ->
+                val start = shownStarts[index]
+                val end = start + shownLengths[index]
+                if (at < start) return bodyStarts[index]
+                when (span) {
+                    is EmotionSpan.Words -> if (at <= end) return bodyStarts[index] + (at - start)
+                    is EmotionSpan.Sticker -> {
+                        if (at <= start) return bodyStarts[index]
+                        if (at == end) return bodyStarts[index] + bodyLengths[index]
+                    }
+                }
+            }
+            return body.length
+        }
+    }
+    return EmotionFieldDisplay(
+        body = body,
+        shown = builder.toAnnotatedString(),
+        cells = cells,
+        mapping = mapping,
+    )
+}
+
+/**
+ * Hands the field the cell text and the map back to the body's offsets.
+ *
+ * The field keeps editing the body itself: a keystroke, a paste and a backspace are all reported as
+ * the token text, not as what is on the line, so nothing here has to translate an edit back. Only
+ * drawing and caret placement ever see the cells.
+ */
+internal class EmotionFieldTransformation(
+    private val display: EmotionFieldDisplay,
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        // An IME still composing hands over a text that is longer than the draft; measure that one,
+        // so no offset in the map ever points past the text it is used with.
+        val current = if (text.text == display.body) display else emotionFieldDisplayOf(text.text)
+        return TransformedText(current.shown, current.mapping)
+    }
 }
 
 /**

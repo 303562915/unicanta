@@ -57,16 +57,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -76,15 +80,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.samolego.canta.data.community.COMMENT_MAX_LENGTH
 import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
-import io.github.samolego.canta.data.community.commentCharactersLeft
 import io.github.samolego.canta.data.community.PlanComment
 import kotlin.math.absoluteValue
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import org.jetbrains.compose.resources.painterResource
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -817,12 +820,6 @@ private fun CommentActions(
 }
 
 /**
- * The length at which the counter appears: near the end, where it is a warning rather than a
- * decoration. Comments are rarely this long, so the bar stays clean for the usual case.
- */
-private const val COMMENT_LENGTH_HINT_FROM = 800
-
-/**
  * The composer every comment page ends with: one quiet pill field and the send button. The field
  * asks for a comment on its own — "发条评论，说说你的感受" — and names the person it answers once
  * one was picked, the way a short-video composer does it. Picking a comment brings the field up
@@ -917,11 +914,13 @@ fun CommentComposer(
                         // travels through the clipboard and the backend, but a person typing sees
                         // the sticker itself.
                         //
-                        // A text field cannot draw a picture inside its own line — BasicTextField
-                        // has no inline content — so the picture is drawn by a Text underneath and
-                        // the field on top keeps its text fully transparent with only its caret
-                        // painted. What the reader sees is the Text; what receives the keystrokes,
-                        // the selection and the paste is the field.
+                        // A text field cannot draw a picture inside its own line, so the field is
+                        // laid out from a line where every sticker is one ideographic space — one
+                        // picture wide — and the picture is drawn in that space's box, underneath
+                        // the field's own drawing. The caret is measured from the same line, which
+                        // is what keeps it on the sticker's right edge instead of a token's width
+                        // away from it. What receives the keystrokes, the selection and the paste
+                        // is still the field, and the text it reports back is still the body.
                         var fieldValue by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
                         LaunchedEffect(draft) {
                             // A sticker from the panel, or a send that cleared the draft, arrives
@@ -931,26 +930,16 @@ fun CommentComposer(
                                 fieldValue = TextFieldValue(draft, TextRange(draft.length))
                             }
                         }
-                        if (draft.isNotEmpty()) {
-                            EmotionText(
-                                body = draft,
-                                fontSize = 13,
-                                lineHeight = 18,
-                                maxLines = 1,
-                                color = colors.onSurface,
-                            )
-                        }
+                        val display = remember(draft) { emotionFieldDisplayOf(draft) }
+                        val stickers = display.cells.map { painterResource(it.emotion.resource) }
+                        var lineLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
                         BasicTextField(
                             value = fieldValue,
                             onValueChange = { typed ->
                                 // Backspace over a sticker takes the whole sticker: half a token on
-                                // screen would be a bracket the reader never typed.
-                                val next = backspaceEmotionAware(draft, typed.text).let {
-                                    // The backend stores `left(body, 1000)`; pasting more than that
-                                    // would send a comment that silently loses its ending, so the
-                                    // field stops at the limit the counter is counting against.
-                                    if (it.length > COMMENT_MAX_LENGTH) it.take(COMMENT_MAX_LENGTH) else it
-                                }
+                                // screen would be a bracket the reader never typed. Nothing is cut
+                                // off at the end: a comment is as long as it was written.
+                                val next = backspaceEmotionAware(draft, typed.text)
                                 fieldValue = if (next == typed.text) {
                                     typed
                                 } else {
@@ -960,12 +949,35 @@ fun CommentComposer(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .focusRequester(focusRequester),
-                            // Same size as the line drawn under it, so the caret lands where the
-                            // words are; only the caret is visible.
-                            textStyle = TextStyle(fontSize = 13.sp, color = Color.Transparent),
+                                .focusRequester(focusRequester)
+                                // The stickers go under the field's own drawing, not over it: their
+                                // space has no glyph, so nothing of the field is hidden by them,
+                                // and the caret stays visible when it sits right before one.
+                                .drawBehind {
+                                    val laid = lineLayout ?: return@drawBehind
+                                    val shownLength = laid.layoutInput.text.length
+                                    display.cells.forEachIndexed { cellIndex, cell ->
+                                        val painter = stickers.getOrNull(cellIndex)
+                                            ?: return@forEachIndexed
+                                        if (cell.index >= shownLength) return@forEachIndexed
+                                        val box = laid.getBoundingBox(cell.index)
+                                        val side = minOf(box.width, box.height)
+                                        if (side <= 0f) return@forEachIndexed
+                                        translate(
+                                            left = box.left + (box.width - side) / 2f,
+                                            top = box.top + (box.height - side) / 2f,
+                                        ) {
+                                            with(painter) { draw(size = Size(side, side)) }
+                                        }
+                                    }
+                                },
+                            // The body's own words are the field's own text; only the stickers are
+                            // substitutes, and their space draws nothing.
+                            textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
                             cursorBrush = SolidColor(colors.primary),
                             singleLine = true,
+                            visualTransformation = remember(display) { EmotionFieldTransformation(display) },
+                            onTextLayout = { lineLayout = it },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                             keyboardActions = KeyboardActions(onSend = { onSend() }),
                         )
@@ -1051,19 +1063,8 @@ fun CommentComposer(
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
-                // The limit, only once it is close enough to matter: a counter that is always
-                // there is noise on a bar people type two words into. Past the limit it turns
-                // red, because the backend would otherwise keep the first 1000 characters and
-                // drop the rest without a word.
-                if (draft.length >= COMMENT_LENGTH_HINT_FROM) {
-                    val left = commentCharactersLeft(draft.length)
-                    Text(
-                        text = if (left > 0) "还能写 $left 字" else "已经到 ${COMMENT_MAX_LENGTH} 字上限",
-                        fontSize = 10.sp,
-                        color = if (left > 0) colors.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 3.dp),
-                    )
-                }
+                // No counter and no ceiling: the field keeps every character that was typed, and
+                // the backend stores the comment whole.
             }
 
                 // Below the field, never over it: the panel is a second row of the same stack, so
