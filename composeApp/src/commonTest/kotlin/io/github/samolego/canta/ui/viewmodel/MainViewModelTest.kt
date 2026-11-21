@@ -81,8 +81,10 @@ class MainViewModelTest {
     }
 
     private suspend fun mainViewModel(
-        loadRules: suspend () -> SafetyRules = { SafetyRules(SafetyRuleSet()) },
         history: OperationLogStore? = null,
+        // Last, so the trailing-lambda form the tests use (`mainViewModel { rules(...) }`) keeps
+        // naming the rules rather than whatever was added to the constructor this week.
+        loadRules: suspend () -> SafetyRules = { SafetyRules(SafetyRuleSet()) },
     ): Pair<MainViewModel, AppListViewModel> {
         // The list owns the log, so it is also where the "delete at system start" switch is applied.
         val appList = AppListViewModel(
