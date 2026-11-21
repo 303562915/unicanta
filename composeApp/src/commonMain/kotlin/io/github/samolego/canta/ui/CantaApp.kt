@@ -48,6 +48,7 @@ import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.recommend.hasNewVotes
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.privilege_root_refused
+import io.github.samolego.canta.generated.resources.privilege_root_opened
 import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.generated.resources.preset_save_error
@@ -144,6 +145,20 @@ private const val STELLAR_PACKAGE = "roro.stellar.manager"
 
 /** The upstream manager, for installs that already run plain Shizuku. */
 private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+
+/**
+ * The root managers whose own screen has to be visited to change an answer. Kept next to the
+ * names detection uses in `PrivilegeChain`: a grant lives in that app, not in an API Canta can
+ * call, so the best this side can do is open it.
+ */
+private val ROOT_MANAGER_PACKAGES = listOf(
+    "com.topjohnwu.magisk",
+    "io.github.vvb2060.magisk",
+    "io.github.huskydg.magisk",
+    "me.weishu.kernelsu",
+    "com.rifsxd.ksunext",
+    "me.bmax.apatch",
+)
 
 /** The app's root composable, shared by the Android, desktop and web entry points. */
 @Composable
@@ -571,6 +586,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 // a broken button, while the fix (allow it in the manager, or the phone is not
                 // rooted) is somewhere else entirely.
                 val privilegeRefused = stringResource(Res.string.privilege_root_refused)
+                val privilegeOpened = stringResource(Res.string.privilege_root_opened)
                 LaunchedEffect(showPrivilegeChooser) {
                     if (showPrivilegeChooser) privilegeChoices = handler.privilegeChoices()
                 }
@@ -588,10 +604,14 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                             showPrivilegeChooser = false
                             coroutineScope.launch {
                                 val granted = handler.authorize(PrivilegeKind.ROOT)
-                                // A press that changes nothing on screen reads as a broken button,
-                                // while the fix (allow it in the manager's Superuser list, or the
-                                // phone is not rooted) is somewhere else entirely.
-                                if (!granted) platform.showMessage(privilegeRefused)
+                                if (!granted) {
+                                    // The grant belongs to the manager, and it has no API to be
+                                    // called into: opening its screen is the only way to help. The
+                                    // message says which of the two happened, so "nothing changed"
+                                    // never has to be guessed at.
+                                    val opened = ROOT_MANAGER_PACKAGES.any { platform.openApp(it) }
+                                    platform.showMessage(if (opened) privilegeOpened else privilegeRefused)
+                                }
                                 privilegeChoices = handler.privilegeChoices()
                                 appListViewModel.loadApps()
                             }
