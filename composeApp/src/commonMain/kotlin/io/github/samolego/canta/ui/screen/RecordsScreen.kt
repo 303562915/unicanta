@@ -215,7 +215,9 @@ private fun ClearAfterBootSwitch(checked: Boolean, onCheckedChange: (Boolean) ->
  */
 private enum class RecordFilter(val label: String) {
     ALL("全部"),
-    INSTALL("安装"),
+
+    /** The pill says 恢复, not 安装: the app is put back the way it was, not installed anew. */
+    INSTALL("恢复"),
     UNINSTALL("卸载"),
     DISABLE("停用");
 
