@@ -103,4 +103,59 @@ class CommunityInboxFeedTest {
         assertEquals(InboxKind.REPLY, InboxKind.of("something_new"))
         assertEquals(InboxKind.PLAN_HEART, InboxKind.of("plan_heart"))
     }
+
+    // ---------------------------------------------------------------- what reached the screen
+
+    private fun at(kind: InboxKind, id: Long, createdAt: String) = InboxItem(
+        kind = kind,
+        id = id,
+        target = "7",
+        body = "x",
+        createdAt = createdAt,
+    )
+
+    @Test
+    fun theNewestRowOfEachKindIsWhatWasSeen() {
+        // A page of the merged feed is the evidence for "this tab was read up to here": the newest
+        // row of that kind on it, and nothing else.
+        val page = listOf(
+            at(InboxKind.REPLY, 12, "2026-11-20T10:00:00.000000Z"),
+            at(InboxKind.REPLY, 9, "2026-11-20T09:00:00.000000Z"),
+            at(InboxKind.COMMENT_HEART, 8, "2026-11-20T11:00:00.000000Z"),
+        )
+        val seen = page.newestPerKind()
+        assertEquals("2026-11-20T10:00:00.000000Z", seen[InboxKind.REPLY])
+        assertEquals("2026-11-20T11:00:00.000000Z", seen[InboxKind.COMMENT_HEART])
+        // The tabs that had no rows on this page have no position: they were not shown, so they were
+        // not read.
+        assertFalse(seen.containsKey(InboxKind.PLAN_HEART))
+        assertFalse(seen.containsKey(InboxKind.PLAN_COMMENT))
+    }
+
+    @Test
+    fun aRowWithoutAStampIsNotEvidence() {
+        // A deployment that sends no `created_at` must not have a row counted as read: a guessed
+        // instant would put news that never appeared on screen below the cursor.
+        val seen = listOf(at(InboxKind.REPLY, 12, "")).newestPerKind()
+        assertTrue(seen.isEmpty())
+        assertEquals(emptySet<InboxKind>(), listOf(at(InboxKind.REPLY, 12, "12")).newestPerKind().keys)
+    }
+
+    @Test
+    fun mergingNeverGoesBackwards() {
+        // The evidence grows by pages: an older entry never replaces a newer one, because the
+        // position it feeds is forward-only.
+        val first = listOf(at(InboxKind.REPLY, 12, "2026-11-20T10:00:00.000000Z")).newestPerKind()
+        val next = listOf(at(InboxKind.REPLY, 13, "2026-11-20T09:00:00.000000Z")).newestPerKind()
+        val merged = mergeNewest(first, next)
+        assertEquals("2026-11-20T10:00:00.000000Z", merged[InboxKind.REPLY], "an older row pulled the tab back")
+
+        val newer = listOf(at(InboxKind.REPLY, 14, "2026-11-20T11:00:00.000000Z")).newestPerKind()
+        assertEquals("2026-11-20T11:00:00.000000Z", mergeNewest(merged, newer)[InboxKind.REPLY])
+        // A kind the first page never had is added, not dropped.
+        assertEquals(
+            "2026-11-20T11:00:00.000000Z",
+            mergeNewest(first, listOf(at(InboxKind.PLAN_HEART, 5, "2026-11-20T11:00:00.000000Z")).newestPerKind())[InboxKind.PLAN_HEART],
+        )
+    }
 }

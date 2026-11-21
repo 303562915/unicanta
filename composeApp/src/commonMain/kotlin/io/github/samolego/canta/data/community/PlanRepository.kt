@@ -237,6 +237,23 @@ class PlanRepository(
     var lastFailureWasNetwork: Boolean = false
         private set
 
+    /**
+     * The newest row of each kind this install was actually shown by [inboxPage], keyed by kind.
+     *
+     * The inbox is four sources merged into one stream, and the page hands the whole stream to a
+     * list that filters it in place: switching tabs makes no call and reports nothing, so "this tab
+     * was opened" does not exist as a signal here. What does exist is the rows that reached the
+     * screen — and that is the honest evidence for moving a tab's read position. A kind whose rows
+     * were served has been seen; a kind that still has news below the first page has not.
+     *
+     * Only ever grows, and only ever forwards: an old entry is behind the stored cursor and does
+     * nothing. Replaced wholesale rather than mutated, so a concurrent read sees one consistent map.
+     */
+    private var servedSinceCount: Map<InboxKind, String> = emptyMap()
+
+    /** Which identity [servedSinceCount] belongs to: another account's rows are not evidence here. */
+    private var servedOwner: String = ""
+
     /** What one call to the backend came back as. */
     private sealed interface Call {
         class Ok(val text: String) : Call
@@ -1103,6 +1120,13 @@ class PlanRepository(
                 )
             }
         }.getOrElse { emptyList() }
+        // What was just handed over is what has been seen: remember the newest row of each kind, so
+        // that the count that follows this page can move exactly those tabs' read positions.
+        if (owner != servedOwner) {
+            servedSinceCount = emptyMap()
+            servedOwner = owner
+        }
+        servedSinceCount = mergeNewest(servedSinceCount, items.newestPerKind())
         return Page(items, hasMore = pageHasMore(items, perSource))
     }
 
@@ -1309,37 +1333,128 @@ class PlanRepository(
     }
 
     /**
-     * What is waiting for [owner] since [seenAt]: four counts, the newest comment id and the instant
-     * this answer was taken at, as one cheap call.
+     * What is waiting for [owner] since [seenAt]: four counts, the newest comment id and the four
+     * read positions this answer moved to, as one cheap call.
      *
-     * This is what the red dot is drawn from, and [seenAt] is what makes it go away: pass the
-     * previous answer's [InboxSummary.checkedAt] and every count comes back as "newer than that",
-     * which is 0 once the list has been read. Empty = everything ever, for an install that has never
-     * opened the inbox.
+     * This is what the red dot is drawn from, and it is counted **per tab**: [seenAt] is the four
+     * positions in encoded form ([InboxCursors.encode] — a plain instant still reads as all four, so
+     * an old stored value keeps working), and each count comes back as "newer than that tab's own
+     * position". Empty = everything ever, for a tab that has never been read.
      *
-     * An older backend has no `inbox_summary` at all, so this answers null there and the caller
-     * counts the only way that deployment supports — one page of [repliesToMePage], which is still
-     * bounded.
+     * [InboxSummary.checkedAt] carries the positions back in the same encoded form: the tabs whose
+     * rows were served by [inboxPage] have moved to those rows, the tabs that answered 0 have moved
+     * to the instant the backend counted at, and a tab that still has news the reader was not shown
+     * stays exactly where it was. That is how reading one tab stops clearing the others.
+     *
+     * An older backend has no per-kind function at all, so this falls back to `inbox_summary` there:
+     * four counts off one cursor, and all four positions move together — exactly today's behaviour.
      */
     suspend fun inboxSummary(owner: String, token: String = "", seenAt: String = ""): InboxSummary? {
         if (owner.isEmpty() && token.isEmpty()) return null
+        val held = InboxCursors.decode(seenAt)
+        val served = servedSinceCount
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_token", token)
-            put("p_seen_at", seenAt)
+            put("p_seen_reply", held[InboxKind.REPLY])
+            put("p_seen_plan_comment", held[InboxKind.PLAN_COMMENT])
+            put("p_seen_comment_heart", held[InboxKind.COMMENT_HEART])
+            put("p_seen_plan_heart", held[InboxKind.PLAN_HEART])
         }.toString()
-        val text = rpc("inbox_summary", body) ?: return null
-        return runCatching {
-            val o = json.parseToJsonElement(text).jsonObject
-            InboxSummary(
-                replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
-                planComments = o["plan_comments"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
-                commentHearts = o["comment_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
-                planHearts = o["plan_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
-                newestCommentId = o["newest_comment_id"]?.jsonPrimitive?.longOrNull ?: 0L,
-                checkedAt = o["checked_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            )
-        }.getOrNull()
+        rpc("inbox_summary_kinds", body)?.let { text ->
+            val (summary, next) = parseKindSummary(text, held, served) ?: return null
+            rememberCursors(owner, token, held, next)
+            return summary
+        }
+        if (!functionMissing) return null
+        // A deployment that predates the per-tab cursors has one function, one cursor. Asking it with
+        // the newest of the four is the closest thing to what that deployment used to do: it counted
+        // from the last instant this install had read to, and all four tabs went quiet at once.
+        val legacy = buildJsonObject {
+            put("p_owner", owner)
+            put("p_token", token)
+            put("p_seen_at", held.latest)
+        }.toString()
+        val legacyText = rpc("inbox_summary", legacy) ?: return null
+        return parseSummary(legacyText)
+    }
+
+    /** One answer of `inbox_summary_kinds`, with the positions the four tabs now stand at. */
+    private fun parseKindSummary(
+        text: String,
+        held: InboxCursors,
+        served: Map<InboxKind, String>,
+    ): Pair<InboxSummary, InboxCursors>? = runCatching {
+        val o = json.parseToJsonElement(text).jsonObject
+        val counts = mapOf(
+            InboxKind.REPLY to (o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0),
+            InboxKind.PLAN_COMMENT to (o["plan_comments"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0),
+            InboxKind.COMMENT_HEART to (o["comment_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0),
+            InboxKind.PLAN_HEART to (o["plan_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0),
+        )
+        // The backend answers the position it actually counted from, which may be the one it has
+        // stored for this identity rather than the one just sent — a reinstall gets the old phone's
+        // positions that way, without asking for them separately.
+        var base = held
+        (o["seen"] as? JsonObject)?.forEach { (name, value) ->
+            val kind = InboxKind.entries.firstOrNull { it.wire == name } ?: return@forEach
+            base = base.with(kind, value.jsonPrimitive.contentOrNull.orEmpty())
+        }
+        val next = base.afterCounting(counts, served, o["checked_at"]?.jsonPrimitive?.contentOrNull.orEmpty())
+        InboxSummary(
+            replies = counts.getValue(InboxKind.REPLY),
+            planComments = counts.getValue(InboxKind.PLAN_COMMENT),
+            commentHearts = counts.getValue(InboxKind.COMMENT_HEART),
+            planHearts = counts.getValue(InboxKind.PLAN_HEART),
+            newestCommentId = o["newest_comment_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            checkedAt = next.encode(),
+        ) to next
+    }.getOrNull()
+
+    /** One answer of the old `inbox_summary`: one cursor for the lot, as that deployment means it. */
+    private fun parseSummary(text: String): InboxSummary? = runCatching {
+        val o = json.parseToJsonElement(text).jsonObject
+        InboxSummary(
+            replies = o["replies"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            planComments = o["plan_comments"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            commentHearts = o["comment_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            planHearts = o["plan_hearts"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            newestCommentId = o["newest_comment_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            // All four at one instant: an old backend has nothing finer to say, and its old app
+            // cleared every tab at once anyway.
+            checkedAt = InboxCursors.of(o["checked_at"]?.jsonPrimitive?.contentOrNull.orEmpty()).encode(),
+        )
+    }.getOrNull()
+
+    /**
+     * Writes the tabs that moved back to the backend, so a reinstall on another phone starts where
+     * this one stopped instead of counting the whole history again.
+     *
+     * A failure here is not a failure of the count: the positions are already in the answer this
+     * call returned, the device keeps moving forward, and the next count writes them again. The
+     * error state is restored, because it belongs to the count the caller is about to read.
+     */
+    private suspend fun rememberCursors(
+        owner: String,
+        token: String,
+        before: InboxCursors,
+        after: InboxCursors,
+    ) {
+        val moved = after.movedFrom(before)
+        if (moved.isEmpty()) return
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_token", token)
+            InboxKind.entries.forEach { kind ->
+                val name = "p_seen_" + kind.wire
+                put(name, if (kind in moved) after[kind] else "")
+            }
+        }.toString()
+        val errorBefore = lastError
+        val networkBefore = lastFailureWasNetwork
+        runCatching { rpc("inbox_seen_mark", body) }
+        lastError = errorBefore
+        lastFailureWasNetwork = networkBefore
     }
 }
 

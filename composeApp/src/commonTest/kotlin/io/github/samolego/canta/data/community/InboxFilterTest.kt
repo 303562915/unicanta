@@ -78,4 +78,31 @@ class InboxFilterTest {
         assertTrue(!InboxFilter.REPLY.accepts(InboxKind.PLAN_COMMENT), "a plan comment is not a reply to me")
         assertTrue(InboxFilter.ALL.accepts(InboxKind.PLAN_HEART))
     }
+
+    @Test
+    fun everyGroupNamesTheKindsItHolds() {
+        // The bridge to the per-tab cursors: a tab reads the kinds it holds, and nothing else.
+        assertEquals(setOf(InboxKind.REPLY), InboxFilter.REPLY.kinds())
+        assertEquals(setOf(InboxKind.PLAN_COMMENT), InboxFilter.PLAN_COMMENT.kinds())
+        assertEquals(setOf(InboxKind.COMMENT_HEART, InboxKind.PLAN_HEART), InboxFilter.HEART.kinds())
+        assertEquals(InboxKind.entries.toSet(), InboxFilter.ALL.kinds())
+    }
+
+    @Test
+    fun theGroupsTogetherCoverEveryKindExactlyOnce() {
+        // Two tabs must not share a kind, or reading one would move the other's position; and no
+        // kind may be missing, or its news would have no cursor at all.
+        val named = InboxFilter.entries.filter { it != InboxFilter.ALL }.flatMap { it.kinds() }
+        assertEquals(named.size, named.toSet().size, "two tabs hold the same kind")
+        assertEquals(InboxKind.entries.toSet(), named.toSet(), "a kind belongs to no tab")
+    }
+
+    @Test
+    fun acceptingAndNamingAgreeForEveryKind() {
+        InboxFilter.entries.forEach { filter ->
+            InboxKind.entries.forEach { kind ->
+                assertEquals(kind in filter.kinds(), filter.accepts(kind), "$filter about $kind")
+            }
+        }
+    }
 }

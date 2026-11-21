@@ -53,10 +53,21 @@ private data class AppNotesBlob(
      */
     val lastSeenReplyId: Long = 0L,
     /**
-     * The instant the inbox was last opened, as the backend stamped it (`inbox_summary`'s
-     * `checked_at`). Every count comes back as "newer than this", so opening the list is what ends
-     * the news, and because the instant comes from the server a phone whose clock is behind still
-     * agrees with the rows. Empty until the inbox has been opened once.
+     * Where each of the four inbox tabs was last read, keyed by the backend's own kind name
+     * (`reply`, `plan_comment`, `comment_heart`, `plan_heart`) and valued with the instant the
+     * backend stamped. One cursor per tab is what keeps "read the replies" from clearing the
+     * hearts; see [InboxCursors].
+     *
+     * Empty on an install that has never opened the inbox, and on one that was upgraded from a
+     * build that only knew [inboxSeenAt] — [ensureLoaded] migrates that single value here.
+     */
+    val inboxSeenCursors: Map<String, String> = emptyMap(),
+    /**
+     * The old single cursor: one instant standing for the whole inbox.
+     *
+     * Nothing reads it any more — the four positions in [inboxSeenCursors] are the truth — but it is
+     * still written as the newest of the four, so an older build reading the same blob still keeps
+     * its red dot off instead of counting the whole history again.
      */
     val inboxSeenAt: String = "",
     /**
@@ -85,6 +96,7 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     private val _likedPlans = MutableStateFlow<Set<Long>>(emptySet())
     private val _packageVerdicts = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     private val _lastSeenReplyId = MutableStateFlow(0L)
+    private val _inboxSeenCursors = MutableStateFlow(InboxCursors.EMPTY)
     private val _inboxSeenAt = MutableStateFlow("")
     private val _commentDrafts = MutableStateFlow<Map<String, String>>(emptyMap())
 
@@ -107,7 +119,15 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     /** The newest reply this install has opened; see [markRepliesSeen]. */
     val lastSeenReplyId: StateFlow<Long> = _lastSeenReplyId.asStateFlow()
 
-    /** When the inbox was last opened, server stamped; see [markInboxSeen]. Empty = never. */
+    /** Where each of the four tabs was last read; see [markInboxSeen]. */
+    val inboxSeenCursors: StateFlow<InboxCursors> = _inboxSeenCursors.asStateFlow()
+
+    /**
+     * The four positions as one string, for the callers that only carry a cursor around: the inbox
+     * page hands it to `PlanRepository.inboxSummary` and gets the next one back as
+     * [InboxSummary.checkedAt]. Encoding and decoding are [InboxCursors.encode] / [InboxCursors.decode];
+     * empty means "never opened".
+     */
     val inboxSeenAt: StateFlow<String> = _inboxSeenAt.asStateFlow()
 
     /** Comments written but not sent, by target key; see [draftOf] and [setDraft]. */
@@ -126,7 +146,16 @@ class AppNoteStore(private val storage: AppBlobStorage) {
                 _likedPlans.value = blob.likedPlans.toSet()
                 _packageVerdicts.value = blob.packageVerdicts
                 _lastSeenReplyId.value = blob.lastSeenReplyId
-                _inboxSeenAt.value = blob.inboxSeenAt
+                // The four positions, or the single one an older build stored: that one instant is
+                // taken as "all four tabs were read up to here", which is exactly what it meant
+                // before the tabs were counted apart. Treating it as "nothing was read" instead
+                // would light the red dot with a year of news the reader had already seen.
+                _inboxSeenCursors.value = if (blob.inboxSeenCursors.isNotEmpty()) {
+                    InboxCursors.ofMap(blob.inboxSeenCursors)
+                } else {
+                    InboxCursors.decode(blob.inboxSeenAt)
+                }
+                _inboxSeenAt.value = _inboxSeenCursors.value.encode()
                 _commentDrafts.value = blob.commentDrafts
             }
         }
@@ -206,25 +235,62 @@ class AppNoteStore(private val storage: AppBlobStorage) {
     }
 
     /**
-     * Remembers that the inbox was opened at [at] — the instant the backend stamped when it counted
-     * the news, handed straight back to it on every later count.
+     * Remembers that the inbox was read up to the four positions in [at] — the encoded cursors the
+     * backend handed back (an [InboxSummary.checkedAt]).
      *
-     * It only ever moves forwards: the stamps are the backend's own UTC strings, so they compare in
-     * order, and a slow answer from an earlier visit must not un-read what arrived after it.
+     * Each tab moves on its own: a tab whose rows the reader was not shown keeps its position, and
+     * so keeps its mark. A plain instant — a value from a build that predates the four cursors, or
+     * a backend that only answers one — means all four tabs read up to that instant, which is what
+     * it meant before.
      *
-     * Answers whether the cursor actually moved. The red dot must only be cleared when it did: a
-     * backend that answers no `checked_at` leaves the cursor where it was, so counting again from
-     * nothing would put the same number straight back and the dot would blink.
+     * Every position only ever moves forwards: the stamps are the backend's own UTC strings, so they
+     * compare in order, and a slow answer from an earlier visit must not un-read what arrived after
+     * it.
+     *
+     * Answers whether the dot may be cleared on the device: true only when all four positions ended
+     * up at one and the same instant. That is the state the old single cursor was in, and the only
+     * one where clearing the whole dot is true; a tab left at an earlier instant means news nobody
+     * was shown, and the dot has to stay on for the next count to say how much. A backend that
+     * answers no `checked_at` leaves every position where it was, so this answers false and the dot
+     * does not blink.
      */
     suspend fun markInboxSeen(at: String): Boolean {
-        if (at.isEmpty()) return false
+        val incoming = InboxCursors.decode(at)
+        if (incoming.isBlank) return false
         ensureLoaded()
         return mutex.withLock {
-            if (at <= _inboxSeenAt.value) return@withLock false
-            _inboxSeenAt.value = at
-            persistLocked()
+            val before = _inboxSeenCursors.value
+            var after = before
+            InboxKind.entries.forEach { kind -> after = after.with(kind, incoming[kind]) }
+            if (after == before) return@withLock false
+            writeCursors(after)
+            after == InboxCursors.of(after.latest)
+        }
+    }
+
+    /**
+     * Remembers that one tab was read up to [at] — the position the backend echoed for that kind.
+     *
+     * This is the call a single tab makes when it is opened, and the one the per-tab marks are built
+     * on: the other tabs do not move. Only moves forwards, and answers whether it did.
+     */
+    suspend fun markInboxSeen(kind: InboxKind, at: String): Boolean {
+        if (!isStamp(at)) return false
+        ensureLoaded()
+        return mutex.withLock {
+            val before = _inboxSeenCursors.value
+            val after = before.with(kind, at)
+            if (after == before) return@withLock false
+            writeCursors(after)
             true
         }
+    }
+
+    /** Stores [cursors] as the four read positions, and keeps the single-cursor mirror in step. */
+    private suspend fun writeCursors(cursors: InboxCursors) {
+        _inboxSeenCursors.value = cursors
+        _inboxSeenAt.value = cursors.encode()
+        persistLocked()
     }
 
     /** What this install said about [pkg], or null when it never voted. */
@@ -261,7 +327,12 @@ class AppNoteStore(private val storage: AppBlobStorage) {
             likedPlans = _likedPlans.value.toList(),
             packageVerdicts = _packageVerdicts.value,
             lastSeenReplyId = _lastSeenReplyId.value,
-            inboxSeenAt = _inboxSeenAt.value,
+            // Only the tabs that have a position: an unread tab is an absent key, not an empty one.
+            inboxSeenCursors = InboxKind.entries.mapNotNull { kind ->
+                _inboxSeenCursors.value[kind].takeIf { it.isNotEmpty() }?.let { kind.wire to it }
+            }.toMap(),
+            // The single-cursor mirror an older build reads: the newest of the four.
+            inboxSeenAt = _inboxSeenCursors.value.latest,
             commentDrafts = _commentDrafts.value,
         )
         runCatching {
