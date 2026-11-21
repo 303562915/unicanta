@@ -270,6 +270,16 @@ kotlin {
                 withJvm()
                 withWasmJs()
             }
+            // Every target that is not the phone itself: desktop and web drive a *remote* device,
+            // so the pieces that only exist because of that pose no question on either. They used
+            // to sit in `adbMain`, which was the same set until Android joined it for the rooted
+            // shell — an `actual` there then collided with Android's own. Kept apart on purpose:
+            // "reaches a device over ADB" and "is not Android" are two different facts, and only
+            // the second one decides where these belong.
+            group("nonAndroid") {
+                withJvm()
+                withWasmJs()
+            }
         }
     }
 
