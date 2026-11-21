@@ -38,6 +38,13 @@ fun commentCharactersLeft(length: Int): Int = (COMMENT_MAX_LENGTH - length).coer
 const val NOTE_MAX_LENGTH: Int = 2000
 
 /**
+ * How many answers a thread shows the first time it is opened, and how many each later "展开更多"
+ * adds. Three is enough to judge whether the conversation is worth reading; ten is a page of it.
+ */
+const val FIRST_REPLY_BATCH: Int = 3
+const val NEXT_REPLY_BATCH: Int = 10
+
+/**
  * What kind of news one row of the inbox is.
  *
  * The list is one stream of four different things — somebody answered me, somebody wrote under the
@@ -253,7 +260,29 @@ fun List<PlanComment>.updatedComment(id: Long, transform: (PlanComment) -> PlanC
     if (id <= 0L) this else map { if (it.id == id) transform(it) else it }
 
 /** One comment and the answers it collected, in the order the backend served them. */
-data class CommentThread(val comment: PlanComment, val replies: List<PlanComment>)
+data class CommentThread(val comment: PlanComment, val replies: List<PlanComment>) {
+
+    /**
+     * Who an answer is aimed at, for the grey arrow that marks a reply to a reply — or empty when
+     * the answer is a direct answer to the comment that started the thread.
+     *
+     * A direct answer needs no marker: it sits under the comment it answers and the indentation says
+     * as much. An answer to one of the *other* answers is the case that has to be spelled out,
+     * because otherwise it reads as if it were answering the starter.
+     */
+    fun markerFor(answer: PlanComment): String {
+        if (answer.replyTo == comment.id) return ""
+        // Zero means an older backend that never sent parent ids: every answer is a direct one.
+        if (answer.replyTo <= 0L) return ""
+        return replies.firstOrNull { it.id == answer.replyTo }?.author.orEmpty()
+    }
+
+    /** The answers this thread shows before anyone asks for more. */
+    val firstBatch: Int get() = FIRST_REPLY_BATCH
+
+    /** The count to show after one more "展开更多" tap, from [shown] currently visible. */
+    fun nextBatch(shown: Int): Int = (shown + NEXT_REPLY_BATCH).coerceAtMost(replies.size)
+}
 
 /**
  * Groups a flat comment list into threads: the comments that start a conversation, each with its

@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -98,6 +99,15 @@ private val CANDIDATE_ICON = 28.dp
 
 /** How much of the window the sheet asks for: it is meant to be a page, not a popup. */
 private const val SHEET_HEIGHT_FRACTION: Float = 0.92f
+
+/**
+ * The shorthand names these sets already go by, offered as one-tap titles.
+ *
+ * They are words people use for the same idea — "极简" is not a different plan from "干净" — so
+ * this is a naming shortcut, not a set of built-in plans: the packages are still whatever the
+ * uploader picked, and the title is the only thing a tap writes.
+ */
+private val PLAN_NAME_PRESETS = listOf("极简", "省电", "游戏", "长辈机", "干净", "日常")
 
 /**
  * Whether the batch on screen may be published, as the three colours the sheet draws.
@@ -291,6 +301,40 @@ fun UploadPlanDialog(
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                            // One tap names the plan: the same handful of shorthand words people
+                            // already use for these sets ("极简"、"省电"), so a title takes a tap
+                            // instead of typing on a phone keyboard.
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                PLAN_NAME_PRESETS.forEach { preset ->
+                                    val picked = title.trim() == preset
+                                    Text(
+                                        text = preset,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (picked) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (picked) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                                }
+                                            )
+                                            .clickable { title = if (picked) "" else preset }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    )
+                                }
+                            }
                         }
                         item("note") {
                             OutlinedTextField(

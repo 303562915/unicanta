@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.COMMENT_MAX_LENGTH
 import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.CommentThread
+import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
 import io.github.samolego.canta.data.community.commentCharactersLeft
 import io.github.samolego.canta.data.community.PlanComment
 import kotlin.math.absoluteValue
@@ -123,13 +125,20 @@ private val TAG_HEIGHT = 16.dp
  * out like: the name is small and grey, the comment itself is the size of body text, and everything
  * that is not the comment — the phone it was written on, the date, "回复" — is smaller and quieter
  * than the comment it stands under.
+ *
+ * Spelled as the raw numbers first and turned into `sp` below, because [EmotionText] draws a
+ * comment's text from integers (so a sticker can be measured against the same line height) and the
+ * two must not drift apart.
  */
-private val NAME_SIZE = 13.sp
-private val NAME_LINE = 17.sp
-private val BODY_SIZE = 15.sp
-private val BODY_LINE = 21.sp
-private val META_SIZE = 11.sp
-private val META_LINE = 14.sp
+private const val NAME_SP = 13
+private const val BODY_SP = 15
+private const val META_SP = 11
+
+private val NAME_SIZE = NAME_SP.sp
+private val NAME_LINE = (NAME_SP + 4).sp
+private val BODY_LINE = (BODY_SP + 6).sp
+private val META_SIZE = META_SP.sp
+private val META_LINE = (META_SP + 3).sp
 private val ACTION_SIZE = 12.sp
 
 /** Where a thread's own lines start: the 12dp gutter, the 36dp avatar and the 9dp gap after it. */
@@ -137,6 +146,12 @@ private val THREAD_TEXT_INSET = 57.dp
 
 /** Where a reply's text starts: the 48dp indent, its 26dp avatar and the 9dp gap after it. */
 private val REPLY_TEXT_INSET = 83.dp
+
+/**
+ * How many answers a thread shows the first time it is opened, and how many each later "展开更多"
+ * adds: three is enough to see whether the conversation is worth reading, ten is a page of it.
+ */
+
 
 /** The stable colour of [name]'s avatar. A hashCode can be negative or Int.MIN_VALUE: take the long. */
 fun avatarColorOf(name: String): Color {
@@ -253,6 +268,10 @@ fun LazyListScope.commentThreads(
     authorName: String = "",
     expanded: Set<Long> = emptySet(),
     onToggleThread: (Long) -> Unit = {},
+    /** How many answers each open thread currently shows; see [FIRST_REPLY_BATCH]. */
+    shownReplies: Map<Long, Int> = emptyMap(),
+    /** Asks for the next batch of one thread's answers. */
+    onShowMoreReplies: (Long) -> Unit = {},
     onLike: (PlanComment) -> Unit = {},
     hidden: Set<Long> = emptySet(),
     onHide: (Long) -> Unit = {},
@@ -263,7 +282,10 @@ fun LazyListScope.commentThreads(
         val starterHidden = hideKey(starter, key) in hidden
         // A folded first-level comment conceals its answers until it is expanded again.
         val open = thread.replies.isEmpty() || key in expanded
-        val shown = if (open && !starterHidden) thread.replies.withIndex() else emptyList()
+        val wanted = shownReplies[key] ?: FIRST_REPLY_BATCH
+        val visible = thread.replies.take(wanted)
+        val remaining = thread.replies.size - visible.size
+        val shown = if (open && !starterHidden) visible.withIndex() else emptyList()
         item(key = "comment-${starter.id}-$index") {
             CommentRow(
                 comment = starter,
@@ -282,7 +304,9 @@ fun LazyListScope.commentThreads(
                     comment = answer,
                     me = me,
                     byAuthor = isPlanAuthor(answer, authorId, authorName),
-                    replyToName = starter.author,
+                    // Only an answer aimed at another answer names anyone: a direct answer to the
+                    // first-level comment needs no marker at all.
+                    replyToName = thread.markerFor(answer),
                     indented = true,
                     onReply = onReply,
                     onDelete = onDelete,
@@ -293,25 +317,43 @@ fun LazyListScope.commentThreads(
             }
         }
         if (thread.replies.isNotEmpty() && !starterHidden) {
-            item(key = "thread-more-$key") {
-                ThreadToggle(
-                    expanded = open,
-                    count = thread.replies.size,
-                    onClick = { onToggleThread(key) },
-                )
+            when {
+                // Closed: one line that opens the first batch.
+                !open -> item(key = "thread-more-$key") {
+                    ThreadToggle(
+                        label = "展开 ${thread.replies.size} 条回复",
+                        up = false,
+                        onClick = { onToggleThread(key) },
+                    )
+                }
+                // Open, with more behind it: the same line, counting only what is still hidden.
+                remaining > 0 -> item(key = "thread-more-$key") {
+                    ThreadToggle(
+                        label = "展开更多 $remaining 条",
+                        up = false,
+                        onClick = { onShowMoreReplies(key) },
+                    )
+                }
+            }
+            if (open) {
+                item(key = "thread-less-$key") {
+                    ThreadToggle(label = "收起", up = true, onClick = { onToggleThread(key) })
+                }
             }
         }
     }
 }
 
-/** "展开 5 条回复" / "收起" under a thread: the one line that shows or hides its answers. */
+/** "展开 5 条回复" / "展开更多 10 条" / "收起": the one line that moves a thread along. */
 @Composable
-private fun ThreadToggle(expanded: Boolean, count: Int, onClick: () -> Unit) {
+private fun ThreadToggle(label: String, up: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = REPLY_TEXT_INSET, end = 12.dp, top = 1.dp, bottom = 5.dp),
+            // Lined up with the comment above it, not with that comment's own answers: the line is
+            // about the thread, so it starts where the thread's text does.
+            .padding(start = THREAD_TEXT_INSET, end = 12.dp, top = 1.dp, bottom = 5.dp),
     ) {
         Row(
             modifier = Modifier
@@ -321,15 +363,15 @@ private fun ThreadToggle(expanded: Boolean, count: Int, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (expanded) "—— 收起" else "—— 展开 $count 条回复",
-                fontSize = 11.sp,
-                lineHeight = 14.sp,
+                text = "—— $label",
+                fontSize = META_SIZE,
+                lineHeight = META_LINE,
                 fontWeight = FontWeight.Medium,
                 color = colors.outline,
             )
             Spacer(Modifier.width(1.dp))
             Icon(
-                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                imageVector = if (up) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = null,
                 modifier = Modifier.size(14.dp),
                 tint = colors.outline,
@@ -528,11 +570,13 @@ fun CommentRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = comment.author.ifEmpty { "匿名" },
-                    fontSize = 11.sp,
+                    // The name is the one step below the comment itself: grey, and quiet enough that
+                    // the text under it is what the eye lands on.
+                    fontSize = NAME_SIZE,
                     // The line height is given, not inherited: the ambient body style would leave a
                     // 20sp-tall line box around 11sp type, which is what made the badges beside it
                     // look oversized.
-                    lineHeight = 14.sp,
+                    lineHeight = NAME_LINE,
                     fontWeight = FontWeight.Medium,
                     color = colors.onSurfaceVariant,
                     maxLines = 1,
@@ -552,8 +596,8 @@ fun CommentRow(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = comment.deviceLabel,
-                        fontSize = 9.sp,
-                        lineHeight = 12.sp,
+                        fontSize = META_SIZE,
+                        lineHeight = META_LINE,
                         color = colors.outline,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -570,12 +614,23 @@ fun CommentRow(
                 exit = shrinkVertically() + fadeOut(),
             ) {
                 Column {
-                    Row(modifier = Modifier.padding(top = 3.dp)) {
+                    Row(modifier = Modifier.padding(top = 3.dp), verticalAlignment = Alignment.Top) {
                         if (replyToName.isNotEmpty()) {
+                            // A grey right-pointing triangle, then whose comment this answers. Not
+                            // an "@": this row is an answer to another answer, and the arrow says
+                            // "this line is aimed at that person" without spelling out a prefix.
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = colors.outline,
+                                modifier = Modifier
+                                    .padding(top = 4.dp, end = 2.dp)
+                                    .size(9.dp),
+                            )
                             Text(
-                                text = "回复 @$replyToName：",
-                                fontSize = 13.sp,
-                                lineHeight = 19.sp,
+                                text = "$replyToName ",
+                                fontSize = NAME_SIZE,
+                                lineHeight = BODY_LINE,
                                 color = colors.onSurfaceVariant,
                             )
                         }
@@ -583,8 +638,8 @@ fun CommentRow(
                         // renderer puts the sticker back where it was typed, in the same paragraph.
                         EmotionText(
                             body = comment.body,
-                            fontSize = 13,
-                            lineHeight = 19,
+                            fontSize = BODY_SP,
+                            lineHeight = BODY_LINE.value.toInt(),
                             color = colors.onSurface,
                         )
                     }
@@ -594,15 +649,15 @@ fun CommentRow(
                     ) {
                         Text(
                             text = relativeStamp(comment.createdAt),
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
+                            fontSize = META_SIZE,
+                            lineHeight = META_LINE,
                             color = colors.outline,
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
                             text = "回复",
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
+                            fontSize = META_SIZE,
+                            lineHeight = META_LINE,
                             color = colors.onSurfaceVariant,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
@@ -842,18 +897,19 @@ fun CommentComposer(
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The pill field: a quiet grey capsule, exactly 36dp tall whether it is empty
-                    // or carrying text — the placeholder and the text share the same line box, so
-                    // the field never grows or shrinks under the reader's thumb. The person being
-                    // answered names itself inside it once one was picked.
+                    // The field: a white capsule 54dp tall — half again the 36 it started at — with a
+                    // small radius rather than a full pill, so it reads as an input box and not as a
+                    // button. White, not the tinted container colour: a comment field is a sheet of
+                    // paper under the text, and the tint made it look like a disabled control.
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(colors.surfaceContainerHigh)
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.surface)
+                            .border(1.dp, colors.outlineVariant, RoundedCornerShape(10.dp))
                             .clickable { focusRequester.requestFocus() }
-                            .padding(horizontal = 14.dp),
+                            .padding(horizontal = 12.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         // The field shows the stickers, not the tokens: "[偷笑]" is how a comment
@@ -938,7 +994,7 @@ fun CommentComposer(
                         },
                         contentDescription = if (pickerOpen) "收起表情" else "表情",
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(40.dp)
                             .clip(RoundedCornerShape(50))
                             .clickable {
                                 if (pickerOpen) {
@@ -962,8 +1018,8 @@ fun CommentComposer(
                     // there is something to send, dim when there is not.
                     Box(
                         modifier = Modifier
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(if (canSend) colors.primary else colors.surfaceContainerHighest)
                             .clickable(enabled = canSend, onClick = onSend)
                             .padding(horizontal = 12.dp),

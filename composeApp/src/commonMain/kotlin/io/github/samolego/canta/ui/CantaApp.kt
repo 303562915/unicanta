@@ -296,18 +296,26 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
 
     // A share code pasted into the clipboard before the app was opened: read it once, then open
     // that plan as soon as the app itself is on screen (not over onboarding).
+    //
+    // "Once" is the whole point. The clipboard holds the code until something replaces it, so a
+    // read on every composition opens the same plan again and again — which is what "它识别很多次"
+    // was. The code that was acted on is remembered here, and reading again never re-opens it.
     var sharedPlan by remember { mutableStateOf<Long?>(null) }
-    var shareChecked by remember { mutableStateOf(false) }
+    /** The clipboard text already acted on: reading it again must not open the same plan twice. */
+    var consumedText by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        if (!shareChecked) {
-            shareChecked = true
-            sharedPlan = ShareCode.parse(platform.readClipboard())
-        }
+        val text = platform.readClipboard()
+        val found = ShareCode.parse(text)
+        // Compared against the whole text, not just the id: copying the same code again replaces
+        // the clipboard, and a person who does that expects it to open again. Nothing but a fresh
+        // copy changes this string, so a recomposition still opens nothing.
+        if (found != null && text != consumedText) sharedPlan = found
     }
     LaunchedEffect(sharedPlan, currentRoute) {
         val planId = sharedPlan ?: return@LaunchedEffect
         if (currentRoute != Screen.Main.route) return@LaunchedEffect
         sharedPlan = null
+        consumedText = platform.readClipboard()
         platform.showMessage("识别到分享码，正在打开方案 #$planId")
         navController.navigate(Screen.PlanDetail.routeFor(planId))
     }

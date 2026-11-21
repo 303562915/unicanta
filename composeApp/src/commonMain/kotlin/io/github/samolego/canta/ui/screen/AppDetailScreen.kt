@@ -61,6 +61,8 @@ import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PackageVotes
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
+import io.github.samolego.canta.data.community.NEXT_REPLY_BATCH
 import io.github.samolego.canta.data.community.threadOf
 import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.data.community.withAnchorFirst
@@ -167,6 +169,8 @@ fun AppDetailScreen(
     var sendError by remember { mutableStateOf<String?>(null) }
     /** Threads the reader opened with "展开 N 条回复"; the rest keep their answers folded. */
     var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
+    /** How many answers each open thread shows; absent means the first batch. */
+    var shownReplies by remember { mutableStateOf(mapOf<Long, Int>()) }
     /**
      * Comments this install put away with the broken heart: a personal hide, this session only —
      * nothing on the server changes, and the page forgets it on the way out.
@@ -413,7 +417,12 @@ fun AppDetailScreen(
                     threads = threads,
                     me = author,
                     expanded = expandedThreads,
+                    shownReplies = shownReplies,
+                    onShowMoreReplies = { key ->
+                        shownReplies = shownReplies + (key to ((shownReplies[key] ?: FIRST_REPLY_BATCH) + NEXT_REPLY_BATCH))
+                    },
                     onToggleThread = { key ->
+                        if (key in expandedThreads) shownReplies = shownReplies - key
                         expandedThreads =
                             if (key in expandedThreads) expandedThreads - key else expandedThreads + key
                     },

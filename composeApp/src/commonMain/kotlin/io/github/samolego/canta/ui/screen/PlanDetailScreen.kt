@@ -62,6 +62,8 @@ import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.DeviceCoverage
+import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
+import io.github.samolego.canta.data.community.NEXT_REPLY_BATCH
 import io.github.samolego.canta.data.community.NOTE_MAX_LENGTH
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
@@ -178,6 +180,8 @@ fun PlanDetailScreen(
     var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
     /** Threads the reader opened with "展开 N 条回复", by their own key; see [threadKey]. */
     var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
+    /** How many answers each open thread shows; absent means the first batch. */
+    var shownReplies by remember { mutableStateOf(mapOf<Long, Int>()) }
     /**
      * Comments this install put away with the broken heart: a personal hide, this session only —
      * nothing on the server changes, and the page forgets it on the way out.
@@ -478,7 +482,16 @@ fun PlanDetailScreen(
                     me = commentAuthor,
                     liked = liked,
                     expandedThreads = expandedThreads,
+                    shownReplies = shownReplies,
+                    // One more batch, ten at a time; `take` on the thread's own list is what keeps
+                    // the count from running past the end, so it needs no arithmetic here.
+                    onShowMoreReplies = { key ->
+                        shownReplies = shownReplies + (key to ((shownReplies[key] ?: FIRST_REPLY_BATCH) + NEXT_REPLY_BATCH))
+                    },
                     onToggleThread = { key ->
+                        // Closing drops the thread's place in the batches, so opening it again
+                        // starts from the first three rather than from wherever it was left.
+                        if (key in expandedThreads) shownReplies = shownReplies - key
                         expandedThreads = if (key in expandedThreads) expandedThreads - key else expandedThreads + key
                     },
                     onVote = vote,
@@ -580,6 +593,9 @@ private fun PlanDetailContent(
     /** The comment threads the reader opened; the rest keep their answers behind "展开 N 条回复". */
     expandedThreads: Set<Long> = emptySet(),
     onToggleThread: (Long) -> Unit = {},
+    /** How many answers each open thread shows; absent means the first batch. */
+    shownReplies: Map<Long, Int> = emptyMap(),
+    onShowMoreReplies: (Long) -> Unit = {},
     onVote: () -> Unit,
     onOpenApp: (String) -> Unit,
     onUsePlan: () -> Unit,
@@ -688,6 +704,8 @@ private fun PlanDetailContent(
             authorId = plan.owner,
             authorName = uploaderName,
             expanded = expandedThreads,
+            shownReplies = shownReplies,
+            onShowMoreReplies = onShowMoreReplies,
             onToggleThread = onToggleThread,
             onReply = onReply,
             onDelete = onDeleteComment,
