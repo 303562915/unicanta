@@ -338,6 +338,9 @@ kotlin {
             implementation(compose.desktop.currentOs)
             // Lays composables out for real, which is the only way to assert what the comment
             // composer's field does with a long line: it has to wrap and the box has to grow.
+            // Experimental on Compose's side; the whole suite is one desktopTest run, so opting in
+            // here is the narrowest place to say so.
+            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
             implementation(compose.uiTest)
         }
         wasmJsMain.dependencies {
