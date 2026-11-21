@@ -769,7 +769,7 @@ private fun AppGridCell(
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
