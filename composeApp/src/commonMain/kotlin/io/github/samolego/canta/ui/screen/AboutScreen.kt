@@ -198,9 +198,19 @@ fun AboutScreen(
         // A download runs in the background: say so in the theme's own colour before it starts.
         scope.launch { toast.showSnackbar(getString(Res.string.about_update_download_toast, version)) }
         updateJob = scope.launch {
-            val result = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
-                updateState = UpdateState.Downloading(version, percent)
-            }
+            // Not one shot: the rounds and the platform's resume keep a flapping proxy from
+            // turning into "download failed, tap it yourself again".
+            val result = downloadReleaseWithRetries(
+                platform = platform,
+                tag = release.tag,
+                buildNumber = release.buildNumber,
+                onRound = { attempt ->
+                    // Every round but the first follows a failed one: back to a spinner instead of
+                    // leaving an error sentence on screen while the next attempt is already running.
+                    if (attempt > 1) updateState = UpdateState.Downloading(version, DOWNLOAD_PROGRESS_UNKNOWN)
+                },
+                onProgress = { percent -> updateState = UpdateState.Downloading(version, percent) },
+            )
             downloadable = null
             // A failure carries its reason, so the page can name it and leave the browser as the
             // way out instead of only offering the same download again.

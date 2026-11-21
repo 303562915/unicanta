@@ -22,6 +22,13 @@ interface CantaPlatform {
     fun openUrl(url: String)
 
     /**
+     * Brings another app to the front by package name, false when this platform cannot or the app
+     * is not there. The privilege managers keep their service in their own app, so "start the
+     * service" or "allow Canta" is something only they can do: this is the door to them.
+     */
+    fun openApp(packageName: String): Boolean = false
+
+    /**
      * True when F-Droid put this build in place. Every store re-signs what it ships, so an APK from
      * the GitHub release can never replace an F-Droid install (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`,
      * or a silent no-op after the user confirms): the updater has to send people back to the store
@@ -97,6 +104,12 @@ interface CantaPlatform {
      * response, or a proxy that drops `Content-Length`. That case has to be shown as an
      * indeterminate spinner: computing a percentage against a size nobody announced is exactly how
      * a running download sits at 0% while it works.
+     *
+     * A platform downloader is expected to survive a transfer that dies: keep the bytes it already
+     * has, continue them with a `Range` request on the next attempt, and retry a few times by
+     * itself. The caller therefore treats one call as "get me this APK", not as "one HTTP request":
+     * asking the reader to tap download again after a dropped proxy node is the failure this
+     * contract exists to remove.
      *
      * Returns [UpdateDownload.Done] with the absolute path, or [UpdateDownload.Failed] with the
      * reason, so the caller can offer the download page instead of a dead end. The file has to

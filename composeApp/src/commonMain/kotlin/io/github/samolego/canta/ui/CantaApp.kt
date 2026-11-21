@@ -37,6 +37,8 @@ import io.github.samolego.canta.core.CantaAppDependencies
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceUser
+import io.github.samolego.canta.core.PrivilegeChoice
+import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.unreadSince
@@ -54,6 +56,7 @@ import io.github.samolego.canta.generated.resources.tab_tweaks
 import io.github.samolego.canta.ui.AppsTab
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
+import io.github.samolego.canta.ui.dialog.PrivilegeChooserDialog
 import io.github.samolego.canta.ui.component.BottomBarItem
 import io.github.samolego.canta.ui.component.CollapsingBottomBar
 import io.github.samolego.canta.ui.component.FloatingPillBar
@@ -76,7 +79,7 @@ import io.github.samolego.canta.ui.screen.UploaderProfileScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PROGRESS_UNKNOWN
-import io.github.samolego.canta.ui.screen.downloadRelease
+import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
 import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestRelease
@@ -111,6 +114,19 @@ private const val SECRET_TAPS = 6
 
 /** Taps after which the remaining count is hinted. */
 private const val SECRET_TAPS_HINT_AFTER = 3
+
+/**
+ * Where the manager behind Stellar/Shizuku comes from. The app points at the fork it recommends,
+ * and this is also the fallback for "open the manager": shared code has no way to launch another
+ * app by package name yet, so the page it is installed from is the closest thing available.
+ */
+private const val STELLAR_URL = "https://github.com/roro2239/Stellar/releases"
+
+/** The manager app that holds the Shizuku service; Stellar is the fork this build recommends. */
+private const val STELLAR_PACKAGE = "roro.stellar.manager"
+
+/** The upstream manager, for installs that already run plain Shizuku. */
+private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
 /** The app's root composable, shared by the Android, desktop and web entry points. */
 @Composable
@@ -199,9 +215,15 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         coroutineScope.launch {
             snackbarHostState.showSnackbar(getString(Res.string.about_update_download_toast, label))
         }
-        val result = downloadRelease(platform, release.tag, release.buildNumber) { percent ->
-            autoUpdate = UpdateState.Downloading(label, percent)
-        }
+        val result = downloadReleaseWithRetries(
+            platform = platform,
+            tag = release.tag,
+            buildNumber = release.buildNumber,
+            onRound = { attempt ->
+                if (attempt > 1) autoUpdate = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
+            },
+            onProgress = { percent -> autoUpdate = UpdateState.Downloading(label, percent) },
+        )
         // A failed start-up download is dropped in silence: the about page is where a failure is
         // named and where the download page is offered as the way out.
         autoUpdate = when (result) {
@@ -437,6 +459,48 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 val fakeScores by appListViewModel.fakeScoresEnabled.collectAsStateWithLifecycle()
                 var deviceUsers by remember { mutableStateOf(emptyList<DeviceUser>()) }
                 var selectedUserId by remember { mutableStateOf(handler.selectedUserId) }
+                // The chooser's own list, read when it opens and again after every action in it:
+                // each action ends in another app (the root manager's prompt, Stellar's service),
+                // so nothing here changes until the user comes back from it.
+                var showPrivilegeChooser by remember { mutableStateOf(false) }
+                var privilegeChoices by remember { mutableStateOf(emptyList<PrivilegeChoice>()) }
+                val reloadPrivilegeChoices: () -> Unit = {
+                    coroutineScope.launch { privilegeChoices = handler.privilegeChoices() }
+                }
+                LaunchedEffect(showPrivilegeChooser) {
+                    if (showPrivilegeChooser) privilegeChoices = handler.privilegeChoices()
+                }
+                if (showPrivilegeChooser) {
+                    PrivilegeChooserDialog(
+                        choices = privilegeChoices,
+                        onDismiss = { showPrivilegeChooser = false },
+                        onRefresh = reloadPrivilegeChoices,
+                        onGrantRoot = {
+                            // The root manager's own prompt is the grant, and only the handler can
+                            // raise it: the dialog gets out of its way and the answer is read back
+                            // once it has been given. `authorize`, not `requestAuthorization`, because
+                            // the chain settles once: a root grant given here has to take over from
+                            // Shizuku now, not wait for the next launch.
+                            showPrivilegeChooser = false
+                            coroutineScope.launch {
+                                handler.authorize(PrivilegeKind.ROOT)
+                                privilegeChoices = handler.privilegeChoices()
+                                appListViewModel.loadApps()
+                            }
+                        },
+                        onOpenManager = {
+                            // The manager's own app is the only place its service can be started or
+                            // Canta allowed, so open it; the releases page stays as the fallback for
+                            // a phone that has neither manager installed.
+                            val opened = platform.openApp(STELLAR_PACKAGE) || platform.openApp(SHIZUKU_PACKAGE)
+                            if (!opened) platform.openUrl(STELLAR_URL)
+                        },
+                        onDownload = { kind ->
+                            // Root has nothing to download; its row never offers this.
+                            if (kind == PrivilegeKind.SHIZUKU) platform.openUrl(STELLAR_URL)
+                        },
+                    )
+                }
                 LaunchedEffect(Unit) {
                     if (handler.isAuthorized) {
                         deviceUsers = handler.availableUsers()
@@ -455,6 +519,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     // leaving the user to guess between root and Stellar/Shizuku.
                     privilegeKind = handler.privilegeKind,
                     privilegeStatus = handler.privilegeStatus,
+                    // Tapping the row opens the chooser, so the user decides between root and
+                    // Stellar/Shizuku instead of being handed whichever the chain picked.
+                    privilegeChoices = privilegeChoices,
+                    onOpenPrivilegeChooser = { showPrivilegeChooser = true },
                     onUserSelected = { id ->
                         coroutineScope.launch {
                             handler.selectUser(id)

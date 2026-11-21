@@ -69,6 +69,7 @@ import io.github.samolego.canta.BuildFlags
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceUser
+import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.PrivilegeStatus
 import io.github.samolego.canta.generated.resources.Res
@@ -158,6 +159,14 @@ fun SettingsScreen(
      */
     privilegeKind: PrivilegeKind = PrivilegeKind.NONE,
     privilegeStatus: PrivilegeStatus = PrivilegeStatus.NOT_AVAILABLE,
+    /**
+     * The routes this phone can take, as the handler reports them. The row above is summarised from
+     * [privilegeKind]/[privilegeStatus]; this is what the chooser it opens will list, and it is
+     * already read by the host because the read suspends.
+     */
+    privilegeChoices: List<PrivilegeChoice> = emptyList(),
+    /** Opens the chooser that lets the user pick root or Stellar/Shizuku. */
+    onOpenPrivilegeChooser: () -> Unit = {},
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -235,7 +244,11 @@ fun SettingsScreen(
                         else -> stringResource(Res.string.onboarding_privilege_state_not_available)
                     },
                     icon = Icons.Default.Lock,
+                    // Tapping it is how the user switches routes: the chain picks one on its own,
+                    // and this is the only place that choice can be made by hand.
+                    onClick = onOpenPrivilegeChooser,
                     divider = false,
+                    trailing = { SettingsChevron() },
                 )
             }
             Spacer(modifier = Modifier.height(GroupGap))

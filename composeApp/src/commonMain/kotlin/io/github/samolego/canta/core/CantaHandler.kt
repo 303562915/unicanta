@@ -44,6 +44,19 @@ enum class PrivilegeStatus {
 }
 
 /**
+ * One privilege the phone could run Canta on, and how far it got.
+ *
+ * [status] and [installed] are separate because they lead to different fixes — install something
+ * that is not there, or grant something that is.
+ */
+data class PrivilegeChoice(
+    val kind: PrivilegeKind,
+    val status: PrivilegeStatus,
+    /** Installed at all: the manager app for Shizuku, the su binary for root. */
+    val installed: Boolean,
+)
+
+/**
  * OS-specific flavor of [DeviceConnectionFailure.AccessDenied], so the UI
  * can point at the real fix (udev rules on Linux, WinUSB driver on Windows)
  * instead of generic replug advice.
@@ -162,6 +175,16 @@ interface CantaHandler {
     /** State of the privileged runtime; only meaningful on Android (Shizuku). */
     val privilegeStatus: PrivilegeStatus
         get() = if (isAuthorized) PrivilegeStatus.ACTIVE else PrivilegeStatus.NOT_AVAILABLE
+
+    /**
+     * What this phone can actually offer right now, root first, so the settings page can let the
+     * user pick the privilege instead of being told which one the app guessed.
+     *
+     * Reports state and nothing else: it never raises a grant prompt, because looking at what is
+     * available is not the moment to ask for anything. Empty where there is nothing to pick from —
+     * the desktop and web builds reach a phone over a cable and have no runtime of their own.
+     */
+    suspend fun privilegeChoices(): List<PrivilegeChoice> = emptyList()
 
     /** Installed apps and apps uninstalled for the user (still on the device). */
     suspend fun loadApps(): List<AppInfo>
@@ -291,6 +314,15 @@ interface CantaHandler {
      * [DeviceDiscovery.None].
      */
     suspend fun requestAuthorization() {}
+
+    /**
+     * Asks [kind] for its grant and keeps working through it when the answer is yes.
+     *
+     * Needed because a handler made of several privileges decides once: a root grant given later,
+     * from the settings page, has to be able to win back over Shizuku instead of waiting for the
+     * next launch. False where the phone does not offer [kind], or where it said no.
+     */
+    suspend fun authorize(kind: PrivilegeKind): Boolean = false
 
     /** How the device is chosen; see [DeviceDiscovery]. */
     val deviceDiscovery: DeviceDiscovery

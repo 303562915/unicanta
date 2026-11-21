@@ -2,6 +2,7 @@ package io.github.samolego.canta.core
 
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.core.root.RootCantaHandler
+import io.github.samolego.canta.core.root.suBinaryPath
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.util.DeviceContext
@@ -63,6 +64,43 @@ class PrivilegeChain(
 
     override val privilegeStatus: PrivilegeStatus get() = active.privilegeStatus
 
+    /**
+     * Both routes this phone has, root first, so the settings page can offer the choice instead of
+     * showing what the chain happened to pick.
+     *
+     * Reads state only. Root's status comes from [RootCantaHandler.isAuthorized], which stays false
+     * until root has answered: calling [RootCantaHandler.prepare] here would put the root manager's
+     * prompt over the settings page merely because the user opened a list.
+     */
+    override suspend fun privilegeChoices(): List<PrivilegeChoice> {
+        val rootChoice = root?.let { handler ->
+            // Checked again rather than trusted from construction: root can be taken away (the
+            // manager was uninstalled, the ROM was updated) between two starts of this process.
+            val hasSu = suBinaryPath() != null
+            PrivilegeChoice(
+                kind = PrivilegeKind.ROOT,
+                status = when {
+                    !hasSu -> PrivilegeStatus.NOT_AVAILABLE
+                    handler.isAuthorized -> PrivilegeStatus.ACTIVE
+                    else -> PrivilegeStatus.NOT_AUTHORIZED
+                },
+                installed = hasSu,
+            )
+        }
+        val shizukuStatus = shizuku.privilegeStatus
+        val shizukuChoice = PrivilegeChoice(
+            kind = PrivilegeKind.SHIZUKU,
+            status = shizukuStatus,
+            // NOT_AVAILABLE is exactly the "neither manager package is on this phone" answer: that
+            // status reads the package list for it, and the two answers that skip that check (Sui
+            // granting Canta directly, and Canta already authorized) both mean a runtime is there.
+            installed = shizukuStatus != PrivilegeStatus.NOT_AVAILABLE,
+        )
+        // No root entry at all when the phone has no su binary: the chain is not even built with a
+        // root handler then, and a row offering something that does not exist would be a dead end.
+        return listOfNotNull(rootChoice, shizukuChoice)
+    }
+
     override suspend fun loadApps(): List<AppInfo> = picked().loadApps()
 
     override val appListRestricted: Boolean get() = active.appListRestricted
@@ -116,6 +154,38 @@ class PrivilegeChain(
 
     override suspend fun requestAuthorization() {
         picked().requestAuthorization()
+    }
+
+    /**
+     * Grants [kind] and moves the chain onto it when it answers, undoing the earlier "no".
+     *
+     * Without this, a phone that settled on Shizuku at startup would keep using it even after the
+     * user granted root from the picker: the decision is made once per process, on purpose, and a
+     * grant has to be the one thing that may overturn it.
+     */
+    override suspend fun authorize(kind: PrivilegeKind): Boolean = when (kind) {
+        PrivilegeKind.ROOT -> {
+            val candidate = root ?: return false
+            val granted = candidate.prepare()
+            if (granted) {
+                settleLock.withLock {
+                    active = candidate
+                    settled = true
+                }
+            }
+            granted
+        }
+
+        PrivilegeKind.SHIZUKU -> {
+            settleLock.withLock {
+                active = shizuku
+                settled = true
+            }
+            shizuku.requestAuthorization()
+            shizuku.isAuthorized
+        }
+
+        PrivilegeKind.NONE -> false
     }
 
     override val deviceDiscovery: DeviceDiscovery get() = active.deviceDiscovery

@@ -45,6 +45,16 @@ private const val DEVELOPMENT_RELEASE_PAGE = "$UPDATE_REPO_URL/releases/tag/$DEV
 private const val CHECK_ATTEMPTS = 2
 private const val RETRY_DELAY_MILLIS = 1_200L
 
+/**
+ * How many rounds a download gets on top of the platform's own resume-and-retry. Each round picks
+ * up the bytes already on disk, so three rounds are three chances for a proxy to come back — not
+ * three downloads of the whole APK.
+ */
+private const val DOWNLOAD_ROUNDS = 3
+
+/** Between rounds: long enough for a proxy to reconnect, short enough not to look frozen. */
+private const val DOWNLOAD_ROUND_DELAY_MILLIS = 5_000L
+
 /** A request that takes longer than this is treated as a broken proxy, not as a slow server. */
 private const val CHECK_TIMEOUT_MILLIS = 12_000L
 
@@ -331,4 +341,35 @@ internal suspend fun downloadRelease(
         if (total > 0) ((received * 100) / total).toInt().coerceIn(0, 100)
         else DOWNLOAD_PROGRESS_UNKNOWN,
     )
+}
+
+/**
+ * [downloadRelease], repeated until the APK is whole: a transfer that dies must not turn into a
+ * person tapping the same button again.
+ *
+ * The platform downloader keeps the bytes it already has between failed attempts and resumes them
+ * with a `Range` request, so a round is not a second download of the whole file. [onRound] is
+ * called before every attempt, which is how the page goes back to "downloading" after a round that
+ * failed instead of leaving the failure on screen while the next round is already running.
+ */
+internal suspend fun downloadReleaseWithRetries(
+    platform: CantaPlatform,
+    tag: String,
+    buildNumber: Int = 0,
+    onRound: (attempt: Int) -> Unit = {},
+    onProgress: (Int) -> Unit,
+): UpdateDownload {
+    var result: UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNKNOWN)
+    for (attempt in 1..DOWNLOAD_ROUNDS) {
+        onRound(attempt)
+        result = downloadRelease(platform, tag, buildNumber, onProgress)
+        if (result is UpdateDownload.Done) return result
+        val failure = (result as? UpdateDownload.Failed)?.failure
+        // Waiting will not free up disk space, and it will not give a build a downloader.
+        if (failure == UpdateDownloadFailure.STORAGE || failure == UpdateDownloadFailure.UNSUPPORTED) {
+            return result
+        }
+        if (attempt < DOWNLOAD_ROUNDS) delay(DOWNLOAD_ROUND_DELAY_MILLIS)
+    }
+    return result
 }

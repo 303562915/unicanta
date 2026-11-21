@@ -32,11 +32,16 @@ import io.ktor.http.contentLength
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 import kotlin.system.exitProcess
 
 class AndroidCantaPlatform(
@@ -47,16 +52,38 @@ class AndroidCantaPlatform(
         private const val TAG = "AndroidCantaPlatform"
 
         /** How long a silent socket may stay open before the transfer is called stalled. */
-        private const val STALL_TIMEOUT_MILLIS = 30_000L
+        private const val STALL_TIMEOUT_MILLIS = 45_000L
 
         /** Reaching GitHub at all: DNS plus TLS plus one round trip, with room for a slow node. */
         private const val CONNECT_TIMEOUT_MILLIS = 20_000L
 
-        /** Ceiling for a whole APK over a proxy: slow is fine, never finishing is not. */
+        /**
+         * Ceiling for one resumed segment, not for the whole APK: a transfer that is cut is
+         * continued by the next attempt, so slow is fine and never finishing is not.
+         */
         private const val DOWNLOAD_TIMEOUT_MILLIS = 10 * 60 * 1000L
 
         /** Bytes per read, and the unit progress moves in when the server announces no size. */
         private const val DOWNLOAD_CHUNK_BYTES = 64 * 1024
+
+        /**
+         * How many times one APK is attempted before the page is told it failed. Every attempt
+         * after the first resumes from the bytes already on disk, so this is not "download it six
+         * times": a flaky proxy node costs a few seconds, not the whole file.
+         */
+        private const val DOWNLOAD_ATTEMPTS = 6
+
+        /** Back-off between attempts: 1.5 s, 3 s, 6 s, 12 s, 20 s. */
+        private const val RETRY_BASE_DELAY_MILLIS = 1_500L
+        private const val RETRY_MAX_DELAY_MILLIS = 20_000L
+
+        /**
+         * The two answer codes the resume depends on. They are compared as numbers, not through
+         * `HttpStatusCode` constants: over HTTP/2 the engine's value carries an empty reason
+         * phrase and never equals the constant, so the transfer would quietly start over.
+         */
+        private const val HTTP_PARTIAL_CONTENT = 206
+        private const val HTTP_RANGE_NOT_SATISFIABLE = 416
 
         /**
          * The installers whose builds cannot be replaced by this repo's APK: F-Droid and the
@@ -76,6 +103,13 @@ class AndroidCantaPlatform(
 
     /** Runs `pm install` as Shizuku; created on first update, not for every page. */
     private val shell by lazy { ShizukuShell(context) }
+
+    /**
+     * One update download at a time. The start-up check and the about page ask for the same APK,
+     * and both write the same partial file: without this, two writers would interleave into a
+     * file neither of them can finish. The second caller waits and then finds the finished APK.
+     */
+    private val updateDownload = Mutex()
 
     /** Attach the activity (from `onCreate`); used for biometric prompts. */
     fun attachActivity(activity: FragmentActivity) {
@@ -149,6 +183,18 @@ class AndroidCantaPlatform(
         }
         context.startActivity(intent)
     }
+
+    /**
+     * Opens the manager's own screen. [android.content.pm.PackageManager.getLaunchIntentForPackage]
+     * returns null for an installed app that has no launcher entry, which is the whole test here:
+     * nothing else about the package has to be known, and a missing app is a plain false.
+     */
+    override fun openApp(packageName: String): Boolean = runCatching {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            ?: return@runCatching false
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    }.getOrDefault(false)
 
     /**
      * Tries the app's own schemes before the web page. `startActivity` is the check: a scheme no
@@ -306,99 +352,264 @@ class AndroidCantaPlatform(
     }
 
     /**
-     * Downloads the APK into a unique file in the app's external files directory, streaming it to
-     * disk and counting the bytes itself.
+     * Downloads the APK into the app's external files directory, resuming wherever the last try
+     * stopped and retrying by itself until the file is whole.
      *
-     * Two things this deliberately does not do any more. It does not buffer the whole APK in a
-     * `ByteArray` (30 MB of heap for a file that belongs on disk), and it does not rely on the
-     * progress callback of the engine: a download whose length the server never announces, or a
-     * plugin that is not installed, leaves that callback silent — which reads as "0%" forever even
-     * though bytes are arriving. Counting what is written cannot lie.
+     * Three things this deliberately does not do. It does not buffer the whole APK in a
+     * `ByteArray` (30 MB of heap for a file that belongs on disk). It does not rely on the progress
+     * callback of the engine: a download whose length the server never announces, or a plugin that
+     * is not installed, leaves that callback silent — which reads as "0%" forever even though
+     * bytes are arriving; counting what is written cannot lie. And it no longer throws the bytes it
+     * already has away when a transfer dies: the partial file is named after the APK itself, the
+     * next attempt asks for `Range: bytes=<have>-`, and a dropped proxy node costs the seconds it
+     * takes to reconnect instead of the whole file.
      *
      * A transfer that stops moving fails instead of hanging: the socket timeout below is what turns
-     * a stalled proxy node into an answer the page can act on.
+     * a stalled node into an answer, and the answer is one more attempt rather than a dead end the
+     * reader has to clear by hand.
      */
     override suspend fun downloadUpdate(
         url: String,
         fileName: String,
         onProgress: (received: Long, total: Long) -> Unit,
+    ): UpdateDownload = updateDownload.withLock { downloadUpdateLocked(url, fileName, onProgress) }
+
+    /** The body of [downloadUpdate]; only ever runs while [updateDownload] is held. */
+    private suspend fun downloadUpdateLocked(
+        url: String,
+        fileName: String,
+        onProgress: (received: Long, total: Long) -> Unit,
     ): UpdateDownload = withContext(Dispatchers.IO) {
-        var target: File? = null
-        val client = HttpClient(OkHttp) {
-            install(HttpTimeout) {
-                connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS
-                socketTimeoutMillis = STALL_TIMEOUT_MILLIS
-                // A ceiling for the whole transfer, so a node that keeps the socket alive but
-                // never finishes cannot hold the update screen open indefinitely.
-                requestTimeoutMillis = DOWNLOAD_TIMEOUT_MILLIS
-            }
+        val directory = context.getExternalFilesDir("updates") ?: context.filesDir
+        if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
+            LogUtils.e(TAG, "Could not create ${directory.absolutePath}")
+            return@withContext UpdateDownload.Failed(UpdateDownloadFailure.STORAGE)
         }
+        // The first caller may already have fetched this release while the second one waited for
+        // the lock: the bytes are on disk, so there is nothing to download.
+        val existing = File(directory, fileName)
+        if (existing.isFile) {
+            if (isCompleteApk(existing)) {
+                val length = existing.length()
+                onProgress(length, length)
+                return@withContext UpdateDownload.Done(existing.absolutePath)
+            }
+            // A half-written or corrupted leftover would win the name in `uniqueUpdateFile` and be
+            // installed by mistake; the partial below is the one that gets resumed.
+            existing.delete()
+        }
+        // One release, one partial file: a download that gave up is picked up by the next attempt —
+        // in this process or after a restart — instead of starting the APK over from byte zero.
+        val partial = File(directory, "$fileName.part")
+        // A process killed between the last byte and the rename leaves a whole APK under the
+        // partial's name; that is a finished download, not something to fetch again.
+        if (partial.isFile && isCompleteApk(partial)) {
+            val landed = settle(partial, uniqueUpdateFile(directory, fileName))
+            val length = landed.length()
+            onProgress(length, length)
+            LogUtils.i(TAG, "Resumed a finished download at ${landed.absolutePath}")
+            return@withContext UpdateDownload.Done(landed.absolutePath)
+        }
+        val client = newDownloadClient()
+        var failure = UpdateDownloadFailure.UNKNOWN
+        // What the partial held before the last attempt: a file that ends without being an APK is
+        // kept as long as it is still growing (the next range request adds to it), and dropped once
+        // an attempt adds nothing, because resuming a file that never grows is a loop.
+        var previousLength = partial.length()
         try {
-            val directory = context.getExternalFilesDir("updates") ?: context.filesDir
-            if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
-                LogUtils.e(TAG, "Could not create ${directory.absolutePath}")
-                return@withContext UpdateDownload.Failed(UpdateDownloadFailure.STORAGE)
-            }
-            val downloaded = File.createTempFile("canta-update-", ".apk", directory)
-            target = downloaded
-
-            val written = client.prepareGet(url) {
-                header(HttpHeaders.UserAgent, "Canta-Android")
-            }.execute { response ->
-                val status = response.status.value
-                if (status !in 200..299) {
-                    throw DownloadFailure(UpdateDownloadFailure.NETWORK, "GitHub answered $status")
-                }
-                // 0 or less: no announced size, so the page shows movement, not a percentage.
-                val total = response.contentLength() ?: -1L
-                val channel = response.bodyAsChannel()
-                val buffer = ByteArray(DOWNLOAD_CHUNK_BYTES)
-                var received = 0L
-                var reported = -1L
-                downloaded.outputStream().use { out ->
-                    while (true) {
-                        val read = channel.readAvailable(buffer, 0, buffer.size)
-                        if (read == -1) break
-                        if (read == 0) continue
-                        out.write(buffer, 0, read)
-                        received += read
-                        // Report once per percent of an announced size, and once per chunk when
-                        // there is no size to divide by; a per-byte callback is just churn.
-                        val percent = if (total > 0) (received * 100) / total else received / DOWNLOAD_CHUNK_BYTES
-                        if (percent != reported) {
-                            reported = percent
-                            onProgress(received, total)
-                        }
+            for (attempt in 1..DOWNLOAD_ATTEMPTS) {
+                coroutineContext.ensureActive()
+                try {
+                    val written = transferOnce(client, url, partial, onProgress)
+                    coroutineContext.ensureActive()
+                    if (!isCompleteApk(partial)) {
+                        // A resumed file can be a good prefix with a bad tail: a proxy that
+                        // appended its own error page, a range answered from another revision.
+                        // Nothing that is not an APK may reach `pm install`.
+                        val length = partial.length()
+                        LogUtils.w(TAG, "Attempt $attempt from $url did not produce an APK at $length bytes")
+                        if (length <= previousLength) partial.delete()
+                        previousLength = length
+                        failure = UpdateDownloadFailure.NETWORK
+                    } else if (written > 0L) {
+                        val landed = settle(partial, uniqueUpdateFile(directory, fileName))
+                        // Partials of older releases are not this download's leftovers to keep: a
+                        // failed 4.1 download is dead weight once 4.2 is on disk.
+                        directory.listFiles { file -> file.name.endsWith(".part") && file != landed }
+                            ?.forEach { it.delete() }
+                        onProgress(written, written)
+                        LogUtils.i(TAG, "Downloaded $written bytes to ${landed.absolutePath}")
+                        return@withContext UpdateDownload.Done(landed.absolutePath)
+                    } else {
+                        LogUtils.e(TAG, "Downloaded an empty file from $url")
+                        partial.delete()
+                        failure = UpdateDownloadFailure.NETWORK
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failure = classifyDownloadFailure(e)
+                    LogUtils.w(TAG, "Attempt $attempt of $DOWNLOAD_ATTEMPTS failed for $url: $e")
+                    // A full disk or a build without a downloader will not get better by waiting,
+                    // and neither will a release GitHub says does not exist.
+                    val permanent = failure == UpdateDownloadFailure.STORAGE ||
+                        failure == UpdateDownloadFailure.UNSUPPORTED ||
+                        (e as? DownloadFailure)?.retryable == false
+                    if (permanent) {
+                        // A full disk is the one permanent failure whose bytes are worth keeping:
+                        // free some space and the next attempt continues where this one stopped.
+                        if (failure != UpdateDownloadFailure.STORAGE) partial.delete()
+                        return@withContext UpdateDownload.Failed(failure)
+                    }
+                    if (attempt < DOWNLOAD_ATTEMPTS) delay(retryDelayMillis(attempt))
                 }
-                received
             }
-
-            coroutineContext.ensureActive()
-            if (written <= 0L) {
-                downloaded.delete()
-                LogUtils.e(TAG, "Downloaded an empty file from $url")
-                return@withContext UpdateDownload.Failed(UpdateDownloadFailure.NETWORK)
-            }
-            onProgress(written, written)
-            LogUtils.i(TAG, "Downloaded $written bytes to ${downloaded.absolutePath}")
-            UpdateDownload.Done(downloaded.absolutePath)
-        } catch (e: CancellationException) {
-            target?.delete()
-            throw e
-        } catch (e: Exception) {
-            target?.delete()
-            LogUtils.e(TAG, "Could not download the update", e)
-            UpdateDownload.Failed(classifyDownloadFailure(e))
+            UpdateDownload.Failed(failure)
         } finally {
             client.close()
         }
     }
 
+    /** One HTTP client per download: the timeouts below belong to the transfer, not to the check. */
+    private fun newDownloadClient(): HttpClient = HttpClient(OkHttp) {
+        install(HttpTimeout) {
+            connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS
+            socketTimeoutMillis = STALL_TIMEOUT_MILLIS
+            // A ceiling for one segment, so a node that keeps the socket alive but never finishes
+            // cannot hold the update screen open indefinitely.
+            requestTimeoutMillis = DOWNLOAD_TIMEOUT_MILLIS
+        }
+    }
+
+    /**
+     * One transfer of [url] into [partial], continuing from whatever the file already holds.
+     *
+     * A server that answers 206 gets its bytes appended. A server that ignores the range (200) is
+     * honoured by truncating and starting over — gluing a second copy onto the first would produce
+     * a file twice as long that installs nowhere. 416 means the partial is already at or past the
+     * announced length, so it is dropped and the next attempt starts clean.
+     */
+    private suspend fun transferOnce(
+        client: HttpClient,
+        url: String,
+        partial: File,
+        onProgress: (received: Long, total: Long) -> Unit,
+    ): Long {
+        val have = if (partial.isFile) partial.length() else 0L
+        return client.prepareGet(url) {
+            header(HttpHeaders.UserAgent, "Canta-Android")
+            if (have > 0) header(HttpHeaders.Range, "bytes=$have-")
+        }.execute { response ->
+            val status = response.status
+            // Compared by number, never by `HttpStatusCode` equality: over HTTP/2 the status line
+            // carries no reason phrase, so the constant and the engine's value differ (the second
+            // is `HttpStatusCode(206, "")`) and an equality test would never match — the resume
+            // would silently be a full download again, and 416 would fall through as permanent.
+            if (status.value == HTTP_RANGE_NOT_SATISFIABLE) {
+                partial.delete()
+                throw DownloadFailure(UpdateDownloadFailure.NETWORK, "GitHub answered 416 for bytes=$have-")
+            }
+            if (status.value !in 200..299) {
+                throw DownloadFailure(
+                    failure = UpdateDownloadFailure.NETWORK,
+                    message = "GitHub answered ${status.value}",
+                    // 408 and 429 are the two 4xx answers that mean "come back later"; 403 and 404
+                    // will answer the same forever.
+                    retryable = status.value !in 400..499 ||
+                        status.value == 408 || status.value == 429,
+                )
+            }
+            // 0 or less: no announced size, so the page shows movement, not a percentage.
+            val announced = response.contentLength() ?: -1L
+            // Where the server says this segment starts. A proxy is free to answer a range from an
+            // offset nobody asked for, so the number is checked; a server that omits the header is
+            // taken at its word.
+            val rangeStart = response.headers[HttpHeaders.ContentRange]
+                ?.substringAfter("bytes ", "")
+                ?.substringBefore('-')
+                ?.trim()
+                ?.toLongOrNull()
+            val resumed = have > 0 && status.value == HTTP_PARTIAL_CONTENT &&
+                (rangeStart == null || rangeStart == have)
+            // A 206 announces what is left, not the size of the file: the page wants the whole count.
+            val total = when {
+                announced <= 0 -> -1L
+                resumed -> have + announced
+                else -> announced
+            }
+            val channel = response.bodyAsChannel()
+            val buffer = ByteArray(DOWNLOAD_CHUNK_BYTES)
+            var received = if (resumed) have else 0L
+            var reported = -1L
+            FileOutputStream(partial, resumed).use { out ->
+                // Say where the transfer starts before the first byte: after a retry the page keeps
+                // the percentage it had instead of falling back to a spinner.
+                onProgress(received, total)
+                while (true) {
+                    coroutineContext.ensureActive()
+                    val read = channel.readAvailable(buffer, 0, buffer.size)
+                    if (read == -1) break
+                    if (read == 0) continue
+                    out.write(buffer, 0, read)
+                    received += read
+                    // Report once per percent of an announced size, and once per chunk when there
+                    // is no size to divide by; a per-byte callback is just churn.
+                    val step = if (total > 0) (received * 100) / total else received / DOWNLOAD_CHUNK_BYTES
+                    if (step != reported) {
+                        reported = step
+                        onProgress(received, total)
+                    }
+                }
+                out.flush()
+            }
+            received
+        }
+    }
+
+    /** Whether [file] is a whole APK: a zip that still carries the manifest `pm install` reads. */
+    private fun isCompleteApk(file: File): Boolean = runCatching {
+        ZipFile(file).use { it.getEntry("AndroidManifest.xml") != null }
+    }.getOrDefault(false)
+
+    /** [name] inside [directory], suffixed when an older download of the same release is there. */
+    private fun uniqueUpdateFile(directory: File, name: String): File {
+        val direct = File(directory, name)
+        if (!direct.exists()) return direct
+        val extension = name.substringAfterLast('.', "")
+        val base = if (extension.isEmpty()) name else name.removeSuffix(".$extension")
+        val suffix = if (extension.isEmpty()) "" else ".$extension"
+        for (index in 1..20) {
+            val candidate = File(directory, "$base-$index$suffix")
+            if (!candidate.exists()) return candidate
+        }
+        return File(directory, "$base-${System.currentTimeMillis()}$suffix")
+    }
+
+    /** Exponential back-off with a ceiling: waiting longer than that stops looking like a retry. */
+    private fun retryDelayMillis(attempt: Int): Long =
+        (RETRY_BASE_DELAY_MILLIS * (1L shl (attempt - 1))).coerceAtMost(RETRY_MAX_DELAY_MILLIS)
+
+    /**
+     * Moves the finished partial onto [target] and answers the file the installer should read.
+     *
+     * A rename can fail while the source is still held open, so the bytes are copied instead. What
+     * is never handed over is the partial's own name: MediaStore shows it, and the installer's
+     * fallbacks read it, and neither should ever see `…apk.part`.
+     */
+    private fun settle(partial: File, target: File): File =
+        if (partial.renameTo(target)) {
+            target
+        } else {
+            partial.copyTo(target, overwrite = true)
+            partial.delete()
+            target
+        }
+
     /** A download that ended for a reason already known, carrying it out unchanged. */
     private class DownloadFailure(
         val failure: UpdateDownloadFailure,
         message: String,
+        val retryable: Boolean = true,
     ) : Exception(message)
 
     /**
