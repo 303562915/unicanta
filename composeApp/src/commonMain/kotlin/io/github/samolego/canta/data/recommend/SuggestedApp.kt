@@ -90,6 +90,9 @@ fun githubProjectUrl(text: String): String? {
         trimmed.startsWith("https://", ignoreCase = true) -> trimmed
         trimmed.startsWith("http://", ignoreCase = true) -> "https://" + trimmed.substring("http://".length)
         trimmed.contains("://") -> return null
+        // `owner/repo` pasted out of a chat has no host at all. A first segment carrying a dot is a
+        // host (`github.com/owner/repo`), which only needs the scheme put in front of it.
+        isBareProjectPath(trimmed) -> "https://github.com/$trimmed"
         else -> "https://$trimmed"
     }
     val match = GITHUB_PROJECT.matchEntire(withScheme) ?: return null
@@ -116,3 +119,12 @@ private val GITHUB_PROJECT = Regex(
 
 /** The `.git` a clone URL ends with, in whatever case it was copied: `Repo.GIT` is `Repo`. */
 private val TRAILING_GIT = Regex("\\.git$", RegexOption.IGNORE_CASE)
+
+/**
+ * True for `owner/repo` with no host in front of it: the first segment has no dot, so it cannot be
+ * a host name. `Obtainium` on its own is neither a host nor a path, and is left to be refused.
+ */
+private fun isBareProjectPath(text: String): Boolean {
+    val first = text.substringBefore('/')
+    return text.contains('/') && first.isNotEmpty() && !first.contains('.')
+}
