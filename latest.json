@@ -1,0 +1,86 @@
+{
+  "version_name": "4.3.0",
+  "version_code": 239,
+  "tag": "v4.3.0",
+  "published_at": "2026-11-21T14:28:17Z",
+  "file": "https://github.com/303562915/unicanta/releases/download/v4.3.0/androidApp-release.apk",
+  "file_name": "androidApp-release.apk",
+  "size": 10865147,
+  "sha256": "55881e4b37b688ba4fda18a3b38ab51652530e53fb8b52e52ddbb6a95df3ff1b",
+  "checksum_file": "https://github.com/303562915/unicanta/releases/download/v4.3.0/SHA256SUMS.txt",
+  "notes": "更新内容：\n- fix: 补上搜索框缺的 Text 导入，修编译 (2f95238)\n- chore: 发布 4.3.0 (239) (74b94d3)\n- feat: 方案详情顶栏加包搜索，应用详情右上角加关联方案抽屉 (305524b)\n- fix: 空队列的指纹不再和「从没打开过」撞车，红点该亮就亮 (1f8baf6)\n- feat: 拿不到 root 时直接打开 root 管理器，「特权运行时」改叫「权限来源」 (2ddda5e)\n- fix: 点授权真的重新问一次 root，失败也给出提示，不再拿启动时缓存的『没有』直接回答 (df87d88)\n- fix: 页面改成抽屉式转场，从右边整屏滑入、返回时整屏滑回右边 (3fc440f)\n- feat: 开着应用时每 30 秒查一次更新，只读发布页不花 API 配额 (89afeff)\n- fix: root 管理器名单补上 Magisk Delta 与 KernelSU Next (eaf19be)\n- fix: 关掉预测性返回，返回上一页不再由系统把整个窗口缩到中间 (709dbb5)\n- fix: 页面退出向右滑出淡出，不再居中缩小（对话框式退场） (c3a2adc)\n- fix: compose.uiTest 补上实验性注解，测试脚本不再编不过 (35a5549)\n- build: compose.uiTest 需要 opt-in 才能用（CI 编译期报 ExperimentalComposeLibrary） (b1bb0d1)\n- fix: 系统启动清空记录的测试不再靠调度时序，直接问列表要不要清 (bd31471)\n- test: 用 desktop UI 测试量评论输入框有没有随长文本折行变高 (1cbf9bb)\n- feat: 投票有新动静时推荐标签点红点，看过投票页就熄灭 (7602e15)\n- fix: 装了 Magisk/KernelSU/APatch 就先要一次 root，不再因为看不见 su 文件而直接跳 Shizuku (3ca9c8a)\n- fix: 评论输入框显式多行（singleLine=false / maxLines 无上限），框高下限 52dp (b81f690)\n- fix: 测试辅助函数收下 history，尾随 lambda 仍指向 loadRules (4a2af9c)\n- feat: 特权运行时那行可点，弹出 root 与 Stellar/Shizuku 的选择并各自去授权 (6c64bab)\n- feat: 记录页加「系统启动后删除记录」开关，默认关闭 (6edcd0c)\n- feat: 达到门槛的推荐标成已上榜、投票结束，投票按钮收起 (4ca6ac3)\n- fix: 评论输入框随内容自动折行，长到一屏就滚 (32c8259)\n- fix: 推荐网格里应用名只占一行，放不下就省略 (3f1677b)\n- fix: 评论输入框里表情包与光标对齐，并去掉评论字数上限 (c82c8de)\n- docs: AGENTS 词表补上 刷票 / 认同 / 影视星球 (c86b5c5)\n- fix: 精选 里补上投票通过的社区条目，并删掉推荐页顶部那句说明 (bc3b1f2)\n- fix: 工具页本机分组标题直接写「本机可用」，去掉厂商名+「你的系统」两行 (efbb4e2)",
+  "history": [
+    {
+      "version_name": "4.3.0",
+      "version_code": 239,
+      "tag": "v4.3.0",
+      "published_at": "2026-11-21T14:28:17Z",
+      "file": "https://github.com/303562915/unicanta/releases/download/v4.3.0/androidApp-release.apk",
+      "file_name": "androidApp-release.apk",
+      "size": 10865147,
+      "sha256": "55881e4b37b688ba4fda18a3b38ab51652530e53fb8b52e52ddbb6a95df3ff1b",
+      "checksum_file": "https://github.com/303562915/unicanta/releases/download/v4.3.0/SHA256SUMS.txt",
+      "notes": "更新内容：\n- fix: 补上搜索框缺的 Text 导入，修编译 (2f95238)\n- chore: 发布 4.3.0 (239) (74b94d3)\n- feat: 方案详情顶栏加包搜索，应用详情右上角加关联方案抽屉 (305524b)\n- fix: 空队列的指纹不再和「从没打开过」撞车，红点该亮就亮 (1f8baf6)\n- feat: 拿不到 root 时直接打开 root 管理器，「特权运行时」改叫「权限来源」 (2ddda5e)\n- fix: 点授权真的重新问一次 root，失败也给出提示，不再拿启动时缓存的『没有』直接回答 (df87d88)\n- fix: 页面改成抽屉式转场，从右边整屏滑入、返回时整屏滑回右边 (3fc440f)\n- feat: 开着应用时每 30 秒查一次更新，只读发布页不花 API 配额 (89afeff)\n- fix: root 管理器名单补上 Magisk Delta 与 KernelSU Next (eaf19be)\n- fix: 关掉预测性返回，返回上一页不再由系统把整个窗口缩到中间 (709dbb5)\n- fix: 页面退出向右滑出淡出，不再居中缩小（对话框式退场） (c3a2adc)\n- fix: compose.uiTest 补上实验性注解，测试脚本不再编不过 (35a5549)\n- build: compose.uiTest 需要 opt-in 才能用（CI 编译期报 ExperimentalComposeLibrary） (b1bb0d1)\n- fix: 系统启动清空记录的测试不再靠调度时序，直接问列表要不要清 (bd31471)\n- test: 用 desktop UI 测试量评论输入框有没有随长文本折行变高 (1cbf9bb)\n- feat: 投票有新动静时推荐标签点红点，看过投票页就熄灭 (7602e15)\n- fix: 装了 Magisk/KernelSU/APatch 就先要一次 root，不再因为看不见 su 文件而直接跳 Shizuku (3ca9c8a)\n- fix: 评论输入框显式多行（singleLine=false / maxLines 无上限），框高下限 52dp (b81f690)\n- fix: 测试辅助函数收下 history，尾随 lambda 仍指向 loadRules (4a2af9c)\n- feat: 特权运行时那行可点，弹出 root 与 Stellar/Shizuku 的选择并各自去授权 (6c64bab)\n- feat: 记录页加「系统启动后删除记录」开关，默认关闭 (6edcd0c)\n- feat: 达到门槛的推荐标成已上榜、投票结束，投票按钮收起 (4ca6ac3)\n- fix: 评论输入框随内容自动折行，长到一屏就滚 (32c8259)\n- fix: 推荐网格里应用名只占一行，放不下就省略 (3f1677b)\n- fix: 评论输入框里表情包与光标对齐，并去掉评论字数上限 (c82c8de)\n- docs: AGENTS 词表补上 刷票 / 认同 / 影视星球 (c86b5c5)\n- fix: 精选 里补上投票通过的社区条目，并删掉推荐页顶部那句说明 (bc3b1f2)\n- fix: 工具页本机分组标题直接写「本机可用」，去掉厂商名+「你的系统」两行 (efbb4e2)"
+    },
+    {
+      "version_name": "4.2.9",
+      "version_code": 0,
+      "tag": "v4.2.9",
+      "published_at": "2026-11-21T09:01:42Z",
+      "file": "https://github.com/303562915/unicanta/releases/download/v4.2.9/androidApp-release.apk",
+      "file_name": "androidApp-release.apk",
+      "size": 10831823,
+      "sha256": "",
+      "checksum_file": "https://github.com/303562915/unicanta/releases/download/v4.2.9/SHA256SUMS.txt",
+      "notes": "更新内容：\n- chore: 发布 4.2.9 (a2edfdb)\n- feat: root 与 Shizuku 串成一条链，su 不通就自动落到 Shizuku，不用用户选 (b82cc0a)\n- fix: su 用查到的绝对路径执行，PATH 里没有时不再把「找不到命令」当成没授权 (b428dca)\n- fix: 身份绑定就带上机型，有型号覆盖率不再只等于开过社区页的人数 (3b63b92)\n- fix: 迁移按文件名先后被拒时用 --include-all，并行写迁移不再卡住 db push (d9a277e)\n- fix: 机型芯片显示编号的，先读厂商 market.name 属性，再靠 device_names 表兜底 (bbced36)\n- fix: 门槛降到 45 后，空条目的缺票数断言跟着改 (971b94e)\n- feat: 设置页写明当前走的是 root 还是 Stellar/Shizuku (3d2ecec)\n- feat: 推荐条目重新分类、本站推荐置顶四条，投票门槛 50 降到 45 票 (5dfa2fa)\n- feat: 消息中心四栏各自记已读，点开一栏不再清掉其它栏的红点 (394ed1e)\n- feat: 停用批次也能整批回滚，停用/恢复批次被打断也能续跑 (230d453)\n- feat: 推荐页恢复两个页签（列表/投票），条目能指回本机还装着的包 (aa77f22)\n- fix: 占用探测抽成共用探针，root 路径下同样拦桌面/键盘/管理员/无障碍 (9bab116)\n- fix: 被占用拦下的包也要带上规则说的理由，一个包只列一次 (005064a)\n- fix: 占用判定只认默认键盘，被拦的包不再同时出现在风险清单里 (065b82a)\n- feat: 后端加 healthz RPC，能分清地址不通和迁移没跑 (63124bc)\n- feat: 卸前拦住正在当桌面/键盘/设备管理员/无障碍的包 (e34c08e)\n- fix: 安全规则弹框构造改挂起，deviceProfile 不能从普通函数调用 (a00b599)\n- feat: 推荐页收回成单页——推荐入口与投票队列直接排在精选列表之上 (6cf2ed9)\n- fix: 关掉卸载前确认不再连带关掉设备安全规则 (cdb1d8a)\n- fix: 补回重写时漏掉的 AppGridCell (9b2c873)\n- feat: 推荐页拆成「精选/社区」两页签，列表只留名字，社区行内做小号投票 (c109d00)\n- fix: root only reports authorized once the grant has actually been given (d1f68c5)\n- fix: 把桌面/Web 的 actual 移出 adb 组，Android 加进 adb 后不再撞同名 actual (28f31d7)\n- fix: 接受裸 owner/repo 形式，推荐表单不再拒掉复制来的项目路径 (aa9f1fe)\n- feat: 推荐页记住排列方式、不重复作者行，并加入社区推荐与投票审核 (960630d)\n- fix: put the android target in the adb source set (5129877)\n- feat: name root as the privilege in the setup pages (6adddec)\n- chore: 发布 4.2.8 (1066b69)\n- feat: 下载页逐版本更新日志，发版说明改为提交清单 (80b24de)\n- feat: work through root instead of Shizuku on a rooted phone (8443f13)\n- fix: 补 CommentThread 缺失的 PlayArrow import，修复 compileAndroidMain (5b9fc01)\n- feat: comment list typography, reply arrow, batches of replies; share code read once (62bdc1b)\n- fix: 下载页开发版更新时间改用 APK 资产上传时间，滚动 release 的 published_at 停在首发 (98f5133)\n- fix: import UploaderProfileScreen where the route uses it (3805d57)\n- test: an unrecorded ROM reads as Android, not as nothing (facb98a)\n- feat: give an uploader a page of their own (410118c)\n- fix: comment_like 的局部变量改名，评论点赞报 42702 从不落库 (c92b71d)\n- fix: 应用详情的评论按身份读取，点赞不再每次显示未赞 (42c0922)\n- fix: pass coverage through the plan page and import JsonPrimitive (f8ec86d)\n- feat: show which other phones a plan's package set survived on (c26665d)\n- feat: search the recommended apps, package names included (a508427)\n- feat: open a page on the comment that was mentioned (1d8384a)\n- fix: PlanHero takes the note-editor callback with the note (75bb260)\n- fix: give the note editor a callback instead of reaching into page state (5600a7d)\n- feat: split the inbox into reply, plan-comment and heart tabs (887b67e)\n- fix: only clear the red dot when the seen cursor really moved (64c392c)\n- fix(migrations): give the inbox cursor its own version number (001da29)\n- feat: let the uploader rewrite a plan's note (b48202e)\n- feat: show the comment length limit instead of truncating silently (1472bd0)\n- feat: switch the comment order between newest, most hearted and most useful (1401178)\n- test: expect the freeze option in the confirm dialog (044e4fb)\n- fix: import the freeze strings where they are used (10ad919)\n- feat: keep a comment draft when the page is left (5001640)\n- fix: import STATUS_NEGATIVE_RESPONSE in PackageOperations (034702f)\n- feat: separate freezing from uninstalling (b506c6b)\n- fix: import emptyFlow for the new disable default (71db355)\n- fix: read the interrupted batch without runCatching around suspend calls (84cda54)\n- feat: resume an uninstall batch that was cut short (c760be2)\n- test: fix the failure-explanation assertions (ffeab3e)\n- feat: undo a whole uninstall batch in one tap (214f9fc)\n- feat: snapshot package state before uninstall (62f40f5)\n- feat: human-readable uninstall failure reasons (74cae49)\n- fix: 切换栏内边距改用四向重载，修 compileKotlinDesktop 失败 (fe6552c)\n- feat: 切换栏加搜索按钮，按包名过滤方案与排行列表 (f5f4fbe)\n- feat: 机型选择器加搜索，切换栏加放大镜入口 (b171483)\n- fix: 折线爱心内缩到跟左侧爱心一样大，表情面板改成点页面空白处收起 (90d882c)\n- fix: 方案详情的重启验证行显示上传者的机型与系统版本，不再借用本机 (cc79f87)\n- fix: 红点按已读游标计数，看完消息不再一直挂着 (1bc84be)\n- feat: 折叠评论的图标改成手绘的爱心加一道细折线，替掉闪电 (6bf36d6)\n- fix: 可用性探测的超时分支补回 Boolean，修 runCatching 推断成 Boolean? 的编译错误 (59785fd)\n- feat: 推荐方案里 @名字后面补上真实机型，未改名时设置页淡黄色慢速呼吸提示改名 (97ff53d)\n- feat: add WiFiAnalyzer to the recommended apps catalog (ffe948a)\n- feat(plans): check the connection before and after an upload (7dc3429)\n- feat(plans): add an all-models scope and make it the default ranking (7a91dc4)\n- fix: 输入框改用透明文本框叠表情文本（BasicTextField 不支持内联图），并修面板高度取值的接收者 (d42e33c)\n- fix(plans): stop the upload sheet bouncing while its list scrolls (ea1a1ce)\n- fix: 输入框里直接把表情画成图（粘贴 [偷笑] 自动变成表情），顶部输入框不再被面板盖住，token 用中文名 (0760877)\n- feat(bloat): ship a fallback copy of the UAD list for phones that cannot reach GitHub (8b1ab19)\n- feat(plans): upload as a bottom sheet behind the reboot check (6ba2b0c)\n- feat: 更新渠道默认走开发版，未选择过渠道的安装跟滚动 dev 构建 (352dd41)\n- fix: appendInlineContent 改为 foundation 包下的扩展，修表情内联渲染编译 (ab52451)\n- fix: 表情内联占位改用 sp 并显式导入 appendInlineContent，修云端编译 (8c44daf)\n- feat: 评论栏加上抖音表情面板，点赞数移到右侧、不喜欢换成单道闪电、折叠正文带展开动画 (04298e0)\n- fix: 钉钉消息末尾改用实际关键词 rr (5585059)\n- ci: 每天把总人数与有型号人数推到钉钉 (906d0a6)\n- feat: 开发版在下载页和关于页显示 build 号，与同版本号的稳定版区分开 (cc29647)\n- feat: 下载页默认选中开发版（迭代更快），开发版暂无产物时自动退回稳定版 (2662cea)"
+    },
+    {
+      "version_name": "4.2.7",
+      "version_code": 0,
+      "tag": "v4.2.7",
+      "published_at": "2026-11-20T07:52:14Z",
+      "file": "https://github.com/303562915/unicanta/releases/download/v4.2.7/androidApp-release.apk",
+      "file_name": "androidApp-release.apk",
+      "size": 6398522,
+      "sha256": "",
+      "checksum_file": "https://github.com/303562915/unicanta/releases/download/v4.2.7/SHA256SUMS.txt",
+      "notes": ""
+    },
+    {
+      "version_name": "4.2.6",
+      "version_code": 0,
+      "tag": "v4.2.6",
+      "published_at": "2026-11-19T16:10:36Z",
+      "file": "https://github.com/303562915/unicanta/releases/download/v4.2.6/androidApp-release.apk",
+      "file_name": "androidApp-release.apk",
+      "size": 6313922,
+      "sha256": "",
+      "checksum_file": "https://github.com/303562915/unicanta/releases/download/v4.2.6/SHA256SUMS.txt",
+      "notes": ""
+    },
+    {
+      "version_name": "4.2.5",
+      "version_code": 0,
+      "tag": "v4.2.5",
+      "published_at": "2026-11-19T15:53:37Z",
+      "file": "https://github.com/303562915/unicanta/releases/download/v4.2.5/androidApp-release.apk",
+      "file_name": "androidApp-release.apk",
+      "size": 6297970,
+      "sha256": "",
+      "checksum_file": "https://github.com/303562915/unicanta/releases/download/v4.2.5/SHA256SUMS.txt",
+      "notes": ""
+    },
+    {
+      "version_name": "4.2.4",
+      "version_code": 0,
+      "tag": "v4.2.4",
+      "published_at": "2026-11-19T15:44:56Z",
+      "file": "https://github.com/303562915/unicanta/releases/download/v4.2.4/androidApp-release.apk",
+      "file_name": "androidApp-release.apk",
+      "size": 6297974,
+      "sha256": "",
+      "checksum_file": "https://github.com/303562915/unicanta/releases/download/v4.2.4/SHA256SUMS.txt",
+      "notes": ""
+    }
+  ]
+}
