@@ -36,7 +36,6 @@ SUPABASE.local.md
 /server/test/
 /server/README.md
 /.github/workflows/supabase_migrations.yml
-/.github/workflows/daily-device-report.yml
 
 # Sticker source files: the copies the app ships live in composeResources/drawable as emo_*.png
 /static/

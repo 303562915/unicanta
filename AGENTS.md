@@ -62,9 +62,9 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | `docs.yml` | `push` 到 `master` 且改 `docs/**`、`release: published`、`workflow_dispatch` | 用最新 `v*` tag 的源码编 WASM，合并 docs 后发 GitHub Pages | `github-pages` |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |
 
-> 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`、`supabase_migrations.yml`、
-> `daily-device-report.yml`）**只留在本地**，已在 `.gitignore` 里排除，不进公开仓库；迁移与查库在本地做，
-> 凭据见 `SUPABASE.local.md`。本地备份在 `backups/db-local-only/`。
+> 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`、`supabase_migrations.yml`）
+> **只留在本地**，已在 `.gitignore` 里排除，不进公开仓库；迁移与查库在本地做，凭据见 `SUPABASE.local.md`。
+> 本地备份在 `backups/db-local-only/`。**钉钉日报 `daily-device-report.yml` 照旧留在仓库里跑，不要删。**
 
 关键 task（云端跑的，你**不要**在本地跑）：
 `:composeApp:desktopTest`、`:packages:desktopTest`、`:androidApp:assembleDebug`、`:androidApp:assembleRelease`、`:desktopApp:desktopJar`、`:webApp:wasmJsBrowserDistribution`。
@@ -126,8 +126,9 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
 1. **重复构建（已修）**：`fork-ci.yml` 的 job 带 `if: github.ref != 'refs/heads/master'`，master 推送只由 `build.yml` 跑一遍，不再双跑。
 2. **`release.yml` 的 secret 名（已对齐）**：它现在读 `CANTA_KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`，与仓库已配置的 secrets 一致，发版不再因 keystore 为空而失败。
 3. **数据库那一侧不进仓库（已迁出）**：`server/supabase/**`、`server/test/**`、`server/README.md`、
-   `supabase_migrations.yml`、`daily-device-report.yml` 都只留在本地并已 gitignore。迁移不再由 CI 应用，
-   要改 schema 就在本地推（本机没有 `supabase` / `psql`，直接查库走 Management API，见 `SUPABASE.local.md`）。
+   `supabase_migrations.yml` 只留在本地并已 gitignore。迁移不再由 CI 应用，要改 schema 就在本地推
+   （本机没有 `supabase` / `psql`，直接查库走 Management API，见 `SUPABASE.local.md`）。
+   **`daily-device-report.yml`（每日钉钉日报）不在此列，它留在仓库里正常跑。**
 4. **action 版本（已统一）**：所有 workflow 都是 `actions/checkout@v4` + `actions/setup-java@v4` + `distribution: temurin`。
 5. **`::set-output`（已移除）**：仓库里已无该写法，`VERSION_NAME` 走 `$GITHUB_ENV`。
 6. **本地不可构建是刻意的**：`gradlew` 无执行位、无 SDK、`/sdcard` 挂载限制。别提交"修 gradlew 权限""加 local.properties"这类补丁。

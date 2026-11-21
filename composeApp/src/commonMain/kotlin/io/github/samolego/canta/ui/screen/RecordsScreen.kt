@@ -24,7 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -102,6 +104,9 @@ fun RecordsScreen(
     // package is what the list is keyed by.
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
 
+    // Which cut of the log is on screen: the four pills under the switch.
+    var filter by remember { mutableStateOf(RecordFilter.ALL) }
+
     // Newest first already, so the first record of a package is the one that describes it now.
     val latest = remember(records) { records.distinctBy { it.packageName } }
 
@@ -115,8 +120,11 @@ fun RecordsScreen(
         records.rollbackCandidate(currentlyUninstalled = { it in gone }, currentlyDisabled = { it in frozen })
     }
 
+    // The pills cut the log before it is laid out, so the day headers describe what is left.
+    val shown = remember(latest, filter) { latest.filter { filter.matches(it) } }
+
     // One flat list of day headers and rows: a lazy list cannot nest one inside another.
-    val entries = remember(latest) { flattenByDay(latest) }
+    val entries = remember(shown) { flattenByDay(shown) }
 
     Column(modifier = modifier.fillMaxSize()) {
         // Above the log and outside the empty check on purpose: with the switch inside the list it
@@ -125,7 +133,8 @@ fun RecordsScreen(
             checked = clearRecordsAfterBoot,
             onCheckedChange = onClearRecordsAfterBootChange,
         )
-        if (latest.isEmpty()) {
+        RecordFilters(selected = filter, onSelect = { filter = it })
+        if (shown.isEmpty()) {
             EmptyRecords(modifier = Modifier.weight(1f).fillMaxWidth())
         } else {
             LazyColumn(
@@ -194,6 +203,63 @@ private fun ClearAfterBootSwitch(checked: Boolean, onCheckedChange: (Boolean) ->
             }
             Spacer(Modifier.width(8.dp))
             SettingsSwitch(checked)
+        }
+    }
+}
+
+/**
+ * The four cuts of the log: everything, what was put back on the device, what was taken off it, and
+ * what was frozen. A freeze is not a removal — the app is still there — so it has its own cut
+ * rather than being counted among the removals; thawing it again stays in that same cut, because a
+ * freeze and its undo are one story told twice.
+ */
+private enum class RecordFilter(val label: String) {
+    ALL("全部"),
+    INSTALL("安装"),
+    UNINSTALL("卸载"),
+    DISABLE("停用");
+
+    fun matches(record: OperationRecord): Boolean = when (this) {
+        ALL -> true
+        INSTALL -> record.kind == OperationKind.REINSTALL
+        UNINSTALL -> record.kind == OperationKind.UNINSTALL
+        DISABLE -> record.kind == OperationKind.DISABLE || record.kind == OperationKind.ENABLE
+    }
+}
+
+/**
+ * The pills that cut the log. One tap each, so the row is short and stays put: switching between
+ * "what I removed" and "what I froze" must cost no more than a look.
+ */
+@Composable
+private fun RecordFilters(selected: RecordFilter, onSelect: (RecordFilter) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 13.dp, end = 13.dp, top = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        RecordFilter.entries.forEach { cut ->
+            val on = cut == selected
+            val tint = if (on) scheme.primary else scheme.onSurfaceVariant
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .clickable(role = Role.Tab, onClick = { onSelect(cut) }),
+                shape = RoundedCornerShape(9.dp),
+                color = if (on) tint.copy(alpha = 0.16f) else FlSurfaceLevel.Card.colorOf(scheme),
+            ) {
+                Text(
+                    text = cut.label,
+                    style = FlText.caption1.copy(
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium
+                    ),
+                    color = tint,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
         }
     }
 }
@@ -297,25 +363,22 @@ private fun DayHeader(day: String) {
 @Composable
 private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    val isFrozen = record.kind == OperationKind.DISABLE
-    val isUninstall = record.kind == OperationKind.UNINSTALL
-    // A removal is the loud one (error); a freeze is a pause (tertiary), because the app is still
-    // on the device and one tap brings it back.
-    val actionColor = when {
-        isUninstall -> scheme.error
-        isFrozen -> scheme.tertiary
-        else -> scheme.primary
-    }
-    // The reverse of what the row says: what was removed is put back, what was frozen is thawed.
-    val reverseLabel = stringResource(
+    // What happened and how it went, in one word: "停用成功", "启用失败". The row no longer spells
+    // out what a tap will do underneath — the tap is the action and the toast is the answer, so a
+    // second label under the time was one thing to read too many.
+    val action = stringResource(
         when (record.kind) {
-            OperationKind.UNINSTALL -> Res.string.records_action_reinstall
-            OperationKind.REINSTALL -> Res.string.records_action_uninstall
-            OperationKind.DISABLE -> Res.string.records_action_enable
-            OperationKind.ENABLE -> Res.string.records_action_disable
+            OperationKind.UNINSTALL -> Res.string.records_action_uninstall
+            OperationKind.REINSTALL -> Res.string.records_action_reinstall
+            OperationKind.DISABLE -> Res.string.records_action_disable
+            OperationKind.ENABLE -> Res.string.records_action_enable
         }
     )
-    val reverseColor = if (isUninstall) scheme.primary else scheme.error
+    val outcome = action + stringResource(
+        if (record.success) Res.string.records_success else Res.string.records_failed
+    )
+    // Green when it took, red when the device refused: the colour is the outcome, not the verb.
+    val outcomeColor = if (record.success) successColor() else scheme.error
 
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onReverse),
@@ -349,36 +412,17 @@ private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> U
                         style = FlText.caption2.copy(fontFamily = FontFamily.Monospace),
                         color = scheme.onSurfaceVariant,
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(
-                                when (record.kind) {
-                                    OperationKind.UNINSTALL -> Res.string.records_action_uninstall
-                                    OperationKind.REINSTALL -> Res.string.records_action_reinstall
-                                    OperationKind.DISABLE -> Res.string.records_action_disable
-                                    OperationKind.ENABLE -> Res.string.records_action_enable
-                                }
-                            ),
-                            style = FlText.caption2,
-                            color = actionColor,
-                        )
-                        Text(
-                            text = " · " + stringResource(
-                                if (record.success) Res.string.records_success else Res.string.records_failed
-                            ),
-                            style = FlText.caption2,
-                            color = if (record.success) successColor() else scheme.error,
-                        )
-                    }
-                    // What a tap does, in the colour of the thing it will do.
+                    // One chip for the whole outcome, painted green when it took and red when the
+                    // device refused. Nothing under it: the tap is the reverse, the toast is the
+                    // answer.
                     Text(
-                        text = reverseLabel,
+                        text = outcome,
                         style = FlText.caption2.copy(fontWeight = FontWeight.SemiBold),
-                        color = reverseColor,
+                        color = outcomeColor,
                         modifier = Modifier
                             .padding(top = 3.dp)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(reverseColor.copy(alpha = 0.12f))
+                            .background(outcomeColor.copy(alpha = 0.12f))
                             .padding(horizontal = 7.dp, vertical = 2.dp),
                     )
                 }

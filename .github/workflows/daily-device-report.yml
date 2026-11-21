@@ -1,0 +1,64 @@
+name: 📊 Daily device report
+
+# 每天把「总人数 / 其中有型号的人数」推到钉钉。
+# 仓库是 public，凭据一律走 secrets：SUPABASE_ACCESS_TOKEN、DINGTALK_WEBHOOK，不写进文件。
+
+on:
+  schedule:
+    # UTC 01:00 = 北京时间 09:00
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query users
+        id: query
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+        run: |
+          set -euo pipefail
+          SQL="select count(*) as total, count(*) filter (where model is not null and model <> '') as with_model from canta_users"
+          RESPONSE=$(curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$SQL" '{query: $q}')")
+          echo "$RESPONSE"
+          TOTAL=$(echo "$RESPONSE" | jq -r '.[0].total')
+          WITH_MODEL=$(echo "$RESPONSE" | jq -r '.[0].with_model')
+          # A malformed answer must fail the job instead of pushing "null" to the group.
+          case "$TOTAL" in ''|null) echo "no total in response" >&2; exit 1;; esac
+          case "$WITH_MODEL" in ''|null) echo "no with_model in response" >&2; exit 1;; esac
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "with_model=$WITH_MODEL" >> "$GITHUB_OUTPUT"
+
+      - name: Push to DingTalk
+        env:
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          TOTAL: ${{ steps.query.outputs.total }}
+          WITH_MODEL: ${{ steps.query.outputs.with_model }}
+        run: |
+          set -euo pipefail
+          STAMP=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
+          BODY=$(jq -n --arg total "$TOTAL" --arg model "$WITH_MODEL" --arg stamp "$STAMP" '{
+            msgtype: "markdown",
+            markdown: {
+              title: "unicanta 用户日报",
+              text: ("### unicanta 用户日报\n\n" +
+                     "- 时间：" + $stamp + "\n" +
+                     "- 总人数：" + $total + "\n" +
+                     "- 有型号：" + $model + "\n\n" +
+                     "rr")
+            }
+          }')
+          ANSWER=$(curl -sS --fail-with-body -X POST "$DINGTALK_WEBHOOK" \
+            -H 'Content-Type: application/json' -d "$BODY")
+          echo "$ANSWER"
+          # DingTalk answers HTTP 200 with errcode != 0 when the keyword or the webhook is wrong.
+          echo "$ANSWER" | jq -e '.errcode == 0' > /dev/null
