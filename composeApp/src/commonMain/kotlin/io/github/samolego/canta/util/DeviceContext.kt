@@ -86,6 +86,14 @@ fun romName(rom: String): String = when (rom) {
  * K70) and keeps the marketing name in a separate `marketname` property; stock Android and most
  * other ROMs put the marketing name straight into `ro.product.model`. Reading these first is what
  * makes the UI say "Redmi K70" instead of a part number.
+ *
+ * The `marketname` family is Xiaomi's and Honor's spelling; the vendors that carry a retail code
+ * instead spell it their own way, one key each — `ro.vivo.market.name` on Funtouch/OriginOS
+ * ("vivo X Fold3 Pro"), `ro.oppo.market.name` on ColorOS, and the two oplus keys OnePlus uses for
+ * the Chinese and English name ("一加 Ace 2"). Without those, a vivo or OnePlus upload stores the
+ * code, and every chip for that model shows a part number forever. Samsung's One UI has no such
+ * property at all — its name is a lookup table, not a prop, which is what
+ * `private.device_names` on the backend is for.
  */
 val MARKET_NAME_PROP_KEYS: List<String> = listOf(
     "ro.product.marketname",
@@ -93,6 +101,12 @@ val MARKET_NAME_PROP_KEYS: List<String> = listOf(
     "ro.product.vendor.marketname",
     "ro.product.system.marketname",
     "ro.product.product.marketname",
+    // vivo / iQOO.
+    "ro.vivo.market.name",
+    // OPPO / realme / OnePlus on ColorOS, Chinese name then English one.
+    "ro.oppo.market.name",
+    "ro.vendor.oplus.market.name",
+    "ro.vendor.oplus.market.enname",
     "ro.config.marketing_name",
     "ro.product.model.marketing",
 )

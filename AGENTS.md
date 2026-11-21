@@ -163,5 +163,49 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
 |---|---|---|---|
 | `ga` | GitHub Actions —— 工作流相关的所有事（改 `.github/workflows/*.yml`、查 run、看日志、下载 artifact、发版触发） | 2026-11-20 | 不是 Google Analytics，不是 general availability。见到 `ga` 先想到工作流 |
 | `action` / `actions` | 同上，GitHub Actions 工作流 | 2026-11-20 | 与 `ga` 同义 |
+| `型号` / `机型显示不对` / `他那个vivo和三星` / `他展示的是这个型号` | 「选择机型」列表里的机型芯片显示的是**零售编号**（`SM-F9710`、`PHK110`、`V2337A`）而不是营销名（`Galaxy Z Fold8`、`一加 Ace 2`、`vivo X Fold3 Pro`） | 2026-11-21 | 用户原话：「它展示的是这个型号，对吗？」「我感觉不太对，只有小米才是正确的。和荣耀是正确的」→ 按第 9 节查 |
+| `调用他们的日志` / `他们上传的日志` / `数据库里面他们上传的这个` | 后台数据库里 App 上传的机型/设备数据（`plans.market_name`、`plans.codename`、`canta_users.model`、`community_comments.device_model`），不是客户端日志文件 | 2026-11-21 | 用户原话：「你可以调用他们的日志让他们上传上来呀」「如果你这次解决不了，那你下次就去找这个文件，就找数据库里面他们上传的这个日志去分析他们手机是什么」 |
 
 > 说明：`ga` 默认指 GitHub Actions，但**不是绝对**——若上下文明显在谈别的东西（如统计分析、灰度发布），以当轮上下文为准；判断依据写进备注。默认顺序：先 Actions，再看上下文。
+
+---
+
+## 9. 机型名显示：零售编号 vs 营销名
+
+用户说的「型号不对」「怎么显示的是这个型号」，指的是**机型芯片标题显示零售编号而不是营销名**。链路如下，四层依次回退：
+
+1. **UI**：`CatalogModel.label` / `Plan.deviceLabel` / `DeviceProfile.displayModel` 都是 `marketName.ifBlank { model }`
+   （[DeviceCatalog.kt](composeApp/src/commonMain/kotlin/io/github/samolego/canta/data/community/DeviceCatalog.kt)）。
+2. **后端** `plan_catalog()`：`plans.market_name` → `private.model_names`（评论区学到的名字）→
+   `private.device_names`（人工/迁移种下的名字）→ 同 codename 的别的行借一个 → `''`
+   （[20261121150000_device_name_seed.sql](server/supabase/migrations/20261121150000_device_name_seed.sql)）。
+3. **上传**：`plans.market_name` 只有上传那台手机自己报才有，由 `marketNameOf(props)` 读系统属性
+   （[DeviceContext.kt](composeApp/src/commonMain/kotlin/io/github/samolego/canta/util/DeviceContext.kt) 的 `MARKET_NAME_PROP_KEYS`）。
+4. **各厂属性不同**：
+   - 小米 / 荣耀：`ro.product.marketname` 有 → 正常，芯片显示名字。
+   - vivo / iQOO：`ro.vivo.market.name`；OPPO / realme / 一加：`ro.oppo.market.name`、`ro.vendor.oplus.market.name`（中）、`ro.vendor.oplus.market.enname`（英）。这些键不读，上传就是空。
+   - 三星 One UI：**没有名字属性**，机器里只有 `SM-xxxx`；只能靠查表。
+
+**再遇到「某台机器显示编号」，按这个顺序处理**（不要先去翻客户端日志，那里没有）：
+
+```sql
+-- 1. 谁没有名字（凭据见 SUPABASE.local.md，走 Management API，一条一条发）
+select brand, model, coalesce(codename,'') as codename, rom, rom_version, sdk
+  from plans where coalesce(market_name,'') = '' order by brand, model;
+```
+
+2. 有 codename / 型号 → 查这台机器到底是什么（三星型号可查 `doc.samsungmobile.com/SM-XXXX`）。
+3. 没属性可读的（三星这类）：往 `private.device_names` 插一行即可，**不用发版**：
+
+```sql
+insert into private.device_names (model, market_name, source)
+values ('sm-xxxx', 'Galaxy ...', 'manual')
+on conflict (model) do update set market_name = excluded.market_name, updated_at = now();
+update plans p set market_name = d.market_name
+  from private.device_names d
+ where coalesce(p.market_name,'') = '' and lower(p.model) = d.model;
+```
+
+4. 属性名对不上（vivo/一加这类）：改 `MARKET_NAME_PROP_KEYS`，手机下次上传/评论就自带名字；
+   已上传的旧行靠第 3 步补。
+5. 验证：`select brand, model, market_name from plan_catalog() where model in (...);`
