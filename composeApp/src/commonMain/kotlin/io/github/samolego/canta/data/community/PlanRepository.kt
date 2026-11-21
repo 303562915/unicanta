@@ -1,5 +1,7 @@
 package io.github.samolego.canta.data.community
 
+import io.github.samolego.canta.data.recommend.SuggestedApp
+import io.github.samolego.canta.data.recommend.SuggestedAppVote
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.TelemetryConfig
 import io.github.samolego.canta.util.androidReleaseOf
@@ -1208,6 +1210,101 @@ class PlanRepository(
             applied = o["applied"]?.jsonPrimitive?.booleanOrNull == true,
             needed = o["needed"]?.jsonPrimitive?.longOrNull?.toInt() ?: DescriptionFix.VOTES_NEEDED,
             shareNeeded = o["share"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: DescriptionFix.SHARE_NEEDED,
+        )
+    }
+
+    /**
+     * Every app the community proposed for the recommendations page, accepted ones first — null
+     * when the backend cannot be reached (or does not carry the function yet, where the page shows
+     * the shipped catalog alone and says nothing about proposals).
+     *
+     * [viewer] is the identity whose votes are marked, so the page lights up the side this install
+     * already picked.
+     */
+    suspend fun suggestedApps(viewer: String = ""): List<SuggestedApp>? {
+        val body = buildJsonObject { put("p_voter", viewer) }.toString()
+        val text = rpc("recommend_suggestions", body) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.map(::parseSuggestedApp)
+        }.getOrNull()
+    }
+
+    /**
+     * Files an app of this install's own as a recommendation, signed with [author] and owned by
+     * [authorId]. The backend keeps one pending entry per identity and project, so filing again is
+     * editing what was filed.
+     *
+     * [url] must be a GitHub project page — the server refuses anything else and answers with its
+     * reason, which the form shows. Answers the entry's id; null when the backend refused it.
+     */
+    suspend fun addSuggestedApp(
+        name: String,
+        url: String,
+        summary: String = "",
+        category: String = "tools",
+        license: String = "",
+        author: String = "",
+        authorId: String = "",
+    ): Long? {
+        if (name.isBlank() || url.isBlank()) return null
+        val payload = buildJsonObject {
+            put("p_name", name)
+            put("p_url", url)
+            put("p_summary", summary)
+            put("p_category", category)
+            put("p_license", license)
+            put("p_author", author)
+            put("p_author_id", authorId)
+        }.toString()
+        val text = rpc("recommend_suggestion_add", payload) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
+        }.getOrNull()
+    }
+
+    /**
+     * Votes [agree] on proposed app [id] as [voter], and answers the fresh counts.
+     *
+     * The backend re-settles the project after every vote, so [SuggestedAppVote.applied] can turn
+     * true here: that is the moment the app joins the page.
+     */
+    suspend fun voteSuggestedApp(id: Long, voter: String, agree: Boolean): SuggestedAppVote? {
+        if (id <= 0L || voter.isEmpty()) return null
+        val payload = buildJsonObject {
+            put("p_id", id)
+            put("p_voter", voter)
+            put("p_agree", agree)
+        }.toString()
+        val text = rpc("recommend_suggestion_vote", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            SuggestedAppVote(
+                agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                applied = o["applied"]?.jsonPrimitive?.booleanOrNull == true,
+            )
+        }.getOrNull()
+    }
+
+    /** One row of [suggestedApps], with every field optional: an old answer stays readable. */
+    private fun parseSuggestedApp(element: kotlinx.serialization.json.JsonElement): SuggestedApp {
+        val o = element.jsonObject
+        return SuggestedApp(
+            id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            name = o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            url = o["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            category = o["category"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            summary = o["summary"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            license = o["license"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            author = o["author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            authorId = o["author_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            mine = o["mine"]?.jsonPrimitive?.booleanOrNull,
+            applied = o["applied"]?.jsonPrimitive?.booleanOrNull == true,
+            needed = o["needed"]?.jsonPrimitive?.longOrNull?.toInt() ?: SuggestedApp.VOTES_NEEDED,
+            shareNeeded = o["share"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: SuggestedApp.SHARE_NEEDED,
         )
     }
 

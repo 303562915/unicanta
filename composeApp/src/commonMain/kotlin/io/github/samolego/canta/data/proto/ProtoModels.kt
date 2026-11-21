@@ -92,6 +92,13 @@ data class AppSettingsProto(
     @ProtoNumber(24) val interruptedBatch: List<String> = emptyList(),
     /** When that batch started, epoch milliseconds; 0 when nothing is pending. */
     @ProtoNumber(25) val interruptedBatchStartedAt: Long = 0,
+    /**
+     * Which of the two arrangements the recommendations page was left in: false is the icon grid
+     * it opens on, true is one card per app. Stored rather than remembered per visit, so leaving
+     * the page and coming back shows the arrangement the reader chose — the page used to forget it
+     * as soon as it left the composition.
+     */
+    @ProtoNumber(26) val recommendationsListMode: Boolean = false,
 )
 
 /**

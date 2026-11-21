@@ -65,6 +65,9 @@ class SettingsViewModel(
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
 
+    /** Which arrangement the recommendations page was left in: false grid, true list. */
+    val recommendationsListMode = settingsStore.recommendationsListModeFlow.state(false)
+
     /** Whether the safety page names this phone and opens on its picture; off unless turned on. */
     val showDevicePhoto = settingsStore.showDevicePhotoFlow.state(false)
 
@@ -121,6 +124,7 @@ class SettingsViewModel(
     fun saveAuthEnabled(enabled: Boolean) = save { setAuthEnabled(enabled) }
     fun saveShowTweaksTab(show: Boolean) = save { setShowTweaksTab(show) }
     fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
+    fun saveRecommendationsListMode(list: Boolean) = save { setRecommendationsListMode(list) }
     fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }

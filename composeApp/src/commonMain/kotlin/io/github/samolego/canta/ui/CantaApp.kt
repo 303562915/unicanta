@@ -389,9 +389,24 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                 TweaksScreen(handler = handler, onNavigateBack = { navController.navigateUp() })
             }
             composable(route = Screen.Recommendations.route) {
+                // The proposed half is written under this install's identity, the same way the
+                // description corrections and the comments are; the arrangement is a stored setting,
+                // so the page opens the way it was left rather than resetting to the grid.
+                var recommendAuthor by remember { mutableStateOf("") }
+                var recommendIdentity by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) {
+                    recommendAuthor = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    recommendIdentity = identity.owner.ifEmpty { identity.token }
+                }
+                val listMode by settingsViewModel.recommendationsListMode.collectAsStateWithLifecycle()
                 RecommendationsScreen(
                     platform = platform,
-                    onNavigateBack = { navController.navigateUp() },
+                    repository = communityRepository,
+                    author = recommendAuthor,
+                    authorId = recommendIdentity,
+                    asGrid = !listMode,
+                    onToggleLayout = { settingsViewModel.saveRecommendationsListMode(!listMode) },
                 )
             }
             composable(route = Screen.Logs.route) {

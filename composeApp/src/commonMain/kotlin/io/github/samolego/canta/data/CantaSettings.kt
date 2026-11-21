@@ -45,6 +45,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val userNameFlow = field { it.userName }
     val showTweaksTabFlow = field { it.showTweaksTab }
     val showRecommendTabFlow = field { it.showRecommendTab }
+    /** Which arrangement the recommendations page was left in: false grid, true list. */
+    val recommendationsListModeFlow = field { it.recommendationsListMode }
     /** Whether the safety page shows the picture of this phone; see [AppSettingsProto.showDevicePhoto]. */
     val showDevicePhotoFlow = field { it.showDevicePhoto }
     /** Downloads a found release on its own and offers the Shizuku install; see [AppSettingsProto.autoInstallUpdates]. */
@@ -78,6 +80,7 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setUserName(name: String) = update { it.copy(userName = name) }
     suspend fun setShowTweaksTab(show: Boolean) = update { it.copy(showTweaksTab = show) }
     suspend fun setShowRecommendTab(show: Boolean) = update { it.copy(showRecommendTab = show) }
+    suspend fun setRecommendationsListMode(list: Boolean) = update { it.copy(recommendationsListMode = list) }
     suspend fun setShowDevicePhoto(show: Boolean) = update { it.copy(showDevicePhoto = show) }
     suspend fun setAutoInstallUpdates(auto: Boolean) = update { it.copy(autoInstallUpdates = auto) }
     suspend fun setUpdateChannel(channel: String) = update {
