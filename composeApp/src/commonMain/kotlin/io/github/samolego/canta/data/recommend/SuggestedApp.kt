@@ -78,9 +78,14 @@ data class SuggestedAppVote(
  * instead of a stored timestamp the phone's clock would have to agree with. Only the counts go in:
  * a vote changed, withdrawn or flipped moves one of them, and a new entry adds a triple. The
  * exact formatting does not matter — it is only ever compared against another one of these.
+ *
+ * An empty queue still has a fingerprint, and it cannot be the empty string: that one is reserved
+ * for "the page was never opened", which [hasNewVotes] reads as no news at all. Otherwise a visit
+ * that found the queue empty, and a queue both empty and untried, would look the same and the
+ * first vote to arrive would land on a page that thinks nobody has ever looked.
  */
 fun voteQueueFingerprint(apps: List<SuggestedApp>): String =
-    apps.sortedBy { it.id }.joinToString(";") { "${it.id}:${it.agrees}:${it.disagrees}" }
+    if (apps.isEmpty()) "empty" else apps.sortedBy { it.id }.joinToString(";") { "${it.id}:${it.agrees}:${it.disagrees}" }
 
 /**
  * Whether [apps] holds news compared to [seen] — the queue this install last looked at.
