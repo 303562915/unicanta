@@ -233,7 +233,7 @@ fun RecommendationsScreen(
     val loaded = catalog
     val groups = remember(loaded) { loaded?.grouped().orEmpty() }
     // The pinned group is the shipped featured entries plus every proposal that cleared the bar:
-    // the queue already badges those as 已收录, so they have to be findable under the same heading.
+    // the queue already badges those as 上榜, so they have to be findable under the same heading.
     val featured = remember(loaded, suggested) {
         (loaded?.featured.orEmpty() + suggested.filter { it.applied }.map { it.asPinned() })
             .distinctBy { it.url.trim().trimEnd('/').lowercase() }
@@ -645,7 +645,7 @@ private fun SuggestedRow(
                 if (app.applied) {
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = "已收录",
+                        text = "已上榜",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
@@ -665,35 +665,66 @@ private fun SuggestedRow(
             )
         }
         Spacer(modifier = Modifier.width(6.dp))
-        CompactVote(
-            label = "认同",
-            count = app.agrees,
-            selected = app.mine == true,
-            color = SuggestAgree,
-            enabled = canVote && !voting,
-            onClick = { onVote(true) },
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        CompactVote(
-            label = "不认同",
-            count = app.disagrees,
-            selected = app.mine == false,
-            color = SuggestDisagree,
-            enabled = canVote && !voting,
-            onClick = { onVote(false) },
-        )
+        if (app.applied) {
+            // The ballot is closed: an entry that cleared the bar has nothing left to vote on, so
+            // the row shows the state instead of two pills that would only re-count the same votes.
+            SettledVote()
+        } else {
+            CompactVote(
+                label = "认同",
+                count = app.agrees,
+                selected = app.mine == true,
+                color = SuggestAgree,
+                enabled = canVote && !voting,
+                onClick = { onVote(true) },
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            CompactVote(
+                label = "不认同",
+                count = app.disagrees,
+                selected = app.mine == false,
+                color = SuggestDisagree,
+                enabled = canVote && !voting,
+                onClick = { onVote(false) },
+            )
+        }
     }
 }
 
 /** The one line under a proposed app's name: how far it is from the bar, in the fewest words. */
 private fun voteStateOf(app: SuggestedApp): String = when {
-    app.applied -> "已在「精选」里 · 认同率 ${((app.share ?: 0f) * 100).toInt()}% · 掉下去会自动退出"
+    app.applied -> "已上榜 · 认同率 ${((app.share ?: 0f) * 100).toInt()}%"
     app.missingVotes > 0 ->
         "还差 ${app.missingVotes} 票" + (app.share?.let { " · 认同 ${(it * 100).toInt()}%" } ?: "")
     (app.share ?: 0f) < app.shareNeeded ->
         "票数够了 · 认同率 ${((app.share ?: 0f) * 100).toInt()}%，还差 " +
             "${(app.shareNeeded * 100).toInt()}%"
     else -> "已达成条件，等待结算"
+}
+
+/**
+ * The end of a proposal's run: it cleared the bar, so the ballot is closed and the two vote pills
+ * give way to one state chip. There is nothing left to press — the counts are the record of how it
+ * got here, not something a later tap is supposed to move.
+ */
+@Composable
+private fun SettledVote() {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(scheme.secondaryContainer)
+            .padding(horizontal = 9.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "投票结束",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.onSecondaryContainer,
+            maxLines = 1,
+        )
+    }
 }
 
 /**
@@ -948,7 +979,7 @@ private fun SuggestionDetailDialog(
             }
             if (app.applied) {
                 Text(
-                    text = "已收录",
+                    text = "已上榜",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
@@ -989,27 +1020,41 @@ private fun SuggestionDetailDialog(
         )
 
         Spacer(modifier = Modifier.height(10.dp))
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            CompactVote(
-                label = "认同",
-                count = app.agrees,
-                selected = app.mine == true,
-                color = SuggestAgree,
-                enabled = canVote && !voting,
-                onClick = { onVote(true) },
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            CompactVote(
-                label = "不认同",
-                count = app.disagrees,
-                selected = app.mine == false,
-                color = SuggestDisagree,
-                enabled = canVote && !voting,
-                onClick = { onVote(false) },
-            )
-            if (voting) {
+        if (app.applied) {
+            // Closed ballot: the sheet keeps the result, not a pair of buttons that would be
+            // counting votes on a question the page has already answered.
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                SettledVote()
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "票数已够，投票关闭",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                CompactVote(
+                    label = "认同",
+                    count = app.agrees,
+                    selected = app.mine == true,
+                    color = SuggestAgree,
+                    enabled = canVote && !voting,
+                    onClick = { onVote(true) },
+                )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                CompactVote(
+                    label = "不认同",
+                    count = app.disagrees,
+                    selected = app.mine == false,
+                    color = SuggestDisagree,
+                    enabled = canVote && !voting,
+                    onClick = { onVote(false) },
+                )
+                if (voting) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                }
             }
         }
     }
