@@ -710,6 +710,49 @@ private fun CompactVote(
 }
 
 /**
+ * One app as a tile: the icon stand-in and its name, nothing else. The author is not repeated under
+ * it — a tap opens the sheet where the whole entry is, author and licence included, and a name
+ * written twice on two lines reads as a bug rather than as credit. A pinned entry keeps the primary
+ * ring around its tile, since the group heading alone is easy to scroll past.
+ */
+@Composable
+private fun AppGridCell(
+    app: RecommendedApp,
+    featured: Boolean,
+    onClick: () -> Unit,
+) {
+    val accent = remember(app.accent, app.id) { accentOf(app.accent, app.id) }
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                onClickLabel = stringResource(Res.string.recommend_details, app.name),
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        AppTile(
+            mark = app.tileMark,
+            accent = accent,
+            size = CellTileSize,
+            corner = 16.dp,
+            ring = if (featured) MaterialTheme.colorScheme.primary else null,
+        )
+        Text(
+            text = app.name,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
  * One app as a row: tile, name, licence, and a sentence about it. A pinned card is drawn with a
  * primary outline so it reads as the one to look at first. The author is deliberately absent — the
  * sheet has it, and the line used to repeat the app's own name for the entries made by the account
