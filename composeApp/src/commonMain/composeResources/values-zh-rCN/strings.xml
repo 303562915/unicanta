@@ -166,6 +166,7 @@
     <string name="privilege_chooser_no_root">这台手机没有 su，用不了 root。</string>
     <string name="privilege_chooser_open_manager">打开 Stellar / Shizuku</string>
     <string name="privilege_chooser_download">下载</string>
+    <string name="privilege_root_refused">没拿到 root：去管理器的「超级用户」里把 UniCanta 允许，或这台机器其实没 root。</string>
     <string name="settings_group_interface">界面</string>
     <string name="settings_show_tweaks">在底栏显示「工具」</string>
     <string name="settings_show_tweaks_description">系统调整那一页。</string>

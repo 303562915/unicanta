@@ -349,6 +349,7 @@
     <string name="privilege_chooser_no_root">No su on this phone, so root is not an option.</string>
     <string name="privilege_chooser_open_manager">Open Stellar / Shizuku</string>
     <string name="privilege_chooser_download">Download</string>
+    <string name="privilege_root_refused">No root came back: allow UniCanta in the manager's Superuser list, or this phone is not rooted.</string>
     <string name="settings_group_interface">Interface</string>
     <string name="settings_show_tweaks">Show Tools in the bar</string>
     <string name="settings_show_tweaks_description">The ROM tweaks page.</string>

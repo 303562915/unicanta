@@ -79,6 +79,17 @@ class RootCantaHandler(
      * which `onConnected` reports: root granted the shell but the helper could not be placed or did
      * not answer its `version`.
      */
+    /**
+     * Asks the root manager again, forgetting the answer this process got at startup.
+     *
+     * [prepare] caches, and rightly so: it is called from operations, and spawning `su` for every
+     * one of them would be absurd. A user pressing "grant" is the exception — that press has to
+     * reach the manager, or the button is a lie.
+     */
+    fun forgetRootAnswer() {
+        rootTransport.forgetProbe()
+    }
+
     suspend fun prepare(): Boolean {
         if (ready) return true
         setupMutex.withLock {
