@@ -111,7 +111,10 @@ class RootTransport(
     }
 
     private fun startSu(command: String): Process =
-        ProcessBuilder("su", "-c", command).redirectErrorStream(false).start()
+        // The binary the gate found, spelled out: a ROM that keeps `su` somewhere PATH does not
+        // reach (KernelSU's /debug_ramdisk, Magisk's ramdisk) would pass the check and then fail
+        // every command with "Cannot run program su", which reads as "root refused".
+        ProcessBuilder(suBinaryPath() ?: "su", "-c", command).redirectErrorStream(false).start()
 
     /**
      * Wraps [this] in single quotes for the shell `su -c` hands the string to, so a path with a
@@ -132,6 +135,15 @@ private val SU_PATHS = listOf(
     "/debug_ramdisk/su",
 )
 
+/** The `su` this phone actually has, in the order above and then along `PATH`; null when none. */
+fun suBinaryPath(): String? =
+    SU_PATHS.firstOrNull { File(it).exists() }
+        ?: (System.getenv("PATH") ?: "")
+            .split(':')
+            .firstNotNullOfOrNull { directory ->
+                if (directory.isEmpty()) null else File(directory, "su").takeIf { it.exists() }?.absolutePath
+            }
+
 /**
  * Whether this phone carries a root binary at all — not a promise that it will grant one.
  *
@@ -139,8 +151,4 @@ private val SU_PATHS = listOf(
  * on, at startup, and a probe there would put a root prompt over the splash screen. The prompt
  * belongs on the first real operation, which is where [RootCantaHandler.prepare] asks for it.
  */
-fun hasSuBinary(): Boolean =
-    SU_PATHS.any { File(it).exists() } ||
-        (System.getenv("PATH") ?: "")
-            .split(':')
-            .any { directory -> directory.isNotEmpty() && File(directory, "su").exists() }
+fun hasSuBinary(): Boolean = suBinaryPath() != null
