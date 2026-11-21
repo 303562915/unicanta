@@ -28,6 +28,11 @@ class BatchRollbackTest {
         return { it in set }
     }
 
+    private fun frozen(vararg packages: String): (String) -> Boolean {
+        val set = packages.toSet()
+        return { it in set }
+    }
+
     @Test
     fun aBatchWhoseAppsAreStillGoneIsOffered() {
         val records = listOf(
@@ -101,5 +106,93 @@ class BatchRollbackTest {
     @Test
     fun anEmptyLogOffersNothing() {
         assertNull(emptyList<OperationRecord>().rollbackCandidate(gone()))
+    }
+
+    @Test
+    fun aFreezeBatchIsOfferedWithTheThawThatUndoesIt() {
+        val records = listOf(
+            record("com.a", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 1),
+            record("com.b", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 2),
+        )
+
+        val rollback = records.rollbackCandidate(gone(), frozen("com.a", "com.b"))
+
+        assertEquals(OperationKind.DISABLE, rollback?.kind, "a freeze batch is undone by thawing")
+        assertEquals(OperationKind.ENABLE, rollback?.undoKind, "the batch is not reinstalled")
+        assertEquals(listOf("com.b", "com.a"), rollback?.packages, "thawed back the way it was frozen")
+    }
+
+    @Test
+    fun anAppThawedByHandIsNotPartOfTheUndo() {
+        val records = listOf(
+            record("com.a", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 1),
+            record("com.b", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 2),
+            record("com.c", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 3),
+        )
+
+        val rollback = records.rollbackCandidate(gone(), frozen("com.a", "com.c"))
+
+        assertEquals(listOf("com.c", "com.a"), rollback?.packages, "com.b is already unfrozen")
+    }
+
+    @Test
+    fun aFreezeBatchWhoseAppsAreNoLongerFrozenIsNotOffered() {
+        val records = listOf(
+            record("com.a", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 1),
+            record("com.b", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 2),
+        )
+
+        assertNull(records.rollbackCandidate(gone(), frozen("com.a")), "a single row is undone by tapping it")
+    }
+
+    @Test
+    fun aFreezeBatchIsNotJudgedByWhetherItsAppsAreGone() {
+        val records = listOf(
+            record("com.a", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 1),
+            record("com.b", kind = OperationKind.DISABLE, batchId = 7, batchIndex = 2),
+        )
+
+        // Both packages are still installed: that is the normal state of a frozen app, and it must
+        // not be what a freeze batch is measured against.
+        assertNull(records.rollbackCandidate(gone("com.a", "com.b")))
+        assertEquals(
+            OperationKind.DISABLE,
+            records.rollbackCandidate(gone("com.a", "com.b"), frozen("com.a", "com.b"))?.kind,
+        )
+    }
+
+    @Test
+    fun aThawBatchIsNotRolledBack() {
+        val records = listOf(
+            record("com.a", kind = OperationKind.ENABLE, batchId = 8, batchIndex = 1),
+            record("com.b", kind = OperationKind.ENABLE, batchId = 8, batchIndex = 2),
+        )
+
+        assertNull(records.rollbackCandidate(gone(), frozen("com.a", "com.b")))
+    }
+
+    @Test
+    fun theNewestBatchWinsAcrossKinds() {
+        val records = listOf(
+            record("com.c", kind = OperationKind.DISABLE, batchId = 9, batchIndex = 1),
+            record("com.d", kind = OperationKind.DISABLE, batchId = 9, batchIndex = 2),
+            record("com.a", kind = OperationKind.UNINSTALL, batchId = 8, batchIndex = 1),
+            record("com.b", kind = OperationKind.UNINSTALL, batchId = 8, batchIndex = 2),
+        )
+
+        val rollback = records.rollbackCandidate(gone("com.a", "com.b"), frozen("com.c", "com.d"))
+
+        assertEquals(9L, rollback?.batchId, "the freeze batch happened last")
+        assertEquals(OperationKind.DISABLE, rollback?.kind)
+    }
+
+    @Test
+    fun aMixedBatchIsNotUndoneAsIfItWereOneOperation() {
+        val records = listOf(
+            record("com.a", kind = OperationKind.UNINSTALL, batchId = 3, batchIndex = 1),
+            record("com.b", kind = OperationKind.DISABLE, batchId = 3, batchIndex = 2),
+        )
+
+        assertNull(records.rollbackCandidate(gone("com.a"), frozen("com.b")))
     }
 }

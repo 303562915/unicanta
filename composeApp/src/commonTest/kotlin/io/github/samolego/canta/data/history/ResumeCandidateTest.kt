@@ -73,4 +73,66 @@ class ResumeCandidateTest {
         assertNull(resumeCandidate(emptyList(), 1000L, emptyList()))
         assertNull(resumeCandidate(listOf("com.a"), 0L, emptyList()), "no start time, no batch")
     }
+
+    @Test
+    fun aBatchWithNoKindIsAnUninstall() {
+        // The migration rule for data stored before batches carried a kind: those versions only
+        // ever remembered uninstall batches, so that is what an untyped entry means.
+        val resume = resumeCandidate(listOf("com.a", "com.b"), 1000L, emptyList())
+
+        assertEquals(OperationKind.UNINSTALL, resume?.kind)
+        assertEquals(OperationKind.UNINSTALL, resume?.finishKind)
+    }
+
+    @Test
+    fun aFreezeBatchResumesAsAFreeze() {
+        val resume = resumeCandidate(
+            interrupted = listOf("com.a", "com.b"),
+            startedAt = 1000L,
+            records = emptyList(),
+            kind = OperationKind.DISABLE,
+        )
+
+        assertEquals(OperationKind.DISABLE, resume?.kind, "resuming a freeze must not delete the app")
+        assertEquals(OperationKind.DISABLE, resume?.finishKind)
+        assertEquals(2, resume?.size)
+    }
+
+    @Test
+    fun aThawBatchResumesAsAThaw() {
+        val resume = resumeCandidate(listOf("com.a"), 1000L, emptyList(), OperationKind.ENABLE)
+
+        assertEquals(OperationKind.ENABLE, resume?.finishKind)
+    }
+
+    @Test
+    fun aBatchThatIsNeverRememberedIsNotResumed() {
+        // Putting apps back is not remembered while it runs: a stored one is stale data, and
+        // "continue restoring" a day later is a prompt nobody can act on.
+        assertNull(resumeCandidate(listOf("com.a"), 1000L, emptyList(), OperationKind.REINSTALL))
+    }
+
+    @Test
+    fun onlyUninstallFreezeAndThawAreRemembered() {
+        assertEquals(true, OperationKind.UNINSTALL.resumable)
+        assertEquals(true, OperationKind.DISABLE.resumable)
+        assertEquals(true, OperationKind.ENABLE.resumable)
+        assertEquals(false, OperationKind.REINSTALL.resumable)
+    }
+
+    @Test
+    fun anAnsweredFreezeBatchIsFinished() {
+        val disabled = OperationRecord(
+            timestamp = 1001,
+            kind = OperationKind.DISABLE,
+            packageName = "com.a",
+            label = "com.a",
+            success = true,
+            batchId = 1000L,
+            batchIndex = 1,
+            batchSize = 2,
+        )
+
+        assertNull(resumeCandidate(listOf("com.a"), 1000L, listOf(disabled), OperationKind.DISABLE))
+    }
 }

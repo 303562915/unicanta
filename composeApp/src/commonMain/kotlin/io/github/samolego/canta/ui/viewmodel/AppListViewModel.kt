@@ -19,10 +19,12 @@ import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.app.PackageSnapshot
 import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.bloat.BloatRepository
+import io.github.samolego.canta.data.history.BatchRollback
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.history.OperationRecord
 import io.github.samolego.canta.data.history.ResumeCandidate
+import io.github.samolego.canta.data.history.resumable
 import io.github.samolego.canta.data.history.resumeCandidate
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.generated.resources.Res
@@ -331,11 +333,10 @@ class AppListViewModel(
         if (packageNames.isEmpty()) return 0
         _lastFailures.value = emptyList()
         // Written before the first app is touched: if the app dies on the second one, this is
-        // what tells the next start which apps the batch never reached.
+        // what tells the next start which apps the batch never reached, and which operation to
+        // repeat on them.
         val batchId = currentTimeMillis()
-        if (kind == OperationKind.UNINSTALL) {
-            runCatching { settings?.startPendingBatch(packageNames, batchId) }
-        }
+        if (kind.resumable) rememberBatch(packageNames, batchId, kind)
         val before = _apps.associateBy { it.packageName }
         val results = when (kind) {
             OperationKind.UNINSTALL -> cantaHandler.uninstallApps(packageNames, resetToFactory)
@@ -385,9 +386,7 @@ class AppListViewModel(
         // The batch is over: every app has an answer, so there is nothing left to resume. This
         // runs even when some apps failed — a refusal is an answer, and asking again would only
         // produce the same refusal twice.
-        if (kind == OperationKind.UNINSTALL) {
-            runCatching { settings?.clearPendingBatch() }
-        }
+        if (kind.resumable) forgetRememberedBatch(kind)
         if (succeededApps.isNotEmpty()) {
             when (kind) {
                 OperationKind.UNINSTALL ->
@@ -409,29 +408,105 @@ class AppListViewModel(
         applyPackages(packageNames, OperationKind.REINSTALL)
 
     /**
-     * What is left of an uninstall batch that was cut short, or null when nothing is. Called once
-     * at start: the batch is the one the user was in the middle of when the app went away.
+     * What is left of a batch that was cut short, or null when nothing is. Called once at start:
+     * the batch is the one the user was in the middle of when the app went away, whatever it was
+     * doing — an uninstall, a freeze or a thaw.
      */
     suspend fun interruptedBatch(): ResumeCandidate? {
-        val current = settings ?: return null
-        val interrupted = current.interruptedBatchFlow.first()
-        if (interrupted.isEmpty()) return null
-        val startedAt = current.interruptedBatchStartedAtFlow.first()
+        // The log carries the kind of the batch; the settings only ever knew about uninstalls, so
+        // they are the fallback for a batch remembered before the kind existed. Reading the store
+        // here also loads it, which is what makes the records below the whole log.
+        val stored = history?.pendingBatch() ?: legacyPendingBatch() ?: return null
         val records = history?.records?.value.orEmpty()
-        return resumeCandidate(interrupted, startedAt, records)
+        val candidate = resumeCandidate(stored.packages, stored.startedAt, records, stored.kind)
+            ?: return null
+        resumingKind = candidate.kind
+        return candidate
     }
 
     /**
-     * Finishes the interrupted batch. The packages already answered are skipped by [applyPackages]
-     * asking the device for each one's state, so nothing that was already removed is attempted a
-     * second time.
+     * The batch remembered by [CantaSettings]: packages and start time, nothing more. Data written
+     * before the log kept the kind only ever holds uninstall batches, so that is what it means.
      */
-    suspend fun resumeInterruptedBatch(packages: List<String>, resetToFactory: Boolean = false): Int =
-        applyPackages(packages, OperationKind.UNINSTALL, resetToFactory)
+    private suspend fun legacyPendingBatch(): ResumeCandidate? {
+        val current = settings ?: return null
+        val interrupted = current.interruptedBatchFlow.first()
+        val startedAt = current.interruptedBatchStartedAtFlow.first()
+        if (interrupted.isEmpty() || startedAt <= 0) return null
+        return ResumeCandidate(
+            packages = interrupted,
+            startedAt = startedAt,
+            kind = OperationKind.UNINSTALL,
+        )
+    }
+
+    /**
+     * The kind of the batch the resume prompt is about, remembered by [interruptedBatch] so the
+     * answer runs the same operation again instead of guessing.
+     */
+    private var resumingKind: OperationKind? = null
+
+    /**
+     * Finishes the interrupted batch with the operation it was already running. The packages
+     * already answered are skipped by [resumeCandidate], so nothing that was already handled is
+     * attempted a second time.
+     */
+    suspend fun resumeInterruptedBatch(
+        packages: List<String>,
+        resetToFactory: Boolean = false,
+    ): Int {
+        // A freeze batch resumed as an uninstall would delete apps the user only meant to pause,
+        // so the kind comes from what was stored when the batch started.
+        val kind = resumingKind ?: interruptedBatch()?.kind ?: OperationKind.UNINSTALL
+        resumingKind = null
+        return applyPackages(packages, kind, resetToFactory && kind == OperationKind.UNINSTALL)
+    }
+
+    /** Finishes an interrupted batch whose kind the caller already knows (the resume prompt's). */
+    suspend fun resumeInterruptedBatch(
+        packages: List<String>,
+        kind: OperationKind,
+        resetToFactory: Boolean = false,
+    ): Int {
+        resumingKind = null
+        return applyPackages(packages, kind, resetToFactory && kind == OperationKind.UNINSTALL)
+    }
+
+    /**
+     * Undoes a whole batch in one tap: what an uninstall batch removed is put back, what a freeze
+     * batch froze is thawed. The outcome and its failures are reported exactly as any other batch,
+     * so a rollback that half worked says which apps it could not do. Returns how many succeeded.
+     */
+    suspend fun rollbackBatch(batch: BatchRollback): Int =
+        applyPackages(batch.packages, batch.undoKind)
 
     /** The interrupted batch was abandoned: stop offering it at every start. */
     suspend fun forgetInterruptedBatch() {
+        resumingKind = null
+        runCatching { history?.clearPendingBatch() }
         settings?.clearPendingBatch()
+    }
+
+    /**
+     * Remembers a batch before its first app is touched, so a batch cut short is still known at the
+     * next start. The log is the copy that carries the kind; [CantaSettings] keeps the uninstall
+     * batch as well, so a build that predates this still offers to finish it.
+     */
+    private suspend fun rememberBatch(packages: List<String>, batchId: Long, kind: OperationKind) {
+        runCatching { history?.startPendingBatch(packages, batchId, kind) }
+            .onFailure { LogUtils.e(TAG, "Could not remember the ${kind.name.lowercase()} batch", it) }
+        if (kind == OperationKind.UNINSTALL) {
+            runCatching { settings?.startPendingBatch(packages, batchId) }
+        }
+    }
+
+    /** The batch finished (or was abandoned): neither copy of it is worth resuming. */
+    private suspend fun forgetRememberedBatch(kind: OperationKind) {
+        resumingKind = null
+        runCatching { history?.clearPendingBatch() }
+        if (kind == OperationKind.UNINSTALL) {
+            runCatching { settings?.clearPendingBatch() }
+        }
     }
 
     /** One line of the records tab for [result]; the phone's own model is asked once per batch. */

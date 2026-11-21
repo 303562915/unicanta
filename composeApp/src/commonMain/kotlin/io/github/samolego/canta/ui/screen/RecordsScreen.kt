@@ -81,7 +81,7 @@ fun RecordsScreen(
     apps: List<AppInfo>,
     onReverse: (OperationRecord) -> Unit,
     modifier: Modifier = Modifier,
-    /** Puts a whole batch back, in one tap: the newest removal that is still partly in place. */
+    /** Undoes a whole batch in one tap: the newest removal or freeze that is still in effect. */
     onRollbackBatch: (BatchRollback) -> Unit = {},
 ) {
     val records by history.records.collectAsStateWithLifecycle()
@@ -105,7 +105,12 @@ fun RecordsScreen(
     // Whether a package is gone right now, asked of the list rather than of the log: a later
     // operation on the same package is what decides, and the log does not say which came last.
     val gone = remember(apps) { apps.filter { it.isUninstalled }.map { it.packageName }.toSet() }
-    val rollback = remember(records, gone) { records.rollbackCandidate { it in gone } }
+    // The same for a freeze: an app thawed by hand after the batch is not part of the undo any
+    // more, so the banner counts what is still frozen instead of what the batch froze.
+    val frozen = remember(apps) { apps.filter { it.isDisabled }.map { it.packageName }.toSet() }
+    val rollback = remember(records, gone, frozen) {
+        records.rollbackCandidate(currentlyUninstalled = { it in gone }, currentlyDisabled = { it in frozen })
+    }
 
     // One flat list of day headers and rows: a lazy list cannot nest one inside another.
     val entries = remember(latest) { flattenByDay(latest) }
@@ -140,16 +145,28 @@ fun RecordsScreen(
 /**
  * The one-tap way out of a batch: undoing ten removals by tapping ten rows is not an undo.
  *
- * It only appears for a batch that can actually be undone — an uninstall batch whose apps are
- * still gone — so the button is never there to fail.
+ * It only appears for a batch that can actually be undone — one whose apps are still in the state
+ * it left them in — so the button is never there to fail. The words follow the batch: an uninstall
+ * batch is put back, a freeze batch is thawed, and a freeze is never called a reinstall.
  */
 @Composable
 private fun RollbackBanner(batch: BatchRollback, onRollback: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val isFreeze = batch.kind == OperationKind.DISABLE
+    // A removal is the loud one (primary); a freeze is a pause (tertiary), the same way the rows
+    // colour it, because the app is still on the device.
+    val accent = if (isFreeze) scheme.tertiary else scheme.primary
+    val title = if (isFreeze) "把这一批全部启用" else "把这一批全部装回来"
+    val body = if (isFreeze) {
+        "这一批停用了 ${batch.size} 个，还都没启用"
+    } else {
+        "这一批删了 ${batch.size} 个，还都没回来"
+    }
+    val action = if (isFreeze) "全部启用" else "一键恢复"
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onRollback),
         shape = RoundedCornerShape(12.dp),
-        color = scheme.primary.copy(alpha = 0.12f),
+        color = accent.copy(alpha = 0.12f),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -157,21 +174,21 @@ private fun RollbackBanner(batch: BatchRollback, onRollback: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "把这一批全部装回来",
+                    text = title,
                     style = FlText.subheadline.copy(fontWeight = FontWeight.SemiBold),
-                    color = scheme.primary,
+                    color = accent,
                 )
                 Text(
-                    text = "这一批删了 ${batch.size} 个，还都没回来",
+                    text = body,
                     style = FlText.caption2,
                     color = scheme.onSurfaceVariant,
                 )
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "一键恢复",
+                text = action,
                 style = FlText.caption2.copy(fontWeight = FontWeight.SemiBold),
-                color = scheme.primary,
+                color = accent,
             )
         }
     }

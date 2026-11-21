@@ -68,8 +68,49 @@ data class OperationRecord(
     val user: Int? = null,
 )
 
+/**
+ * The batch that was running when the app last stopped, kept beside the log in the same blob: a
+ * resume needs both the packages that never got an answer and what the batch was doing to them.
+ *
+ * The kind is stored by name rather than by ordinal so a record written by a newer build cannot be
+ * misread as a different operation: an unknown name falls back to [OperationKind.UNINSTALL], which
+ * is also what a blob written before this field existed means — those versions only ever
+ * remembered uninstall batches.
+ */
 @Serializable
-private data class OperationLogBlob(val records: List<OperationRecord> = emptyList())
+private data class PendingBatchBlob(
+    val packages: List<String> = emptyList(),
+    val startedAt: Long = 0L,
+    val kind: String = "",
+) {
+    /** The batch as a candidate, or null when nothing is pending. */
+    fun candidate(): ResumeCandidate? {
+        if (packages.isEmpty() || startedAt <= 0) return null
+        return ResumeCandidate(
+            packages = packages,
+            startedAt = startedAt,
+            kind = runCatching { OperationKind.valueOf(kind) }.getOrDefault(OperationKind.UNINSTALL),
+        )
+    }
+
+    companion object {
+        fun of(packages: List<String>, startedAt: Long, kind: OperationKind) =
+            PendingBatchBlob(packages = packages, startedAt = startedAt, kind = kind.name)
+
+        /** Anything still undecided: a batch that was answered in full, or one never started. */
+        val NONE = PendingBatchBlob()
+    }
+}
+
+@Serializable
+private data class OperationLogBlob(
+    val records: List<OperationRecord> = emptyList(),
+    /**
+     * The batch that never finished. Blobs written before this field existed decode as "nothing
+     * pending", and the copy `CantaSettings` keeps is used instead (an uninstall batch).
+     */
+    val pending: PendingBatchBlob = PendingBatchBlob.NONE,
+)
 
 /**
  * The record of everything Canta uninstalled or put back: shown on the records tab and mirrored
@@ -106,6 +147,9 @@ class OperationLogStore(
     /** Newest first, as the records tab shows them. */
     val records: StateFlow<List<OperationRecord>> = _records.asStateFlow()
 
+    /** The batch that never finished, if any; read and written under [mutex] with the records. */
+    private var pending = PendingBatchBlob.NONE
+
     private var loaded = false
 
     /** Reads the blob once; every entry point calls it before answering. */
@@ -114,9 +158,9 @@ class OperationLogStore(
             if (loaded) return@withLock
             runCatching {
                 storage.read()?.decodeToString()?.let { text ->
-                    _records.value = json.decodeFromString(OperationLogBlob.serializer(), text)
-                        .records
-                        .sortedByDescending { it.timestamp }
+                    val blob = json.decodeFromString(OperationLogBlob.serializer(), text)
+                    _records.value = blob.records.sortedByDescending { it.timestamp }
+                    pending = blob.pending
                 }
             }.onFailure { LogUtils.e(TAG, "Could not read the operation log", it) }
             loaded = true
@@ -130,23 +174,65 @@ class OperationLogStore(
     suspend fun record(records: List<OperationRecord>) {
         if (records.isEmpty()) return
         ensureReady()
-        val kept = mutex.withLock {
+        val (kept, pendingNow) = mutex.withLock {
             val merged = (records.sortedByDescending { it.timestamp } + _records.value)
                 .take(MAX_RECORDS)
             _records.value = merged
-            merged
+            merged to pending
         }
-        persist(kept)
+        persist(kept, pendingNow)
         LogUtils.i(TAG, "Recorded ${records.size} operation(s)")
+    }
+
+    /**
+     * Remembers the batch that is starting, together with what it is doing, so a batch cut short by
+     * the app dying still knows which apps it never reached and what to do to them.
+     *
+     * @param packages the whole list; the finished ones are dropped as their answers arrive.
+     * @param startedAt the batch id, which is also when it started.
+     */
+    suspend fun startPendingBatch(packages: List<String>, startedAt: Long, kind: OperationKind) {
+        if (packages.isEmpty()) return
+        ensureReady()
+        val next = PendingBatchBlob.of(packages, startedAt, kind)
+        val (kept, pendingNow) = mutex.withLock {
+            pending = next
+            _records.value to next
+        }
+        persist(kept, pendingNow)
+        LogUtils.i(TAG, "Remembered a ${kind.name.lowercase()} batch of ${packages.size} package(s)")
+    }
+
+    /**
+     * The stored batch, or null when the last one was answered in full. The caller still has to
+     * drop the packages that do have a record: this only says what was remembered.
+     */
+    suspend fun pendingBatch(): ResumeCandidate? {
+        ensureReady()
+        return mutex.withLock { pending }.candidate()
+    }
+
+    /** The batch finished (or was abandoned): nothing is left to resume. */
+    suspend fun clearPendingBatch() {
+        ensureReady()
+        val (kept, pendingNow) = mutex.withLock {
+            if (pending == PendingBatchBlob.NONE) return@withLock null
+            pending = PendingBatchBlob.NONE
+            _records.value to PendingBatchBlob.NONE
+        } ?: return
+        persist(kept, pendingNow)
     }
 
     /** Forgets every record: the blob and the CSV both start over. */
     suspend fun clear() {
         mutex.withLock {
             _records.value = emptyList()
+            // A resume is worked out against the records; without them a stored batch would look
+            // untouched and be redone from the first app. Both go together.
+            pending = PendingBatchBlob.NONE
             loaded = true
         }
-        persist(emptyList())
+        persist(emptyList(), PendingBatchBlob.NONE)
         LogUtils.i(TAG, "Operation log cleared")
     }
 
@@ -157,11 +243,16 @@ class OperationLogStore(
      */
     suspend fun export(): String? = writeCsv(_records.value)
 
-    private suspend fun persist(records: List<OperationRecord>) = withContext(Dispatchers.Default) {
+    private suspend fun persist(
+        records: List<OperationRecord>,
+        pending: PendingBatchBlob,
+    ) = withContext(Dispatchers.Default) {
         runCatching {
             storage.write(
-                json.encodeToString(OperationLogBlob.serializer(), OperationLogBlob(records))
-                    .encodeToByteArray()
+                json.encodeToString(
+                    OperationLogBlob.serializer(),
+                    OperationLogBlob(records = records, pending = pending),
+                ).encodeToByteArray()
             )
         }.onFailure { LogUtils.e(TAG, "Could not store the operation log", it) }
         writeCsv(records)
