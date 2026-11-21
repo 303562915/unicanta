@@ -18,7 +18,6 @@ import io.github.samolego.canta.generated.resources.occupied_accessibility
 import io.github.samolego.canta.generated.resources.occupied_device_admin
 import io.github.samolego.canta.generated.resources.occupied_input_method
 import io.github.samolego.canta.generated.resources.occupied_launcher
-import io.github.samolego.canta.generated.resources.records_cleared_after_reboot
 import io.github.samolego.canta.testing.FakeHandler
 import io.github.samolego.canta.testing.FakePlatform
 import io.github.samolego.canta.testing.MemoryStorage
@@ -75,24 +74,14 @@ class MainViewModelTest {
             Res.string.occupied_input_method,
             Res.string.occupied_device_admin,
             Res.string.occupied_accessibility,
-            Res.string.records_cleared_after_reboot,
         ).forEach { getString(it) }
         body()
     }
 
     private suspend fun mainViewModel(
-        history: OperationLogStore? = null,
-        // Last, so the trailing-lambda form the tests use (`mainViewModel { rules(...) }`) keeps
-        // naming the rules rather than whatever was added to the constructor this week.
         loadRules: suspend () -> SafetyRules = { SafetyRules(SafetyRuleSet()) },
     ): Pair<MainViewModel, AppListViewModel> {
-        // The list owns the log, so it is also where the "delete at system start" switch is applied.
-        val appList = AppListViewModel(
-            handler,
-            offlineBloatRepository(),
-            history = history,
-            settings = settings,
-        )
+        val appList = AppListViewModel(handler, offlineBloatRepository())
         val main = MainViewModel(handler, platform, settings, appList, loadRules)
         return main to appList
     }
@@ -352,6 +341,10 @@ class MainViewModelTest {
      * The records tab's switch: on, the log is dropped the first time the app runs after a reboot;
      * off, it stays. Never on the very first start of the switch either — a reboot that happened
      * before the app ever ran is not what was asked for.
+     *
+     * Asked of the list directly rather than through a start: the answer is what the start acts on
+     * (it is also what makes the app say the log was cleared), and awaiting it keeps the test out
+     * of the dispatchers a real start hops through.
      */
     @Test
     fun theRecordsAreClearedAtASystemStartOnlyWhenTheSwitchIsOn() = runVmTest {
@@ -370,31 +363,37 @@ class MainViewModelTest {
             )
             assertEquals(1, log.records.value.size, "the log starts out with something to clear")
         }
+        suspend fun start(): Boolean = AppListViewModel(
+            handler,
+            offlineBloatRepository(),
+            history = log,
+            settings = settings,
+        ).clearRecordsIfRebooted()
 
         settings.setClearRecordsAfterBoot(true)
         handler.boot = "boot-1"
 
         aRecord()
-        mainViewModel(history = log)
-        assertEquals(1, log.records.value.size, "no boot was stored yet, so there is no restart to see")
+        assertFalse(start(), "no boot was stored yet, so there is no restart to see")
+        assertEquals(1, log.records.value.size)
         assertEquals("boot-1", settings.recordsBootIdFlow.first())
 
         // The same boot, opened again: opening the app is not a system start.
-        mainViewModel(history = log)
+        assertFalse(start())
         assertEquals(1, log.records.value.size)
 
-        // A reboot with the switch on: the log goes.
+        // A reboot with the switch on: the log goes, and the answer is what the app reports.
         handler.boot = "boot-2"
-        mainViewModel(history = log)
-        assertTrue(log.records.value.isEmpty(), "the switch is on and the phone restarted")
-        assertEquals(listOf(getString(Res.string.records_cleared_after_reboot)), platform.shownMessages)
+        assertTrue(start(), "the switch is on and the phone restarted")
+        assertTrue(log.records.value.isEmpty())
+        assertEquals("boot-2", settings.recordsBootIdFlow.first())
 
         // A reboot with the switch off: the log stays, and the boot is still remembered.
         settings.setClearRecordsAfterBoot(false)
         aRecord()
         handler.boot = "boot-3"
-        mainViewModel(history = log)
-        assertEquals(1, log.records.value.size, "off means the records are kept through restarts")
+        assertFalse(start(), "off means the records are kept through restarts")
+        assertEquals(1, log.records.value.size)
         assertEquals("boot-3", settings.recordsBootIdFlow.first())
     }
 }
