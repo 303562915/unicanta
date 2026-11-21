@@ -319,4 +319,18 @@ class MainViewModelTest {
         assertTrue(dialog.blocked.single().why.isNotBlank(), "the dialog has to say which job it is")
         assertTrue(handler.uninstallCalls.isEmpty(), "removing the home screen leaves nothing to go back to")
     }
+
+    @Test
+    fun aPackageBothRiskyByRuleAndInUseIsListedOnceAsBlocked() = runVmTest {
+        handler.occupied = mapOf("com.a" to listOf(Occupancy.LAUNCHER))
+        val (main, appList) = mainViewModel { rules(SafetyRule("com.a", "risky", why = "loses a setting")) }
+        appList.selectedApps.add("com.a")
+
+        main.applyToSelected(AppsType.INSTALLED)
+
+        val dialog = assertIs<MainDialog.UnsafeSelection>(main.dialog)
+        assertEquals(listOf("com.a"), dialog.blocked.map { it.pkg })
+        assertTrue(dialog.risky.isEmpty(), "the same package must not be offered as removable further down")
+        assertTrue("loses a setting" in dialog.blocked.single().why, "both reasons survive in one line")
+    }
 }

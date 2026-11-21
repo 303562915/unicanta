@@ -230,11 +230,14 @@ class MainViewModel(
         // with it, which is what it used to do.
         val verdicts = safetyRules().verdicts(selected, handler.deviceProfile())
         val ruleBlocked = verdicts.values.filter { it.status == SafetyStatus.CRITICAL }
-        val risky = verdicts.values.filter { it.status == SafetyStatus.RISKY }
         // A package that is the home screen, the keyboard, an administrator or an accessibility
         // service right now is blocked even when no rule mentions it: the shipped rules cannot know
         // what this user switched on, and removing it takes the phone's way back with it.
         val blocked = mergeVerdicts(ruleBlocked, occupancyVerdicts(selected))
+        val blockedPackages = blocked.map { it.pkg }.toSet()
+        // What is blocked is already listed above; repeating it as merely risky would read as "this
+        // one you may remove anyway", the opposite of what the rules just said.
+        val risky = verdicts.values.filter { it.status == SafetyStatus.RISKY && it.pkg !in blockedPackages }
         if (blocked.isNotEmpty()) {
             dialog = unsafeSelection(selected, verdicts, blocked, risky)
             return
@@ -306,7 +309,9 @@ class MainViewModel(
         blocked = blocked,
         risky = risky,
         deviceLabel = handler.deviceProfile()?.label().orEmpty(),
-        unknownCount = selected.count { it !in verdicts },
+        // A package in use has no rule either, but it is not unknown to the dialog: it is listed
+        // above with the job it is doing.
+        unknownCount = selected.count { pkg -> pkg !in verdicts && blocked.none { it.pkg == pkg } },
     )
 
     /** [MainDialog.UnsafeSelection] accepted: drop the blocked ones and continue with the rest. */

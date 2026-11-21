@@ -119,6 +119,25 @@ enum class DeviceDiscovery {
 }
 
 /**
+ * A job a package is doing on the phone right now. Removing a package that holds one of these
+ * takes the job with it: no home screen to go back to, no keyboard to type with, no way to undo it
+ * from inside the app.
+ */
+enum class Occupancy {
+    /** The home screen (launcher) the phone boots into. */
+    LAUNCHER,
+
+    /** The input method the phone is set to, the one that comes up when a field is tapped. */
+    INPUT_METHOD,
+
+    /** Holds device administrator rights, which have to be released before the app can go. */
+    DEVICE_ADMIN,
+
+    /** Providing an accessibility service, which whatever set it up depends on. */
+    ACCESSIBILITY,
+}
+
+/**
  * Abstract contract that takes care of the platform-specific, low-level
  * operations: loading installed/uninstalled apps and uninstalling/reinstalling.
  *
@@ -130,25 +149,6 @@ enum class DeviceDiscovery {
  * Operations report their real outcome: they return once the device has
  * answered, not when the command was merely dispatched.
  */
-/**
- * A job a package is doing on the phone right now. Removing a package that holds one of these
- * takes the job with it: no home screen to go back to, no keyboard to type with, no way to undo it
- * from inside the app.
- */
-enum class Occupancy {
-    /** The home screen (launcher) the phone boots into. */
-    LAUNCHER,
-
-    /** The default input method, or one the user has enabled. */
-    INPUT_METHOD,
-
-    /** Holds device administrator rights, which have to be released before the app can go. */
-    DEVICE_ADMIN,
-
-    /** Providing an accessibility service, which whatever set it up depends on. */
-    ACCESSIBILITY,
-}
-
 interface CantaHandler {
     val isAuthorized: Boolean
 

@@ -263,13 +263,13 @@ class AndroidCantaHandler(
         withContext(Dispatchers.IO) {
             if (packageNames.isEmpty()) return@withContext emptyMap()
             val home = launcherPackage()
-            val keyboards = inputMethodPackages()
+            val keyboard = defaultInputMethodPackage()
             val admins = deviceAdminPackages()
             val accessibility = accessibilityPackages()
             packageNames.distinct().mapNotNull { pkg ->
                 val roles = buildList {
                     if (pkg == home) add(Occupancy.LAUNCHER)
-                    if (pkg in keyboards) add(Occupancy.INPUT_METHOD)
+                    if (pkg == keyboard) add(Occupancy.INPUT_METHOD)
                     if (pkg in admins) add(Occupancy.DEVICE_ADMIN)
                     if (pkg in accessibility) add(Occupancy.ACCESSIBILITY)
                 }
@@ -285,16 +285,16 @@ class AndroidCantaHandler(
         )?.activityInfo?.packageName
     }.getOrNull()
 
-    /** The default keyboard plus the enabled ones: both lose their job when removed. */
-    private fun inputMethodPackages(): Set<String> = runCatching {
-        val enabled = context.getSystemService(InputMethodManager::class.java)
-            ?.enabledInputMethodList
-            ?.mapNotNull { it.packageName }
-            .orEmpty()
-        val default = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+    /**
+     * The keyboard the phone actually types with. The other enabled ones are left out on purpose:
+     * people keep two or three around and removing a spare keyboard strands nothing.
+     */
+    private fun defaultInputMethodPackage(): String? = runCatching {
+        Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
             ?.let { ComponentName.unflattenFromString(it)?.packageName }
-        (enabled + listOfNotNull(default)).toSet()
-    }.getOrDefault(emptySet())
+            ?: context.getSystemService(InputMethodManager::class.java)
+                ?.let { manager -> manager.enabledInputMethodList.firstOrNull()?.packageName }
+    }.getOrNull()
 
     /** Apps holding device administrator rights, which cannot be removed until they give them up. */
     private fun deviceAdminPackages(): Set<String> = runCatching {
