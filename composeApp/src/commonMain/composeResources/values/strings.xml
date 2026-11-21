@@ -168,6 +168,8 @@
     <string name="onboarding_privilege_title">Last step: the privilege</string>
     <string name="onboarding_privilege_subtitle">Removing system apps needs one privileged runtime. Either one works; we recommend Stellar.</string>
     <string name="onboarding_privilege_state_active">Privilege granted — this phone is ready.</string>
+    <string name="onboarding_privilege_state_root_active">Working through root — this phone is ready.</string>
+    <string name="onboarding_privilege_state_root_pending">Root is there; allow UniCanta when it asks.</string>
     <string name="onboarding_privilege_state_not_authorized">Service is running. Allow UniCanta in it.</string>
     <string name="onboarding_privilege_state_not_running">Installed, service not started.</string>
     <string name="onboarding_privilege_state_not_available">No privileged runtime detected yet.</string>

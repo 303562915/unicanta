@@ -138,6 +138,10 @@ class AndroidCantaHandler(
     override val isAuthorized: Boolean
         get() = ShizukuPermission.isCantaAuthorized()
 
+    /** This handler is the Shizuku path: the setup pages describe a runtime app, not a root grant. */
+    override val privilegeKind: PrivilegeKind
+        get() = PrivilegeKind.SHIZUKU
+
     override val privilegeStatus: PrivilegeStatus
         get() = ShizukuPermission.privilegeStatus(packageManager)
 

@@ -9,6 +9,24 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
 /**
+ * Which privilege Canta is running on.
+ *
+ * The UI needs this because the two are set up in completely different ways: one is an app to
+ * install and start, the other is a grant from a root manager. Telling a rooted user to install
+ * Shizuku would be an instruction that cannot help them.
+ */
+enum class PrivilegeKind {
+    /** Nothing privileged is available; only the app list works. */
+    NONE,
+
+    /** Shizuku or Sui: a runtime app the user installs, starts and authorizes. */
+    SHIZUKU,
+
+    /** A rooted phone: no runtime app at all, only the root manager's own prompt. */
+    ROOT,
+}
+
+/**
  * Status of the privileged runtime (Shizuku / Sui on Android).
  */
 enum class PrivilegeStatus {
@@ -114,6 +132,13 @@ enum class DeviceDiscovery {
  */
 interface CantaHandler {
     val isAuthorized: Boolean
+
+    /**
+     * Which privilege [isAuthorized] is about, so the setup pages can name the right one: a rooted
+     * phone is authorized by its root manager's prompt, not by a runtime app to install.
+     */
+    val privilegeKind: PrivilegeKind
+        get() = PrivilegeKind.NONE
 
     /** State of the privileged runtime; only meaningful on Android (Shizuku). */
     val privilegeStatus: PrivilegeStatus

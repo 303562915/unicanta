@@ -76,6 +76,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.PrivilegeStatus
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.accept
@@ -125,6 +126,8 @@ import io.github.samolego.canta.generated.resources.onboarding_privilege_recomme
 import io.github.samolego.canta.generated.resources.onboarding_privilege_shizuku_action
 import io.github.samolego.canta.generated.resources.onboarding_privilege_shizuku_body
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_active
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_authorized
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_available
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
@@ -751,6 +754,9 @@ private fun PrivilegePage(
     // Re-read on resume: every step happens in another app, and the user comes straight back.
     var status by remember { mutableStateOf(handler.privilegeStatus) }
     var isAuthorized by remember { mutableStateOf(handler.isAuthorized) }
+    // Which privilege is in play: a rooted phone needs no runtime app at all, so the whole page
+    // about installing Shizuku is the wrong instruction for it.
+    val kind = handler.privilegeKind
     val scope = rememberCoroutineScope()
 
     fun refresh() {
@@ -788,9 +794,17 @@ private fun PrivilegePage(
         StatusCard(
             ready = ready,
             status = status,
+            kind = kind,
             onDetect = { refresh() },
             onGrant = {
                 if (status == PrivilegeStatus.NOT_AUTHORIZED) {
+                    scope.launch {
+                        handler.requestAuthorization()
+                        refresh()
+                    }
+                } else if (kind == PrivilegeKind.ROOT) {
+                    // Root is the one case with nothing to install: the grant lives in the root
+                    // manager's own prompt, which `requestAuthorization` is what raises.
                     scope.launch {
                         handler.requestAuthorization()
                         refresh()
@@ -802,29 +816,55 @@ private fun PrivilegePage(
                 }
             },
         )
-        Spacer(Modifier.height(14.dp))
-        RuntimeCard(
-            recommended = true,
-            mark = "St",
-            title = "Stellar",
-            body = Res.string.onboarding_privilege_stellar_body,
-            action = Res.string.onboarding_privilege_stellar_action,
-            onOpen = { platform.openUrl(STELLAR_URL) },
-        )
-        Spacer(Modifier.height(10.dp))
-        RuntimeCard(
-            recommended = false,
-            mark = "Sh",
-            title = "Shizuku",
-            body = Res.string.onboarding_privilege_shizuku_body,
-            action = Res.string.onboarding_privilege_shizuku_action,
-            onOpen = { platform.openUrl(SHIZUKU_URL) },
-        )
-        Spacer(Modifier.height(14.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            StepLine("1", Res.string.onboarding_privilege_step_install, done = status != PrivilegeStatus.NOT_AVAILABLE)
-            StepLine("2", Res.string.onboarding_privilege_step_start, done = status == PrivilegeStatus.NOT_AUTHORIZED || ready)
-            StepLine("3", Res.string.onboarding_privilege_step_grant, done = ready)
+        if (kind == PrivilegeKind.ROOT) {
+            // A rooted phone is done here: no runtime app, no three steps. Saying so plainly is the
+            // whole point — the cards below would otherwise tell a rooted user to install Shizuku.
+            Spacer(Modifier.height(14.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(FlSurfaceLevel.Card.colorOf(MaterialTheme.colorScheme))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "这台手机有 root，Canta 直接用 root 工作",
+                    style = FlText.subheadline,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "不需要装 Shizuku 或 Stellar。第一次卸载时会弹一次 root 授权，允许之后就一直免询问。" +
+                        "如果你在 root 管理器里拒绝过授权，回到这里点「重新检测」或重装 Canta 再授权一次。",
+                    style = FlText.caption1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            Spacer(Modifier.height(14.dp))
+            RuntimeCard(
+                recommended = true,
+                mark = "St",
+                title = "Stellar",
+                body = Res.string.onboarding_privilege_stellar_body,
+                action = Res.string.onboarding_privilege_stellar_action,
+                onOpen = { platform.openUrl(STELLAR_URL) },
+            )
+            Spacer(Modifier.height(10.dp))
+            RuntimeCard(
+                recommended = false,
+                mark = "Sh",
+                title = "Shizuku",
+                body = Res.string.onboarding_privilege_shizuku_body,
+                action = Res.string.onboarding_privilege_shizuku_action,
+                onOpen = { platform.openUrl(SHIZUKU_URL) },
+            )
+            Spacer(Modifier.height(14.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                StepLine("1", Res.string.onboarding_privilege_step_install, done = status != PrivilegeStatus.NOT_AVAILABLE)
+                StepLine("2", Res.string.onboarding_privilege_step_start, done = status == PrivilegeStatus.NOT_AUTHORIZED || ready)
+                StepLine("3", Res.string.onboarding_privilege_step_grant, done = ready)
+            }
         }
         Spacer(Modifier.height(10.dp))
         Text(
@@ -843,15 +883,27 @@ private fun PrivilegePage(
 private fun StatusCard(
     ready: Boolean,
     status: PrivilegeStatus,
+    kind: PrivilegeKind,
     onDetect: () -> Unit,
     onGrant: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val message = when {
-        ready -> Res.string.onboarding_privilege_state_active
-        status == PrivilegeStatus.NOT_AUTHORIZED -> Res.string.onboarding_privilege_state_not_authorized
-        status == PrivilegeStatus.NOT_RUNNING -> Res.string.onboarding_privilege_state_not_running
-        else -> Res.string.onboarding_privilege_state_not_available
+    // A rooted phone has no runtime to install or start, so the two failure sentences mean something
+    // else there: "no root grant yet" and "root was refused". Telling a rooted user to install
+    // Shizuku is exactly the wrong instruction, and it is what this branch exists to avoid.
+    val message = if (kind == PrivilegeKind.ROOT) {
+        if (ready) {
+            Res.string.onboarding_privilege_state_root_active
+        } else {
+            Res.string.onboarding_privilege_state_root_pending
+        }
+    } else {
+        when {
+            ready -> Res.string.onboarding_privilege_state_active
+            status == PrivilegeStatus.NOT_AUTHORIZED -> Res.string.onboarding_privilege_state_not_authorized
+            status == PrivilegeStatus.NOT_RUNNING -> Res.string.onboarding_privilege_state_not_running
+            else -> Res.string.onboarding_privilege_state_not_available
+        }
     }
     Column(
         modifier = Modifier

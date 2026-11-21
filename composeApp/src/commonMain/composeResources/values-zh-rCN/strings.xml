@@ -333,6 +333,8 @@
     <string name="onboarding_privilege_title">最后一步：拿到权限</string>
     <string name="onboarding_privilege_subtitle">卸载系统应用需要一个特权运行时。两个都行，我们推荐 Stellar。</string>
     <string name="onboarding_privilege_state_active">已拿到权限，这台手机可以用了。</string>
+    <string name="onboarding_privilege_state_root_active">正在通过 root 工作，这台手机可以用了。</string>
+    <string name="onboarding_privilege_state_root_pending">有 root，只差你允许 UniCanta 一次。</string>
     <string name="onboarding_privilege_state_not_authorized">服务在跑，去里面允许 UniCanta。</string>
     <string name="onboarding_privilege_state_not_running">已安装，服务还没启动。</string>
     <string name="onboarding_privilege_state_not_available">还没检测到特权运行时。</string>

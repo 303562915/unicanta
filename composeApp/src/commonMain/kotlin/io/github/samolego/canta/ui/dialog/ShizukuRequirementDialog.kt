@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.PrivilegeStatus
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.close
@@ -92,6 +93,26 @@ internal fun ShizukuRequirementDialogContent(
             TextButton(onClick = { onClose(false) }) { Text(stringResource(Res.string.close)) }
         },
     ) {
+        // A rooted phone has nothing to install and no service to start: the only step is the root
+        // manager's own prompt. Listing Stellar, Shizuku and "start its service" there would be
+        // four instructions about software the user does not need.
+        if (handler.privilegeKind == PrivilegeKind.ROOT) {
+            Text(
+                text = "这台手机有 root，Canta 直接通过 root 工作。第一次操作时会弹一次授权，允许之后就不用再问。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 24.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                RequirementItem(
+                    text = "在 root 管理器里允许 Canta",
+                    isCompleted = isAuthorized,
+                    onActionClick = { onClose(true) },
+                )
+            }
+            return@CantaDialog
+        }
+
         Text(
             text = stringResource(Res.string.shizuku_requirement_description),
             style = MaterialTheme.typography.bodyMedium,

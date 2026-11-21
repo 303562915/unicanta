@@ -1,5 +1,6 @@
 package io.github.samolego.canta.core.root
 
+import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.adb.AdbCantaHandler
 import io.github.samolego.canta.util.LogUtils
 import kotlinx.coroutines.sync.Mutex
@@ -32,9 +33,20 @@ class RootCantaHandler(
     @Volatile
     private var setupTried = false
 
+    /** Whether a `su` binary was there at construction; the app only builds this handler when it is. */
+    private val suDetected = hasSuBinary()
+
+    /** Whether root has answered; false until [prepare] has run at least once. */
+    override val isAuthorized: Boolean
+        get() = ready || suDetected
+
     /** Whether root has answered; false until [prepare] has run at least once. */
     override val isConnected: Boolean
         get() = ready
+
+    /** This handler is the root path: there is no runtime app to install, only a grant to give. */
+    override val privilegeKind: PrivilegeKind
+        get() = PrivilegeKind.ROOT
 
     /** Root is not a device to pick: it is the phone this app is installed on. */
     override val deviceDiscovery
