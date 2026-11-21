@@ -229,11 +229,10 @@ class MainViewModel(
         // be asked twice — turning the "are you sure" prompt off must not turn the safety check off
         // with it, which is what it used to do.
         val verdicts = safetyRules().verdicts(selected, handler.deviceProfile())
-        val ruleBlocked = verdicts.values.filter { it.status == SafetyStatus.CRITICAL }
         // A package that is the home screen, the keyboard, an administrator or an accessibility
         // service right now is blocked even when no rule mentions it: the shipped rules cannot know
         // what this user switched on, and removing it takes the phone's way back with it.
-        val blocked = mergeVerdicts(ruleBlocked, occupancyVerdicts(selected))
+        val blocked = blockedVerdicts(verdicts.values, occupancyVerdicts(selected))
         val blockedPackages = blocked.map { it.pkg }.toSet()
         // What is blocked is already listed above; repeating it as merely risky would read as "this
         // one you may remove anyway", the opposite of what the rules just said.
@@ -280,20 +279,24 @@ class MainViewModel(
         Occupancy.ACCESSIBILITY -> getString(Res.string.occupied_accessibility)
     }
 
-    /** One entry per package: a package both risky by rule and in use would otherwise be listed twice. */
-    private fun mergeVerdicts(rules: List<SafetyVerdict>, inUse: List<SafetyVerdict>): List<SafetyVerdict> {
-        if (inUse.isEmpty()) return rules
+    /**
+     * One entry per package, and both reasons kept: a package can be critical by rule, in use, or
+     * both, and "it would strand the phone" plus "it is the keyboard" are separate facts. A package
+     * the rules merely find risky but that is in use now is blocked, so its rule still gets a word.
+     */
+    private fun blockedVerdicts(
+        ruleVerdicts: Collection<SafetyVerdict>,
+        inUse: List<SafetyVerdict>,
+    ): List<SafetyVerdict> {
+        val byRule = ruleVerdicts.filter { it.status == SafetyStatus.CRITICAL }.associateBy { it.pkg }
         val busy = inUse.associateBy { it.pkg }
-        val merged = rules.map { verdict ->
-            val extra = busy[verdict.pkg]
-            if (extra == null) {
-                verdict
-            } else {
-                verdict.copy(why = listOf(verdict.why, extra.why).filter { it.isNotBlank() }.joinToString("; "))
-            }
+        val anyRule = ruleVerdicts.associateBy { it.pkg }
+        return (byRule.keys + busy.keys).map { pkg ->
+            val why = listOfNotNull(anyRule[pkg]?.why, busy[pkg]?.why)
+                .filter { it.isNotBlank() }
+                .joinToString("; ")
+            SafetyVerdict(pkg, SafetyStatus.CRITICAL, why)
         }
-        val covered = merged.map { it.pkg }.toSet()
-        return merged + inUse.filterNot { it.pkg in covered }
     }
 
     /**
