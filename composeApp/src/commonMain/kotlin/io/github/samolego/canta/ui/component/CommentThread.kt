@@ -912,7 +912,10 @@ fun CommentComposer(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(max = 132.dp)
+                            // One line's height at the least — the same 54dp the send pill and the
+                            // sticker key are, so an empty bar still looks like a bar — and a
+                            // palm's worth at most, past which the box scrolls instead of growing.
+                            .heightIn(min = 52.dp, max = 132.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(colors.surface)
                             .border(1.dp, colors.outlineVariant, RoundedCornerShape(10.dp))
@@ -999,9 +1002,10 @@ fun CommentComposer(
                                             }
                                         },
                                     // The body's own words are the field's own text; only the
-                                    // stickers are substitutes, and their space draws nothing. No
-                                    // `singleLine`: a comment that reaches the edge of the box wraps
-                                    // instead of running off it.
+                                    // stickers are substitutes, and their space draws nothing. The
+                                    // line is left to wrap: `singleLine` stays false and the line
+                                    // count is unbounded, so a comment that reaches the edge of the
+                                    // box continues on the next line instead of running off it.
                                     textStyle = TextStyle(
                                         fontSize = 13.sp,
                                         lineHeight = 20.sp,
@@ -1012,6 +1016,9 @@ fun CommentComposer(
                                         EmotionFieldTransformation(display)
                                     },
                                     onTextLayout = { lineLayout = it },
+                                    singleLine = false,
+                                    maxLines = Int.MAX_VALUE,
+                                    minLines = 1,
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                                     keyboardActions = KeyboardActions(onSend = { onSend() }),
                                 )
