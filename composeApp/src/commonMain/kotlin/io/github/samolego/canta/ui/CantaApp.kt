@@ -444,6 +444,10 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     selectedUserId = selectedUserId,
                     fakeScores = fakeScores,
                     onFakeScoresChange = appListViewModel::setFakeScores,
+                    // What is granting the privilege right now, so the page can name it instead of
+                    // leaving the user to guess between root and Stellar/Shizuku.
+                    privilegeKind = handler.privilegeKind,
+                    privilegeStatus = handler.privilegeStatus,
                     onUserSelected = { id ->
                         coroutineScope.launch {
                             handler.selectUser(id)

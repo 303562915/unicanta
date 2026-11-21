@@ -154,6 +154,10 @@
     <string name="require_auth_setting">需要身份认证</string>
     <string name="settings_group_device">设备</string>
     <string name="settings_group_general">常规</string>
+    <string name="settings_privilege_title">特权运行时</string>
+    <string name="settings_privilege_root">root</string>
+    <string name="settings_privilege_shizuku">Stellar / Shizuku</string>
+    <string name="settings_privilege_none">没检测到</string>
     <string name="settings_group_interface">界面</string>
     <string name="settings_show_tweaks">在底栏显示「工具」</string>
     <string name="settings_show_tweaks_description">系统调整那一页。</string>

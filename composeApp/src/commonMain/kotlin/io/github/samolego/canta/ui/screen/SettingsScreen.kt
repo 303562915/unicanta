@@ -69,8 +69,20 @@ import io.github.samolego.canta.BuildFlags
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceUser
+import io.github.samolego.canta.core.PrivilegeKind
+import io.github.samolego.canta.core.PrivilegeStatus
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.about_us
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_active
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_authorized
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_available
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
+import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
+import io.github.samolego.canta.generated.resources.settings_privilege_none
+import io.github.samolego.canta.generated.resources.settings_privilege_root
+import io.github.samolego.canta.generated.resources.settings_privilege_shizuku
+import io.github.samolego.canta.generated.resources.settings_privilege_title
 import io.github.samolego.canta.generated.resources.advanced_settings
 import io.github.samolego.canta.generated.resources.allow_unsafe_selections
 import io.github.samolego.canta.generated.resources.allow_unsafe_uninstalls_description
@@ -139,6 +151,13 @@ fun SettingsScreen(
     onUserSelected: (Int) -> Unit = {},
     fakeScores: Boolean = false,
     onFakeScoresChange: (Boolean) -> Unit = {},
+    /**
+     * Which privileged runtime is actually working right now, and how far it got. Read from the
+     * handler rather than remembered: a phone that was rooted yesterday and lost it today has to
+     * say so on this page, not on the setup page the user has already passed.
+     */
+    privilegeKind: PrivilegeKind = PrivilegeKind.NONE,
+    privilegeStatus: PrivilegeStatus = PrivilegeStatus.NOT_AVAILABLE,
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -184,6 +203,39 @@ fun SettingsScreen(
                     name = userName,
                     identityUserId = identityUserId,
                     onEdit = { showRename = true },
+                )
+            }
+            Spacer(modifier = Modifier.height(GroupGap))
+
+            // Which privilege the app is actually running on. The setup page says it once, at the
+            // start; this is where someone looks when an uninstall is refused and wants to know why.
+            SettingsGroup(title = stringResource(Res.string.settings_privilege_title)) {
+                SettingsItem(
+                    title = when (privilegeKind) {
+                        PrivilegeKind.ROOT -> stringResource(Res.string.settings_privilege_root)
+                        PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
+                        PrivilegeKind.NONE -> stringResource(Res.string.settings_privilege_none)
+                    },
+                    description = when {
+                        privilegeKind == PrivilegeKind.ROOT && privilegeStatus == PrivilegeStatus.ACTIVE ->
+                            stringResource(Res.string.onboarding_privilege_state_root_active)
+
+                        privilegeKind == PrivilegeKind.ROOT ->
+                            stringResource(Res.string.onboarding_privilege_state_root_pending)
+
+                        privilegeStatus == PrivilegeStatus.ACTIVE ->
+                            stringResource(Res.string.onboarding_privilege_state_active)
+
+                        privilegeStatus == PrivilegeStatus.NOT_AUTHORIZED ->
+                            stringResource(Res.string.onboarding_privilege_state_not_authorized)
+
+                        privilegeStatus == PrivilegeStatus.NOT_RUNNING ->
+                            stringResource(Res.string.onboarding_privilege_state_not_running)
+
+                        else -> stringResource(Res.string.onboarding_privilege_state_not_available)
+                    },
+                    icon = Icons.Default.Lock,
+                    divider = false,
                 )
             }
             Spacer(modifier = Modifier.height(GroupGap))

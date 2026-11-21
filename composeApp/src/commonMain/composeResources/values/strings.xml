@@ -337,6 +337,10 @@
     <string name="require_auth_setting">Require authentication</string>
     <string name="settings_group_device">Device</string>
     <string name="settings_group_general">General</string>
+    <string name="settings_privilege_title">Privileged runtime</string>
+    <string name="settings_privilege_root">root</string>
+    <string name="settings_privilege_shizuku">Stellar / Shizuku</string>
+    <string name="settings_privilege_none">Not detected</string>
     <string name="settings_group_interface">Interface</string>
     <string name="settings_show_tweaks">Show Tools in the bar</string>
     <string name="settings_show_tweaks_description">The ROM tweaks page.</string>
