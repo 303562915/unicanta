@@ -97,8 +97,6 @@ import io.github.samolego.canta.generated.resources.recommend_title
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
-import io.github.samolego.canta.ui.fl.FlSegment
-import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
@@ -119,12 +117,6 @@ private val RowTileSize = 30.dp
 /** Narrowest cell the grid will lay out, which settles on four columns on a phone. */
 private val MinCellWidth = 76.dp
 
-/** The maintainers' picks: the half that is a wall of icons. */
-private const val TAB_PICKS = 0
-
-/** The community's proposals: the half that is a queue of votes. */
-private const val TAB_COMMUNITY = 1
-
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
 private val SuggestAgree = Color(0xFF2FA84F)
 
@@ -141,24 +133,24 @@ private val FallbackAccents = listOf(
 )
 
 /**
- * The recommendations page, in two halves that are kept apart on purpose.
+ * The recommendations page: one page, read top to bottom.
  *
- * The first is the maintainers' catalog: a wall of icons by default — a name under each tile, four
+ * It opens on what the maintainers keep: a wall of icons by default — a name under each tile, four
  * to a row, the way an app store shows them — and the toolbar button switches it to one card per
  * app with the summary spelled out. The author is not printed under the name: a tap opens the sheet
  * where the whole entry is, and a name written twice on two lines reads as a bug, not as credit.
  * The arrangement is a stored setting, not a per-visit whim: coming back shows what was chosen.
  *
- * The second is the community's queue: anybody may put up an app of their own, provided it is open
- * source and lives on GitHub, and the votes decide whether it joins the first half — fifty votes in
- * all, of which eighty per cent have to agree. Those rows are one line tall with the two counts in
- * them, because the queue is a list to work through, not a page of essays: the summary and the
- * proposer are in the sheet a tap opens.
+ * Under the intro sits the open half: a row that files one more app, and the queue of what others
+ * already filed. Anybody may put an app up, provided it is open source and lives on GitHub, and the
+ * votes decide whether it joins the list below — fifty votes in all, of which eighty per cent have
+ * to agree. Those rows are one line tall with the two counts in them, because the queue is a list
+ * to work through, not a page of essays: the summary and the proposer are in the sheet a tap opens.
  *
- * @param repository the community backend, for the second half; null leaves it out.
+ * @param repository the community backend, for the queue; null leaves it out.
  * @param author the name this install's submissions are signed with.
  * @param authorId the identity number behind [author]: what "mine" and one vote per identity key on.
- * @param asGrid false for the one-card-per-app arrangement of the first half.
+ * @param asGrid false for the one-card-per-app arrangement of the catalog.
  */
 @Composable
 fun RecommendationsScreen(
@@ -174,10 +166,8 @@ fun RecommendationsScreen(
     var detail by remember { mutableStateOf<RecommendedApp?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
     var query by rememberSaveable { mutableStateOf("") }
-    /** Which half is showing; the picks are what the bar leads here for, so they open first. */
-    var tab by rememberSaveable { mutableIntStateOf(TAB_PICKS) }
 
-    // The proposed half: the queue, how the votes stand, and the form that files one more.
+    // The open half: the queue of proposed apps, how the votes stand, and the form that files one.
     var suggested by remember { mutableStateOf<List<SuggestedApp>>(emptyList()) }
     var suggestReloads by remember { mutableIntStateOf(0) }
     var suggestError by remember { mutableStateOf<String?>(null) }
@@ -275,15 +265,13 @@ fun RecommendationsScreen(
             ScreenTopBar(
                 title = stringResource(Res.string.recommend_title),
                 actions = {
-                    if (tab == TAB_PICKS) {
-                        IconButton(onClick = onToggleLayout) {
-                            Icon(
-                                imageVector = if (asGrid) Icons.Default.ViewList else Icons.Default.GridView,
-                                contentDescription = stringResource(
-                                    if (asGrid) Res.string.recommend_switch_list else Res.string.recommend_switch_grid,
-                                ),
-                            )
-                        }
+                    IconButton(onClick = onToggleLayout) {
+                        Icon(
+                            imageVector = if (asGrid) Icons.Default.ViewList else Icons.Default.GridView,
+                            contentDescription = stringResource(
+                                if (asGrid) Res.string.recommend_switch_list else Res.string.recommend_switch_grid,
+                            ),
+                        )
                     }
                 },
             )
@@ -298,14 +286,8 @@ fun RecommendationsScreen(
 
         val openDetails: (RecommendedApp) -> Unit = { detail = it }
         val openSuggestion: (SuggestedApp) -> Unit = { suggestionDetail = it }
-        val showGrid = asGrid && tab == TAB_PICKS
 
-        val segments = listOf(
-            FlSegment("picks", if (featured.isEmpty()) "精选" else "精选 ${featured.size}"),
-            FlSegment("community", if (suggested.isEmpty()) "社区" else "社区 ${suggested.size}"),
-        )
-
-        if (showGrid) {
+        if (asGrid) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = MinCellWidth),
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -313,20 +295,22 @@ fun RecommendationsScreen(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                item(key = "tabs", span = { GridItemSpan(maxLineSpan) }) {
-                    FlSegmentedControl(
-                        segments = segments,
-                        selectedIndex = tab,
-                        onSelect = { tab = it },
-                        insetHorizontal = 6.dp,
-                    )
+                item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
+                    CatalogSearchField(query = query, onQueryChange = { query = it })
                 }
+                item(key = "intro", span = { GridItemSpan(maxLineSpan) }) { IntroNote() }
 
-                if (tab == TAB_COMMUNITY) {
+                // The open half sits right under the intro and above the picks: one page, read top
+                // to bottom — here is what you may add, here is where the votes stand, and below
+                // that the list the maintainers keep.
+                if (!searching) {
                     item(key = "suggest-new", span = { GridItemSpan(maxLineSpan) }) {
                         SuggestEntryRow(onClick = openSuggest, inset = 10.dp)
                     }
                     if (suggested.isNotEmpty()) {
+                        item(key = "community-head", span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(label = "大家推荐的", count = suggested.size, inset = 10.dp)
+                        }
                         suggested.forEachIndexed { index, entry ->
                             item(key = "suggest-$index-${entry.id}", span = { GridItemSpan(maxLineSpan) }) {
                                 SuggestedRow(
@@ -347,53 +331,48 @@ fun RecommendationsScreen(
                     item(key = "community-foot", span = { GridItemSpan(maxLineSpan) }) {
                         CommunityFoot(inset = 10.dp)
                     }
+                }
+
+                if (loaded.apps.isEmpty()) {
+                    item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
+                }
+
+                if (searching) {
+                    if (found.isEmpty()) {
+                        item(key = "no-hits", span = { GridItemSpan(maxLineSpan) }) {
+                            NoHits(query = query)
+                        }
+                    }
+                    gridItems(found, key = { "hit-${it.id}" }) { app ->
+                        AppGridCell(app = app, featured = app.featured, onClick = { openDetails(app) })
+                    }
+                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                        FooterNote(found.size)
+                    }
                 } else {
-                    item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
-                        CatalogSearchField(query = query, onQueryChange = { query = it })
+                    if (featured.isNotEmpty()) {
+                        item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(
+                                label = stringResource(Res.string.recommend_featured),
+                                count = featured.size,
+                            )
+                        }
+                        gridItems(featured, key = { "featured-${it.id}" }) { app ->
+                            AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
+                        }
                     }
-                    item(key = "intro", span = { GridItemSpan(maxLineSpan) }) { IntroNote() }
 
-                    if (loaded.apps.isEmpty()) {
-                        item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
+                    groups.forEach { (category, apps) ->
+                        item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(label = categoryLabel(category), count = apps.size)
+                        }
+                        gridItems(apps, key = { it.id }) { app ->
+                            AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
+                        }
                     }
 
-                    if (searching) {
-                        if (found.isEmpty()) {
-                            item(key = "no-hits", span = { GridItemSpan(maxLineSpan) }) {
-                                NoHits(query = query)
-                            }
-                        }
-                        gridItems(found, key = { "hit-${it.id}" }) { app ->
-                            AppGridCell(app = app, featured = app.featured, onClick = { openDetails(app) })
-                        }
-                        item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
-                            FooterNote(found.size)
-                        }
-                    } else {
-                        if (featured.isNotEmpty()) {
-                            item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(
-                                    label = stringResource(Res.string.recommend_featured),
-                                    count = featured.size,
-                                )
-                            }
-                            gridItems(featured, key = { "featured-${it.id}" }) { app ->
-                                AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
-                            }
-                        }
-
-                        groups.forEach { (category, apps) ->
-                            item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(label = categoryLabel(category), count = apps.size)
-                            }
-                            gridItems(apps, key = { it.id }) { app ->
-                                AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
-                            }
-                        }
-
-                        item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
-                            FooterNote(loaded.apps.size)
-                        }
+                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                        FooterNote(loaded.apps.size)
                     }
                 }
             }
@@ -402,20 +381,21 @@ fun RecommendationsScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(bottom = BarRoom),
             ) {
-                item(key = "tabs") {
-                    FlSegmentedControl(
-                        segments = segments,
-                        selectedIndex = tab,
-                        onSelect = { tab = it },
-                        insetHorizontal = 16.dp,
-                    )
+                item(key = "search") {
+                    CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp)
                 }
+                item(key = "intro") { IntroNote() }
 
-                if (tab == TAB_COMMUNITY) {
+                // One page, read top to bottom: what you may add, where the votes stand, and below
+                // that the list the maintainers keep.
+                if (!searching) {
                     item(key = "suggest-new") {
                         SuggestEntryRow(onClick = openSuggest, inset = 16.dp)
                     }
                     if (suggested.isNotEmpty()) {
+                        item(key = "community-head") {
+                            SectionHeader(label = "大家推荐的", count = suggested.size, inset = 16.dp)
+                        }
                         items(suggested.size, key = { "suggest-$it" }) { index ->
                             val entry = suggested[index]
                             SuggestedRow(
@@ -433,49 +413,44 @@ fun RecommendationsScreen(
                         }
                     }
                     item(key = "community-foot") { CommunityFoot(inset = 16.dp) }
+                }
+
+                if (loaded.apps.isEmpty()) {
+                    item(key = "empty") { EmptyNote() }
+                }
+
+                if (searching) {
+                    if (found.isEmpty()) {
+                        item(key = "no-hits") { NoHits(query = query, inset = 16.dp) }
+                    }
+                    items(found, key = { "hit-${it.id}" }) { app ->
+                        RecommendationCard(app = app, featured = app.featured, onClick = { openDetails(app) })
+                    }
+                    item(key = "footer") { FooterNote(found.size, inset = 16.dp) }
                 } else {
-                    item(key = "search") {
-                        CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp)
+                    if (featured.isNotEmpty()) {
+                        item(key = "featured-head") {
+                            SectionHeader(
+                                label = stringResource(Res.string.recommend_featured),
+                                count = featured.size,
+                                inset = 16.dp,
+                            )
+                        }
+                        items(featured, key = { "featured-${it.id}" }) { app ->
+                            RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
+                        }
                     }
-                    item(key = "intro") { IntroNote() }
 
-                    if (loaded.apps.isEmpty()) {
-                        item(key = "empty") { EmptyNote() }
+                    groups.forEach { (category, apps) ->
+                        item(key = "head-$category") {
+                            SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
+                        }
+                        items(apps, key = { it.id }) { app ->
+                            RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
+                        }
                     }
 
-                    if (searching) {
-                        if (found.isEmpty()) {
-                            item(key = "no-hits") { NoHits(query = query, inset = 16.dp) }
-                        }
-                        items(found, key = { "hit-${it.id}" }) { app ->
-                            RecommendationCard(app = app, featured = app.featured, onClick = { openDetails(app) })
-                        }
-                        item(key = "footer") { FooterNote(found.size, inset = 16.dp) }
-                    } else {
-                        if (featured.isNotEmpty()) {
-                            item(key = "featured-head") {
-                                SectionHeader(
-                                    label = stringResource(Res.string.recommend_featured),
-                                    count = featured.size,
-                                    inset = 16.dp,
-                                )
-                            }
-                            items(featured, key = { "featured-${it.id}" }) { app ->
-                                RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
-                            }
-                        }
-
-                        groups.forEach { (category, apps) ->
-                            item(key = "head-$category") {
-                                SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
-                            }
-                            items(apps, key = { it.id }) { app ->
-                                RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
-                            }
-                        }
-
-                        item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
-                    }
+                    item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
                 }
             }
         }
