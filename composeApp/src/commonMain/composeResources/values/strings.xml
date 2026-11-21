@@ -518,7 +518,6 @@
     <string name="tweaks_restore_running">Restoring %1$d of %2$d…</string>
     <string name="tweaks_restore_done">%1$d put back, %2$d failed.</string>
     <string name="recommend_title">App recommendations</string>
-    <string name="recommend_intro">Open-source apps worth installing. Tap a card and its project page opens in the browser: Canta only hands over the link and installs nothing from here.</string>
     <string name="recommend_featured">Featured</string>
     <string name="recommend_by">by %1$s</string>
     <string name="recommend_open">Open %1$s in the browser</string>

@@ -458,7 +458,6 @@
     <string name="tweaks_restore_running">正在恢复 %1$d / %2$d…</string>
     <string name="tweaks_restore_done">已装回 %1$d 个，失败 %2$d 个。</string>
     <string name="recommend_title">应用推荐</string>
-    <string name="recommend_intro">这里都是开源、免费的应用。点卡片会在浏览器里打开项目主页——Canta 只负责给链接，不会从这里装任何东西。</string>
     <string name="recommend_featured">本站推荐</string>
     <string name="recommend_by">作者 %1$s</string>
     <string name="recommend_open">在浏览器里打开 %1$s</string>

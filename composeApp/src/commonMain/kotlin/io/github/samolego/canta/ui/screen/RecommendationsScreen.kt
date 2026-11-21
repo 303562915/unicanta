@@ -94,7 +94,6 @@ import io.github.samolego.canta.generated.resources.recommend_details
 import io.github.samolego.canta.generated.resources.recommend_empty
 import io.github.samolego.canta.generated.resources.recommend_featured
 import io.github.samolego.canta.generated.resources.recommend_footer
-import io.github.samolego.canta.generated.resources.recommend_intro
 import io.github.samolego.canta.generated.resources.recommend_open_browser
 import io.github.samolego.canta.generated.resources.recommend_switch_grid
 import io.github.samolego.canta.generated.resources.recommend_switch_list
@@ -233,7 +232,12 @@ fun RecommendationsScreen(
 
     val loaded = catalog
     val groups = remember(loaded) { loaded?.grouped().orEmpty() }
-    val featured = remember(loaded) { loaded?.featured.orEmpty() }
+    // The pinned group is the shipped featured entries plus every proposal that cleared the bar:
+    // the queue already badges those as 已收录, so they have to be findable under the same heading.
+    val featured = remember(loaded, suggested) {
+        (loaded?.featured.orEmpty() + suggested.filter { it.applied }.map { it.asPinned() })
+            .distinctBy { it.url.trim().trimEnd('/').lowercase() }
+    }
     // While a search is running the category headings go away: a result is a result wherever it is
     // filed, and a heading with one row under it is noise.
     val found = remember(loaded, query) { loaded?.search(query).orEmpty() }
@@ -383,7 +387,6 @@ fun RecommendationsScreen(
                 item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
                     CatalogSearchField(query = query, onQueryChange = { query = it })
                 }
-                item(key = "intro", span = { GridItemSpan(maxLineSpan) }) { IntroNote() }
 
                 if (loaded.apps.isEmpty()) {
                     item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
@@ -437,7 +440,6 @@ fun RecommendationsScreen(
                 item(key = "search") {
                     CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp)
                 }
-                item(key = "intro") { IntroNote() }
 
                 if (loaded.apps.isEmpty()) {
                     item(key = "empty") { EmptyNote() }
@@ -522,6 +524,23 @@ fun RecommendationsScreen(
         )
     }
 }
+
+/**
+ * A proposal that cleared the bar, drawn with the same cards the shipped entries use: the queue and
+ * the list are two views of one page, and an entry the queue marks as accepted has to look the same
+ * once it is under the pinned heading. The id is prefixed so it cannot collide with a shipped one.
+ */
+private fun SuggestedApp.asPinned(): RecommendedApp = RecommendedApp(
+    id = "community-$id",
+    name = name,
+    author = author,
+    category = category,
+    url = url,
+    summary = summary,
+    license = license,
+    mark = tileMark,
+    featured = true,
+)
 
 /**
  * The author of an app, for the sheet that spells an entry out — or nothing when it would only
@@ -668,7 +687,7 @@ private fun SuggestedRow(
 
 /** The one line under a proposed app's name: how far it is from the bar, in the fewest words. */
 private fun voteStateOf(app: SuggestedApp): String = when {
-    app.applied -> "已在「精选」里 · 认同率掉下去会自动退出"
+    app.applied -> "已在「精选」里 · 认同率 ${((app.share ?: 0f) * 100).toInt()}% · 掉下去会自动退出"
     app.missingVotes > 0 ->
         "还差 ${app.missingVotes} 票" + (app.share?.let { " · 认同 ${(it * 100).toInt()}%" } ?: "")
     (app.share ?: 0f) < app.shareNeeded ->
@@ -1283,17 +1302,6 @@ private fun AppTile(
             maxLines = 1,
         )
     }
-}
-
-/** What the page is: open-source apps, and what a tap does. */
-@Composable
-private fun IntroNote() {
-    Text(
-        text = stringResource(Res.string.recommend_intro),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 12.dp, bottom = 2.dp),
-    )
 }
 
 /** Shown when the catalog is empty, or could not be read. */
