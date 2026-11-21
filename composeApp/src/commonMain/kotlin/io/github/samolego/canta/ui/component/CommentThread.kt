@@ -21,17 +21,20 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
@@ -895,105 +898,138 @@ fun CommentComposer(
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The field: a white capsule 54dp tall — half again the 36 it started at — with a
-                    // small radius rather than a full pill, so it reads as an input box and not as a
+                    // The field: a white box one line tall (about 54dp with its padding) with a small
+                    // radius rather than a full pill, so it reads as an input box and not as a
                     // button. White, not the tinted container colour: a comment field is a sheet of
                     // paper under the text, and the tint made it look like a disabled control.
+                    //
+                    // It grows with what is written — a comment that runs past the edge of the line
+                    // wraps and the bar gets taller — up to a palm's worth of lines; past that the
+                    // box stops growing and scrolls. The scroll sits outside the field on purpose:
+                    // the field itself is never scrolled, which is what keeps a sticker drawn from
+                    // its own line's measurement on top of the character it stands for.
+                    val fieldScroll = rememberScrollState()
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(54.dp)
+                            .heightIn(max = 132.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(colors.surface)
                             .border(1.dp, colors.outlineVariant, RoundedCornerShape(10.dp))
-                            .clickable { focusRequester.requestFocus() }
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.CenterStart,
+                            .clickable { focusRequester.requestFocus() },
                     ) {
-                        // The field shows the stickers, not the tokens: "[偷笑]" is how a comment
-                        // travels through the clipboard and the backend, but a person typing sees
-                        // the sticker itself.
-                        //
-                        // A text field cannot draw a picture inside its own line, so the field is
-                        // laid out from a line where every sticker is one ideographic space — one
-                        // picture wide — and the picture is drawn in that space's box, underneath
-                        // the field's own drawing. The caret is measured from the same line, which
-                        // is what keeps it on the sticker's right edge instead of a token's width
-                        // away from it. What receives the keystrokes, the selection and the paste
-                        // is still the field, and the text it reports back is still the body.
-                        var fieldValue by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
-                        LaunchedEffect(draft) {
-                            // A sticker from the panel, or a send that cleared the draft, arrives
-                            // from outside the field: move the caret to the end so the next
-                            // keystroke lands after what was just added.
-                            if (fieldValue.text != draft) {
-                                fieldValue = TextFieldValue(draft, TextRange(draft.length))
-                            }
-                        }
-                        val display = remember(draft) { emotionFieldDisplayOf(draft) }
-                        val stickers = display.cells.map { painterResource(it.emotion.resource) }
-                        var lineLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-                        BasicTextField(
-                            value = fieldValue,
-                            onValueChange = { typed ->
-                                // Backspace over a sticker takes the whole sticker: half a token on
-                                // screen would be a bracket the reader never typed. Nothing is cut
-                                // off at the end: a comment is as long as it was written.
-                                val next = backspaceEmotionAware(draft, typed.text)
-                                fieldValue = if (next == typed.text) {
-                                    typed
-                                } else {
-                                    TextFieldValue(next, TextRange(next.length))
-                                }
-                                if (next != draft) onDraftChange(next)
-                            },
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                                // The stickers go under the field's own drawing, not over it: their
-                                // space has no glyph, so nothing of the field is hidden by them,
-                                // and the caret stays visible when it sits right before one.
-                                .drawBehind {
-                                    val laid = lineLayout ?: return@drawBehind
-                                    val shownLength = laid.layoutInput.text.length
-                                    display.cells.forEachIndexed { cellIndex, cell ->
-                                        val painter = stickers.getOrNull(cellIndex)
-                                            ?: return@forEachIndexed
-                                        if (cell.index >= shownLength) return@forEachIndexed
-                                        val box = laid.getBoundingBox(cell.index)
-                                        val side = minOf(box.width, box.height)
-                                        if (side <= 0f) return@forEachIndexed
-                                        translate(
-                                            left = box.left + (box.width - side) / 2f,
-                                            top = box.top + (box.height - side) / 2f,
-                                        ) {
-                                            with(painter) { draw(size = Size(side, side)) }
+                                .verticalScroll(fieldScroll)
+                                .padding(horizontal = 12.dp, vertical = 16.dp),
+                        ) {
+                            // The field shows the stickers, not the tokens: "[偷笑]" is how a
+                            // comment travels through the clipboard and the backend, but a person
+                            // typing sees the sticker itself.
+                            //
+                            // A text field cannot draw a picture inside its own line, so the field
+                            // is laid out from a line where every sticker is one ideographic space
+                            // — one picture wide — and the picture is drawn in that space's box,
+                            // underneath the field's own drawing. The caret is measured from the
+                            // same line, which is what keeps it on the sticker's right edge instead
+                            // of a token's width away from it. What receives the keystrokes, the
+                            // selection and the paste is still the field, and the text it reports
+                            // back is still the body.
+                            var fieldValue by remember {
+                                mutableStateOf(TextFieldValue(draft, TextRange(draft.length)))
+                            }
+                            LaunchedEffect(draft) {
+                                // A sticker from the panel, or a send that cleared the draft,
+                                // arrives from outside the field: move the caret to the end so the
+                                // next keystroke lands after what was just added.
+                                if (fieldValue.text != draft) {
+                                    fieldValue = TextFieldValue(draft, TextRange(draft.length))
+                                }
+                            }
+                            val display = remember(draft) { emotionFieldDisplayOf(draft) }
+                            val stickers = display.cells.map { painterResource(it.emotion.resource) }
+                            var lineLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+                            // The prompt rides on the first line rather than under it: the field is
+                            // one empty line tall before anything is typed, and a second child in
+                            // the column would push the bar down by a line for no reason.
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                BasicTextField(
+                                    value = fieldValue,
+                                    onValueChange = { typed ->
+                                        // Backspace over a sticker takes the whole sticker: half a
+                                        // token on screen would be a bracket the reader never typed.
+                                        // Nothing is cut off at the end: a comment is as long as it
+                                        // was written.
+                                        val next = backspaceEmotionAware(draft, typed.text)
+                                        fieldValue = if (next == typed.text) {
+                                            typed
+                                        } else {
+                                            TextFieldValue(next, TextRange(next.length))
                                         }
-                                    }
-                                },
-                            // The body's own words are the field's own text; only the stickers are
-                            // substitutes, and their space draws nothing.
-                            textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
-                            cursorBrush = SolidColor(colors.primary),
-                            singleLine = true,
-                            visualTransformation = remember(display) { EmotionFieldTransformation(display) },
-                            onTextLayout = { lineLayout = it },
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = { onSend() }),
-                        )
-                        if (draft.isEmpty()) {
-                            Text(
-                                text = if (replyToName.isNotEmpty()) {
-                                    "回复 @$replyToName"
-                                } else {
-                                    "发条评论，说说你的感受"
-                                },
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp,
-                                color = colors.outline,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                                        if (next != draft) onDraftChange(next)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(focusRequester)
+                                        // The stickers go under the field's own drawing, not over
+                                        // it: their space has no glyph, so nothing of the field is
+                                        // hidden by them, and the caret stays visible when it sits
+                                        // right before one.
+                                        .drawBehind {
+                                            val laid = lineLayout ?: return@drawBehind
+                                            val shownLength = laid.layoutInput.text.length
+                                            display.cells.forEachIndexed { cellIndex, cell ->
+                                                val painter = stickers.getOrNull(cellIndex)
+                                                    ?: return@forEachIndexed
+                                                if (cell.index >= shownLength) {
+                                                    return@forEachIndexed
+                                                }
+                                                val box = laid.getBoundingBox(cell.index)
+                                                val side = minOf(box.width, box.height)
+                                                if (side <= 0f) return@forEachIndexed
+                                                translate(
+                                                    left = box.left + (box.width - side) / 2f,
+                                                    top = box.top + (box.height - side) / 2f,
+                                                ) {
+                                                    with(painter) {
+                                                        draw(size = Size(side, side))
+                                                    }
+                                                }
+                                            }
+                                        },
+                                    // The body's own words are the field's own text; only the
+                                    // stickers are substitutes, and their space draws nothing. No
+                                    // `singleLine`: a comment that reaches the edge of the box wraps
+                                    // instead of running off it.
+                                    textStyle = TextStyle(
+                                        fontSize = 13.sp,
+                                        lineHeight = 20.sp,
+                                        color = colors.onSurface,
+                                    ),
+                                    cursorBrush = SolidColor(colors.primary),
+                                    visualTransformation = remember(display) {
+                                        EmotionFieldTransformation(display)
+                                    },
+                                    onTextLayout = { lineLayout = it },
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                    keyboardActions = KeyboardActions(onSend = { onSend() }),
+                                )
+                                if (draft.isEmpty()) {
+                                    Text(
+                                        text = if (replyToName.isNotEmpty()) {
+                                            "回复 @$replyToName"
+                                        } else {
+                                            "发条评论，说说你的感受"
+                                        },
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp,
+                                        color = colors.outline,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.width(8.dp))
