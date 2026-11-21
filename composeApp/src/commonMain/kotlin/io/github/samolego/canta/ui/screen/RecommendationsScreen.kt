@@ -97,6 +97,8 @@ import io.github.samolego.canta.generated.resources.recommend_title
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
@@ -111,8 +113,17 @@ private val TileSize = 46.dp
 /** The tile of a grid cell, which has no room for a summary under it. */
 private val CellTileSize = 56.dp
 
+/** The tile of a proposed app's row, which has to stay one line tall. */
+private val RowTileSize = 30.dp
+
 /** Narrowest cell the grid will lay out, which settles on four columns on a phone. */
 private val MinCellWidth = 76.dp
+
+/** The maintainers' picks: the half that is a wall of icons. */
+private const val TAB_PICKS = 0
+
+/** The community's proposals: the half that is a queue of votes. */
+private const val TAB_COMMUNITY = 1
 
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
 private val SuggestAgree = Color(0xFF2FA84F)
@@ -130,23 +141,24 @@ private val FallbackAccents = listOf(
 )
 
 /**
- * The recommendations page: open-source apps the maintainers like, pinned ones first and then one
- * group per category — plus the open half, where anybody may put up an app of their own and the
- * community votes on whether it joins.
+ * The recommendations page, in two halves that are kept apart on purpose.
  *
- * Like the other pages the bottom bar leads to, it has no back chevron: it is a place of its own,
- * which is why there is no back callback here to pass down.
+ * The first is the maintainers' catalog: a wall of icons by default — a name under each tile, four
+ * to a row, the way an app store shows them — and the toolbar button switches it to one card per
+ * app with the summary spelled out. The author is not printed under the name: a tap opens the sheet
+ * where the whole entry is, and a name written twice on two lines reads as a bug, not as credit.
+ * The arrangement is a stored setting, not a per-visit whim: coming back shows what was chosen.
  *
- * The catalog is a wall of icons by default — a name and its author under each tile, four to a row,
- * the way an app store shows them — and the toolbar button switches it to one card per app with the
- * summary spelled out. Either way a tap opens the entry's detail sheet rather than the browser, so
- * a mis-tap costs nothing; the sheet is where the link out lives. The arrangement is a stored
- * setting, not a per-visit whim: leaving the page and coming back keeps the one that was chosen.
+ * The second is the community's queue: anybody may put up an app of their own, provided it is open
+ * source and lives on GitHub, and the votes decide whether it joins the first half — fifty votes in
+ * all, of which eighty per cent have to agree. Those rows are one line tall with the two counts in
+ * them, because the queue is a list to work through, not a page of essays: the summary and the
+ * proposer are in the sheet a tap opens.
  *
- * @param repository the community backend, for the proposed apps; null leaves that half out.
+ * @param repository the community backend, for the second half; null leaves it out.
  * @param author the name this install's submissions are signed with.
  * @param authorId the identity number behind [author]: what "mine" and one vote per identity key on.
- * @param asGrid false for the one-card-per-app arrangement; the toolbar button flips it.
+ * @param asGrid false for the one-card-per-app arrangement of the first half.
  */
 @Composable
 fun RecommendationsScreen(
@@ -162,10 +174,10 @@ fun RecommendationsScreen(
     var detail by remember { mutableStateOf<RecommendedApp?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
     var query by rememberSaveable { mutableStateOf("") }
+    /** Which half is showing; the picks are what the bar leads here for, so they open first. */
+    var tab by rememberSaveable { mutableIntStateOf(TAB_PICKS) }
 
-    // The proposed half: what the community put up, how the votes stand, and the form that files
-    // one more. Kept beside the shipped catalog rather than merged into it, because the two are
-    // decided by different people and the page says so.
+    // The proposed half: the queue, how the votes stand, and the form that files one more.
     var suggested by remember { mutableStateOf<List<SuggestedApp>>(emptyList()) }
     var suggestReloads by remember { mutableIntStateOf(0) }
     var suggestError by remember { mutableStateOf<String?>(null) }
@@ -173,6 +185,7 @@ fun RecommendationsScreen(
     var composerOpen by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var submitError by remember { mutableStateOf<String?>(null) }
+    var suggestionDetail by remember { mutableStateOf<SuggestedApp?>(null) }
 
     LaunchedEffect(Unit) {
         catalog = Recommendations.bundled()
@@ -186,9 +199,8 @@ fun RecommendationsScreen(
             suggestError = null
         } else {
             // A backend without the function is not a failure of the page: it simply has no
-            // proposals to show, and `lastError` is the function-missing message. A call that never
-            // arrived leaves `lastError` null, which is the case that needs words of its own —
-            // otherwise the half simply vanishes and the reader cannot tell why.
+            // proposals, and `lastError` is the function-missing message. A call that never
+            // arrived leaves `lastError` null, which is the case that needs words of its own.
             suggestError = repo.lastError ?: "社区推荐拉不到，检查一下网络或代理再刷新。"
         }
     }
@@ -200,6 +212,7 @@ fun RecommendationsScreen(
     // filed, and a heading with one row under it is noise.
     val found = remember(loaded, query) { loaded?.search(query).orEmpty() }
     val searching = query.isNotBlank()
+    val canVote = authorId.isNotEmpty() || author.isNotEmpty()
 
     val submit: (String, String, String, String, String) -> Unit = submit@{ name, url, summary, category, license ->
         val repo = repository
@@ -254,23 +267,23 @@ fun RecommendationsScreen(
     }
 
     val openSuggest: () -> Unit = { composerOpen = true }
-    val canVote = authorId.isNotEmpty() || author.isNotEmpty()
 
     Scaffold(
         topBar = {
-            // A page the bottom bar leads to: no chevron, only the layout button.
+            // A page the bottom bar leads to: no chevron. The layout button belongs to the picks:
+            // the queue is a list of rows, and there is nothing to rearrange there.
             ScreenTopBar(
                 title = stringResource(Res.string.recommend_title),
                 actions = {
-                    // One button, two arrangements: the icon shows what a tap gets you. The choice
-                    // is written to the settings, so the page opens the way it was left.
-                    IconButton(onClick = onToggleLayout) {
-                        Icon(
-                            imageVector = if (asGrid) Icons.Default.ViewList else Icons.Default.GridView,
-                            contentDescription = stringResource(
-                                if (asGrid) Res.string.recommend_switch_list else Res.string.recommend_switch_grid,
-                            ),
-                        )
+                    if (tab == TAB_PICKS) {
+                        IconButton(onClick = onToggleLayout) {
+                            Icon(
+                                imageVector = if (asGrid) Icons.Default.ViewList else Icons.Default.GridView,
+                                contentDescription = stringResource(
+                                    if (asGrid) Res.string.recommend_switch_list else Res.string.recommend_switch_grid,
+                                ),
+                            )
+                        }
                     }
                 },
             )
@@ -284,9 +297,15 @@ fun RecommendationsScreen(
         }
 
         val openDetails: (RecommendedApp) -> Unit = { detail = it }
-        val openSuggested: (SuggestedApp) -> Unit = { platform.openUrl(it.url) }
+        val openSuggestion: (SuggestedApp) -> Unit = { suggestionDetail = it }
+        val showGrid = asGrid && tab == TAB_PICKS
 
-        if (asGrid) {
+        val segments = listOf(
+            FlSegment("picks", if (featured.isEmpty()) "精选" else "精选 ${featured.size}"),
+            FlSegment("community", if (suggested.isEmpty()) "社区" else "社区 ${suggested.size}"),
+        )
+
+        if (showGrid) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = MinCellWidth),
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -294,73 +313,88 @@ fun RecommendationsScreen(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
-                    CatalogSearchField(query = query, onQueryChange = { query = it })
+                item(key = "tabs", span = { GridItemSpan(maxLineSpan) }) {
+                    FlSegmentedControl(
+                        segments = segments,
+                        selectedIndex = tab,
+                        onSelect = { tab = it },
+                        insetHorizontal = 6.dp,
+                    )
                 }
-                item(key = "intro", span = { GridItemSpan(maxLineSpan) }) { IntroNote() }
 
-                if (!searching) {
+                if (tab == TAB_COMMUNITY) {
                     item(key = "suggest-new", span = { GridItemSpan(maxLineSpan) }) {
-                        SuggestEntryRow(onClick = openSuggest, inset = 6.dp)
+                        SuggestEntryRow(onClick = openSuggest, inset = 10.dp)
                     }
                     if (suggested.isNotEmpty()) {
-                        item(key = "suggest-head", span = { GridItemSpan(maxLineSpan) }) {
-                            CommunityHeader(count = suggested.size)
-                        }
                         suggested.forEachIndexed { index, entry ->
                             item(key = "suggest-$index-${entry.id}", span = { GridItemSpan(maxLineSpan) }) {
-                                SuggestedAppCard(
+                                SuggestedRow(
                                     app = entry,
                                     voting = votingId == entry.id,
                                     canVote = canVote,
+                                    inset = 10.dp,
                                     onVote = { agree -> vote(entry, agree) },
-                                    onOpen = { openSuggested(entry) },
+                                    onOpen = { openSuggestion(entry) },
                                 )
                             }
                         }
                     } else if (suggestError != null) {
                         item(key = "suggest-error", span = { GridItemSpan(maxLineSpan) }) {
-                            CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 6.dp)
+                            CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 10.dp)
                         }
                     }
-                }
-
-                if (loaded.apps.isEmpty()) {
-                    item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
-                }
-
-                if (searching) {
-                    if (found.isEmpty()) {
-                        item(key = "no-hits", span = { GridItemSpan(maxLineSpan) }) {
-                            NoHits(query = query)
-                        }
-                    }
-                    gridItems(found, key = { "hit-${it.id}" }) { app ->
-                        AppGridCell(app = app, featured = app.featured, onClick = { openDetails(app) })
-                    }
-                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
-                        FooterNote(found.size)
+                    item(key = "community-foot", span = { GridItemSpan(maxLineSpan) }) {
+                        CommunityFoot(inset = 10.dp)
                     }
                 } else {
-                    if (featured.isNotEmpty()) {
-                        item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(label = stringResource(Res.string.recommend_featured), count = featured.size)
-                        }
-                        gridItems(featured, key = { "featured-${it.id}" }) { app ->
-                            AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
-                        }
+                    item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
+                        CatalogSearchField(query = query, onQueryChange = { query = it })
+                    }
+                    item(key = "intro", span = { GridItemSpan(maxLineSpan) }) { IntroNote() }
+
+                    if (loaded.apps.isEmpty()) {
+                        item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
                     }
 
-                    groups.forEach { (category, apps) ->
-                        item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(label = categoryLabel(category), count = apps.size)
+                    if (searching) {
+                        if (found.isEmpty()) {
+                            item(key = "no-hits", span = { GridItemSpan(maxLineSpan) }) {
+                                NoHits(query = query)
+                            }
                         }
-                        gridItems(apps, key = { it.id }) { app ->
-                            AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
+                        gridItems(found, key = { "hit-${it.id}" }) { app ->
+                            AppGridCell(app = app, featured = app.featured, onClick = { openDetails(app) })
+                        }
+                        item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                            FooterNote(found.size)
+                        }
+                    } else {
+                        if (featured.isNotEmpty()) {
+                            item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(
+                                    label = stringResource(Res.string.recommend_featured),
+                                    count = featured.size,
+                                )
+                            }
+                            gridItems(featured, key = { "featured-${it.id}" }) { app ->
+                                AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
+                            }
+                        }
+
+                        groups.forEach { (category, apps) ->
+                            item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(label = categoryLabel(category), count = apps.size)
+                            }
+                            gridItems(apps, key = { it.id }) { app ->
+                                AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
+                            }
+                        }
+
+                        item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                            FooterNote(loaded.apps.size)
                         }
                     }
-
-                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) { FooterNote(loaded.apps.size) }
                 }
             }
         } else {
@@ -368,66 +402,80 @@ fun RecommendationsScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(bottom = BarRoom),
             ) {
-                item(key = "search") { CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp) }
-                item(key = "intro") { IntroNote() }
+                item(key = "tabs") {
+                    FlSegmentedControl(
+                        segments = segments,
+                        selectedIndex = tab,
+                        onSelect = { tab = it },
+                        insetHorizontal = 16.dp,
+                    )
+                }
 
-                if (!searching) {
+                if (tab == TAB_COMMUNITY) {
                     item(key = "suggest-new") {
                         SuggestEntryRow(onClick = openSuggest, inset = 16.dp)
                     }
                     if (suggested.isNotEmpty()) {
-                        item(key = "suggest-head") { CommunityHeader(count = suggested.size, inset = 16.dp) }
                         items(suggested.size, key = { "suggest-$it" }) { index ->
                             val entry = suggested[index]
-                            SuggestedAppCard(
+                            SuggestedRow(
                                 app = entry,
                                 voting = votingId == entry.id,
                                 canVote = canVote,
+                                inset = 16.dp,
                                 onVote = { agree -> vote(entry, agree) },
-                                onOpen = { openSuggested(entry) },
+                                onOpen = { openSuggestion(entry) },
                             )
                         }
                     } else if (suggestError != null) {
-                        item(key = "suggest-error") { CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 16.dp) }
+                        item(key = "suggest-error") {
+                            CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 16.dp)
+                        }
                     }
-                }
-
-                if (loaded.apps.isEmpty()) {
-                    item(key = "empty") { EmptyNote() }
-                }
-
-                if (searching) {
-                    if (found.isEmpty()) {
-                        item(key = "no-hits") { NoHits(query = query, inset = 16.dp) }
-                    }
-                    items(found, key = { "hit-${it.id}" }) { app ->
-                        RecommendationCard(app = app, featured = app.featured, onClick = { openDetails(app) })
-                    }
-                    item(key = "footer") { FooterNote(found.size, inset = 16.dp) }
+                    item(key = "community-foot") { CommunityFoot(inset = 16.dp) }
                 } else {
-                    if (featured.isNotEmpty()) {
-                        item(key = "featured-head") {
-                            SectionHeader(
-                                label = stringResource(Res.string.recommend_featured),
-                                count = featured.size,
-                                inset = 16.dp,
-                            )
-                        }
-                        items(featured, key = { "featured-${it.id}" }) { app ->
-                            RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
-                        }
+                    item(key = "search") {
+                        CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp)
+                    }
+                    item(key = "intro") { IntroNote() }
+
+                    if (loaded.apps.isEmpty()) {
+                        item(key = "empty") { EmptyNote() }
                     }
 
-                    groups.forEach { (category, apps) ->
-                        item(key = "head-$category") {
-                            SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
+                    if (searching) {
+                        if (found.isEmpty()) {
+                            item(key = "no-hits") { NoHits(query = query, inset = 16.dp) }
                         }
-                        items(apps, key = { it.id }) { app ->
-                            RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
+                        items(found, key = { "hit-${it.id}" }) { app ->
+                            RecommendationCard(app = app, featured = app.featured, onClick = { openDetails(app) })
                         }
-                    }
+                        item(key = "footer") { FooterNote(found.size, inset = 16.dp) }
+                    } else {
+                        if (featured.isNotEmpty()) {
+                            item(key = "featured-head") {
+                                SectionHeader(
+                                    label = stringResource(Res.string.recommend_featured),
+                                    count = featured.size,
+                                    inset = 16.dp,
+                                )
+                            }
+                            items(featured, key = { "featured-${it.id}" }) { app ->
+                                RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
+                            }
+                        }
 
-                    item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
+                        groups.forEach { (category, apps) ->
+                            item(key = "head-$category") {
+                                SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
+                            }
+                            items(apps, key = { it.id }) { app ->
+                                RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
+                            }
+                        }
+
+                        item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
+                    }
                 }
             }
         }
@@ -439,6 +487,20 @@ fun RecommendationsScreen(
             onDismiss = { detail = null },
             onOpen = {
                 detail = null
+                platform.openUrl(app.url)
+            },
+        )
+    }
+
+    suggestionDetail?.let { app ->
+        SuggestionDetailDialog(
+            app = app,
+            voting = votingId == app.id,
+            canVote = canVote,
+            onVote = { agree -> vote(app, agree) },
+            onDismiss = { suggestionDetail = null },
+            onOpen = {
+                suggestionDetail = null
                 platform.openUrl(app.url)
             },
         )
@@ -458,12 +520,8 @@ fun RecommendationsScreen(
 }
 
 /**
- * The line under an app's name: its author, or nothing when that would only repeat the name.
- *
- * A good few catalog entries are made by the account they are named after — `Droid-ify` by
- * Droid-ify, `AdAway` by AdAway — and drawing the name twice, once bold and once grey underneath,
- * reads as a rendering bug rather than as credit. The licence still gets its own line where there
- * is one, so nothing is lost by dropping the repetition.
+ * The author of an app, for the sheet that spells an entry out — or nothing when it would only
+ * repeat the name it already stands under.
  */
 private fun authorLineOf(name: String, author: String): String? {
     val trimmed = author.trim()
@@ -495,28 +553,6 @@ private fun SectionHeader(label: String, count: Int, inset: Dp = 6.dp) {
     }
 }
 
-/** The heading of the proposed half, saying who decides what lands under it. */
-@Composable
-private fun CommunityHeader(count: Int, inset: Dp = 6.dp) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 16.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "社区推荐",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
 /** One quiet line of explanation, for the cases where the list below it is missing. */
 @Composable
 private fun CommunityHint(text: String, inset: Dp = 6.dp) {
@@ -528,61 +564,156 @@ private fun CommunityHint(text: String, inset: Dp = 6.dp) {
     )
 }
 
+/** What the queue is and what it takes to leave it: the rule, said once, at the end of the list. */
+@Composable
+private fun CommunityFoot(inset: Dp = 6.dp) {
+    Text(
+        text = "满 ${SuggestedApp.VOTES_NEEDED} 票、且认同率到 " +
+            "${(SuggestedApp.SHARE_NEEDED * 100).toInt()}% 就进「精选」；票数掉下去会自动退回来。",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 10.dp, bottom = 8.dp),
+    )
+}
+
 /**
- * One app as a tile: the icon stand-in, its name and its author, nothing else. A pinned entry keeps
- * the primary ring around its tile, since the group heading alone is easy to scroll past.
+ * One app as a row: tile, name, and the state of its vote — one line tall, because the queue is a
+ * list to work through rather than a page of essays. The summary and who proposed it are in the
+ * sheet a tap opens; the two counts sit at the end of the row, small enough to be read at a glance
+ * without turning the row into a dashboard.
  */
 @Composable
-private fun AppGridCell(
-    app: RecommendedApp,
-    featured: Boolean,
-    onClick: () -> Unit,
+private fun SuggestedRow(
+    app: SuggestedApp,
+    voting: Boolean,
+    canVote: Boolean,
+    inset: Dp,
+    onVote: (Boolean) -> Unit,
+    onOpen: () -> Unit,
 ) {
-    val accent = remember(app.accent, app.id) { accentOf(app.accent, app.id) }
-    val author = authorLineOf(app.name, app.author)
-    Column(
+    val scheme = MaterialTheme.colorScheme
+    val accent = remember(app.id, app.category) { accentOf("", "${app.id}-${app.category}") }
+    Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .fillMaxWidth()
+            .padding(start = inset, end = inset, top = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.surfaceContainerLow)
             .clickable(
                 onClickLabel = stringResource(Res.string.recommend_details, app.name),
                 role = Role.Button,
-                onClick = onClick,
+                onClick = onOpen,
             )
-            .padding(vertical = 8.dp, horizontal = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+            .padding(start = 9.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        AppTile(
-            mark = app.tileMark,
-            accent = accent,
-            size = CellTileSize,
-            corner = 16.dp,
-            ring = if (featured) MaterialTheme.colorScheme.primary else null,
-        )
-        Text(
-            text = app.name,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (author != null) {
+        AppTile(mark = app.tileMark, accent = accent, size = RowTileSize, corner = 10.dp)
+        Spacer(modifier = Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = app.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (app.applied) {
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "已收录",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(SuggestAgree)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                }
+            }
             Text(
-                text = author,
+                text = voteStateOf(app),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
+                color = if (app.applied) scheme.primary else scheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(modifier = Modifier.width(6.dp))
+        CompactVote(
+            label = "认同",
+            count = app.agrees,
+            selected = app.mine == true,
+            color = SuggestAgree,
+            enabled = canVote && !voting,
+            onClick = { onVote(true) },
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        CompactVote(
+            label = "不认同",
+            count = app.disagrees,
+            selected = app.mine == false,
+            color = SuggestDisagree,
+            enabled = canVote && !voting,
+            onClick = { onVote(false) },
+        )
+    }
+}
+
+/** The one line under a proposed app's name: how far it is from the bar, in the fewest words. */
+private fun voteStateOf(app: SuggestedApp): String = when {
+    app.applied -> "已在「精选」里 · 认同率掉下去会自动退出"
+    app.missingVotes > 0 ->
+        "还差 ${app.missingVotes} 票" + (app.share?.let { " · 认同 ${(it * 100).toInt()}%" } ?: "")
+    (app.share ?: 0f) < app.shareNeeded ->
+        "票数够了 · 认同率 ${((app.share ?: 0f) * 100).toInt()}%，还差 " +
+            "${(app.shareNeeded * 100).toInt()}%"
+    else -> "已达成条件，等待结算"
+}
+
+/**
+ * One side of a proposal's vote, small: a pill the height of the row's text, holding the label and
+ * the count together. Filled once this install picked it, a raised surface while it did not.
+ */
+@Composable
+private fun CompactVote(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    color: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (selected) color else FlSurfaceLevel.Page.raised.colorOf(scheme))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selected) {
+            Text(text = "✓", fontSize = 9.sp, color = Color.White)
+            Spacer(modifier = Modifier.width(3.dp))
+        }
+        Text(
+            text = if (count > 0) "$label $count" else label,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) Color.White else scheme.onSurface,
+            maxLines = 1,
+        )
     }
 }
 
 /**
- * One app as a row: tile, name, author and licence, and a sentence about it. A pinned card is
- * drawn with a primary outline so it reads as the one to look at first.
+ * One app as a row: tile, name, licence, and a sentence about it. A pinned card is drawn with a
+ * primary outline so it reads as the one to look at first. The author is deliberately absent — the
+ * sheet has it, and the line used to repeat the app's own name for the entries made by the account
+ * they are named after.
  */
 @Composable
 private fun RecommendationCard(
@@ -591,10 +722,7 @@ private fun RecommendationCard(
     onClick: () -> Unit,
 ) {
     val accent = remember(app.accent, app.id) { accentOf(app.accent, app.id) }
-    // "作者 qianyumeng0228 · MIT": the author is shown unless it repeats the name, the licence only
-    // when the entry names one.
-    val authorLine = authorLineOf(app.name, app.author)?.let { stringResource(Res.string.recommend_by, it) }
-    val meta = listOfNotNull(authorLine, app.license.trim().ifEmpty { null }).joinToString(" · ")
+    val meta = app.license.trim().ifEmpty { null }.orEmpty()
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
@@ -658,8 +786,8 @@ private fun RecommendationCard(
 
 /**
  * The row that opens the submission form: the one place on this page where the reader writes
- * instead of reading. It sits above the proposed apps because that is the order of the flow —
- * file one, and it lands in the list underneath.
+ * instead of reading. It sits above the queue because that is the order of the flow — file one, and
+ * it lands in the list underneath.
  */
 @Composable
 private fun SuggestEntryRow(onClick: () -> Unit, inset: Dp = 6.dp) {
@@ -667,11 +795,11 @@ private fun SuggestEntryRow(onClick: () -> Unit, inset: Dp = 6.dp) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = inset, end = inset, top = 12.dp)
+            .padding(start = inset, end = inset, top = 10.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 11.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -692,12 +820,10 @@ private fun SuggestEntryRow(onClick: () -> Unit, inset: Dp = 6.dp) {
                 color = scheme.onSurface,
             )
             Text(
-                text = "必须是 GitHub 上的开源项目；大家投票，满 " +
-                    "${SuggestedApp.VOTES_NEEDED} 票且认同率 " +
-                    "${(SuggestedApp.SHARE_NEEDED * 100).toInt()}% 就进上面的列表。",
+                text = "只收 GitHub 上的开源项目，提交后由大家投票。",
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.onSurfaceVariant,
-                maxLines = 3,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -705,15 +831,17 @@ private fun SuggestEntryRow(onClick: () -> Unit, inset: Dp = 6.dp) {
 }
 
 /**
- * One proposed app: who filed it, what it is called, the sentence about it, and the two counts its
- * fate is decided by. An accepted entry carries a badge and a link out; the rest wait for votes.
+ * What a tap on a proposed app opens: the sentence about it, who filed it, where the votes stand,
+ * and the same two buttons the row carries — bigger here, because this is the place to think about
+ * it. The button at the end leaves Canta for the project page; nothing is installed from here.
  */
 @Composable
-private fun SuggestedAppCard(
+private fun SuggestionDetailDialog(
     app: SuggestedApp,
     voting: Boolean,
     canVote: Boolean,
     onVote: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
     onOpen: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -721,182 +849,103 @@ private fun SuggestedAppCard(
     val meta = listOfNotNull(
         authorLineOf(app.name, app.author)?.let { stringResource(Res.string.recommend_by, it) },
         app.license.trim().ifEmpty { null },
-        categoryLabel(app.category).takeIf { it.isNotBlank() },
     ).joinToString(" · ")
 
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerLow),
-        border = if (app.applied) BorderStroke(1.dp, SuggestAgree.copy(alpha = 0.6f)) else null,
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                AppTile(mark = app.tileMark, accent = accent, size = 36.dp, corner = 12.dp)
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = app.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (meta.isNotEmpty()) {
-                        Text(
-                            text = meta,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = scheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                if (app.applied) {
-                    Text(
-                        text = "已收录",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(SuggestAgree)
-                            .padding(horizontal = 7.dp, vertical = 2.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                IconButton(onClick = onOpen) {
-                    Icon(
-                        imageVector = Icons.Default.OpenInNew,
-                        contentDescription = stringResource(Res.string.recommend_open_browser),
-                        tint = scheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        widthFraction = WIDE_DIALOG_WIDTH,
+        scrollable = true,
+        buttons = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.recommend_close)) }
+            Button(onClick = onOpen) {
+                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(text = stringResource(Res.string.recommend_open_browser), modifier = Modifier.padding(start = 8.dp))
             }
-
-            if (app.summary.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
+        },
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            AppTile(mark = app.tileMark, accent = accent, size = CellTileSize, corner = 16.dp)
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    text = app.summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
+                    text = app.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            // The bar: the same green/red split the removal vote uses, so both read as one idea.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(percent = 50))
-                    .background(scheme.surfaceContainerHighest),
-            ) {
-                if (app.agrees > 0) {
-                    Box(
-                        modifier = Modifier
-                            .height(6.dp)
-                            .weight(app.agrees.toFloat())
-                            .background(SuggestAgree),
-                    )
-                }
-                if (app.disagrees > 0) {
-                    Box(
-                        modifier = Modifier
-                            .height(6.dp)
-                            .weight(app.disagrees.toFloat())
-                            .background(SuggestDisagree),
+                if (meta.isNotBlank()) {
+                    Text(
+                        text = meta,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = scheme.onSurfaceVariant,
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = buildString {
-                    append("${app.agrees} 人认同")
-                    app.share?.let { append(" · ${(it * 100).toInt()}%") }
-                    append(" · ${app.disagrees} 人不认同")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = when {
-                    app.applied -> "已进列表；认同率掉下去会自动退出。"
-                    app.missingVotes > 0 ->
-                        "还差 ${app.missingVotes} 票" +
-                            (app.share?.let { " · 现在认同 ${(it * 100).toInt()}%" } ?: "")
-                    (app.share ?: 0f) < app.shareNeeded ->
-                        "票数够了，但认同率只有 ${((app.share ?: 0f) * 100).toInt()}%，还差 " +
-                            "${(app.shareNeeded * 100).toInt()}%"
-                    else -> "已达成条件，等待后端结算"
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (app.applied) scheme.primary else scheme.onSurfaceVariant,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SuggestVotePill(
-                    label = if (app.mine == true) "已认同" else "认同",
-                    count = app.agrees,
-                    selected = app.mine == true,
-                    color = SuggestAgree,
-                    enabled = canVote && !voting,
-                    onClick = { onVote(true) },
+            if (app.applied) {
+                Text(
+                    text = "已收录",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(SuggestAgree)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                SuggestVotePill(
-                    label = if (app.mine == false) "已不认同" else "不认同",
-                    count = app.disagrees,
-                    selected = app.mine == false,
-                    color = SuggestDisagree,
-                    enabled = canVote && !voting,
-                    onClick = { onVote(false) },
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                if (voting) {
-                    Text(text = "…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-                }
             }
         }
-    }
-}
 
-/** One side of a proposal's vote: filled once this install picked it, raised surface while not. */
-@Composable
-private fun SuggestVotePill(
-    label: String,
-    count: Int,
-    selected: Boolean,
-    color: Color,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(percent = 50))
-            .background(if (selected) color else FlSurfaceLevel.Page.raised.colorOf(scheme))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (selected) {
-            Text(text = "✓", fontSize = 11.sp, color = Color.White)
-            Spacer(modifier = Modifier.width(4.dp))
+        Surface(
+            modifier = Modifier.padding(top = 12.dp),
+            shape = RoundedCornerShape(8.dp),
+            color = scheme.secondaryContainer,
+        ) {
+            Text(
+                text = categoryLabel(app.category),
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSecondaryContainer,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
+
+        if (app.summary.isNotBlank()) {
+            Text(
+                text = app.summary,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+
         Text(
-            text = "$label $count",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) Color.White else scheme.onSurface,
+            text = voteStateOf(app) + " · ${app.agrees} 认同 / ${app.disagrees} 不认同",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (app.applied) scheme.primary else scheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 10.dp),
         )
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            CompactVote(
+                label = "认同",
+                count = app.agrees,
+                selected = app.mine == true,
+                color = SuggestAgree,
+                enabled = canVote && !voting,
+                onClick = { onVote(true) },
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            CompactVote(
+                label = "不认同",
+                count = app.disagrees,
+                selected = app.mine == false,
+                color = SuggestDisagree,
+                enabled = canVote && !voting,
+                onClick = { onVote(false) },
+            )
+            if (voting) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = "…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
@@ -946,7 +995,7 @@ private fun SuggestComposerDialog(
         Text(
             text = "只收 GitHub 上的开源项目。提交后大家投票：满 " +
                 "${SuggestedApp.VOTES_NEEDED} 票、且认同率到 " +
-                "${(SuggestedApp.SHARE_NEEDED * 100).toInt()}% 才进列表；票数掉下去也会自动退出。",
+                "${(SuggestedApp.SHARE_NEEDED * 100).toInt()}% 才进「精选」；票数掉下去也会自动退出。",
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
         )
@@ -1043,7 +1092,8 @@ private fun SuggestComposerDialog(
 
 /**
  * What a tap on a cell opens: the whole entry, and the one button that leaves Canta. Nothing is
- * installed from here either — the button hands the project page to the browser.
+ * installed from here either — the button hands the project page to the browser. This is also where
+ * the author and the summary live, which is why the tile and the row do not repeat them.
  */
 @Composable
 private fun RecommendationDetailDialog(
@@ -1146,8 +1196,9 @@ private fun AppTile(
             fontWeight = FontWeight.Bold,
             // Two characters need to be smaller to stay inside the tile.
             fontSize = when {
-                mark.length > 1 -> 15.sp
+                mark.length > 1 -> if (size < RowTileSize) 10.sp else 15.sp
                 size > TileSize -> 23.sp
+                size < RowTileSize -> 14.sp
                 else -> 19.sp
             },
             maxLines = 1,
