@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.util.DeviceIdentity
+import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.PackageTelemetry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +31,12 @@ class SettingsViewModel(
     private val repository: PlanRepository? = null,
     /** The phone's stable lookup key, so a reinstall gets its old identity back. */
     private val deviceKey: String = "",
+    /**
+     * This phone, read when the identity is claimed. Sent with the bind so the backend knows which
+     * model an install is even when the user never opens the community page — the catalog counts
+     * people per model, and an identity with no model is a person nobody can count.
+     */
+    private val deviceProfile: suspend () -> DeviceProfile? = { null },
 ) : ViewModel() {
 
     private fun <T> Flow<T>.state(initial: T): StateFlow<T> =
@@ -92,7 +99,10 @@ class SettingsViewModel(
     private suspend fun syncName() {
         val repo = repository ?: return
         val localToken = DeviceIdentity.ensure(settingsStore)
-        val remote = repo.identify(localToken, deviceKey) ?: return
+        // Best effort: a read that fails (no helper, no root) leaves the model empty here and the
+        // backend keeps whatever an earlier call knew.
+        val phone = runCatching { deviceProfile() }.getOrNull()
+        val remote = repo.identify(localToken, deviceKey, phone) ?: return
         // Adopt the token the phone already owned, if this is a reinstall.
         val token = remote.token.ifEmpty { localToken }
         if (token != localToken) settingsStore.setIdentityToken(token)

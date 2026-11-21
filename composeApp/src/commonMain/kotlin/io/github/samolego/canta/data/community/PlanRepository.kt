@@ -613,11 +613,16 @@ class PlanRepository(
      *
      * Null when the backend cannot be reached; the caller then keeps its local token.
      */
-    suspend fun identify(token: String, deviceKey: String = ""): UserProfile? {
+    suspend fun identify(token: String, deviceKey: String = "", profile: DeviceProfile? = null): UserProfile? {
         if (token.isEmpty()) return null
         val body = buildJsonObject {
             put("p_token", token)
             put("p_device_key", deviceKey)
+            // The phone travels with the identity, not only with the community page's sign-in: an
+            // install that never opens that page still says which model it is, which is what the
+            // catalog's people counts are built from.
+            put("p_model", profile?.model.orEmpty())
+            put("p_codename", profile?.device.orEmpty())
         }.toString()
         val text = rpc("identity_bind", body) ?: return null
         return parseProfile(text)

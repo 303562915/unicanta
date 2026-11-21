@@ -209,3 +209,10 @@ update plans p set market_name = d.market_name
 4. 属性名对不上（vivo/一加这类）：改 `MARKET_NAME_PROP_KEYS`，手机下次上传/评论就自带名字；
    已上传的旧行靠第 3 步补。
 5. 验证：`select brand, model, market_name from plan_catalog() where model in (...);`
+
+**日报「总人数 / 有型号」怎么读**：这两个数出自 `canta_users`，不是 `plans`。`canta_users.model`
+以前只有打开「社区/安全规则」页触发 `user_login` 才写，所以 2026-11-21 实测 594 人里 549 人空
+（92%），那个「有型号 45」= 打开过社区页的人数，**不是**识别率。从
+[20261121160000_identity_bind_model.sql](server/supabase/migrations/20261121160000_identity_bind_model.sql)
+起 `identity_bind` 随身份一起收 `model`/`codename`，装机即上报。识别率要看 `plans`：
+`select count(distinct model) filter (where coalesce(market_name,'') <> '')::float / count(distinct model) from plans;`
