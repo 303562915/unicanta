@@ -1,6 +1,11 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,18 +23,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.AppReview
+import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PackageVotes
 import io.github.samolego.canta.data.community.PlanComment
@@ -127,6 +138,8 @@ fun AppDetailScreen(
     token: String = "",
     /** Opens the page where this app's description can be corrected and voted on. */
     onOpenDescriptionFixes: (String) -> Unit = {},
+    /** Opens one of the plans that hold this app, from the related-plans drawer. */
+    onOpenPlan: (Long) -> Unit = {},
     /**
      * The comment this page was opened on, from the inbox: its thread is put first and opened, so
      * "somebody answered you" lands on the answer rather than on the top of the page.
@@ -176,6 +189,24 @@ fun AppDetailScreen(
      * nothing on the server changes, and the page forgets it on the way out.
      */
     var hiddenComments by remember { mutableStateOf(setOf<Long>()) }
+    /**
+     * The plans of this phone that hold this app. The page answers "can this phone live without it";
+     * the plans answer the other half — "who already proved a whole set that drops it", which is the
+     * step a reader takes after one green vote. Loaded with the page so the drawer opens instantly.
+     */
+    var relatedPlans by remember(packageName) { mutableStateOf<List<CommunityPlan>>(emptyList()) }
+    var relatedLoading by remember(packageName) { mutableStateOf(false) }
+    /** Whether the related-plans drawer is out; it closes on the scrim, on the ×, and on a tap on a plan. */
+    var drawerOpen by remember(packageName) { mutableStateOf(false) }
+
+    LaunchedEffect(packageName, profile, repository) {
+        val repo = repository ?: return@LaunchedEffect
+        relatedLoading = true
+        // The plans come back for this model and build only, which is the scope the drawer claims:
+        // a plan for another phone would put a set on screen that was never proven here.
+        relatedPlans = repo.plansFor(profile).filter { packageName in it.packages }
+        relatedLoading = false
+    }
 
     LaunchedEffect(packageName) {
         recommendations = Recommendations.bundled()
@@ -467,7 +498,65 @@ fun AppDetailScreen(
                 title = app?.name ?: packageName,
                 onNavigateBack = onNavigateBack,
                 height = FlTopBarCompactHeight,
+                actions = {
+                    // The glyph plus the count: the number is the reason to open the drawer, and a
+                    // bare icon would leave "are there even any plans with this app?" unanswered
+                    // until after the tap.
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(percent = 50))
+                            .clickable { drawerOpen = true }
+                            .padding(horizontal = 9.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlaylistAddCheck,
+                            contentDescription = "包含这个应用的方案",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (relatedPlans.isNotEmpty()) {
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = "${relatedPlans.size}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                },
             )
+            // The drawer: a scrim that fades and a panel that slides in from the right, both drawn
+            // over the bar — a surface opened by the bar should be able to cover it.
+            AnimatedVisibility(
+                visible = drawerOpen,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.32f))
+                        .clickable { drawerOpen = false },
+                )
+            }
+            AnimatedVisibility(
+                visible = drawerOpen,
+                enter = slideInHorizontally(initialOffsetX = { it }),
+                exit = slideOutHorizontally(targetOffsetX = { it }),
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) {
+                RelatedPlansPanel(
+                    plans = relatedPlans,
+                    loading = relatedLoading,
+                    onOpenPlan = { id ->
+                        drawerOpen = false
+                        onOpenPlan(id)
+                    },
+                    onClose = { drawerOpen = false },
+                )
+            }
         }
     }
 }
@@ -1131,4 +1220,133 @@ private fun scopedToDevice(
 private fun formatSize(bytes: Long): String {
     val mb = bytes / (1024.0 * 1024.0)
     return if (mb >= 1) "${(mb * 10).toInt() / 10.0} MB" else "${bytes / 1024} KB"
+}
+
+/**
+ * The plans that hold this app, as a drawer over the page.
+ *
+ * It is a drawer and not a section of the page because the page is read top to bottom for one
+ * answer — "can this phone live without it" — and the plans are a *branch* off that answer: what a
+ * reader does after a green vote, when they want a whole set somebody already proved. Putting them
+ * in the scroll would either bury them under the thread or push the thread down for everyone who
+ * came for the votes. One tap on a row opens that plan.
+ */
+@Composable
+private fun RelatedPlansPanel(
+    plans: List<CommunityPlan>,
+    loading: Boolean,
+    onOpenPlan: (Long) -> Unit,
+    onClose: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier
+            .fillMaxHeight()
+            .fillMaxWidth(0.86f)
+            .widthIn(max = 380.dp),
+        color = scheme.surfaceContainerHigh,
+        // Rounded on the side it slides in from: the edge it came out of, not the one it is
+        // attached to.
+        shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                // The panel reaches the top of the screen on purpose; the status bar's own height
+                // is what keeps the title clear of the clock.
+                .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "包含这个应用的方案",
+                        style = FlText.subheadline,
+                        color = scheme.onSurface,
+                    )
+                    Text(
+                        // What the list is scoped to, said out loud: these plans are this phone's
+                        // model and build, so an empty drawer means "nobody here yet", never
+                        // "nobody anywhere".
+                        text = when {
+                            loading -> "正在读这一机型的方案…"
+                            plans.isEmpty() -> "本机型还没有这样的方案"
+                            else -> "本机型共 ${plans.size} 个"
+                        },
+                        style = FlText.caption2,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "关闭",
+                        modifier = Modifier.size(16.dp),
+                        tint = scheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (!loading && plans.isEmpty()) {
+                Text(
+                    text = "还没有人把它写进方案。用「社区」页上传一个精简方案，别人在这个应用的页面上" +
+                        "就能看到它被谁去掉过。",
+                    style = FlText.caption1,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(plans, key = { it.id }) { plan ->
+                    RelatedPlanRow(plan = plan, onOpen = { onOpenPlan(plan.id) })
+                }
+            }
+        }
+    }
+}
+
+/** One plan in the drawer: its name, and the numbers that say whether it is worth opening. */
+@Composable
+private fun RelatedPlanRow(plan: CommunityPlan, onOpen: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = plan.title,
+                style = FlText.footnote.copy(fontWeight = FontWeight.SemiBold),
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                modifier = Modifier.size(13.dp),
+                tint = scheme.outline,
+            )
+        }
+        Text(
+            // The package count leads: a plan that holds forty packages is a different thing from
+            // one that holds five, and that is the number the drawer is compared on.
+            text = buildString {
+                append("${plan.packages.size} 包 · 点赞 ${plan.votes} · ${plan.comments} 评论")
+                val author = plan.authorName
+                if (author.isNotEmpty()) append(" · @$author")
+            },
+            style = FlText.caption2,
+            color = scheme.outline,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }

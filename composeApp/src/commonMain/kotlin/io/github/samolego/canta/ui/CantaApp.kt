@@ -1112,6 +1112,9 @@ private fun AppDetailRoute(
         onOpenDescriptionFixes = { pkg ->
             navController.navigate(Screen.DescriptionFix.routeForApp(pkg))
         },
+        // A plan opened from this page's drawer: the same page the plans list opens, so the reader
+        // can go back to the app they were reading about.
+        onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
         anchorCommentId = anchorCommentId,
     )
 }

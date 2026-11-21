@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
@@ -95,6 +96,7 @@ import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.LetterAvatar
+import io.github.samolego.canta.ui.component.PackageSearchField
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -109,6 +111,12 @@ import org.jetbrains.compose.resources.stringResource
 
 /** Icon size of a package row: small enough to fit a plan of twenty packages on one screen. */
 private val PACKAGE_ICON = 34.dp
+
+/**
+ * How much room the package filter takes under the bar while it is open: the list starts below it
+ * rather than scrolling under it, so no row is ever half-hidden by the field.
+ */
+private val SEARCH_BAR_SPACE = 46.dp
 
 /**
  * One community plan, opened from the plans list — or from a share code somebody pasted.
@@ -202,6 +210,13 @@ fun PlanDetailScreen(
      * can say "and four other builds" instead of only naming the uploader's.
      */
     var coverage by remember { mutableStateOf<List<DeviceCoverage>>(emptyList()) }
+    /**
+     * The package filter over the plan's own list. A plan can carry over a hundred packages, and
+     * "is `com.miui.daemon` even in this one?" is the question the list is read for — the field
+     * narrows the rows as it is typed, in the ranking's own order.
+     */
+    var searchOpen by remember(planId) { mutableStateOf(false) }
+    var query by remember(planId) { mutableStateOf("") }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -414,6 +429,11 @@ fun PlanDetailScreen(
         }
     }
 
+    // Where the filter field lands while it is open: the bar's own top edge, so the field reads as
+    // a second line of the bar rather than as something floating in the middle of the page.
+    val searchTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+        FlTopBarCompactHeight
+
     Scaffold(
         // The title bar is not a Scaffold topBar: it floats over the content as a transparent
         // layer, so what scrolls up under it stays readable through it.
@@ -476,6 +496,8 @@ fun PlanDetailScreen(
                     rules = rules,
                     profile = profile,
                     coverage = coverage,
+                    query = query,
+                    searchOpen = searchOpen,
                     onOpenUploader = onOpenUploader,
                     comments = comments,
                     loadError = loadError,
@@ -520,6 +542,24 @@ fun PlanDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            // The filter sits under the bar, over the page rather than in the scroll: it is open
+            // only while it is wanted, and a row scrolling behind a field that stays put is what
+            // makes a filter feel like a lens instead of another line of the text.
+            if (searchOpen && plan != null) {
+                PackageSearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                    // Closing drops the filter with the field: a narrowed list with nothing on
+                    // screen saying why it is narrow is the one state this page must not keep.
+                    onClose = {
+                        searchOpen = false
+                        query = ""
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = searchTop),
+                )
+            }
             // The floating title bar, drawn last so it sits over the scroll: a layer of nothing —
             // no background of its own — with the page's name and its way out.
             ScreenTopBar(
@@ -528,6 +568,24 @@ fun PlanDetailScreen(
                 height = FlTopBarCompactHeight,
                 actions = {
                     plan?.let { current ->
+                        IconButton(
+                            onClick = {
+                                searchOpen = !searchOpen
+                                if (!searchOpen) query = ""
+                            },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "搜索方案里的包",
+                                modifier = Modifier.size(18.dp),
+                                tint = if (searchOpen) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            )
+                        }
                         // The share glyph, not the clipboard one: what the button does is hand the
                         // plan to somebody else, and only the mechanism is a copy.
                         IconButton(onClick = { onShare(current) }, modifier = Modifier.size(36.dp)) {
@@ -584,6 +642,10 @@ private fun PlanDetailContent(
     foreign: Boolean = false,
     /** The other phones this package set was proven on, most-proven first. */
     coverage: List<DeviceCoverage> = emptyList(),
+    /** The package filter typed under the bar: rows are narrowed to the packages that match. */
+    query: String = "",
+    /** True while the filter field is on screen, so the list starts below it instead of under it. */
+    searchOpen: Boolean = false,
     /** Opens this uploader's own page; null when there is no identity to open. */
     onOpenUploader: ((String) -> Unit)? = null,
     comments: List<PlanComment>,
@@ -618,10 +680,19 @@ private fun PlanDetailContent(
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
+    val needle = query.trim()
     // Ranking order, not upload order: the point of the section is where each package stands here.
-    val ranked = plan.packages
-        .map { pkg -> pkg to ranking[pkg] }
-        .sortedWith(compareBy(nullsLast()) { (_, rank) -> rank?.rank })
+    // The filter narrows that order without re-sorting it: a filtered ranking is still a ranking.
+    val ranked = remember(plan.packages, ranking, needle) {
+        val ordered = plan.packages
+            .map { pkg -> pkg to ranking[pkg] }
+            .sortedWith(compareBy(nullsLast()) { (_, rank) -> rank?.rank })
+        if (needle.isEmpty()) {
+            ordered
+        } else {
+            ordered.filter { (pkg, _) -> pkg.contains(needle, ignoreCase = true) }
+        }
+    }
     val threads = remember(comments, order, anchorCommentId) {
         comments.threads().inOrder(order).withAnchorFirst(anchorCommentId)
     }
@@ -642,17 +713,42 @@ private fun PlanDetailContent(
     val topSpace = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
         FlTopBarCompactHeight
 
-    LazyColumn(modifier = modifier, contentPadding = PaddingValues(top = topSpace, bottom = 16.dp)) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(
+            // Open, the filter takes its room out of the top: the card starts below the field, so
+            // nothing slides under a field that is still being typed in.
+            top = topSpace + if (searchOpen) SEARCH_BAR_SPACE else 0.dp,
+            bottom = 16.dp,
+        ),
+    ) {
         item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, coverage = coverage, onOpenUploader = onOpenUploader, onEditNote = onEditNote) }
 
         item {
             SectionTitle(
                 title = stringResource(Res.string.plan_detail_ranking_title),
-                subtitle = stringResource(
-                    Res.string.plan_detail_ranking_hint,
-                    profile?.displayModel ?: "-",
-                ),
+                // With a filter on, the subtitle is the answer it just gave: how many of the plan's
+                // packages survived the needle, so an empty stretch of page still says why.
+                subtitle = if (needle.isEmpty()) {
+                    stringResource(
+                        Res.string.plan_detail_ranking_hint,
+                        profile?.displayModel ?: "-",
+                    )
+                } else {
+                    "${ranked.size}/${plan.packages.size} 个包匹配「$needle」"
+                },
             )
+        }
+        if (needle.isNotEmpty() && ranked.isEmpty()) {
+            item(key = "package-filter-empty") {
+                Text(
+                    text = "这个方案里没有包含「$needle」的包。清掉搜索框里的字看全部 ${plan.packages.size} 个。",
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
         }
         items(ranked, key = { pair -> pair.first }) { (pkg, rank) ->
             PackageRankRow(
