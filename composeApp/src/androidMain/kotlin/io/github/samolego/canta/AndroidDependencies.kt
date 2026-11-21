@@ -6,6 +6,9 @@ import io.github.samolego.canta.core.AndroidCantaPlatform
 import io.github.samolego.canta.core.CantaAppDependencies
 import io.github.samolego.canta.core.StoredData
 import io.github.samolego.canta.core.cantaAppDependencies
+import io.github.samolego.canta.core.root.RootCantaHandler
+import io.github.samolego.canta.core.root.RootTransport
+import io.github.samolego.canta.core.root.hasSuBinary
 import io.github.samolego.canta.data.FileAppStorage
 import java.io.File
 
@@ -26,6 +29,18 @@ fun provideAndroidDependencies(context: Context, platform: AndroidCantaPlatform)
         },
         platform = platform,
         platformName = "android",
-        handler = { AndroidCantaHandler(appContext) },
+        handler = {
+            // A rooted phone needs no Shizuku: the same on-device helper that the desktop build
+            // pushes over a cable is pushed and run here through `su`, so root is a second
+            // privilege under identical code rather than a second implementation.
+            //
+            // The choice is made on the presence of a `su` binary, not on a live probe: that would
+            // ask for root before there is anything to do with it.
+            if (hasSuBinary()) {
+                RootCantaHandler(RootTransport(appContext.cacheDir))
+            } else {
+                AndroidCantaHandler(appContext)
+            }
+        },
     )
 }
