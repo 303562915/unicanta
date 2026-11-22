@@ -34,6 +34,17 @@ private fun keywordFailure(message: String): FailureExplanation? {
     fun mentions(vararg needles: String) = needles.any { it in text }
 
     return when {
+        // Shizuku is gone: the app thought the runtime was still there, but the call never left
+        // this process. It reads as "no result" (STATUS_NO_RESULT) and used to be explained as
+        // "the device never answered", which sent people to refresh a list that was perfectly fine.
+        // Nothing on the phone was touched, and only starting the runtime again can change that.
+        mentions("binder haven't been received", "binder haven't", "shizuku binder") ->
+            FailureExplanation(
+                reason = "Shizuku 服务已经断开，这次操作根本没送到手机上。",
+                advice = "把 Shizuku 重新启动（手机重启、或系统清理后台之后它不会自己起来），" +
+                    "等 Canta 显示已授权再试一次。用无线调试启动的，需要重新 adb 连接后再启动它。",
+            )
+
         // The helper never answered: nothing was tried on the phone at all.
         mentions("helper unavailable", "no result from helper", "helper") ->
             FailureExplanation(

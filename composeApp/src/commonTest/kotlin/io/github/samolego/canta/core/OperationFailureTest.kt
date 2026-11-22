@@ -60,6 +60,24 @@ class OperationFailureTest {
     }
 
     @Test
+    fun aDeadShizukuBinderSaysToStartTheRuntime() {
+        // What a phone reports when Shizuku was killed or restarted under the app: nothing reached
+        // the device, so "refresh the list and see if it worked" would be wrong advice.
+        val explanation = assertNotNull(
+            failed(
+                OperationResult.STATUS_NO_RESULT,
+                "java.lang.IllegalStateException: binder haven't been received",
+            ).explainFailure()
+        )
+        assertTrue("Shizuku" in explanation.reason, explanation.reason)
+        assertTrue("Shizuku" in explanation.advice, explanation.advice)
+        assertTrue(
+            "刷新" !in explanation.advice,
+            "a dead binder is not a device that stayed silent: ${explanation.advice}",
+        )
+    }
+
+    @Test
     fun aMissingResultStillSaysWhatToDo() {
         val explanation = assertNotNull(failed(OperationResult.STATUS_NO_RESULT).explainFailure())
         assertTrue(explanation.advice.isNotBlank())

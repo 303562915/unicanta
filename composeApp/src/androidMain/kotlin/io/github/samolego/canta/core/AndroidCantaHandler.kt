@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import rikka.shizuku.Shizuku
 import kotlin.math.roundToInt
 
 /**
@@ -64,7 +65,43 @@ class AndroidCantaHandler(
 
         /** Intent MIUI/HyperOS use for their per-app permission editor. */
         const val MIUI_PERMISSION_EDITOR = "miui.intent.action.APP_PERM_EDITOR"
+
+        /**
+         * What a package gets back when there is no Shizuku binder at all. Worded with Shizuku's
+         * own phrase, because [io.github.samolego.canta.core.explainFailure] matches on it and
+         * turns it into the one advice that helps: start the runtime again.
+         */
+        const val BINDER_GONE = "Shizuku binder haven't been received"
     }
+
+    /** Shizuku's binder *right now*; the cached [ShizukuPermission] status lags a runtime that just died. */
+    private fun runtimeReady(): Boolean = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+
+    /**
+     * One result per package, in order. Without a binder there is nothing to try, so every package
+     * gets the same honest answer instead of a stack trace out of a dead wrapper: the wrapper's
+     * exception reads as "the device never answered", which blames the phone for a runtime that is
+     * simply not running.
+     */
+    private fun batchResults(
+        packageNames: List<String>,
+        operation: (String) -> OperationResult,
+    ): Flow<OperationResult> = flow {
+        packageNames.forEach { name ->
+            emit(
+                if (runtimeReady()) {
+                    operation(name)
+                } else {
+                    OperationResult(
+                        packageName = name,
+                        success = false,
+                        status = OperationResult.STATUS_NEGATIVE_RESPONSE,
+                        message = BINDER_GONE,
+                    )
+                }
+            )
+        }
+    }.flowOn(Dispatchers.IO)
 
     /**
      * The privileged listing, completed with [local] for anything it does not contain. Returns
@@ -188,14 +225,14 @@ class AndroidCantaHandler(
         packageManager.getInfoForPackage(packageName)?.applicationInfo?.canResetToFactory == true
 
     override fun uninstallApps(packageNames: List<String>, resetToFactory: Boolean): Flow<OperationResult> =
-        flow { packageNames.forEach { emit(operations.uninstall(it, resetToFactory)) } }.flowOn(Dispatchers.IO)
+        batchResults(packageNames) { operations.uninstall(it, resetToFactory) }
 
     override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> =
-        flow { packageNames.forEach { emit(operations.reinstall(it)) } }.flowOn(Dispatchers.IO)
+        batchResults(packageNames) { operations.reinstall(it) }
 
     /** Shizuku's package service can freeze and unfreeze apps, so both halves are available. */
     override fun setDisabledApps(packageNames: List<String>, disabled: Boolean): Flow<OperationResult> =
-        flow { packageNames.forEach { emit(operations.setDisabled(it, disabled)) } }.flowOn(Dispatchers.IO)
+        batchResults(packageNames) { operations.setDisabled(it, disabled) }
 
     override val supportsDisabling: Boolean get() = true
 
