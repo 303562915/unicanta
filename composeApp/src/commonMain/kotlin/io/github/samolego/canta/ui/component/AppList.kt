@@ -103,6 +103,7 @@ fun AppList(
                 LoadingBadgesIndicator()
             }
             if (appType == AppsType.UNINSTALLED ||
+                appType == AppsType.DISABLED ||
                 enableSelectAll &&
                 appListModel.selectedFilter.badgeInfo ==
                 AppBadgeInfo.RECOMMENDED

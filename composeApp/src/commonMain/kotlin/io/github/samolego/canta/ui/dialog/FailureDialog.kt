@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -24,18 +25,23 @@ import org.jetbrains.compose.resources.stringResource
  *
  * @param attempts how many packages the batch tried in total.
  * @param reasons what the device said and what to do about it, already distinct.
- * @param isReinstall whether the batch was putting apps back rather than removing them.
+ * @param kind what was being attempted: it titles the dialog.
  */
 @Composable
 fun FailureDialog(
     attempts: Int,
     reasons: List<Pair<String, String>>,
-    isReinstall: Boolean,
+    kind: OperationKind,
     onDismissRequest: () -> Unit,
 ) {
     CantaDialog(
         onDismissRequest = onDismissRequest,
-        title = if (isReinstall) "没能恢复" else "没能卸载",
+        title = when (kind) {
+            OperationKind.UNINSTALL -> "没能卸载"
+            OperationKind.REINSTALL -> "没能恢复"
+            OperationKind.DISABLE -> "没能停用"
+            OperationKind.ENABLE -> "没能启用"
+        },
         dismissible = false,
         scrollable = true,
         buttons = {

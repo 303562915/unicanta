@@ -12,3 +12,8 @@
 # run its script.
 -keep class io.github.samolego.canta.core.shizuku.ShellUserService { *; }
 
+# Dhizuku does the same with its own user service: Dhizuku instantiates
+# CantaDhizukuService by name inside its process, so the class and its
+# (Context) constructor have to survive minification.
+-keep class io.github.samolego.canta.core.dhizuku.CantaDhizukuService { *; }
+

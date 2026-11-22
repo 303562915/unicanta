@@ -92,6 +92,9 @@ class SettingsViewModel(
     /** Dark mode: 0 follows the system, 1 forces light, 2 forces dark. */
     val themeMode = settingsStore.themeModeFlow.state(0)
 
+    /** Whether the "no VPN" reminder was turned off for good; off unless the reader said so. */
+    val hideVpnNotice = settingsStore.hideVpnNoticeFlow.state(false)
+
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */
     val onboardingVersion: StateFlow<Int?> = settingsStore.onboardingVersionFlow.state<Int?>(null)
 
@@ -152,6 +155,9 @@ class SettingsViewModel(
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
     fun saveThemeAccent(argb: Int) = save { setThemeAccent(argb) }
     fun saveThemeMode(mode: Int) = save { setThemeMode(mode) }
+
+    /** "不再提示" on the proxy reminder: persisted, so the next start does not ask again. */
+    fun saveHideVpnNotice(hide: Boolean) = save { setHideVpnNotice(hide) }
 
     /**
      * Renames this install: the value is stored at once, so the page and the next review use it

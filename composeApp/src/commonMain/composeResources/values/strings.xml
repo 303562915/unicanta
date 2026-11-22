@@ -24,6 +24,7 @@
     <string name="tab_installed">Installed apps</string>
     <string name="tab_records">Records</string>
     <string name="tab_uninstalled">Uninstalled apps</string>
+    <string name="tab_disabled">Disabled apps</string>
     <string name="records_action_uninstall">Uninstall</string>
     <string name="records_action_reinstall">Restore</string>
     <string name="records_action_disable">Freeze</string>
@@ -89,6 +90,14 @@
 <plurals name="success_reinstalled">
     <item quantity="one">You have successfully reinstalled %1$d app!</item>
     <item quantity="other">You have successfully reinstalled %1$d apps!</item>
+</plurals>
+<plurals name="success_enabled">
+    <item quantity="one">You have successfully unfrozen %1$d app!</item>
+    <item quantity="other">You have successfully unfrozen %1$d apps!</item>
+</plurals>
+<plurals name="success_disabled">
+    <item quantity="one">You have successfully frozen %1$d app!</item>
+    <item quantity="other">You have successfully frozen %1$d apps!</item>
 </plurals>
     <string name="close">Close</string>
     <string
@@ -169,6 +178,9 @@
     <string name="onboarding_network_enable">Turn on proxy</string>
     <string name="onboarding_network_recheck">Check network</string>
     <string name="onboarding_network_note">Without it the app still works: local rules, app list and removal are unaffected.</string>
+    <string name="vpn_notice_text">No VPN detected on this phone. Our database is in Japan, so a proxy or VPN is required to reach the full data.</string>
+    <string name="vpn_notice_open">Turn on proxy</string>
+    <string name="vpn_notice_never">Do not remind me again</string>
     <string name="onboarding_privilege_title">Last step: the privilege</string>
     <string name="onboarding_privilege_subtitle">Removing system apps needs one privileged runtime. Either one works; we recommend Stellar.</string>
     <string name="onboarding_privilege_state_active">Privilege granted — this phone is ready.</string>

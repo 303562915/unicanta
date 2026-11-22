@@ -35,6 +35,7 @@ import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.CommunityScore
 import io.github.samolego.canta.util.DeviceContext
 import io.github.samolego.canta.util.fakeScores
+import io.github.samolego.canta.util.FailureDetail
 import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.Job
@@ -305,8 +306,8 @@ class AppListViewModel(
     }
 
     /**
-     * Uninstalls ([AppsType.INSTALLED]) or reinstalls ([AppsType.UNINSTALLED])
-     * every selected app, updating the list as each one succeeds. Returns how
+     * Uninstalls ([AppsType.INSTALLED]), reinstalls ([AppsType.UNINSTALLED]) or unfreezes
+     * ([AppsType.DISABLED]) every selected app, updating the list as each one succeeds. Returns how
      * many succeeded.
      */
     suspend fun applyToSelected(type: AppsType, resetToFactory: Boolean = false): Int =
@@ -346,6 +347,9 @@ class AppListViewModel(
         }
         val succeededApps = mutableListOf<AppInfo>()
         val failed = mutableListOf<OperationRecord>()
+        // One per refused package, for the report the backend keeps: the records tab says what
+        // happened on this phone, this says it to the person who can fix the app.
+        val failureDetails = mutableListOf<FailureDetail>()
         val log = mutableListOf<OperationRecord>()
         var succeeded = 0
         results.collect { result ->
@@ -378,11 +382,32 @@ class AppListViewModel(
                 selectedApps.remove(result.packageName)
             } else {
                 failed += record
+                failureDetails += FailureDetail(
+                    kind = kind,
+                    packageName = result.packageName,
+                    status = result.status,
+                    message = result.message,
+                    reason = record.reason,
+                    advice = record.advice,
+                    isSystemApp = app?.isSystemApp == true,
+                    batchIndex = record.batchIndex,
+                    batchSize = record.batchSize,
+                    appVersion = app?.versionName.orEmpty(),
+                )
                 LogUtils.w(TAG, "${kind.name.lowercase()} '${result.packageName}' failed: ${result.message} (${result.status})")
             }
         }
         _lastFailures.value = failed
         recordOperations(log)
+        // Off this batch's path: a report that cannot be sent must never delay the next app or the
+        // dialog that explains why this one was refused. No retry — the next batch reports its own.
+        if (failureDetails.isNotEmpty()) {
+            val details = failureDetails.toList()
+            viewModelScope.launch {
+                runCatching { telemetry?.recordFailures(details) }
+                    .onFailure { LogUtils.w(TAG, "Failure report not sent: $it") }
+            }
+        }
         // The batch is over: every app has an answer, so there is nothing left to resume. This
         // runs even when some apps failed — a refusal is an answer, and asking again would only
         // produce the same refusal twice.

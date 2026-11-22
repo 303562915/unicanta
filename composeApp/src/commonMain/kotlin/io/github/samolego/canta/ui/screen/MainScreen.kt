@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.InstallMobile
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -72,7 +73,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-/** The app list screen: installed/records/uninstalled tabs, the action FAB and its dialogs. */
+/** The app list screen: installed/records/uninstalled/disabled tabs, the action FAB and its dialogs. */
 @Composable
 fun MainScreen(
     handler: CantaHandler,
@@ -268,11 +269,11 @@ private fun MainFab(
         FloatingActionButton(
             containerColor = when (appsType) {
                 AppsType.INSTALLED -> MaterialTheme.colorScheme.error
-                AppsType.UNINSTALLED -> MaterialTheme.colorScheme.primary
+                AppsType.UNINSTALLED, AppsType.DISABLED -> MaterialTheme.colorScheme.primary
             },
             contentColor = when (appsType) {
                 AppsType.INSTALLED -> MaterialTheme.colorScheme.onError
-                AppsType.UNINSTALLED -> MaterialTheme.colorScheme.onPrimary
+                AppsType.UNINSTALLED, AppsType.DISABLED -> MaterialTheme.colorScheme.onPrimary
             },
             shape = RoundedCornerShape(32.dp),
             // Clear of the floating bar: the bar is 62 dp tall, 21 dp off the bottom edge,
@@ -283,6 +284,11 @@ private fun MainFab(
             when (appsType) {
                 AppsType.INSTALLED -> Icon(Icons.Default.Delete, stringResource(Res.string.uninstall))
                 AppsType.UNINSTALLED -> Icon(Icons.Default.InstallMobile, stringResource(Res.string.reinstall))
+                // A frozen app is put back, not removed: the button says which way it goes.
+                AppsType.DISABLED -> Icon(
+                    Icons.Default.PlayArrow,
+                    stringResource(Res.string.records_action_enable),
+                )
             }
         }
     }
@@ -348,13 +354,13 @@ private fun MainDialogs(
         is MainDialog.Success -> SuccessDialog(
             platform = platform,
             count = dialog.count,
-            isReinstall = dialog.isReinstall,
+            kind = dialog.kind,
             onDismissRequest = mainViewModel::dismissDialog,
         )
         is MainDialog.Failure -> FailureDialog(
             attempts = dialog.attempts,
             reasons = dialog.reasons,
-            isReinstall = dialog.isReinstall,
+            kind = dialog.kind,
             onDismissRequest = mainViewModel::dismissDialog,
         )
         MainDialog.ShizukuSetup -> ShizukuRequirementDialog(

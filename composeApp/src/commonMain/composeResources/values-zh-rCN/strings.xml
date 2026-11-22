@@ -20,6 +20,7 @@
     <string name="tab_installed">已安装</string>
     <string name="tab_records">记录</string>
     <string name="tab_uninstalled">已卸载</string>
+    <string name="tab_disabled">已停用</string>
     <string name="records_action_uninstall">卸载</string>
     <string name="records_action_reinstall">恢复</string>
     <string name="records_action_disable">停用</string>
@@ -80,6 +81,12 @@
     </plurals>
     <plurals name="success_reinstalled">
         <item quantity="other">您已成功恢复 %1$d 个应用！</item>
+    </plurals>
+    <plurals name="success_enabled">
+        <item quantity="other">您已成功启用 %1$d 个应用！</item>
+    </plurals>
+    <plurals name="success_disabled">
+        <item quantity="other">您已成功停用 %1$d 个应用！</item>
     </plurals>
     <string name="close">关闭</string>
     <string name="canta_description">UniCanta 是一个开源的卸载工具，可借助 Shizuku 删除系统和用户应用程序。通过 UniCanta，您无需电脑辅助即可随心精简设备。\n\n特别感谢 %1$s。\n没有他们的协助，UniCanta 将无法做到如今的程度。</string>
@@ -350,6 +357,9 @@
     <string name="onboarding_network_enable">去开科学上网</string>
     <string name="onboarding_network_recheck">重新检测</string>
     <string name="onboarding_network_note">不开也能用：本地规则、应用列表和卸载都不受影响。</string>
+    <string name="vpn_notice_text">本机没有检测到 VPN。我们的数据库在日本，必须开启科学上网才能访问完整数据。</string>
+    <string name="vpn_notice_open">开启科学上网</string>
+    <string name="vpn_notice_never">不再提示</string>
     <string name="onboarding_privilege_title">最后一步：拿到权限</string>
     <string name="onboarding_privilege_subtitle">卸载系统应用需要一个特权运行时。两个都行，我们推荐 Stellar。</string>
     <string name="onboarding_privilege_state_active">已拿到权限，这台手机可以用了。</string>

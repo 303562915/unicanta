@@ -6,9 +6,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontWeight
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.generated.resources.success
+import io.github.samolego.canta.generated.resources.success_disabled
+import io.github.samolego.canta.generated.resources.success_enabled
 import io.github.samolego.canta.generated.resources.success_reinstalled
 import io.github.samolego.canta.generated.resources.success_uninstalled
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -19,7 +22,8 @@ import org.jetbrains.compose.resources.stringResource
 fun SuccessDialog(
     platform: CantaPlatform,
     count: Int,
-    isReinstall: Boolean = false,
+    /** What the batch did, which is what the line below says it did. */
+    kind: OperationKind,
     onDismissRequest: () -> Unit
 ) {
     CantaDialog(
@@ -33,7 +37,12 @@ fun SuccessDialog(
     ) {
         Text(
             text = pluralStringResource(
-                if (isReinstall) Res.plurals.success_reinstalled else Res.plurals.success_uninstalled,
+                when (kind) {
+                    OperationKind.UNINSTALL -> Res.plurals.success_uninstalled
+                    OperationKind.REINSTALL -> Res.plurals.success_reinstalled
+                    OperationKind.DISABLE -> Res.plurals.success_disabled
+                    OperationKind.ENABLE -> Res.plurals.success_enabled
+                },
                 count,
                 count
             ),

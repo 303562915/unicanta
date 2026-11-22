@@ -2,7 +2,6 @@ package io.github.samolego.canta.data.app
 
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.filter_any
-import io.github.samolego.canta.generated.resources.filter_disabled
 import io.github.samolego.canta.generated.resources.filter_unclassified
 import io.github.samolego.canta.generated.resources.filter_user
 import org.jetbrains.compose.resources.StringResource
@@ -48,8 +47,8 @@ class Filter(
                 Filter(label = Res.string.filter_unclassified, shouldShow = { app -> app.badgeInfo == null })
             removalFilters.add(2, unclassified)
 
-            val disabled = Filter(label = Res.string.filter_disabled, shouldShow = { app -> app.isDisabled })
-            removalFilters.add(3, disabled)
+            // No "disabled" filter: frozen apps have their own page now (AppsTab.DISABLED), and the
+            // installed list no longer contains them, so a filter for it would always come up empty.
 
             availableFilters = removalFilters
         }

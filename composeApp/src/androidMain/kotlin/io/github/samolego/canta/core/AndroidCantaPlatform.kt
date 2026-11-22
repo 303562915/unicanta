@@ -127,6 +127,8 @@ class AndroidCantaPlatform(
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
     }
 
+    override fun supportsVpnDetection(): Boolean = true
+
     /**
      * True while a VPN, or an app told to route through Android's always-on VPN setting, carries the
      * traffic. Clash-style clients (FlClash, Karing on this phone) describe themselves as VPN apps

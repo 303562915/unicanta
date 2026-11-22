@@ -14,13 +14,14 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * One entry point over the privileges an Android phone can offer, in the order they are worth
- * trying: a `su` that answers (Magisk, KernelSU, APatch, or a build that ships its own su), and
- * otherwise Stellar/Shizuku.
+ * trying: a `su` that answers (Magisk, KernelSU, APatch, or a build that ships its own su), then
+ * Stellar/Shizuku, and — when it is the one that answered — Dhizuku, which shares the DeviceOwner
+ * role rather than a shell and therefore only carries the freeze half of the app.
  *
  * The point is that the user should not have to know which one they have, and should not be stuck
  * when the one the app guessed is refused: [picked] asks root once, on the first call that needs a
- * device, and moves to Shizuku for good if that answer is no. A phone with no `su` binary at all
- * never even builds a root handler, so the chain is then just Shizuku with one indirection.
+ * device, and moves on if that answer is no. A phone with no `su` binary at all never even builds a
+ * root handler, so the chain is then just the two runtime apps with one indirection.
  *
  * Everything that only reports state reads [active] directly: a property cannot suspend, and by the
  * time the UI asks, [loadApps] has already settled the question. Everything that touches the device
@@ -30,11 +31,21 @@ class PrivilegeChain(
     private val root: RootCantaHandler?,
     private val shizuku: AndroidCantaHandler,
     private val packageManager: PackageManager,
+    /**
+     * The device-owner route, when it is worth offering: null keeps the chain exactly as it was
+     * before Dhizuku support, which is what the desktop-facing tests and older builds see.
+     */
+    private val dhizuku: DhizukuCantaHandler? = null,
 ) : CantaHandler {
 
-    /** Starts on root when the phone has a su binary: that is the privilege to try first. */
+    /**
+     * Starts on root when the phone has a su binary: that is the privilege to try first. A phone
+     * without one starts on whichever runtime app is already authorized, and falls back to Shizuku
+     * when neither is — its setup page is the one that can actually install and start something.
+     */
     @Volatile
-    private var active: CantaHandler = root ?: shizuku
+    private var active: CantaHandler =
+        root ?: if (shizuku.isAuthorized) shizuku else dhizuku?.takeIf { it.isAuthorized } ?: shizuku
 
     @Volatile
     private var settled: Boolean = root == null
@@ -65,7 +76,14 @@ class PrivilegeChain(
                 // while their daemon runs, and a phone whose manager app is installed but whose `su`
                 // is not there yet is exactly the phone that would otherwise never see a prompt.
                 val worthTrying = suBinaryPath() != null || rootManagerInstalled()
-                active = if (candidate != null && worthTrying && candidate.prepare()) candidate else shizuku
+                active = when {
+                    candidate != null && worthTrying && candidate.prepare() -> candidate
+                    // Someone already granted one of the runtime apps: use it rather than asking
+                    // for a grant that has been given. Shizuku first, since it can do more.
+                    shizuku.isAuthorized -> shizuku
+                    dhizuku?.isAuthorized == true -> dhizuku
+                    else -> shizuku
+                }
                 settled = true
             }
         }
@@ -114,7 +132,21 @@ class PrivilegeChain(
         )
         // No root entry at all when the phone has no su binary: the chain is not even built with a
         // root handler then, and a row offering something that does not exist would be a dead end.
-        return listOfNotNull(rootChoice, shizukuChoice)
+        // Dhizuku is only listed once it is actually there (or already granting us): it is a third
+        // manager to install, so offering it to every unrooted phone would be noise.
+        val dhizukuChoice = dhizuku?.let { handler ->
+            val status = handler.privilegeStatus
+            if (status == PrivilegeStatus.NOT_AVAILABLE && !handler.isAuthorized) {
+                null
+            } else {
+                PrivilegeChoice(
+                    kind = PrivilegeKind.DHIZUKU,
+                    status = status,
+                    installed = status != PrivilegeStatus.NOT_AVAILABLE,
+                )
+            }
+        }
+        return listOfNotNull(rootChoice, shizukuChoice, dhizukuChoice)
     }
 
     override suspend fun loadApps(): List<AppInfo> = picked().loadApps()
@@ -202,6 +234,20 @@ class PrivilegeChain(
             }
             shizuku.requestAuthorization()
             shizuku.isAuthorized
+        }
+
+        PrivilegeKind.DHIZUKU -> {
+            val candidate = dhizuku ?: return false
+            // Asked again rather than trusted from the last look: the grant lives in Dhizuku's own
+            // screen, and the user may have just come back from it.
+            val granted = candidate.grant()
+            if (granted) {
+                settleLock.withLock {
+                    active = candidate
+                    settled = true
+                }
+            }
+            granted
         }
 
         PrivilegeKind.NONE -> false

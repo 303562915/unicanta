@@ -295,6 +295,9 @@ class Telemetry(
     private val pending = Channel<TelemetryEvent>(Channel.UNLIMITED)
     private var debounce: Job? = null
 
+    /** The platform label this client signs its reports with ("android", "desktop", "web"). */
+    val platformName: String get() = platform
+
     /** Adds [events] to the queue and restarts the debounce timer. */
     fun queue(events: List<TelemetryEvent>) {
         if (events.isEmpty()) return
@@ -325,6 +328,41 @@ class Telemetry(
     suspend fun sendAndWait(events: List<TelemetryEvent>): Boolean {
         if (events.isEmpty()) return true
         return send(events)
+    }
+
+    /**
+     * Posts one [FailureReport] to the backend's `operation_failure` RPC and returns whether it was
+     * accepted. Gated by [isEnabled] like the events: with analytics off, nothing leaves the phone.
+     *
+     * Not queued and not retried: a refusal that could not be reported while the phone was offline
+     * is not worth carrying into the next start, and the user is never made to wait for it.
+     */
+    suspend fun sendFailureReport(report: FailureReport): Boolean {
+        if (!isEnabled()) return false
+        val body = JsonObject(
+            mapOf("payload" to JsonPrimitive(compactJson.encodeToString(report)))
+        ).toString()
+        return try {
+            val response = client.post(TelemetryConfig.BASE_URL + "operation_failure") {
+                rpcHeaders()
+                setBody(body)
+            }
+            if (response.status.isSuccess()) {
+                LogUtils.i(TAG, "Sent failure report ${report.kind} ${report.pkg} (${report.status})")
+                true
+            } else {
+                LogUtils.w(
+                    TAG,
+                    "Failure report rejected: ${response.status} ${response.bodyAsText().take(200)}",
+                )
+                false
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogUtils.w(TAG, "Failure report dropped: $e")
+            false
+        }
     }
 
     private suspend fun sendPending() {

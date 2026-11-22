@@ -4,12 +4,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -26,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -60,6 +67,9 @@ import io.github.samolego.canta.generated.resources.tab_apps
 import io.github.samolego.canta.generated.resources.tab_recommend
 import io.github.samolego.canta.generated.resources.tab_rules
 import io.github.samolego.canta.generated.resources.tab_tweaks
+import io.github.samolego.canta.generated.resources.vpn_notice_never
+import io.github.samolego.canta.generated.resources.vpn_notice_open
+import io.github.samolego.canta.generated.resources.vpn_notice_text
 import io.github.samolego.canta.ui.AppsTab
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
@@ -72,6 +82,7 @@ import io.github.samolego.canta.ui.component.dockScroll
 import io.github.samolego.canta.ui.component.rememberDockVisibility
 import io.github.samolego.canta.ui.fl.FlAccent
 import io.github.samolego.canta.ui.fl.FlGlyphs
+import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlThemeMode
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
@@ -137,6 +148,14 @@ private const val SECRET_TAPS_HINT_AFTER = 3
  * is on screen, because a check the person cannot see the result of is just traffic.
  */
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
+
+/**
+ * How often the "no VPN" reminder is asked again while the app is on screen. The community
+ * deployment sits in Japan, so a phone without a proxy reads as "everything is offline"; a minute
+ * is short enough to catch a proxy that was switched off mid-session or a client that was opened
+ * but never connected, and long enough not to sit in the way of reading.
+ */
+private const val VPN_NOTICE_INTERVAL_MILLIS = 60_000L
 
 /**
  * Where the manager behind Stellar/Shizuku comes from. The app points at the fork it recommends,
@@ -380,6 +399,27 @@ private fun CantaNavigation(
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     // A page arrives at its top, so the bar is always there until something is scrolled.
     LaunchedEffect(currentRoute) { dock.show() }
+
+    // Without a proxy this phone reads the community backend across a border it cannot reach: the
+    // pages then show cached or empty data while the network itself is fine, which looks like a
+    // broken app. The platform is asked once a minute while a page is open — the reminder goes away
+    // by itself as soon as a VPN carries the traffic, and a reader who picked "不再提示" never sees
+    // it again, because that answer is stored rather than remembered for this session.
+    val hideVpnNotice by settingsViewModel.hideVpnNotice.collectAsStateWithLifecycle()
+    var vpnNoticeVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(hideVpnNotice, currentRoute, appVisible) {
+        val onOnboarding = currentRoute == null || currentRoute == Screen.Onboarding.route
+        if (hideVpnNotice || onOnboarding || !appVisible || !platform.supportsVpnDetection()) {
+            vpnNoticeVisible = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            // Re-checked every round: a proxy opened from the reminder, then closed again, has to
+            // bring the notice back without waiting for the next launch.
+            vpnNoticeVisible = !platform.isVpnActive()
+            delay(VPN_NOTICE_INTERVAL_MILLIS)
+        }
+    }
 
     // The inbox: everything that happened to what this install wrote, counted for the red dot on
     // the app list's bar and in Settings. That is no longer "replies" alone — a heart on a comment
@@ -960,10 +1000,84 @@ private fun CantaNavigation(
             }
         }
 
+        // The proxy reminder covers every page: it is about the app sitting on the wrong side of
+        // the network, not about whichever page happens to be open.
+        if (vpnNoticeVisible) {
+            VpnNoticeCard(
+                text = stringResource(Res.string.vpn_notice_text),
+                openLabel = stringResource(Res.string.vpn_notice_open),
+                neverLabel = stringResource(Res.string.vpn_notice_never),
+                onOpenProxy = {
+                    // Out of the way as soon as the proxy screen answers; the next round of the
+                    // check above brings it back while no VPN carries the traffic.
+                    if (platform.openProxySettings()) vpnNoticeVisible = false
+                },
+                onNeverShow = {
+                    vpnNoticeVisible = false
+                    settingsViewModel.saveHideVpnNotice(true)
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+
         ThemeToastHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp),
         )
+    }
+}
+
+/**
+ * The proxy reminder: one line saying why the community data is out of reach, and the only two
+ * answers that matter — switch a proxy on, or stop being asked.
+ *
+ * It is deliberately not a dialog: it rides on top of the page, so the app list stays usable while
+ * the phone is offline, which is the whole point of "不开也能用".
+ */
+@Composable
+private fun VpnNoticeCard(
+    text: String,
+    openLabel: String,
+    neverLabel: String,
+    onOpenProxy: () -> Unit,
+    onNeverShow: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = scheme.surfaceVariant,
+        contentColor = scheme.onSurfaceVariant,
+        shadowElevation = 8.dp,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(text = text, style = FlText.caption1, color = scheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onOpenProxy) {
+                    Text(
+                        text = openLabel,
+                        style = FlText.caption1,
+                        fontWeight = FontWeight.SemiBold,
+                        color = scheme.primary,
+                    )
+                }
+                TextButton(onClick = onNeverShow) {
+                    Text(
+                        text = neverLabel,
+                        style = FlText.caption1,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 

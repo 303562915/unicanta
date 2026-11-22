@@ -37,6 +37,14 @@ interface CantaPlatform {
     fun isInstalledFromFdroid(): Boolean = false
 
     /**
+     * Whether [isVpnActive] can answer at all. The reminder that asks for a proxy runs only where
+     * this is true: a desktop or web build has no VPN transport to inspect, and the constant `false`
+     * of the default implementation would nag about something that platform cannot do anything
+     * about.
+     */
+    fun supportsVpnDetection(): Boolean = false
+
+    /**
      * Whether a VPN currently carries this device's traffic. The community backend is Supabase in
      * Tokyo, so on a phone without a proxy every community read looks like "the server is offline"
      * even though the network is fine; the onboarding asks this to say so instead of letting people

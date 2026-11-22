@@ -113,7 +113,7 @@ class MainViewModelTest {
 
         main.onUninstallConfirmed(resetToFactory = true)
         assertEquals(listOf(listOf("com.a") to true), handler.uninstallCalls)
-        assertEquals(MainDialog.Success(count = 1, isReinstall = false), main.dialog)
+        assertEquals(MainDialog.Success(count = 1, kind = OperationKind.UNINSTALL), main.dialog)
     }
 
     @Test
@@ -168,7 +168,7 @@ class MainViewModelTest {
 
         val dialog = assertIs<MainDialog.Failure>(main.dialog)
         assertEquals(1, dialog.attempts)
-        assertFalse(dialog.isReinstall)
+        assertEquals(OperationKind.UNINSTALL, dialog.kind)
         assertEquals(1, dialog.reasons.size, "one cause, said once")
         assertTrue("厂商" in dialog.reasons.single().first, dialog.reasons.single().first)
     }
@@ -195,7 +195,7 @@ class MainViewModelTest {
         main.applyToSelected(AppsType.INSTALLED)
         main.onUninstallConfirmed(resetToFactory = false)
 
-        assertEquals(MainDialog.Success(count = 1, isReinstall = false), main.dialog)
+        assertEquals(MainDialog.Success(count = 1, kind = OperationKind.UNINSTALL), main.dialog)
     }
 
     @Test
@@ -275,7 +275,7 @@ class MainViewModelTest {
         main.applyToSelected(AppsType.INSTALLED)
 
         assertEquals(listOf(listOf("com.a") to false), handler.uninstallCalls, "risky is not blocked, only mentioned")
-        assertEquals(MainDialog.Success(count = 1, isReinstall = false), main.dialog)
+        assertEquals(MainDialog.Success(count = 1, kind = OperationKind.UNINSTALL), main.dialog)
     }
 
     @Test

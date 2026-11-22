@@ -326,6 +326,7 @@ kotlin {
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.biometric)
             implementation(libs.shizuku.api)
+            implementation(libs.dhizuku.api)
             implementation(libs.hiddenapibypass)
         }
         named("desktopMain").dependencies {

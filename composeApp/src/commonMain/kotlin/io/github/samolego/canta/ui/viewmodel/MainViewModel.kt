@@ -25,6 +25,7 @@ import io.github.samolego.canta.generated.resources.occupied_launcher
 import io.github.samolego.canta.generated.resources.records_cleared_after_reboot
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.message
+import io.github.samolego.canta.ui.operationKind
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
 import io.github.samolego.canta.util.SafetyVerdict
@@ -45,7 +46,14 @@ sealed interface MainDialog {
         /** Whether freezing is on the table here; a device without it only has removal. */
         val canFreeze: Boolean = false,
     ) : MainDialog
-    data class Success(val count: Int, val isReinstall: Boolean) : MainDialog
+    /**
+     * What the batch did, so the dialog can say "uninstalled" / "restored" / "frozen" / "unfrozen"
+     * instead of guessing from a boolean.
+     */
+    data class Success(
+        val count: Int,
+        val kind: OperationKind,
+    ) : MainDialog
     /**
      * Nothing in the batch went through: instead of staying silent, name what the device refused
      * and what to try next, one line per distinct reason.
@@ -53,7 +61,8 @@ sealed interface MainDialog {
     data class Failure(
         val attempts: Int,
         val reasons: List<Pair<String, String>>,
-        val isReinstall: Boolean,
+        /** What was being attempted: it titles the dialog. */
+        val kind: OperationKind,
     ) : MainDialog
 
     /** Packages that came back although the build did not change: a rescue of the last batch. */
@@ -159,7 +168,7 @@ class MainViewModel(
             val done = appList.resumeInterruptedBatch(packages)
             appList.loadApps()
             if (done > 0 && !settings.hideSuccessDialogFlow.first()) {
-                dialog = MainDialog.Success(count = done, isReinstall = false)
+                dialog = MainDialog.Success(count = done, kind = OperationKind.UNINSTALL)
             }
         }
     }
@@ -184,7 +193,7 @@ class MainViewModel(
             settings.setRestoreSuspects(emptyList())
             val reverted = appList.reinstallPackages(suspects)
             if (reverted > 0 && !settings.hideSuccessDialogFlow.first()) {
-                dialog = MainDialog.Success(count = reverted, isReinstall = true)
+                dialog = MainDialog.Success(count = reverted, kind = OperationKind.REINSTALL)
             } else {
                 appList.loadApps()
             }
@@ -373,14 +382,14 @@ class MainViewModel(
         val count = appList.applyPackages(attempted, OperationKind.DISABLE)
         if (count > 0 && !settings.hideSuccessDialogFlow.first()) {
             // Reported as a freeze, not as a removal: "1 app uninstalled" would be a lie.
-            dialog = MainDialog.Success(count = count, isReinstall = true)
+            dialog = MainDialog.Success(count = count, kind = OperationKind.DISABLE)
         } else if (count == 0) {
             val failures = appList.lastFailures.value
             if (failures.isNotEmpty()) {
                 dialog = MainDialog.Failure(
                     attempts = failures.size,
                     reasons = failures.map { it.reason.ifEmpty { it.message } to it.advice }.distinct(),
-                    isReinstall = true,
+                    kind = OperationKind.DISABLE,
                 )
             }
         }
@@ -402,10 +411,10 @@ class MainViewModel(
         val attempted = if (type == AppsType.INSTALLED) appList.selectedApps.toList() else emptyList()
         val count = appList.applyToSelected(type, resetToFactory)
         if (attempted.isNotEmpty()) settings.setLastConfirmedPackages(attempted)
-        val isReinstall = type == AppsType.UNINSTALLED
+        val kind = type.operationKind
         if (count > 0) {
             if (!settings.hideSuccessDialogFlow.first()) {
-                dialog = MainDialog.Success(count = count, isReinstall = isReinstall)
+                dialog = MainDialog.Success(count = count, kind = kind)
             }
             return
         }
@@ -417,7 +426,7 @@ class MainViewModel(
         val reasons = failures
             .map { it.reason.ifEmpty { it.message } to it.advice }
             .distinct()
-        dialog = MainDialog.Failure(attempts = failures.size, reasons = reasons, isReinstall = isReinstall)
+        dialog = MainDialog.Failure(attempts = failures.size, reasons = reasons, kind = kind)
     }
 
     // Device selection (desktop, web).

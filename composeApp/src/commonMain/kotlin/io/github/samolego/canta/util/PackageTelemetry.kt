@@ -1,5 +1,6 @@
 package io.github.samolego.canta.util
 
+import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
@@ -160,6 +161,62 @@ class PackageTelemetry(
     /** Community scores, or null when analytics is off or they couldn't be fetched. */
     suspend fun fetchScores() =
         if (settings.analyticsEnabledFlow.first()) telemetry.fetchScores(handler.deviceContext()) else null
+
+    /**
+     * Reports the packages a batch could not touch, one row each, so a refusal that only shows up
+     * on somebody else's phone can still be explained afterwards (see [FailureReport]).
+     *
+     * Gated by the analytics opt-in like every other report; fire-and-forget, and never awaited by
+     * the batch that produced it.
+     */
+    suspend fun recordFailures(details: List<FailureDetail>) {
+        if (details.isEmpty()) return
+        if (!settings.analyticsEnabledFlow.first()) return
+        val device = failureDevice()
+        val user = handler.selectedUserId ?: 0
+        val version = BuildInfo.VERSION_NAME
+        for (detail in details) {
+            val report = FailureReport(
+                v = 1,
+                platform = telemetry.platformName,
+                kind = detail.kind.name.lowercase(),
+                pkg = detail.packageName,
+                status = detail.status,
+                // The device's own wording is the point of the report, but a stack trace pasted
+                // into it must not become the whole row.
+                message = detail.message.take(MAX_FAILURE_TEXT),
+                reason = detail.reason.take(MAX_FAILURE_TEXT),
+                advice = detail.advice.take(MAX_FAILURE_TEXT),
+                system = detail.isSystemApp,
+                batchIndex = detail.batchIndex,
+                batchSize = detail.batchSize,
+                user = user,
+                appVersion = detail.appVersion,
+                cantaVersion = version,
+                device = device,
+            )
+            telemetry.sendFailureReport(report)
+        }
+    }
+
+    /** The phone as the reports describe it: the coarse context plus the model, which is the key the analysis groups by. */
+    private suspend fun failureDevice(): FailureReportDevice {
+        val context = runCatching { handler.deviceContext() }.getOrNull() ?: DeviceContext.UNKNOWN
+        val profile = runCatching { handler.deviceProfile() }.getOrNull()
+        return FailureReportDevice(
+            brand = context.brand,
+            rom = context.rom,
+            romVersion = context.romVersion,
+            sdk = context.sdk,
+            model = profile?.model.orEmpty(),
+            codename = profile?.device.orEmpty(),
+        )
+    }
+
+    /** Longest piece of text kept per field of a [FailureReport]. */
+    private companion object {
+        const val MAX_FAILURE_TEXT = 400
+    }
 
     /**
      * Forgets everything queued for sending (analytics turned off). The pending uninstalls stay:

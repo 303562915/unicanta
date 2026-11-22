@@ -22,6 +22,13 @@ enum class PrivilegeKind {
     /** Shizuku or Sui: a runtime app the user installs, starts and authorizes. */
     SHIZUKU,
 
+    /**
+     * Dhizuku: a manager that shares the DeviceOwner role. It is not a shell, so it can freeze an
+     * app but cannot remove one — the setup pages have to name it separately for exactly that
+     * reason, or a Dhizuku user would be told to look for a permission it cannot give.
+     */
+    DHIZUKU,
+
     /** A rooted phone: no runtime app at all, only the root manager's own prompt. */
     ROOT,
 }

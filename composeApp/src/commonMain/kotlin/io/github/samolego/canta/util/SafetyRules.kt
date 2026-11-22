@@ -5,8 +5,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * The phone Canta is talking to, read locally only: model and build fingerprint are exactly what
- * the telemetry opt-in promises never to send, so they live here and nowhere else.
+ * The phone Canta is talking to, read locally only: model and build fingerprint are what the
+ * telemetry opt-in promises never to send, so they live here and nowhere else. The one exception
+ * is a refused operation: a report of a failure carries the model code, because the same refusal
+ * means different things on different vendors, and it is never sent with analytics off
+ * (see [FailureReport]).
  *
  * The point is the safety rules: whether a package may be removed depends on the model and the
  * ROM version, not just on the package name.

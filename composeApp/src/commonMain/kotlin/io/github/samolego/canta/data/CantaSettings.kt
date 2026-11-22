@@ -57,6 +57,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val themeAccentFlow: Flow<Int> = field { it.themeAccent }
     /** Dark mode: 0 follows the system, 1 forces light, 2 forces dark; see [AppSettingsProto.themeMode]. */
     val themeModeFlow: Flow<Int> = field { it.themeMode }
+    /** Whether the "no VPN" reminder was switched off on this install; see [AppSettingsProto.hideVpnNotice]. */
+    val hideVpnNoticeFlow = field { it.hideVpnNotice }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
@@ -98,6 +100,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setConfirmBeforeInstall(confirm: Boolean) = update { it.copy(confirmBeforeInstall = confirm) }
     suspend fun setThemeAccent(argb: Int) = update { it.copy(themeAccent = argb) }
     suspend fun setThemeMode(mode: Int) = update { it.copy(themeMode = mode.coerceIn(0, 2)) }
+    /** Remembers that the "no VPN" reminder must never come back; see [AppSettingsProto.hideVpnNotice]. */
+    suspend fun setHideVpnNotice(hide: Boolean) = update { it.copy(hideVpnNotice = hide) }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }

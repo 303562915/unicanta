@@ -6,6 +6,8 @@
 //   POST /rest/v1/rpc/record             {payload, challenge, sig, x} -> {ok, accepted}
 //   POST /rest/v1/rpc/package_scores     {}                       -> [rows]
 //   POST /rest/v1/rpc/package_scores_for {p_rom, p_rom_version}   -> [rows]
+//   POST /rest/v1/rpc/operation_failure  {payload}                -> {ok}
+//   POST /rest/v1/rpc/failure_summary    {}                       -> [rows]
 //
 // Storage is a single SQLite file (node:sqlite, no native modules). Proof of
 // work is the same one the client solves (util/Pow.kt):
@@ -28,6 +30,8 @@ const CHALLENGE_TTL_MS = 10 * 60 * 1000
 
 const KINDS = new Set(['uninstalled', 'survived_reboot', 'reinstalled', 'voided', 'restored'])
 const BUCKETS = new Set(['1', '2-10', '11+'])
+/** The operations a failure report can be about. */
+const FAILURE_KINDS = new Set(['uninstall', 'reinstall', 'disable', 'enable'])
 
 const db = new DatabaseSync(DB_PATH)
 db.exec(`
@@ -53,6 +57,31 @@ db.exec(`
   create index if not exists events_pkg on events (pkg);
   create index if not exists events_pkg_rom on events (pkg, rom, rom_version);
   create index if not exists events_received on events (received_at);
+  create table if not exists failures (
+    id integer primary key autoincrement,
+    received_at integer not null,
+    platform text not null,
+    kind text not null,
+    pkg text not null,
+    status integer not null,
+    message text not null,
+    reason text not null,
+    advice text not null,
+    system_app integer not null,
+    batch_index integer not null,
+    batch_size integer not null,
+    android_user integer not null,
+    app_version text not null,
+    canta_version text not null,
+    brand text not null,
+    rom text not null,
+    rom_version integer not null,
+    sdk integer not null,
+    model text not null,
+    codename text not null
+  );
+  create index if not exists failures_pkg on failures (pkg);
+  create index if not exists failures_received on failures (received_at);
 `)
 
 const sha256hex = (buf) => createHash('sha256').update(buf).digest('hex')
@@ -208,7 +237,75 @@ export function purge(keepDays = RETENTION_DAYS) {
   const cutoff = Date.now() - keepDays * 24 * 60 * 60 * 1000
   const events = db.prepare('delete from events where received_at < ?').run(cutoff).changes
   const challenges = db.prepare('delete from challenges where created_at < ?').run(cutoff).changes
-  return { events: Number(events), challenges: Number(challenges) }
+  const failures = db.prepare('delete from failures where received_at < ?').run(cutoff).changes
+  return { events: Number(events), challenges: Number(challenges), failures: Number(failures) }
+}
+
+/**
+ * Why a device refused an operation (client: util/FailureReport.kt). One row per refused package;
+ * the shape is checked the same way the Postgres RPC does it.
+ */
+function storeFailure({ payload }) {
+  if (typeof payload !== 'string' || !payload) throw new Error('missing payload')
+  if (payload.length > 20000) throw new Error('payload too large')
+  const body = JSON.parse(payload)
+  if (body.v !== 1) throw new Error('unsupported payload version')
+  if (!FAILURE_KINDS.has(body.kind)) throw new Error(`bad kind: ${body.kind}`)
+  if (typeof body.pkg !== 'string' || !body.pkg || body.pkg.length > 200) throw new Error('bad package name')
+  const recent = db
+    .prepare('select count(*) as n from failures where pkg = ? and received_at > ?')
+    .get(body.pkg, Date.now() - 60 * 60 * 1000)
+  if (Number(recent.n) >= 60) throw new Error('too many reports for this package')
+  const text = (value, max) => String(value ?? '').slice(0, max)
+  db.prepare(
+    `insert into failures (
+       received_at, platform, kind, pkg, status, message, reason, advice, system_app,
+       batch_index, batch_size, android_user, app_version, canta_version,
+       brand, rom, rom_version, sdk, model, codename
+     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    Date.now(),
+    text(body.platform, 40) || 'unknown',
+    body.kind,
+    body.pkg,
+    Number(body.status ?? 0),
+    text(body.message, 400),
+    text(body.reason, 400),
+    text(body.advice, 400),
+    body.system ? 1 : 0,
+    Number(body.batchIndex ?? 0),
+    Number(body.batchSize ?? 0),
+    Number(body.user ?? 0),
+    text(body.appVersion, 80),
+    text(body.cantaVersion, 40),
+    text(body.device?.brand, 40) || 'unknown',
+    text(body.device?.rom, 40) || 'unknown',
+    Number(body.device?.romVersion ?? 0),
+    Number(body.device?.sdk ?? 0),
+    text(body.device?.model, 80),
+    text(body.device?.codename, 80),
+  )
+  return { ok: true }
+}
+
+/** What fails where, for reading: `select * from failure_summary order by refusals desc;`. */
+function failureSummary() {
+  return db
+    .prepare(
+      `select kind, pkg, model, rom, rom_version, sdk,
+              count(*) as refusals,
+              min(received_at) as first_seen,
+              max(received_at) as last_seen
+         from failures
+        group by kind, pkg, model, rom, rom_version, sdk
+        order by refusals desc`
+    )
+    .all()
+    .map((row) => ({
+      ...row,
+      first_seen: new Date(Number(row.first_seen)).toISOString(),
+      last_seen: new Date(Number(row.last_seen)).toISOString(),
+    }))
 }
 
 function readBody(req) {
@@ -249,6 +346,8 @@ const routes = {
   },
   package_scores: () => packageScores(),
   package_scores_for: (body) => packageScoresFor(body?.p_rom ?? '', body?.p_rom_version ?? -1),
+  operation_failure: (body) => storeFailure(body ?? {}),
+  failure_summary: () => failureSummary(),
 }
 
 export const server = createServer(async (req, res) => {

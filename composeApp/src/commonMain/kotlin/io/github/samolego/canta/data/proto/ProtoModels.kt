@@ -137,6 +137,14 @@ data class AppSettingsProto(
      * one keeps following the phone.
      */
     @ProtoNumber(32) val themeMode: Int = 0,
+    /**
+     * Whether the "no VPN" reminder is switched off for good. Off by default: the community data
+     * lives in a Tokyo deployment, so a phone without a proxy silently shows cached or empty pages
+     * that look like a broken app, and this reminder is the only thing that says why. "不再提示"
+     * sets it, and it stays set — asking again after somebody said no is the nagging this exists
+     * to avoid.
+     */
+    @ProtoNumber(33) val hideVpnNotice: Boolean = false,
 )
 
 /**
