@@ -50,6 +50,7 @@ import io.github.samolego.canta.generated.resources.about_check_update
 import io.github.samolego.canta.generated.resources.about_check_update_action
 import io.github.samolego.canta.generated.resources.about_check_update_hint
 import io.github.samolego.canta.generated.resources.about_auto_install
+import io.github.samolego.canta.generated.resources.about_confirm_install
 import io.github.samolego.canta.generated.resources.about_download_cancel
 import io.github.samolego.canta.generated.resources.about_download_failed_network
 import io.github.samolego.canta.generated.resources.about_download_failed_storage
@@ -171,6 +172,7 @@ fun AboutScreen(
     val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
 
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
+    val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
     val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
@@ -233,6 +235,26 @@ fun AboutScreen(
         downloadable = null
     }
 
+    // One install path for both the switch-off case and the dialog: the APK replaces this app, so
+    // a success closes it, and a refused install is handed to the system installer instead.
+    val startInstall: (UpdateState.ReadyToInstall) -> Unit = { ready ->
+        pendingInstall = null
+        updateState = UpdateState.Installing(ready.version, ready.path)
+        scope.launch {
+            val failure = platform.installUpdate(ready.path)
+            if (failure == null) {
+                platform.exitApp()
+            } else if (platform.requestInstall(ready.path)) {
+                // The privileged runtime could not read any home for the APK, but the system
+                // installer reads through the granted content URI, so the same file still
+                // installs — with the system's own dialog.
+                updateState = UpdateState.HandedOff(ready.version)
+            } else {
+                updateState = UpdateState.FailedWith(failure)
+            }
+        }
+    }
+
     val checkUpdate: () -> Unit = checkUpdate@{
         if (updateChannel != null && updateState !is UpdateState.Checking && updateState !is UpdateState.Downloading && updateState !is UpdateState.Installing) {
             // A store build cannot be replaced by this repo's APK: its signature is the store's.
@@ -265,10 +287,14 @@ fun AboutScreen(
         }
     }
 
-    // The download is done: ask before replacing a running app.
-    LaunchedEffect(updateState) {
+    // The download is done: install it right away, or ask first when the switch says so. Asking is
+    // off by default — the download was already the request, and the install takes long enough for
+    // the "正在安装" line to be read before the app closes.
+    LaunchedEffect(updateState, confirmBeforeInstall) {
         val ready = updateState
-        if (ready is UpdateState.ReadyToInstall) pendingInstall = ready
+        if (ready is UpdateState.ReadyToInstall) {
+            if (confirmBeforeInstall) pendingInstall = ready else startInstall(ready)
+        }
     }
 
     Scaffold(
@@ -336,6 +362,12 @@ fun AboutScreen(
                     val pending = updateState
                     if (enabled && pending is UpdateState.Available) download(pending.release)
                 },
+            )
+            ToggleCard(
+                glyph = FlGlyphs.warning,
+                title = stringResource(Res.string.about_confirm_install),
+                checked = confirmBeforeInstall,
+                onCheckedChange = settingsViewModel::saveConfirmBeforeInstall,
             )
             Spacer(Modifier.height(10.dp))
 
@@ -416,31 +448,17 @@ fun AboutScreen(
             )
         }
 
-        // The install replaces the app and closes it, so it always asks first — the switch only
-        // decides who downloads, never whether the user gets told.
+        // The install replaces the app and closes it. By default it runs as soon as the APK is here;
+        // the "安装前确认" switch above brings this dialog back for anyone who wants the last word.
         pendingInstall?.let { ready ->
             AlertDialog(
                 onDismissRequest = { pendingInstall = null },
                 title = { Text(stringResource(Res.string.about_install_title, ready.version)) },
                 text = { Text(stringResource(Res.string.about_install_message)) },
                 confirmButton = {
-                    TextButton(onClick = {
-                        pendingInstall = null
-                        updateState = UpdateState.Installing(ready.version, ready.path)
-                        scope.launch {
-                            val failure = platform.installUpdate(ready.path)
-                            if (failure == null) {
-                                platform.exitApp()
-                            } else if (platform.requestInstall(ready.path)) {
-                                // The privileged runtime could not read any home for the APK, but
-                                // the system installer reads through the granted content URI, so
-                                // the same file still installs — with the system's own dialog.
-                                updateState = UpdateState.HandedOff(ready.version)
-                            } else {
-                                updateState = UpdateState.FailedWith(failure)
-                            }
-                        }
-                    }) { Text(stringResource(Res.string.about_install_confirm)) }
+                    TextButton(onClick = { startInstall(ready) }) {
+                        Text(stringResource(Res.string.about_install_confirm))
+                    }
                 },
                 dismissButton = {
                     TextButton(onClick = { pendingInstall = null }) {

@@ -379,6 +379,7 @@
     <string name="about_update_download_toast">Version %1$s found — downloading</string>
     <string name="about_update_store_managed">Installed from F-Droid — update it there</string>
     <string name="about_auto_install">Download updates automatically</string>
+    <string name="about_confirm_install">Confirm before installing</string>
     <string name="update_channel">Update channel</string>
     <string name="update_channel_stable">Stable</string>
     <string name="update_channel_dev">Development</string>

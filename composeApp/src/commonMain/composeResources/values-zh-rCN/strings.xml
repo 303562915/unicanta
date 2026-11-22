@@ -196,6 +196,7 @@
     <string name="about_update_download_toast">发现新版本 %1$s，正在下载</string>
     <string name="about_update_store_managed">由 F-Droid 安装，请从商店更新</string>
     <string name="about_auto_install">自动下载更新包</string>
+    <string name="about_confirm_install">安装前确认</string>
     <string name="update_channel">更新渠道</string>
     <string name="update_channel_stable">稳定版</string>
     <string name="update_channel_dev">开发版</string>

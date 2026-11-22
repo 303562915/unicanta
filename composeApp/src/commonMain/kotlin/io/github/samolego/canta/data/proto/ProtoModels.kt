@@ -69,11 +69,11 @@ data class AppSettingsProto(
     @ProtoNumber(20) val showRecommendTab: Boolean = false,
     /**
      * When on, a new release is downloaded as soon as the update check finds one, and the app
-     * offers to install it through Shizuku. The install itself always asks first: it replaces
-     * the app and closes it, which is not something to do behind someone's back.
+     * installs it through Shizuku right after the download. The extra confirmation is the
+     * [confirmBeforeInstall] switch, off by default.
      *
      * On by default: a check that finds something new and then waits for a second tap is a check
-     * most people never finish. Installing still asks.
+     * most people never finish.
      */
     @ProtoNumber(21) val autoInstallUpdates: Boolean = true,
     /**
@@ -118,6 +118,13 @@ data class AppSettingsProto(
      * rather than "there are votes", which would never go out. Empty until the queue was seen.
      */
     @ProtoNumber(29) val votesSeen: String = "",
+    /**
+     * Whether a downloaded release waits for a tap before it replaces the running app. Off by
+     * default: the download only happened because automatic updates are on, so the install is
+     * what was asked for, and the install itself is slow enough that the "正在安装" line is read
+     * before anything closes. Turned on, the confirmation dialog comes back.
+     */
+    @ProtoNumber(30) val confirmBeforeInstall: Boolean = false,
 )
 
 /**

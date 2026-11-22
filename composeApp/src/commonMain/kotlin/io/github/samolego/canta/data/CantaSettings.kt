@@ -51,6 +51,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val showDevicePhotoFlow = field { it.showDevicePhoto }
     /** Downloads a found release on its own and offers the Shizuku install; see [AppSettingsProto.autoInstallUpdates]. */
     val autoInstallUpdatesFlow = field { it.autoInstallUpdates }
+    /** Whether a downloaded release is installed at once instead of after a confirmation tap. */
+    val confirmBeforeInstallFlow = field { it.confirmBeforeInstall }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
@@ -89,6 +91,7 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setRecommendationsListMode(list: Boolean) = update { it.copy(recommendationsListMode = list) }
     suspend fun setShowDevicePhoto(show: Boolean) = update { it.copy(showDevicePhoto = show) }
     suspend fun setAutoInstallUpdates(auto: Boolean) = update { it.copy(autoInstallUpdates = auto) }
+    suspend fun setConfirmBeforeInstall(confirm: Boolean) = update { it.copy(confirmBeforeInstall = confirm) }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }

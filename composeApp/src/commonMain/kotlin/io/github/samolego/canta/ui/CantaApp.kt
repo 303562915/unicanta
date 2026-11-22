@@ -95,6 +95,7 @@ import io.github.samolego.canta.generated.resources.about_install_cancel
 import io.github.samolego.canta.generated.resources.about_install_confirm
 import io.github.samolego.canta.generated.resources.about_install_message
 import io.github.samolego.canta.generated.resources.about_install_title
+import io.github.samolego.canta.generated.resources.about_installing
 import io.github.samolego.canta.ui.theme.CantaTheme
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.ui.viewmodel.CURRENT_ONBOARDING_VERSION
@@ -214,13 +215,26 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
         platform.messages.collect { snackbarHostState.showSnackbar(it) }
     }
 
-    // A release found at start-up is downloaded without asking; installing it still asks,
-    // because it replaces the running app and closes it.
+    // A release found at start-up is downloaded without asking; the install runs as soon as the
+    // download is done, unless the about page's switch asks for a confirmation first (it is off
+    // by default).
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
     var autoUpdate by remember { mutableStateOf<UpdateState?>(null) }
     var autoInstallAsked by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     val updateClient = remember { HttpClient() }
+
+    // One install path for the automatic case and for the dialog: announce that it is running,
+    // then let the privileged runtime replace this app. Success closes the app — the new build
+    // takes over; a refused install is handed to the system installer (system dialog) instead.
+    val installRelease: (UpdateState.ReadyToInstall) -> Unit = { ready ->
+        coroutineScope.launch {
+            platform.showMessage(getString(Res.string.about_installing))
+            val failure = platform.installUpdate(ready.path)
+            if (failure == null) platform.exitApp()
+            else if (!platform.requestInstall(ready.path)) platform.showMessage(failure)
+        }
+    }
 
     // The poll below only asks while the app is visible: in the background nobody is reading the
     // answer, and a check every half minute is a request the person never asked for.
@@ -290,10 +304,18 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
                     // Success or failure, this session stops asking for the same version again —
                     // a retry loop would be a download every half minute.
                     autoUpdate = when (result) {
-                        is UpdateDownload.Done ->
-                            UpdateState.ReadyToInstall(label, result.path).also {
-                                autoInstallAsked = it
+                        is UpdateDownload.Done -> {
+                            val ready = UpdateState.ReadyToInstall(label, result.path)
+                            // Asking first is a switch, off by default: the download only ran
+                            // because automatic updates are on, so the install is the thing that
+                            // was asked for. Turned on, the dialog below is the second tap.
+                            if (settingsViewModel.confirmBeforeInstall.value) {
+                                autoInstallAsked = ready
+                            } else {
+                                installRelease(ready)
                             }
+                            ready
+                        }
                         is UpdateDownload.Failed -> null
                     }
                     return@LaunchedEffect
@@ -324,11 +346,7 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
             confirmButton = {
                 TextButton(onClick = {
                     autoInstallAsked = null
-                    coroutineScope.launch {
-                        val failure = platform.installUpdate(ready.path)
-                        if (failure == null) platform.exitApp()
-                        else if (!platform.requestInstall(ready.path)) platform.showMessage(failure)
-                    }
+                    installRelease(ready)
                 }) { Text(stringResource(Res.string.about_install_confirm)) }
             },
             dismissButton = {

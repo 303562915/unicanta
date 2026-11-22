@@ -81,8 +81,10 @@ class SettingsViewModel(
     /** Whether the records tab empties itself at the next system start; off unless turned on. */
     val clearRecordsAfterBoot = settingsStore.clearRecordsAfterBootFlow.state(false)
 
-    /** Downloads a found release on its own; the install still asks first. */
+    /** Downloads a found release on its own; [confirmBeforeInstall] decides whether it waits for a tap. */
     val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(true)
+    /** Whether installing a downloaded release asks first; off means it installs right away. */
+    val confirmBeforeInstall = settingsStore.confirmBeforeInstallFlow.state(false)
     val updateChannel = settingsStore.updateChannelFlow.state<String?>(null)
 
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */
@@ -141,6 +143,7 @@ class SettingsViewModel(
     fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
     fun saveClearRecordsAfterBoot(clear: Boolean) = save { setClearRecordsAfterBoot(clear) }
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
+    fun saveConfirmBeforeInstall(confirm: Boolean) = save { setConfirmBeforeInstall(confirm) }
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
 
     /**
