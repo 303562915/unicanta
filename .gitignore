@@ -37,10 +37,11 @@ node_modules/
 
 # Database project stays local: schema, migrations, fixtures and the deployment notes for it.
 # The published repository ships the client and the standalone node backend only.
+# Migrations are applied by hand over the Management API -- there is no CI workflow for them
+# (see AGENTS.md section 10); the old supabase_migrations.yml no longer exists.
 /server/supabase/
 /server/test/
 /server/README.md
-/.github/workflows/supabase_migrations.yml
 
 # Sticker source files: the copies the app ships live in composeResources/drawable as emo_*.png
 /static/

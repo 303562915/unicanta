@@ -66,8 +66,9 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | `daily-device-report.yml` 📊 Daily device report | 定时 + `workflow_dispatch` | 钉钉日报（读 `canta_users`；识别率口径见第 9 节） | — |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |
 
-> 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`、`supabase_migrations.yml`）
+> 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`）
 > **只留在本地**，已在 `.gitignore` 里排除，不进公开仓库；迁移与查库在本地做，凭据见 `SUPABASE.local.md`。
+> **推迁移没有 CI，唯一路径是手工走 Management API，步骤见第 10 节。**
 > 本地备份在 `backups/db-local-only/`。**钉钉日报 `daily-device-report.yml` 照旧留在仓库里跑，不要删。**
 
 关键 task（云端跑的，你**不要**在本地跑）：
@@ -129,9 +130,10 @@ gh run download <run-id> -n app-debug -D artifacts
 
 1. **重复构建（已修）**：`fork-ci.yml` 的 job 带 `if: github.ref != 'refs/heads/master'`，master 推送只由 `build.yml` 跑一遍，不再双跑。
 2. **`release.yml` 的 secret 名（已对齐）**：它现在读 `CANTA_KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`，与仓库已配置的 secrets 一致，发版不再因 keystore 为空而失败。
-3. **数据库那一侧不进仓库（已迁出）**：`server/supabase/**`、`server/test/**`、`server/README.md`、
-   `supabase_migrations.yml` 只留在本地并已 gitignore。迁移不再由 CI 应用，要改 schema 就在本地推
-   （本机没有 `supabase` / `psql`，直接查库走 Management API，见 `SUPABASE.local.md`）。
+3. **数据库那一侧不进仓库（已迁出）**：`server/supabase/**`、`server/test/**`、`server/README.md`
+   只留在本地并已 gitignore。`supabase_migrations.yml` **已经不存在了**（2026-11-22 核实：磁盘上没有、
+   索引里也没有，只剩 `.gitignore` 里一条过时规则），所以任何"推送自动 `db push`"的说法都不成立；
+   改 schema 只能手工推，步骤见**第 10 节**。
    **`daily-device-report.yml`（每日钉钉日报）不在此列，它留在仓库里正常跑。**
 4. **action 版本（已统一）**：所有 workflow 都是 `actions/checkout@v4` + `actions/setup-java@v4` + `distribution: temurin`。
 5. **`::set-output`（已移除）**：仓库里已无该写法，`VERSION_NAME` 走 `$GITHUB_ENV`。
@@ -231,3 +233,51 @@ update plans p set market_name = d.market_name
 以前只有打开「社区/安全规则」页触发 `user_login` 才写，所以 2026-11-21 实测 594 人里 549 人空
 （92%），那个「有型号 45」= 打开过社区页的人数，**不是**识别率。从 `20261121160000_identity_bind_model.sql` 起 `identity_bind` 随身份一起收 `model`/`codename`，装机即上报（迁移只在本地）。识别率要看 `plans`：
 `select count(distinct model) filter (where coalesce(market_name,'') <> '')::float / count(distinct model) from plans;`
+
+---
+
+## 10. 数据库迁移：没有 CI，只有手工一条路
+
+`.github/workflows/supabase_migrations.yml` **不存在**（2026-11-22 核实：磁盘上没有、git 索引里也没有），
+`server/supabase/**` 整个不进仓库。所以「推送迁移 → CI 自动 `db push`」这件事**从来没有发生，也不会发生**。
+改 schema 的唯一路径是手工推，下面是实际用过、验证过的那一套。
+
+### 10.1 连上去（本机没有 supabase CLI / psql / docker）
+
+```powershell
+$root = 'G:\trae\respositories\unicanta'
+$txt  = Get-Content (Join-Path $root 'SUPABASE.local.md') -Raw
+$pat  = [regex]::Match($txt,'sbp_[0-9a-f]+').Value
+$ref  = [regex]::Match($txt,'Project Ref\s*\|\s*`([a-z0-9]+)`').Groups[1].Value
+$h    = @{ Authorization = "Bearer $pat"; 'Content-Type' = 'application/json' }
+function Q($sql) {
+  $b = @{ query = $sql } | ConvertTo-Json -Compress
+  Invoke-RestMethod -Uri "https://api.supabase.com/v1/projects/$ref/database/query" `
+    -Method Post -Headers $h -Body $b -Proxy $env:HTTPS_PROXY
+}
+Q 'select 1 as ok'   # 先证明：地址通、token 对、代理没坏
+```
+
+`api.supabase.com` 必须走 `$env:HTTPS_PROXY`，否则报 SSL 握手失败。**一次请求只能带一条语句。**
+
+### 10.2 推一个迁移：七步，顺序不能换
+
+1. **备份要被替换的东西**：函数就
+   `Q "select pg_get_functiondef('public.xxx(sig)'::regprocedure) as d"`，写进
+   `backups/db-local-only/<name>_before_<date>.sql`。
+2. **数行数**：`Q 'select count(*) from public.<table>'`，把数字记下来。
+3. **拆语句**：带 `$$ … $$` 的 `create or replace function` **不能按分号硬拆**。
+   按顶层关键字切块（`create or replace function …` / `revoke …` / `do $$ … $$;`），
+   照 `20261122100000_comment_delete_owner_match.sql` 那次的三段切法。
+4. **逐条发**，每条都要看到 OK；任何一条报错就停下，别继续发后面的。
+5. **再数一遍行数**，必须和步骤 2 一样。不一样就是出事了，立刻用步骤 1 的备份回滚。
+6. **验定义真的换了**：`pg_get_functiondef(...)` 里能搜到新逻辑的关键字。
+7. **空跑一次**：拿明显无效的入参调一次，确认走的是拒绝分支、不抛异常。
+
+### 10.3 不要做的事
+
+- 不用 `delete` / `drop` 来「重置后重建」：`plans`、`community_comments`、`canta_users` 是真数据。
+- 不把 `server/supabase/**` 加进仓库来「让 CI 推」——那是把 live 服务的 schema 公开。
+  真要走那条路是独立决定，先算清代价：git 历史永久留痕，推上去撤不回来。
+- `server/supabase/ops/` 里的脚本会删数据（`purge_plans` 清空全部方案与方案评论），
+  只在明确要清空时手工跑。
