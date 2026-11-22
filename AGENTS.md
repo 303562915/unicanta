@@ -282,3 +282,38 @@ Q 'select 1 as ok'   # 先证明：地址通、token 对、代理没坏
   真要走那条路是独立决定，先算清代价：git 历史永久留痕，推上去撤不回来。
 - `server/supabase/ops/` 里的脚本会删数据（`purge_plans` 清空全部方案与方案评论），
   只在明确要清空时手工跑。
+
+---
+
+## 11. dependabot 告警：先分级，再动手
+
+2026-11-22 的教训：`ws` 那条 high 告警（dev server 的传递依赖）花了 5 轮交互、4 次 CI
+才关掉，而当天的真问题（删评论越权，能删别人的评论）只用了两三步。**严重度标签不等于优先级，
+要按"有没有进用户的运行路径"分级。**
+
+### 11.1 三类，处理强度完全不同
+
+| 类 | 判断 | 处理 |
+|---|---|---|
+| **进运行路径** | `composeApp` 的 `wasmJsMain` npm 依赖（`@yume-chan/*`）、`androidMain`/`commonMain` 的库、`helper` | 认真修，带验证 |
+| **只在构建/dev 工具链** | `ws`、webpack 那层、yarn 自己、`kotlin-js-store/**` 里的锁 | **一步升得上就升；升不动就记成已知项，不追** |
+| **只在测试依赖** | `kotlin-test`、`ktor-client-mock`、pglite | 不管 |
+
+判据一句话：**这个包会不会出现在用户手机或用户的浏览器里加载的产物中？** 不会，就当第二类。
+
+### 11.2 第二类的成本上限（硬规则）
+
+- 最多 **2 次 CI 试错**。第 3 次之前必须已经从文档/源码确认了 API 名，不能靠盲改试。
+- 仍升不动 → 在本文档第 6 节加一行「已知项 + 为什么升不动 + 影响面」，**收工**。
+- 不要为它建分支跑全量验证；本地读源码能确认的，不要推 CI 试。
+
+### 11.3 `kotlin-js-store/wasm/yarn.lock` 的两条铁律
+
+1. **不要手改**。`kotlinWasmStoreYarnLock` 会校验，改了必红：
+   `Lock file was changed. Run the kotlinWasmUpgradeYarnLock task`。
+2. 要抬版本只能：① 在 `composeApp/build.gradle.kts` 里加 yarn resolution，
+   且必须挂 **wasm** 的扩展 —— `withType<...targets.wasm.yarn.WasmYarnPlugin>()` +
+   `the<...targets.wasm.yarn.WasmYarnRootExtension>()`（挂 js 的 `YarnPlugin` 编译能过但**不生效**）；
+   ② 跑 `wasm-lock-upgrade.yml` 拿到工具链重算的锁，下载后提交。
+   注意 `settings.gradle.kts` 里 `rootProject` 是 `Settings` 不是 `Project`，那段写不进去。
+3. 摘掉锁里某条再重算，只能用来**证明**范围不接受新版本，不是修法。
