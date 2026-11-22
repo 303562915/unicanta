@@ -102,6 +102,7 @@ import io.github.samolego.canta.ui.component.PlanScopeDialog
 import io.github.samolego.canta.ui.component.label
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
+import io.github.samolego.canta.ui.fl.successColor
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.util.DeviceIdentity
@@ -854,6 +855,10 @@ private fun RankingTab(
 ) {
     val ranking = remember(plans) { rankPackages(plans) }
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
+    // What this phone no longer has, asked of the app list rather than of the plans: the ranking is
+    // about what should go, so the rows that already went have to be told apart from the ones that
+    // are still here — and that verdict belongs to this phone, not to the model the list is about.
+    val removed = remember(apps) { apps.filter { it.isUninstalled }.mapTo(mutableSetOf()) { it.packageName } }
     val needle = query.trim()
     val rows = if (needle.isEmpty()) {
         ranking
@@ -897,6 +902,9 @@ private fun RankingTab(
                     // answer would be somebody else's build wearing this one's name.
                     verdict = if (otherDevice) null else rules?.verdict(row.pkg, profile),
                     otherDevice = otherDevice,
+                    // Whether it is gone is not the same question as the rules' verdict, and it is
+                    // true under any scope: the phone in hand is the one that did the removing.
+                    removed = row.pkg in removed,
                     onClick = { onOpenApp(row.pkg) },
                 )
             }
@@ -911,8 +919,14 @@ private fun RankRowView(
     app: AppInfo?,
     verdict: SafetyVerdict?,
     otherDevice: Boolean = false,
+    /** True when this phone no longer has the package: the row is painted so it can be spotted. */
+    removed: Boolean = false,
     onClick: () -> Unit = {},
 ) {
+    // A row whose package already went takes the success colour, name and package line together:
+    // the list exists to say what should go, so "this one is gone" is the one state worth seeing
+    // before reading any of the numbers, and green is the colour this app already uses for it.
+    val goneColor = successColor()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -931,6 +945,10 @@ private fun RankRowView(
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                // Colour and weight together: green on its own is a quiet difference on a list of
+                // white names, and this is the one row state that has to be read at a glance.
+                fontWeight = if (removed) FontWeight.SemiBold else null,
+                color = if (removed) goneColor else MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = rank.pkg,
@@ -939,7 +957,11 @@ private fun RankRowView(
                 lineHeight = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (removed) {
+                    goneColor.copy(alpha = 0.75f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
         // One number, one line: how many people marked it. How many plans it was marked in is a
