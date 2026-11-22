@@ -26,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +55,7 @@ import io.github.samolego.canta.generated.resources.cancel
 import io.github.samolego.canta.generated.resources.got_it
 import io.github.samolego.canta.generated.resources.tweaks_copied
 import io.github.samolego.canta.generated.resources.tweaks_copy_command
+import io.github.samolego.canta.generated.resources.tweaks_package_refused
 import io.github.samolego.canta.generated.resources.tweaks_empty
 import io.github.samolego.canta.generated.resources.tweaks_restore_button
 import io.github.samolego.canta.generated.resources.tweaks_restore_confirm_body
@@ -81,7 +83,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.RomTweak
-import io.github.samolego.canta.util.RomTweaks
+import io.github.samolego.canta.util.commandFor
 import io.github.samolego.canta.util.familyKeyOf
 import io.github.samolego.canta.util.familyLabel
 import kotlinx.coroutines.launch
@@ -131,6 +133,8 @@ fun TweaksScreen(
     var run by remember { mutableStateOf<RunStep?>(null) }
     var detail by remember { mutableStateOf<RomTweak?>(null) }
     var copied by remember { mutableStateOf<String?>(null) }
+    /** The card waiting for a package name; null when nothing is being asked. */
+    var asking by remember { mutableStateOf<RomTweak?>(null) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
@@ -186,13 +190,15 @@ fun TweaksScreen(
                     run = RunStep.Finished(tweak, handler.runTweakCommand(tweak.command))
                 }
             }
+            // The command is only known once a package is named, so the button asks first.
+            RomTweaks.ACTION_SHELL_WITH_PACKAGE -> asking = tweak
             else -> Unit
         }
     }
 
     /** Whether the card gets a run button at all: no button where nothing could happen. */
     fun runnable(tweak: RomTweak): Boolean = when (tweak.action) {
-        RomTweaks.ACTION_SHELL -> handler.supportsTweakCommands
+        RomTweaks.ACTION_SHELL, RomTweaks.ACTION_SHELL_WITH_PACKAGE -> handler.supportsTweakCommands
         RomTweaks.ACTION_RESTORE_ALL -> true
         else -> false
     }
@@ -263,6 +269,23 @@ fun TweaksScreen(
         )
     }
 
+    asking?.let { tweak ->
+        PackageNameDialog(
+            tweak = tweak,
+            onRun = { packageName ->
+                asking = null
+                val script = tweak.commandFor(packageName)
+                if (script != null) {
+                    scope.launch {
+                        run = RunStep.Running(tweak)
+                        run = RunStep.Finished(tweak, handler.runTweakCommand(script))
+                    }
+                }
+            },
+            onDismiss = { asking = null },
+        )
+    }
+
     when (val current = run) {
         null -> Unit
         is RunStep.Running -> BusyDialog(
@@ -306,7 +329,7 @@ fun TweaksScreen(
 
 /** The icon a card shows: one per kind of action, so the button reads as the same job everywhere. */
 private fun iconOf(tweak: RomTweak): ImageVector = when (tweak.action) {
-    RomTweaks.ACTION_SHELL -> Icons.Default.Bolt
+    RomTweaks.ACTION_SHELL, RomTweaks.ACTION_SHELL_WITH_PACKAGE -> Icons.Default.Bolt
     RomTweaks.ACTION_RESTORE_ALL -> Icons.Default.Restore
     else -> Icons.Default.Info
 }
@@ -452,10 +475,62 @@ private fun TweakDetailDialog(
     }
 }
 
+/**
+ * Asks for the package a prompt-driven card needs.
+ *
+ * The name is checked here as the user types, so the reason a name is refused is visible before the
+ * button is pressed: a command assembled from free text would otherwise be a shell injection point,
+ * and the few packages that keep the phone usable are refused outright (see [NEVER_TOUCH]).
+ */
+@Composable
+private fun PackageNameDialog(
+    tweak: RomTweak,
+    onRun: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    val name = text.trim()
+    val usable = tweak.commandFor(name) != null
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = tweak.title,
+        widthFraction = WIDE_DIALOG_WIDTH,
+        buttons = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+            TextButton(onClick = { onRun(name) }, enabled = usable) {
+                Text(stringResource(Res.string.tweaks_run))
+            }
+        },
+    ) {
+        if (tweak.why.isNotEmpty()) {
+            Text(
+                text = tweak.why,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            singleLine = true,
+            label = { Text(tweak.prompt) },
+            placeholder = { Text("com.example.app") },
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
+        if (name.isNotEmpty() && !usable) {
+            Text(
+                text = stringResource(Res.string.tweaks_package_refused),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+    }
+}
+
 /** What the script printed, or why it never ran. */
 @Composable
-private fun TweakResultDialog(
-    tweak: RomTweak,
+private fun TweakResultDialog(    tweak: RomTweak,
     run: TweakRun,
     onDismiss: () -> Unit,
 ) {

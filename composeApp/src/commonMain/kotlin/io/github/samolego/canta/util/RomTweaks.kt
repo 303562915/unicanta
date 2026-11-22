@@ -1,6 +1,7 @@
 package io.github.samolego.canta.util
 
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.packages.isValidPackageName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -23,6 +24,11 @@ data class RomTweak(
     val why: String = "",
     val command: String = "",
     val action: String? = null,
+    /**
+     * What the card asks for before it can run: a package name, in the words of the JSON. Empty on
+     * the cards that need nothing, and the command then has no [PACKAGE_TOKEN] to fill in.
+     */
+    val prompt: String = "",
 )
 
 @Serializable
@@ -66,6 +72,20 @@ class RomTweaks(private val set: RomTweakSet) {
         /** Runs the card's [RomTweak.command] as one `sh` script through the privileged shell. */
         const val ACTION_SHELL = "shell"
 
+        /**
+         * The same, for a card whose command is only known once the user names a package: the
+         * shell command carries [PACKAGE_TOKEN], and [commandFor] fills it in — or refuses, when the
+         * name is not a package name or is one of the few that must never be touched.
+         *
+         * This exists because some refusals are about *who* is asking rather than about the
+         * package: a ROM that answers "no root permission" for every `setApplicationEnabledSetting`
+         * leaves the shell command as the only route, and that route needs the name typed in.
+         */
+        const val ACTION_SHELL_WITH_PACKAGE = "shell-with-package"
+
+        /** Where [commandFor] puts the package the user typed. */
+        const val PACKAGE_TOKEN = "{{pkg}}"
+
         /** The vendor groups, in display order. */
         val FAMILIES = listOf("xiaomi", "oppo", "vivo", "honor", "samsung")
 
@@ -93,4 +113,36 @@ fun familyLabel(key: String): String = when (key) {
     "honor" -> "华为 / 荣耀（EMUI · MagicOS）"
     "samsung" -> "三星（One UI）"
     else -> key
+}
+
+/**
+ * Packages a typed-in shell command must never touch: without them the phone has no home screen,
+ * no keyboard, no way into settings, or no window manager. The list is deliberately short — it is
+ * a backstop against a typo, not a safety model.
+ */
+val NEVER_TOUCH: Set<String> = setOf(
+    "android",
+    "com.android.systemui",
+    "com.android.settings",
+    "com.android.packageinstaller",
+    "com.android.phone",
+    "com.android.shell",
+    "com.android.launcher3",
+    "com.android.inputmethod.latin",
+    "com.miui.home",
+    "com.miui.securitycenter",
+)
+
+/**
+ * The script to run for a prompt-driven card, with [packageName] in place of the token, or null
+ * when this card takes no package or the name may not be used.
+ *
+ * The name is checked against the package-name shape before it reaches the shell — the command is a
+ * `sh` script, so an unchecked string would be an injection point, not just a wrong answer.
+ */
+fun RomTweak.commandFor(packageName: String): String? {
+    if (action != RomTweaks.ACTION_SHELL_WITH_PACKAGE) return null
+    val name = packageName.trim()
+    if (!isValidPackageName(name) || name in NEVER_TOUCH) return null
+    return command.replace(RomTweaks.PACKAGE_TOKEN, name)
 }

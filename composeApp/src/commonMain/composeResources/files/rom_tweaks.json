@@ -1,6 +1,6 @@
 {
- "version": 4,
- "updated": "2026-11-18",
+ "version": 5,
+ "updated": "2026-11-22",
  "tweaks": [
   {
    "id": "xiaomi-splash-hardcontrol",
@@ -9,6 +9,51 @@
    "why": "澎湃OS / MIUI 上官方应用启动时，systemAdSolution 的 miad 广告位会把开屏卡满 3 秒。把 files 目录里的 miad 目录换成同名空文件即可封死广告位；再把智能服务的「显示在其他应用的上层」权限开关一次，缺失智能服务时还会有 3 秒空等，这一步会顺手试装回去。",
    "command": "SD=/storage/emulated/0/Android/data/com.miui.systemAdSolution/files\nP=com.miui.systemAdSolution\nmkdir -p \"$SD\"\nrm -rf \"$SD/miad\"\ntouch \"$SD/miad\"\nif pm path $P >/dev/null 2>&1; then echo \"智能服务：已安装\"; else pm install-existing --user 0 $P >/dev/null 2>&1; if pm path $P >/dev/null 2>&1; then echo \"智能服务：已装回\"; else echo \"智能服务：缺失 SVC_MISSING\"; fi; fi\ncmd appops set $P SYSTEM_ALERT_WINDOW allow\ncmd appops set $P SYSTEM_ALERT_WINDOW deny\nif [ -f \"$SD/miad\" ]; then echo \"miad：已替换成文件\"; else echo \"miad：写入失败 MIAD_FAIL\"; exit 1; fi",
    "action": "shell"
+  },
+  {
+   "id": "xiaomi-disable-package",
+   "rom": "hyperos",
+   "title": "按包名停用一个应用（要 root）",
+   "why": "有些包 Canta 在列表里改不动：这台 ROM 只认 root 身份（报 no root permission），或者它在 Android 的保护名单里。填包名跑一次 pm disable-user，用的是工具页这条 shell 的身份——Shizuku 的 shell 权限改不了上面那两类，只有 root 来源会成功。桌面、系统界面、设置、电话、安装器、输入法这几类会被直接拒绝。",
+   "command": "PKG={{pkg}}\nif pm list packages -u | sed 's/^package://' | grep -qx \"$PKG\"; then :; else echo \"没有这个包：$PKG\"; exit 1; fi\nif pm disable-user --user 0 \"$PKG\" 2>&1; then echo \"已停用 $PKG\"; else echo \"停用被拒绝 DISABLE_REFUSED\"; exit 1; fi",
+   "action": "shell-with-package",
+   "prompt": "包名"
+  },
+  {
+   "id": "oppo-disable-package",
+   "rom": "coloros",
+   "title": "按包名停用一个应用（要 root）",
+   "why": "有些包 Canta 在列表里改不动：这台 ROM 只认 root 身份（报 no root permission），或者它在 Android 的保护名单里。填包名跑一次 pm disable-user，用的是工具页这条 shell 的身份——Shizuku 的 shell 权限改不了上面那两类，只有 root 来源会成功。桌面、系统界面、设置、电话、安装器、输入法这几类会被直接拒绝。",
+   "command": "PKG={{pkg}}\nif pm list packages -u | sed 's/^package://' | grep -qx \"$PKG\"; then :; else echo \"没有这个包：$PKG\"; exit 1; fi\nif pm disable-user --user 0 \"$PKG\" 2>&1; then echo \"已停用 $PKG\"; else echo \"停用被拒绝 DISABLE_REFUSED\"; exit 1; fi",
+   "action": "shell-with-package",
+   "prompt": "包名"
+  },
+  {
+   "id": "vivo-disable-package",
+   "rom": "funtouch",
+   "title": "按包名停用一个应用（要 root）",
+   "why": "有些包 Canta 在列表里改不动：这台 ROM 只认 root 身份（报 no root permission），或者它在 Android 的保护名单里。填包名跑一次 pm disable-user，用的是工具页这条 shell 的身份——Shizuku 的 shell 权限改不了上面那两类，只有 root 来源会成功。桌面、系统界面、设置、电话、安装器、输入法这几类会被直接拒绝。",
+   "command": "PKG={{pkg}}\nif pm list packages -u | sed 's/^package://' | grep -qx \"$PKG\"; then :; else echo \"没有这个包：$PKG\"; exit 1; fi\nif pm disable-user --user 0 \"$PKG\" 2>&1; then echo \"已停用 $PKG\"; else echo \"停用被拒绝 DISABLE_REFUSED\"; exit 1; fi",
+   "action": "shell-with-package",
+   "prompt": "包名"
+  },
+  {
+   "id": "honor-disable-package",
+   "rom": "emui",
+   "title": "按包名停用一个应用（要 root）",
+   "why": "有些包 Canta 在列表里改不动：这台 ROM 只认 root 身份（报 no root permission），或者它在 Android 的保护名单里。填包名跑一次 pm disable-user，用的是工具页这条 shell 的身份——Shizuku 的 shell 权限改不了上面那两类，只有 root 来源会成功。桌面、系统界面、设置、电话、安装器、输入法这几类会被直接拒绝。",
+   "command": "PKG={{pkg}}\nif pm list packages -u | sed 's/^package://' | grep -qx \"$PKG\"; then :; else echo \"没有这个包：$PKG\"; exit 1; fi\nif pm disable-user --user 0 \"$PKG\" 2>&1; then echo \"已停用 $PKG\"; else echo \"停用被拒绝 DISABLE_REFUSED\"; exit 1; fi",
+   "action": "shell-with-package",
+   "prompt": "包名"
+  },
+  {
+   "id": "samsung-disable-package",
+   "rom": "oneui",
+   "title": "按包名停用一个应用（要 root）",
+   "why": "有些包 Canta 在列表里改不动：这台 ROM 只认 root 身份（报 no root permission），或者它在 Android 的保护名单里。填包名跑一次 pm disable-user，用的是工具页这条 shell 的身份——Shizuku 的 shell 权限改不了上面那两类，只有 root 来源会成功。桌面、系统界面、设置、电话、安装器、输入法这几类会被直接拒绝。",
+   "command": "PKG={{pkg}}\nif pm list packages -u | sed 's/^package://' | grep -qx \"$PKG\"; then :; else echo \"没有这个包：$PKG\"; exit 1; fi\nif pm disable-user --user 0 \"$PKG\" 2>&1; then echo \"已停用 $PKG\"; else echo \"停用被拒绝 DISABLE_REFUSED\"; exit 1; fi",
+   "action": "shell-with-package",
+   "prompt": "包名"
   }
  ]
 }
