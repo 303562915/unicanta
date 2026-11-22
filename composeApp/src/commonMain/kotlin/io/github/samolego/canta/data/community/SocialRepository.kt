@@ -912,7 +912,10 @@ class SocialRepository(
         val body = buildJsonObject { put("p_owner", owner) }.toString()
         val text = rpc(name, body) ?: return emptyList()
         return rowsOf(text).mapNotNull { row ->
-            val id = row.textOf("id")
+            // 后端把身份号放在 `owner` 列（followers_of / following_of 都是），`id` 只作旧字段兜底：
+            // 早先这里只读 `id`，拿到空串，于是所有人都被下面的空判断丢掉——关注列表、可拉进群的
+            // 名单、可私聊的人全成了空的。
+            val id = row.textOf("owner").ifBlank { row.textOf("id") }
             val display = row.textOf("name")
             // 一个既没有编号也没有名字的行在界面上画不出来，也没法点，直接丢掉。
             if (id.isEmpty() && display.isEmpty()) return@mapNotNull null
@@ -921,7 +924,8 @@ class SocialRepository(
                 name = display,
                 iFollow = row.flagOf("i_follow") ?: iFollow,
                 followsMe = row.flagOf("follows_me") ?: followsMe,
-                since = row.textOf("since"),
+                // 关注时间在 `created_at`，`since` 是同一个意思的旧名。
+                since = row.textOf("created_at").ifBlank { row.textOf("since") },
             )
         }
     }
