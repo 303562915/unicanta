@@ -571,4 +571,9 @@
     <string name="plan_upload_offline">Cannot reach the community server: uploading needs access to the backend. Check the network or turn on the VPN, then retry.</string>
     <string name="plan_upload_failed_network">Upload failed: the request never left the phone. Check the network or turn on the VPN, then retry.</string>
     <string name="plan_upload_ok_detail">Uploaded — the plan is in, and it shows up once the list refreshes.</string>
+    <string name="settings_group_theme">Theme</string>
+    <string name="theme_accent">Accent color</string>
+    <string name="theme_mode_system">System</string>
+    <string name="theme_mode_light">Light</string>
+    <string name="theme_mode_dark">Dark</string>
 </resources>

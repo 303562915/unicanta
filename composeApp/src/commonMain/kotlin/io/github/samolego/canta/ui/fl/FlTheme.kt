@@ -27,14 +27,17 @@ val FlShapes = Shapes(
  *
  * There is no Material You here on purpose — the app draws the colors FlClash's default
  * accent generates, so it looks the same on every phone and matches the reference on the
- * ones that would otherwise tint themselves after the wallpaper.
+ * ones that would otherwise tint themselves after the wallpaper. The one accent the user
+ * picks in the settings is the app's own choice, not the wallpaper's: see [FlAccent].
  */
 @Composable
 fun FlTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    /** The accent picked in the settings; [FlAccent.Default] is FlClash's own table. */
+    accent: FlAccent = FlAccent.Default,
     content: @Composable () -> Unit,
 ) {
-    val scheme = if (darkTheme) FlPalette.dark else FlPalette.light
+    val scheme = accent.scheme(darkTheme)
     CompositionLocalProvider(LocalFlColorScheme provides scheme) {
         MaterialTheme(
             colorScheme = scheme,

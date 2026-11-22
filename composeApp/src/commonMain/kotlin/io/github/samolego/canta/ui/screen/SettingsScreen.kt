@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -58,6 +61,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -113,6 +121,11 @@ import io.github.samolego.canta.generated.resources.require_auth_setting_desc
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.generated.resources.settings_group_device
 import io.github.samolego.canta.generated.resources.settings_group_general
+import io.github.samolego.canta.generated.resources.settings_group_theme
+import io.github.samolego.canta.generated.resources.theme_accent
+import io.github.samolego.canta.generated.resources.theme_mode_dark
+import io.github.samolego.canta.generated.resources.theme_mode_light
+import io.github.samolego.canta.generated.resources.theme_mode_system
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ExpandIcon
 import io.github.samolego.canta.ui.component.LetterAvatar
@@ -123,6 +136,10 @@ import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.SettingsTextItem
 import io.github.samolego.canta.ui.component.SwitchSettingsItem
+import io.github.samolego.canta.ui.fl.FlAccent
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
+import io.github.samolego.canta.ui.fl.FlThemeMode
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import org.jetbrains.compose.resources.stringResource
 
@@ -135,6 +152,15 @@ private val GroupGap = 12.dp
 
 /** Room left under the last card for the floating bar that is drawn over the page. */
 private val FloatingBarRoom = 96.dp
+
+/** Side inset inside a settings card: the same 14dp the rows of the settings lists use. */
+private val AccentRowInset = 14.dp
+
+/** How many accent swatches share a row; twelve accents make two even rows of six. */
+private const val ACCENTS_PER_ROW = 6
+
+/** Diameter of one accent swatch. */
+private val AccentSwatchSize = 30.dp
 
 @Composable
 fun SettingsScreen(
@@ -179,6 +205,8 @@ fun SettingsScreen(
     val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
+    val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
+    val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
     var showRename by rememberSaveable { mutableStateOf(false) }
     var advancedSettingsExpanded by rememberSaveable { mutableStateOf(false) }
     val authRequiredTitle = stringResource(Res.string.auth_required)
@@ -295,6 +323,27 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(GroupGap))
+            // How the app looks: an accent picked from the twelve the reference app ships, and
+            // which dark mode to draw it in. Both take effect at once — the theme is applied
+            // above the navigation, so the whole page repaints rather than just this card.
+            SettingsGroup(title = stringResource(Res.string.settings_group_theme)) {
+                ThemeAccentPicker(
+                    selected = FlAccent.ofArgb(themeAccent),
+                    onSelect = { settingsViewModel.saveThemeAccent(it.argb) },
+                )
+                FlSegmentedControl(
+                    segments = listOf(
+                        FlSegment("system", stringResource(Res.string.theme_mode_system)),
+                        FlSegment("light", stringResource(Res.string.theme_mode_light)),
+                        FlSegment("dark", stringResource(Res.string.theme_mode_dark)),
+                    ),
+                    selectedIndex = FlThemeMode.ofStored(themeMode).ordinal,
+                    onSelect = { settingsViewModel.saveThemeMode(FlThemeMode.entries[it].stored) },
+                    insetHorizontal = AccentRowInset,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(GroupGap))
             SettingsGroup {
                 SettingsItem(
                     title = stringResource(Res.string.advanced_settings),
@@ -379,6 +428,74 @@ fun SettingsScreen(
                     divider = false,
                     onClick = onOpenAbout,
                     trailing = { SettingsChevron() },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The accent swatches, six to a row. Each one is a bare circle — no caption, the way the color
+ * pickers of both reference apps draw them — and the selected one is ringed and checked rather
+ * than filled with a badge over its own color.
+ */
+@Composable
+private fun ThemeAccentPicker(selected: FlAccent, onSelect: (FlAccent) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AccentRowInset, vertical = 10.dp)
+    ) {
+        FlAccent.entries.chunked(ACCENTS_PER_ROW).forEach { row ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                row.forEach { accent ->
+                    AccentSwatch(
+                        accent = accent,
+                        selected = accent == selected,
+                        onSelect = onSelect,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                // The last row may be short; the empty slots keep the columns aligned.
+                repeat(ACCENTS_PER_ROW - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccentSwatch(
+    accent: FlAccent,
+    selected: Boolean,
+    onSelect: (FlAccent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    // A ring in the text color rather than in primary: on the accent's own circle a primary
+    // ring would be the very same color and read as no ring at all.
+    val ring = if (selected) scheme.onSurface else scheme.outlineVariant.copy(alpha = 0.6f)
+    val label = stringResource(Res.string.theme_accent) + " " + accent.label
+    Box(modifier = modifier.padding(vertical = 5.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(AccentSwatchSize)
+                .clip(CircleShape)
+                .background(accent.color)
+                .border(width = if (selected) 2.dp else 1.dp, color = ring, shape = CircleShape)
+                .semantics {
+                    this.selected = selected
+                    contentDescription = label
+                }
+                .clickable(role = Role.RadioButton) { onSelect(accent) },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                // The check has to read on amber and lime as well as on indigo.
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = if (accent.color.luminance() > 0.45f) Color(0xFF16181D) else Color.White,
                 )
             }
         }

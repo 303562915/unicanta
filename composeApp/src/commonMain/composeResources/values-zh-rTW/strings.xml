@@ -136,4 +136,9 @@
     <string name="device_no_longer_available">所選裝置已無法使用。請重新選擇裝置。</string>
     <string name="device_busy">此裝置正由其他程式或瀏覽器分頁使用。請關閉所有正在使用該裝置的程式或分頁，拔除裝置並重新連接，然後再次選擇裝置。</string>
     <string name="device_busy_linux">裝置忙碌中：這台電腦上的其他程式已占用該裝置。在 Linux 上，通常是 ModemManager、adb 伺服器或檔案傳輸（MTP）監控程式造成的。請停止這些程式（例如執行 sudo systemctl stop ModemManager），拔除手機並重新連接，然後再次選擇裝置。</string>
+    <string name="settings_group_theme">主題</string>
+    <string name="theme_accent">主題色</string>
+    <string name="theme_mode_system">跟隨系統</string>
+    <string name="theme_mode_light">淺色</string>
+    <string name="theme_mode_dark">深色</string>
 </resources>

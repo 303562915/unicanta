@@ -3,6 +3,7 @@ package io.github.samolego.canta.ui
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -69,7 +70,9 @@ import io.github.samolego.canta.ui.component.FloatingPillBar
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.dockScroll
 import io.github.samolego.canta.ui.component.rememberDockVisibility
+import io.github.samolego.canta.ui.fl.FlAccent
 import io.github.samolego.canta.ui.fl.FlGlyphs
+import io.github.samolego.canta.ui.fl.FlThemeMode
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
@@ -164,15 +167,42 @@ private val ROOT_MANAGER_PACKAGES = listOf(
 /** The app's root composable, shared by the Android, desktop and web entry points. */
 @Composable
 fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: CrashReportStore? = null) {
-    CantaTheme {
+    // One client for the community pages, and the settings view model that owns how the app
+    // looks: both are made here rather than inside the navigation, because the theme is applied
+    // above it and has to read the stored accent and dark mode before anything is drawn.
+    val communityRepository = remember { PlanRepository(HttpClient()) }
+    val settingsViewModel: SettingsViewModel = viewModel {
+        SettingsViewModel(
+            deps.settings,
+            deps.packageTelemetry,
+            communityRepository,
+            deps.platform.deviceKey(),
+            { deps.handler.deviceProfile() },
+        )
+    }
+    val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
+    val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
+    val systemDark = isSystemInDarkTheme()
+    val darkTheme = when (FlThemeMode.ofStored(themeMode)) {
+        FlThemeMode.Light -> false
+        FlThemeMode.Dark -> true
+        FlThemeMode.System -> systemDark
+    }
+    CantaTheme(darkTheme = darkTheme, accent = FlAccent.ofArgb(themeAccent)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            CantaNavigation(deps, closeApp, crashReports)
+            CantaNavigation(deps, closeApp, crashReports, communityRepository, settingsViewModel)
         }
     }
 }
 
 @Composable
-private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: CrashReportStore?) {
+private fun CantaNavigation(
+    deps: CantaAppDependencies,
+    closeApp: () -> Unit,
+    crashReports: CrashReportStore?,
+    communityRepository: PlanRepository,
+    settingsViewModel: SettingsViewModel,
+) {
     val handler = deps.handler
     val platform = deps.platform
 
@@ -181,19 +211,6 @@ private fun CantaNavigation(deps: CantaAppDependencies, closeApp: () -> Unit, cr
 
     val appListViewModel: AppListViewModel = viewModel {
         AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry, deps.history, deps.settings)
-    }
-    // One client for the community pages: plans, comments, and the identity in settings.
-    val communityRepository = remember { PlanRepository(HttpClient()) }
-    val settingsViewModel: SettingsViewModel = viewModel {
-        // The device key is what gives a reinstalled app its old identity back; the profile is what
-        // tells the backend which model that identity is, even if the community page is never opened.
-        SettingsViewModel(
-            deps.settings,
-            deps.packageTelemetry,
-            communityRepository,
-            platform.deviceKey(),
-            { handler.deviceProfile() },
-        )
     }
     val presetViewModel: PresetsViewModel = viewModel { PresetsViewModel(deps.presetStore, handler, platform) }
     val mainViewModel: MainViewModel = viewModel { MainViewModel(handler, platform, deps.settings, appListViewModel) }

@@ -87,6 +87,11 @@ class SettingsViewModel(
     val confirmBeforeInstall = settingsStore.confirmBeforeInstallFlow.state(false)
     val updateChannel = settingsStore.updateChannelFlow.state<String?>(null)
 
+    /** The accent the app draws with, as ARGB; 0 is FlClash's own `#007AFF`. */
+    val themeAccent = settingsStore.themeAccentFlow.state(0)
+    /** Dark mode: 0 follows the system, 1 forces light, 2 forces dark. */
+    val themeMode = settingsStore.themeModeFlow.state(0)
+
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */
     val onboardingVersion: StateFlow<Int?> = settingsStore.onboardingVersionFlow.state<Int?>(null)
 
@@ -145,6 +150,8 @@ class SettingsViewModel(
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
     fun saveConfirmBeforeInstall(confirm: Boolean) = save { setConfirmBeforeInstall(confirm) }
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
+    fun saveThemeAccent(argb: Int) = save { setThemeAccent(argb) }
+    fun saveThemeMode(mode: Int) = save { setThemeMode(mode) }
 
     /**
      * Renames this install: the value is stored at once, so the page and the next review use it

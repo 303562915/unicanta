@@ -53,6 +53,10 @@ class CantaSettings(storage: AppBlobStorage) {
     val autoInstallUpdatesFlow = field { it.autoInstallUpdates }
     /** Whether a downloaded release is installed at once instead of after a confirmation tap. */
     val confirmBeforeInstallFlow = field { it.confirmBeforeInstall }
+    /** The accent the app draws with, as ARGB; 0 is FlClash's own `#007AFF`; see [AppSettingsProto.themeAccent]. */
+    val themeAccentFlow: Flow<Int> = field { it.themeAccent }
+    /** Dark mode: 0 follows the system, 1 forces light, 2 forces dark; see [AppSettingsProto.themeMode]. */
+    val themeModeFlow: Flow<Int> = field { it.themeMode }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
@@ -92,6 +96,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setShowDevicePhoto(show: Boolean) = update { it.copy(showDevicePhoto = show) }
     suspend fun setAutoInstallUpdates(auto: Boolean) = update { it.copy(autoInstallUpdates = auto) }
     suspend fun setConfirmBeforeInstall(confirm: Boolean) = update { it.copy(confirmBeforeInstall = confirm) }
+    suspend fun setThemeAccent(argb: Int) = update { it.copy(themeAccent = argb) }
+    suspend fun setThemeMode(mode: Int) = update { it.copy(themeMode = mode.coerceIn(0, 2)) }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }

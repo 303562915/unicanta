@@ -125,6 +125,18 @@ data class AppSettingsProto(
      * before anything closes. Turned on, the confirmation dialog comes back.
      */
     @ProtoNumber(30) val confirmBeforeInstall: Boolean = false,
+    /**
+     * The accent the app draws with, as ARGB. 0 means "nothing picked yet", which is FlClash's
+     * own `#007AFF`; the value is one of `FlAccent`'s colors. Local only, like everything else
+     * about how this phone looks.
+     */
+    @ProtoNumber(31) val themeAccent: Int = 0,
+    /**
+     * Which dark mode the app draws in: 0 follows the system, 1 forces light, 2 forces dark.
+     * 0 is both the proto3 zero value and the default behaviour, so an install that never picked
+     * one keeps following the phone.
+     */
+    @ProtoNumber(32) val themeMode: Int = 0,
 )
 
 /**

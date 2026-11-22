@@ -511,4 +511,9 @@
     <string name="plan_upload_offline">连不上社区服务器：上传需要能访问后端，请检查网络或开启 VPN 后重试。</string>
     <string name="plan_upload_failed_network">上传失败：请求没能发出去，检查网络或开启 VPN 后重试。</string>
     <string name="plan_upload_ok_detail">已上传：方案已提交，列表刷新后就能看到。</string>
+    <string name="settings_group_theme">主题</string>
+    <string name="theme_accent">主题色</string>
+    <string name="theme_mode_system">跟随系统</string>
+    <string name="theme_mode_light">浅色</string>
+    <string name="theme_mode_dark">深色</string>
 </resources>
