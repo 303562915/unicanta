@@ -2,8 +2,11 @@ package io.github.samolego.canta.data.community
 
 import io.github.samolego.canta.util.TelemetryConfig
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -94,6 +97,10 @@ data class Conversation(
  *
  * [removed] 是被删掉的那一条：后端保留占位（这样上下文的时序不乱），页面据此画"已撤回"，
  * 而不是把气泡整个从列表里拿掉——拿掉会让上面那句话失去被回复的对象。
+ *
+ * [kind] 是这一条的类型：`"text"` 是文字，`"image"` 是图片，那时 [body] 里放的是 storage 里的
+ * 对象路径（不是 URL）。认不出来的值原样保留，页面按"不认识"处理即可——不回退成 `"text"`，
+ * 免得把一张图当文字画出来。缺失才是 `"text"`。
  */
 data class ChatMessage(
     val id: Long,
@@ -102,6 +109,7 @@ data class ChatMessage(
     val body: String,
     val createdAt: String,
     val removed: Boolean = false,
+    val kind: String = "text",
 ) {
 
     /** 气泡上方那个署名；后端没给名字就退回编号。 */
@@ -219,6 +227,37 @@ class SocialRepository(
         class Ok(val text: String) : Call
         class Refused(val reason: String) : Call
         object Unreachable : Call
+    }
+
+    /** 二进制下载的三种结局，与 [Call] 一一对应；拆开是因为成功的那个还带着字节。 */
+    private sealed interface Blob {
+        class Ok(val bytes: ByteArray) : Blob
+        class Refused(val reason: String) : Blob
+        object Unreachable : Blob
+    }
+
+    /**
+     * 把一次**非 rpc** 请求的结果记进 [lastError] / [lastFailureWasNetwork]，成功返回 true。
+     *
+     * 这就是 [rpc] 里那三个分支的等价物，只是 [rpc] 还要把正文交出去，而 storage 的写只关心
+     * 成没成。两处的语义必须一模一样，否则页面在"上传失败"和"发消息失败"上会得到两种判断。
+     */
+    private fun record(result: Call): Boolean = when (result) {
+        is Call.Ok -> {
+            lastFailureWasNetwork = false
+            lastError = null
+            true
+        }
+        is Call.Refused -> {
+            lastFailureWasNetwork = false
+            lastError = result.reason
+            false
+        }
+        Call.Unreachable -> {
+            lastFailureWasNetwork = true
+            lastError = null
+            false
+        }
     }
 
     // ------------------------------------------------------------------ 关注
@@ -413,6 +452,36 @@ class SocialRepository(
     }
 
     /**
+     * 把已经传到 storage 的一张图发成一条消息，返回后端落库的那一行。
+     *
+     * 两步的顺序是死的：先 [uploadChatImage] 把字节放进 bucket，拿到 [path] 之后再调这一条。
+     * 返回的 [ChatMessage] 里 `kind = "image"`，而它那个 `body`（即 [ChatMessage.body]）里放的
+     * 是图片路径而不是文字，这样气泡可以直接照着画，不用等下一次 [messagesFor]。
+     *
+     * 失败返回 null；此时图可能已经在 bucket 里了（上传成功、登记失败），所以重试之前要允许
+     * `x-upsert` 覆盖——[uploadChatImage] 本来就带这个头。
+     */
+    suspend fun sendImageMessage(owner: String, conversation: Long, path: String): ChatMessage? {
+        if (owner.isEmpty() || conversation <= 0L || path.isEmpty()) return null
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_path", path)
+        }.toString()
+        val text = rpc("message_send_image", payload) ?: return null
+        val row = firstRowOf(text) ?: return null
+        val id = row.longOf("id") ?: return null
+        return ChatMessage(
+            id = id,
+            sender = owner,
+            senderName = "",
+            body = path,
+            createdAt = row.textOf("created_at"),
+            kind = "image",
+        )
+    }
+
+    /**
      * 删掉 [messageId] 这条消息，返回这件事成没成。
      *
      * 删是"标记撤回"，不是把行抹掉：所以这个方法成功之后，`messages_for` 里那条还在，
@@ -565,6 +634,128 @@ class SocialRepository(
         val body = buildJsonObject { put("p_owner", owner) }.toString()
         val text = rpc("conversations_mark_all_read", body) ?: return 0
         return intFrom(text, "conversations_mark_all_read") ?: 0
+    }
+
+    // ------------------------------------------------------------------ 聊天图片
+
+    /**
+     * Storage 的根。
+     *
+     * [baseUrl] 是 **REST 的 rpc 入口**（默认 `https://<ref>.supabase.co/rest/v1/rpc/`，见
+     * `composeApp/build.gradle.kts` 里 `canta.telemetry.baseUrl` 的默认值），而 storage 挂在同一个
+     * 主机的另一个前缀下（`https://<ref>.supabase.co/storage/v1/...`）。直接把 `baseUrl` 拼上去
+     * 会得到 `.../rest/v1/rpc/storage/v1/...`，那是 404。所以这里切掉 `/rest/v1` 那一段，
+     * 只留 scheme + host。
+     *
+     * 构建时把 baseUrl 换成一个没有 `/rest/v1` 的前缀时，原样使用它（trimEnd 掉尾斜杠），
+     * 这样自定义部署仍然按"它给的根"拼接。
+     */
+    private val storageBase: String =
+        baseUrl.substringBefore("/rest/v1").trimEnd('/').ifEmpty { baseUrl.trimEnd('/') }
+
+    /** `chat-images` 这个 bucket 里 [objectPath] 的完整地址。路径里的前导斜杠不算两遍。 */
+    private fun chatImageUrl(objectPath: String): String =
+        storageBase + "/storage/v1/object/chat-images/" + objectPath.trimStart('/')
+
+    /**
+     * 把 [bytes] 传进 `chat-images` bucket 的 [objectPath]，成功（HTTP 2xx）返回 true。
+     *
+     * [owner] 不参与定位：对象路径完全由 [objectPath] 决定（谁传的、放在哪个会话目录下，都是
+     * 调用方的事）。这里只用它挡一下"身份是空的就别传"。
+     *
+     * 直接对 storage 发 PUT，不走 rpc：Supabase 的 storage 是普通 HTTP 端点，`apikey` 加
+     * `Authorization: Bearer` 两个头都要（前者给网关，后者给 storage 的鉴权），`x-upsert: true`
+     * 让同一条路径可以覆盖——重发同一张图不该变成第二个对象。
+     *
+     * 失败返回 false，原因进 [lastError]（响应体前 200 字）；连不上是
+     * [lastFailureWasNetwork] = true。与 [rpc] 的约定完全一致，页面用同一套判断。
+     */
+    suspend fun uploadChatImage(
+        owner: String,
+        objectPath: String,
+        bytes: ByteArray,
+        mime: String,
+    ): Boolean {
+        if (owner.isEmpty() || objectPath.isBlank()) return false
+        val answered = runCatching {
+            withTimeoutOrNull(RPC_TIMEOUT_MS) {
+                val response = client.put(chatImageUrl(objectPath)) {
+                    header("apikey", apiKey)
+                    header(HttpHeaders.Authorization, "Bearer $apiKey")
+                    header(HttpHeaders.ContentType, mime)
+                    header("x-upsert", "true")
+                    setBody(bytes)
+                }
+                if (response.status.isSuccess()) {
+                    Call.Ok("")
+                } else {
+                    val text = runCatching { response.bodyAsText() }.getOrDefault("")
+                    Call.Refused(text.take(200).ifBlank { "HTTP ${response.status.value}" })
+                }
+            }
+        }
+        return record(answered.getOrNull() ?: Call.Unreachable)
+    }
+
+    /**
+     * 把 [objectPath] 那张图读回来，2xx 返回字节，别的一律 null。
+     *
+     * 字节走 Ktor 自带的 `body<ByteArray>()`（仓库里读远程图片的现成先例是
+     * `ui/component/DeviceHero.kt`），不需要 ContentNegotiation；解码成图片是界面的事，
+     * 这一层只负责把字节拿回来。
+     */
+    suspend fun downloadChatImage(objectPath: String): ByteArray? {
+        if (objectPath.isBlank()) return null
+        val answered = runCatching {
+            withTimeoutOrNull(RPC_TIMEOUT_MS) {
+                val response = client.get(chatImageUrl(objectPath)) {
+                    header("apikey", apiKey)
+                    header(HttpHeaders.Authorization, "Bearer $apiKey")
+                }
+                if (response.status.isSuccess()) {
+                    // 状态码对了，但正文仍可能读不出来（连接被掐断）：那两个字节算"服务端没给"，
+                    // 不是网络失败，也不该让页面去查代理。
+                    val bytes = runCatching { response.body<ByteArray>() }.getOrNull()
+                    if (bytes == null) {
+                        Blob.Refused("HTTP ${response.status.value}（正文读不出来）")
+                    } else {
+                        Blob.Ok(bytes)
+                    }
+                } else {
+                    val text = runCatching { response.bodyAsText() }.getOrDefault("")
+                    Blob.Refused(text.take(200).ifBlank { "HTTP ${response.status.value}" })
+                }
+            }
+        }
+        return when (val blob = answered.getOrNull() ?: Blob.Unreachable) {
+            is Blob.Ok -> {
+                lastFailureWasNetwork = false
+                lastError = null
+                blob.bytes
+            }
+            is Blob.Refused -> {
+                lastFailureWasNetwork = false
+                lastError = blob.reason
+                null
+            }
+            Blob.Unreachable -> {
+                lastFailureWasNetwork = true
+                lastError = null
+                null
+            }
+        }
+    }
+
+    /**
+     * 清掉 [days] 天前的聊天图片，返回被清掉的消息条数。
+     *
+     * 这是后端按天数扫的清理，客户端只负责报"多少天"，不自己算时间。失败返回 0——
+     * **0 可能是一次成功的清理**（没有过期图），要分辨就看 [lastError] / [lastFailureWasNetwork]。
+     */
+    suspend fun purgeOldImages(days: Int = 10): Int {
+        val body = buildJsonObject { put("p_days", days) }.toString()
+        val text = rpc("chat_purge_images", body) ?: return 0
+        return intFrom(text, "expired_messages") ?: 0
     }
 
     // ------------------------------------------------------------------ 传输
@@ -762,6 +953,7 @@ class SocialRepository(
             body = row.textOf("body"),
             createdAt = row.textOf("created_at"),
             removed = row.flagOf("removed") ?: false,
+            kind = row.textOf("kind").ifBlank { "text" },
         )
     }
 }

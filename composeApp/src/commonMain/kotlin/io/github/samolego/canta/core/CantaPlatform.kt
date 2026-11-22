@@ -150,4 +150,12 @@ interface CantaPlatform {
 
     /** Closes the app, so the freshly installed version starts clean on the next launch. */
     fun exitApp() = Unit
+
+    /**
+     * 让用户挑一张图片，返回它的字节。
+     *
+     * 聊天里发图片走这条路：只有真的有相册的平台才需要实现它。桌面、网页、测试这些没有相册的
+     * 目标沿用默认实现回答 null，调用方把 null 当成"没有图片"（用户取消也是这样），不报错。
+     */
+    suspend fun pickImage(): ByteArray? = null
 }

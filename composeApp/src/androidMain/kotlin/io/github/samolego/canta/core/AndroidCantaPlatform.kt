@@ -13,6 +13,8 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -31,6 +33,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentLength
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -38,6 +41,7 @@ import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -111,9 +115,28 @@ class AndroidCantaPlatform(
      */
     private val updateDownload = Mutex()
 
-    /** Attach the activity (from `onCreate`); used for biometric prompts. */
+    /** 相册挑选器：在 [attachActivity] 里注册，注册之后才能 launch。 */
+    private var imagePicker: ActivityResultLauncher<String>? = null
+
+    /** 正在等哪一次挑选的结果；同一时刻只会有一个。 */
+    private var pendingImage: CompletableDeferred<ByteArray?>? = null
+
+    /** Attach the activity (from `onCreate`); used for biometric prompts and the photo picker. */
     fun attachActivity(activity: FragmentActivity) {
         biometricActivity = activity
+        // 必须在这里注册（Activity 还没进入 STARTED），之后再注册会抛 IllegalStateException。
+        imagePicker = activity.registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            val waiting = pendingImage
+            pendingImage = null
+            if (uri == null) {
+                waiting?.complete(null)
+            } else {
+                val bytes = runCatching {
+                    activity.contentResolver.openInputStream(uri)?.use { stream -> stream.readBytes() }
+                }.getOrNull()
+                waiting?.complete(bytes)
+            }
+        }
     }
 
     /** Detach the activity when it is destroyed. */
@@ -121,6 +144,27 @@ class AndroidCantaPlatform(
         if (biometricActivity === activity) {
             biometricActivity = null
         }
+        // 活动没了，挂着的挑选器也就没用了：再点图片会重新进 attachActivity 注册。
+        imagePicker = null
+        pendingImage = null
+    }
+
+    /**
+     * 让用户从相册挑一张图：拉起系统的图片选择器，等结果回来再继续。
+     *
+     * 用户取消、超时（三分钟）或者当前没有活动可以挂选择器，都回答 null——调用方把 null 当成
+     * "没有图片"，不弹错误：取消不是失败。
+     */
+    override suspend fun pickImage(): ByteArray? {
+        val launcher = imagePicker ?: return null
+        val waiting = CompletableDeferred<ByteArray?>()
+        pendingImage = waiting
+        withContext(Dispatchers.Main) { launcher.launch("image/*") }
+        val bytes = withTimeoutOrNull(180_000L) { waiting.await() }
+        if (pendingImage === waiting) {
+            pendingImage = null
+        }
+        return bytes
     }
 
     override fun showMessage(message: String) {

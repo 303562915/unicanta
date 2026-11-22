@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -45,7 +47,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -66,11 +70,25 @@ import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import io.github.samolego.canta.util.currentTimeMillis
+import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.decodeToImageBitmap
 
 /** 一个气泡最宽多少：一行字到这儿换行，免得一条长消息把整块屏幕占满。 */
 private val ChatBubbleMaxWidth = 260.dp
+
+/** 一张图最多占多大：竖图再高也不能把一屏撑满，宽高两条都收着。 */
+private val ChatImageMaxWidth = 220.dp
+private val ChatImageMaxHeight = 280.dp
+
+/** 图片还没到、或者根本解不开时那个灰框：尺寸固定，换图时列表不会上下跳。 */
+private val ChatImagePlaceholderWidth = 160.dp
+private val ChatImagePlaceholderHeight = 120.dp
+
+/** 图片的圆角：比气泡的 14 小一点，图按 12 收边更像一张卡片。 */
+private val ChatImageShape = RoundedCornerShape(12.dp)
 
 /** 一页读多少条：首屏和往上翻历史用同一个数，翻页就用这个数往回退一屏。 */
 private const val ChatPageSize = 30
@@ -104,16 +122,20 @@ private data class ChatQuickPhrase(val label: String, val insert: String)
  *  * 消息区：别人的消息左边一张小圆头像，自己的靠右；换一天的头上压一条居中的灰字日期。
  *    点头像看那个人的主页，别人的长按气泡复制正文，自己的长按弹「复制 / 撤回」小菜单，
  *    撤回过的消息画成一行居中灰字，三者与头像点击是各自独立的触摸区域。
+ *    图片消息（`kind == "image"`）画成一张图，自己的靠右、别人的带头像，过期的画一行灰字。
  *  * 滚动：不在最底的时候右下角有一个「新消息(N)」胶囊和一个向下箭头，点了滚到最新一条；
  *    滚到最顶时自动往回翻一页历史（[SocialRepository.messagesBefore]）。
  *  * 底部：一排快捷短语胶囊 + 输入栏（九宫格 / 输入框 / 语音或发送 / 表情 / 加号），
- *    表情拉开输入栏上方的表情面板（[EmotionPicker]），九宫格和加号拉开一个只有占位按钮的
- *    「更多」面板；两个面板互斥，拉开一个收起另一个。
+ *    表情拉开输入栏上方的表情面板（[EmotionPicker]），九宫格和加号拉开「更多」面板；
+ *    面板里只有「图片」能用（[pickImage] 选图 → 上传 → 登记），视频/位置/文件点一下只给一句
+ *    「只支持发图片」；两个面板互斥，拉开一个收起另一个。
  *
  * 后端只提供读一页（[SocialRepository.messagesFor]、[SocialRepository.messagesBefore]）、写一条
- * （[SocialRepository.sendMessage]）、撤回一条（[SocialRepository.deleteMessage]）和一次会话详情
- * （[SocialRepository.conversationDetail]）；写成功的那一条直接用后端回来的行画出来，不等下一次
- * 拉取，撤回成功把本地那条标成已撤回。详情拉不到就当没有，聊天照常。
+ * （[SocialRepository.sendMessage]、[SocialRepository.sendImageMessage]）、传一张图
+ * （[SocialRepository.uploadChatImage]、[SocialRepository.downloadChatImage]）、撤回一条
+ * （[SocialRepository.deleteMessage]）和一次会话详情（[SocialRepository.conversationDetail]）；
+ * 写成功的那一条直接用后端回来的行画出来，不等下一次拉取，撤回成功把本地那条标成已撤回。
+ * 详情拉不到就当没有，聊天照常。
  *
  * 顺序：后端给的是旧在前，所以列表本身正序，进入页面和发出消息后都滚到最底一行。
  * 打开页面就把已读位置推到此刻（[SocialRepository.markRead]）：读回执丢了不是错，下一条消息前再推一次。
@@ -131,6 +153,8 @@ fun ChatScreen(
     onOpenGroupInfo: () -> Unit = {},
     /** 点头像/顶栏抬头，打开那个人的主页。 */
     onOpenProfile: (owner: String) -> Unit = {},
+    /** 让平台挑一张图片：桌面/网页没有相册，返回 null。 */
+    pickImage: suspend () -> ByteArray? = { null },
 ) {
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -145,6 +169,13 @@ fun ChatScreen(
     var showEmotions by remember { mutableStateOf(false) }
     /** 撤回失败亮一句：样式与位置照 [sendFailed] 那行。 */
     var recallFailed by remember { mutableStateOf(false) }
+    /** 正在选图或传图：挡住重复点「图片」，同时底部那一行亮「正在发送图片…」。 */
+    var sendingImage by remember { mutableStateOf(false) }
+    /**
+     * 更多面板那四个钮的一句话反馈：图片没传成/没发出去、别的钮点了不该动，
+     * 都借输入框下面这一行说，2 秒后自己灭掉。
+     */
+    var imageHint by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
     /** 刚复制的是哪一条：不是 null 的时候底部亮一句「已复制」，过一会儿自己灭掉。 */
     var copiedId by remember { mutableStateOf<Long?>(null) }
@@ -262,6 +293,44 @@ fun ChatScreen(
         }
     }
 
+    /**
+     * 发一张图：选 → 传 → 登记，三步都走完才把气泡画出来。
+     *
+     * 选图返回 null 就静默退出：用户取消不是错误，桌面/网页本来也没有相册（[pickImage] 的默认实现
+     * 就返回 null），这时候弹一句红字只会让人以为自己做错了什么。上传成功但登记失败时，对象已经
+     * 躺在 bucket 里了，这一层没有删对象的接口，所以只提示，不假装撤回过。
+     */
+    val sendImage: () -> Unit = {
+        if (!sendingImage) {
+            scope.launch {
+                sendingImage = true
+                imageHint = null
+                try {
+                    val bytes = pickImage()
+                    if (bytes != null) {
+                        // 路径按 owner 分目录：bucket 是大家共用的，时间戳加随机数让同一张图重发也不撞名。
+                        val path = "$owner/${currentTimeMillis()}-${Random.nextInt(1_000_000)}.jpg"
+                        if (!repository.uploadChatImage(owner, path, bytes, "image/jpeg")) {
+                            imageHint = "图片没上传成，检查代理后再试"
+                        } else {
+                            val sent = repository.sendImageMessage(owner, conversationId, path)
+                            if (sent == null) {
+                                imageHint = "图片没发出去"
+                            } else {
+                                messages = chatAppend(messages, sent)
+                                // 发出去就把面板收起来：让人直接看见那张图落到了最下面。
+                                showMore = false
+                            }
+                        }
+                    }
+                } finally {
+                    // 选图被打断（换会话、页面走了）也要把闸门放开，否则这个钮再也点不动。
+                    sendingImage = false
+                }
+            }
+        }
+    }
+
     /** 快捷短语 / 语音 / 表情都往输入框里塞字：前面有字又不是空格就隔开一个。 */
     val insert: (String) -> Unit = { piece ->
         draft = if (draft.isEmpty() || draft.last().isWhitespace()) {
@@ -271,9 +340,13 @@ fun ChatScreen(
         }
     }
 
-    /** 复制一条消息：整条正文进剪贴板，底部亮一句。别人的长按直接进来，自己的从长按菜单的「复制」进来。 */
+    /**
+     * 复制一条消息：整条正文进剪贴板，底部亮一句。别人的长按直接进来，自己的从长按菜单的「复制」进来。
+     *
+     * 图片消息的 [ChatMessage.body] 是 storage 路径，不是人写的字：复制过去也没法用，所以给空串。
+     */
     val copyMessage: (ChatMessage) -> Unit = { message ->
-        clipboard.setText(AnnotatedString(message.body))
+        clipboard.setText(AnnotatedString(if (message.kind == "text") message.body else ""))
         copiedId = message.id
     }
 
@@ -299,6 +372,14 @@ fun ChatScreen(
         if (copiedId != null) {
             delay(1600L)
             copiedId = null
+        }
+    }
+
+    // 更多面板那几句反馈只借一次机会：说清 2 秒就收走，别一直挂在输入框下面。
+    LaunchedEffect(imageHint) {
+        if (imageHint != null) {
+            delay(2000L)
+            imageHint = null
         }
     }
 
@@ -375,8 +456,20 @@ fun ChatScreen(
                                         maxLines = 1,
                                         modifier = Modifier.fillMaxWidth(),
                                     )
+                                } else if (message.kind == "expired") {
+                                    // 过期的图片后端不再留存，只剩一行灰字占住当时的位置。
+                                    Text(
+                                        text = "图片已过期（只保留 10 天）",
+                                        style = FlText.caption2,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
                                 } else {
                                     ChatBubble(
+                                        // 图片要自己按 storage 路径去取字节，所以把仓库也递进去。
+                                        repository = repository,
                                         message = message,
                                         mine = message.sender == owner,
                                         // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
@@ -422,7 +515,11 @@ fun ChatScreen(
             }
             ChatQuickPhraseRow(onInsert = insert)
             if (showMore) {
-                ChatMorePanel()
+                // 四个钮里只有「图片」真能用：其余三个点一下给一句话，不当哑巴按钮。
+                ChatMorePanel(
+                    onPickImage = sendImage,
+                    onUnavailable = { imageHint = "只支持发图片" },
+                )
             }
             if (showEmotions) {
                 // 表情面板：贴在输入栏上方，点一颗把 token（如 [偷笑]）填进草稿，「键盘」把它收回去。
@@ -453,6 +550,24 @@ fun ChatScreen(
                     if (showEmotions) showMore = false
                 },
             )
+            // 图片这一路的提示与文字那条同款：传的时候一直亮，失败了才说话，成功了不说话。
+            if (sendingImage) {
+                Text(
+                    text = "正在发送图片…",
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                )
+            } else if (imageHint != null) {
+                Text(
+                    text = imageHint.orEmpty(),
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                )
+            }
             if (sendFailed) {
                 Text(
                     text = "没发出去，检查代理后再试",
@@ -669,12 +784,17 @@ private fun ChatDayDivider(stamp: String) {
  * （[DropdownMenu]，写法照 MessagesScreen 的 ConversationRow）：「复制」走 [onLongPress]，
  * 「撤回」只在给了 [onDelete] 时出现。正文里的表情 token 由 [EmotionText] 画成图。
  *
+ * `kind == "image"` 的那一条不走文字那一套：不套气泡、不喂 [EmotionText]，正文（storage 路径）
+ * 交给 [ChatImageBody] 去取字节画成一张图。图片消息自己也带时间，位置挪到图下面一行小字。
+ * 图片的菜单只有「撤回」：正文是路径不是话，复制过去没有意义（见 [ChatBubbleMenu] 的 canCopy）。
+ *
  * 头像上的点击是**另一块区域**（[onAvatarClick]）：头像在 [Row] 里是气泡的兄弟节点，气泡自己
  * 挂的是长按，两处手势不重叠，点头像不会顺手触发菜单，长按气泡也不会跳走。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatBubble(
+    repository: SocialRepository,
     message: ChatMessage,
     mine: Boolean,
     showSender: Boolean,
@@ -691,6 +811,19 @@ private fun ChatBubble(
         menuable -> ({ menuOpen = true })
         mine -> null
         else -> onLongPress
+    }
+    // 图片不是文字：气泡的底色和 12 的内边距会在图四周多出一圈主色，那一路换成一张裸图。
+    val isImage = message.kind == "image"
+    // 长按的手套：文字和图片两条路都要挂一次，包成值免得写两遍修饰符链。
+    val holdModifier = if (longPress == null) {
+        Modifier
+    } else {
+        Modifier.combinedClickable(
+            onClickLabel = "这条消息",
+            onLongClickLabel = if (menuable) "打开这条消息的菜单" else "复制这条消息",
+            onLongClick = longPress,
+            onClick = {},
+        )
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -715,65 +848,176 @@ private fun ChatBubble(
                     modifier = Modifier.padding(start = 6.dp, bottom = 2.dp),
                 )
             }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (mine) colors.primary else colors.surfaceVariant)
-                    .then(
-                        if (longPress == null) {
-                            Modifier
-                        } else {
-                            Modifier.combinedClickable(
-                                onClickLabel = "这条消息",
-                                onLongClickLabel = if (menuable) "打开这条消息的菜单" else "复制这条消息",
-                                onLongClick = longPress,
-                                onClick = {},
+            if (isImage) {
+                // 图片自己带圆角，所以外面不再套那个有底色、有内边距的气泡。
+                Box(
+                    modifier = Modifier
+                        .clip(ChatImageShape)
+                        .then(holdModifier),
+                ) {
+                    ChatImageBody(repository = repository, objectPath = message.body)
+                    if (menuable) {
+                        // 图片的菜单只有「撤回」：canCopy = false 把「复制」那一项拿掉。
+                        ChatBubbleMenu(
+                            modifier = Modifier.align(Alignment.TopEnd),
+                            open = menuOpen,
+                            canCopy = false,
+                            onDismiss = { menuOpen = false },
+                            onCopy = { onLongPress?.invoke() },
+                            onDelete = { onDelete?.invoke() },
+                        )
+                    }
+                }
+                val clock = chatClockOf(message.createdAt)
+                if (clock.isNotEmpty()) {
+                    Text(
+                        text = clock,
+                        fontSize = 8.sp,
+                        color = colors.outline,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (mine) colors.primary else colors.surfaceVariant)
+                        .then(holdModifier)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Column {
+                        EmotionText(
+                            body = message.body,
+                            fontSize = 14,
+                            lineHeight = 19,
+                            color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
+                        )
+                        val clock = chatClockOf(message.createdAt)
+                        if (clock.isNotEmpty()) {
+                            Text(
+                                text = clock,
+                                fontSize = 8.sp,
+                                color = if (mine) colors.onPrimary.copy(alpha = 0.7f) else colors.outline,
+                                maxLines = 1,
+                                modifier = Modifier.padding(top = 2.dp),
                             )
-                        },
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                Column {
-                    EmotionText(
-                        body = message.body,
-                        fontSize = 14,
-                        lineHeight = 19,
-                        color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
-                    )
-                    val clock = chatClockOf(message.createdAt)
-                    if (clock.isNotEmpty()) {
-                        Text(
-                            text = clock,
-                            fontSize = 8.sp,
-                            color = if (mine) colors.onPrimary.copy(alpha = 0.7f) else colors.outline,
-                            maxLines = 1,
-                            modifier = Modifier.padding(top = 2.dp),
+                        }
+                    }
+                    if (menuable) {
+                        // 菜单锚在气泡上：Box 包着的 DropdownMenu 贴着气泡右上角弹出来。
+                        ChatBubbleMenu(
+                            modifier = Modifier.align(Alignment.TopEnd),
+                            open = menuOpen,
+                            canCopy = true,
+                            onDismiss = { menuOpen = false },
+                            onCopy = { onLongPress?.invoke() },
+                            onDelete = { onDelete?.invoke() },
                         )
                     }
                 }
-                if (menuable) {
-                    // 菜单锚在气泡上：Box 包着的 DropdownMenu 贴着气泡右上角弹出来。
-                    DropdownMenu(
-                        expanded = menuOpen,
-                        onDismissRequest = { menuOpen = false },
-                        modifier = Modifier.align(Alignment.TopEnd),
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("复制", fontSize = 14.sp) },
-                            onClick = {
-                                menuOpen = false
-                                onLongPress?.invoke()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("撤回", fontSize = 14.sp) },
-                            onClick = {
-                                menuOpen = false
-                                onDelete?.invoke()
-                            },
-                        )
-                    }
-                }
+            }
+        }
+    }
+}
+
+/**
+ * 气泡右上角那个长按菜单：「复制」（[canCopy] 时才画）与「撤回」。
+ *
+ * 两项都是先收起菜单再动手：菜单留着会把下面的气泡挡住，动作却已经发出去了，看着像没点上。
+ * 图片消息传 [canCopy] = false —— 它的正文是 storage 路径，不是人写的字。
+ */
+@Composable
+private fun ChatBubbleMenu(
+    modifier: Modifier = Modifier,
+    open: Boolean,
+    canCopy: Boolean,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = open,
+        onDismissRequest = onDismiss,
+        modifier = modifier,
+    ) {
+        if (canCopy) {
+            DropdownMenuItem(
+                text = { Text("复制", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onCopy()
+                },
+            )
+        }
+        DropdownMenuItem(
+            text = { Text("撤回", fontSize = 14.sp) },
+            onClick = {
+                onDismiss()
+                onDelete()
+            },
+        )
+    }
+}
+
+/**
+ * 图片消息的正文：先一个灰框，字节到了换成图。
+ *
+ * 字节按 [objectPath] 现取（[SocialRepository.downloadChatImage]，失败就是 null），解码用
+ * compose resources 的 `ByteArray.decodeToImageBitmap()`——仓库里读远程图片的现成先例是
+ * `ui/component/DeviceHero.kt`，那一处也没有额外的 OptIn。
+ *
+ * 三态：还没到 → 160×120 的灰框；成功 → 按 [ChatImageMaxWidth] / [ChatImageMaxHeight] 收边的图；
+ * 取不到或解不开 → 同一个灰框上写「图片加载失败」。占位先占住位置，图到了列表也不会跳。
+ */
+@Composable
+private fun ChatImageBody(repository: SocialRepository, objectPath: String) {
+    var bitmap by remember(objectPath) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(objectPath) { mutableStateOf(false) }
+
+    // 键是路径：同一个 slot 换了图就重新取。滚出去再滚回来会再取一次，但不会留着上一张。
+    LaunchedEffect(objectPath) {
+        bitmap = null
+        failed = false
+        if (objectPath.isBlank()) {
+            failed = true
+            return@LaunchedEffect
+        }
+        val bytes = repository.downloadChatImage(objectPath)
+        val decoded = bytes?.let { raw -> runCatching { raw.decodeToImageBitmap() }.getOrNull() }
+        if (decoded == null) {
+            failed = true
+        } else {
+            bitmap = decoded
+        }
+    }
+
+    val loaded = bitmap
+    if (loaded != null) {
+        Image(
+            bitmap = loaded,
+            contentDescription = "图片",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .widthIn(max = ChatImageMaxWidth)
+                .heightIn(max = ChatImageMaxHeight)
+                .clip(ChatImageShape),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(width = ChatImagePlaceholderWidth, height = ChatImagePlaceholderHeight)
+                .clip(ChatImageShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (failed) {
+                Text(
+                    text = "图片加载失败",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
+                )
             }
         }
     }
@@ -823,13 +1067,17 @@ private fun ChatQuickPhraseRow(onInsert: (String) -> Unit) {
 }
 
 /**
- * 「更多」面板：四个占位的圆形按钮。
+ * 「更多」面板：四个圆形按钮，只有第一个真的能用。
  *
- * 附件、位置这些后端还没有落点，所以这一排只负责展开和收起，点了什么也不做——
- * 画一个点了会报错的按钮，比画一个安静的占位更糟。
+ * 「图片」走 [onPickImage]（选图 → 上传 → 登记，见 `ChatScreen` 里的 sendImage）；视频、位置、
+ * 文件这三样后端还没有落点，所以它们只借 [onUnavailable] 说一句「只支持发图片」——
+ * 点了什么都不发生比说一句更让人以为按钮坏了。
  */
 @Composable
-private fun ChatMorePanel() {
+private fun ChatMorePanel(
+    onPickImage: () -> Unit,
+    onUnavailable: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -837,18 +1085,24 @@ private fun ChatMorePanel() {
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        ChatMoreCell(glyph = FlGlyphs.iconTile, label = "图片")
-        ChatMoreCell(glyph = FlGlyphs.eye, label = "视频")
-        ChatMoreCell(glyph = FlGlyphs.pin, label = "位置")
-        ChatMoreCell(glyph = FlGlyphs.importFile, label = "文件")
+        ChatMoreCell(glyph = FlGlyphs.iconTile, label = "图片", onClick = onPickImage)
+        ChatMoreCell(glyph = FlGlyphs.eye, label = "视频", onClick = onUnavailable)
+        ChatMoreCell(glyph = FlGlyphs.pin, label = "位置", onClick = onUnavailable)
+        ChatMoreCell(glyph = FlGlyphs.importFile, label = "文件", onClick = onUnavailable)
     }
 }
 
-/** 更多面板里的一格：一个灰圆 + 底下一行字。 */
+/** 更多面板里的一格：一个灰圆 + 底下一行字。整格都能点（圆子太小，手指对不准）。 */
 @Composable
-private fun ChatMoreCell(glyph: FlGlyph, label: String) {
+private fun ChatMoreCell(glyph: FlGlyph, label: String, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClickLabel = label, onClick = onClick)
+            .padding(vertical = 2.dp),
+    ) {
         Box(
             modifier = Modifier
                 .size(44.dp)
@@ -1005,6 +1259,15 @@ private fun chatClockOf(createdAt: String): String {
     if (at < 0 || createdAt.length < at + 6) return ""
     return createdAt.substring(at + 1, at + 6)
 }
+
+/**
+ * 把后端刚回来的那一条并进列表：后到的同 id 覆盖先前的，最后按 id 排回正序。
+ *
+ * 与轮询里的合并同一套判据（`(fresh + messages).distinctBy { id }.sortedBy { id }`）：
+ * 自己发的这一条可能已经随下一次拉取进了列表，重复画一个 id 的气泡会让 LazyColumn 的 key 撞车。
+ */
+private fun chatAppend(current: List<ChatMessage>, incoming: ChatMessage): List<ChatMessage> =
+    (listOf(incoming) + current).distinctBy { message -> message.id }.sortedBy { message -> message.id }
 
 /** 拉不到消息的两种原因分开说：没连上是网络的事，被拒绝是后端的事。 */
 private fun chatErrorOf(reason: String?, network: Boolean): String? = when {

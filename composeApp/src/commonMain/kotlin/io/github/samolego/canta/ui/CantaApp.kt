@@ -491,6 +491,12 @@ private fun CantaNavigation(
             countTick++
         }
     }
+
+    // 聊天图片只留 10 天：启动时清一次就够了（一天开几次也只多问几次，后端限 10 次/分钟）。
+    // 清不掉不打扰任何人——它只是"顺手把旧图删掉"，失败不影响任何页面。
+    LaunchedEffect(Unit) {
+        runCatching { socialRepository.purgeOldImages(10) }
+    }
     LaunchedEffect(currentRoute, countTick) {
         // The three pages that carry the count: the app list (top bar bell), the messages page
         // (its own row and the bar entry) and the interactions list. Anywhere else the number is
@@ -1222,6 +1228,8 @@ private fun CantaNavigation(
                     onOpenProfile = { person ->
                         navController.navigate(Screen.Uploader.routeFor(person))
                     },
+                    // 发图片：相册由平台层拉起来，桌面/网页没有相册就回答 null，页面静默放弃。
+                    pickImage = { platform.pickImage() },
                 )
             }
             composable(route = Screen.CreateGroup.route) {
