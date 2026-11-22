@@ -103,6 +103,72 @@ data class ChatMessage(
 }
 
 /**
+ * 群里的一个人：身份 [owner] 和他今天用的名字 [name]。
+ *
+ * 名字是群详情这一次调用时的名字，改了名要重新拉一次详情才看得到；[owner] 才是认人的那一位。
+ */
+data class ConversationMember(
+    val owner: String,
+    val name: String,
+) {
+
+    /** 成员列表上那一行字；没名字就亮编号。 */
+    val label: String
+        get() = name.ifBlank { if (owner.isNotEmpty()) "#$owner" else "" }
+}
+
+/**
+ * 一个会话的详情：谁在里面、群名是什么、什么时候建的。
+ *
+ * [members] 在私聊里也有，就是那两个人——后端按会话成员表直出，不区分 kind。
+ * 一个成员都没有时是空列表，不是 null：空群也是群，界面自己决定怎么画。
+ */
+data class ConversationDetail(
+    val id: Long,
+    val kind: String,
+    val title: String,
+    val members: List<ConversationMember>,
+    val createdAt: String = "",
+) {
+
+    /** 与 [Conversation.isGroup] 同一判据：`kind == "group"`。 */
+    val isGroup: Boolean
+        get() = kind == "group"
+
+    /** 详情页的标题：没群名就叫「群聊」，不把会话号当名字摆在标题上。 */
+    val label: String
+        get() = title.ifBlank { "群聊" }
+}
+
+/**
+ * 一个人的主页数字：他上传了多少方案、投了多少票、写了多少评论、被多少人关注、关注了多少人。
+ *
+ * **名字是 `SocialUserProfile` 而不是 `UserProfile`**：同包 [PlanRepository] 里已经有一个
+ * `UserProfile`（token / userId / name，那是"我自己的身份"），两个同名顶层类在同一包里是重定义，
+ * 所以这一位带上前缀。这里的 [owner] 是**别人**的身份字符串，和那边的 `userId` 不是一回事。
+ *
+ * [iFollow] / [followsMe] 是"我"（[userProfile] 的 viewer）和他之间的两条边，viewer 为空时后端
+ * 给的就是 false。数字字段缺失或类型不对一律退 0，[since] 缺失是空串。
+ */
+data class SocialUserProfile(
+    val owner: String,
+    val name: String,
+    val plans: Int,
+    val votes: Int,
+    val comments: Int,
+    val followers: Int,
+    val following: Int,
+    val iFollow: Boolean,
+    val followsMe: Boolean,
+    val since: String = "",
+) {
+
+    /** 主页标题那一行字：有名字用名字，没有就亮编号。 */
+    val label: String
+        get() = name.ifBlank { if (owner.isNotEmpty()) "#$owner" else "" }
+}
+
+/**
  * 社交那一层：关注、私聊、群聊。
  *
  * 和 [PlanRepository] 一样，这只是后端 RPC 的一层薄壳：一个方法一次调用，返回的东西在本地解析成
@@ -182,6 +248,37 @@ class SocialRepository(
         return followingFrom(text) ?: false
     }
 
+    /**
+     * [owner] 的主页数字，带上看它的那个人 [viewer] 与 [owner] 之间的两条关注边。
+     *
+     * [viewer] 为空也照问：那时 [SocialUserProfile.iFollow] / [SocialUserProfile.followsMe] 都是
+     * false，页面按"没登录"处理。返回里没有 `owner` 的行（空对象、或者后端拿不到这个人）就是
+     * null——那和"拉失败"在页面上是同一件事：画不出主页。
+     */
+    suspend fun userProfile(owner: String, viewer: String = ""): SocialUserProfile? {
+        if (owner.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_viewer", viewer)
+        }.toString()
+        val text = rpc("user_profile", body) ?: return null
+        val row = firstRowOf(text) ?: return null
+        val who = row.textOf("owner")
+        if (who.isEmpty()) return null
+        return SocialUserProfile(
+            owner = who,
+            name = row.textOf("name"),
+            plans = row.intOf("plans"),
+            votes = row.intOf("votes"),
+            comments = row.intOf("comments"),
+            followers = row.intOf("followers"),
+            following = row.intOf("following"),
+            iFollow = row.flagOf("i_follow") ?: false,
+            followsMe = row.flagOf("follows_me") ?: false,
+            since = row.textOf("since"),
+        )
+    }
+
     // ------------------------------------------------------------------ 会话
 
     /** [owner] 参与的全部会话，后端排好的顺序原样返回；一次解析失败就是空列表。 */
@@ -190,6 +287,30 @@ class SocialRepository(
         val body = buildJsonObject { put("p_owner", owner) }.toString()
         val text = rpc("conversations_for", body) ?: return emptyList()
         return rowsOf(text).mapNotNull { row -> conversationOf(row) }
+    }
+
+    /**
+     * [conversation] 的详情：群名、成员表、创建时间。
+     *
+     * 空对象、以及没有 `id` 的返回都是 null——那不是"一个空会话"，是"这个会话不存在（或者不是
+     * 我的）"，页面该退回列表而不是画一个空壳。
+     */
+    suspend fun conversationDetail(owner: String, conversation: Long): ConversationDetail? {
+        if (owner.isEmpty() || conversation <= 0L) return null
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+        }.toString()
+        val text = rpc("conversation_detail", body) ?: return null
+        val row = firstRowOf(text) ?: return null
+        val id = row.longOf("id") ?: return null
+        return ConversationDetail(
+            id = id,
+            kind = row.textOf("kind"),
+            title = row.textOf("title"),
+            members = membersOf(row),
+            createdAt = row.textOf("created_at"),
+        )
     }
 
     /**
@@ -212,6 +333,30 @@ class SocialRepository(
             put("p_limit", limit)
         }.toString()
         val text = rpc("messages_for", body) ?: return emptyList()
+        return rowsOf(text).mapNotNull { row -> messageOf(row) }
+    }
+
+    /**
+     * [conversation] 里比 [beforeId] 更旧的一页消息，解析与 [messagesFor] 完全一致。
+     *
+     * 往上翻历史用这一条：拿当前看到的最旧那条的 id 当锚，新消息再多也不会把页错开
+     * （用 offset 翻历史会被刚到的消息挤动，所以有这两个入口）。
+     * [beforeId] 传 0 就是"从最新一条往前"，后端按同一件事处理。
+     */
+    suspend fun messagesBefore(
+        owner: String,
+        conversation: Long,
+        beforeId: Long,
+        limit: Int = 30,
+    ): List<ChatMessage> {
+        if (owner.isEmpty() || conversation <= 0L) return emptyList()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_before_id", beforeId)
+            put("p_limit", limit)
+        }.toString()
+        val text = rpc("messages_before", body) ?: return emptyList()
         return rowsOf(text).mapNotNull { row -> messageOf(row) }
     }
 
@@ -267,6 +412,56 @@ class SocialRepository(
         }.toString()
         val text = rpc("group_create", body) ?: return null
         return idFrom(text)
+    }
+
+    /**
+     * 往已有的群里加人，返回加完之后群里有几个人。
+     *
+     * 加进去的人后端自己会去掉重复的，所以这个方法也是幂等的：同一个 [members] 再发一次，
+     * 人数不变。失败返回 null——群至少有群主，人数不会真的是 0，所以 null 不会被一个真值盖住。
+     */
+    suspend fun addGroupMembers(owner: String, conversation: Long, members: List<String>): Int? {
+        if (owner.isEmpty() || conversation <= 0L) return null
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_members", buildJsonArray { members.forEach { add(it) } })
+        }.toString()
+        val text = rpc("group_add_members", body) ?: return null
+        return intFrom(text, "members")
+    }
+
+    /**
+     * 改群名，返回这件事成没成。
+     *
+     * 只有群主能改，后端拒绝时返回 false 并把它那句话写进 [lastError]——页面据此说"只有群主
+     * 能改名"，而不是笼统说"失败了"。
+     */
+    suspend fun renameGroup(owner: String, conversation: Long, title: String): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_title", title)
+        }.toString()
+        val text = rpc("group_rename", body) ?: return false
+        return booleanFrom(text, "group_rename") ?: false
+    }
+
+    /**
+     * 退出 [conversation]，返回这件事成没成。
+     *
+     * 退群之后这个会话就不该再出现在 [conversationsFor] 里了，但本对象不替页面做这个删除：
+     * 谁持有列表谁自己重拉。
+     */
+    suspend fun leaveConversation(owner: String, conversation: Long): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+        }.toString()
+        val text = rpc("conversation_leave", body) ?: return false
+        return booleanFrom(text, "conversation_leave") ?: false
     }
 
     /**
@@ -385,6 +580,45 @@ class SocialRepository(
     private fun idFrom(text: String): Long? {
         firstRowOf(text)?.let { row -> return row.longOf("conversation_id") ?: row.longOf("id") }
         return scalarOf(text)?.longOrNull
+    }
+
+    /**
+     * 一个整数字段的答案：对象里的 [key]，或者直接就是一个数（`returns int` 那种）。
+     *
+     * 和 [JsonObject.intOf] 不同，这里**没有兜底值**：缺字段就是 null，因为调用方要区分
+     * "后端没给"和"后端给了 0"。
+     */
+    private fun intFrom(text: String, key: String): Int? {
+        firstRowOf(text)?.let { row -> row.longOf(key)?.let { return it.toInt() } }
+        return scalarOf(text)?.longOrNull?.toInt()
+    }
+
+    /**
+     * 一个布尔答案：后端 `returns boolean` 时 PostgREST 有两种吐法——直接 `true`，或者包在
+     * 一个以函数名命名的键里（`{"group_rename": true}`）。
+     *
+     * 先认 [key]；对象里换了键名也照样认（取第一个布尔），这样后端哪天改包装不影响这一侧。
+     * 都没有就是 null，由调用方决定退成什么。
+     */
+    private fun booleanFrom(text: String, key: String): Boolean? {
+        val row = firstRowOf(text) ?: return scalarOf(text)?.booleanOrNull
+        row.flagOf(key)?.let { return it }
+        return row.values.firstNotNullOfOrNull { value ->
+            runCatching { value.jsonPrimitive.booleanOrNull }.getOrNull()
+        }
+    }
+
+    /** [row] 里的成员表；没有 `members`、它不是数组、元素不是对象，都只影响对应那一项。 */
+    private fun membersOf(row: JsonObject): List<ConversationMember> {
+        val array = runCatching { row["members"]?.jsonArray }.getOrNull() ?: return emptyList()
+        return array.mapNotNull { element ->
+            val member = runCatching { element.jsonObject }.getOrNull() ?: return@mapNotNull null
+            val owner = member.textOf("owner")
+            val display = member.textOf("name")
+            // 既没有身份也没有名字的成员画不出来，也退不掉，直接丢掉。
+            if (owner.isEmpty() && display.isEmpty()) return@mapNotNull null
+            ConversationMember(owner = owner, name = display)
+        }
     }
 
     /** 一次关注列表调用：RPC 名 + `p_owner`，回来的人按方向补上那两条边的默认值。 */

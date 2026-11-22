@@ -93,9 +93,12 @@ import io.github.samolego.canta.ui.screen.DescriptionFixScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.ChatScreen
+import io.github.samolego.canta.ui.screen.CreateGroupScreen
+import io.github.samolego.canta.ui.screen.GroupInfoScreen
 import io.github.samolego.canta.ui.screen.InteractionsScreen
 import io.github.samolego.canta.ui.screen.MessagesScreen
 import io.github.samolego.canta.ui.screen.MyCommentsScreen
+import io.github.samolego.canta.ui.screen.UserProfileScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
 import io.github.samolego.canta.ui.screen.PresetsScreen
@@ -986,11 +989,28 @@ private fun CantaNavigation(
                             args.read { if (contains("owner")) getString("owner") else null }
                         }.getOrNull()
                     }.orEmpty()
-                UploaderProfileScreen(
-                    owner = owner,
+                var profileIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(owner) { profileIdentity = DeviceIdentity.current(deps.settings) }
+                UserProfileScreen(
                     repository = communityRepository,
+                    social = socialRepository,
+                    owner = owner,
+                    viewer = profileIdentity.owner.ifEmpty { profileIdentity.token },
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
+                    onOpenChat = { peer ->
+                        // 从主页点私信：开一个会话再进去，dm_open 对已有会话是复用的。
+                        coroutineScope.launch {
+                            val self = profileIdentity.owner.ifEmpty { profileIdentity.token }
+                            val opened = socialRepository.openDm(self, peer)
+                            if (opened != null && opened > 0L) {
+                                navController.navigate(Screen.Chat.routeFor(opened))
+                            } else {
+                                platform.showMessage("开不了私聊，检查代理后再试")
+                            }
+                        }
+                    },
                     onNavigateBack = { navController.navigateUp() },
+                    onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
                 )
             }
             composable(route = Screen.DescriptionFix.route) { entry ->
@@ -1094,6 +1114,19 @@ private fun CantaNavigation(
                         navController.navigate(Screen.Interactions.route) { launchSingleTop = true }
                     },
                     onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
+                    onOpenCreateGroup = { navController.navigate(Screen.CreateGroup.route) },
+                    onOpenDm = { peer ->
+                        // 点一个只有关注关系的人：先开一个私聊再进去，dm_open 本身复用已有会话。
+                        coroutineScope.launch {
+                            val self = messagesIdentity.owner.ifEmpty { messagesIdentity.token }
+                            val opened = socialRepository.openDm(self, peer)
+                            if (opened != null && opened > 0L) {
+                                navController.navigate(Screen.Chat.routeFor(opened))
+                            } else {
+                                platform.showMessage("开不了私聊，检查代理后再试")
+                            }
+                        }
+                    },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
                 )
             }
@@ -1166,6 +1199,44 @@ private fun CantaNavigation(
                     title = chatTitle,
                     isGroup = chatIsGroup,
                     onNavigateBack = { navController.navigateUp() },
+                    onOpenGroupInfo = {
+                        navController.navigate(Screen.GroupInfo.routeFor(conversationId))
+                    },
+                )
+            }
+            composable(route = Screen.CreateGroup.route) {
+                var groupIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) { groupIdentity = DeviceIdentity.current(deps.settings) }
+                CreateGroupScreen(
+                    repository = socialRepository,
+                    owner = groupIdentity.owner.ifEmpty { groupIdentity.token },
+                    onCreated = { id ->
+                        // 建完直接进去说话：建一个空群站在原地，人还得自己再找一遍。
+                        navController.navigate(Screen.Chat.routeFor(id)) {
+                            popUpTo(Screen.CreateGroup.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateBack = { navController.navigateUp() },
+                    onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
+                )
+            }
+            composable(route = Screen.GroupInfo.route) { entry ->
+                val groupId = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("conversationId")) getString("conversationId") else null }
+                        }.getOrNull()
+                    }
+                    ?.toLongOrNull() ?: 0L
+                var infoIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) { infoIdentity = DeviceIdentity.current(deps.settings) }
+                GroupInfoScreen(
+                    repository = socialRepository,
+                    owner = infoIdentity.owner.ifEmpty { infoIdentity.token },
+                    conversationId = groupId,
+                    onNavigateBack = { navController.navigateUp() },
+                    onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
+                    onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
                 )
             }
         }

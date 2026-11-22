@@ -91,6 +91,10 @@ fun MessagesScreen(
     inboxPreview: String,
     onOpenInteractions: () -> Unit,
     onOpenChat: (conversationId: Long) -> Unit,
+    /** 发起群聊：挑人、起名、建群。 */
+    onOpenCreateGroup: () -> Unit = {},
+    /** 打开和某人的私聊：没有会话就先开一个（后端 dm_open 是幂等的）。 */
+    onOpenDm: (peerOwner: String) -> Unit = {},
     onMessage: (String) -> Unit = {},
 ) {
     var loading by remember { mutableStateOf(true) }
@@ -128,7 +132,7 @@ fun MessagesScreen(
             MessagesTopBar(
                 onMenu = { onMessage("菜单还没做") },
                 onSearch = { onMessage("搜索还没做") },
-                onNewGroup = { onMessage("群聊邀请还没做") },
+                onNewGroup = onOpenCreateGroup,
             )
         },
     ) { padding ->
@@ -152,11 +156,12 @@ fun MessagesScreen(
                     contacts = recentContacts,
                     onTapDaily = { onMessage("限时日常还没做") },
                     onTapContact = { contact ->
-                        // 有关会话就进去；只有关注、还没聊过的，先给一句话，不凭空开一个空会话。
+                        // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
+                        // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
                         if (contact.conversationId > 0L) {
                             onOpenChat(contact.conversationId)
                         } else {
-                            onMessage("还没和 ${contact.label} 聊过")
+                            onOpenDm(contact.key)
                         }
                     },
                 )

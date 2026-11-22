@@ -45,6 +45,19 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
         fun routeFor(id: Long) = "chat/$id"
     }
 
+    /** 发起群聊：挑人、起名、建一个群。不是 `group/…` 底下的一段，免得和上面的群资料抢路由。 */
+    data object CreateGroup : Screen("group-new")
+
+    /**
+     * 一个群的资料：成员、改名、加人、退群。
+     *
+     * The id is a path argument, so [routeFor] is the only place that builds the URL.
+     */
+    data object GroupInfo : Screen("group/{conversationId}") {
+        /** Concrete route for conversation [id]. */
+        fun routeFor(id: Long) = "group/$id"
+    }
+
     /**
      * How the app looks: the accent picked from the twelve, and which dark mode to draw it in.
      *
