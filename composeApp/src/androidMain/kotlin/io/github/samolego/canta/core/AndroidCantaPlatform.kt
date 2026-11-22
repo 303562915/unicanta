@@ -392,6 +392,7 @@ class AndroidCantaPlatform(
         val existing = File(directory, fileName)
         if (existing.isFile) {
             if (isCompleteApk(existing)) {
+                deleteStaleUpdateApks(directory, existing)
                 val length = existing.length()
                 onProgress(length, length)
                 return@withContext UpdateDownload.Done(existing.absolutePath)
@@ -407,6 +408,7 @@ class AndroidCantaPlatform(
         // partial's name; that is a finished download, not something to fetch again.
         if (partial.isFile && isCompleteApk(partial)) {
             val landed = settle(partial, uniqueUpdateFile(directory, fileName))
+            deleteStaleUpdateApks(directory, landed)
             val length = landed.length()
             onProgress(length, length)
             LogUtils.i(TAG, "Resumed a finished download at ${landed.absolutePath}")
@@ -439,6 +441,10 @@ class AndroidCantaPlatform(
                         // failed 4.1 download is dead weight once 4.2 is on disk.
                         directory.listFiles { file -> file.name.endsWith(".part") && file != landed }
                             ?.forEach { it.delete() }
+                        // So are the whole APKs of releases that were downloaded but never
+                        // installed: without this, every release the reader skipped leaves a
+                        // ~30 MB corpse behind and the folder grows one file per version.
+                        deleteStaleUpdateApks(directory, landed)
                         onProgress(written, written)
                         LogUtils.i(TAG, "Downloaded $written bytes to ${landed.absolutePath}")
                         return@withContext UpdateDownload.Done(landed.absolutePath)
@@ -606,6 +612,21 @@ class AndroidCantaPlatform(
             partial.delete()
             target
         }
+
+    /**
+     * Deletes every whole APK in [directory] other than [keep], so the folder holds the one
+     * release being installed now and nothing else: an APK the reader never installed (an
+     * install that was refused, a release the poll superseded) would otherwise sit there
+     * forever, one file per version.
+     */
+    private fun deleteStaleUpdateApks(directory: File, keep: File) {
+        directory.listFiles { file -> file.isFile && file != keep && file.name.endsWith(".apk") }
+            ?.forEach { file ->
+                if (file.delete()) {
+                    LogUtils.i(TAG, "Removed the stale update APK ${file.name}")
+                }
+            }
+    }
 
     /** A download that ended for a reason already known, carrying it out unchanged. */
     private class DownloadFailure(
