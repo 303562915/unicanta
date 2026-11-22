@@ -351,3 +351,14 @@ kotlin {
         }
     }
 }
+
+// ws 是 Kotlin/Wasm 工具链（webpack-dev-server 那一层）的传递依赖，被 pin 在 8.20.1，
+// 而那个版本范围不接受 8.21.0 —— 把锁里那条摘掉重算，插件照样解析回 8.20.1。
+// 8.21.0 修的是 ws 的 "Memory exhaustion DoS from tiny fragments"（dependabot alert #1），
+// 所以在这里强制抬上去。锁文件必须用 `:kotlinWasmUpgradeYarnLock` 重算
+// （见 .github/workflows/wasm-lock-upgrade.yml）：`kotlinWasmStoreYarnLock` 会校验锁，
+// 手改一律让构建变红。
+rootProject.plugins.withType<org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnPlugin> {
+    rootProject.the<org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnRootExtension>()
+        .resolution("ws", "8.21.0")
+}
