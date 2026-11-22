@@ -7,9 +7,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -823,6 +826,9 @@ private fun CommentActions(
     }
 }
 
+/** How many of the stickers the open bar offers as a quick row: one row, not a grid. */
+private const val QUICK_EMOTION_COUNT = 10
+
 /**
  * The composer every comment page ends with: one quiet pill field and the send button. The field
  * asks for a comment on its own — "发条评论，说说你的感受" — and names the person it answers once
@@ -910,7 +916,7 @@ fun CommentComposer(
                     Icon(
                         imageVector = Icons.Outlined.Image,
                         contentDescription = "评论暂时只能发文字",
-                        modifier = Modifier.size(30.dp).padding(6.dp),
+                        modifier = Modifier.size(40.dp).padding(9.dp),
                         // Dimmed rather than hidden: an image key is what a comment box of this
                         // shape usually carries, and this one takes no pictures — a lit key that
                         // answers nothing would be the worse of the two lies.
@@ -920,10 +926,10 @@ fun CommentComposer(
                         imageVector = Icons.Outlined.AlternateEmail,
                         contentDescription = "插入 @",
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(40.dp)
                             .clip(RoundedCornerShape(50))
                             .clickable { onDraftChange(draft + "@") }
-                            .padding(6.dp),
+                            .padding(9.dp),
                         tint = colors.onSurfaceVariant,
                     )
                     Icon(
@@ -934,7 +940,7 @@ fun CommentComposer(
                         },
                         contentDescription = if (pickerOpen) "收起表情" else "表情",
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(40.dp)
                             .clip(RoundedCornerShape(50))
                             .clickable {
                                 if (pickerOpen) {
@@ -948,34 +954,63 @@ fun CommentComposer(
                                     onPickerOpenChange(true)
                                 }
                             }
-                            .padding(6.dp),
+                            .padding(9.dp),
                         tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
                     )
+                }
+                // One row of the stickers everybody uses, under the field while it is open: the
+                // same ones the panel offers, so a face is one tap away instead of two. The row
+                // scrolls sideways when the set outgrows the phone, and never wraps — "only one
+                // row" is the point of it.
+                val quickEmotions: @Composable () -> Unit = {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        EMOTIONS.take(QUICK_EMOTION_COUNT).forEach { emotion ->
+                            Image(
+                                painter = painterResource(emotion.resource),
+                                contentDescription = emotion.name,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .padding(3.dp)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        rememberEmotionPick(emotion.name)
+                                        onDraftChange(draft + emotion.token)
+                                    },
+                            )
+                        }
+                    }
                 }
                 val sendKey: @Composable () -> Unit = {
                     val canSend = draft.isNotBlank() && !sending
                     Row(
                         modifier = Modifier
-                            .height(34.dp)
+                            // The keys beside it are forty wide; send matches them, so the bar has
+                            // one height and the button is as easy to hit as the icons.
+                            .height(40.dp)
                             .clip(RoundedCornerShape(percent = 50))
-                            .background(if (canSend) colors.primary else inputFieldColor())
+                            // Dim is the hairline grey, not white: a white pill on a white page is
+                            // a button nobody can see.
+                            .background(if (canSend) colors.primary else inputFieldBorderColor())
                             .clickable(enabled = canSend, onClick = onSend)
-                            .padding(horizontal = 13.dp),
+                            .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = sendLabel,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
                         )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The field: one grey pill, the height of the keys that sit inside it, the way a
-                    // short-video composer draws its comment box. The keys that act on the draft live
-                    // inside the pill's right end instead of floating beside it, so the bar reads as
-                    // one thing to write in rather than as a row of three buttons.
+                    // The field: a white pill with a hairline for an edge, the height of the keys that
+                    // sit in it. White rather than a tint — a comment box is paper under the text,
+                    // and the theme's container colour turned it into a pale blue control. The
+                    // hairline is what keeps white on a white page.
                     //
                     // It grows with what is written — a comment that runs past the edge of the line
                     // wraps and the bar gets taller — up to a palm's worth of lines; past that the
@@ -990,6 +1025,7 @@ fun CommentComposer(
                             .heightIn(min = 46.dp, max = 140.dp)
                             .clip(RoundedCornerShape(percent = 50))
                             .background(inputFieldColor())
+                            .border(1.dp, inputFieldBorderColor(), RoundedCornerShape(percent = 50))
                             .clickable { focusRequester.requestFocus() },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -1118,26 +1154,30 @@ fun CommentComposer(
                         // draft grows to their left and never runs under them.
                         if (!open) draftKeys()
                     }
-                    // Closed, send rides beside the pill, and only once there is something to
-                    // send: an empty bar is a field and its keys, nothing that reads as a dead
-                    // button.
-                    if (!open) {
+                    // Send rides beside the pill. Closed, it waits for the first character — an
+                    // empty closed bar is a field and its keys, nothing that reads as a dead
+                    // button. Open, it is always there, dim until there is something to send: the
+                    // one button people look for while typing must not come and go.
+                    if (open) {
+                        Box(modifier = Modifier.padding(start = 8.dp)) { sendKey() }
+                    } else {
                         AnimatedVisibility(visible = draft.isNotBlank() || sending) {
-                            Box(modifier = Modifier.padding(start = 6.dp)) { sendKey() }
+                            Box(modifier = Modifier.padding(start = 8.dp)) { sendKey() }
                         }
                     }
                 }
-                // Open, the keys drop to a row of their own under the pill, send at its end.
+                // Open, under the pill: one row of the stickers everybody uses, the three keys at
+                // its end. Send stays up beside the field, where the thumb and the caret are —
+                // pushing it down a row would put it under the row it belongs above.
                 AnimatedVisibility(visible = open) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // The strip takes whatever the keys leave: one row of faces, scrolled
+                        // sideways when it runs out of phone.
+                        Box(modifier = Modifier.weight(1f)) { quickEmotions() }
                         draftKeys()
-                        Spacer(Modifier.weight(1f))
-                        // Send joins the row only once there is something to send: on an empty
-                        // draft the row is keys and nothing else, exactly like the closed bar.
-                        if (draft.isNotBlank() || sending) sendKey()
                     }
                 }
                 if (failed) {

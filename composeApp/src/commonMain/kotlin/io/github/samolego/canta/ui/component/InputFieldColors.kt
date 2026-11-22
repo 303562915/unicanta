@@ -5,13 +5,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * The grey under a comment box or a search field.
+ * The fill under a comment box or a search field: plain white, not a tint.
  *
- * Not the theme's tinted container: a box you type into is a sheet of paper, and the container
- * colour carries the accent, which made the field read as a disabled control. This is a neutral
- * grey — the one a short-video composer puts under its comment box — and it stays neutral in the
- * dark theme too, where it is a lifted charcoal rather than a purple-tinted one.
+ * A box you type into is a sheet of paper on the page. The theme's container colours carry the
+ * accent, which is what made the field read as a pale blue control instead of as paper — so this
+ * stays neutral in both themes, and a hairline beside it is what gives it an edge on a light page.
  */
 @Composable
 fun inputFieldColor(): Color =
-    if (isSystemInDarkTheme()) Color(0xFF2B2B2E) else Color(0xFFF1F2F4)
+    if (isSystemInDarkTheme()) Color(0xFF2A2A2D) else Color(0xFFFFFFFF)
+
+/** The hairline that keeps a white field from melting into a light page. */
+@Composable
+fun inputFieldBorderColor(): Color =
+    if (isSystemInDarkTheme()) Color(0xFF3A3A3D) else Color(0xFFE6E7E9)

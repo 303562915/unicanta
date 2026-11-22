@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -55,11 +56,12 @@ fun PackageSearchField(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
-            // The same neutral grey the comment box uses: both are "somewhere to type" on this
-            // app, and two differently tinted boxes on one page read as two components that came
-            // from different apps.
+            // The same white pill with a hairline that the comment box uses: both are
+            // "somewhere to type" on this app, and two differently tinted boxes on one page read as
+            // two components that came from different apps.
             .clip(RoundedCornerShape(percent = 50))
             .background(inputFieldColor())
+            .border(1.dp, inputFieldBorderColor(), RoundedCornerShape(percent = 50))
             .heightIn(min = 44.dp)
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
