@@ -18,6 +18,15 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
 
     /** Open-source apps worth installing; the cards only link out to their project pages. */
     data object Recommendations : Screen("recommend")
+
+    /**
+     * How the app looks: the accent picked from the twelve, and which dark mode to draw it in.
+     *
+     * A page of its own rather than a card in the settings, the way the reference app does it:
+     * the swatches want the whole width, and the choice is one a user comes back to.
+     */
+    data object Theme : Screen("theme")
+
     data object Onboarding : Screen("onboarding")
 
     /**

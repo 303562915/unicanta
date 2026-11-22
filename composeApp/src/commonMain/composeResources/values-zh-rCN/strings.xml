@@ -516,4 +516,6 @@
     <string name="theme_mode_system">跟随系统</string>
     <string name="theme_mode_light">浅色</string>
     <string name="theme_mode_dark">深色</string>
+    <string name="theme_mode">深色模式</string>
+    <string name="theme_preview">预览</string>
 </resources>

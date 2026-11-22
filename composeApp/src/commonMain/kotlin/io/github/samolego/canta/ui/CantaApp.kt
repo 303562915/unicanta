@@ -94,6 +94,7 @@ import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
 import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
+import io.github.samolego.canta.ui.screen.ThemeScreen
 import io.github.samolego.canta.generated.resources.about_install_cancel
 import io.github.samolego.canta.generated.resources.about_install_confirm
 import io.github.samolego.canta.generated.resources.about_install_message
@@ -605,6 +606,12 @@ private fun CantaNavigation(
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
+            composable(route = Screen.Theme.route) {
+                ThemeScreen(
+                    settingsViewModel = settingsViewModel,
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
             composable(route = Screen.Settings.route) {
                 val fakeScores by appListViewModel.fakeScoresEnabled.collectAsStateWithLifecycle()
                 var deviceUsers by remember { mutableStateOf(emptyList<DeviceUser>()) }
@@ -711,6 +718,7 @@ private fun CantaNavigation(
                         }
                     },
                     onOpenAbout = { navController.navigate(Screen.About.route) },
+                    onOpenTheme = { navController.navigate(Screen.Theme.route) },
                     onOpenMyComments = { navController.navigate(Screen.MyComments.route) },
                     unreadReplies = unreadReplies,
                 )
