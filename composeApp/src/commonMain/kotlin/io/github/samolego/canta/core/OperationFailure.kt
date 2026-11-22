@@ -67,6 +67,37 @@ private fun keywordFailure(message: String): FailureExplanation? {
                 advice = "重新从列表里勾选这个应用，不要手抄包名。",
             )
 
+        // Android's own protection list (`canPackageBeChanged`), checked before anything runs: no
+        // shell — and therefore no Shizuku route — can change these, whoever asks. Seen on packages
+        // a vendor preloads as essential (an IME, a launcher, the store that ships with the build).
+        mentions("cannot disable a protected package", "cannot uninstall a protected package") ->
+            FailureExplanation(
+                reason = "这是 Android 的保护包（设备所有者、设备锁或关键系统组件），shell 身份改不了它的状态。",
+                advice = "只有 root 或设备所有者能试；没有 root 就别管它，这个包一般不影响日常使用。",
+            )
+
+        // The ROM's own rule, not Android's: Xiaomi and a few others refuse this for every system
+        // package, so the advice is about the route rather than about this one package.
+        mentions("cannot disable system packages") ->
+            FailureExplanation(
+                reason = "这台 ROM 自己禁止停用系统应用，跟是哪个包无关。",
+                advice = "换 root 身份再试；没有 root 就用「卸载」，或者到安全规则里把它标成禁区。",
+            )
+
+        mentions("no root permission") ->
+            FailureExplanation(
+                reason = "这个操作要 root 身份，Shizuku 的 shell 权限不够。",
+                advice = "到「设置 → 权限来源」里切到 root（Magisk / KernelSU / APatch）再试一次。",
+            )
+
+        // The framework will not even name a package setting to a shell ("for null"): that is the
+        // device-owner / device-lock tier, one step above the protected list above.
+        mentions("cannot change component state") ->
+            FailureExplanation(
+                reason = "这个包在设备所有者 / 设备锁这一层受保护，系统连它的状态都不给 shell 看。",
+                advice = "只有 root 能改；没有 root 的话它会保持现在的状态，不影响日常使用。",
+            )
+
         // The Dhizuku route deletes through the package installer's device-owner path; a refusal
         // there means the owner role or the app's own policy said no, not that the route is blind.
         mentions("dhizuku is not authorized") ->

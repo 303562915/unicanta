@@ -113,4 +113,55 @@ class OperationFailureTest {
             failed(1, "PERMISSION DENIAL").explainFailure()?.reason,
         )
     }
+
+    @Test
+    fun androidsProtectionListIsNotBlamedOnTheVendor() {
+        // Reported from the field as "厂商把这个包锁住了", which sent people looking for a vendor
+        // switch: this one is Android's own list, and only root gets past it.
+        val explanation = assertNotNull(
+            failed(
+                OperationResult.STATUS_NEGATIVE_RESPONSE,
+                "java.lang.SecurityException: Cannot disable a protected package: com.freeme.ime",
+            ).explainFailure()
+        )
+        assertTrue("保护包" in explanation.reason, explanation.reason)
+        assertTrue("root" in explanation.advice, explanation.advice)
+        assertTrue("厂商" !in explanation.reason, explanation.reason)
+    }
+
+    @Test
+    fun aRomThatRefusesEverySystemPackageIsNamedAsSuch() {
+        val explanation = assertNotNull(
+            failed(
+                OperationResult.STATUS_NEGATIVE_RESPONSE,
+                "java.lang.SecurityException: Cannot disable system packages.",
+            ).explainFailure()
+        )
+        assertTrue("ROM" in explanation.reason, explanation.reason)
+    }
+
+    @Test
+    fun aShellThatNeedsRootSaysSo() {
+        val explanation = assertNotNull(
+            failed(
+                OperationResult.STATUS_NEGATIVE_RESPONSE,
+                "java.lang.SecurityException: Cannot disable com.vivo.abe no root permission",
+            ).explainFailure()
+        )
+        assertTrue("root" in explanation.advice, explanation.advice)
+    }
+
+    @Test
+    fun theDeviceOwnerTierIsNotReadAsAVendorLock() {
+        // What DeviceLockController answers to a shell: the framework will not even name the
+        // package setting, so there is no vendor switch to go looking for.
+        val explanation = assertNotNull(
+            failed(
+                OperationResult.STATUS_NEGATIVE_RESPONSE,
+                "java.lang.SecurityException: Shell cannot change component state for null to 0",
+            ).explainFailure()
+        )
+        assertTrue("设备所有者" in explanation.reason, explanation.reason)
+        assertTrue("厂商" !in explanation.reason, explanation.reason)
+    }
 }
