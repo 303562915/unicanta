@@ -60,6 +60,22 @@ class OperationFailureTest {
     }
 
     @Test
+    fun aNullPackageInstallerIsNamedAsSuch() {
+        // 33 of the first 58 reports from the field: the package service hands back no installer,
+        // which is not the device "staying silent" either.
+        val explanation = assertNotNull(
+            failed(
+                OperationResult.STATUS_NO_RESULT,
+                "java.lang.NullPointerException: Attempt to invoke interface method " +
+                    "'android.os.IBinder android.content.pm.IPackageInstaller.asBinder()' " +
+                    "on a null object reference",
+            ).explainFailure()
+        )
+        assertTrue("包安装器" in explanation.reason, explanation.reason)
+        assertTrue("刷新" !in explanation.advice, explanation.advice)
+    }
+
+    @Test
     fun aDeadShizukuBinderSaysToStartTheRuntime() {
         // What a phone reports when Shizuku was killed or restarted under the app: nothing reached
         // the device, so "refresh the list and see if it worked" would be wrong advice.

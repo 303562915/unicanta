@@ -34,6 +34,15 @@ private fun keywordFailure(message: String): FailureExplanation? {
     fun mentions(vararg needles: String) = needles.any { it in text }
 
     return when {
+        // The package service handed back no installer at all, so the call never left the app.
+        // Seen on One UI 8 (33 of the first 58 reports): it arrives as STATUS_NO_RESULT too, and
+        // "the device never answered" hides that nothing was even attempted.
+        mentions("ipackageinstaller") ->
+            FailureExplanation(
+                reason = "系统没有把包安装器交给 Canta，这次操作没有执行。",
+                advice = "重启一次 Shizuku 再试；一直这样的话改用「停用」，这台 ROM 多半只允许冻结、不允许卸载。",
+            )
+
         // Shizuku is gone: the app thought the runtime was still there, but the call never left
         // this process. It reads as "no result" (STATUS_NO_RESULT) and used to be explained as
         // "the device never answered", which sent people to refresh a list that was perfectly fine.
