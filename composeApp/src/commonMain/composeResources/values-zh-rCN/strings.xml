@@ -144,6 +144,10 @@
     <string name="grant_shizuku_permission_to_canta">在 Shizuku 应用中向 Canta 授予权限</string>
     <string name="install_stellar_instead">推荐改用 Stellar（Shizuku 的分支，用法一样）</string>
     <string name="shizuku_required">需要 Shizuku</string>
+    <string name="dhizuku_required">需要 Dhizuku</string>
+    <string name="dhizuku_requirement_description">Dhizuku 共享的是设备所有者权限，不是 shell。在 Dhizuku 里允许 UniCanta 之后，可以冻结（暂停）应用；卸载仍然要 Shizuku 或 root。</string>
+    <string name="dhizuku_open_app">打开 Dhizuku（它必须已激活并在运行）</string>
+    <string name="grant_dhizuku_permission_to_canta">在 Dhizuku 里允许 UniCanta</string>
     <string name="shizuku_requirement_description">Canta 使用 Shizuku 来卸载软件而无需 root 权限。因为 Shizuku 提供了访问系统级SDK的安全方法。</string>
     <string name="commits_url">提交 URL</string>
     <string name="commits_url_description">更新检查使用的提交信息地址。</string>
@@ -379,6 +383,7 @@
     <string name="onboarding_privilege_stellar_body">Shizuku 的深度定制分支：权限更细、可跟随开机启动、修了联发科的老问题。走同一套 Shizuku API，现有应用不用改。</string>
     <string name="onboarding_privilege_stellar_action">下载 Stellar</string>
     <string name="onboarding_privilege_shizuku_body">原版 Shizuku。协议完全一样，已经在用就继续用它。</string>
+    <string name="onboarding_privilege_dhizuku_body">Dhizuku 已经在共享设备所有者权限：冻结能用，卸载不行。要卸载，装下面两个运行时的任意一个。</string>
     <string name="onboarding_privilege_shizuku_action">下载 Shizuku</string>
     <string name="onboarding_privilege_step_install">1 · 安装 Stellar（或 Shizuku）</string>
     <string name="onboarding_privilege_step_start">2 · 启动服务（无线调试或 Root）</string>

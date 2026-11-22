@@ -32,6 +32,10 @@ import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.PrivilegeStatus
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.close
+import io.github.samolego.canta.generated.resources.dhizuku_open_app
+import io.github.samolego.canta.generated.resources.dhizuku_required
+import io.github.samolego.canta.generated.resources.dhizuku_requirement_description
+import io.github.samolego.canta.generated.resources.grant_dhizuku_permission_to_canta
 import io.github.samolego.canta.generated.resources.grant_shizuku_permission_to_canta
 import io.github.samolego.canta.generated.resources.install_shizuku
 import io.github.samolego.canta.generated.resources.install_stellar_instead
@@ -50,6 +54,10 @@ private const val SHIZUKU_GITHUB_URL = "https://github.com/RikkaApps/Shizuku/rel
 
 /** The fork we steer people to: same API and same binder, finer permissions, boots with the phone. */
 private const val STELLAR_URL = "https://github.com/roro2239/Stellar/releases"
+
+/** The manager that shares the DeviceOwner role; no Play Store listing, so GitHub is the download. */
+private const val DHIZUKU_PACKAGE = "com.rosan.dhizuku"
+private const val DHIZUKU_URL = "https://github.com/iamr0s/Dhizuku/releases"
 
 /**
  * Walks the user through the Shizuku setup. [onClose] with `true` means
@@ -87,12 +95,43 @@ internal fun ShizukuRequirementDialogContent(
 
     CantaDialog(
         onDismissRequest = { onClose(false) },
-        title = stringResource(Res.string.shizuku_required),
+        // The title has to name the right manager: a Dhizuku user reading "Shizuku required" would
+        // go looking for an app they do not need.
+        title = stringResource(
+            if (handler.privilegeKind == PrivilegeKind.DHIZUKU) Res.string.dhizuku_required
+            else Res.string.shizuku_required
+        ),
         widthFraction = WIDE_DIALOG_WIDTH,
         buttons = {
             TextButton(onClick = { onClose(false) }) { Text(stringResource(Res.string.close)) }
         },
     ) {
+        // Dhizuku is answered inside its own app, not by starting a service: the grant is a prompt
+        // the manager raises, and when it is not running the app has to be opened first.
+        if (handler.privilegeKind == PrivilegeKind.DHIZUKU) {
+            Text(
+                text = stringResource(Res.string.dhizuku_requirement_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 24.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                RequirementItem(
+                    text = stringResource(Res.string.dhizuku_open_app),
+                    isCompleted = status == PrivilegeStatus.ACTIVE || status == PrivilegeStatus.NOT_AUTHORIZED,
+                    onActionClick = {
+                        if (!platform.openApp(DHIZUKU_PACKAGE)) platform.openUrl(DHIZUKU_URL)
+                    },
+                )
+                RequirementItem(
+                    text = stringResource(Res.string.grant_dhizuku_permission_to_canta),
+                    isCompleted = isAuthorized,
+                    onActionClick = { onClose(true) },
+                )
+            }
+            return@CantaDialog
+        }
+
         // A rooted phone has nothing to install and no service to start: the only step is the root
         // manager's own prompt. Listing Stellar, Shizuku and "start its service" there would be
         // four instructions about software the user does not need.

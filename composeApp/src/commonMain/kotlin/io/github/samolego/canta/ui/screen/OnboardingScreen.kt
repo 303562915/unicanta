@@ -121,6 +121,7 @@ import io.github.samolego.canta.generated.resources.onboarding_network_title
 import io.github.samolego.canta.generated.resources.onboarding_network_vpn_off
 import io.github.samolego.canta.generated.resources.onboarding_network_vpn_on
 import io.github.samolego.canta.generated.resources.onboarding_privilege_detect
+import io.github.samolego.canta.generated.resources.onboarding_privilege_dhizuku_body
 import io.github.samolego.canta.generated.resources.onboarding_privilege_grant
 import io.github.samolego.canta.generated.resources.onboarding_privilege_note
 import io.github.samolego.canta.generated.resources.onboarding_privilege_recommended
@@ -163,6 +164,7 @@ import io.github.samolego.canta.generated.resources.onboarding_start
 import io.github.samolego.canta.generated.resources.onboarding_welcome_subtitle
 import io.github.samolego.canta.generated.resources.onboarding_welcome_title
 import io.github.samolego.canta.generated.resources.privacy_policy
+import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku_active
 import io.github.samolego.canta.generated.resources.show_whats_sent
 import io.github.samolego.canta.ui.dialog.NoWarrantyContent
 import io.github.samolego.canta.ui.component.SettingsChevron
@@ -843,6 +845,17 @@ private fun PrivilegePage(
             }
         } else {
             Spacer(Modifier.height(14.dp))
+            // A phone already running Dhizuku is not told to install a fifth app for nothing: the
+            // note says what it can already do, and the cards below are the route to the removal
+            // half it does not have.
+            if (kind == PrivilegeKind.DHIZUKU) {
+                Text(
+                    text = stringResource(Res.string.onboarding_privilege_dhizuku_body),
+                    style = FlText.caption1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(14.dp))
+            }
             RuntimeCard(
                 recommended = true,
                 mark = "St",
@@ -900,6 +913,9 @@ private fun StatusCard(
         }
     } else {
         when {
+            // Dhizuku grants a narrower thing than a shell, so "you're ready" would overpromise:
+            // freezing works, and the removal half is what the cards right below are for.
+            kind == PrivilegeKind.DHIZUKU && ready -> Res.string.settings_privilege_dhizuku_active
             ready -> Res.string.onboarding_privilege_state_active
             status == PrivilegeStatus.NOT_AUTHORIZED -> Res.string.onboarding_privilege_state_not_authorized
             status == PrivilegeStatus.NOT_RUNNING -> Res.string.onboarding_privilege_state_not_running

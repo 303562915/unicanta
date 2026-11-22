@@ -196,6 +196,7 @@
     <string name="onboarding_privilege_stellar_body">A tuned Shizuku fork: finer permissions, starts with the phone, and fixes the MediaTek bug. Shizuku-API apps work unchanged.</string>
     <string name="onboarding_privilege_stellar_action">Download Stellar</string>
     <string name="onboarding_privilege_shizuku_body">The original. Follows the same Shizuku-API contract, use it if you already run it.</string>
+    <string name="onboarding_privilege_dhizuku_body">Dhizuku is already granting DeviceOwner here: freezing works, removing does not. Install one of the two below for the removal half.</string>
     <string name="onboarding_privilege_shizuku_action">Download Shizuku</string>
     <string name="onboarding_privilege_step_install">1 · Install Stellar (or Shizuku)</string>
     <string name="onboarding_privilege_step_start">2 · Start its service (wireless debugging or root)</string>
@@ -324,6 +325,10 @@
     >Grant permission to Canta in Shizuku</string>
     <string name="install_stellar_instead">Recommended: Stellar, a Shizuku fork that works the same way</string>
     <string name="shizuku_required">Shizuku Required</string>
+    <string name="dhizuku_required">Dhizuku Required</string>
+    <string name="dhizuku_requirement_description">Dhizuku shares the DeviceOwner role instead of a shell. Once UniCanta is allowed there, it can freeze (pause) apps; removing them still needs Shizuku or root.</string>
+    <string name="dhizuku_open_app">Open Dhizuku (it has to be activated and running)</string>
+    <string name="grant_dhizuku_permission_to_canta">Allow UniCanta in Dhizuku</string>
     <string
         name="shizuku_requirement_description"
     >Canta uses Shizuku to uninstall apps without requiring root access. Shizuku provides a secure way to access system-level SDKs.</string>
