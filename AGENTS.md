@@ -283,6 +283,29 @@ Q 'select 1 as ok'   # 先证明：地址通、token 对、代理没坏
 - `server/supabase/ops/` 里的脚本会删数据（`purge_plans` 清空全部方案与方案评论），
   只在明确要清空时手工跑。
 
+### 10.4 写接口限速（2026-11-22 已上线）
+
+`private.write_rate` + `private.throttle_write(bucket, max, window_seconds)`，按**来源 IP**
+计数（`x-forwarded-for`，取不到就 `cf-connecting-ip`，都没有记成 `unknown`）。
+
+九个写函数开头各多了一行 `perform private.throttle_write('<bucket>', <max>, 60)`：
+`plan_submit` 5、`comment_add`/`comment_delete`/`description_fix_vote`/`recommend_suggestion_vote`
+各 20、`plan_vote`/`package_vote` 各 30、`comment_like` 40、`inbox_seen_mark` 60（每分钟）。
+
+要点：
+
+- **按 IP 不按自报身份**：九个函数的身份全是客户端自报（`p_voter` / `p_owner` / `p_author_id`
+  / `p_plan->>'owner'`），按自报值限速等于没限。
+- **不改签名、不改返回、不改既有分支**，所以现有客户端一行不用动。
+- **只管 RPC 层**：直接连库灌行（手动运维、`insert`）不受影响——那些没有 `request.headers`。
+- 变量不能叫 `ip`：`private.write_rate` 有同名列，PL/pgSQL 报 42702 ambiguous。
+- 改函数的做法：先用 `pg_get_functiondef` 取线上原文、插一行、再 `create or replace` 回去；
+  原文备份在 `backups/db-local-only/functions-before-throttle/`。
+
+**身份收口还没做**（投票/评论/方案的身份仍由客户端自报）。它要么给每个函数加可选 `p_token`
+参数（要 drop 旧签名，有秒级 404 窗口），要么新起 `*_v2` 函数——两条都得等客户端先发版
+带上 token，否则 v2 是死代码。顺序固定：客户端补 token → 服务端认 token → 再收紧。
+
 ---
 
 ## 11. dependabot 告警：先分级，再动手
