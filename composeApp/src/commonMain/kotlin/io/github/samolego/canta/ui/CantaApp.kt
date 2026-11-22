@@ -157,6 +157,9 @@ private const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
  */
 private const val VPN_NOTICE_INTERVAL_MILLIS = 60_000L
 
+/** How long that reminder stays on screen before it takes itself away; it returns a minute later. */
+private const val VPN_NOTICE_VISIBLE_MILLIS = 12_000L
+
 /**
  * Where the manager behind Stellar/Shizuku comes from. The app points at the fork it recommends,
  * and this is also the fallback for "open the manager": shared code has no way to launch another
@@ -414,9 +417,15 @@ private fun CantaNavigation(
             return@LaunchedEffect
         }
         while (true) {
+            if (!platform.isVpnActive()) {
+                // Shown, then taken away again: a notice that never leaves is a banner, and this one
+                // comes back by itself a minute later while no VPN carries the traffic.
+                vpnNoticeVisible = true
+                delay(VPN_NOTICE_VISIBLE_MILLIS)
+                vpnNoticeVisible = false
+            }
             // Re-checked every round: a proxy opened from the reminder, then closed again, has to
             // bring the notice back without waiting for the next launch.
-            vpnNoticeVisible = !platform.isVpnActive()
             delay(VPN_NOTICE_INTERVAL_MILLIS)
         }
     }
