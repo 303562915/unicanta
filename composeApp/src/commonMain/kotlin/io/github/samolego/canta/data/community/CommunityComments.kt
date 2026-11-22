@@ -88,6 +88,11 @@ data class InboxItem(
     val parentBody: String = "",
     /** Who did it: the reply's writer, or the newest person to tap the heart. */
     val actor: String = "",
+    /**
+     * 那个人的身份号：主页、名单这些"点人进主页"的入口要用它，[actor] 只是今天用的名字，
+     * 后端在 `actor` 之外单独给了一列，没有就空着（行还能开，只是头像点不出主页）。
+     */
+    val actorId: String = "",
     val createdAt: String = "",
     /**
      * For the heart kinds: how many people hearted it in total, the newest included. One line says

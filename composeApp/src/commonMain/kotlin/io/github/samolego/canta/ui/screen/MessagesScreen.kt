@@ -278,9 +278,9 @@ fun MessagesScreen(
                     )
                 }
                 RecentContactsRow(
-                    userName = userName,
                     contacts = recentContacts,
-                    onTapDaily = { onMessage("限时日常还没做") },
+                    // 抖音「限时日常」的那一格，在这里是真正的动作：发起群聊。
+                    onStartGroup = onOpenCreateGroup,
                     onTapContact = { contact ->
                         // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
                         // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
@@ -751,9 +751,8 @@ private fun SearchHitRow(hit: SearchHit, onOpen: () -> Unit) {
  */
 @Composable
 private fun RecentContactsRow(
-    userName: String,
     contacts: List<RecentContact>,
-    onTapDaily: () -> Unit,
+    onStartGroup: () -> Unit,
     onTapContact: (RecentContact) -> Unit,
 ) {
     LazyRow(
@@ -761,7 +760,7 @@ private fun RecentContactsRow(
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item(key = "daily") { DailyCell(userName = userName, onClick = onTapDaily) }
+        item(key = "daily") { NewChatCell(onClick = onStartGroup) }
         if (contacts.isEmpty()) {
             item(key = "no-friends") { NoFriendsCell() }
         } else {
@@ -772,17 +771,14 @@ private fun RecentContactsRow(
     }
 }
 
-/** 「限时日常」：一个描边的圆加号，下面一行字。 */
+/** 那排的第一格：抖音「限时日常」的位置换成我们真正的动作——发起群聊。 */
 @Composable
-private fun DailyCell(userName: String, onClick: () -> Unit) {
+private fun NewChatCell(onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .width(ContactCellWidth)
-            .clickable(
-                onClickLabel = if (userName.isEmpty()) "限时日常" else "$userName 的限时日常",
-                onClick = onClick,
-            )
+            .clickable(onClickLabel = "发起群聊", onClick = onClick)
             .padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -797,7 +793,7 @@ private fun DailyCell(userName: String, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "限时日常",
+            text = "群聊",
             style = FlText.caption2,
             color = scheme.onSurfaceVariant,
             maxLines = 1,

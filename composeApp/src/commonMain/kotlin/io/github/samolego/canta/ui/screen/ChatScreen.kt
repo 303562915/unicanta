@@ -28,6 +28,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -55,6 +57,9 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.EmotionPicker
+import io.github.samolego.canta.ui.component.EmotionText
+import io.github.samolego.canta.ui.component.rememberEmotionPick
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
@@ -97,15 +102,18 @@ private data class ChatQuickPhrase(val label: String, val insert: String)
  *  * 顶栏：回去的箭头、首字头像、名字（群聊挂人数），右边两个圆形按钮（通话 / 更多）。
  *    头像和名字是一块入口：群聊进群资料，私聊进对面那个人的主页（[onOpenProfile]）。
  *  * 消息区：别人的消息左边一张小圆头像，自己的靠右；换一天的头上压一条居中的灰字日期。
- *    点头像看那个人的主页，长按气泡复制正文，两者是各自独立的触摸区域。
+ *    点头像看那个人的主页，别人的长按气泡复制正文，自己的长按弹「复制 / 撤回」小菜单，
+ *    撤回过的消息画成一行居中灰字，三者与头像点击是各自独立的触摸区域。
  *  * 滚动：不在最底的时候右下角有一个「新消息(N)」胶囊和一个向下箭头，点了滚到最新一条；
  *    滚到最顶时自动往回翻一页历史（[SocialRepository.messagesBefore]）。
  *  * 底部：一排快捷短语胶囊 + 输入栏（九宫格 / 输入框 / 语音或发送 / 表情 / 加号），
- *    九宫格和加号拉开一个只有占位按钮的「更多」面板。
+ *    表情拉开输入栏上方的表情面板（[EmotionPicker]），九宫格和加号拉开一个只有占位按钮的
+ *    「更多」面板；两个面板互斥，拉开一个收起另一个。
  *
  * 后端只提供读一页（[SocialRepository.messagesFor]、[SocialRepository.messagesBefore]）、写一条
- * （[SocialRepository.sendMessage]）和一次会话详情（[SocialRepository.conversationDetail]）；
- * 写成功的那一条直接用后端回来的行画出来，不等下一次拉取。详情拉不到就当没有，聊天照常。
+ * （[SocialRepository.sendMessage]）、撤回一条（[SocialRepository.deleteMessage]）和一次会话详情
+ * （[SocialRepository.conversationDetail]）；写成功的那一条直接用后端回来的行画出来，不等下一次
+ * 拉取，撤回成功把本地那条标成已撤回。详情拉不到就当没有，聊天照常。
  *
  * 顺序：后端给的是旧在前，所以列表本身正序，进入页面和发出消息后都滚到最底一行。
  * 打开页面就把已读位置推到此刻（[SocialRepository.markRead]）：读回执丢了不是错，下一条消息前再推一次。
@@ -133,6 +141,10 @@ fun ChatScreen(
     var sendFailed by remember { mutableStateOf(false) }
     var loadingEarlier by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
+    /** 表情面板开没开：和 [showMore] 互斥，拉开一个就把另一个收回去。 */
+    var showEmotions by remember { mutableStateOf(false) }
+    /** 撤回失败亮一句：样式与位置照 [sendFailed] 那行。 */
+    var recallFailed by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
     /** 刚复制的是哪一条：不是 null 的时候底部亮一句「已复制」，过一会儿自己灭掉。 */
     var copiedId by remember { mutableStateOf<Long?>(null) }
@@ -160,15 +172,16 @@ fun ChatScreen(
     }
 
     // 会话开着时自己问新消息：没有推送通道，不轮询的话对方说什么都要等退出再进才看得见。
-    // 只并进尾巴，不动已经翻出来的历史；有变化才走一次已读。
+    // 只并进尾巴，不动已经翻出来的历史。fresh 放在前面：同一 id 以后回来的为准，别的设备
+    // 撤回的消息才能在本机也变灰；最后按 id 排回正序。有实质变化才走一次已读。
     LaunchedEffect(conversationId, owner) {
         if (conversationId <= 0L) return@LaunchedEffect
         while (true) {
             delay(ChatPollMs)
-            val latest = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
-            if (latest.isNotEmpty()) {
-                val merged = (messages + latest).distinctBy { it.id }.sortedBy { it.id }
-                if (merged.size != messages.size) {
+            val fresh = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
+            if (fresh.isNotEmpty()) {
+                val merged = (fresh + messages).distinctBy { it.id }.sortedBy { it.id }
+                if (merged != messages) {
                     messages = merged
                     repository.markRead(owner, conversationId)
                 }
@@ -258,10 +271,27 @@ fun ChatScreen(
         }
     }
 
-    /** 长按别人的消息：整条正文进剪贴板，底部亮一句。自己发的那种不挂长按（见 [ChatBubble]）。 */
+    /** 复制一条消息：整条正文进剪贴板，底部亮一句。别人的长按直接进来，自己的从长按菜单的「复制」进来。 */
     val copyMessage: (ChatMessage) -> Unit = { message ->
         clipboard.setText(AnnotatedString(message.body))
         copiedId = message.id
+    }
+
+    /**
+     * 撤回自己的一条：问后端 [SocialRepository.deleteMessage]，成了把本地这条标成已撤回
+     * （重画成一行灰字），败了底部亮一句提示，气泡原样不动。
+     */
+    val recallMessage: (ChatMessage) -> Unit = { message ->
+        scope.launch {
+            if (repository.deleteMessage(owner, message.id)) {
+                recallFailed = false
+                messages = messages.map { current ->
+                    if (current.id == message.id) current.copy(removed = true) else current
+                }
+            } else {
+                recallFailed = true
+            }
+        }
     }
 
     // 剪贴板本身没有任何看得见的反应：不说一句，人不知道自己按成功没有。1.6 秒后自己灭掉。
@@ -335,21 +365,38 @@ fun ChatScreen(
                                     val stamp = chatDayStampOf(message.createdAt)
                                     if (stamp.isNotEmpty()) ChatDayDivider(stamp)
                                 }
-                                ChatBubble(
-                                    message = message,
-                                    mine = message.sender == owner,
-                                    // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
-                                    showSender = grouped && message.sender != owner,
-                                    // 点头像看那个人的主页：自己那条不画头像，这个回调也就不给。
-                                    // 群里谁发言谁有自己的一张头像，身份就是 message.sender。
-                                    onAvatarClick = if (message.sender != owner && message.sender.isNotEmpty()) {
-                                        { onOpenProfile(message.sender) }
-                                    } else {
-                                        null
-                                    },
-                                    // 长按复制：自己的气泡由 ChatBubble 自己忽略这个回调。
-                                    onLongPress = { copyMessage(message) },
-                                )
+                                if (message.removed) {
+                                    // 撤回过的消息不画气泡：一行居中灰字，不带头像，也不参与长按复制。
+                                    Text(
+                                        text = "该消息已撤回",
+                                        style = FlText.caption2,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                } else {
+                                    ChatBubble(
+                                        message = message,
+                                        mine = message.sender == owner,
+                                        // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
+                                        showSender = grouped && message.sender != owner,
+                                        // 点头像看那个人的主页：自己那条不画头像，这个回调也就不给。
+                                        // 群里谁发言谁有自己的一张头像，身份就是 message.sender。
+                                        onAvatarClick = if (message.sender != owner && message.sender.isNotEmpty()) {
+                                            { onOpenProfile(message.sender) }
+                                        } else {
+                                            null
+                                        },
+                                        // 长按：别人的直接复制；自己的弹「复制 / 撤回」小菜单（见 [ChatBubble]）。
+                                        onLongPress = { copyMessage(message) },
+                                        onDelete = if (message.sender == owner) {
+                                            { recallMessage(message) }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -377,6 +424,17 @@ fun ChatScreen(
             if (showMore) {
                 ChatMorePanel()
             }
+            if (showEmotions) {
+                // 表情面板：贴在输入栏上方，点一颗把 token（如 [偷笑]）填进草稿，「键盘」把它收回去。
+                EmotionPicker(
+                    onPick = { emotion ->
+                        rememberEmotionPick(emotion.name)
+                        draft = draft + emotion.token
+                    },
+                    onDelete = {},
+                    onKeyboard = { showEmotions = false },
+                )
+            }
             ChatComposer(
                 draft = draft,
                 onDraftChange = { draft = it },
@@ -384,11 +442,29 @@ fun ChatScreen(
                 onSend = send,
                 onInsert = insert,
                 showMore = showMore,
-                onToggleMore = { showMore = !showMore },
+                onToggleMore = {
+                    showMore = !showMore
+                    // 两个面板互斥：拉开一个就把另一个收回去。
+                    if (showMore) showEmotions = false
+                },
+                showEmotions = showEmotions,
+                onToggleEmotions = {
+                    showEmotions = !showEmotions
+                    if (showEmotions) showMore = false
+                },
             )
             if (sendFailed) {
                 Text(
                     text = "没发出去，检查代理后再试",
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                )
+            }
+            if (recallFailed) {
+                Text(
+                    text = "没撤回成，检查代理后再试",
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
                     color = MaterialTheme.colorScheme.error,
@@ -589,11 +665,12 @@ private fun ChatDayDivider(stamp: String) {
  * 一条消息：自己的靠右、主色气泡、主色上的字；别人的靠左、灰气泡，左边一张小圆头像。
  *
  * 群聊里别人的气泡上面署一个名字（[ChatMessage.label]，后端没给名字就退回编号）。
- * 长按别人的气泡把整条正文复制到剪贴板（[onLongPress]）；自己的气泡不挂这个动作——复制自己刚
- * 打的字没有意义，还平白多一个误触。
+ * 长按别人的气泡把整条正文复制到剪贴板（[onLongPress]）；自己的气泡长按弹一个小菜单
+ * （[DropdownMenu]，写法照 MessagesScreen 的 ConversationRow）：「复制」走 [onLongPress]，
+ * 「撤回」只在给了 [onDelete] 时出现。正文里的表情 token 由 [EmotionText] 画成图。
  *
  * 头像上的点击是**另一块区域**（[onAvatarClick]）：头像在 [Row] 里是气泡的兄弟节点，气泡自己
- * 挂的是长按复制，两处手势不重叠，点头像不会顺手复制，长按气泡也不会跳走。
+ * 挂的是长按，两处手势不重叠，点头像不会顺手触发菜单，长按气泡也不会跳走。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -603,9 +680,18 @@ private fun ChatBubble(
     showSender: Boolean,
     onAvatarClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    /** 撤回这条的回调；只有自己的消息给了它，长按才弹菜单，别人的长按仍旧直接复制。 */
+    onDelete: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    val longPress = if (mine) null else onLongPress
+    // 自己的气泡带了撤回回调：长按弹「复制 / 撤回」菜单；其余情况维持各自原来的长按。
+    val menuable = mine && onDelete != null
+    var menuOpen by remember { mutableStateOf(false) }
+    val longPress = when {
+        menuable -> ({ menuOpen = true })
+        mine -> null
+        else -> onLongPress
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
@@ -639,7 +725,7 @@ private fun ChatBubble(
                         } else {
                             Modifier.combinedClickable(
                                 onClickLabel = "这条消息",
-                                onLongClickLabel = "复制这条消息",
+                                onLongClickLabel = if (menuable) "打开这条消息的菜单" else "复制这条消息",
                                 onLongClick = longPress,
                                 onClick = {},
                             )
@@ -648,10 +734,10 @@ private fun ChatBubble(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Column {
-                    Text(
-                        text = message.body,
-                        fontSize = 14.sp,
-                        lineHeight = 19.sp,
+                    EmotionText(
+                        body = message.body,
+                        fontSize = 14,
+                        lineHeight = 19,
                         color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
                     )
                     val clock = chatClockOf(message.createdAt)
@@ -662,6 +748,29 @@ private fun ChatBubble(
                             color = if (mine) colors.onPrimary.copy(alpha = 0.7f) else colors.outline,
                             maxLines = 1,
                             modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                }
+                if (menuable) {
+                    // 菜单锚在气泡上：Box 包着的 DropdownMenu 贴着气泡右上角弹出来。
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false },
+                        modifier = Modifier.align(Alignment.TopEnd),
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("复制", fontSize = 14.sp) },
+                            onClick = {
+                                menuOpen = false
+                                onLongPress?.invoke()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("撤回", fontSize = 14.sp) },
+                            onClick = {
+                                menuOpen = false
+                                onDelete?.invoke()
+                            },
                         )
                     }
                 }
@@ -763,7 +872,7 @@ private fun ChatMoreCell(glyph: FlGlyph, label: String) {
  *
  * 右边的第一个圆按钮是**会变的那一个**：输入框里有字它就是发送（[FlGlyphs.send]，主色），
  * 没字的时候才是语音按钮。发送是这个页面唯一的出口，不能让它藏在别处。
- * 表情插一个「😀」，加号和左边的九宫格一样拉开更多面板。
+ * 表情钮拉开输入栏上方的表情面板（再点一次收起），加号和左边的九宫格一样拉开更多面板。
  */
 @Composable
 private fun ChatComposer(
@@ -774,6 +883,8 @@ private fun ChatComposer(
     onInsert: (String) -> Unit,
     showMore: Boolean,
     onToggleMore: () -> Unit,
+    showEmotions: Boolean = false,
+    onToggleEmotions: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
@@ -836,8 +947,8 @@ private fun ChatComposer(
         Spacer(Modifier.width(4.dp))
         FlBarButton(
             glyph = FlGlyphs.add,
-            contentDescription = "表情",
-            onClick = { onInsert("😀") },
+            contentDescription = if (showEmotions) "收起表情" else "表情",
+            onClick = onToggleEmotions,
             size = 36.dp,
             iconSize = 17.dp,
         )

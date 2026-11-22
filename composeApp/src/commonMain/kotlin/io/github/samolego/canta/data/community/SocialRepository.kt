@@ -91,6 +91,9 @@ data class Conversation(
  *
  * [sender] 是发消息那个身份，[senderName] 是他发这条时用的名字（历史消息保留当时的名字，
  * 后端改名后旧消息跟着变，这是后端的决定，这里只搬运）。
+ *
+ * [removed] 是被删掉的那一条：后端保留占位（这样上下文的时序不乱），页面据此画"已撤回"，
+ * 而不是把气泡整个从列表里拿掉——拿掉会让上面那句话失去被回复的对象。
  */
 data class ChatMessage(
     val id: Long,
@@ -98,6 +101,7 @@ data class ChatMessage(
     val senderName: String,
     val body: String,
     val createdAt: String,
+    val removed: Boolean = false,
 ) {
 
     /** 气泡上方那个署名；后端没给名字就退回编号。 */
@@ -151,7 +155,8 @@ data class ConversationDetail(
  * 所以这一位带上前缀。这里的 [owner] 是**别人**的身份字符串，和那边的 `userId` 不是一回事。
  *
  * [iFollow] / [followsMe] 是"我"（[userProfile] 的 viewer）和他之间的两条边，viewer 为空时后端
- * 给的就是 false。数字字段缺失或类型不对一律退 0，[since] 缺失是空串。
+ * 给的就是 false。数字字段缺失或类型不对一律退 0，[since] 缺失是空串；[bio] 是他自己写的一句话，
+ * 没写过就是空串。
  */
 data class SocialUserProfile(
     val owner: String,
@@ -164,6 +169,7 @@ data class SocialUserProfile(
     val iFollow: Boolean,
     val followsMe: Boolean,
     val since: String = "",
+    val bio: String = "",
 ) {
 
     /** 主页标题那一行字：有名字用名字，没有就亮编号。 */
@@ -279,7 +285,24 @@ class SocialRepository(
             iFollow = row.flagOf("i_follow") ?: false,
             followsMe = row.flagOf("follows_me") ?: false,
             since = row.textOf("since"),
+            bio = row.textOf("bio"),
         )
+    }
+
+    /**
+     * 改自己的签名，返回这件事成没成。
+     *
+     * 只有本人能改；后端拒绝时返回 false，它那句话写进 [lastError]，页面据此解释
+     * "为什么没改上"，而不是笼统报错。
+     */
+    suspend fun setBio(owner: String, bio: String): Boolean {
+        if (owner.isEmpty()) return false
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_bio", bio)
+        }.toString()
+        val text = rpc("profile_set_bio", body) ?: return false
+        return booleanFrom(text, "profile_set_bio") ?: false
     }
 
     // ------------------------------------------------------------------ 会话
@@ -387,6 +410,23 @@ class SocialRepository(
             body = body,
             createdAt = row.textOf("created_at"),
         )
+    }
+
+    /**
+     * 删掉 [messageId] 这条消息，返回这件事成没成。
+     *
+     * 删是"标记撤回"，不是把行抹掉：所以这个方法成功之后，`messages_for` 里那条还在，
+     * 只是 [ChatMessage.removed] 变成 true，气泡该画成"已撤回"。这笔账由后端记，
+     * 本对象不本地改列表——重拉一次才是准的。
+     */
+    suspend fun deleteMessage(owner: String, messageId: Long): Boolean {
+        if (owner.isEmpty() || messageId <= 0L) return false
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_message", messageId)
+        }.toString()
+        val text = rpc("message_delete", body) ?: return false
+        return booleanFrom(text, "message_delete") ?: false
     }
 
     /**
@@ -712,7 +752,7 @@ class SocialRepository(
         )
     }
 
-    /** 一行 `messages_for`；连 id 都没有的行画不成气泡，丢掉。 */
+    /** 一行消息（`messages_for` / `messages_before` 同一解析）；连 id 都没有的行画不成气泡，丢掉。 */
     private fun messageOf(row: JsonObject): ChatMessage? {
         val id = row.longOf("id") ?: return null
         return ChatMessage(
@@ -721,6 +761,7 @@ class SocialRepository(
             senderName = row.textOf("sender_name"),
             body = row.textOf("body"),
             createdAt = row.textOf("created_at"),
+            removed = row.flagOf("removed") ?: false,
         )
     }
 }

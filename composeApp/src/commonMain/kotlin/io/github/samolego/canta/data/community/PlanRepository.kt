@@ -1128,6 +1128,7 @@ class PlanRepository(
                     body = o["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     parentBody = o["parent_body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     actor = actorName.ifEmpty { o["actor"]?.jsonPrimitive?.contentOrNull.orEmpty() },
+                    actorId = o["actor"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     likes = o["likes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 )

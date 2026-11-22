@@ -1171,6 +1171,10 @@ private fun CantaNavigation(
                     onOpenAppComment = { pkg, commentId ->
                         navController.navigate(Screen.AppComment.routeFor(pkg, commentId))
                     },
+                    // 点互动行上的头像，看那个人：InboxItem 里带着 actor 的身份号。
+                    onOpenProfile = { person ->
+                        navController.navigate(Screen.Uploader.routeFor(person))
+                    },
                     onNavigateBack = { navController.navigateUp() },
                 )
             }

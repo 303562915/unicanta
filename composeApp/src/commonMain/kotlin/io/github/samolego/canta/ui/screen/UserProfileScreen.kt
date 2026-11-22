@@ -26,9 +26,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,15 +43,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.SocialUserProfile
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.component.avatarLetter
+import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -91,8 +98,9 @@ private enum class ProfileTab { Plans, Favorites }
  *
  * 这一页只画后端真的存了的东西：数字来自 [SocialRepository.userProfile]，作品来自
  * [PlanRepository.plansByOwner]，两样都是拉不到就退成 0 与空列表，页面照常画，失败的原因
- * 用一行灰字交代（[SocialRepository.lastError] / [PlanRepository.lastError]）。简介后端没有
- * 这一列，所以这里恒是「这个人很懒」——不凭空编一句话出来。
+ * 用一行灰字交代（[SocialRepository.lastError] / [PlanRepository.lastError]）。简介来自
+ * [SocialUserProfile.bio]，本人看这一页时右侧有一支笔，点开改（[SocialRepository.setBio]）；
+ * 没写过就还是那一句「这个人很懒」占位。
  *
  * @param owner 主页是谁的：身份字符串，也是昵称拿不到时的兜底名字。
  * @param viewer 看这一页的人，关注按钮写的就是他和 [owner] 之间那条边。
@@ -121,6 +129,10 @@ fun UserProfileScreen(
     var following by remember(owner, viewer) { mutableStateOf(false) }
     var busy by remember(owner, viewer) { mutableStateOf(false) }
     var tab by remember(owner, viewer) { mutableStateOf(ProfileTab.Plans) }
+    // 改简介的对话框三位一体：开没开、框里的草稿、保存请求在不在路上。
+    var showBioEditor by remember(owner, viewer) { mutableStateOf(false) }
+    var bioDraft by remember(owner, viewer) { mutableStateOf("") }
+    var savingBio by remember(owner, viewer) { mutableStateOf(false) }
     var problem by remember(owner, viewer) { mutableStateOf<String?>(null) }
 
     // 一次把两样都问完再画：先画骨架再补数字，这一页会闪两下，和消息页同一个理由。
@@ -183,7 +195,15 @@ fun UserProfileScreen(
                             onOpenFollowers = { onOpenFollows(true) },
                         )
                         Spacer(Modifier.height(10.dp))
-                        ProfileBio(problem = problem)
+                        ProfileBio(
+                            bio = shown?.bio.orEmpty(),
+                            editable = viewer == owner && viewer.isNotEmpty(),
+                            problem = problem,
+                            onEdit = {
+                                bioDraft = profile?.bio.orEmpty()
+                                showBioEditor = true
+                            },
+                        )
                         Spacer(Modifier.height(2.dp))
                         ProfileActionRow(
                             following = following,
@@ -243,6 +263,61 @@ fun UserProfileScreen(
                     }
                 }
             }
+        }
+    }
+
+    // 改简介的对话框：笔一点开它，草稿预填当前简介，保存走 social.setBio。
+    // 保存中的按钮置灰、字换成「保存中」，防一只手连点出两笔请求。
+    if (showBioEditor) {
+        CantaDialog(
+            onDismissRequest = { if (!savingBio) showBioEditor = false },
+            title = "编辑简介",
+            buttons = {
+                TextButton(onClick = { showBioEditor = false }) { Text("取消") }
+                TextButton(
+                    enabled = !savingBio,
+                    onClick = {
+                        val next = bioDraft.trim()
+                        scope.launch {
+                            savingBio = true
+                            val ok = social.setBio(owner, next)
+                            savingBio = false
+                            if (ok) {
+                                profile = profile?.copy(bio = next)
+                                showBioEditor = false
+                                onMessage("简介已更新")
+                            } else {
+                                onMessage("没保存成，检查代理后再试")
+                            }
+                        }
+                    },
+                ) {
+                    Text(if (savingBio) "保存中" else "保存")
+                }
+            },
+        ) {
+            BasicTextField(
+                value = bioDraft,
+                onValueChange = { bioDraft = it.take(200) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(scheme.surfaceContainerHigh)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                textStyle = TextStyle(fontSize = 14.sp, color = scheme.onSurface),
+                cursorBrush = SolidColor(scheme.primary),
+                minLines = 3,
+                decorationBox = { inner ->
+                    if (bioDraft.isEmpty()) {
+                        Text(
+                            text = "介绍一下自己（可不填）",
+                            fontSize = 14.sp,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    }
+                    inner()
+                },
+            )
         }
     }
 }
@@ -429,19 +504,47 @@ private fun ProfileStat(value: Int, label: String, modifier: Modifier = Modifier
 }
 
 /**
- * 简介区：一句灰字、一个「IP：未知」小灰标，拉失败时再多一行原因。
+ * 简介区：本人写过的那句话，或「这个人很懒」的灰字占位，下面跟着「IP：未知」小灰标。
  *
- * 后端的人主页没有简介这一列，所以这里恒是「这个人很懒」，等哪天后端存了简介再换掉它。
+ * bio 与占位二选一：有简介就放开多行写，颜色用 onSurface；没有时保持原来的灰字。
+ * [editable] 表示看主页的人就是本人：那一行右侧放一支笔，点开改简介；别人看时只有字。
  */
 @Composable
-private fun ProfileBio(problem: String?) {
+private fun ProfileBio(
+    bio: String,
+    editable: Boolean,
+    problem: String?,
+    onEdit: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Text(
-            text = "这个人很懒，什么都没写",
-            style = FlText.footnote,
-            color = scheme.onSurfaceVariant,
-        )
+        Row(verticalAlignment = Alignment.Top) {
+            if (bio.isNotBlank()) {
+                Text(
+                    text = bio,
+                    style = FlText.subheadline,
+                    color = scheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Text(
+                    text = "这个人很懒，什么都没写",
+                    style = FlText.footnote,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (editable) {
+                Spacer(Modifier.width(4.dp))
+                FlBarButton(
+                    glyph = FlGlyphs.edit,
+                    contentDescription = "编辑简介",
+                    onClick = onEdit,
+                    iconSize = 18.dp,
+                    filled = false,
+                )
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             text = "IP：未知",

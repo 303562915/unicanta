@@ -91,6 +91,8 @@ fun InteractionsScreen(
     onInboxSeen: (newestCommentId: Long, checkedAt: String) -> Unit = { _, _ -> },
     onOpenPlanComment: (planId: Long, commentId: Long) -> Unit = { id, _ -> },
     onOpenAppComment: (packageName: String, commentId: Long) -> Unit = { pkg, _ -> },
+    /** 点行头像看那个人的主页；后端没给身份号时行内不挂这个点击。 */
+    onOpenProfile: (owner: String) -> Unit = {},
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -242,7 +244,11 @@ fun InteractionsScreen(
                                 items = inbox.items,
                                 key = { row -> "${row.kind}-${row.id}-${row.createdAt}" },
                             ) { row ->
-                                InteractionRow(item = row, onOpen = { open(row) })
+                                InteractionRow(
+                                    item = row,
+                                    onOpen = { open(row) },
+                                    onOpenProfile = onOpenProfile,
+                                )
                             }
                             if (loadingMore) {
                                 item(key = "interactions-more") { InteractionLoadingMore() }
@@ -370,7 +376,11 @@ private fun InteractionTabText(label: String, active: Boolean, onClick: (() -> U
  * 而不是在于读这三十个字。
  */
 @Composable
-private fun InteractionRow(item: InboxItem, onOpen: () -> Unit) {
+private fun InteractionRow(
+    item: InboxItem,
+    onOpen: () -> Unit,
+    onOpenProfile: (owner: String) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
@@ -382,7 +392,15 @@ private fun InteractionRow(item: InboxItem, onOpen: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {
-            InteractionAvatar(name = item.actor, size = 40.dp)
+            // 头像是一块自己的入口：点开那个人的主页。行本身的点击仍然是开那条消息指向的页。
+            InteractionAvatar(
+                name = item.actor,
+                size = 40.dp,
+                modifier = Modifier.clickable(
+                    enabled = item.actorId.isNotEmpty(),
+                    onClickLabel = "看主页",
+                ) { onOpenProfile(item.actorId) },
+            )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -512,10 +530,14 @@ private fun InteractionFollowButton(followed: Boolean, enabled: Boolean, onClick
 
 /** 首字的圆头像：名字是别人给的，这里只取第一个字符，取不到就画一个问号。 */
 @Composable
-private fun InteractionAvatar(name: String, size: Dp) {
+private fun InteractionAvatar(
+    name: String,
+    size: Dp,
+    modifier: Modifier = Modifier,
+) {
     val colors = MaterialTheme.colorScheme
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(size)
             .clip(CircleShape)
             .background(colors.primary.copy(alpha = 0.15f)),
