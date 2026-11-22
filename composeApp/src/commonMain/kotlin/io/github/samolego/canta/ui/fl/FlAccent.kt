@@ -112,7 +112,15 @@ private fun ColorScheme.accented(seed: Color, dark: Boolean): ColorScheme {
 
 /** Which ink reads on [fill]: near-black on the bright accents (amber, lime), white elsewhere. */
 private fun inkOn(fill: Color): Color =
-    if (fill.luminance() > 0.45f) Color(0xFF16181D) else Color(0xFFFFFFFF)
+    if (fill.relativeLuminance() > 0.45f) Color(0xFF16181D) else Color(0xFFFFFFFF)
+
+/**
+ * Perceived brightness of a color, 0–1.
+ *
+ * Compose 1.12 removed `Color.luminance()`, and this is the one thing the theme needed out of it:
+ * which ink a fill can carry.
+ */
+fun Color.relativeLuminance(): Float = 0.299f * red + 0.587f * green + 0.114f * blue
 
 /** A color as hue (0–360°), saturation and lightness (both 0–1). */
 private data class Hsl(val hue: Float, val saturation: Float, val lightness: Float)

@@ -61,7 +61,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -140,6 +139,7 @@ import io.github.samolego.canta.ui.fl.FlAccent
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlThemeMode
+import io.github.samolego.canta.ui.fl.relativeLuminance
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import org.jetbrains.compose.resources.stringResource
 
@@ -495,7 +495,7 @@ private fun AccentSwatch(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = if (accent.color.luminance() > 0.45f) Color(0xFF16181D) else Color.White,
+                    tint = if (accent.color.relativeLuminance() > 0.45f) Color(0xFF16181D) else Color.White,
                 )
             }
         }
