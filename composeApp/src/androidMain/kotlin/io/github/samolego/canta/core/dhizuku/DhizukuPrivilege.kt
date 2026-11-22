@@ -124,7 +124,9 @@ object DhizukuPrivilege {
         val answer = CompletableDeferred<Boolean>()
         withContext(Dispatchers.Main) {
             runCatching {
-                Dhizuku.requestPermission(object : DhizukuRequestPermissionListener {
+                // `DhizukuRequestPermissionListener` is an abstract class extending the AIDL Stub,
+                // not an interface: it needs the constructor call.
+                Dhizuku.requestPermission(object : DhizukuRequestPermissionListener() {
                     override fun onRequestPermission(grantResult: Int) {
                         answer.complete(grantResult == PackageManager.PERMISSION_GRANTED)
                     }
