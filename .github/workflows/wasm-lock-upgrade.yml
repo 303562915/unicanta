@@ -1,0 +1,51 @@
+name: 🔒 Wasm Yarn Lock Upgrade
+
+# 手工维护工具，不参与构建链。
+#
+# `kotlin-js-store/wasm/yarn.lock` 由 Kotlin/Wasm 插件生成并**校验**
+# （`kotlinWasmStoreYarnLock` 任务；锁和实际解析不一致就整条构建失败），
+# 所以这个文件不能手改 —— 必须让插件自己重算。
+#
+# 触发一次，跑 `kotlinWasmUpgradeYarnLock`，把重算后的锁作为 artifact 上传，
+# 人工下载后提交。dependabot 报了传递依赖的漏洞时走这条路。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wasm-lock-upgrade
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: 🧶 Recompute the wasm yarn lock
+        run: ./gradlew :kotlinWasmUpgradeYarnLock --no-daemon --stacktrace
+
+      - name: 🔍 Show what changed
+        run: |
+          git --no-pager diff --stat
+          git --no-pager diff -- kotlin-js-store || true
+
+      - name: 📤 Upload the upgraded lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-yarn-lock
+          path: kotlin-js-store/wasm/yarn.lock
+          if-no-files-found: error
+          retention-days: 7
