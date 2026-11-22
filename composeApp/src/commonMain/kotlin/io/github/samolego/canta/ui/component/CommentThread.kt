@@ -63,6 +63,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -897,6 +898,79 @@ fun CommentComposer(
                 if (replyToName.isNotEmpty()) {
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
+                // Two shapes, the way a short-video composer draws this bar. Closed — nothing
+                // written, no caret — the three keys sit inside the pill's right end, so the whole
+                // bar is one thing. Open — the field has the caret, or something was written — the
+                // pill is only the place being written in, and the keys drop to a row of their own
+                // under it, with send at that row's end. A pill can hold a caret or hold keys, but
+                // a caret between the keys reads as a third key.
+                var fieldFocused by remember { mutableStateOf(false) }
+                val open = fieldFocused || draft.isNotBlank()
+                val draftKeys: @Composable () -> Unit = {
+                    Icon(
+                        imageVector = Icons.Outlined.Image,
+                        contentDescription = "评论暂时只能发文字",
+                        modifier = Modifier.size(30.dp).padding(6.dp),
+                        // Dimmed rather than hidden: an image key is what a comment box of this
+                        // shape usually carries, and this one takes no pictures — a lit key that
+                        // answers nothing would be the worse of the two lies.
+                        tint = colors.onSurfaceVariant.copy(alpha = 0.38f),
+                    )
+                    Icon(
+                        imageVector = Icons.Outlined.AlternateEmail,
+                        contentDescription = "插入 @",
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(50))
+                            .clickable { onDraftChange(draft + "@") }
+                            .padding(6.dp),
+                        tint = colors.onSurfaceVariant,
+                    )
+                    Icon(
+                        imageVector = if (pickerOpen) {
+                            Icons.Outlined.Keyboard
+                        } else {
+                            Icons.Outlined.EmojiEmotions
+                        },
+                        contentDescription = if (pickerOpen) "收起表情" else "表情",
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(50))
+                            .clickable {
+                                if (pickerOpen) {
+                                    onPickerOpenChange(false)
+                                    focusRequester.requestFocus()
+                                } else {
+                                    // The keyboard gives way to the panel: both open at once would
+                                    // leave the grid with a quarter of the screen.
+                                    focus.clearFocus()
+                                    imeController?.hide()
+                                    onPickerOpenChange(true)
+                                }
+                            }
+                            .padding(6.dp),
+                        tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
+                    )
+                }
+                val sendKey: @Composable () -> Unit = {
+                    val canSend = draft.isNotBlank() && !sending
+                    Row(
+                        modifier = Modifier
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(if (canSend) colors.primary else inputFieldColor())
+                            .clickable(enabled = canSend, onClick = onSend)
+                            .padding(horizontal = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = sendLabel,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
+                        )
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // The field: one grey pill, the height of the keys that sit inside it, the way a
                     // short-video composer draws its comment box. The keys that act on the draft live
@@ -973,6 +1047,10 @@ fun CommentComposer(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .focusRequester(focusRequester)
+                                        // The bar changes shape when this field takes the caret: the
+                                        // keys leave the pill and move under it. Tracked here, because
+                                        // the field is the only thing that knows it got the focus.
+                                        .onFocusChanged { fieldFocused = it.isFocused }
                                         // The stickers go under the field's own drawing, not over
                                         // it: their space has no glyph, so nothing of the field is
                                         // hidden by them, and the caret stays visible when it sits
@@ -1036,75 +1114,30 @@ fun CommentComposer(
                                 }
                             }
                         }
-                        // The keys sit inside the pill's right end, where a short-video composer
-                        // puts them: the draft grows to their left and never runs under them.
-                        Icon(
-                            imageVector = Icons.Outlined.Image,
-                            contentDescription = "评论暂时只能发文字",
-                            modifier = Modifier.size(30.dp).padding(6.dp),
-                            // Dimmed rather than hidden: an image key is what a comment box of this
-                            // shape usually carries, and this one takes no pictures — a lit key that
-                            // answers nothing would be the worse of the two lies.
-                            tint = colors.onSurfaceVariant.copy(alpha = 0.38f),
-                        )
-                        Icon(
-                            imageVector = Icons.Outlined.AlternateEmail,
-                            contentDescription = "插入 @",
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(RoundedCornerShape(50))
-                                .clickable { onDraftChange(draft + "@") }
-                                .padding(6.dp),
-                            tint = colors.onSurfaceVariant,
-                        )
-                        Icon(
-                            imageVector = if (pickerOpen) {
-                                Icons.Outlined.Keyboard
-                            } else {
-                                Icons.Outlined.EmojiEmotions
-                            },
-                            contentDescription = if (pickerOpen) "收起表情" else "表情",
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(RoundedCornerShape(50))
-                                .clickable {
-                                    if (pickerOpen) {
-                                        onPickerOpenChange(false)
-                                        focusRequester.requestFocus()
-                                    } else {
-                                        // The keyboard gives way to the panel: both open at once
-                                        // would leave the grid with a quarter of the screen.
-                                        focus.clearFocus()
-                                        imeController?.hide()
-                                        onPickerOpenChange(true)
-                                    }
-                                }
-                                .padding(6.dp),
-                            tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
-                        )
+                        // The keys sit inside the pill's right end while the bar is closed: the
+                        // draft grows to their left and never runs under them.
+                        if (!open) draftKeys()
                     }
-                    // The send pill appears with the first character, exactly as a short-video
-                    // composer only offers "发送" once there is something to send: an empty bar is a
-                    // field and a sticker key, nothing that reads as a dead button.
-                    val canSend = draft.isNotBlank() && !sending
-                    AnimatedVisibility(visible = draft.isNotBlank() || sending) {
-                        Row(
-                            modifier = Modifier
-                                .padding(start = 6.dp)
-                                .height(34.dp)
-                                .clip(RoundedCornerShape(percent = 50))
-                                .background(if (canSend) colors.primary else colors.surfaceContainerHighest)
-                                .clickable(enabled = canSend, onClick = onSend)
-                                .padding(horizontal = 13.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = sendLabel,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
-                            )
+                    // Closed, send rides beside the pill, and only once there is something to
+                    // send: an empty bar is a field and its keys, nothing that reads as a dead
+                    // button.
+                    if (!open) {
+                        AnimatedVisibility(visible = draft.isNotBlank() || sending) {
+                            Box(modifier = Modifier.padding(start = 6.dp)) { sendKey() }
                         }
+                    }
+                }
+                // Open, the keys drop to a row of their own under the pill, send at its end.
+                AnimatedVisibility(visible = open) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        draftKeys()
+                        Spacer(Modifier.weight(1f))
+                        // Send joins the row only once there is something to send: on an empty
+                        // draft the row is keys and nothing else, exactly like the closed bar.
+                        if (draft.isNotBlank() || sending) sendKey()
                     }
                 }
                 if (failed) {
