@@ -247,6 +247,7 @@
     <string name="app_list_restricted_grant">Grant access</string>
     <string name="app_list_restricted_open_settings">Open the setting</string>
     <string name="app_list_restricted_dismiss">Got it</string>
+    <string name="app_list_incomplete">Shizuku is not running, so this list only holds the apps Android lets Canta see; it may be incomplete. Start Shizuku, then pull down to refresh.</string>
     <string name="uninstall_new_packages">Not in your last confirmed batch — make sure you know these: %1$s</string>
     <string name="uninstall_new_packages_more">and %1$d more</string>
     <string name="restore_suspects_title">Packages came back by themselves</string>

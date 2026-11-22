@@ -290,6 +290,7 @@
     <string name="app_list_restricted_grant">去授权</string>
     <string name="app_list_restricted_open_settings">去打开</string>
     <string name="app_list_restricted_dismiss">知道了</string>
+    <string name="app_list_incomplete">Shizuku 没在运行，这次只读到系统允许本应用看到的那部分应用，列表可能不全。启动 Shizuku 后下拉刷新。</string>
     <string name="uninstall_large_batch_warning">一次卸这么多太多：建议分小批卸载，中间重启一次，出问题时才知道是哪个包。</string>
     <string name="uninstall_recovery_hint">先留好退路：保持 USB 调试开启，记下包名，并备份重要数据。卸错包可能让手机开不了机。</string>
     <string name="uninstall_or_freeze_hint">停用只是把它冻住，应用和数据都还在设备上，点一下就能解冻；卸载会腾出空间，但没有副本就装不回来。</string>

@@ -153,6 +153,15 @@ class AppListViewModel(
     /** Whether the "the system hides the app list" dialog was already shown in this run. */
     private var noticeShown = false
 
+    /**
+     * True when this load ran without a privileged runtime, so the list is only what the ROM lets
+     * the app see: a phone with 400 packages can come back with 60 and nothing complains. The tabs
+     * then look empty for no visible reason, which reads as a bug in the app rather than as "the
+     * runtime is not running" (see [AppsTab] and the banner in the list).
+     */
+    var listIncomplete by mutableStateOf(false)
+        private set
+
     /** True the first time a restricted list is loaded: the screen then asks for the permission. */
     var askForAppListPermission by mutableStateOf(false)
         private set
@@ -241,6 +250,8 @@ class AppListViewModel(
             isLoading = false
             isLoadingBadges = false
             appListRestricted = cantaHandler.appListRestricted && _apps.isNotEmpty()
+            // Read on every load, so pulling the list down after starting the runtime clears it.
+            listIncomplete = !cantaHandler.isAuthorized && _apps.isNotEmpty()
             if (appListRestricted && !noticeShown) askForAppListPermission = true
         }
     }

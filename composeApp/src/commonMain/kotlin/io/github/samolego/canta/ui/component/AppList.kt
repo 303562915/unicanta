@@ -41,6 +41,7 @@ import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.app_list_incomplete
 import io.github.samolego.canta.generated.resources.clear_selected_apps
 import io.github.samolego.canta.generated.resources.loading_apps
 import io.github.samolego.canta.generated.resources.loading_badges
@@ -103,6 +104,17 @@ fun AppList(
                 platform = platform,
                 handler = handler,
                 onDismiss = { showAppDialog = null },
+            )
+        }
+
+        // Said before the list, not after a search that finds nothing: a list that is missing two
+        // thirds of the phone has to explain itself, or the empty tabs look like a broken app.
+        if (appListModel.listIncomplete) {
+            Text(
+                text = stringResource(Res.string.app_list_incomplete),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             )
         }
 
