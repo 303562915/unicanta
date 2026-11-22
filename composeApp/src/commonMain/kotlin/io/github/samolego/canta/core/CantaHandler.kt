@@ -31,6 +31,16 @@ enum class PrivilegeKind {
 
     /** A rooted phone: no runtime app at all, only the root manager's own prompt. */
     ROOT,
+    ;
+
+    /**
+     * How this route is spelled in reports to the backend (`root`, `shizuku`, `dhizuku`, `none`).
+     *
+     * Sent with the install's identity and with every refused operation, so "how many people run
+     * this on Dhizuku, and what does that route refuse" is a query rather than a guess. Lowercase
+     * and stable: the database stores these strings as they are.
+     */
+    val wire: String get() = name.lowercase()
 }
 
 /**

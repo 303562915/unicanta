@@ -179,6 +179,9 @@ class PackageTelemetry(
             val report = FailureReport(
                 v = 1,
                 platform = telemetry.platformName,
+                // Which route refused: root, Stellar/Shizuku or Dhizuku behave differently, and the
+                // Dhizuku one is the newest, so its refusals are the ones worth reading first.
+                privilege = handler.privilegeKind.wire,
                 kind = detail.kind.name.lowercase(),
                 pkg = detail.packageName,
                 status = detail.status,

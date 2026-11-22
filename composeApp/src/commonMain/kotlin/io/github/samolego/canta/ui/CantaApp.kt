@@ -211,6 +211,7 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
             communityRepository,
             deps.platform.deviceKey(),
             { deps.handler.deviceProfile() },
+            { deps.handler.privilegeKind.wire },
         )
     }
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()

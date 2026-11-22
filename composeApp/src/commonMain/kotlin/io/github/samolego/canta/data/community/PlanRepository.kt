@@ -613,7 +613,12 @@ class PlanRepository(
      *
      * Null when the backend cannot be reached; the caller then keeps its local token.
      */
-    suspend fun identify(token: String, deviceKey: String = "", profile: DeviceProfile? = null): UserProfile? {
+    suspend fun identify(
+        token: String,
+        deviceKey: String = "",
+        profile: DeviceProfile? = null,
+        privilege: String = "",
+    ): UserProfile? {
         if (token.isEmpty()) return null
         val body = buildJsonObject {
             put("p_token", token)
@@ -623,6 +628,9 @@ class PlanRepository(
             // catalog's people counts are built from.
             put("p_model", profile?.model.orEmpty())
             put("p_codename", profile?.device.orEmpty())
+            // Which route is granting the privilege right now, so "how many people run on Dhizuku"
+            // is a query on `canta_users` instead of a guess. Older backends ignore the argument.
+            put("p_privilege", privilege)
         }.toString()
         val text = rpc("identity_bind", body) ?: return null
         return parseProfile(text)

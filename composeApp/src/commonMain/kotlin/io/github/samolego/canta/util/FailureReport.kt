@@ -46,6 +46,9 @@ data class FailureReportDevice(
  * What is posted to the backend's `operation_failure` RPC, one row per refused package.
  *
  * @param platform the client's own label: "android", "desktop" or "web".
+ * @param privilege which route the attempt went through (`root`, `shizuku`, `dhizuku`, `none`):
+ *   the same refusal means different things per route, and a route that only exists on some phones
+ *   would otherwise be invisible in the data.
  * @param kind `uninstall`, `reinstall`, `disable` or `enable` (lowercase [OperationKind] names).
  */
 @Serializable
@@ -53,6 +56,8 @@ data class FailureReport(
     /** Payload version; no default, so it is always on the wire even with defaults omitted. */
     val v: Int,
     val platform: String,
+    /** The privilege route this attempt ran on; empty on clients that predate the field. */
+    val privilege: String = "",
     val kind: String,
     val pkg: String,
     val status: Int,

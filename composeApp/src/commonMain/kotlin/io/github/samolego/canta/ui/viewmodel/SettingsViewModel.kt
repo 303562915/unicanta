@@ -37,6 +37,12 @@ class SettingsViewModel(
      * people per model, and an identity with no model is a person nobody can count.
      */
     private val deviceProfile: suspend () -> DeviceProfile? = { null },
+    /**
+     * Which privilege route is in force right now, read at the moment the identity is claimed
+     * (`root`, `shizuku`, `dhizuku`, `none`). Reported with the bind so the backend can say how
+     * many installs run on each route — the Dhizuku one is new and would otherwise be invisible.
+     */
+    private val privilege: () -> String = { "" },
 ) : ViewModel() {
 
     private fun <T> Flow<T>.state(initial: T): StateFlow<T> =
@@ -115,7 +121,7 @@ class SettingsViewModel(
         // Best effort: a read that fails (no helper, no root) leaves the model empty here and the
         // backend keeps whatever an earlier call knew.
         val phone = runCatching { deviceProfile() }.getOrNull()
-        val remote = repo.identify(localToken, deviceKey, phone) ?: return
+        val remote = repo.identify(localToken, deviceKey, phone, privilege()) ?: return
         // Adopt the token the phone already owned, if this is a reinstall.
         val token = remote.token.ifEmpty { localToken }
         if (token != localToken) settingsStore.setIdentityToken(token)
