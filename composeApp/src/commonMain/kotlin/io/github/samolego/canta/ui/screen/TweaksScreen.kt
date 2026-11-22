@@ -83,6 +83,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.RomTweak
+import io.github.samolego.canta.util.RomTweaks
 import io.github.samolego.canta.util.commandFor
 import io.github.samolego.canta.util.familyKeyOf
 import io.github.samolego.canta.util.familyLabel
