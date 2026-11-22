@@ -82,6 +82,11 @@ data class BottomBarItem(
     val selected: Boolean,
     /** Something new is waiting behind this destination: drawn as the red dot over the glyph. */
     val dot: Boolean = false,
+    /**
+     * How many of them are new, when that count is known: the dot becomes a red pill with the
+     * number in it, the marker a chat app puts on a tab. 0 keeps the plain [dot].
+     */
+    val badge: Int = 0,
 )
 
 // Geometry of the dock FlClash draws on every mobile view (prism_ui's
@@ -476,7 +481,16 @@ private fun BarEntry(
             )
             // The dot sits on the glyph's top corner rather than beside the label: the label is
             // already tight in a five-slot bar, and the corner is where every chat app puts it.
-            if (item.dot) {
+            // A count, when the page knows one, takes the dot's place — a number says "three new
+            // votes" where a dot only says "something".
+            if (item.badge > 0) {
+                UnreadBadge(
+                    count = item.badge,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = 1.dp),
+                )
+            } else if (item.dot) {
                 UnreadDot(
                     modifier = Modifier
                         .align(Alignment.TopEnd)

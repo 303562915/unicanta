@@ -1,6 +1,7 @@
 package io.github.samolego.canta.data.recommend
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -52,5 +53,30 @@ class VoteQueueFingerprintTest {
         val seen = voteQueueFingerprint(emptyList())
         assertFalse(hasNewVotes(seen, emptyList()))
         assertTrue(hasNewVotes(seen, listOf(app(1, 1, 0))))
+    }
+
+    @Test
+    fun theCountIsHowManyVotesArrived() {
+        val seen = voteQueueFingerprint(listOf(app(1, 2, 1), app(2, 3, 0)))
+        assertEquals(0, newVotesSince(seen, listOf(app(1, 2, 1), app(2, 3, 0))), "a queue that has not moved")
+        assertEquals(1, newVotesSince(seen, listOf(app(1, 3, 1), app(2, 3, 0))), "one agreeing vote")
+        assertEquals(2, newVotesSince(seen, listOf(app(1, 2, 3), app(2, 3, 0))), "two disagreeing votes")
+        assertEquals(3, newVotesSince(seen, listOf(app(1, 5, 1), app(2, 3, 0))), "three votes on one entry")
+    }
+
+    @Test
+    fun aBrandNewEntryBringsItsVotesWithIt() {
+        val seen = voteQueueFingerprint(listOf(app(1, 2, 1)))
+        assertEquals(4, newVotesSince(seen, listOf(app(1, 2, 1), app(2, 3, 1))))
+    }
+
+    @Test
+    fun newsThatIsNotANewVoteCountsZero() {
+        // A withdrawal, or a flip that keeps the total: the dot still lights up, but the marker
+        // has no number to put there, so the caller keeps the plain dot.
+        val seen = voteQueueFingerprint(listOf(app(1, 2, 1)))
+        assertEquals(0, newVotesSince(seen, listOf(app(1, 1, 1))))
+        assertEquals(0, newVotesSince(seen, listOf(app(1, 3, 0))))
+        assertEquals(0, newVotesSince("", listOf(app(1, 45, 1))), "never having looked is not news")
     }
 }

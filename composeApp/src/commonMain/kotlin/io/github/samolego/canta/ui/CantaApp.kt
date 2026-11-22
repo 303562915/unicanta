@@ -54,6 +54,7 @@ import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.recommend.hasNewVotes
+import io.github.samolego.canta.data.recommend.newVotesSince
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.privilege_root_refused
 import io.github.samolego.canta.generated.resources.privilege_root_opened
@@ -498,12 +499,19 @@ private fun CantaNavigation(
     // The queue is fetched here rather than only inside the page because the dot has to be there
     // before the page is: an entry that waits to be visited before it says there is something to
     // visit is not a notification. One call per resume, and failures leave the dot as it was.
+    //
+    // Two readings of the same comparison: [newVotes] is "the queue moved", which is all a
+    // withdrawal can say, and [newVoteCount] is how many votes arrived, which the marker shows as
+    // a number the way an app's messages entry shows how many messages there are.
     var newVotes by remember { mutableStateOf(false) }
+    var newVoteCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(countTick) {
         val identity = DeviceIdentity.current(deps.settings)
         val voter = identity.owner.ifEmpty { identity.token }
         val queue = communityRepository.suggestedApps(voter) ?: return@LaunchedEffect
-        newVotes = hasNewVotes(deps.settings.votesSeenFlow.first(), queue)
+        val seen = deps.settings.votesSeenFlow.first()
+        newVotes = hasNewVotes(seen, queue)
+        newVoteCount = newVotesSince(seen, queue)
     }
 
     // A share code pasted into the clipboard before the app was opened: read it once, then open
@@ -649,6 +657,7 @@ private fun CantaNavigation(
                         coroutineScope.launch {
                             deps.settings.setVotesSeen(fingerprint)
                             newVotes = false
+                            newVoteCount = 0
                         }
                     },
                 )
@@ -1036,6 +1045,7 @@ private fun CantaNavigation(
                         showRecommend = showRecommendTab,
                         // Nothing to point at while the queue itself is open: that page is the dot.
                         showVoteDot = newVotes && currentRoute != Screen.Recommendations.route,
+                        showVoteCount = newVoteCount,
                     ),
                     onSelect = { key -> onBottomBarSelect(key, navController) },
                 )
@@ -1155,6 +1165,8 @@ private fun bottomBarItems(
     showTweaks: Boolean,
     showRecommend: Boolean,
     showVoteDot: Boolean = false,
+    /** How many votes are new: shown as the number in the marker, when there is one to show. */
+    showVoteCount: Int = 0,
 ): List<BottomBarItem> = buildList {
     // The same glyphs FlClash's own bar leads with — the grid of apps, the rules list,
     // the toolbox, the gear — plus one for the recommendations page.
@@ -1164,15 +1176,19 @@ private fun bottomBarItems(
         add(BottomBarItem(BarKey.TWEAKS, FlGlyphs.tools, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route))
     }
     if (showRecommend) {
-        // The dot is the vote queue's news, the way the one in Settings is the inbox's: it goes
-        // out when the queue has been looked at, not when the page has been left.
+        // The marker is the vote queue's news, the way the one in the top bar is the inbox's: it
+        // goes out when the queue has been looked at, not when the page has been left. The count
+        // is only drawn off the page it points at — on the page itself every vote has been read
+        // by the time the screen is up.
+        val votesOpen = route == Screen.Recommendations.route
         add(
             BottomBarItem(
                 BarKey.RECOMMEND,
                 FlGlyphs.appsList,
                 stringResource(Res.string.tab_recommend),
-                route == Screen.Recommendations.route,
+                votesOpen,
                 dot = showVoteDot,
+                badge = if (votesOpen) 0 else showVoteCount,
             ),
         )
     }

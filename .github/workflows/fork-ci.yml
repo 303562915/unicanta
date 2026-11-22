@@ -48,7 +48,9 @@ jobs:
             --stacktrace --no-daemon
 
       - name: 🧪 Full desktop test suite
-        run: ./gradlew :composeApp:desktopTest --stacktrace --no-daemon
+        # Both test modules: master runs them together in build.yml, and a branch that
+        # only ran one of them could go green with :packages broken.
+        run: ./gradlew :composeApp:desktopTest :packages:desktopTest --stacktrace --no-daemon
 
       - name: 📤 Upload test reports
         if: always()

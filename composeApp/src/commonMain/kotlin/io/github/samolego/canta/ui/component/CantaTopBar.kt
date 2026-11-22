@@ -15,13 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -150,10 +149,12 @@ fun CantaTopBar(
 }
 
 /**
- * The bar's entry to the inbox, with a red dot while somebody waits for an answer.
+ * The bar's entry to the inbox, wearing the count of what is waiting in it.
  *
  * It is drawn like the other bar buttons, but with a Material glyph instead of one of the FlClash
- * set: the set has no message icon, and a chat bubble is what people read as "replies".
+ * set: the set has no message icon. The bell is the shape every phone owner already reads as "news
+ * arrived", and it is the one that carries a number well — a speech bubble with a "12" on its
+ * corner is a chat, a bell with a "12" is the notification list this button actually opens.
  */
 @Composable
 private fun InboxBarButton(unread: Int, onClick: () -> Unit) {
@@ -170,7 +171,6 @@ private fun InboxBarButton(unread: Int, onClick: () -> Unit) {
             .minimumInteractiveComponentSize()
             .size(44.dp)
             .scale(pressScale)
-            .clip(CircleShape)
             .drawBehind { drawCircle(FlSurfaceLevel.Page.raised.colorOf(scheme)) }
             .clickable(
                 interactionSource = interaction,
@@ -182,19 +182,19 @@ private fun InboxBarButton(unread: Int, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.Message,
+            imageVector = Icons.Outlined.Notifications,
             contentDescription = if (unread > 0) "消息，$unread 条没看" else "消息",
             modifier = Modifier.size(20.dp),
             tint = scheme.onSurface,
         )
-        if (unread > 0) {
-            UnreadDot(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 9.dp, end = 9.dp),
-                size = 9.dp,
-            )
-        }
+        // The count sits on the icon's top corner, leaning a little past it the way a chat app's
+        // badge overlaps the button it belongs to; the bar's 8 dp gap has room for the overhang.
+        UnreadBadge(
+            count = unread,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 6.dp, end = 3.dp),
+        )
     }
 }
 

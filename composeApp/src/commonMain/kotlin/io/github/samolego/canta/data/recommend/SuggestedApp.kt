@@ -98,6 +98,46 @@ fun hasNewVotes(seen: String, apps: List<SuggestedApp>): Boolean =
     seen.isNotEmpty() && seen != voteQueueFingerprint(apps)
 
 /**
+ * How many votes arrived since [seen] — the number the red marker on the recommendations entry
+ * carries, where [hasNewVotes] only says "something".
+ *
+ * Only growth is counted: a vote cast moves the count up by one and the marker says "1"; a vote
+ * withdrawn, or a flipped vote that keeps the total, is news but is not a *new vote*, so it
+ * answers 0 and the caller falls back to the plain dot. A brand new entry brings its whole count
+ * with it, which is the honest reading of "votes this install has not seen".
+ *
+ * [seen] being empty means the queue was never opened: nothing is new, exactly as in
+ * [hasNewVotes].
+ */
+fun newVotesSince(seen: String, apps: List<SuggestedApp>): Int {
+    if (seen.isEmpty()) {
+        return 0
+    }
+    val before = votesByEntry(seen)
+    return apps.sumOf { app ->
+        val now = app.agrees + app.disagrees
+        (now - (before[app.id] ?: 0)).coerceAtLeast(0)
+    }
+}
+
+/** The per-entry vote totals inside a [voteQueueFingerprint], keyed by entry id. */
+private fun votesByEntry(fingerprint: String): Map<Long, Int> {
+    if (fingerprint == "empty") {
+        return emptyMap()
+    }
+    return fingerprint.splitToSequence(';').mapNotNull { triple ->
+        val parts = triple.split(':')
+        if (parts.size != 3) {
+            return@mapNotNull null
+        }
+        val id = parts[0].toLongOrNull() ?: return@mapNotNull null
+        val agrees = parts[1].toIntOrNull() ?: return@mapNotNull null
+        val disagrees = parts[2].toIntOrNull() ?: return@mapNotNull null
+        id to (agrees + disagrees)
+    }.toMap()
+}
+
+/**
  * `owner/repo` of a GitHub project page, or null when [text] is not one.
  *
  * The recommendation list promises exactly one thing — open source, on GitHub — so the submission

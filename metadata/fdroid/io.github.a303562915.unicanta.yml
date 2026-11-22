@@ -22,9 +22,9 @@ RepoType: git
 Repo: https://github.com/303562915/unicanta.git
 
 Builds:
-  - versionName: 4.2.6
-    versionCode: 235
-    commit: v4.2.6
+  - versionName: 4.3.0
+    versionCode: 239
+    commit: v4.3.0
     gradle:
       - ':androidApp:assembleRelease'
     prebuild:
@@ -36,5 +36,5 @@ Builds:
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 4.2.6
-CurrentVersionCode: 235
+CurrentVersion: 4.3.0
+CurrentVersionCode: 239
