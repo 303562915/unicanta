@@ -158,6 +158,12 @@ fun SettingsScreen(
     onOpenMyComments: () -> Unit = {},
     /** Replies this install has not opened yet; the row shows a dot instead of quiet text. */
     unreadReplies: Int = 0,
+    /**
+     * A newer build than this one is published. The about row wears the same red dot as the entry
+     * in the bar: the page behind it is where the update is checked and installed, so the dot is
+     * the way there rather than news to dismiss.
+     */
+    updateAvailable: Boolean = false,
     deviceUsers: List<DeviceUser> = emptyList(),
     selectedUserId: Int? = null,
     onUserSelected: (Int) -> Unit = {},
@@ -417,7 +423,12 @@ fun SettingsScreen(
                     icon = Icons.Default.Info,
                     divider = false,
                     onClick = onOpenAbout,
-                    trailing = { SettingsChevron() },
+                    trailing = {
+                        if (updateAvailable) {
+                            UnreadDot(modifier = Modifier.padding(end = 6.dp))
+                        }
+                        SettingsChevron()
+                    },
                 )
             }
         }

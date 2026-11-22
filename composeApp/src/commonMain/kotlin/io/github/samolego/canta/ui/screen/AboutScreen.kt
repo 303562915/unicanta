@@ -104,6 +104,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.SettingsSwitch
 import io.github.samolego.canta.ui.component.ThemeToastHost
+import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -163,6 +164,12 @@ fun AboutScreen(
     platform: CantaPlatform,
     settingsViewModel: SettingsViewModel,
     onNavigateBack: () -> Unit,
+    /**
+     * A newer build than this one is published, as the start-up read found it. The page does not
+     * check on its own — the row is the check — so this is what puts the red dot on that row
+     * before the tap. Once the tap answers, the row says the version itself and the dot is gone.
+     */
+    updateAvailable: Boolean = false,
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -319,6 +326,9 @@ fun AboutScreen(
 
             UpdateCard(
                 state = updateState,
+                // Only while the row has nothing of its own to say: a found release, a download or
+                // an install all speak for themselves, and a dot over them would be a second voice.
+                fresh = updateAvailable && updateState == UpdateState.Idle,
                 onCheck = checkUpdate,
                 onOpenRelease = {
                     (updateState as? UpdateState.Available)?.let { download(it.release) }
@@ -530,6 +540,8 @@ private fun UpdateCard(
     state: UpdateState,
     onCheck: () -> Unit,
     onOpenRelease: () -> Unit,
+    /** A newer build is known to exist: the row wears the red dot until it says so itself. */
+    fresh: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val failed = state is UpdateState.Failed || state is UpdateState.FailedWith
@@ -573,11 +585,19 @@ private fun UpdateCard(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(Res.string.about_check_update),
-                style = FlText.subheadline.copy(fontWeight = FontWeight.Medium),
-                color = scheme.onSurface,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(Res.string.about_check_update),
+                    style = FlText.subheadline.copy(fontWeight = FontWeight.Medium),
+                    color = scheme.onSurface,
+                )
+                // The guide, not the news: it says "there is one, tap here", and the line under it
+                // is what names the version once the tap has asked.
+                if (fresh) {
+                    Spacer(Modifier.width(6.dp))
+                    UnreadDot()
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (busy) {
                     CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp)

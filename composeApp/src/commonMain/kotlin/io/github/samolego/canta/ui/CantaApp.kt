@@ -514,6 +514,33 @@ private fun CantaNavigation(
         newVoteCount = newVotesSince(seen, queue)
     }
 
+    // A newer build than the one installed, for the marker that leads the way to it: the Settings
+    // entry in the bar, the 关于 row on that page, and the check card inside it. Same release page
+    // as the poll above (no API quota), read once per resume, and only while the automatic path is
+    // off — with it on, the APK is fetched and installed without anyone having to be led anywhere.
+    //
+    // This one says "a newer build is published", not "something happened": it is a fact about the
+    // installed APK, so it goes out when the app is actually replaced — not when a page is looked
+    // at — and a read that failed leaves it exactly as it was instead of switching the guide off.
+    // A build that came from F-Droid is left alone too: its signature is the store's, so this
+    // repo's APK could not replace it and the marker would only point at a dead end.
+    var updateAvailable by remember { mutableStateOf(false) }
+    LaunchedEffect(updateChannel, autoInstallUpdates, countTick) {
+        if (updateChannel == null || autoInstallUpdates) return@LaunchedEffect
+        if (platform.isInstalledFromFdroid()) return@LaunchedEffect
+        val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
+        val release = try {
+            latestReleaseFromPage(updateClient, channel)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Nothing to report: the about page is where a failed check is named, and the next
+            // resume is the retry.
+            null
+        }
+        if (release != null) updateAvailable = release.isNewerThanInstalled()
+    }
+
     // A share code pasted into the clipboard before the app was opened: read it once, then open
     // that plan as soon as the app itself is on screen (not over onboarding).
     //
@@ -673,6 +700,9 @@ private fun CantaNavigation(
                     platform = platform,
                     settingsViewModel = settingsViewModel,
                     onNavigateBack = { navController.navigateUp() },
+                    // What the start-up read already knows, so the row can say "there is one" before
+                    // the tap that checks: the dot is the guide, the check is what confirms it.
+                    updateAvailable = updateAvailable,
                 )
             }
             composable(route = Screen.Theme.route) {
@@ -812,6 +842,8 @@ private fun CantaNavigation(
                     onOpenTheme = { navController.navigate(Screen.Theme.route) },
                     onOpenMyComments = { navController.navigate(Screen.MyComments.route) },
                     unreadReplies = unreadReplies,
+                    // Same dot as the bar's: the page it leads to is the one below this row.
+                    updateAvailable = updateAvailable,
                 )
             }
             composable(route = Screen.Presets.route) {
@@ -1046,6 +1078,8 @@ private fun CantaNavigation(
                         // Nothing to point at while the queue itself is open: that page is the dot.
                         showVoteDot = newVotes && currentRoute != Screen.Recommendations.route,
                         showVoteCount = newVoteCount,
+                        // The way to a newer build: 设置 → 关于 → 检查更新, marked at its first step.
+                        showUpdateDot = updateAvailable,
                     ),
                     onSelect = { key -> onBottomBarSelect(key, navController) },
                 )
@@ -1167,6 +1201,8 @@ private fun bottomBarItems(
     showVoteDot: Boolean = false,
     /** How many votes are new: shown as the number in the marker, when there is one to show. */
     showVoteCount: Int = 0,
+    /** A newer build than this one is published: the Settings entry carries the dot to it. */
+    showUpdateDot: Boolean = false,
 ): List<BottomBarItem> = buildList {
     // The same glyphs FlClash's own bar leads with — the grid of apps, the rules list,
     // the toolbox, the gear — plus one for the recommendations page.
@@ -1192,7 +1228,15 @@ private fun bottomBarItems(
             ),
         )
     }
-    add(BottomBarItem(BarKey.SETTINGS, FlGlyphs.settings, stringResource(Res.string.settings), route == Screen.Settings.route))
+    add(
+        BottomBarItem(
+            BarKey.SETTINGS,
+            FlGlyphs.settings,
+            stringResource(Res.string.settings),
+            route == Screen.Settings.route,
+            dot = showUpdateDot,
+        ),
+    )
 }
 
 private fun onBottomBarSelect(
