@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/protocol.test.mjs"
+    "test": "node node/test/e2e.test.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.0"

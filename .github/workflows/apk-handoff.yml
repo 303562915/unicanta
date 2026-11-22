@@ -29,6 +29,7 @@ permissions:
 jobs:
   handoff:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Download the artifact from that run
         env:
@@ -42,6 +43,12 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+          # This workflow only publishes CI debug builds. Without the guard, a mistyped tag plus
+          # the --clobber below would overwrite a stable release's assets.
+          case "$TAG" in
+            ci-*) ;;
+            *) echo "::error::tag must start with 'ci-' (got '$TAG')"; exit 1 ;;
+          esac
           apk=$(find handoff -name '*.apk' | head -1)
           test -n "$apk"
           sha256sum "$apk" > handoff/SHA256SUMS.txt

@@ -16,6 +16,7 @@ jobs:
   publish:
     name: Build and publish signed development APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,9 +107,12 @@ jobs:
               --notes "Preparing the first development build." \
               --prerelease
           fi
+          # --clobber: re-running this workflow for the same run number produces the same
+          # asset names, and without it the upload fails instead of replacing them.
           gh release upload dev \
             "dist/androidApp-release-${RUN_NUMBER}.apk" \
-            "dist/SHA256SUMS-${RUN_NUMBER}.txt"
+            "dist/SHA256SUMS-${RUN_NUMBER}.txt" \
+            --clobber
           gh release edit dev \
             --title "Canta development build $RUN_NUMBER" \
             --notes-file RELEASE_NOTES.md \

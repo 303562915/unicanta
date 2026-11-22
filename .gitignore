@@ -30,6 +30,11 @@ server/node/telemetry.db-journal
 # Local-only Supabase credentials / endpoints (never commit)
 SUPABASE.local.md
 
+# npm deps for the standalone node backend. `server/node/` only ships its test and source;
+# `server/node_modules/` was tracked by mistake because server/.gitignore anchored the path
+# as `server/node_modules/` (which resolves to server/server/node_modules/).
+node_modules/
+
 # Database project stays local: schema, migrations, fixtures and the deployment notes for it.
 # The published repository ships the client and the standalone node backend only.
 /server/supabase/

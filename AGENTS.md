@@ -26,7 +26,8 @@
 - `gh` 查 run、看日志、下 artifact（见第 4、5 节）。
 - 如果需要理解某个编译错误，读云端日志，而不是重建本地环境。
 
-> 环境事实：本机 `/sdcard` 是 FUSE 挂载，`gradlew` 无可执行位，且 `ANDROID_HOME` 为空、没有 Android SDK。这是**设计状态**，不是待修的 bug。别去"修复"它。
+> 环境事实：`gradlew` 无可执行位，且 `ANDROID_HOME` 为空、没有 Android SDK。这是**设计状态**，不是待修的 bug。别去"修复"它。
+> 早前笔记里的 `/sdcard/...` 是那台**安卓设备**上的路径（FUSE 挂载）；当前检出在 Windows 上，路径见第 1 节。
 
 ---
 
@@ -40,7 +41,7 @@
 | 构建身份 | `gh` 已登录 `303562915`（scopes: repo, workflow, read:org, gist） |
 
 Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopApp`、`:webApp`（wasmJs）、`:packages`、`:helper`、`:hiddenApiStubs`。
-版本号在 `gradle.properties`：`version_code=229` / `version_name=4.2.0`。
+版本号在 `gradle.properties`（当前 `version_code=239` / `version_name=4.3.0`）；发版前以文件为准，别抄这里的数字。
 
 ### Supabase 本地入口
 
@@ -55,11 +56,14 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | 文件 | 触发 | 干什么 | 产物 artifact |
 |---|---|---|---|
 | `development-release.yml` 🧪 Development APK | `push` 到 `master` | 构建签名 APK 并发布滚动开发版 | GitHub prerelease `dev` |
-| `build.yml` 🏗️ Push Build | `push`（任意分支）、`workflow_dispatch` | 测试 → debug APK → release APK（有签名 secret 才做） | `test-reports`、`app-debug`、`app-release` |
-| `fork-ci.yml` 🔧 Fork CI | `push`（任意分支）、`workflow_dispatch` | 先跑 `composeApp/util` 测试，再全量 desktopTest，然后 debug + minified release | `test-reports`、`app-debug`、`app-release` |
+| `build.yml` 🏗️ Push Build | `push`（任意分支）、`workflow_dispatch` | 测试 → debug APK → release APK（有签名 secret 才做；**master 上跳过**，签名 APK 由 dev release 出，避免同一份编译两次） | `test-reports`、`app-debug`（master 上无 `app-release`） |
+| `fork-ci.yml` 🔧 Fork CI | `push`（**非 master** 分支）、`workflow_dispatch` | 先跑 `composeApp/util` 测试，再全量 desktopTest，然后 debug + minified release | `test-reports`、`app-debug`、`app-release` |
 | `pull_request_build.yml` 🔍 PR Check | `pull_request` → `master`（opened / synchronize / reopened） | `:packages:desktopTest` + `:composeApp:desktopTest`，再 assembleDebug、desktopJar、wasm 分发 | `app-debug` |
-| `release.yml` 📦🚀 | 仅 `workflow_dispatch` | 签名 release APK → 校验和 → attestation → 建 **draft** GitHub release | 上传到 release（`v$version_name`） |
-| `docs.yml` | `push` 到 `master` 且改 `docs/**`、`release: published`、`workflow_dispatch` | 用最新 `v*` tag 的源码编 WASM，合并 docs 后发 GitHub Pages | `github-pages` |
+| `release.yml` 📦🚀 | `push: tags: v*`、`workflow_dispatch` | 签名 release APK → 校验和 → attestation → 建 GitHub release（tag push 直接发布；dispatch 传 `keep_draft=true` 才是 draft） | 上传到 release（tag 用推上来的 `v*` tag 名，dispatch 时才用 `v$version_name`） |
+| `docs.yml` | `push` 到 `master` 且改 `docs/**`、`release: published`、`workflow_dispatch` | 用最新 `v*` tag 的源码编 WASM，**只验证文档站能构建**（不部署，Pages 归 `pages.yml`） | `docs-site` |
+| `pages.yml` 🌐 Deploy download page | `push` 改 `site/**` 或本文件、`release: published`、`workflow_run`（🧪 Development APK 成功）、`workflow_dispatch` | 把 `site/` + `latest.json` + `development.json` 推到 `gh-pages` 分支 | GitHub Pages：<https://303562915.github.io/unicanta/> |
+| `apk-handoff.yml` 📤 APK Handoff | 仅 `workflow_dispatch`（`run_id`，`tag` 必须以 `ci-` 开头） | 把某个 run 的 `app-debug` 复制成预发布资产，不构建任何东西 | release 资产 |
+| `daily-device-report.yml` 📊 Daily device report | 定时 + `workflow_dispatch` | 钉钉日报（读 `canta_users`；识别率口径见第 9 节） | — |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |
 
 > 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`、`supabase_migrations.yml`）
@@ -76,7 +80,7 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 ## 3. 标准工作流：改完就推，推送后直接结束
 
 ```bash
-cd /sdcard/Aaaa/unicanta/Canta
+cd /g/trae/respositories/unicanta   # 当前检出（Windows 上就是仓库根，别照抄旧笔记的 /sdcard 路径）
 
 git status --short                 # 先确认改了什么
 git add -A
@@ -101,10 +105,10 @@ git push origin master             # 不要 --force，不要推空提交试探
 gh run list --limit 10
 gh run watch <run-id> --exit-status          # 阻塞到结束，失败返回非零
 gh run view <run-id> --log-failed            # 只看失败的步骤日志
-gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
+gh run download <run-id> -n app-debug -D artifacts
 ```
 
-- 下载后看 `/sdcard/Aaaa/unicanta/artifacts/app-debug/SHA256SUMS.txt` 与 `*.apk`。
+- 下载后看 `artifacts/app-debug/SHA256SUMS.txt` 与 `*.apk`。
 - 需要发版：`gh workflow run release.yml`，它会建 **draft** release，人工去网页确认后再 publish。
 - 需要只跑构建不跑其它：`gh workflow run build.yml`（`workflow_dispatch` 手动触发）。
 
@@ -131,7 +135,7 @@ gh run download <run-id> -n app-debug -D /sdcard/Aaaa/unicanta/artifacts
    **`daily-device-report.yml`（每日钉钉日报）不在此列，它留在仓库里正常跑。**
 4. **action 版本（已统一）**：所有 workflow 都是 `actions/checkout@v4` + `actions/setup-java@v4` + `distribution: temurin`。
 5. **`::set-output`（已移除）**：仓库里已无该写法，`VERSION_NAME` 走 `$GITHUB_ENV`。
-6. **本地不可构建是刻意的**：`gradlew` 无执行位、无 SDK、`/sdcard` 挂载限制。别提交"修 gradlew 权限""加 local.properties"这类补丁。
+6. **本地不可构建是刻意的**：没有 SDK、没有 `ANDROID_HOME`、`gradlew` 无执行位。别提交"修 gradlew 权限""加 local.properties""装 SDK"这类补丁。（旧笔记里的 `/sdcard` 挂载限制是**安卓设备**上的事，与当前 Windows 检出无关。）
 7. `gradle.properties` 开了 `org.gradle.configuration-cache=true`，新增 Gradle 任务/插件若读取环境变量，需要在任务上声明输入，否则云端会因缓存命中而行为异常。
 
 ---

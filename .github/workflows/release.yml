@@ -24,6 +24,7 @@ jobs:
     permissions: write-all
     name: 🤖📦🚀 Build & prepare Android release
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: ⬇️ Checkout repository
@@ -64,7 +65,14 @@ jobs:
         run: |
           version=$(grep "^version_name=" gradle.properties | cut -d'=' -f2)
           echo "VERSION_NAME=$version" >> $GITHUB_ENV
-          echo "tag=v$version" >> $GITHUB_OUTPUT
+          # A tag push names the release: gradle.properties may already be on the next version by
+          # the time the tag is pushed, and publishing v4.3.1 from a v4.3.0 tag would be wrong.
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$version"
+          fi
+          echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: 📝 Write release notes
         env:

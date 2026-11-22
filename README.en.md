@@ -195,9 +195,12 @@ only; they are not part of this repository.
 | `docs/` | VitePress documentation site |
 | `packages/` | platform helper packages |
 
-## Known TODOs
+## Distribution
 
-- this fork has no release signing or distribution; CI only produces debug APKs.
+- `release.yml` publishes signed APKs: push a `v*` tag (or dispatch it with `keep_draft=true`
+  to get a draft first). Checksums and a build provenance attestation ship with the assets.
+- `development-release.yml` publishes a signed rolling build to the `dev` pre-release on every
+  push to `master`; `pages.yml` then refreshes <https://303562915.github.io/unicanta/>.
 
 ## Credits
 

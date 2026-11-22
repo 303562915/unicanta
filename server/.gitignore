@@ -1,4 +1,4 @@
 specs.md
 
-# server test deps
-server/node_modules/
+# server test deps (this file sits in server/, so the old `server/node_modules/` never matched)
+node_modules/

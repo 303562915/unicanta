@@ -135,7 +135,8 @@ survived >= 50% 且上面 <= 2%                -> SAFE
 与上游一致：需要 Shizuku（Android 16 建议用 [fork 版](https://github.com/thedjchi/Shizuku)）。
 
 1. 安装并激活 [Shizuku](https://shizuku.rikka.app/guide/setup/)；
-2. 安装本仓库构建出的 APK（本 fork 未发布到任何商店，需自行构建，见下）；
+2. 安装本仓库构建出的 APK —— 直接去 [下载页](https://303562915.github.io/unicanta/) 或
+   [Releases](https://github.com/303562915/unicanta/releases) 取签名包，不需要自己编；
 3. 选择应用 → 点垃圾桶。
 
 > [!Warning]
@@ -153,10 +154,12 @@ survived >= 50% 且上面 <= 2%                -> SAFE
 2. **Debug APK**：`:androidApp:assembleDebug`，产物与 SHA-256 上传为 artifact；
 3. **Release APK**：`:androidApp:assembleRelease`（R8 压缩），仅当仓库配置了签名密钥
    `CANTA_KEYSTORE_BASE64`（另需 `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`）时执行，
-   未配置则该任务自动跳过，测试与 Debug APK 照常产出。
+   未配置则该任务自动跳过，测试与 Debug APK 照常产出。**master 推送时这个 job 不跑**：
+   同一次 push 里 `development-release.yml` 已经产出签名 APK，再编一遍只是白烧 runner；
+   手动 `workflow_dispatch` 时仍然会跑。
 
-遥测端点等构建参数同样在 Actions 里通过 `-Pcanta.telemetry.*` 传入，本地不需要准备
-JDK 或 Gradle 缓存。
+要临时指向别的遥测后端，用 `fork-ci.yml` 的 `telemetry_base_url` / `telemetry_api_key`
+两个 dispatch 输入（`build.yml` 没有这组输入）。本地不需要准备 JDK 或 Gradle 缓存。
 
 ## 本地回归
 
