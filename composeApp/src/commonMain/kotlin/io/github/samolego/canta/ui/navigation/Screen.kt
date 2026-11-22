@@ -20,6 +20,32 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Recommendations : Screen("recommend")
 
     /**
+     * The messages page: what other people did around this install, the chats it is in, and the
+     * way into both.
+     *
+     * It is a bar page of its own rather than a tab of [MyComments]: news about other people is
+     * something a reader checks while doing nothing else, and it was buried behind the page about
+     * this install's own writing.
+     */
+    data object Messages : Screen("messages")
+
+    /**
+     * The four kinds of news in full: replies, comments under my plans, hearts, and endorsements,
+     * with the list of who started following this install beside them.
+     */
+    data object Interactions : Screen("interactions")
+
+    /**
+     * One conversation — a direct message or a group — in full.
+     *
+     * The id is a path argument, so [routeFor] is the only place that builds the URL.
+     */
+    data object Chat : Screen("chat/{conversationId}") {
+        /** Concrete route for conversation [id]; pairs with the `conversationId` argument. */
+        fun routeFor(id: Long) = "chat/$id"
+    }
+
+    /**
      * How the app looks: the accent picked from the twelve, and which dark mode to draw it in.
      *
      * A page of its own rather than a card in the settings, the way the reference app does it:

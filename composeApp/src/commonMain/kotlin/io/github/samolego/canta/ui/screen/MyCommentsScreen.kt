@@ -122,7 +122,7 @@ fun MyCommentsScreen(
 ) {
     val scope = rememberCoroutineScope()
     // 0 = what I wrote, 1 = the inbox, 2 = the plans I uploaded.
-    var tab by remember { mutableIntStateOf(if (startOnInbox) 1 else 0) }
+    var tab by remember { mutableIntStateOf(0) }
     var mine by remember { mutableStateOf<Page<MyComment>>(Page.EMPTY) }
     var inbox by remember { mutableStateOf<Page<InboxItem>>(Page.EMPTY) }
     // How far each source of the inbox has been read. The feed takes [perSource] rows *per source*
@@ -157,8 +157,8 @@ fun MyCommentsScreen(
         loadError = null
         inboxOffset = 0
         val firstMine = repository.myCommentsPage(owner, token, offset = 0)
-        val firstInbox = repository.inboxPage(owner, token, offset = 0, perSource = perSource)
-        summary = repository.inboxSummary(owner, token, seenAt) ?: InboxSummary.EMPTY
+        // The news is not read here any more: the messages page owns it, and asking for it twice
+        // per visit would be two requests for something this page no longer draws.
         // Management asks for the owner's plans by identity, not by device: an OS update must not
         // hide the plan someone came here to delete. An older deployment falls back to the list of
         // this phone.
@@ -166,8 +166,6 @@ fun MyCommentsScreen(
             repository.plansFor(profile).filter { it.owner == owner }
         }
         mine = firstMine
-        inbox = firstInbox
-        inboxOffset = perSource
         // A backend that is missing the function, or a phone that is offline, must not read as
         // "you never commented": say which one it was.
         loadError = repository.lastError
@@ -200,29 +198,8 @@ fun MyCommentsScreen(
         }
     }
 
-    // Having the inbox on screen is what "read" means: the dot is cleared the moment the tab that
-    // shows it is the one being looked at, not when the page is left — and it stays cleared, because
-    // what is reported back is the instant the backend counted from, not a number of rows.
-    //
-    // Waiting for the first page is deliberate: an inbox that came back empty has nothing to mark as
-    // read, and moving the cursor on an empty answer would hide news that arrived after the count.
-    LaunchedEffect(tab, inbox) {
-        if (tab == 1 && inbox.items.isNotEmpty()) {
-            onInboxSeen(
-                maxOf(newestInboxCommentId(inbox.items), summary.newestCommentId),
-                summary.checkedAt,
-            )
-            // From this moment the list has been read: the label stops saying "消息 · 3", which is
-            // also what the dot shows now that it is gone. The cursor itself is kept — a later page
-            // of the same visit still reports the instant this visit began.
-            summary = summary.copy(
-                replies = 0,
-                planComments = 0,
-                commentHearts = 0,
-                planHearts = 0,
-            )
-        }
-    }
+    // Having the inbox on screen is what "read" used to mean here; that reading now happens on the
+    // messages page, which is where the inbox lives.
 
     /**
      * Opens what a row is about. A row with a comment behind it also hands that comment id along, so
@@ -315,13 +292,12 @@ fun MyCommentsScreen(
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("mine", "我写的 · ${mine.items.size}"),
-                        // The inbox says how much of it is new, which is the number the red dot on
-                        // the app list is about: opening this tab is what clears that dot.
-                        FlSegment("inbox", inboxLabel(summary)),
                         FlSegment("plans", "我的方案 · ${myPlans.size}"),
                     ),
-                    selectedIndex = tab,
-                    onSelect = { tab = it },
+                    // Two entries, not three: the news moved to its own page in the bar, and what
+                    // is left here is only what this install wrote.
+                    selectedIndex = if (tab == 2) 1 else 0,
+                    onSelect = { tab = if (it == 1) 2 else 0 },
                 )
             }
         },
@@ -341,9 +317,6 @@ fun MyCommentsScreen(
             // The next page is requested when the last row is on screen, not before: a list of ten
             // rows that asks for more the moment it is drawn would load the history it was built
             // to avoid.
-            EndlessScroll(inboxListState, enabled = tab == 1 && inbox.hasMore && !loadingMore) {
-                loadMore(true)
-            }
             EndlessScroll(mineListState, enabled = tab == 0 && mine.hasMore && !loadingMore) {
                 loadMore(false)
             }

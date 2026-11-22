@@ -52,6 +52,7 @@ import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.recommend.hasNewVotes
 import io.github.samolego.canta.data.recommend.newVotesSince
@@ -91,6 +92,9 @@ import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.DescriptionFixScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
+import io.github.samolego.canta.ui.screen.ChatScreen
+import io.github.samolego.canta.ui.screen.InteractionsScreen
+import io.github.samolego.canta.ui.screen.MessagesScreen
 import io.github.samolego.canta.ui.screen.MyCommentsScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
@@ -205,6 +209,8 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     // looks: both are made here rather than inside the navigation, because the theme is applied
     // above it and has to read the stored accent and dark mode before anything is drawn.
     val communityRepository = remember { PlanRepository(HttpClient()) }
+    // Direct messages, groups and follows: their own calls, against the same backend.
+    val socialRepository = remember { SocialRepository(HttpClient()) }
     val settingsViewModel: SettingsViewModel = viewModel {
         SettingsViewModel(
             deps.settings,
@@ -225,7 +231,7 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     }
     CantaTheme(darkTheme = darkTheme, accent = FlAccent.ofArgb(themeAccent)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            CantaNavigation(deps, closeApp, crashReports, communityRepository, settingsViewModel)
+            CantaNavigation(deps, closeApp, crashReports, communityRepository, socialRepository, settingsViewModel)
         }
     }
 }
@@ -236,6 +242,7 @@ private fun CantaNavigation(
     closeApp: () -> Unit,
     crashReports: CrashReportStore?,
     communityRepository: PlanRepository,
+    socialRepository: SocialRepository,
     settingsViewModel: SettingsViewModel,
 ) {
     val handler = deps.handler
@@ -456,6 +463,10 @@ private fun CantaNavigation(
     // A backend older than that function still answers `comments_replies_to`, so the fallback counts
     // one page of replies and keeps the dot's old meaning instead of never lighting up.
     var unreadReplies by remember { mutableIntStateOf(0) }
+    // Unread direct messages and group messages, counted apart from the news above: the bar entry
+    // wears one number for both, the way a chat app's messages tab does, and the page itself splits
+    // them again.
+    var unreadChats by remember { mutableIntStateOf(0) }
     var lastSeenReplyId by remember { mutableStateOf(0L) }
     var inboxSeenAt by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
@@ -468,7 +479,14 @@ private fun CantaNavigation(
     var countTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { countTick++ }
     LaunchedEffect(currentRoute, countTick) {
-        if (currentRoute != Screen.Main.route && currentRoute != Screen.MyComments.route) return@LaunchedEffect
+        // The three pages that carry the count: the app list (top bar bell), the messages page
+        // (its own row and the bar entry) and the interactions list. Anywhere else the number is
+        // not on screen, so counting there would be a call for nothing.
+        val countsHere = currentRoute == Screen.Main.route ||
+            currentRoute == Screen.Messages.route ||
+            currentRoute == Screen.Interactions.route ||
+            currentRoute == Screen.MyComments.route
+        if (!countsHere) return@LaunchedEffect
         deps.notes.ensureReady()
         val identity = DeviceIdentity.current(deps.settings)
         val owner = identity.owner.ifEmpty { identity.token }
@@ -487,6 +505,13 @@ private fun CantaNavigation(
             communityRepository.inboxSummary(owner, identity.token, seenAt)?.total
                 ?: communityRepository.repliesToMe(owner, identity.token, offset = 0)
                     .unreadSince(seen).size
+        }
+        // The chats are their own count on the backend, and they are read on the same three pages:
+        // one more call, where the summary above is already being asked for.
+        unreadChats = if (owner.isEmpty()) {
+            0
+        } else {
+            socialRepository.conversationsFor(owner).sumOf { it.unread }
         }
     }
 
@@ -631,10 +656,10 @@ private fun CantaNavigation(
                     navigateToPage = { navController.navigate(it) },
                     closeApp = closeApp,
                     enableSelectAll = versionTapCounter >= SECRET_TAPS,
-                    // The dot on the bar, and the way to the page it is about: one tap from the
-                    // app list to the answers somebody left under this install's comments.
-                    unreadReplies = unreadReplies,
-                    onOpenInbox = { navController.navigate(Screen.MyComments.route) { launchSingleTop = true } },
+                    // One number for the bell and for the bar entry: what is waiting in the
+                    // messages page, news and chats alike.
+                    unreadReplies = unreadReplies + unreadChats,
+                    onOpenInbox = { navController.navigate(Screen.Messages.route) { launchSingleTop = true } },
                 )
             }
             composable(route = Screen.Rules.route) {
@@ -1046,6 +1071,103 @@ private fun CantaNavigation(
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
+            composable(route = Screen.Messages.route) {
+                // The messages page is about one identity: the name an outgoing message is signed
+                // with, and the number plus token that prove it to the backend.
+                var messagesName by remember { mutableStateOf("") }
+                var messagesIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) {
+                    messagesName = DeviceIdentity.displayName(deps.settings)
+                    messagesIdentity = DeviceIdentity.current(deps.settings)
+                }
+                MessagesScreen(
+                    repository = socialRepository,
+                    planRepository = communityRepository,
+                    owner = messagesIdentity.owner.ifEmpty { messagesIdentity.token },
+                    userName = messagesName,
+                    token = messagesIdentity.token,
+                    // The same count the bar and the top bar carry: the page repeats it on the
+                    // interactions row, and none of it is a second source of truth.
+                    inboxUnread = unreadReplies,
+                    inboxPreview = "",
+                    onOpenInteractions = {
+                        navController.navigate(Screen.Interactions.route) { launchSingleTop = true }
+                    },
+                    onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
+                    onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
+                )
+            }
+            composable(route = Screen.Interactions.route) {
+                var interactionsName by remember { mutableStateOf("") }
+                var interactionsIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) {
+                    interactionsName = DeviceIdentity.displayName(deps.settings)
+                    interactionsIdentity = DeviceIdentity.current(deps.settings)
+                }
+                InteractionsScreen(
+                    repository = communityRepository,
+                    social = socialRepository,
+                    owner = interactionsIdentity.owner.ifEmpty { interactionsIdentity.token },
+                    token = interactionsIdentity.token,
+                    seenAt = inboxSeenAt,
+                    onInboxSeen = { newest, checkedAt ->
+                        // The same closing of the loop the bar does: reading a row is what moves
+                        // the cursor the count is taken from.
+                        coroutineScope.launch {
+                            val moved = deps.notes.markInboxSeen(checkedAt)
+                            deps.notes.markRepliesSeen(newest)
+                            inboxSeenAt = deps.notes.inboxSeenAt.value
+                            if (moved) unreadReplies = 0
+                        }
+                    },
+                    onOpenPlanComment = { id, commentId ->
+                        navController.navigate(Screen.PlanComment.routeFor(id, commentId))
+                    },
+                    onOpenAppComment = { pkg, commentId ->
+                        navController.navigate(Screen.AppComment.routeFor(pkg, commentId))
+                    },
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
+            composable(route = Screen.Chat.route) { entry ->
+                val conversationId = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("conversationId")) getString("conversationId") else null }
+                        }.getOrNull()
+                    }
+                    ?.toLongOrNull() ?: 0L
+                var chatName by remember { mutableStateOf("") }
+                var chatIdentity by remember { mutableStateOf(Identity("")) }
+                // A chat is opened by id, and the route only carries the id: the name over the
+                // messages is read back from the conversation list, so a group says its own name
+                // and a direct chat says the other person's instead of a generic "私聊".
+                var chatTitle by remember { mutableStateOf("") }
+                var chatIsGroup by remember { mutableStateOf(false) }
+                LaunchedEffect(conversationId) {
+                    chatName = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    chatIdentity = identity
+                    if (conversationId > 0L) {
+                        val self = identity.owner.ifEmpty { identity.token }
+                        val opened = socialRepository.conversationsFor(self)
+                            .firstOrNull { it.id == conversationId }
+                        chatTitle = opened
+                            ?.let { row -> row.title.ifBlank { row.peerName.ifBlank { row.peer } } }
+                            .orEmpty()
+                        chatIsGroup = opened?.isGroup == true
+                    }
+                }
+                ChatScreen(
+                    repository = socialRepository,
+                    owner = chatIdentity.owner.ifEmpty { chatIdentity.token },
+                    userName = chatName,
+                    conversationId = conversationId,
+                    title = chatTitle,
+                    isGroup = chatIsGroup,
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
         }
 
         // Read once at launch; shown only after onboarding, never on top of it.
@@ -1080,6 +1202,9 @@ private fun CantaNavigation(
                         showVoteCount = newVoteCount,
                         // The way to a newer build: 设置 → 关于 → 检查更新, marked at its first step.
                         showUpdateDot = updateAvailable,
+                        // What the bell in the top bar counts, on the entry that now leads to the
+                        // page the bell opens.
+                        showMessageCount = unreadReplies + unreadChats,
                     ),
                     onSelect = { key -> onBottomBarSelect(key, navController) },
                 )
@@ -1174,6 +1299,7 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Rules.route,
     Screen.Tweaks.route,
     Screen.Recommendations.route,
+    Screen.Messages.route,
     Screen.Settings.route,
     Screen.Presets.route,
 )
@@ -1184,6 +1310,7 @@ private object BarKey {
     const val RULES = "rules"
     const val TWEAKS = "tweaks"
     const val RECOMMEND = "recommend"
+    const val MESSAGES = "messages"
     const val SETTINGS = "settings"
 }
 
@@ -1203,6 +1330,8 @@ private fun bottomBarItems(
     showVoteCount: Int = 0,
     /** A newer build than this one is published: the Settings entry carries the dot to it. */
     showUpdateDot: Boolean = false,
+    /** How much news and how many unread chats wait behind the messages entry. */
+    showMessageCount: Int = 0,
 ): List<BottomBarItem> = buildList {
     // The same glyphs FlClash's own bar leads with — the grid of apps, the rules list,
     // the toolbox, the gear — plus one for the recommendations page.
@@ -1230,6 +1359,19 @@ private fun bottomBarItems(
     }
     add(
         BottomBarItem(
+            BarKey.MESSAGES,
+            FlGlyphs.requests,
+            // A literal rather than a resource key: the page's own labels are Chinese too, and
+            // adding a key here would have to be mirrored into every language folder.
+            "消息",
+            route == Screen.Messages.route,
+            // The same number the top bar's bell wears: what arrived while this page was not the
+            // one being looked at. On the page itself it is read, so it drops to nothing.
+            badge = if (route == Screen.Messages.route) 0 else showMessageCount,
+        ),
+    )
+    add(
+        BottomBarItem(
             BarKey.SETTINGS,
             FlGlyphs.settings,
             stringResource(Res.string.settings),
@@ -1248,6 +1390,7 @@ private fun onBottomBarSelect(
         BarKey.RULES -> navController.navigateSingleTop(Screen.Rules.route)
         BarKey.TWEAKS -> navController.navigateSingleTop(Screen.Tweaks.route)
         BarKey.RECOMMEND -> navController.navigateSingleTop(Screen.Recommendations.route)
+        BarKey.MESSAGES -> navController.navigateSingleTop(Screen.Messages.route)
         BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Settings.route)
     }
 }
