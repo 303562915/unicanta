@@ -410,7 +410,7 @@
     <string name="plans_identity">身份码 %1$s · 免登录</string>
     <string name="plans_hero_source">图源 Wikimedia Commons</string>
     <string name="plans_reload">重新加载</string>
-    <string name="plans_reload_failed">没连上后端，缓存可能是旧的 · 重新加载</string>
+    <string name="plans_reload_failed">您可能没有开启科学上网，所以使用是离线数据</string>
     <string name="plans_verified_short">重启验证</string>
     <string name="plans_empty_title">%1$s 还没有人上传方案</string>
     <string name="plans_empty_body">第一个方案会由你上传；断网时这里也会是空的。</string>
