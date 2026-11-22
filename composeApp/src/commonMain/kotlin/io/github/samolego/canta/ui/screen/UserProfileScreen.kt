@@ -108,6 +108,8 @@ fun UserProfileScreen(
     onOpenPlan: (planId: Long) -> Unit,
     onOpenChat: (owner: String) -> Unit,
     onNavigateBack: () -> Unit,
+    /** 点「关注」或「粉丝」那一格：打开那一栏的名单，[followers] 为 true 时是粉丝。 */
+    onOpenFollows: (followers: Boolean) -> Unit = {},
     onMessage: (String) -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -177,6 +179,8 @@ fun UserProfileScreen(
                             votes = shown?.votes ?: 0,
                             following = shown?.following ?: 0,
                             followers = shown?.followers ?: 0,
+                            onOpenFollowing = { onOpenFollows(false) },
+                            onOpenFollowers = { onOpenFollows(true) },
                         )
                         Spacer(Modifier.height(10.dp))
                         ProfileBio(problem = problem)
@@ -379,13 +383,27 @@ private fun HeroAvatar(name: String) {
     }
 }
 
-/** 一行三个数字：等宽三列，数字在上、灰标签在下。 */
+/** 一行三个数字：等宽三列，数字在上、灰标签在下；后两格能点，进那一栏的名单。 */
 @Composable
-private fun ProfileStats(votes: Int, following: Int, followers: Int) {
+private fun ProfileStats(
+    votes: Int,
+    following: Int,
+    followers: Int,
+    onOpenFollowing: () -> Unit,
+    onOpenFollowers: () -> Unit,
+) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         ProfileStat(value = votes, label = "获赞", modifier = Modifier.weight(1f))
-        ProfileStat(value = following, label = "关注", modifier = Modifier.weight(1f))
-        ProfileStat(value = followers, label = "粉丝", modifier = Modifier.weight(1f))
+        ProfileStat(
+            value = following,
+            label = "关注",
+            modifier = Modifier.weight(1f).clickable(onClick = onOpenFollowing),
+        )
+        ProfileStat(
+            value = followers,
+            label = "粉丝",
+            modifier = Modifier.weight(1f).clickable(onClick = onOpenFollowers),
+        )
     }
 }
 

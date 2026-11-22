@@ -57,6 +57,8 @@ data class SocialPerson(
  * [peer] 是私聊对面的身份，[peerName] 是他今天用的名字，两个都是空的就是群聊；
  * [lastBody] / [lastAt] 是列表上那一行的预览，后端没给就是空串。
  * [members] 只有群聊有意义，私聊那一行后端给什么都原样搬过来，这里不替它猜。
+ * [pinned] 是这一行被置顶了没有，与后端 `conversations_for` 的排序无关：怎么排是后端的事，
+ * 这里只搬运"是不是置顶"，缺字段就是没置顶。
  */
 data class Conversation(
     val id: Long,
@@ -68,6 +70,7 @@ data class Conversation(
     val lastAt: String = "",
     val unread: Int = 0,
     val members: Int = 0,
+    val pinned: Boolean = false,
 ) {
 
     /** 群聊与会话共用一张列表，界面靠这一位决定画头像还是画群标。 */
@@ -465,6 +468,39 @@ class SocialRepository(
     }
 
     /**
+     * 把 [conversation] 置顶或取消置顶，返回这件事成没成。
+     *
+     * [pin] 传什么就是什么，不在这里取反：后端存的是"当前是不是置顶"，所以重复调同一个值也是
+     * 幂等的。失败 false，原因是网络还是服务端看 [lastError] / [lastFailureWasNetwork]。
+     */
+    suspend fun pinConversation(owner: String, conversation: Long, pin: Boolean): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_pin", pin)
+        }.toString()
+        val text = rpc("conversation_pin", body) ?: return false
+        return booleanFrom(text, "conversation_pin") ?: false
+    }
+
+    /**
+     * 把 [conversation] 从列表里藏掉，返回这件事成没成。
+     *
+     * 藏不是删：消息还在，成员还在，只是这一行不再出现在 [conversationsFor] 里；要它回来只能由
+     * 后端的规则决定（比如又有人发消息），本对象不做本地隐藏，免得两处状态打架。
+     */
+    suspend fun hideConversation(owner: String, conversation: Long): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+        }.toString()
+        val text = rpc("conversation_hide", body) ?: return false
+        return booleanFrom(text, "conversation_hide") ?: false
+    }
+
+    /**
      * 把 [conversation] 里 [owner] 的已读位置推到现在。
      *
      * 写失败什么也不发生：下一条消息之前再问一次就好，读回执丢了不是错。
@@ -476,6 +512,19 @@ class SocialRepository(
             put("p_conversation", conversation)
         }.toString()
         rpc("message_read", body)
+    }
+
+    /**
+     * 把 [owner] 所有会话的已读位置一起推到现在，返回动了几个会话。
+     *
+     * 失败返回 0——**0 不是失败**：一个全都读过的账号，这个调用本来就该返回 0。页面要分这两件事
+     * 就看 [lastError] / [lastFailureWasNetwork]：两个都干净、返回值是 0，那就是真的没有新消息。
+     */
+    suspend fun markAllConversationsRead(owner: String): Int {
+        if (owner.isEmpty()) return 0
+        val body = buildJsonObject { put("p_owner", owner) }.toString()
+        val text = rpc("conversations_mark_all_read", body) ?: return 0
+        return intFrom(text, "conversations_mark_all_read") ?: 0
     }
 
     // ------------------------------------------------------------------ 传输
@@ -659,6 +708,7 @@ class SocialRepository(
             lastAt = row.textOf("last_at"),
             unread = row.intOf("unread"),
             members = row.intOf("members"),
+            pinned = row.flagOf("pinned") ?: false,
         )
     }
 

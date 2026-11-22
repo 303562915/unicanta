@@ -87,6 +87,8 @@ fun GroupInfoScreen(
     conversationId: Long,
     onNavigateBack: () -> Unit,
     onOpenChat: (conversationId: Long) -> Unit = {},
+    /** 点成员格子，打开那个人的主页。 */
+    onOpenProfile: (owner: String) -> Unit = {},
     onMessage: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -234,6 +236,7 @@ fun GroupInfoScreen(
                             adding = adding,
                             onTapAdd = { adding = !adding },
                             onOpenChat = { onOpenChat(conversationId) },
+                            onOpenProfile = onOpenProfile,
                         )
                     }
                     if (adding) {
@@ -430,6 +433,8 @@ private fun GroupInfoHeader(
  *
  * 网格末尾那一格是「+」：它和成员共用同一套列宽，所以按五个一组切，切到最后一行不满五格就用
  * 空白格补齐，格子才会对齐在左边那五列上。
+ *
+ * 每个成员格子（[GroupMemberCell]）自己是一块入口，点开那个人的主页（[onOpenProfile]）。
  */
 @Composable
 private fun GroupInfoMembers(
@@ -437,6 +442,7 @@ private fun GroupInfoMembers(
     adding: Boolean,
     onTapAdd: () -> Unit,
     onOpenChat: () -> Unit,
+    onOpenProfile: (String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -480,7 +486,11 @@ private fun GroupInfoMembers(
                         if (member == null) {
                             GroupAddCell(expanded = adding, onClick = onTapAdd)
                         } else {
-                            GroupMemberCell(label = member.label)
+                            GroupMemberCell(
+                                label = member.label,
+                                owner = member.owner,
+                                onOpenProfile = onOpenProfile,
+                            )
                         }
                     }
                 }
@@ -492,12 +502,22 @@ private fun GroupInfoMembers(
     }
 }
 
-/** 一位成员：圆头像 + 下面一行名字（一行就截断）。 */
+/**
+ * 一位成员：圆头像 + 下面一行名字（一行就截断）。
+ *
+ * 整格（头像 + 名字）一起可点，点开 [owner] 的主页。没有身份号的人点了也没处去，
+ * 所以 [owner] 为空时这一格不响应——不留一个点了没反应的格子。
+ */
 @Composable
-private fun GroupMemberCell(label: String) {
+private fun GroupMemberCell(label: String, owner: String, onOpenProfile: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = owner.isNotEmpty(), onClickLabel = "看主页") {
+                onOpenProfile(owner)
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         GroupInfoAvatar(label = label)

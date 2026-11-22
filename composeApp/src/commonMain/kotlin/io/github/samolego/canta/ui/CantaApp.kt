@@ -95,6 +95,8 @@ import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.ChatScreen
 import io.github.samolego.canta.ui.screen.CreateGroupScreen
 import io.github.samolego.canta.ui.screen.GroupInfoScreen
+import io.github.samolego.canta.ui.screen.FollowListScreen
+import io.github.samolego.canta.ui.screen.GroupsScreen
 import io.github.samolego.canta.ui.screen.InteractionsScreen
 import io.github.samolego.canta.ui.screen.MessagesScreen
 import io.github.samolego.canta.ui.screen.MyCommentsScreen
@@ -1018,6 +1020,9 @@ private fun CantaNavigation(
                         }
                     },
                     onNavigateBack = { navController.navigateUp() },
+                    onOpenFollows = { followers ->
+                        navController.navigate(Screen.FollowList.routeFor(owner, followers))
+                    },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
                 )
             }
@@ -1123,6 +1128,7 @@ private fun CantaNavigation(
                     },
                     onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
                     onOpenCreateGroup = { navController.navigate(Screen.CreateGroup.route) },
+                    onOpenGroups = { navController.navigate(Screen.Groups.route) },
                     onOpenDm = { peer ->
                         // 点一个只有关注关系的人：先开一个私聊再进去，dm_open 本身复用已有会话。
                         coroutineScope.launch {
@@ -1139,10 +1145,8 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.Interactions.route) {
-                var interactionsName by remember { mutableStateOf("") }
                 var interactionsIdentity by remember { mutableStateOf(Identity("")) }
                 LaunchedEffect(Unit) {
-                    interactionsName = DeviceIdentity.displayName(deps.settings)
                     interactionsIdentity = DeviceIdentity.current(deps.settings)
                 }
                 InteractionsScreen(
@@ -1210,6 +1214,10 @@ private fun CantaNavigation(
                     onOpenGroupInfo = {
                         navController.navigate(Screen.GroupInfo.routeFor(conversationId))
                     },
+                    // 点头像看那个人的主页：私聊的对端，或群里发言的那个人。
+                    onOpenProfile = { person ->
+                        navController.navigate(Screen.Uploader.routeFor(person))
+                    },
                 )
             }
             composable(route = Screen.CreateGroup.route) {
@@ -1244,6 +1252,57 @@ private fun CantaNavigation(
                     conversationId = groupId,
                     onNavigateBack = { navController.navigateUp() },
                     onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
+                    // 群成员网格里点谁的头像就看谁的主页。
+                    onOpenProfile = { person ->
+                        navController.navigate(Screen.Uploader.routeFor(person))
+                    },
+                    onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
+                )
+            }
+            composable(route = Screen.Groups.route) {
+                var groupsIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) { groupsIdentity = DeviceIdentity.current(deps.settings) }
+                GroupsScreen(
+                    repository = socialRepository,
+                    owner = groupsIdentity.owner.ifEmpty { groupsIdentity.token },
+                    onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
+                    onOpenCreateGroup = { navController.navigate(Screen.CreateGroup.route) },
+                    onNavigateBack = { navController.navigateUp() },
+                    onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
+                )
+            }
+            composable(route = Screen.FollowList.route) { entry ->
+                val followOwner = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("owner")) getString("owner") else null }
+                        }.getOrNull()
+                    }.orEmpty()
+                val followTab = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("tab")) getString("tab") else null }
+                        }.getOrNull()
+                    }.orEmpty()
+                var followIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) { followIdentity = DeviceIdentity.current(deps.settings) }
+                FollowListScreen(
+                    repository = socialRepository,
+                    owner = followOwner,
+                    startOnFollowers = followTab == "followers",
+                    onOpenProfile = { person -> navController.navigate(Screen.Uploader.routeFor(person)) },
+                    onOpenChat = { peer ->
+                        coroutineScope.launch {
+                            val self = followIdentity.owner.ifEmpty { followIdentity.token }
+                            val opened = socialRepository.openDm(self, peer)
+                            if (opened != null && opened > 0L) {
+                                navController.navigate(Screen.Chat.routeFor(opened))
+                            } else {
+                                platform.showMessage("开不了私聊，检查代理后再试")
+                            }
+                        }
+                    },
+                    onNavigateBack = { navController.navigateUp() },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
                 )
             }

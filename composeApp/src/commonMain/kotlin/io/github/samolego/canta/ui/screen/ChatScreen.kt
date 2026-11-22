@@ -1,7 +1,9 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,11 +38,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -90,7 +95,9 @@ private data class ChatQuickPhrase(val label: String, val insert: String)
  * 样子照着抖音私信做，但只做能落到这一层数据上的东西：
  *
  *  * 顶栏：回去的箭头、首字头像、名字（群聊挂人数），右边两个圆形按钮（通话 / 更多）。
+ *    头像和名字是一块入口：群聊进群资料，私聊进对面那个人的主页（[onOpenProfile]）。
  *  * 消息区：别人的消息左边一张小圆头像，自己的靠右；换一天的头上压一条居中的灰字日期。
+ *    点头像看那个人的主页，长按气泡复制正文，两者是各自独立的触摸区域。
  *  * 滚动：不在最底的时候右下角有一个「新消息(N)」胶囊和一个向下箭头，点了滚到最新一条；
  *    滚到最顶时自动往回翻一页历史（[SocialRepository.messagesBefore]）。
  *  * 底部：一排快捷短语胶囊 + 输入栏（九宫格 / 输入框 / 语音或发送 / 表情 / 加号），
@@ -114,17 +121,23 @@ fun ChatScreen(
     onNavigateBack: () -> Unit,
     memberCount: Int = 0,
     onOpenGroupInfo: () -> Unit = {},
+    /** 点头像/顶栏抬头，打开那个人的主页。 */
+    onOpenProfile: (owner: String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
-    var draft by remember { mutableStateOf("") }
+    var draft by rememberSaveable { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var sendFailed by remember { mutableStateOf(false) }
     var loadingEarlier by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
+    /** 刚复制的是哪一条：不是 null 的时候底部亮一句「已复制」，过一会儿自己灭掉。 */
+    var copiedId by remember { mutableStateOf<Long?>(null) }
+    // 跨平台剪贴板：与 TweaksScreen 里复制命令用的是同一个（LocalClipboardManager.setText）。
+    val clipboard = LocalClipboardManager.current
     /** 上一次滚到底时最后一条的 id：只有尾巴变了才往下滚，往上翻历史不该把视图拽到底。 */
     var tailId by remember { mutableStateOf<Long?>(null) }
     /** 首屏已经落到底了没有：没落过底之前不往上翻页，否则一进页面就白拉一页历史。 */
@@ -245,11 +258,28 @@ fun ChatScreen(
         }
     }
 
+    /** 长按别人的消息：整条正文进剪贴板，底部亮一句。自己发的那种不挂长按（见 [ChatBubble]）。 */
+    val copyMessage: (ChatMessage) -> Unit = { message ->
+        clipboard.setText(AnnotatedString(message.body))
+        copiedId = message.id
+    }
+
+    // 剪贴板本身没有任何看得见的反应：不说一句，人不知道自己按成功没有。1.6 秒后自己灭掉。
+    LaunchedEffect(copiedId) {
+        if (copiedId != null) {
+            delay(1600L)
+            copiedId = null
+        }
+    }
+
     // 观感上的群聊：形参说不是、但详情说是，就按群聊画（同一个判据见 ConversationDetail.isGroup）。
     val grouped = isGroup || detail?.isGroup == true
     // 标题：形参空的时候用详情里的群名，都空就叫「私聊」；人数优先用调用方给的，没有数成员。
     val heading = title.ifBlank { detail?.title.orEmpty() }.ifBlank { "私聊" }
     val members = if (memberCount > 0) memberCount else detail?.members?.size ?: 0
+    // 私聊里"另一个人"的身份：详情成员表里第一个不是自己的那个。取不到就是空串，
+    // 顶栏据此不挂点击——宁可点不动，也不要推开一张没有内容的主页。
+    val peerOwner = detail?.members?.firstOrNull { member -> member.owner != owner }?.owner.orEmpty()
 
     Scaffold(
         topBar = {
@@ -257,8 +287,10 @@ fun ChatScreen(
                 title = heading,
                 isGroup = grouped,
                 memberCount = members,
+                peerOwner = peerOwner,
                 onNavigateBack = onNavigateBack,
                 onOpenGroupInfo = onOpenGroupInfo,
+                onOpenProfile = onOpenProfile,
             )
         },
     ) { padding ->
@@ -308,6 +340,15 @@ fun ChatScreen(
                                     mine = message.sender == owner,
                                     // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
                                     showSender = grouped && message.sender != owner,
+                                    // 点头像看那个人的主页：自己那条不画头像，这个回调也就不给。
+                                    // 群里谁发言谁有自己的一张头像，身份就是 message.sender。
+                                    onAvatarClick = if (message.sender != owner && message.sender.isNotEmpty()) {
+                                        { onOpenProfile(message.sender) }
+                                    } else {
+                                        null
+                                    },
+                                    // 长按复制：自己的气泡由 ChatBubble 自己忽略这个回调。
+                                    onLongPress = { copyMessage(message) },
                                 )
                             }
                         }
@@ -354,6 +395,15 @@ fun ChatScreen(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                 )
             }
+            if (copiedId != null) {
+                Text(
+                    text = "已复制这条消息",
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                )
+            }
         }
     }
 }
@@ -363,18 +413,41 @@ fun ChatScreen(
  *
  * 图标集里没有电话和相机，通话用 [FlGlyphs.profiles]、更多用 [FlGlyphs.more]；
  * 两个都走 [onOpenGroupInfo]——这一层没有单独的通话实现，点开的是同一个资料页。
+ *
+ * 左边的圆头像和标题也是一块入口：群聊点进群资料（[onOpenGroupInfo]），
+ * 私聊点进对面那个人的主页（[onOpenProfile]，身份用 [peerOwner]）。私聊还没拿到对方身份时
+ * 这一块不挂点击——空身份只会推开一张空主页。
  */
 @Composable
 private fun ChatTopBar(
     title: String,
     isGroup: Boolean,
     memberCount: Int,
+    peerOwner: String,
     onNavigateBack: () -> Unit,
     onOpenGroupInfo: () -> Unit,
+    onOpenProfile: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     // 群聊有人数就挂在名字后面，和抖音一样是名字的一部分，不另起一个角标。
     val heading = if (isGroup && memberCount > 0) "${title}(${memberCount})" else title
+    // 私聊的入口需要一个具体的人：拿不到身份（空串）就返回 null，整块不响应。
+    val openPeer: (() -> Unit)? = if (!isGroup && peerOwner.isNotEmpty()) {
+        { onOpenProfile(peerOwner) }
+    } else {
+        null
+    }
+    // 抬头点一下去哪：群聊是群资料，私聊是这个人的主页；两边都没有就什么都不挂。
+    val openHeader: (() -> Unit)? = if (isGroup) onOpenGroupInfo else openPeer
+    // 头像与标题共用同一段点击：两块都能点，但只算一个动作。
+    val headerClick = if (openHeader == null) {
+        Modifier
+    } else {
+        Modifier.clickable(
+            onClickLabel = if (isGroup) "打开群资料" else "看主页",
+            onClick = openHeader,
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -395,9 +468,9 @@ private fun ChatTopBar(
                 filled = false,
             )
             Spacer(Modifier.width(2.dp))
-            ChatHeaderAvatar(title = title, isGroup = isGroup)
+            ChatHeaderAvatar(title = title, isGroup = isGroup, onClick = openHeader)
             Spacer(Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).then(headerClick)) {
                 Text(
                     text = heading,
                     style = FlText.headline,
@@ -433,14 +506,27 @@ private fun ChatTopBar(
     }
 }
 
-/** 顶栏左边那个 40 的圆头像：首字画圆，没标题时群给「群」、私聊给「聊」，不留空圆。 */
+/**
+ * 顶栏左边那个 40 的圆头像：首字画圆，没标题时群给「群」、私聊给「聊」，不留空圆。
+ *
+ * [onClick] 是「点头像进资料/主页」这一个动作；为 null 的时候就只是一个装饰圆，不抢触摸。
+ */
 @Composable
-private fun ChatHeaderAvatar(title: String, isGroup: Boolean) {
+private fun ChatHeaderAvatar(title: String, isGroup: Boolean, onClick: (() -> Unit)? = null) {
     val scheme = MaterialTheme.colorScheme
+    val circle = Modifier
+        .size(40.dp)
+        .clip(CircleShape)
+        .background(scheme.primary.copy(alpha = 0.15f), CircleShape)
     Box(
-        modifier = Modifier
-            .size(40.dp)
-            .background(scheme.primary.copy(alpha = 0.15f), CircleShape),
+        modifier = if (onClick == null) {
+            circle
+        } else {
+            circle.clickable(
+                onClickLabel = if (isGroup) "打开群资料" else "看主页",
+                onClick = onClick,
+            )
+        },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -453,14 +539,25 @@ private fun ChatHeaderAvatar(title: String, isGroup: Boolean) {
     }
 }
 
-/** 一条消息左侧的小圆头像：别人的话才画，32 的圆里放 sender 的首字。 */
+/**
+ * 一条消息左侧的小圆头像：别人的话才画，32 的圆里放 sender 的首字。
+ *
+ * 头像自己是一块独立的可点区域（[onClick]）：气泡整块挂的是长按复制，点头像看人不能挂在气泡上，
+ * 否则两个手势会互相抢。[onClick] 为 null 时就只是一个装饰圆。
+ */
 @Composable
-private fun ChatRowAvatar(label: String) {
+private fun ChatRowAvatar(label: String, onClick: (() -> Unit)? = null) {
     val scheme = MaterialTheme.colorScheme
+    val circle = Modifier
+        .size(32.dp)
+        .clip(CircleShape)
+        .background(scheme.primary.copy(alpha = 0.15f), CircleShape)
     Box(
-        modifier = Modifier
-            .size(32.dp)
-            .background(scheme.primary.copy(alpha = 0.15f), CircleShape),
+        modifier = if (onClick == null) {
+            circle
+        } else {
+            circle.clickable(onClickLabel = "看主页", onClick = onClick)
+        },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -492,17 +589,30 @@ private fun ChatDayDivider(stamp: String) {
  * 一条消息：自己的靠右、主色气泡、主色上的字；别人的靠左、灰气泡，左边一张小圆头像。
  *
  * 群聊里别人的气泡上面署一个名字（[ChatMessage.label]，后端没给名字就退回编号）。
+ * 长按别人的气泡把整条正文复制到剪贴板（[onLongPress]）；自己的气泡不挂这个动作——复制自己刚
+ * 打的字没有意义，还平白多一个误触。
+ *
+ * 头像上的点击是**另一块区域**（[onAvatarClick]）：头像在 [Row] 里是气泡的兄弟节点，气泡自己
+ * 挂的是长按复制，两处手势不重叠，点头像不会顺手复制，长按气泡也不会跳走。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatBubble(message: ChatMessage, mine: Boolean, showSender: Boolean) {
+private fun ChatBubble(
+    message: ChatMessage,
+    mine: Boolean,
+    showSender: Boolean,
+    onAvatarClick: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+) {
     val colors = MaterialTheme.colorScheme
+    val longPress = if (mine) null else onLongPress
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
         if (!mine) {
-            ChatRowAvatar(label = message.label)
+            ChatRowAvatar(label = message.label, onClick = onAvatarClick)
             Spacer(Modifier.width(8.dp))
         }
         Column(
@@ -523,6 +633,18 @@ private fun ChatBubble(message: ChatMessage, mine: Boolean, showSender: Boolean)
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
                     .background(if (mine) colors.primary else colors.surfaceVariant)
+                    .then(
+                        if (longPress == null) {
+                            Modifier
+                        } else {
+                            Modifier.combinedClickable(
+                                onClickLabel = "这条消息",
+                                onLongClickLabel = "复制这条消息",
+                                onLongClick = longPress,
+                                onClick = {},
+                            )
+                        },
+                    )
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Column {

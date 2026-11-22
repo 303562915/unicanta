@@ -58,6 +58,20 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
         fun routeFor(id: Long) = "group/$id"
     }
 
+    /** 这个身份所在的全部群聊，从消息页「折叠的群聊」进去。 */
+    data object Groups : Screen("groups")
+
+    /**
+     * 某人的关注与粉丝两个列表，两段路径参数分别是人和要打开的那一栏。
+     *
+     * 一栏一份路由而不是 query：`followers` / `following` 是两种列表，读 URL 就该知道是哪一种。
+     */
+    data object FollowList : Screen("follow/{owner}/{tab}") {
+        /** Concrete route for person [owner], on the followers or the following list. */
+        fun routeFor(owner: String, followers: Boolean) =
+            "follow/$owner/${if (followers) "followers" else "following"}"
+    }
+
     /**
      * How the app looks: the accent picked from the twelve, and which dark mode to draw it in.
      *
