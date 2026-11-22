@@ -16,7 +16,7 @@ You can turn auto-updating off in Settings.
 
 ### Package analytics (optional, opt-in)
 Package analytics is **off** unless you choose "Contribute" during onboarding or enable it in Settings.
-When enabled, Canta sends the following to a [Supabase](https://supabase.com) project hosted in the EU (Frankfurt, AWS eu-central-1):
+When enabled, Canta sends the following to a [Supabase](https://supabase.com) project hosted in Japan (Tokyo, AWS ap-northeast-1):
 
 - For **system packages only**: the package name, the event (*uninstalled*, *survived a reboot*, *reinstalled*, or *voided* when an uninstalled package came back without you reinstalling it in Canta, for example through a system update, so the uninstall says nothing about the reboot), the ISO week of the uninstall, and a coarse batch-size bucket (1, 2-10 or 11+ packages uninstalled together).
 - The platform Canta runs on (android, desktop or web).
