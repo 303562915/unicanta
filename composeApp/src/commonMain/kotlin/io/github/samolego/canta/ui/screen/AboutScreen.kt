@@ -240,6 +240,9 @@ fun AboutScreen(
     val startInstall: (UpdateState.ReadyToInstall) -> Unit = { ready ->
         pendingInstall = null
         updateState = UpdateState.Installing(ready.version, ready.path)
+        // Said out loud as well as in the status row: the tap that starts the install is the last
+        // thing this page shows before the app is replaced.
+        scope.launch { toast.showSnackbar(getString(Res.string.about_installing)) }
         scope.launch {
             val failure = platform.installUpdate(ready.path)
             if (failure == null) {
