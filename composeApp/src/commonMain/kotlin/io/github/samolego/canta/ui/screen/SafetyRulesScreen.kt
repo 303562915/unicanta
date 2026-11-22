@@ -102,7 +102,6 @@ import io.github.samolego.canta.ui.component.PlanScopeDialog
 import io.github.samolego.canta.ui.component.label
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
-import io.github.samolego.canta.ui.fl.successColor
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.util.DeviceIdentity
@@ -919,14 +918,14 @@ private fun RankRowView(
     app: AppInfo?,
     verdict: SafetyVerdict?,
     otherDevice: Boolean = false,
-    /** True when this phone no longer has the package: the row is painted so it can be spotted. */
+    /** True when this phone no longer has the package: its package line is painted red. */
     removed: Boolean = false,
     onClick: () -> Unit = {},
 ) {
-    // A row whose package already went takes the success colour, name and package line together:
-    // the list exists to say what should go, so "this one is gone" is the one state worth seeing
-    // before reading any of the numbers, and green is the colour this app already uses for it.
-    val goneColor = successColor()
+    // Only the package line changes colour, not the app's name: the name is how the row is read,
+    // while the package name is the thing that actually went. Red on that line is the signal, and
+    // it is red rather than a tint of the accent so it cannot be mistaken for the chip on the right.
+    val goneColor = MaterialTheme.colorScheme.error
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -945,10 +944,6 @@ private fun RankRowView(
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                // Colour and weight together: green on its own is a quiet difference on a list of
-                // white names, and this is the one row state that has to be read at a glance.
-                fontWeight = if (removed) FontWeight.SemiBold else null,
-                color = if (removed) goneColor else MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = rank.pkg,
@@ -957,11 +952,9 @@ private fun RankRowView(
                 lineHeight = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (removed) {
-                    goneColor.copy(alpha = 0.75f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                // Full strength, not a faded tint: on a list of grey package names this line is the
+                // only thing saying the package is no longer on the phone.
+                color = if (removed) goneColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         // One number, one line: how many people marked it. How many plans it was marked in is a
