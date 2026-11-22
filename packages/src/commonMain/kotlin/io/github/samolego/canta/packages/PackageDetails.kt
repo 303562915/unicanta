@@ -50,6 +50,16 @@ data class PackageDetails(
      * a message without it reads as "unknown" rather than as 1970.
      */
     @ProtoNumber(11) val firstInstallTime: Long = 0,
+    /**
+     * Whether a person (or a tool) turned this package off, rather than the ROM shipping it off.
+     *
+     * `ApplicationInfo.enabled` cannot tell the two apart, and the frozen list depended on it: a
+     * preload that is `COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED` — Device Lock Controller, a
+     * carrier's own apps — was listed as if the user had frozen it. The distinction is the
+     * package's own enabled setting: `DISABLED` and `DISABLED_USER` are a decision someone made,
+     * `DISABLED_UNTIL_USED` is what a build ships.
+     */
+    @ProtoNumber(12) val disabledByUser: Boolean = false,
 )
 
 /** Same rule as `ApplicationInfo.canResetToFactory`, for packages read through the helper. */

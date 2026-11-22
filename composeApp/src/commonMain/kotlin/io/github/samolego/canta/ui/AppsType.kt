@@ -25,11 +25,16 @@ enum class AppsType(val glyph: FlGlyph, val label: StringResource) {
      * on the installed one (its action there is removal, which is not what is wanted for it), and
      * an app removed for the user stays on the uninstalled list even if its frozen flag is still
      * set, because that is the list whose action brings it back.
+     *
+     * "Frozen" means a person switched it off ([AppInfo.isDisabledByUser]); a preload the ROM ships
+     * disabled is neither frozen nor installed-and-working here, so it stays on the installed list,
+     * where its own badge says it is off — the frozen page would otherwise claim a decision the
+     * user never made (Device Lock Controller, carrier preloads).
      */
     fun matches(app: AppInfo): Boolean = when (this) {
-        INSTALLED -> !app.isUninstalled && !app.isDisabled
+        INSTALLED -> !app.isUninstalled && !app.isDisabledByUser
         UNINSTALLED -> app.isUninstalled
-        DISABLED -> app.isDisabled && !app.isUninstalled
+        DISABLED -> app.isDisabledByUser && !app.isUninstalled
     }
 }
 

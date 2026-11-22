@@ -22,19 +22,40 @@ private const val FALLBACK_ICON_SIZE_PX = 192
 fun PackageInfo.toPackageDetails(packageManager: PackageManager): PackageDetails {
     val appInfo = applicationInfo
     val installed = appInfo?.isInstalledForUser == true
+    val disabled = installed && appInfo?.enabled == false
     return PackageDetails(
         packageName = packageName,
         label = appInfo?.loadLabel(packageManager)?.toString().orEmpty(),
         versionName = versionName.orEmpty(),
         versionCode = PackageInfoCompat.getLongVersionCode(this),
-        disabled = installed && !appInfo.enabled,
+        disabled = disabled,
         apkSize = appInfo?.apkSize() ?: 0,
         isSystem = appInfo?.isSystem == true,
         installed = installed,
         hasSystemUpdate = appInfo?.hasSystemUpdate == true,
         installerPackage = installerPackageName(packageManager),
         firstInstallTime = firstInstallTime,
+        disabledByUser = disabled && disabledBySomeone(packageManager),
     )
+}
+
+/**
+ * Whether the package's off state is a decision rather than how the build shipped it.
+ *
+ * `_DISABLED_USER` is Canta's own freeze and any `pm disable-user`; plain `_DISABLED` is what root
+ * tools and some ROM settings use. `_DISABLED_UNTIL_USED` is the one to leave out: it is the state
+ * a system image gives a component it has never started (Device Lock Controller on a financed
+ * phone, carrier preloads), so counting it would report a preload as something the user froze.
+ */
+private fun PackageInfo.disabledBySomeone(packageManager: PackageManager): Boolean {
+    val state = try {
+        packageManager.getApplicationEnabledSetting(packageName)
+    } catch (e: Exception) {
+        // A package the caller may not inspect: "not disabled by a person" is the safe answer.
+        return false
+    }
+    return state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED ||
+        state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
 }
 
 /**

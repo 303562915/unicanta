@@ -35,6 +35,14 @@ data class AppInfo(
         get() = !details.installed
     val isDisabled: Boolean
         get() = details.disabled
+
+    /**
+     * Disabled by a person or a tool, not by the build: only these belong on the frozen list.
+     * A preload the ROM ships switched off (Device Lock Controller, a carrier's app) is
+     * [isDisabled] too, but nobody here turned it off, so claiming it would be a false accusation.
+     */
+    val isDisabledByUser: Boolean
+        get() = details.disabledByUser
     /** Size of the base and split APKs in bytes, or null when unknown. */
     val apkSize: Long?
         get() = details.apkSize.takeIf { it > 0 }
@@ -72,6 +80,7 @@ data class AppInfo(
     fun withIcon(newIcon: ImageBitmap?): AppInfo = copy(icon = newIcon)
     fun withUninstalled(uninstalled: Boolean): AppInfo =
         copy(details = details.copy(installed = !uninstalled))
+    /** A freeze or a thaw done here: both are the user's own doing, which is what the list reads. */
     fun withDisabled(disabled: Boolean): AppInfo =
-        copy(details = details.copy(disabled = disabled))
+        copy(details = details.copy(disabled = disabled, disabledByUser = disabled))
 }
