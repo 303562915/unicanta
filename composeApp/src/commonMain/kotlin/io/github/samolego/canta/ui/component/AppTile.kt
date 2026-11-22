@@ -61,6 +61,8 @@ fun AppTile(
     onCheckChanged: (Boolean) -> Unit,
     onShowDialog: () -> Unit,
     showBorder: Boolean = isSelected,
+    /** On the uninstalled list: whether the ROM never installed this for the user, instead of Canta removing it. */
+    neverInstalled: Boolean = false,
     checkedColor: Color = MaterialTheme.colorScheme.primary,
     checkedBackgroundColor: Color = MaterialTheme.colorScheme.primaryContainer.copy(
         alpha = 0.2f
@@ -129,6 +131,9 @@ fun AppTile(
                     if (appInfo.isDisabled) {
                         DisabledBadge()
                     }
+                    if (neverInstalled) {
+                        NeverInstalledBadge()
+                    }
                     if (appInfo.packageName == CANTA_PACKAGE_NAME) {
                         CantaBadge()
                     }
@@ -156,6 +161,8 @@ fun SelectedAppTile(
     score: CommunityScore? = null,
     onCheckChanged: (Boolean) -> Unit,
     onShowDialog: () -> Unit,
+    /** Same meaning as in [AppTile]: the ROM never installed it, Canta did not remove it. */
+    neverInstalled: Boolean = false,
 ) {
     AppTile(
         modifier = modifier,
@@ -165,6 +172,7 @@ fun SelectedAppTile(
         showBorder = false,
         onCheckChanged = onCheckChanged,
         onShowDialog = onShowDialog,
+        neverInstalled = neverInstalled,
         checkedColor = MaterialTheme.colorScheme.error,
         checkedBackgroundColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
     )

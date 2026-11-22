@@ -25,10 +25,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -103,6 +104,14 @@ fun MainScreen(
     // Pager state is hoisted to CantaNavigation so preset-applying knows the tab.
     val currentTab = AppsTab.entries[pagerState.currentPage]
     val selectedAppsType = currentTab.appsType
+
+    // What Canta itself removed: the uninstalled list is everything with no install for this user,
+    // and only the log can tell the two apart (see NeverInstalledBadge).
+    val log by history.records.collectAsStateWithLifecycle()
+    val uninstalledByCanta = remember(log) {
+        log.filter { it.kind == OperationKind.UNINSTALL && it.success }
+            .mapTo(HashSet()) { it.packageName }
+    }
 
     LaunchedEffect(pagerState) {
         // Filters and selection are per tab: reset them when the user switches
@@ -210,6 +219,7 @@ fun MainScreen(
                             platform = platform,
                             handler = handler,
                             enableSelectAll = enableSelectAll,
+                            uninstalledByCanta = uninstalledByCanta,
                         )
                     }
                 }

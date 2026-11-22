@@ -18,6 +18,7 @@
     <string name="expand">Expand</string>
     <string name="collapse">Collapse</string>
     <string name="badge_disabled">DISABLED</string>
+    <string name="badge_never_installed">NOT INSTALLED</string>
     <string name="helper_notice">Canta places a small helper in /data/local/tmp on the device to read and manage apps. It runs only while Canta uses it.</string>
     <string name="device_android_too_old">This device runs an Android version older than 9, which Canta doesn't support.</string>
     <string name="helper_unavailable">Couldn't set up Canta's helper on the device. Check that it is connected and authorized, then try again.</string>

@@ -73,11 +73,21 @@ fun AppList(
     platform: CantaPlatform,
     handler: CantaHandler,
     enableSelectAll: Boolean = false,
+    /**
+     * Packages Canta itself uninstalled, from the records tab's log. Everything else on the
+     * uninstalled list is a package this phone never installed for the user — the AOSP installer a
+     * vendor replaced, a vault this build does not use — and saying so is what keeps a reader from
+     * believing they removed it (see [NeverInstalledBadge]).
+     */
+    uninstalledByCanta: Set<String> = emptySet(),
 ) {
     var showAppDialog by remember { mutableStateOf<AppInfo?>(null) }
 
     val appList by remember { derivedStateOf { appListModel.appList.filter(appType::matches) } }
     val selectedAppList by remember { derivedStateOf { appListModel.selectedAppsSorted.filter(appType::matches) } }
+    /** The list is showing removals, so "Canta never touched this" is only a question here. */
+    fun neverInstalled(app: AppInfo): Boolean =
+        appType == AppsType.UNINSTALLED && app.packageName !in uninstalledByCanta
     val scores by appListModel.scores.collectAsStateWithLifecycle()
     val allowUnsafeUninstalls by settingsViewModel.allowUnsafeUninstalls.collectAsStateWithLifecycle()
 
@@ -167,6 +177,7 @@ fun AppList(
                                     SelectedAppTile(
                                         appInfo = appInfo,
                                         score = scores[appInfo.packageName],
+                                        neverInstalled = neverInstalled(appInfo),
                                         onCheckChanged = {
                                             appListModel.selectedApps.remove(appInfo.packageName)
                                         },
@@ -203,6 +214,7 @@ fun AppList(
                             score = scores[appInfo.packageName],
                             isSelected =
                                 appListModel.selectedApps.contains(appInfo.packageName),
+                            neverInstalled = neverInstalled(appInfo),
                             enabled = appInfo.badgeInfo != AppBadgeInfo.UNSAFE || allowUnsafeUninstalls,
                             onCheckChanged = { checked ->
                                 if (checked) {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.DisabledByDefault
 import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material3.Icon
@@ -24,6 +25,7 @@ import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.badge_disabled
+import io.github.samolego.canta.generated.resources.badge_never_installed
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,6 +53,24 @@ fun DisabledBadge() {
         description = stringResource(Res.string.badge_disabled),
         icon = Icons.Default.DisabledByDefault,
         color = MaterialTheme.colorScheme.tertiary,
+    )
+}
+
+/**
+ * The package is on the phone but never installed for this user, and Canta never removed it.
+ *
+ * ROMs ship components they do not use — the AOSP `com.android.packageinstaller` next to the
+ * vendor's own installer, `com.android.privatespace` on a build with its own vault — and every
+ * one of those lands on the uninstalled list, because that list is "no install for this user".
+ * Without the badge a reader is told they removed something they never touched.
+ */
+@Composable
+fun NeverInstalledBadge() {
+    AppBadgeContent(
+        label = stringResource(Res.string.badge_never_installed),
+        description = stringResource(Res.string.badge_never_installed),
+        icon = Icons.Default.Block,
+        color = MaterialTheme.colorScheme.secondary,
     )
 }
 
