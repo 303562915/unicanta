@@ -339,7 +339,6 @@ private fun MainDialogs(
             bootloopRisk = dialog.bootloopRisk,
             newPackages = dialog.newPackages,
             canFreeze = dialog.canFreeze,
-            canUninstall = dialog.canUninstall,
             onDismiss = mainViewModel::dismissDialog,
             onAgree = mainViewModel::onUninstallConfirmed,
             onFreeze = mainViewModel::onFreezeConfirmed,

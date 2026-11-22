@@ -184,6 +184,7 @@ gh run download <run-id> -n app-debug -D artifacts
 | `站` / `他现在的站只有两个` / `刷到83` | 方案详情里的**票数**，即 `plan_votes` 里该 `plan_id` 的行数（`plan_get().votes`）；「站只有两个」= 票数很少，「刷到83」= 直接插 votes 行把票数补到 83 | 2026-11-21 | 用户原话：「他现在的站只有两个，帮我刷到83」。与「刷票」同义，但对象是 `plans`/`plan_votes` 而不是 `recommend_suggestion_votes`。本次对象 `plans.id=35`「再一次精简」 |
 | `再一次精简` | 方案 `plans.id = 35`（Redmi K40 / `M2012K11AC`，hyperos 4，109 个包） | 2026-11-21 | 用户原话里的「一个叫再一次精简的这一个方案」 |
 | `修正历史` / `描述修正` | 应用详情页里「描述修正」的列表，即 `description_fixes_for(pkg)` 读的 `public.description_fixes` 行（带 `agrees`/`disagrees`/`applied`）；「拉到50」= 往 `description_fix_votes` 灌 `agree=true` 补到 50，「直接通过」= 调 `private.description_fix_settle(pkg)` 让 `applied=true` | 2026-11-21 | 用户原话：「把修正历史的有一条是只有一条修正历史的，你把他那个票给他拉到50，直接通过」。本次对象 `description_fixes.id=3`（`com.android.browser`，author=开发者） |
+| `他这个` / `他那个` | 指代**上一轮提到的那款第三方软件/方案**（本次指 Dhizuku），不是指人、不是指某台设备 | 2026-11-22 | 用户原话：「他这个不行吗？」= 追问 Dhizuku 是不是也能做上一轮我说它不能做的事（卸载）。按此理解后核实：设备所有者可通过 `PackageInstaller` 静默卸载，我上一轮结论是错的 |
 
 > 说明：`ga` 默认指 GitHub Actions，但**不是绝对**——若上下文明显在谈别的东西（如统计分析、灰度发布），以当轮上下文为准；判断依据写进备注。默认顺序：先 Actions，再看上下文。
 

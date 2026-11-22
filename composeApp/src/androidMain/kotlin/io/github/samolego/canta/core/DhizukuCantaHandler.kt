@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import io.github.samolego.canta.core.dhizuku.DhizukuPrivilege
+import io.github.samolego.canta.core.dhizuku.DhizukuServices
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.packages.OperationResult
+import io.github.samolego.canta.packages.PackageOperations
 import io.github.samolego.canta.util.LogUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -16,15 +18,17 @@ import kotlinx.coroutines.flow.flowOn
  * Android [CantaHandler] on Dhizuku: the route for a phone that shares the DeviceOwner role instead
  * of a shell.
  *
- * What it can do is one half of what the other routes do, and that half is real:
+ * Two of the three writes work, each through the door the framework opens for an owner:
  *
- *  - the app list, the records and everything else read-only comes from [reads] unchanged;
- *  - freezing and thawing work, through `DevicePolicyManager.setPackagesSuspended` — the pause is
- *    a system-level stop the app cannot undo on its own;
- *  - uninstalling and reinstalling do not, and say so instead of pretending: the device owner has
- *    no `DELETE_PACKAGES` and no `INSTALL_PACKAGES`, so `PackageInstaller` and
- *    `IPackageManager.deletePackageAsUser` both refuse it. Every app that supports Dhizuku has the
- *    same limit; the fix is Shizuku or root, and the failure text points there.
+ *  - **uninstall** runs through [PackageOperations] over [DhizukuServices], so the installer call is
+ *    executed by Dhizuku itself. The package installer deletes silently when the calling uid is the
+ *    device owner (`canSilentlyInstallPackage`), which is why the flags, the status callback and
+ *    the reset-to-factory sequence are the same code the Shizuku route uses;
+ *  - **freeze / thaw** goes through `DevicePolicyManager.setPackagesSuspended` from inside Dhizuku's
+ *    process — a pause the app cannot undo on its own;
+ *  - **reinstall** is refused with a plain reason: `installExistingPackageAsUser` demands
+ *    `INSTALL_PACKAGES`, and no owner carve-out exists for it. Putting an app back needs Shizuku or
+ *    root.
  *
  * [reads] is the same [AndroidCantaHandler] the Shizuku route uses, so the list, the icons and the
  * device facts cannot drift between the two routes.
@@ -40,17 +44,32 @@ class DhizukuCantaHandler(
     private companion object {
         const val TAG = "DhizukuCantaHandler"
 
-        /**
-         * A message the failure mapping recognises (`OperationFailure.keywordFailure`). The status
-         * code alone would read as "an unknown failure", which explains nothing about the route.
-         */
-        const val ROUTE_CANNOT_INSTALL = "dhizuku route cannot install or remove packages"
+        /** A message the failure mapping recognises (`OperationFailure.keywordFailure`). */
+        const val ROUTE_CANNOT_INSTALL = "dhizuku route cannot install existing packages"
 
         /** Same idea for the freeze half: device owner refused this package. */
         const val SUSPEND_REFUSED = "dhizuku refused to suspend this package"
+
+        /** The grant is missing or Dhizuku went away between two calls. */
+        const val NO_PRIVILEGE = "dhizuku is not authorized"
     }
 
     private val packageManager: PackageManager get() = context.packageManager
+
+    /**
+     * The installer calls, run as Dhizuku. Built lazily and keyed on the owner package it reports:
+     * the framework rejects a claimed package that does not belong to the calling uid, and a fork
+     * ships under a name of its own.
+     */
+    private val operations: PackageOperations? by lazy {
+        val owner = DhizukuPrivilege.ownerPackage()
+        if (owner == null) {
+            LogUtils.w(TAG, "Dhizuku did not name its owner package; uninstall is unavailable")
+            null
+        } else {
+            PackageOperations(DhizukuServices, context, installerPackage = owner)
+        }
+    }
 
     override val isAuthorized: Boolean get() = DhizukuPrivilege.isActive()
 
@@ -78,7 +97,32 @@ class DhizukuCantaHandler(
         }
     }
 
-    /** Freezing is the one write this route has, and it is the reversible one. */
+    /**
+     * Removes every package for the user, one status per package, with the same reset-to-factory
+     * sequence the Shizuku route runs: an updated system app first loses its update.
+     */
+    override fun uninstallApps(packageNames: List<String>, resetToFactory: Boolean): Flow<OperationResult> = flow {
+        val installer = operations
+        packageNames.forEach { packageName ->
+            emit(
+                if (installer == null || !isAuthorized) {
+                    refused(packageName, NO_PRIVILEGE)
+                } else {
+                    installer.uninstall(packageName, resetToFactory)
+                }
+            )
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * Not available on this route, and said so: restoring an app asks the framework for
+     * `INSTALL_PACKAGES`, which a device owner does not hold.
+     */
+    override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> = flow {
+        packageNames.forEach { emit(refused(it, ROUTE_CANNOT_INSTALL)) }
+    }
+
+    /** Freezing is the one write that needs the owner role itself, not the installer. */
     override fun setDisabledApps(packageNames: List<String>, disabled: Boolean): Flow<OperationResult> = flow {
         packageNames.forEach { packageName ->
             val ok = DhizukuPrivilege.setSuspended(packageName, disabled)
@@ -94,28 +138,6 @@ class DhizukuCantaHandler(
     }.flowOn(Dispatchers.IO)
 
     override val supportsDisabling: Boolean get() = true
-
-    /** The whole point of this route: the device owner role cannot remove a package. */
-    override val supportsUninstall: Boolean get() = false
-
-    override fun uninstallApps(packageNames: List<String>, resetToFactory: Boolean): Flow<OperationResult> =
-        refused(packageNames)
-
-    override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> = refused(packageNames)
-
-    /** Every package refused for the same reason, one result each, so the batch still reports per app. */
-    private fun refused(packageNames: List<String>): Flow<OperationResult> = flow {
-        packageNames.forEach { packageName ->
-            emit(
-                OperationResult(
-                    packageName = packageName,
-                    success = false,
-                    status = OperationResult.STATUS_NEGATIVE_RESPONSE,
-                    message = ROUTE_CANNOT_INSTALL,
-                )
-            )
-        }
-    }
 
     /** The tools page needs a shell; a device owner is not one. The page hides itself on this flag. */
     override val supportsTweakCommands: Boolean get() = false
@@ -135,4 +157,12 @@ class DhizukuCantaHandler(
 
     /** Asks for the grant and reports whether it arrived; the chain moves onto this route on `true`. */
     suspend fun grant(): Boolean = DhizukuPrivilege.requestPermission()
+
+    /** One package the route refuses before trying, with the reason the mapping turns into advice. */
+    private fun refused(packageName: String, message: String): OperationResult = OperationResult(
+        packageName = packageName,
+        success = false,
+        status = OperationResult.STATUS_NEGATIVE_RESPONSE,
+        message = message,
+    )
 }

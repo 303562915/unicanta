@@ -67,13 +67,20 @@ private fun keywordFailure(message: String): FailureExplanation? {
                 advice = "重新从列表里勾选这个应用，不要手抄包名。",
             )
 
-        // The Dhizuku route holds the DeviceOwner role, which is not a shell: the framework gives
-        // `DELETE_PACKAGES` and `INSTALL_PACKAGES` to the system and to device-owner *provisioning*
-        // only, so this is a route limit rather than something another try would get past.
-        mentions("dhizuku route") ->
+        // The Dhizuku route deletes through the package installer's device-owner path; a refusal
+        // there means the owner role or the app's own policy said no, not that the route is blind.
+        mentions("dhizuku is not authorized") ->
             FailureExplanation(
-                reason = "Dhizuku 只共享受限的设备所有者权限，它没有卸载或安装应用的权限。",
-                advice = "要删应用，把「设置 → 权限来源」切到 Shizuku 或 root；留在这条路上就用同一个对话框里的「冻结」。",
+                reason = "Dhizuku 没有授权给 UniCanta，这次操作没有执行。",
+                advice = "打开 Dhizuku 允许 UniCanta，或者到「设置 → 权限来源」里点重新检测。",
+            )
+
+        // Restoring an app is the one write this route cannot do: it asks for INSTALL_PACKAGES,
+        // which the device owner role does not carry.
+        mentions("dhizuku route cannot install") ->
+            FailureExplanation(
+                reason = "Dhizuku 不能把应用装回来：设备所有者权限里没有安装权限。",
+                advice = "恢复应用请把「设置 → 权限来源」切到 Shizuku 或 root。",
             )
 
         // The freeze half was refused for this package: a policy call the owner cannot make.

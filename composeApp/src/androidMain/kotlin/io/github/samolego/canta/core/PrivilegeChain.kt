@@ -171,9 +171,6 @@ class PrivilegeChain(
 
     override val supportsDisabling: Boolean get() = active.supportsDisabling
 
-    /** False while the Dhizuku route is the active one: a device owner cannot remove a package. */
-    override val supportsUninstall: Boolean get() = active.supportsUninstall
-
     override val supportsTweakCommands: Boolean get() = active.supportsTweakCommands
 
     override suspend fun runTweakCommand(script: String): TweakRun = picked().runTweakCommand(script)

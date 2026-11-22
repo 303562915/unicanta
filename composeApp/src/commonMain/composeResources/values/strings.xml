@@ -190,14 +190,13 @@
     <string name="onboarding_privilege_state_not_authorized">Service is running. Allow UniCanta in it.</string>
     <string name="onboarding_privilege_state_not_running">Installed, service not started.</string>
     <string name="onboarding_privilege_state_not_available">No privileged runtime detected yet.</string>
-    <string name="uninstall_route_cannot_remove">This privilege source (Dhizuku) cannot remove apps: freezing is what it offers. Switch to Shizuku or root under Settings → Privilege source to uninstall.</string>
     <string name="onboarding_privilege_detect">Check again</string>
     <string name="onboarding_privilege_grant">Grant now</string>
     <string name="onboarding_privilege_recommended">Recommended</string>
     <string name="onboarding_privilege_stellar_body">A tuned Shizuku fork: finer permissions, starts with the phone, and fixes the MediaTek bug. Shizuku-API apps work unchanged.</string>
     <string name="onboarding_privilege_stellar_action">Download Stellar</string>
     <string name="onboarding_privilege_shizuku_body">The original. Follows the same Shizuku-API contract, use it if you already run it.</string>
-    <string name="onboarding_privilege_dhizuku_body">Dhizuku is already granting DeviceOwner here: freezing works, removing does not. Install one of the two below for the removal half.</string>
+    <string name="onboarding_privilege_dhizuku_body">Dhizuku is already granting DeviceOwner here: freezing and uninstalling work; restoring an app needs one of the two below.</string>
     <string name="onboarding_privilege_shizuku_action">Download Shizuku</string>
     <string name="onboarding_privilege_step_install">1 · Install Stellar (or Shizuku)</string>
     <string name="onboarding_privilege_step_start">2 · Start its service (wireless debugging or root)</string>
@@ -327,7 +326,7 @@
     <string name="install_stellar_instead">Recommended: Stellar, a Shizuku fork that works the same way</string>
     <string name="shizuku_required">Shizuku Required</string>
     <string name="dhizuku_required">Dhizuku Required</string>
-    <string name="dhizuku_requirement_description">Dhizuku shares the DeviceOwner role instead of a shell. Once UniCanta is allowed there, it can freeze (pause) apps; removing them still needs Shizuku or root.</string>
+    <string name="dhizuku_requirement_description">Dhizuku shares the DeviceOwner role instead of a shell. Once UniCanta is allowed there, freezing and uninstalling both work; restoring an app needs Shizuku or root.</string>
     <string name="dhizuku_open_app">Open Dhizuku (it has to be activated and running)</string>
     <string name="grant_dhizuku_permission_to_canta">Allow UniCanta in Dhizuku</string>
     <string
@@ -364,14 +363,14 @@
     <string name="settings_privilege_root">root</string>
     <string name="settings_privilege_shizuku">Stellar / Shizuku</string>
     <string name="settings_privilege_dhizuku">Dhizuku</string>
-    <string name="settings_privilege_dhizuku_active">Granted: freezing works, removing does not. Uninstalling needs Shizuku or root.</string>
+    <string name="settings_privilege_dhizuku_active">Granted: freeze and uninstall both work through the DeviceOwner role. Restoring an app needs Shizuku or root.</string>
     <string name="settings_privilege_none">Not detected</string>
     <string name="privilege_chooser_title">Choose the privilege source</string>
     <string name="privilege_chooser_root_title">root (Magisk / KernelSU / built-in su)</string>
     <string name="privilege_chooser_no_root">No su on this phone, so root is not an option.</string>
     <string name="privilege_chooser_open_manager">Open Stellar / Shizuku</string>
     <string name="privilege_chooser_open_dhizuku">Open Dhizuku</string>
-    <string name="privilege_chooser_dhizuku_note">Shares the DeviceOwner role: freeze only, no uninstall.</string>
+    <string name="privilege_chooser_dhizuku_note">Shares the DeviceOwner role: freeze and uninstall, restoring needs Shizuku or root.</string>
     <string name="privilege_chooser_download">Download</string>
     <string name="privilege_root_refused">No root came back: allow UniCanta in the manager's Superuser list, or this phone is not rooted.</string>
     <string name="privilege_root_opened">The manager is open — allow UniCanta there, then come back and check again.</string>

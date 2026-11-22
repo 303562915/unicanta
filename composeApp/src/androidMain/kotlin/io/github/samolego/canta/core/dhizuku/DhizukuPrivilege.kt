@@ -26,14 +26,18 @@ import kotlinx.coroutines.withTimeoutOrNull
  * The third privilege Canta can run on: [Dhizuku](https://github.com/iamr0s/Dhizuku), which shares
  * the DeviceOwner role instead of a shell.
  *
- * The difference matters and is not a bug here: a shell (Shizuku, root) may call
- * `PackageManager.deletePackageAsUser`, because that only asks for `DELETE_PACKAGES`. A device
- * owner cannot — the framework grants that permission to the system and to the profile/device
- * owner *provisioning* path only (`DeletePackageHelper.isCallerAllowedToSilentlyUninstall`), which
- * is why every app that supports Dhizuku freezes what it hides instead of removing it. So this
- * route reports [PrivilegeKind.DHIZUKU] and offers the freeze half of the app: pause and resume
- * through [DevicePolicyManager.setPackagesSuspended]. Uninstall stays with Shizuku or root, and
- * [io.github.samolego.canta.core.DhizukuCantaHandler] says so instead of failing silently.
+ * It is not a shell, but two of the three writes still work, through different doors:
+ *
+ *  - **uninstall** goes through the package installer, which deletes silently when
+ *    `DevicePolicyManagerInternal.canSilentlyInstallPackage(callerPackage, callingUid)` says the
+ *    caller is the device owner or an affiliated profile owner
+ *    ([`PackageInstallerService.uninstall`](https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/services/core/java/com/android/server/pm/PackageInstallerService.java)).
+ *    The framework also checks that the claimed package belongs to the calling uid, so the call has
+ *    to run as Dhizuku and claim Dhizuku — see [DhizukuServices];
+ *  - **freeze / thaw** goes through `DevicePolicyManager.setPackagesSuspended`, which needs the
+ *    owner role from inside the owner's own process — see [CantaDhizukuService];
+ *  - **reinstall** does not work: `installExistingPackageAsUser` asks for `INSTALL_PACKAGES` and has
+ *    no owner carve-out, so that half stays with Shizuku or root.
  *
  * Everything the device has to do happens inside [CantaDhizukuService], which Dhizuku instantiates
  * in *its own* process: only from there is the caller the device owner, and only from there can
@@ -102,6 +106,16 @@ object DhizukuPrivilege {
         packageManager.getPackageInfo(PACKAGE_NAME, 0)
         true
     }.getOrDefault(false)
+
+    /**
+     * The package that holds the owner role — a fork ships under its own name — or null when the
+     * binder is not there. The privileged installer has to claim exactly this package: the
+     * framework rejects a claim that does not belong to the calling uid.
+     */
+    fun ownerPackage(): String? = runCatching {
+        if (!connected && !connect()) return null
+        Dhizuku.getOwnerPackageName()
+    }.onFailure { LogUtils.w(TAG, "Dhizuku did not name its owner package: $it") }.getOrNull()
 
     fun status(packageManager: PackageManager): PrivilegeStatus = when {
         isActive() -> PrivilegeStatus.ACTIVE

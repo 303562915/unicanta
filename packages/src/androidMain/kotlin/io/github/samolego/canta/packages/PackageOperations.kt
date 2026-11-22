@@ -14,14 +14,27 @@ import io.github.samolego.canta.packages.OperationResult.Companion.STATUS_NO_RES
 import java.lang.reflect.InvocationTargetException
 
 /**
+ * Installer identity when the privileged binder runs as the shell; `getMySessions` checks the
+ * installer's owner, and the silent-delete check accepts whatever package owns the calling uid.
+ */
+private const val SHELL_INSTALLER = "com.android.shell"
+
+/**
  * Uninstalls and reinstalls apps through the framework's package installer,
  * with [services] providing privileged access (Shizuku in the app, direct in
  * the ADB helper). Calls block until the installer reports back; run them
  * off the main thread.
+ *
+ * @param installerPackage who the installer calls claim to be. The framework checks that the
+ *   caller package belongs to the calling uid (`AppOpsManager.checkPackage`) *and* decides whether
+ *   to delete silently by asking whether that uid is the device owner, so this has to be the
+ *   identity the wrapped binder runs as: the shell over ADB/Shizuku, or the Dhizuku manager on the
+ *   route where the calls run in its process.
  */
 class PackageOperations(
     private val services: SystemServices,
     private val context: Context,
+    private val installerPackage: String = SHELL_INSTALLER,
 ) {
     private companion object {
         const val TAG = "PackageOperations"
@@ -32,9 +45,6 @@ class PackageOperations(
 
         /** How long to wait for the installer's status. */
         const val RESULT_TIMEOUT_MS = 30_000L
-
-        /** Installer identity; `getMySessions` checks the installer's owner, which is shell under ADB. */
-        const val INSTALLER_PACKAGE = "com.android.shell"
     }
 
     private val packageManager: PackageManager get() = context.packageManager
@@ -207,11 +217,11 @@ class PackageOperations(
             Build.VERSION.SDK_INT > Build.VERSION_CODES.R ->
                 PackageInstaller::class.java
                     .getConstructor(IPackageInstaller::class.java, String::class.java, String::class.java, Int::class.javaPrimitiveType)
-                    .newInstance(installer, INSTALLER_PACKAGE, null, services.userId)
+                    .newInstance(installer, installerPackage, null, services.userId)
             else ->
                 PackageInstaller::class.java
                     .getConstructor(IPackageInstaller::class.java, String::class.java, Int::class.javaPrimitiveType)
-                    .newInstance(installer, INSTALLER_PACKAGE, services.userId)
+                    .newInstance(installer, installerPackage, services.userId)
         }
     }
 }
