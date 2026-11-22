@@ -116,6 +116,7 @@ import io.github.samolego.canta.generated.resources.onboarding_next
 import io.github.samolego.canta.generated.resources.onboarding_network_enable
 import io.github.samolego.canta.generated.resources.onboarding_network_note
 import io.github.samolego.canta.generated.resources.onboarding_network_recheck
+import io.github.samolego.canta.generated.resources.onboarding_network_requirement
 import io.github.samolego.canta.generated.resources.onboarding_network_title
 import io.github.samolego.canta.generated.resources.onboarding_network_vpn_off
 import io.github.samolego.canta.generated.resources.onboarding_network_vpn_on
@@ -672,7 +673,7 @@ private fun NetworkPage(platform: CantaPlatform, onBack: () -> Unit, onDone: () 
         pageIndex = PAGE_NETWORK,
         badge = { IconBadge(Icons.Default.Info) },
         title = Res.string.onboarding_network_title,
-        subtitle = Res.string.onboarding_network_vpn_off,
+        subtitle = Res.string.onboarding_network_requirement,
         negative = {
             OnboardingButton(
                 onClick = onBack,

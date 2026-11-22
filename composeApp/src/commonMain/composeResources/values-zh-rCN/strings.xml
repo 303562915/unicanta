@@ -343,10 +343,11 @@
     <string name="onboarding_origin_title">这个项目怎么来的</string>
     <string name="onboarding_read_readme">读完整 README</string>
     <string name="onboarding_start">开始使用</string>
-    <string name="onboarding_network_title">社区数据需要代理</string>
-    <string name="onboarding_network_vpn_on">已检测到代理，社区评分和方案可以正常拉取。</string>
-    <string name="onboarding_network_vpn_off">现在没有代理。社区库在日本，不开代理时安全评分、方案和上报会一直显示成离线。</string>
-    <string name="onboarding_network_enable">去开代理</string>
+    <string name="onboarding_network_title">数据库在日本，必须开启科学上网</string>
+    <string name="onboarding_network_requirement">我们的软件数据库在日本，必须开启科学上网才能访问完整数据。想体验完整功能，必须开启科学上网，否则社区评分、方案和上报都拿不到。</string>
+    <string name="onboarding_network_vpn_on">已检测到科学上网，社区评分和方案可以正常拉取。</string>
+    <string name="onboarding_network_vpn_off">现在没有开启科学上网，社区评分、方案和上报会一直显示成离线。</string>
+    <string name="onboarding_network_enable">去开科学上网</string>
     <string name="onboarding_network_recheck">重新检测</string>
     <string name="onboarding_network_note">不开也能用：本地规则、应用列表和卸载都不受影响。</string>
     <string name="onboarding_privilege_title">最后一步：拿到权限</string>
@@ -382,7 +383,7 @@
     <string name="onboarding_opt_out_note">不分享也可以正常用，只是没有社区安全评分；UAD 标记对所有人都在。</string>
     <string name="onboarding_shared">你卸掉了哪些系统包、之后手机是否正常重启、是否又装了回来；以及手机品牌和系统版本，例如「Xiaomi, HyperOS 1, Android 14」。</string>
     <string name="onboarding_shared_title">会分享什么</string>
-    <string name="onboarding_welcome_subtitle">开始之前，先看一下这个。</string>
+    <string name="onboarding_welcome_subtitle">开始之前，先看一下这个。我们的数据库在日本，必须开启科学上网才能访问完整数据。</string>
     <string name="onboarding_welcome_title">欢迎使用 UniCanta</string>
     <string name="privacy_policy">隐私政策</string>
     <string name="share_package_data">分享匿名卸载数据</string>
