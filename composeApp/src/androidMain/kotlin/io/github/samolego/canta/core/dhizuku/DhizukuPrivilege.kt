@@ -139,10 +139,14 @@ object DhizukuPrivilege {
 
     // ---- the device owner half, run inside Dhizuku's process --------------------------------
 
-    private val serviceArgs: DhizukuUserServiceArgs? by lazy {
-        appContext?.let { context ->
-            DhizukuUserServiceArgs(ComponentName(context.packageName, CantaDhizukuService::class.java.name))
-        }
+    /**
+     * The component Dhizuku is asked to start. A component name is only a key here: Dhizuku loads
+     * the class from our APK by that name, and the package has to be ours or Dhizuku refuses the
+     * bind. Built per call rather than cached, so a bind that happens before [attach] is not
+     * poisoned by a null.
+     */
+    private fun serviceArgs(): DhizukuUserServiceArgs? = appContext?.let { context ->
+        DhizukuUserServiceArgs(ComponentName(context.packageName, CantaDhizukuService::class.java.name))
     }
 
     /** One bind at a time: two taps in a row would otherwise start the service twice. */
@@ -237,7 +241,7 @@ object DhizukuPrivilege {
     /** Starts [CantaDhizukuService] inside Dhizuku if it is not running yet; null when it cannot. */
     private suspend fun bindService(): IBinder? = bindLock.withLock {
         service?.let { return@withLock it }
-        val args = serviceArgs ?: return@withLock null
+        val args = serviceArgs() ?: return@withLock null
         if (!isActive()) return@withLock null
 
         val answer = CompletableDeferred<IBinder?>()

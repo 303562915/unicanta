@@ -95,6 +95,9 @@ class DhizukuCantaHandler(
 
     override val supportsDisabling: Boolean get() = true
 
+    /** The whole point of this route: the device owner role cannot remove a package. */
+    override val supportsUninstall: Boolean get() = false
+
     override fun uninstallApps(packageNames: List<String>, resetToFactory: Boolean): Flow<OperationResult> =
         refused(packageNames)
 

@@ -1,5 +1,4 @@
 package io.github.samolego.canta.core
-
 import android.content.pm.PackageManager
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.core.root.RootCantaHandler
@@ -44,8 +43,7 @@ class PrivilegeChain(
      * when neither is — its setup page is the one that can actually install and start something.
      */
     @Volatile
-    private var active: CantaHandler =
-        root ?: if (shizuku.isAuthorized) shizuku else dhizuku?.takeIf { it.isAuthorized } ?: shizuku
+    private var active: CantaHandler = root ?: authorizedRuntime(shizuku, dhizuku)
 
     @Volatile
     private var settled: Boolean = root == null
@@ -173,6 +171,9 @@ class PrivilegeChain(
 
     override val supportsDisabling: Boolean get() = active.supportsDisabling
 
+    /** False while the Dhizuku route is the active one: a device owner cannot remove a package. */
+    override val supportsUninstall: Boolean get() = active.supportsUninstall
+
     override val supportsTweakCommands: Boolean get() = active.supportsTweakCommands
 
     override suspend fun runTweakCommand(script: String): TweakRun = picked().runTweakCommand(script)
@@ -276,6 +277,20 @@ class PrivilegeChain(
     override val connectionSupported: Boolean get() = active.connectionSupported
 
     override val lastConnectionFailure: DeviceConnectionFailure? get() = active.lastConnectionFailure
+}
+
+/**
+ * The runtime app that already answered "yes" when the app started, Shizuku first because it can do
+ * more than the device owner route. A phone with neither falls back to Shizuku: its setup page is
+ * the one that can install and start something.
+ */
+private fun authorizedRuntime(
+    shizuku: AndroidCantaHandler,
+    dhizuku: DhizukuCantaHandler?,
+): CantaHandler = when {
+    shizuku.isAuthorized -> shizuku
+    dhizuku?.isAuthorized == true -> dhizuku
+    else -> shizuku
 }
 
 /**

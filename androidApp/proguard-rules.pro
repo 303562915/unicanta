@@ -17,3 +17,9 @@
 # (Context) constructor have to survive minification.
 -keep class io.github.samolego.canta.core.dhizuku.CantaDhizukuService { *; }
 
+# Dhizuku's client API reaches for framework internals by name (ActivityThread
+# for its no-arg init, which this app never calls). They exist on the device but
+# not in android.jar, so R8 must not treat them as missing at build time.
+-dontwarn android.app.ActivityThread
+-dontwarn com.rosan.dhizuku.**
+

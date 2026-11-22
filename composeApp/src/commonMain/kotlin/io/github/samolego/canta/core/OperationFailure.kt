@@ -47,6 +47,22 @@ private fun keywordFailure(message: String): FailureExplanation? {
                 advice = "重新从列表里勾选这个应用，不要手抄包名。",
             )
 
+        // The Dhizuku route holds the DeviceOwner role, which is not a shell: the framework gives
+        // `DELETE_PACKAGES` and `INSTALL_PACKAGES` to the system and to device-owner *provisioning*
+        // only, so this is a route limit rather than something another try would get past.
+        mentions("dhizuku route") ->
+            FailureExplanation(
+                reason = "Dhizuku 只共享受限的设备所有者权限，它没有卸载或安装应用的权限。",
+                advice = "要删应用，把「设置 → 权限来源」切到 Shizuku 或 root；留在这条路上就用同一个对话框里的「冻结」。",
+            )
+
+        // The freeze half was refused for this package: a policy call the owner cannot make.
+        mentions("dhizuku refused") ->
+            FailureExplanation(
+                reason = "Dhizuku（设备所有者）没有接受这次暂停。",
+                advice = "这个包多半受系统保护；先取消它的设备管理员身份，或改用 Shizuku / root 处理。",
+            )
+
         // A device administrator owns the package: it cannot be removed until that is given up.
         mentions(
             "device_policy", "device policy", "devicepolicy", "device admin",

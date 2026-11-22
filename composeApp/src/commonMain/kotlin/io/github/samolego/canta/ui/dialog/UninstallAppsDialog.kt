@@ -20,6 +20,7 @@ import io.github.samolego.canta.generated.resources.uninstall_new_packages
 import io.github.samolego.canta.generated.resources.uninstall_new_packages_more
 import io.github.samolego.canta.generated.resources.uninstall_or_freeze_hint
 import io.github.samolego.canta.generated.resources.uninstall_recovery_hint
+import io.github.samolego.canta.generated.resources.uninstall_route_cannot_remove
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
 import io.github.samolego.canta.util.isLargeBatch
@@ -36,6 +37,12 @@ fun UninstallAppsDialog(
     newPackages: List<String> = emptyList(),
     /** Whether this device can freeze apps; the reversible way out is hidden when it cannot. */
     canFreeze: Boolean = false,
+    /**
+     * Whether this route can remove apps at all. False on Dhizuku, where the device owner role has
+     * no `DELETE_PACKAGES`: the button would only ever produce a failure, so it is not offered and
+     * the dialog says why.
+     */
+    canUninstall: Boolean = true,
     onDismiss: () -> Unit,
     onAgree: (resetToFactory: Boolean) -> Unit,
     /** Freeze instead of removing: same packages, but everything stays on the device. */
@@ -54,10 +61,21 @@ fun UninstallAppsDialog(
             if (canFreeze) {
                 TextButton(onClick = onFreeze) { Text(stringResource(Res.string.records_action_disable)) }
             }
-            TextButton(onClick = { onAgree(resetToFactory) }) { Text(stringResource(Res.string.ok)) }
+            if (canUninstall) {
+                TextButton(onClick = { onAgree(resetToFactory) }) { Text(stringResource(Res.string.ok)) }
+            }
         },
     ) {
-        Text(stringResource(Res.string.are_you_sure_to_uninstall_apps, appCount))
+        if (canUninstall) {
+            Text(stringResource(Res.string.are_you_sure_to_uninstall_apps, appCount))
+        } else {
+            // Nothing to confirm: this route has no removal in it, and saying so here is the only
+            // place the user is looking when the trash icon did not do what they expected.
+            Text(
+                text = stringResource(Res.string.uninstall_route_cannot_remove),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (canFreeze) {
             // Said plainly, because this is the one place the user chooses between a pause and a
             // removal, and the difference is not visible afterwards.

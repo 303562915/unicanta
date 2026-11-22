@@ -174,6 +174,16 @@ private const val STELLAR_PACKAGE = "roro.stellar.manager"
 private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
 /**
+ * The manager that shares the DeviceOwner role instead of a shell. It is a third route, not a
+ * replacement: it gives the freeze half of the app, and its own app is where both the activation
+ * and the per-app grant live.
+ */
+private const val DHIZUKU_PACKAGE = "com.rosan.dhizuku"
+
+/** Where Dhizuku is published; it has no Play Store listing, so this is the download. */
+private const val DHIZUKU_URL = "https://github.com/iamr0s/Dhizuku/releases"
+
+/**
  * The root managers whose own screen has to be visited to change an answer. Kept next to the
  * names detection uses in `PrivilegeChain`: a grant lives in that app, not in an API Canta can
  * call, so the best this side can do is open it.
@@ -707,16 +717,38 @@ private fun CantaNavigation(
                                 appListViewModel.loadApps()
                             }
                         },
-                        onOpenManager = {
-                            // The manager's own app is the only place its service can be started or
-                            // Canta allowed, so open it; the releases page stays as the fallback for
-                            // a phone that has neither manager installed.
-                            val opened = platform.openApp(STELLAR_PACKAGE) || platform.openApp(SHIZUKU_PACKAGE)
-                            if (!opened) platform.openUrl(STELLAR_URL)
+                        onOpenManager = { kind ->
+                            if (kind == PrivilegeKind.DHIZUKU) {
+                                // Dhizuku has no service to start: when it is up, the grant is given
+                                // in its own approval screen, which the handler raises. When it is
+                                // not up (never activated, or stopped), opening the app is the only
+                                // step that helps, so that is the fallback.
+                                coroutineScope.launch {
+                                    showPrivilegeChooser = false
+                                    val granted = handler.authorize(PrivilegeKind.DHIZUKU)
+                                    if (!granted) {
+                                        val opened = platform.openApp(DHIZUKU_PACKAGE)
+                                        if (!opened) platform.openUrl(DHIZUKU_URL)
+                                    }
+                                    privilegeChoices = handler.privilegeChoices()
+                                    if (granted) appListViewModel.loadApps()
+                                }
+                            } else {
+                                // The manager's own app is the only place its service can be started
+                                // or Canta allowed, so open it; the releases page stays as the
+                                // fallback for a phone that has neither manager installed.
+                                val opened =
+                                    platform.openApp(STELLAR_PACKAGE) || platform.openApp(SHIZUKU_PACKAGE)
+                                if (!opened) platform.openUrl(STELLAR_URL)
+                            }
                         },
                         onDownload = { kind ->
-                            // Root has nothing to download; its row never offers this.
-                            if (kind == PrivilegeKind.SHIZUKU) platform.openUrl(STELLAR_URL)
+                            when (kind) {
+                                PrivilegeKind.SHIZUKU -> platform.openUrl(STELLAR_URL)
+                                PrivilegeKind.DHIZUKU -> platform.openUrl(DHIZUKU_URL)
+                                // Root has nothing to download; its row never offers this.
+                                else -> Unit
+                            }
                         },
                     )
                 }

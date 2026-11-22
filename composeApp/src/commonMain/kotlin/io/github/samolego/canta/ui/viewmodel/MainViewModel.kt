@@ -45,6 +45,8 @@ sealed interface MainDialog {
         val newPackages: List<String> = emptyList(),
         /** Whether freezing is on the table here; a device without it only has removal. */
         val canFreeze: Boolean = false,
+        /** Whether removal is on the table here; the Dhizuku route only has freezing. */
+        val canUninstall: Boolean = true,
     ) : MainDialog
     /**
      * What the batch did, so the dialog can say "uninstalled" / "restored" / "frozen" / "unfrozen"
@@ -284,6 +286,7 @@ class MainViewModel(
             // With no batch confirmed yet everything is new, which would flag every first run.
             newPackages = if (known.isEmpty()) emptyList() else selected.filterNot { it in known },
             canFreeze = handler.supportsDisabling,
+            canUninstall = handler.supportsUninstall,
         )
     }
 

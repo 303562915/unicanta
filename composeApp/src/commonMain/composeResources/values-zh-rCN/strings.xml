@@ -167,11 +167,15 @@
     <string name="settings_privilege_title">权限来源</string>
     <string name="settings_privilege_root">root</string>
     <string name="settings_privilege_shizuku">Stellar / Shizuku</string>
+    <string name="settings_privilege_dhizuku">Dhizuku</string>
+    <string name="settings_privilege_dhizuku_active">已授权：能冻结（暂停）应用，不能卸载。卸载要切到 Shizuku 或 root。</string>
     <string name="settings_privilege_none">没检测到</string>
     <string name="privilege_chooser_title">选择权限来源</string>
     <string name="privilege_chooser_root_title">root（Magisk / KernelSU / 自带 su）</string>
     <string name="privilege_chooser_no_root">这台手机没有 su，用不了 root。</string>
     <string name="privilege_chooser_open_manager">打开 Stellar / Shizuku</string>
+    <string name="privilege_chooser_open_dhizuku">打开 Dhizuku</string>
+    <string name="privilege_chooser_dhizuku_note">共享设备所有者权限：只能冻结，不能卸载。</string>
     <string name="privilege_chooser_download">下载</string>
     <string name="privilege_root_refused">没拿到 root：去管理器的「超级用户」里把 UniCanta 允许，或这台机器其实没 root。</string>
     <string name="privilege_root_opened">已打开管理器 —— 在里面允许 UniCanta，再回来点「重新检测」。</string>
@@ -368,6 +372,7 @@
     <string name="onboarding_privilege_state_not_authorized">服务在跑，去里面允许 UniCanta。</string>
     <string name="onboarding_privilege_state_not_running">已安装，服务还没启动。</string>
     <string name="onboarding_privilege_state_not_available">还没检测到特权运行时。</string>
+    <string name="uninstall_route_cannot_remove">当前的权限来源（Dhizuku）没有卸载权限，它只能冻结。要卸载，请到「设置 → 权限来源」切到 Shizuku 或 root。</string>
     <string name="onboarding_privilege_detect">重新检测</string>
     <string name="onboarding_privilege_grant">现在授权</string>
     <string name="onboarding_privilege_recommended">推荐</string>

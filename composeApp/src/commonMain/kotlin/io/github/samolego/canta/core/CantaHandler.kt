@@ -248,6 +248,13 @@ interface CantaHandler {
     val supportsDisabling: Boolean get() = false
 
     /**
+     * Whether packages can be removed on this route at all. True everywhere a shell is behind the
+     * app; false on the Dhizuku route, where the device owner role grants no `DELETE_PACKAGES`, so
+     * the confirmation dialog leads with freezing instead of offering a button that cannot work.
+     */
+    val supportsUninstall: Boolean get() = true
+
+    /**
      * Whether [runTweakCommand] can do anything here. The Android app has Shizuku's shell, the
      * ADB targets have the device's own; a desktop with no phone connected has neither.
      */

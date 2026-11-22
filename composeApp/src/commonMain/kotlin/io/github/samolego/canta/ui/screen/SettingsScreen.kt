@@ -81,6 +81,8 @@ import io.github.samolego.canta.generated.resources.onboarding_privilege_state_n
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
+import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku
+import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku_active
 import io.github.samolego.canta.generated.resources.settings_privilege_none
 import io.github.samolego.canta.generated.resources.settings_privilege_root
 import io.github.samolego.canta.generated.resources.settings_privilege_shizuku
@@ -240,6 +242,7 @@ fun SettingsScreen(
                     title = when (privilegeKind) {
                         PrivilegeKind.ROOT -> stringResource(Res.string.settings_privilege_root)
                         PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
+                        PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
                         PrivilegeKind.NONE -> stringResource(Res.string.settings_privilege_none)
                     },
                     description = when {
@@ -248,6 +251,11 @@ fun SettingsScreen(
 
                         privilegeKind == PrivilegeKind.ROOT ->
                             stringResource(Res.string.onboarding_privilege_state_root_pending)
+
+                        // Dhizuku's state is "granted" too, but what follows from it is narrower:
+                        // the row says so, otherwise the first refused uninstall reads as a bug.
+                        privilegeKind == PrivilegeKind.DHIZUKU && privilegeStatus == PrivilegeStatus.ACTIVE ->
+                            stringResource(Res.string.settings_privilege_dhizuku_active)
 
                         privilegeStatus == PrivilegeStatus.ACTIVE ->
                             stringResource(Res.string.onboarding_privilege_state_active)

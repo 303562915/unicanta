@@ -25,11 +25,14 @@ import io.github.samolego.canta.generated.resources.onboarding_privilege_state_n
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
+import io.github.samolego.canta.generated.resources.privilege_chooser_dhizuku_note
 import io.github.samolego.canta.generated.resources.privilege_chooser_download
 import io.github.samolego.canta.generated.resources.privilege_chooser_no_root
+import io.github.samolego.canta.generated.resources.privilege_chooser_open_dhizuku
 import io.github.samolego.canta.generated.resources.privilege_chooser_open_manager
 import io.github.samolego.canta.generated.resources.privilege_chooser_root_title
 import io.github.samolego.canta.generated.resources.privilege_chooser_title
+import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku
 import io.github.samolego.canta.generated.resources.settings_privilege_shizuku
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
@@ -48,7 +51,8 @@ import org.jetbrains.compose.resources.stringResource
  *   entry is not drawn, since there is no such thing to offer.
  * @param onDismiss the dialog was closed.
  * @param onGrantRoot raise the root manager's prompt; the host closes the dialog for it.
- * @param onOpenManager lead to Stellar/Shizuku, whose service has to be started there.
+ * @param onOpenManager lead to the manager app of [PrivilegeKind]: Stellar/Shizuku has a service to
+ *   start there, Dhizuku has an approval screen to answer.
  * @param onDownload install the manager app of [PrivilegeKind] (root has nothing to download).
  * @param onRefresh read the two states again, after the user did a step in another app.
  */
@@ -57,7 +61,7 @@ fun PrivilegeChooserDialog(
     choices: List<PrivilegeChoice>,
     onDismiss: () -> Unit,
     onGrantRoot: () -> Unit,
-    onOpenManager: () -> Unit,
+    onOpenManager: (PrivilegeKind) -> Unit,
     onDownload: (PrivilegeKind) -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -95,7 +99,7 @@ fun PrivilegeChooserDialog(
 private fun PrivilegeChoiceRow(
     choice: PrivilegeChoice,
     onGrantRoot: () -> Unit,
-    onOpenManager: () -> Unit,
+    onOpenManager: (PrivilegeKind) -> Unit,
     onDownload: (PrivilegeKind) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -106,6 +110,7 @@ private fun PrivilegeChoiceRow(
                         PrivilegeKind.ROOT -> stringResource(Res.string.privilege_chooser_root_title)
                         // The same name the settings row uses, so both pages read as one thing.
                         PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
+                        PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
                         // Filtered out above: NONE is not a privilege, there is nothing to name.
                         PrivilegeKind.NONE -> ""
                     },
@@ -118,6 +123,15 @@ private fun PrivilegeChoiceRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Dhizuku is the one route whose powers stop before removal: said on the row itself,
+                // because the difference only shows up later, as a refused uninstall.
+                if (choice.kind == PrivilegeKind.DHIZUKU) {
+                    Text(
+                        text = stringResource(Res.string.privilege_chooser_dhizuku_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             actionOf(choice, onGrantRoot, onOpenManager, onDownload)?.let { (label, onClick) ->
                 TextButton(onClick = onClick) { Text(label) }
@@ -162,11 +176,12 @@ private fun statusText(choice: PrivilegeChoice): String = when {
 private fun actionOf(
     choice: PrivilegeChoice,
     onGrantRoot: () -> Unit,
-    onOpenManager: () -> Unit,
+    onOpenManager: (PrivilegeKind) -> Unit,
     onDownload: (PrivilegeKind) -> Unit,
 ): Pair<String, () -> Unit>? = when {
     // Nothing installed yet: the fix is to install the runtime, and the row's button goes there.
-    choice.kind == PrivilegeKind.SHIZUKU && !choice.installed ->
+    // Root is not something to download, so it keeps the branch below.
+    choice.kind != PrivilegeKind.ROOT && !choice.installed ->
         stringResource(Res.string.privilege_chooser_download) to { onDownload(choice.kind) }
 
     // A phone with no `su` at all: root is not something to download, so the row says so above and
@@ -179,6 +194,10 @@ private fun actionOf(
 
     choice.status == PrivilegeStatus.ACTIVE -> null
 
-    // Installed but not authorized or not running: both are answered inside the manager app.
-    else -> stringResource(Res.string.privilege_chooser_open_manager) to onOpenManager
+    // Installed but not authorized or not running: both are answered inside the manager app — the
+    // service to start for Stellar/Shizuku, the approval screen for Dhizuku.
+    choice.kind == PrivilegeKind.DHIZUKU ->
+        stringResource(Res.string.privilege_chooser_open_dhizuku) to { onOpenManager(choice.kind) }
+
+    else -> stringResource(Res.string.privilege_chooser_open_manager) to { onOpenManager(choice.kind) }
 }
