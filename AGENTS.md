@@ -36,7 +36,7 @@
 | 项 | 值 |
 |---|---|
 | 本地路径 | 当前检出：`G:\trae\respositories\unicanta`（历史笔记里的 `/sdcard/Aaaa/unicanta/Canta` 是另一台设备，不要照抄） |
-| 远程 | `origin` → `https://github.com/303562915/unicanta.git` |
+| 远程 | `origin` → `https://github.com/303562915/unicanta.git`（**canonical**，2026-11-22 用 `gh api` 核过）。若 `git remote -v` 显示 `Canta.git`，那是旧名，GitHub 目前会重定向，但别依赖它：`git remote set-url origin https://github.com/303562915/unicanta.git` 改回来 |
 | 默认分支 | `master` |
 | 构建身份 | `gh` 已登录 `303562915`（scopes: repo, workflow, read:org, gist） |
 
