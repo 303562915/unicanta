@@ -541,4 +541,5 @@
     <string name="theme_mode_dark">深色</string>
     <string name="theme_mode">深色模式</string>
     <string name="theme_preview">预览</string>
+    <string name="about_install_handoff">已把 %1$s 交给系统安装器，请在弹出的对话框里确认安装。</string>
 </resources>

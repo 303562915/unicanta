@@ -156,12 +156,16 @@ Same requirements as upstream: Shizuku (Android 16 may need the
 
 ## Build
 
-```bash
-./gradlew :androidApp:assembleDebug     # debug
-./gradlew :androidApp:assembleRelease   # needs signing config
-```
+There is **no local build**. This fork has no Android SDK wired up, and `gradlew` is not
+executable on purpose — every build runs in GitHub Actions:
 
-JDK 21 required. Modules: `androidApp` / `desktopApp` / `webApp` / `composeApp`.
+- `build.yml` — tests, debug APK, and a signed release APK when the signing secrets are set
+  (skipped on `master`, where `development-release.yml` produces the same signed APK)
+- `release.yml` — signed release + checksums + attestation, on a `v*` tag or manual dispatch
+- `development-release.yml` — the rolling signed `dev` pre-release
+
+Modules: `composeApp` / `androidApp` / `desktopApp` / `webApp` / `packages` / `helper` /
+`hiddenApiStubs` (see `settings.gradle.kts`).
 
 ## Local regression
 

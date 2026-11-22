@@ -915,8 +915,11 @@ fun CommentComposer(
                 val draftKeys: @Composable () -> Unit = {
                     Icon(
                         imageVector = Icons.Outlined.Image,
-                        contentDescription = "评论暂时只能发文字",
-                        modifier = Modifier.size(40.dp).padding(9.dp),
+                        // Decorative: this key takes no pictures and answers no tap, so it gets no
+                        // description. A caption like "comments are text-only for now" would be read
+                        // aloud as if the key did something, which is worse than silence.
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp).padding(13.dp),
                         // Dimmed rather than hidden: an image key is what a comment box of this
                         // shape usually carries, and this one takes no pictures — a lit key that
                         // answers nothing would be the worse of the two lies.
@@ -925,11 +928,13 @@ fun CommentComposer(
                     Icon(
                         imageVector = Icons.Outlined.AlternateEmail,
                         contentDescription = "插入 @",
+                        // 48dp is the touch minimum; the icon itself stays 22dp inside it, so the
+                        // key looks the same as its neighbours while being easy to hit.
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(48.dp)
                             .clip(RoundedCornerShape(50))
                             .clickable { onDraftChange(draft + "@") }
-                            .padding(9.dp),
+                            .padding(13.dp),
                         tint = colors.onSurfaceVariant,
                     )
                     Icon(
@@ -1271,15 +1276,23 @@ private fun ReplyChip(name: String, onCancel: () -> Unit) {
             Spacer(Modifier.width(4.dp))
             Text(text = "回复 $name", fontSize = 9.sp, color = colors.primary)
             Spacer(Modifier.width(2.dp))
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "取消回复",
+            // The glyph stays 12dp but the tap target does not: a 14dp square is unmissable only
+            // with a mouse. The chip grows by 6dp to hold it, which is what makes "cancel" reachable
+            // on a phone without turning the chip into a button.
+            Box(
                 modifier = Modifier
-                    .size(14.dp)
+                    .size(26.dp)
                     .clip(RoundedCornerShape(50))
                     .clickable(onClick = onCancel),
-                tint = colors.primary,
-            )
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "取消回复",
+                    modifier = Modifier.size(12.dp),
+                    tint = colors.primary,
+                )
+            }
             Spacer(Modifier.width(2.dp))
         }
     }

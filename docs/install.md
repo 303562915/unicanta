@@ -10,7 +10,9 @@ description: 安装 unicanta 分支的步骤。
 3. 安装本仓库构建出的 APK：
    - [GitHub Releases](https://github.com/303562915/unicanta/releases/latest/)
    - [下载页](https://303562915.github.io/unicanta/)（稳定版 / 开发版可切换）
-   - 或自行构建：`./gradlew :androidApp:assembleDebug`
+
+> 本仓库**不支持本地构建**：没有 Android SDK，构建全部在 GitHub Actions 里完成
+> （见 `AGENTS.md` 第 0 节）。要自己出包就 fork 后走 Actions，别在本地跑 `gradlew`。
 
 ## F-Droid
 
