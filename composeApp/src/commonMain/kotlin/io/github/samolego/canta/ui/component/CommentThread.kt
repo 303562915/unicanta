@@ -43,7 +43,9 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -896,10 +898,10 @@ fun CommentComposer(
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The field: a white box one line tall (about 54dp with its padding) with a small
-                    // radius rather than a full pill, so it reads as an input box and not as a
-                    // button. White, not the tinted container colour: a comment field is a sheet of
-                    // paper under the text, and the tint made it look like a disabled control.
+                    // The field: one grey pill, the height of the keys that sit inside it, the way a
+                    // short-video composer draws its comment box. The keys that act on the draft live
+                    // inside the pill's right end instead of floating beside it, so the bar reads as
+                    // one thing to write in rather than as a row of three buttons.
                     //
                     // It grows with what is written — a comment that runs past the edge of the line
                     // wraps and the bar gets taller — up to a palm's worth of lines; past that the
@@ -907,25 +909,21 @@ fun CommentComposer(
                     // the field itself is never scrolled, which is what keeps a sticker drawn from
                     // its own line's measurement on top of the character it stands for.
                     val fieldScroll = rememberScrollState()
-                    Box(
+                    Row(
                         modifier = Modifier
                             .weight(1f)
-                            // One line's height at the least — a soft grey pill the height of the
-                            // sticker key, so an empty bar still reads as a bar — and a palm's worth
-                            // at most, past which the box scrolls instead of growing.
-                            .heightIn(min = 48.dp, max = 132.dp)
-                            // A full pill on a soft grey, with no outline: the box is a place to
-                            // write, not a control with an edge, and the grey is the tone the rest
-                            // of the app already uses for "somewhere to put text".
+                            // One line's height at the least, a palm's worth at most.
+                            .heightIn(min = 46.dp, max = 140.dp)
                             .clip(RoundedCornerShape(percent = 50))
-                            .background(colors.surfaceContainerHighest)
+                            .background(inputFieldColor())
                             .clickable { focusRequester.requestFocus() },
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .weight(1f)
                                 .verticalScroll(fieldScroll)
-                                .padding(horizontal = 16.dp, vertical = 13.dp),
+                                .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
                         ) {
                             // The field shows the stickers, not the tokens: "[偷笑]" is how a
                             // comment travels through the clipboard and the backend, but a person
@@ -1038,37 +1036,53 @@ fun CommentComposer(
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    // The sticker key, beside the field: a bare glyph the size of a thumb, the way a
-                    // short-video composer draws its row of keys — no disc behind it, so the bar
-                    // reads as one line and not as three buttons. Lit while the panel is up, so the
-                    // bar says where the taps go.
-                    Icon(
-                        imageVector = if (pickerOpen) {
-                            Icons.Outlined.Keyboard
-                        } else {
-                            Icons.Outlined.EmojiEmotions
-                        },
-                        contentDescription = if (pickerOpen) "收起表情" else "表情",
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(50))
-                            .clickable {
-                                if (pickerOpen) {
-                                    onPickerOpenChange(false)
-                                    focusRequester.requestFocus()
-                                } else {
-                                    // The keyboard gives way to the panel: both open at once would
-                                    // leave the grid with a quarter of the screen.
-                                    focus.clearFocus()
-                                    imeController?.hide()
-                                    onPickerOpenChange(true)
+                        // The keys sit inside the pill's right end, where a short-video composer
+                        // puts them: the draft grows to their left and never runs under them.
+                        Icon(
+                            imageVector = Icons.Outlined.Image,
+                            contentDescription = "评论暂时只能发文字",
+                            modifier = Modifier.size(30.dp).padding(6.dp),
+                            // Dimmed rather than hidden: an image key is what a comment box of this
+                            // shape usually carries, and this one takes no pictures — a lit key that
+                            // answers nothing would be the worse of the two lies.
+                            tint = colors.onSurfaceVariant.copy(alpha = 0.38f),
+                        )
+                        Icon(
+                            imageVector = Icons.Outlined.AlternateEmail,
+                            contentDescription = "插入 @",
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(50))
+                                .clickable { onDraftChange(draft + "@") }
+                                .padding(6.dp),
+                            tint = colors.onSurfaceVariant,
+                        )
+                        Icon(
+                            imageVector = if (pickerOpen) {
+                                Icons.Outlined.Keyboard
+                            } else {
+                                Icons.Outlined.EmojiEmotions
+                            },
+                            contentDescription = if (pickerOpen) "收起表情" else "表情",
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(50))
+                                .clickable {
+                                    if (pickerOpen) {
+                                        onPickerOpenChange(false)
+                                        focusRequester.requestFocus()
+                                    } else {
+                                        // The keyboard gives way to the panel: both open at once
+                                        // would leave the grid with a quarter of the screen.
+                                        focus.clearFocus()
+                                        imeController?.hide()
+                                        onPickerOpenChange(true)
+                                    }
                                 }
-                            }
-                            .padding(5.dp),
-                        tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
-                    )
+                                .padding(6.dp),
+                            tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
+                        )
+                    }
                     // The send pill appears with the first character, exactly as a short-video
                     // composer only offers "发送" once there is something to send: an empty bar is a
                     // field and a sticker key, nothing that reads as a dead button.

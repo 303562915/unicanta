@@ -55,11 +55,11 @@ fun PackageSearchField(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
-            // The same soft grey pill the comment composer uses: both are "somewhere to type" on
-            // this app, and two different-looking input boxes on one page read as two components
-            // that came from different apps.
+            // The same neutral grey the comment box uses: both are "somewhere to type" on this
+            // app, and two differently tinted boxes on one page read as two components that came
+            // from different apps.
             .clip(RoundedCornerShape(percent = 50))
-            .background(scheme.surfaceContainerHighest)
+            .background(inputFieldColor())
             .heightIn(min = 44.dp)
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
