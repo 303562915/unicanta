@@ -11,6 +11,12 @@ name: 🔒 Wasm Yarn Lock Upgrade
 
 on:
   workflow_dispatch:
+    inputs:
+      purge_ws:
+        description: "先把 ws 那条从锁里删掉再重算（用来让插件重新解析这条依赖）"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -35,7 +41,18 @@ jobs:
           cache: "gradle"
 
       - name: 🧶 Recompute the wasm yarn lock
-        run: ./gradlew :kotlinWasmUpgradeYarnLock --no-daemon --stacktrace
+        run: |
+          if [ "${{ inputs.purge_ws }}" = "true" ]; then
+            python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path('kotlin-js-store/wasm/yarn.lock')
+          t = p.read_text()
+          t2 = re.sub(r'(?m)^ws@[^\n]*\n(?:  [^\n]*\n)*\n?', '', t)
+          p.write_text(t2)
+          print('purged ws entry:', t != t2)
+          PY
+          fi
+          ./gradlew :kotlinWasmUpgradeYarnLock --no-daemon --stacktrace
 
       - name: 🔍 Show what changed
         run: |
