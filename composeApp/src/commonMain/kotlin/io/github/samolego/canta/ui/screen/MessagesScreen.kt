@@ -1,7 +1,6 @@
 package io.github.samolego.canta.ui.screen
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.backgroundimport androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.InboxSummary
 import io.github.samolego.canta.data.community.PlanRepository
@@ -53,6 +55,10 @@ import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import kotlinx.coroutines.delay
+
+/** 页面开着时多久问一次后端：没有推送，靠这一行让列表跟上别人的动作。 */
+private const val MessagePollMs: Long = 15_000L
 
 /** 头像那一排最多画多少位最近联系人：再多就不是「最近」了。 */
 private const val RecentContactCap: Int = 8
@@ -104,10 +110,29 @@ fun MessagesScreen(
     // 这个数先留着，页面拿到它才算把「有多少条新互动」问过一遍。
     var summary by remember { mutableStateOf(InboxSummary.EMPTY) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每十几秒整页闪一下骨架。
+    var reloads by remember { mutableIntStateOf(0) }
+
+    // 没有推送通道，页面开着的时候只能自己问。15 秒一次，比"退出再进"快得多，又不至于把
+    // 每分钟 120 次的后端额度吃满（一次刷新是三四个查询）。
+    LaunchedEffect(owner) {
+        if (owner.isEmpty()) return@LaunchedEffect
+        while (true) {
+            delay(MessagePollMs)
+            reloads++
+        }
+    }
+
+    // 从会话页、建群页退回来时立刻再问一次：定时器最久还要等 15 秒，人刚说完话回来却看到
+    // 旧的预览和旧的未读数，会以为没发出去。第一次进入不重复拉（那时 reloads 还是 0）。
+    var resumedOnce by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (resumedOnce) reloads++ else resumedOnce = true
+    }
 
     // 一页三次请求，一次拉完再画：先画骨架再补数据会让这一页闪两下。
-    LaunchedEffect(owner) {
-        loading = true
+    LaunchedEffect(owner, reloads) {
+        if (reloads == 0) loading = true
         loadError = null
         val chats = repository.conversationsFor(owner)
         val people = repository.followersOf(owner)

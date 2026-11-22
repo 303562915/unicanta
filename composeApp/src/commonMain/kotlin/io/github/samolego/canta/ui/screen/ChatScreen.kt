@@ -56,6 +56,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 一个气泡最宽多少：一行字到这儿换行，免得一条长消息把整块屏幕占满。 */
@@ -63,6 +64,9 @@ private val ChatBubbleMaxWidth = 260.dp
 
 /** 一页读多少条：首屏和往上翻历史用同一个数，翻页就用这个数往回退一屏。 */
 private const val ChatPageSize = 30
+
+/** 会话开着时多久问一次新消息：没有推送，短了浪费额度，长了就"不准时"。 */
+private const val ChatPollMs: Long = 8_000L
 
 /**
  * 输入框上面那排快捷短语：左边是画出来的样子，右边是点下去真正填进输入框的字。
@@ -140,6 +144,23 @@ fun ChatScreen(
         loading = false
         repository.markRead(owner, conversationId)
         detail = repository.conversationDetail(owner, conversationId)
+    }
+
+    // 会话开着时自己问新消息：没有推送通道，不轮询的话对方说什么都要等退出再进才看得见。
+    // 只并进尾巴，不动已经翻出来的历史；有变化才走一次已读。
+    LaunchedEffect(conversationId, owner) {
+        if (conversationId <= 0L) return@LaunchedEffect
+        while (true) {
+            delay(ChatPollMs)
+            val latest = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
+            if (latest.isNotEmpty()) {
+                val merged = (messages + latest).distinctBy { it.id }.sortedBy { it.id }
+                if (merged.size != messages.size) {
+                    messages = merged
+                    repository.markRead(owner, conversationId)
+                }
+            }
+        }
     }
 
     // 新消息（自己发的也算）落到最下面才看得见；列表是正序的，所以滚到最后一行。

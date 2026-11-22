@@ -481,6 +481,14 @@ private fun CantaNavigation(
     // the phone was in a pocket would otherwise wait for a page change that may never come.
     var countTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { countTick++ }
+    // 一直停在这一页也要跟上：别的手机在这期间发来消息，红点和底栏的数字不该等到切页才动。
+    // 60 秒一次，只在带着这几个数字的页面上跑（下面那个 effect 会自己筛）。
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            countTick++
+        }
+    }
     LaunchedEffect(currentRoute, countTick) {
         // The three pages that carry the count: the app list (top bar bell), the messages page
         // (its own row and the bar entry) and the interactions list. Anywhere else the number is
