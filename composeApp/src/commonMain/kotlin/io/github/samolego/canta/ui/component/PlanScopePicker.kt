@@ -157,14 +157,18 @@ fun PlanScopeBar(
                 outlined = true,
             )
             if (openedScope != null && onSelectBuild != null) {
-                // Every build laid out as its own capsule: "全部版本" first, because it is the
-                // step back, then the builds the backend knows of this model.
-                ScopeChip(
-                    text = "全部版本",
-                    selected = openedScope.build == null,
-                    onClick = { onSelectBuild(null) },
-                    outlined = true,
-                )
+                // Every build as its own capsule. "全部版本" is not one of them until it is needed:
+                // every build *is* the default, so a capsule saying "全部版本" on an untouched page
+                // offers a choice that has already been made. It appears only once a build is
+                // picked, where it is the way back.
+                if (openedScope.build != null) {
+                    ScopeChip(
+                        text = "全部版本",
+                        selected = false,
+                        onClick = { onSelectBuild(null) },
+                        outlined = true,
+                    )
+                }
                 openedScope.model.builds.forEach { build ->
                     val current = openedScope.build
                     ScopeChip(
@@ -556,11 +560,11 @@ private fun ScopeChip(
     val shape = RoundedCornerShape(percent = 50)
     Row(
         // The capsule is the whole tap target and a comfortable one to hit: a label with 4dp of
-        // padding reads as text, and text is what nobody thinks to tap. 40dp rather than Material's
-        // 48dp because these chips wrap onto several rows, and pads that reach past the capsule
-        // would overlap the row above — which turns one tap into a coin toss.
+        // padding reads as text, and text is what nobody thinks to tap. 32dp, not 40: these chips
+        // come in rows under the page band, and at 40 they read as a second band of their own and
+        // push the list down the page.
         modifier = Modifier
-            .heightIn(min = 40.dp)
+            .heightIn(min = 32.dp)
             // Clipped before the tap: an unclipped ripple draws a square inside a capsule.
             .clip(shape)
             .background(container, shape)
@@ -575,12 +579,12 @@ private fun ScopeChip(
                 }
             )
             .clickable(onClick = onClick)
-            .padding(start = 13.dp, end = if (chevron) 9.dp else 13.dp, top = 7.dp, bottom = 7.dp),
+            .padding(start = 10.dp, end = if (chevron) 7.dp else 10.dp, top = 5.dp, bottom = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = text,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = content,
             maxLines = 1,
@@ -591,7 +595,7 @@ private fun ScopeChip(
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
                 contentDescription = null,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(14.dp),
                 tint = content,
             )
         }

@@ -246,24 +246,24 @@ fun DeviceHero(
                     // name ("Galaxy Z Fold8") would be the first thing to go under an ellipsis.
                     Row(
                         modifier = Modifier
-                            .heightIn(min = 34.dp)
+                            .heightIn(min = 30.dp)
                             .clip(RoundedCornerShape(percent = 50))
                             .background(capsuleBackground)
                             .border(1.dp, capsuleBorder, RoundedCornerShape(percent = 50))
                             .clickable(onClick = onTitleClick)
-                            .padding(start = 11.dp, end = 7.dp, top = 4.dp, bottom = 4.dp),
+                            .padding(start = 10.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = title,
-                            fontSize = 19.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = onBand,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false),
                         )
-                        Spacer(Modifier.width(5.dp))
+                        Spacer(Modifier.width(4.dp))
                         Text(
                             text = "切换",
                             fontSize = 9.sp,
@@ -275,13 +275,13 @@ fun DeviceHero(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = null,
                             tint = capsuleAccent,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(14.dp),
                         )
                     }
                 } else {
                     Text(
                         text = title,
-                        fontSize = 19.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = onBand,
                         maxLines = 1,
