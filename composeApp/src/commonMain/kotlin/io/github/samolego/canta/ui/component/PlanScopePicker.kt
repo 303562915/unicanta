@@ -21,8 +21,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -38,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,22 +99,24 @@ fun PlanScope.buildLabel(): String? = when (this) {
 }
 
 /**
- * The two chips under the page switch: which phone, and which of its builds — the state the list
- * below is drawn from.
+ * The bar under the page switch: which phone, and which of its builds — the state the list below is
+ * drawn from.
  *
- * The chip *is* the button: it carries the chevron that says "there is a list behind this", and the
- * tap target is the capsule itself, not the empty row it sits in. There used to be a "切换" word to
- * the right of it; that word is gone, because two targets for one action only made the reader guess
- * which one was the real one — and a reader who tapped the blank space between them got nothing at
- * all. The search button on the right belongs to the list under the switch, not to the phone: it
- * filters rows by package.
+ * The model capsule *is* the button: it carries the chevron that says "there is a list behind
+ * this", and the tap target is the capsule itself, not the empty row it sits in. The search button
+ * on the right belongs to the list under the switch, not to the phone: it filters rows by package.
  *
- * The builds are a row of capsules of their own, not one capsule that opens another list: a build
- * is a value the reader switches between, and a value that needs a sheet opened to see it is a
- * choice the page could have shown in the same breath. [onSelectBuild] picks one directly; null
- * keeps the older single capsule for callers with no reload story to hang on it.
+ * The builds are capsules of their own, in one row that scrolls sideways instead of wrapping: a
+ * model can have a dozen system versions, and a wrapped row would push the ranking down by three
+ * lines before the first app. Reaching the rest costs one horizontal swipe.
+ *
+ * There is no "全部版本" capsule. Opening a phone already means every build of it — a capsule for a
+ * choice that has already been made is a button that does nothing visible. Tapping the current build
+ * again is how it goes back to every build, which is where the page started.
+ *
+ * [onSelectBuild] picks a build directly; null keeps the older single capsule for callers with no
+ * reload story to hang on it.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlanScopeBar(
     scope: PlanScope,
@@ -128,6 +134,23 @@ fun PlanScopeBar(
 ) {
     val colors = MaterialTheme.colorScheme
     val openedScope = scope as? PlanScope.Other
+    // One entry per build: a LazyRow key has to be unique, and the client groups builds by
+    // (rom, version) rather than trusting the row count the backend sent.
+    val builds = openedScope?.model?.builds.orEmpty().distinctBy { it.rom + "/" + it.romVersion }
+    val currentBuild = openedScope?.build
+    val selectedBuildIndex = builds.indexOfFirst { build ->
+        currentBuild != null && currentBuild.rom == build.rom && currentBuild.romVersion == build.romVersion
+    }
+    // Hoisted out of the branch below: a state remembered inside it would be discarded and rebuilt
+    // whenever the bar flips between "has builds" and "has none", and the scroll position with it.
+    val buildRowState = rememberLazyListState()
+    // Keyed on the model as well as the index: two phones can both have their selected build at
+    // position 2, and an index-only key would leave the second one's capsule off screen.
+    LaunchedEffect(openedScope?.model?.model, selectedBuildIndex) {
+        if (builds.isEmpty()) return@LaunchedEffect
+        // Nothing selected means "every build", and that row starts at its first capsule.
+        buildRowState.animateScrollToItem(if (selectedBuildIndex >= 0) selectedBuildIndex else 0)
+    }
     Row(
         // Not clickable as a row any more: a row-wide target under a lone chip is what made the
         // tap feel like it landed somewhere other than where the finger went.
@@ -136,63 +159,58 @@ fun PlanScopeBar(
             .padding(start = 16.dp, top = 2.dp, end = 6.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The chips flow rather than share one line under an ellipsis: a system version is a long
-        // string, and truncating it under a capsule is what made the version look cut off. A pair
-        // that does not fit on one line simply wraps.
-        FlowRow(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            ScopeChip(
-                text = scope.label(ownLabel),
-                selected = true,
-                onClick = onOpen,
-                // The chevron is the hint: a capsule with an arrow on it is read as a list that
-                // opens, which is exactly what it does.
-                chevron = true,
-                // Outlined, not filled: the filled capsule is the heading's job, where it says
-                // which phone the page is about. This one is the list's scope — the same model
-                // name on purpose, so the two never look like two different things to switch.
-                outlined = true,
-            )
-            if (openedScope != null && onSelectBuild != null) {
-                // Every build as its own capsule. "全部版本" is not one of them until it is needed:
-                // every build *is* the default, so a capsule saying "全部版本" on an untouched page
-                // offers a choice that has already been made. It appears only once a build is
-                // picked, where it is the way back.
-                if (openedScope.build != null) {
-                    ScopeChip(
-                        text = "全部版本",
-                        selected = false,
-                        onClick = { onSelectBuild(null) },
-                        outlined = true,
-                    )
-                }
-                openedScope.model.builds.forEach { build ->
-                    val current = openedScope.build
+        ScopeChip(
+            text = scope.label(ownLabel),
+            selected = true,
+            onClick = onOpen,
+            // The chevron is the hint: a capsule with an arrow on it is read as a list that
+            // opens, which is exactly what it does.
+            chevron = true,
+            // Outlined, not filled: the filled capsule is the heading's job, where it says
+            // which phone the page is about. This one is the list's scope — the same model
+            // name on purpose, so the two never look like two different things to switch.
+            outlined = true,
+            // Capped so a long name ("REDMI K100 Pro Max") cannot eat the whole row: the builds
+            // after it are the point of this line, and they need room to start.
+            modifier = Modifier.widthIn(max = 168.dp),
+        )
+        if (openedScope != null && onSelectBuild != null && builds.isNotEmpty()) {
+            Spacer(Modifier.width(6.dp))
+            LazyRow(
+                state = buildRowState,
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                contentPadding = PaddingValues(end = 4.dp),
+            ) {
+                items(builds, key = { it.rom + "/" + it.romVersion }) { build ->
+                    val selected = currentBuild != null &&
+                        currentBuild.rom == build.rom &&
+                        currentBuild.romVersion == build.romVersion
                     ScopeChip(
                         text = build.versionLabel,
-                        selected = current != null &&
-                            current.rom == build.rom &&
-                            current.romVersion == build.romVersion,
-                        onClick = { onSelectBuild(build) },
+                        selected = selected,
+                        // Tapping the selected build again steps back to every build of the model.
+                        onClick = { onSelectBuild(if (selected) null else build) },
                         outlined = true,
-                    )
-                }
-            } else {
-                scope.buildLabel()?.let { build ->
-                    // The build stays a plain capsule: it is the finer half of the scope, and two
-                    // outline capsules side by side would read as two equal choices instead of
-                    // "this phone, and then this build of it".
-                    ScopeChip(
-                        text = build,
-                        selected = false,
-                        onClick = onOpen,
-                        chevron = true,
                     )
                 }
             }
+        } else {
+            scope.buildLabel()?.let { build ->
+                Spacer(Modifier.width(6.dp))
+                // The build stays a plain capsule: it is the finer half of the scope, and two
+                // outline capsules side by side would read as two equal choices instead of
+                // "this phone, and then this build of it".
+                ScopeChip(
+                    text = build,
+                    selected = false,
+                    onClick = onOpen,
+                    chevron = true,
+                    modifier = Modifier.widthIn(max = 168.dp),
+                )
+            }
+            Spacer(Modifier.weight(1f))
         }
         if (onSearch != null) {
             // Its own tap target: the chip switches the phone, this narrows the list, so one never
@@ -543,6 +561,8 @@ private fun ScopeChip(
     chevron: Boolean = false,
     /** Drawn as an outline instead of a filled capsule: a filter, not the page's subject. */
     outlined: Boolean = false,
+    /** Room for the caller to cap the width, so a long model name cannot own the row. */
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val container = when {
@@ -563,7 +583,7 @@ private fun ScopeChip(
         // padding reads as text, and text is what nobody thinks to tap. 32dp, not 40: these chips
         // come in rows under the page band, and at 40 they read as a second band of their own and
         // push the list down the page.
-        modifier = Modifier
+        modifier = modifier
             .heightIn(min = 32.dp)
             // Clipped before the tap: an unclipped ripple draws a square inside a capsule.
             .clip(shape)
