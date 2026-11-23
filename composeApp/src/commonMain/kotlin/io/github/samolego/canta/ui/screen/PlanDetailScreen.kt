@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -225,6 +226,14 @@ fun PlanDetailScreen(
     var query by remember(planId) { mutableStateOf("") }
     /** The scroll of the page's list: opening the filter scrolls the packages into view. */
     val listState = rememberLazyListState()
+    /**
+     * True once the hero has scrolled away. The bar then shows the plan's own name instead of the
+     * generic page title: a hundred package rows later, "方案详情" no longer says which plan this
+     * is, and the reader who forgot has to scroll all the way back up to find out.
+     */
+    val heroScrolledAway by remember(listState) {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -491,7 +500,13 @@ fun PlanDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("…", style = MaterialTheme.typography.bodyLarge)
+                    // "…" alone gave no sign the page was working: the plan is a backend call and
+                    // on a slow proxy it takes a while, so say what is being waited for.
+                    Text(
+                        text = "正在读取方案…",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
 
                 loaded == null -> Box(
@@ -570,7 +585,12 @@ fun PlanDetailScreen(
             // no background of its own — with the page's name and its way out.
             ScreenTopBar(
                 onNavigateBack = onNavigateBack,
-                title = stringResource(Res.string.plan_detail_title),
+                // The plan's name takes over once the hero is gone; see [heroScrolledAway].
+                title = if (heroScrolledAway) {
+                    plan?.title.orEmpty().ifBlank { stringResource(Res.string.plan_detail_title) }
+                } else {
+                    stringResource(Res.string.plan_detail_title)
+                },
                 height = FlTopBarCompactHeight,
                 actions = {
                     plan?.let { current ->
@@ -922,13 +942,17 @@ private fun PlanHero(
                 )
                 // The date rides the uploader's line instead of owning one: on the card's own
                 // surface a standalone "2026-11-21" cost a whole row and read like a second title.
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = plan.rebootedAt.take(10),
-                    fontSize = 9.sp,
-                    color = colors.onPrimaryContainer.copy(alpha = 0.65f),
-                    maxLines = 1,
-                )
+                // Hidden when the field is empty: a spacer plus an empty text is a blank gap that
+                // looks like the card forgot to load something.
+                if (plan.rebootedAt.isNotBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = plan.rebootedAt.take(10),
+                        fontSize = 9.sp,
+                        color = colors.onPrimaryContainer.copy(alpha = 0.65f),
+                        maxLines = 1,
+                    )
+                }
                 if (mine) {
                     Spacer(Modifier.width(6.dp))
                     Chip(label = "我的方案", color = colors.primary)
@@ -980,7 +1004,9 @@ private fun PlanHero(
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        text = "机型不符：这是「${plan.deviceLabel.ifBlank { "未知机型" }}」的方案",
+                        // The phone is already named on the chip line right above; repeating it
+                        // here made the warning read as a second device line instead of a warning.
+                        text = "这不是本机机型的方案",
                         fontSize = 11.sp,
                         lineHeight = 14.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -1079,7 +1105,7 @@ private fun PlanHero(
                     .padding(top = 10.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(percent = 50))
-                    .background(colors.onPrimaryContainer.copy(alpha = 0.12f))
+                    .background(colors.primary)
                     .clickable(onClick = onUsePlan)
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -1089,14 +1115,14 @@ private fun PlanHero(
                     imageVector = Icons.Default.PlaylistAddCheck,
                     contentDescription = null,
                     modifier = Modifier.size(15.dp),
-                    tint = colors.onPrimaryContainer,
+                    tint = colors.onPrimary,
                 )
                 Spacer(Modifier.width(7.dp))
                 Text(
                     text = "使用这套方案（${plan.packages.size} 个包）",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = colors.onPrimaryContainer,
+                    color = colors.onPrimary,
                 )
             }
         }
