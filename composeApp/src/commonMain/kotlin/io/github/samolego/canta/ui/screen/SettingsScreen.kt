@@ -24,6 +24,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,7 @@ import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.PrivilegeStatus
+import io.github.samolego.canta.data.history.RestoreMode
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.advanced_settings
 import io.github.samolego.canta.generated.resources.allow_unsafe_selections
@@ -51,6 +53,7 @@ import io.github.samolego.canta.generated.resources.allow_unsafe_uninstalls_desc
 import io.github.samolego.canta.generated.resources.auto_update_bloat_list
 import io.github.samolego.canta.generated.resources.bloat_list_url
 import io.github.samolego.canta.generated.resources.bloat_list_url_description
+import io.github.samolego.canta.generated.resources.cancel
 import io.github.samolego.canta.generated.resources.commits_url
 import io.github.samolego.canta.generated.resources.commits_url_description
 import io.github.samolego.canta.generated.resources.confirm_uninstall
@@ -80,6 +83,7 @@ import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.AppLinkCard
 import io.github.samolego.canta.ui.component.AppToggleCard
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ExpandIcon
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsGroup
@@ -135,10 +139,11 @@ fun SettingsScreen(
     fakeScores: Boolean = false,
     onFakeScoresChange: (Boolean) -> Unit = {},
     /**
-     * 生成"最近删掉的包名"的恢复脚本并交给分享面板，好发到电脑上双击运行。
-     * 具体的文件生成在 [io.github.samolego.canta.data.history.OperationLogStore.shareRestoreScript]。
+     * 生成恢复脚本并交给分享面板，好发到电脑上双击运行：[RestoreMode.REMOVED] 按记录恢复，
+     * [RestoreMode.ALL] 一键恢复所有已卸载的包。文件由
+     * [io.github.samolego.canta.data.history.OperationLogStore.shareRestoreScript] 生成。
      */
-    onExportRestoreScript: () -> Unit = {},
+    onExportRestoreScript: (RestoreMode) -> Unit = {},
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -163,6 +168,7 @@ fun SettingsScreen(
         lockAnswer?.let { answer -> launchGateOf(question, answer) }
     }
     var gateDialogShown by remember { mutableStateOf(false) }
+    var restoreDialogShown by remember { mutableStateOf(false) }
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
 
     val authRequiredTitle = stringResource(Res.string.require_auth_setting)
@@ -340,12 +346,12 @@ fun SettingsScreen(
 
             // 撤回卸载的最后一条线：删掉的包其实还在系统分区里，install-existing 能把标记取消，
             // 但那条命令只能在电脑上通过 adb 打。这里生成一个批处理发出去，双击就跑：
-            // 先按 Canta 的记录逐个装回来，再保底把系统里所有已卸载的包全恢复一遍。
+            // 可以先按记录恢复，也可以不看记录、一键恢复全部已卸载的包。
             AppLinkCard(
                 glyph = FlGlyphs.send,
-                title = "导出最近删除的包名",
-                subtitle = "生成 ADB 恢复脚本，发送到电脑上双击运行；保底恢复所有已卸载的包",
-                onClick = onExportRestoreScript,
+                title = "导出恢复脚本",
+                subtitle = "最近删除的包名 / 一键恢复全部已卸载的包，发到电脑上双击运行",
+                onClick = { restoreDialogShown = true },
             )
             Spacer(Modifier.height(CardGap))
 
@@ -408,6 +414,77 @@ fun SettingsScreen(
                 onSave = { questionId, answer -> settingsViewModel.saveLaunchGate(questionId, answer) },
                 onClear = { settingsViewModel.clearLaunchGate() },
                 onDismiss = { gateDialogShown = false },
+            )
+        }
+
+        // 导出哪一份：只导记录里的，还是不看记录、把全部已卸载的都装回来。
+        if (restoreDialogShown) {
+            RestoreExportDialog(
+                onDismiss = { restoreDialogShown = false },
+                onPick = { mode ->
+                    restoreDialogShown = false
+                    onExportRestoreScript(mode)
+                },
+            )
+        }
+    }
+}
+
+/**
+ * 恢复脚本的两个版本，各占一行：记录里的按名字逐个装，全部的交给保底那段自己列。
+ * 说清区别比让用户猜"导出全部"是什么意思重要。
+ */
+@Composable
+private fun RestoreExportDialog(
+    onDismiss: () -> Unit,
+    onPick: (RestoreMode) -> Unit,
+) {
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = "导出恢复脚本",
+        buttons = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+        },
+    ) {
+        RestoreChoiceRow(
+            title = "最近删除的包名",
+            subtitle = "只写 Canta 记录里还没装回来的包，最后再保底全量恢复一次",
+            onClick = { onPick(RestoreMode.REMOVED) },
+        )
+        Spacer(Modifier.height(6.dp))
+        RestoreChoiceRow(
+            title = "导出全部",
+            subtitle = "不看记录：一键还原所有「已卸载但文件还在」的包",
+            onClick = { onPick(RestoreMode.ALL) },
+        )
+    }
+}
+
+/** 对话框里的一行可点选项：标题一行、说明一行，整行都是点击区。 */
+@Composable
+private fun RestoreChoiceRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = FlText.subheadline,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = FlText.caption2,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

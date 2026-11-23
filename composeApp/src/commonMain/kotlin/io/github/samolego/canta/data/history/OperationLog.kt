@@ -141,6 +141,9 @@ class OperationLogStore(
          */
         const val RESTORE_FILE_NAME = "canta-restore.bat"
 
+        /** The same, but for "put every removed package back" without consulting the records. */
+        const val RESTORE_ALL_FILE_NAME = "canta-restore-all.bat"
+
         /** What the share sheet is told the rescue script is; `.bat` has no registered MIME. */
         private const val RESTORE_MIME = "application/octet-stream"
 
@@ -272,37 +275,50 @@ class OperationLogStore(
     }
 
     /**
-     * 生成"把删掉的装回来"的脚本，交给分享面板发到电脑上双击运行。
+     * 生成恢复脚本，交给分享面板发到电脑上双击运行。
      *
      * 为什么是一个文件而不是一页清单：`install-existing` 只能在电脑上通过 adb 打，
      * 手机自己救不了自己；而人手里真正要的是"插上数据线、双击、等它跑完"。
-     * 脚本先按记录逐个恢复，再保底把系统里所有已卸载的包恢复一遍——即使记录丢了、
-     * 或者删的时候 Canta 不在，第二次也还在。
+     *
+     * [RestoreMode.REMOVED] 先按记录逐个恢复，再保底把系统里所有已卸载的包恢复一遍；
+     * [RestoreMode.ALL] 不要记录，直接就是那一遍保底——删的时候 Canta 不在、记录被清过，
+     * 或者包是别的手机删的，都走这个。
      */
-    suspend fun shareRestoreScript(): RestoreExport {
+    suspend fun shareRestoreScript(mode: RestoreMode = RestoreMode.REMOVED): RestoreExport {
         ensureReady()
-        val packages = recentlyRemovedPackages()
+        // 「导出全部」不看记录：它要的就是系统里所有已卸载的都装回来。
+        val packages = if (mode == RestoreMode.REMOVED) recentlyRemovedPackages() else emptyList()
+        val fileName = if (mode == RestoreMode.ALL) RESTORE_ALL_FILE_NAME else RESTORE_FILE_NAME
         // 拼字符串放后台；分享面板得在调用者的线程上开（Android 从应用上下文启 Activity 要主线程）。
-        val script = withContext(Dispatchers.Default) { restoreScript(packages) }
-        val shared = runCatching { platform.shareFile(RESTORE_FILE_NAME, script, RESTORE_MIME) }
+        val script = withContext(Dispatchers.Default) { restoreScript(packages, mode) }
+        val shared = runCatching { platform.shareFile(fileName, script, RESTORE_MIME) }
             .getOrDefault(false)
         // 没有分享面板的构建（桌面、网页）至少把文件放到用户找得到的地方。
         val path = if (shared) {
             null
         } else {
-            runCatching { platform.exportLog(RESTORE_FILE_NAME, script) }.getOrNull()
+            runCatching { platform.exportLog(fileName, script) }.getOrNull()
         }
-        return RestoreExport(packages = packages.size, shared = shared, path = path)
+        return RestoreExport(packages = packages.size, shared = shared, path = path, mode = mode)
     }
 
     /** The batch file itself; CRLF because it is a Windows script, whoever writes it. */
-    private fun restoreScript(packages: List<String>): String = buildString {
+    private fun restoreScript(packages: List<String>, mode: RestoreMode): String = buildString {
+        val all = mode == RestoreMode.ALL
         append("@echo off\r\n")
         append("chcp 65001 >nul\r\n")
-        append("rem ==== Canta 恢复脚本（生成于 ${OperationTime.stamp(currentTimeMillis())}）====\r\n")
+        append(
+            "rem ==== " + (if (all) "Canta 一键恢复脚本" else "Canta 恢复脚本") +
+                "（生成于 ${OperationTime.stamp(currentTimeMillis())}）====\r\n"
+        )
         append("rem 用法：手机打开「USB 调试」，用数据线连上电脑，电脑装好 adb，然后双击本文件。\r\n")
-        append("rem 先按 Canta 的记录把删掉的包装回来，再保底把系统里所有「已卸载但文件还在」\r\n")
-        append("rem 的包恢复一次。两者都是 install-existing，不碰数据，不会清手机。\r\n")
+        if (all) {
+            append("rem 不看 Canta 的记录：把系统里所有「已卸载但文件还在」的包全部装回来。\r\n")
+        } else {
+            append("rem 先按 Canta 的记录把删掉的包装回来，再保底把系统里所有「已卸载但文件还在」\r\n")
+            append("rem 的包恢复一次。\r\n")
+        }
+        append("rem 都是 install-existing，不碰数据，不会清手机。\r\n")
         append("setlocal enabledelayedexpansion\r\n")
         append("set \"ADB=adb\"\r\n")
         append("\r\n")
@@ -317,19 +333,27 @@ class OperationLogStore(
         append("  exit /b 1\r\n")
         append(")\r\n")
         append("\r\n")
-        if (packages.isEmpty()) {
-            append("rem 记录里没有未恢复的卸载，直接走保底。\r\n")
-        } else {
-            append("echo [1/2] 按 Canta 的记录恢复 ${packages.size} 个包...\r\n")
-            append("for %%P in (\r\n")
-            packages.forEach { append(it).append("\r\n") }
-            append(") do (\r\n")
-            append("  echo   %%P\r\n")
-            append("  %ADB% shell cmd package install-existing --user 0 %%P\r\n")
-            append(")\r\n")
-            append("\r\n")
+        if (!all) {
+            if (packages.isEmpty()) {
+                append("rem 记录里没有未恢复的卸载，直接走保底。\r\n")
+            } else {
+                append("echo [1/2] 按 Canta 的记录恢复 ${packages.size} 个包...\r\n")
+                append("for %%P in (\r\n")
+                packages.forEach { append(it).append("\r\n") }
+                append(") do (\r\n")
+                append("  echo   %%P\r\n")
+                append("  %ADB% shell cmd package install-existing --user 0 %%P\r\n")
+                append(")\r\n")
+                append("\r\n")
+            }
         }
-        append("echo [2/2] 保底：恢复系统里所有已卸载的包...\r\n")
+        append(
+            if (all) {
+                "echo [1/1] 一键恢复系统里所有已卸载的包...\r\n"
+            } else {
+                "echo [2/2] 保底：恢复系统里所有已卸载的包...\r\n"
+            }
+        )
         // 循环放在手机上跑：adb 的输出带 CRLF，批处理的 for /f 会把行尾回车一起读进变量，
         // 拼出来的包名带着 \r 传给 install-existing 必然对不上。只依赖 cut 与 while read，
         // 已安装的包再 install-existing 一次是无害的，所以这里不做差集，宁可多跑几个。
@@ -422,12 +446,22 @@ class OperationLogStore(
 }
 
 /**
+ * 导出哪一种恢复脚本。
+ *
+ * [REMOVED] 只认 Canta 自己的记录：先按记录逐个装回来，再保底全量恢复一次。
+ * [ALL] 不看记录，一键把系统里所有「已卸载但文件还在」的包装回来——记录丢了、
+ * 或者包是别的工具/别的手机删的，都靠它。
+ */
+enum class RestoreMode { REMOVED, ALL }
+
+/**
  * 分享恢复脚本的结果：脚本里写进了几个包名、分享面板有没有打开、以及没有面板时文件落在了哪里。
  */
 data class RestoreExport(
     val packages: Int,
     val shared: Boolean,
     val path: String?,
+    val mode: RestoreMode,
 )
 
 /**

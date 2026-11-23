@@ -54,6 +54,7 @@ import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.unreadSince
+import io.github.samolego.canta.data.history.RestoreMode
 import io.github.samolego.canta.data.recommend.hasNewVotes
 import io.github.samolego.canta.data.recommend.newVotesSince
 import io.github.samolego.canta.generated.resources.Res
@@ -1023,11 +1024,14 @@ private fun CantaNavigation(
                     onOpenTheme = { navController.navigate(Screen.Theme.route) },
                     // 救急用的文件：删掉的包还在系统分区里，恢复命令得在电脑上跑。
                     // 生成的批处理交给分享面板（发到电脑），打不开面板的构建就留在下载目录。
-                    onExportRestoreScript = {
+                    onExportRestoreScript = { mode ->
                         coroutineScope.launch {
-                            val exported = deps.history.shareRestoreScript()
+                            val exported = deps.history.shareRestoreScript(mode)
                             platform.showMessage(
                                 when {
+                                    exported.shared && mode == RestoreMode.ALL ->
+                                        "已生成一键恢复脚本（全部已卸载的包），选「发送到电脑」即可"
+
                                     exported.shared && exported.packages > 0 ->
                                         "已生成 ${exported.packages} 个包名的恢复脚本，选「发送到电脑」即可"
 
