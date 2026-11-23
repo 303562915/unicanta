@@ -2,7 +2,20 @@ package io.github.samolego.canta.ui.navigation
 
 sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Logs : Screen("logs")
+
+    /**
+     * 新设置页：外观、通用开关、权限、底栏槽位、启动密码与高级项，布局照关于页的卡片流。
+     *
+     * 从 [Mine] 进；底栏不再直接进这里。
+     */
     data object Settings : Screen("settings")
+
+    /**
+     * "我的"：这个安装自己的身份，以及只有它自己知道的那些东西（评论、方案）。
+     *
+     * 底栏那个齿轮进的是这一页 —— 用户说的"把设置改为我的"改的就是这个入口。
+     */
+    data object Mine : Screen("mine")
 
     /** The app's own page: version, the switches that shape how it behaves, and where it lives. */
     data object About : Screen("about")

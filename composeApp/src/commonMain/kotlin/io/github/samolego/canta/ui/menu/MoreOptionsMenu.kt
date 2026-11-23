@@ -46,7 +46,16 @@ fun MoreOptionsMenu(
                 }
         )
 
-        // Settings page
+        // 我的：身份与"我写过的"，底栏那个齿轮通往的那一页。
+        DropdownMenuItem(
+                text = { Text("我的") },
+                onClick = {
+                    navigateToPage(Screen.Mine.route)
+                    onDismiss()
+                }
+        )
+
+        // 设置：开关都在这里，布局照关于页。
         DropdownMenuItem(
                 text = { Text(stringResource(Res.string.settings)) },
                 onClick = {

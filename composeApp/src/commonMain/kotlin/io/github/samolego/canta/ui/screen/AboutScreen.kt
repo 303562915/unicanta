@@ -2,7 +2,6 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -87,32 +86,23 @@ import io.github.samolego.canta.generated.resources.about_update_failed_server
 import io.github.samolego.canta.generated.resources.about_update_failed_timeout
 import io.github.samolego.canta.generated.resources.about_up_to_date
 import io.github.samolego.canta.generated.resources.about_update_store_managed
-import io.github.samolego.canta.generated.resources.auto_update_bloat_list
 import io.github.samolego.canta.generated.resources.about_install_handoff
-import io.github.samolego.canta.generated.resources.confirm_uninstall
-import io.github.samolego.canta.generated.resources.hide_success_dialog
-import io.github.samolego.canta.generated.resources.settings
-import io.github.samolego.canta.generated.resources.settings_bar_slots_hint
-import io.github.samolego.canta.generated.resources.tab_apps
-import io.github.samolego.canta.generated.resources.tab_recommend
-import io.github.samolego.canta.generated.resources.tab_rules
-import io.github.samolego.canta.generated.resources.tab_tweaks
 import io.github.samolego.canta.generated.resources.update_channel
 import io.github.samolego.canta.generated.resources.update_channel_dev
 import io.github.samolego.canta.generated.resources.update_channel_stable
+import io.github.samolego.canta.ui.component.AppCardCorner
+import io.github.samolego.canta.ui.component.AppCardInset
+import io.github.samolego.canta.ui.component.AppLinkCard
+import io.github.samolego.canta.ui.component.AppToggleCard
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
-import io.github.samolego.canta.ui.component.SettingsSwitch
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.UnreadDot
-import io.github.samolego.canta.ui.dialog.LaunchGateDialog
-import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
-import io.github.samolego.canta.ui.lock.launchGateOf
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
@@ -145,21 +135,14 @@ private val QQ_GROUP_SCHEMES = listOf(
     "mqq://card/show_pslcard?uin=$QQ_GROUP&card_type=group",
 )
 
-/** Side inset of a card, the same as the settings page uses. */
-private val CardInset = 13.dp
-
-/** Corner of every card on this page. */
-private val CardCorner = 12.dp
-
 /** Height the icon tile is drawn at. */
 private val IconTile = 62.dp
 
 /**
- * The about page, laid out the way FlClash lays out its own: the app on top, then the switches
- * that decide how it behaves, then where it lives.
+ * The about page, laid out the way FlClash lays out its own: the app on top, then the update row
+ * and the two switches that decide how an update lands, then where the app lives.
  *
- * The five switches are one card each rather than rows inside one card: every one of them is a
- * decision on its own, and a page with five separate settings reads faster than a list.
+ * 卡片几何与两张通用卡片在 AppCards.kt 里，设置页用同一份；这里只留版本、更新与"关于作者"。
  */
 @Composable
 fun AboutScreen(
@@ -172,26 +155,12 @@ fun AboutScreen(
      * before the tap. Once the tap answers, the row says the version itself and the dot is gone.
      */
     updateAvailable: Boolean = false,
+    /**
+     * 连点版本号的手势：原来挂在设置页，设置页拆成"我的"+"设置"之后挂到这里——
+     * 版本号本来就在这一页。
+     */
+    onVersionTap: () -> Unit = {},
 ) {
-    val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
-    val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
-    val hideSuccessDialog by settingsViewModel.hideSuccessDialog.collectAsStateWithLifecycle()
-    val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
-    val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
-    val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
-    // 存的是"静音"，所以下面那个开关读的是它的反；见 AppSettingsProto.muteChatNotices。
-    val muteChatNotices by settingsViewModel.muteChatNotices.collectAsStateWithLifecycle()
-
-    // The start-up lock, as the store holds it. A pair that is not a question this build knows
-    // plus a real date is shown as "not set" here too, so the page that turns the lock off is
-    // never itself behind a question nobody can answer.
-    val lockQuestion by settingsViewModel.launchQuestion.collectAsStateWithLifecycle()
-    val lockAnswer by settingsViewModel.launchAnswer.collectAsStateWithLifecycle()
-    val activeGate = lockQuestion?.let { question ->
-        lockAnswer?.let { answer -> launchGateOf(question, answer) }
-    }
-    var gateDialogShown by remember { mutableStateOf(false) }
-
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
     val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
@@ -335,7 +304,7 @@ fun AboutScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(top = 6.dp, bottom = 28.dp),
         ) {
-            AppHero()
+            AppHero(onVersionTap = onVersionTap)
             Spacer(Modifier.height(16.dp))
 
             UpdateCard(
@@ -354,7 +323,7 @@ fun AboutScreen(
             when {
                 updateState is UpdateState.Downloading -> {
                     Spacer(Modifier.height(10.dp))
-                    LinkCard(
+                    AppLinkCard(
                         glyph = FlGlyphs.close,
                         title = stringResource(Res.string.about_download_cancel),
                         onClick = cancelDownload,
@@ -364,7 +333,7 @@ fun AboutScreen(
                 (updateState as? UpdateState.FailedWith)?.download != null ||
                     updateState is UpdateState.Failed -> {
                     Spacer(Modifier.height(10.dp))
-                    LinkCard(
+                    AppLinkCard(
                         glyph = FlGlyphs.link,
                         title = stringResource(Res.string.about_download_page),
                         subtitle = DOWNLOAD_PAGE_URL,
@@ -379,7 +348,7 @@ fun AboutScreen(
             )
             Spacer(Modifier.height(10.dp))
 
-            ToggleCard(
+            AppToggleCard(
                 glyph = FlGlyphs.cloudDownload,
                 title = stringResource(Res.string.about_auto_install),
                 checked = autoInstallUpdates,
@@ -390,99 +359,22 @@ fun AboutScreen(
                     if (enabled && pending is UpdateState.Available) download(pending.release)
                 },
             )
-            ToggleCard(
+            AppToggleCard(
                 glyph = FlGlyphs.warning,
                 title = stringResource(Res.string.about_confirm_install),
                 checked = confirmBeforeInstall,
                 onCheckedChange = settingsViewModel::saveConfirmBeforeInstall,
             )
             Spacer(Modifier.height(10.dp))
-
-            // The five switches: each its own card, so nothing has to be read as a table.
-            ToggleCard(
-                glyph = FlGlyphs.cloudDownload,
-                title = stringResource(Res.string.auto_update_bloat_list),
-                checked = autoUpdateBloatList,
-                onCheckedChange = settingsViewModel::saveAutoUpdateBloatList,
-            )
-            ToggleCard(
-                glyph = FlGlyphs.warning,
-                title = stringResource(Res.string.confirm_uninstall),
-                checked = confirmBeforeUninstall,
-                onCheckedChange = settingsViewModel::saveConfirmBeforeUninstall,
-            )
-            ToggleCard(
-                glyph = FlGlyphs.check,
-                title = stringResource(Res.string.hide_success_dialog),
-                checked = hideSuccessDialog,
-                onCheckedChange = settingsViewModel::saveHideSuccessDialog,
-            )
-
-            // The bar itself, as one row of five: the three pages everyone needs are lit and
-            // cannot be tapped, the other two are the switches — a page shows once its slot is on.
-            BarSlotsCard(
-                showTweaks = showTweaksTab,
-                showRecommend = showRecommendTab,
-                onToggleTweaks = settingsViewModel::saveShowTweaksTab,
-                onToggleRecommend = settingsViewModel::saveShowRecommendTab,
-            )
-
-            // The name and the photo at the top of the safety page: both are decoration, and the
-            // model string is more than some users want on screen, so they share one switch and it
-            // starts off. Turned on, the picture is looked up and the model names the band.
-            ToggleCard(
-                glyph = FlGlyphs.iconTile,
-                title = "显示机型与照片",
-                checked = showDevicePhoto,
-                onCheckedChange = settingsViewModel::saveShowDevicePhoto,
-            )
-
-            // The start-up question: one birthday in front of everything, for the phone that gets
-            // handed to somebody who taps before reading. Off until it is set here.
-            LinkCard(
-                glyph = FlGlyphs.lock,
-                title = "启动密码",
-                subtitle = activeGate?.let { "${it.question.label} · 已开启" }
-                    ?: "未设置 · 设置后打开软件要先答一个生日",
-                onClick = { gateDialogShown = true },
-            )
-
-            // 有人发消息来的时候要不要在系统通知栏弹一条。
-            //
-            // 出厂是开的（proto 里存的是"静音"，见 AppSettingsProto.muteChatNotices），但打开
-            // 这个开关的同时得把系统权限要到：Android 13 起那是运行时权限，没有它
-            // NotificationManagerCompat 会把通知静默丢掉，开关看着是开的、却什么都不弹。
-            // 拒绝了就把开关退回去，不留一个说谎的勾。
-            ToggleCard(
-                glyph = FlGlyphs.send,
-                title = "消息通知",
-                checked = !muteChatNotices,
-                onCheckedChange = { wantOn ->
-                    when {
-                        !wantOn -> settingsViewModel.saveMuteChatNotices(true)
-                        // 早就有了权限（Android 12 及以下，或者之前点过允许）：直接开，不打扰。
-                        platform.canNotify() -> settingsViewModel.saveMuteChatNotices(false)
-                        else -> scope.launch {
-                            if (platform.requestNotifyPermission()) {
-                                settingsViewModel.saveMuteChatNotices(false)
-                            } else {
-                                platform.showMessage("没有通知权限，系统不会显示消息提醒")
-                            }
-                        }
-                    }
-                },
-            )
-
-            Spacer(Modifier.height(6.dp))
             // The author first: the two entries people look for when they want to ask something,
             // each opened in its own app when it is installed and on the web page otherwise.
-            LinkCard(
+            AppLinkCard(
                 glyph = FlGlyphs.profiles,
                 title = stringResource(Res.string.about_coolapk),
                 subtitle = stringResource(Res.string.about_coolapk_hint),
                 onClick = { platform.openLink(COOLAPK_URL, *COOLAPK_SCHEMES.toTypedArray()) },
             )
-            LinkCard(
+            AppLinkCard(
                 glyph = FlGlyphs.link,
                 title = stringResource(Res.string.about_qq_group),
                 subtitle = stringResource(Res.string.about_qq_group_hint),
@@ -498,12 +390,12 @@ fun AboutScreen(
                     }
                 },
             )
-            LinkCard(
+            AppLinkCard(
                 glyph = FlGlyphs.profiles,
                 title = stringResource(Res.string.about_contributors),
                 onClick = { platform.openUrl(CONTRIBUTORS_URL) },
             )
-            LinkCard(
+            AppLinkCard(
                 glyph = FlGlyphs.link,
                 title = stringResource(Res.string.about_source_repo),
                 subtitle = REPO_URL,
@@ -530,28 +422,17 @@ fun AboutScreen(
                 },
             )
         }
-
-        // Setting, replacing and turning off the start-up question all happen here; the pair is
-        // only ever written to the store, and the lock screen reads it back on the next start.
-        if (gateDialogShown) {
-            LaunchGateDialog(
-                existing = activeGate,
-                onSave = { questionId, answer -> settingsViewModel.saveLaunchGate(questionId, answer) },
-                onClear = { settingsViewModel.clearLaunchGate() },
-                onDismiss = { gateDialogShown = false },
-            )
-        }
     }
 }
 
 /** The app itself: icon tile, name, version, one line about what it does. */
 @Composable
-private fun AppHero() {
+private fun AppHero(onVersionTap: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = CardInset + 3.dp, vertical = 10.dp),
+            .padding(horizontal = AppCardInset + 3.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -576,6 +457,8 @@ private fun AppHero() {
                 },
                 style = FlText.footnote,
                 color = scheme.onSurfaceVariant,
+                // 连点版本号的那个手势（全选推荐应用的隐藏开关）挂在这一行上。
+                modifier = Modifier.clickable(onClick = onVersionTap),
             )
             Text(
                 text = stringResource(Res.string.about_tagline),
@@ -636,8 +519,8 @@ private fun UpdateCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = CardInset)
-            .clip(RoundedCornerShape(CardCorner))
+            .padding(horizontal = AppCardInset)
+            .clip(RoundedCornerShape(AppCardCorner))
             .background(FlSurfaceLevel.Card.colorOf(scheme))
             // A failure is the one state where a second tap is the obvious next move, so the row
             // keeps working as the retry button instead of only reporting.
@@ -719,8 +602,8 @@ private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> U
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = CardInset)
-            .clip(RoundedCornerShape(CardCorner))
+            .padding(horizontal = AppCardInset)
+            .clip(RoundedCornerShape(AppCardCorner))
             .background(FlSurfaceLevel.Card.colorOf(scheme))
             .clickable(enabled = channel != null) { expanded = true }
             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -755,178 +638,5 @@ private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> U
                 )
             }
         }
-    }
-}
-
-/** One switch, in its own card. */
-@Composable
-private fun ToggleCard(
-    glyph: FlGlyph,
-    title: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = CardInset, vertical = 4.dp)
-            .clip(RoundedCornerShape(CardCorner))
-            .background(FlSurfaceLevel.Card.colorOf(scheme))
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FlGlyphIcon(glyph = glyph, size = 19.dp, tint = scheme.primary, fill = 0.2f)
-        Spacer(Modifier.width(11.dp))
-        Text(
-            text = title,
-            style = FlText.subheadline,
-            color = scheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(8.dp))
-        SettingsSwitch(checked)
-    }
-}
-
-/** One entry of the bottom bar: [glyph], [label], whether it is lit, and whether it takes a tap. */
-private data class BarSlot(
-    val glyph: FlGlyph,
-    val label: String,
-    val lit: Boolean,
-    val onToggle: (() -> Unit)?,
-)
-
-/**
- * The bar as one row of five slots. The three pages everyone needs are always lit and cannot be
- * tapped; the tools page and the picks page are switches, and a page only gets an entry in the bar
- * while its slot is lit. This is the only place the two optional pages are turned on.
- */
-@Composable
-private fun BarSlotsCard(
-    showTweaks: Boolean,
-    showRecommend: Boolean,
-    onToggleTweaks: (Boolean) -> Unit,
-    onToggleRecommend: (Boolean) -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val slots = listOf(
-        BarSlot(FlGlyphs.dashboard, stringResource(Res.string.tab_apps), lit = true, onToggle = null),
-        BarSlot(FlGlyphs.rules, stringResource(Res.string.tab_rules), lit = true, onToggle = null),
-        BarSlot(
-            FlGlyphs.tools,
-            stringResource(Res.string.tab_tweaks),
-            lit = showTweaks,
-            onToggle = { onToggleTweaks(!showTweaks) },
-        ),
-        BarSlot(
-            FlGlyphs.appsList,
-            stringResource(Res.string.tab_recommend),
-            lit = showRecommend,
-            onToggle = { onToggleRecommend(!showRecommend) },
-        ),
-        BarSlot(FlGlyphs.settings, stringResource(Res.string.settings), lit = true, onToggle = null),
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = CardInset, vertical = 4.dp)
-            .clip(RoundedCornerShape(CardCorner))
-            .background(FlSurfaceLevel.Card.colorOf(scheme))
-            .padding(horizontal = 10.dp, vertical = 11.dp),
-    ) {
-        Text(
-            text = stringResource(Res.string.settings_bar_slots_hint),
-            style = FlText.caption2,
-            color = scheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        Spacer(Modifier.height(9.dp))
-        Row(modifier = Modifier.fillMaxWidth()) {
-            slots.forEach { slot -> BarSlotChip(slot, Modifier.weight(1f)) }
-        }
-    }
-}
-
-@Composable
-private fun BarSlotChip(slot: BarSlot, modifier: Modifier = Modifier) {
-    val scheme = MaterialTheme.colorScheme
-    val lit = slot.lit
-    val toggle = slot.onToggle
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .then(if (toggle != null) Modifier.clickable(onClick = toggle) else Modifier)
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(if (lit) scheme.primary else scheme.surfaceContainerHighest),
-            contentAlignment = Alignment.Center,
-        ) {
-            FlGlyphIcon(
-                glyph = slot.glyph,
-                size = 18.dp,
-                tint = if (lit) scheme.onPrimary else scheme.onSurfaceVariant,
-                fill = if (lit) 1f else 0f,
-            )
-        }
-        Text(
-            text = slot.label,
-            style = FlText.caption2,
-            color = if (lit) scheme.onSurface else scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** A row that opens something outside the app: [title] with the address under it, when known. */
-@Composable
-private fun LinkCard(
-    glyph: FlGlyph,
-    title: String,
-    subtitle: String = "",
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = CardInset, vertical = 4.dp)
-            .clip(RoundedCornerShape(CardCorner))
-            .background(FlSurfaceLevel.Card.colorOf(scheme))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FlGlyphIcon(glyph = glyph, size = 19.dp, tint = scheme.primary, fill = 0.2f)
-        Spacer(Modifier.width(11.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = FlText.subheadline,
-                color = scheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle.isNotEmpty()) {
-                Text(
-                    text = subtitle,
-                    style = FlText.caption2,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        SettingsChevron()
     }
 }

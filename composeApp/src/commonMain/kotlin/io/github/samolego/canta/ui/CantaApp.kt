@@ -116,6 +116,7 @@ import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
 import io.github.samolego.canta.ui.screen.TweaksScreen
+import io.github.samolego.canta.ui.screen.MineScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
 import io.github.samolego.canta.ui.screen.ThemeScreen
 import io.github.samolego.canta.generated.resources.about_install_cancel
@@ -621,7 +622,9 @@ private fun CantaNavigation(
         val countsHere = currentRoute == Screen.Main.route ||
             currentRoute == Screen.Messages.route ||
             currentRoute == Screen.Interactions.route ||
-            currentRoute == Screen.MyComments.route
+            currentRoute == Screen.MyComments.route ||
+            // "我的"把未读数写进了"我的评论"那一行的副标题，所以它也得算一份。
+            currentRoute == Screen.Mine.route
         if (!countsHere) return@LaunchedEffect
         deps.notes.ensureReady()
         val identity = DeviceIdentity.current(deps.settings)
@@ -864,12 +867,40 @@ private fun CantaNavigation(
                     // What the start-up read already knows, so the row can say "there is one" before
                     // the tap that checks: the dot is the guide, the check is what confirms it.
                     updateAvailable = updateAvailable,
+                    // 连点版本号：隐藏的"全选推荐应用"开关。手势挂在关于页的版本号上。
+                    onVersionTap = {
+                        versionTapCounter += 1
+                        coroutineScope.launch {
+                            when {
+                                versionTapCounter == SECRET_TAPS ->
+                                    platform.showMessage(
+                                        getString(
+                                            Res.string.select_all_enabled,
+                                            getString(Res.string.badge_recommended_name),
+                                        )
+                                    )
+                                versionTapCounter in (SECRET_TAPS_HINT_AFTER + 1)..<SECRET_TAPS ->
+                                    platform.showMessage(getString(Res.string.select_all_tip, SECRET_TAPS - versionTapCounter))
+                            }
+                        }
+                    },
                 )
             }
             composable(route = Screen.Theme.route) {
                 ThemeScreen(
                     settingsViewModel = settingsViewModel,
                     onNavigateBack = { navController.navigateUp() },
+                )
+            }
+            composable(route = Screen.Mine.route) {
+                MineScreen(
+                    settingsViewModel = settingsViewModel,
+                    onOpenSettings = { navController.navigate(Screen.Settings.route) },
+                    onOpenMyComments = { navController.navigate(Screen.MyComments.route) },
+                    onOpenAbout = { navController.navigate(Screen.About.route) },
+                    unreadReplies = unreadReplies,
+                    // Same dot as the bar's: the about page behind this row is where updates live.
+                    updateAvailable = updateAvailable,
                 )
             }
             composable(route = Screen.Settings.route) {
@@ -993,28 +1024,7 @@ private fun CantaNavigation(
                             appListViewModel.loadApps()
                         }
                     },
-                    onVersionTap = {
-                        versionTapCounter += 1
-                        coroutineScope.launch {
-                            when {
-                                versionTapCounter == SECRET_TAPS ->
-                                    platform.showMessage(
-                                        getString(
-                                            Res.string.select_all_enabled,
-                                            getString(Res.string.badge_recommended_name),
-                                        )
-                                    )
-                                versionTapCounter in (SECRET_TAPS_HINT_AFTER + 1)..<SECRET_TAPS ->
-                                    platform.showMessage(getString(Res.string.select_all_tip, SECRET_TAPS - versionTapCounter))
-                            }
-                        }
-                    },
-                    onOpenAbout = { navController.navigate(Screen.About.route) },
                     onOpenTheme = { navController.navigate(Screen.Theme.route) },
-                    onOpenMyComments = { navController.navigate(Screen.MyComments.route) },
-                    unreadReplies = unreadReplies,
-                    // Same dot as the bar's: the page it leads to is the one below this row.
-                    updateAvailable = updateAvailable,
                 )
             }
             composable(route = Screen.Presets.route) {
@@ -1577,7 +1587,7 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Tweaks.route,
     Screen.Recommendations.route,
     Screen.Messages.route,
-    Screen.Settings.route,
+    Screen.Mine.route,
     Screen.Presets.route,
 )
 
@@ -1651,8 +1661,10 @@ private fun bottomBarItems(
         BottomBarItem(
             BarKey.SETTINGS,
             FlGlyphs.settings,
-            stringResource(Res.string.settings),
-            route == Screen.Settings.route,
+            // 字面量而不是资源键：这一格指向"我的"，开关已经搬到设置页，和"消息"那格一样
+            // 不做多语言镜像。
+            "我的",
+            route == Screen.Mine.route,
             dot = showUpdateDot,
         ),
     )
@@ -1668,7 +1680,7 @@ private fun onBottomBarSelect(
         BarKey.TWEAKS -> navController.navigateSingleTop(Screen.Tweaks.route)
         BarKey.RECOMMEND -> navController.navigateSingleTop(Screen.Recommendations.route)
         BarKey.MESSAGES -> navController.navigateSingleTop(Screen.Messages.route)
-        BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Settings.route)
+        BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Mine.route)
     }
 }
 

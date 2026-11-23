@@ -1,12 +1,6 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,169 +15,127 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.BuildFlags
-import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.PrivilegeStatus
 import io.github.samolego.canta.generated.resources.Res
-import io.github.samolego.canta.generated.resources.about_us
+import io.github.samolego.canta.generated.resources.advanced_settings
+import io.github.samolego.canta.generated.resources.allow_unsafe_selections
+import io.github.samolego.canta.generated.resources.allow_unsafe_uninstalls_description
+import io.github.samolego.canta.generated.resources.auto_update_bloat_list
+import io.github.samolego.canta.generated.resources.bloat_list_url
+import io.github.samolego.canta.generated.resources.bloat_list_url_description
+import io.github.samolego.canta.generated.resources.commits_url
+import io.github.samolego.canta.generated.resources.commits_url_description
+import io.github.samolego.canta.generated.resources.confirm_uninstall
+import io.github.samolego.canta.generated.resources.device_user
+import io.github.samolego.canta.generated.resources.device_user_description
+import io.github.samolego.canta.generated.resources.fake_community_scores
+import io.github.samolego.canta.generated.resources.fake_community_scores_description
+import io.github.samolego.canta.generated.resources.hide_success_dialog
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_active
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_authorized
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_available
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
+import io.github.samolego.canta.generated.resources.require_auth_setting
+import io.github.samolego.canta.generated.resources.require_auth_setting_desc
+import io.github.samolego.canta.generated.resources.settings
+import io.github.samolego.canta.generated.resources.settings_group_theme
 import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku
 import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku_active
 import io.github.samolego.canta.generated.resources.settings_privilege_none
 import io.github.samolego.canta.generated.resources.settings_privilege_root
 import io.github.samolego.canta.generated.resources.settings_privilege_shizuku
-import io.github.samolego.canta.generated.resources.settings_privilege_title
-import io.github.samolego.canta.generated.resources.advanced_settings
-import io.github.samolego.canta.generated.resources.allow_unsafe_selections
-import io.github.samolego.canta.generated.resources.allow_unsafe_uninstalls_description
-import io.github.samolego.canta.generated.resources.auth_required
-import io.github.samolego.canta.generated.resources.auth_required_description
-import io.github.samolego.canta.generated.resources.auto_update_bloat_list
-import io.github.samolego.canta.generated.resources.auto_update_bloat_list_description
-import io.github.samolego.canta.generated.resources.bloat_list_url
-import io.github.samolego.canta.generated.resources.bloat_list_url_description
-import io.github.samolego.canta.generated.resources.cancel
-import io.github.samolego.canta.generated.resources.commits_url
-import io.github.samolego.canta.generated.resources.commits_url_description
-import io.github.samolego.canta.generated.resources.confirm_uninstall
-import io.github.samolego.canta.generated.resources.debug_section
-import io.github.samolego.canta.generated.resources.device_user
-import io.github.samolego.canta.generated.resources.device_user_description
-import io.github.samolego.canta.generated.resources.fake_community_scores
-import io.github.samolego.canta.generated.resources.fake_community_scores_description
-import io.github.samolego.canta.generated.resources.hide_success_dialog
-import io.github.samolego.canta.generated.resources.ok
-import io.github.samolego.canta.generated.resources.profile_default_name
-import io.github.samolego.canta.generated.resources.profile_edit_name
-import io.github.samolego.canta.generated.resources.profile_name_hint
-import io.github.samolego.canta.generated.resources.profile_name_title
-import io.github.samolego.canta.generated.resources.require_auth_setting
-import io.github.samolego.canta.generated.resources.require_auth_setting_desc
-import io.github.samolego.canta.generated.resources.settings
-import io.github.samolego.canta.generated.resources.settings_group_device
-import io.github.samolego.canta.generated.resources.settings_group_general
-import io.github.samolego.canta.generated.resources.settings_group_theme
 import io.github.samolego.canta.generated.resources.theme_mode_dark
 import io.github.samolego.canta.generated.resources.theme_mode_light
 import io.github.samolego.canta.generated.resources.theme_mode_system
-import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.AppBarSlotsCard
+import io.github.samolego.canta.ui.component.AppCardCorner
+import io.github.samolego.canta.ui.component.AppCardInset
+import io.github.samolego.canta.ui.component.AppLinkCard
+import io.github.samolego.canta.ui.component.AppToggleCard
 import io.github.samolego.canta.ui.component.ExpandIcon
-import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsGroup
-import io.github.samolego.canta.ui.component.SettingsItem
-import io.github.samolego.canta.ui.component.SettingsChevron
-import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.SettingsTextItem
 import io.github.samolego.canta.ui.component.SwitchSettingsItem
+import io.github.samolego.canta.ui.dialog.LaunchGateDialog
 import io.github.samolego.canta.ui.fl.FlAccent
+import io.github.samolego.canta.ui.fl.FlGlyph
+import io.github.samolego.canta.ui.fl.FlGlyphIcon
+import io.github.samolego.canta.ui.fl.FlGlyphs
+import io.github.samolego.canta.ui.fl.FlSurfaceLevel
+import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlThemeMode
+import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.ui.lock.launchGateOf
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
+/** 卡片之间的距离，与关于页保持一致。 */
+private val CardGap = 10.dp
 
-/** Longest nickname the dialog takes, so the avatar row never has to shrink it. */
-private const val MAX_NAME_LENGTH = 24
-
-/** Space between two group cards. */
-private val GroupGap = 12.dp
-
-/** Room left under the last card for the floating bar that is drawn over the page. */
-private val FloatingBarRoom = 96.dp
-
+/**
+ * 「设置」页：从「我的」页进来，摆的是那些不常改、但总要能改到的开关。
+ *
+ * 布局沿用关于页的卡片流——一张卡一个决定，比一张长表读得快；权限、多用户、主题、
+ * 底栏槽位和启动锁这些原本散在设置页与关于页两头的东西，在这里合成一页。
+ */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun SettingsScreen(
     platform: CantaPlatform,
-    onNavigateBack: () -> Unit,
     settingsViewModel: SettingsViewModel,
-    onVersionTap: () -> Unit,
-    onOpenAbout: () -> Unit,
-    /** Opens the theme page: the accent and the dark mode live there rather than in a card here. */
+    onNavigateBack: () -> Unit,
+    /** 打开主题页：配色与深浅色在那页里选，这里只写当前值。 */
     onOpenTheme: () -> Unit = {},
-    /** Opens the page that lists this install's comments and the replies to them. */
-    onOpenMyComments: () -> Unit = {},
-    /** Replies this install has not opened yet; the row shows a dot instead of quiet text. */
-    unreadReplies: Int = 0,
     /**
-     * A newer build than this one is published. The about row wears the same red dot as the entry
-     * in the bar: the page behind it is where the update is checked and installed, so the dot is
-     * the way there rather than news to dismiss.
+     * 现在实际生效的是哪一种特权运行时，以及走到哪一步。读 handler 而不是记着：
+     * 昨天能 root、今天丢了的手机，得在这一页说清楚。
      */
-    updateAvailable: Boolean = false,
+    privilegeKind: PrivilegeKind = PrivilegeKind.NONE,
+    privilegeStatus: PrivilegeStatus = PrivilegeStatus.NOT_AVAILABLE,
+    /**
+     * 这台手机可走的路由，由 handler 报出。页面上不用它（选择器自己有），
+     * 保留是为了调用方接线口径一致。
+     */
+    privilegeChoices: List<PrivilegeChoice> = emptyList(),
+    /** 打开选择器，让用户手选 root 或 Stellar/Shizuku。 */
+    onOpenPrivilegeChooser: () -> Unit = {},
     deviceUsers: List<DeviceUser> = emptyList(),
     selectedUserId: Int? = null,
     onUserSelected: (Int) -> Unit = {},
     fakeScores: Boolean = false,
     onFakeScoresChange: (Boolean) -> Unit = {},
-    /**
-     * Which privileged runtime is actually working right now, and how far it got. Read from the
-     * handler rather than remembered: a phone that was rooted yesterday and lost it today has to
-     * say so on this page, not on the setup page the user has already passed.
-     */
-    privilegeKind: PrivilegeKind = PrivilegeKind.NONE,
-    privilegeStatus: PrivilegeStatus = PrivilegeStatus.NOT_AVAILABLE,
-    /**
-     * The routes this phone can take, as the handler reports them. The row above is summarised from
-     * [privilegeKind]/[privilegeStatus]; this is what the chooser it opens will list, and it is
-     * already read by the host because the read suspends.
-     */
-    privilegeChoices: List<PrivilegeChoice> = emptyList(),
-    /** Opens the chooser that lets the user pick root or Stellar/Shizuku. */
-    onOpenPrivilegeChooser: () -> Unit = {},
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -192,37 +144,40 @@ fun SettingsScreen(
     val authEnabled by settingsViewModel.authEnabled.collectAsStateWithLifecycle()
     val bloatListUrl by settingsViewModel.bloatListUrl.collectAsStateWithLifecycle()
     val commitsUrl by settingsViewModel.commitsUrl.collectAsStateWithLifecycle()
-    val userName by settingsViewModel.userName.collectAsStateWithLifecycle()
-    val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
-    // What the theme row says before it is opened: the accent in force and the mode it is drawn in.
+    val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
+    // 存的是「静音」，所以下面那个开关读的是它的反；见 AppSettingsProto.muteChatNotices。
+    val muteChatNotices by settingsViewModel.muteChatNotices.collectAsStateWithLifecycle()
+
+    // 启动锁，按库里的值摊开。认不出的题加一个真日期的组合也按「未设置」显示，
+    // 免得关锁的那一页自己先被一个没人答得出的问题挡住。
+    val lockQuestion by settingsViewModel.launchQuestion.collectAsStateWithLifecycle()
+    val lockAnswer by settingsViewModel.launchAnswer.collectAsStateWithLifecycle()
+    val activeGate = lockQuestion?.let { question ->
+        lockAnswer?.let { answer -> launchGateOf(question, answer) }
+    }
+    var gateDialogShown by remember { mutableStateOf(false) }
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
+
+    val authRequiredTitle = stringResource(Res.string.require_auth_setting)
+    val authRequiredSubtitle = stringResource(Res.string.require_auth_setting_desc)
     val themeModeLabel = when (FlThemeMode.ofStored(themeMode)) {
         FlThemeMode.System -> stringResource(Res.string.theme_mode_system)
         FlThemeMode.Light -> stringResource(Res.string.theme_mode_light)
         FlThemeMode.Dark -> stringResource(Res.string.theme_mode_dark)
     }
-    var showRename by rememberSaveable { mutableStateOf(false) }
-    var advancedSettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    val authRequiredTitle = stringResource(Res.string.auth_required)
-    val authRequiredSubtitle = stringResource(Res.string.auth_required_description)
-
-    if (showRename) {
-        RenameDialog(
-            current = userName,
-            onDismiss = { showRename = false },
-            onSave = { name ->
-                settingsViewModel.saveUserName(name)
-                showRename = false
-            },
-        )
-    }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
-            ScreenTopBar(title = stringResource(Res.string.settings))
+            // 从「我的」页进来，所以顶栏带回退箭头。
+            ScreenTopBar(
+                title = stringResource(Res.string.settings),
+                onNavigateBack = onNavigateBack,
+            )
         }
     ) { padding ->
         Column(
@@ -230,142 +185,178 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(top = 8.dp, bottom = FloatingBarRoom)
+                .padding(top = 6.dp, bottom = 28.dp),
         ) {
-            SettingsGroup {
-                UserCard(
-                    name = userName,
-                    identityUserId = identityUserId,
-                    onEdit = { showRename = true },
-                )
-            }
-            Spacer(modifier = Modifier.height(GroupGap))
+            // 当前特权来源。装机页只说过一次，卸载被拒时用户要看的就是这里。
+            AppLinkCard(
+                glyph = FlGlyphs.lock,
+                title = when (privilegeKind) {
+                    PrivilegeKind.ROOT -> stringResource(Res.string.settings_privilege_root)
+                    PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
+                    PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
+                    PrivilegeKind.NONE -> stringResource(Res.string.settings_privilege_none)
+                },
+                subtitle = when {
+                    privilegeKind == PrivilegeKind.ROOT && privilegeStatus == PrivilegeStatus.ACTIVE ->
+                        stringResource(Res.string.onboarding_privilege_state_root_active)
 
-            // Which privilege the app is actually running on. The setup page says it once, at the
-            // start; this is where someone looks when an uninstall is refused and wants to know why.
-            SettingsGroup(title = stringResource(Res.string.settings_privilege_title)) {
-                SettingsItem(
-                    title = when (privilegeKind) {
-                        PrivilegeKind.ROOT -> stringResource(Res.string.settings_privilege_root)
-                        PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
-                        PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
-                        PrivilegeKind.NONE -> stringResource(Res.string.settings_privilege_none)
-                    },
-                    description = when {
-                        privilegeKind == PrivilegeKind.ROOT && privilegeStatus == PrivilegeStatus.ACTIVE ->
-                            stringResource(Res.string.onboarding_privilege_state_root_active)
+                    privilegeKind == PrivilegeKind.ROOT ->
+                        stringResource(Res.string.onboarding_privilege_state_root_pending)
 
-                        privilegeKind == PrivilegeKind.ROOT ->
-                            stringResource(Res.string.onboarding_privilege_state_root_pending)
+                    // Dhizuku 也是「已授权」，但能做的事更窄：这一行写明白，
+                    // 否则第一次被拒的卸载会被当成 bug。
+                    privilegeKind == PrivilegeKind.DHIZUKU && privilegeStatus == PrivilegeStatus.ACTIVE ->
+                        stringResource(Res.string.settings_privilege_dhizuku_active)
 
-                        // Dhizuku's state is "granted" too, but what follows from it is narrower:
-                        // the row says so, otherwise the first refused uninstall reads as a bug.
-                        privilegeKind == PrivilegeKind.DHIZUKU && privilegeStatus == PrivilegeStatus.ACTIVE ->
-                            stringResource(Res.string.settings_privilege_dhizuku_active)
+                    privilegeStatus == PrivilegeStatus.ACTIVE ->
+                        stringResource(Res.string.onboarding_privilege_state_active)
 
-                        privilegeStatus == PrivilegeStatus.ACTIVE ->
-                            stringResource(Res.string.onboarding_privilege_state_active)
+                    privilegeStatus == PrivilegeStatus.NOT_AUTHORIZED ->
+                        stringResource(Res.string.onboarding_privilege_state_not_authorized)
 
-                        privilegeStatus == PrivilegeStatus.NOT_AUTHORIZED ->
-                            stringResource(Res.string.onboarding_privilege_state_not_authorized)
+                    privilegeStatus == PrivilegeStatus.NOT_RUNNING ->
+                        stringResource(Res.string.onboarding_privilege_state_not_running)
 
-                        privilegeStatus == PrivilegeStatus.NOT_RUNNING ->
-                            stringResource(Res.string.onboarding_privilege_state_not_running)
+                    else -> stringResource(Res.string.onboarding_privilege_state_not_available)
+                },
+                // 点它就是换路由：链路自己会挑一条，这里是唯一能手选的地方。
+                onClick = onOpenPrivilegeChooser,
+            )
+            Spacer(Modifier.height(CardGap))
 
-                        else -> stringResource(Res.string.onboarding_privilege_state_not_available)
-                    },
-                    icon = Icons.Default.Lock,
-                    // Tapping it is how the user switches routes: the chain picks one on its own,
-                    // and this is the only place that choice can be made by hand.
-                    onClick = onOpenPrivilegeChooser,
-                    divider = false,
-                    trailing = { SettingsChevron() },
-                )
-            }
-            Spacer(modifier = Modifier.height(GroupGap))
-
+            // 多用户/工作资料：只有一个用户时没有可选的，整张卡不出现。
             if (deviceUsers.size > 1) {
-                SettingsGroup(title = stringResource(Res.string.settings_group_device)) {
-                    DeviceUserItem(deviceUsers, selectedUserId, onUserSelected, divider = false)
-                }
-                Spacer(modifier = Modifier.height(GroupGap))
+                DeviceUserCard(
+                    users = deviceUsers,
+                    selectedId = selectedUserId,
+                    onSelected = onUserSelected,
+                )
+                Spacer(Modifier.height(CardGap))
             }
 
-            SettingsGroup(title = stringResource(Res.string.settings_group_general)) {
-                SwitchSettingsItem(
-                    title = stringResource(Res.string.auto_update_bloat_list),
-                    description = stringResource(Res.string.auto_update_bloat_list_description),
-                    icon = Icons.Default.Update,
-                    checked = autoUpdateBloatList,
-                    onCheckedChange = settingsViewModel::saveAutoUpdateBloatList,
-                )
-                SwitchSettingsItem(
-                    title = stringResource(Res.string.confirm_uninstall),
-                    icon = Icons.Default.Delete,
-                    checked = confirmBeforeUninstall,
-                    onCheckedChange = settingsViewModel::saveConfirmBeforeUninstall,
-                )
-                SwitchSettingsItem(
-                    title = stringResource(Res.string.hide_success_dialog),
-                    icon = Icons.AutoMirrored.Default.Message,
-                    checked = hideSuccessDialog,
-                    onCheckedChange = settingsViewModel::saveHideSuccessDialog,
-                )
-                SwitchSettingsItem(
-                    title = stringResource(Res.string.require_auth_setting),
-                    description = stringResource(Res.string.require_auth_setting_desc),
-                    icon = Icons.Default.Lock,
-                    checked = authEnabled,
-                    divider = false,
-                    onCheckedChange = { enabled ->
-                        platform.requireBiometric(title = authRequiredTitle, subtitle = authRequiredSubtitle) {
-                            settingsViewModel.saveAuthEnabled(enabled)
+            AppToggleCard(
+                glyph = FlGlyphs.cloudDownload,
+                title = stringResource(Res.string.auto_update_bloat_list),
+                checked = autoUpdateBloatList,
+                onCheckedChange = settingsViewModel::saveAutoUpdateBloatList,
+            )
+            Spacer(Modifier.height(CardGap))
+            AppToggleCard(
+                glyph = FlGlyphs.warning,
+                title = stringResource(Res.string.confirm_uninstall),
+                checked = confirmBeforeUninstall,
+                onCheckedChange = settingsViewModel::saveConfirmBeforeUninstall,
+            )
+            Spacer(Modifier.height(CardGap))
+            AppToggleCard(
+                glyph = FlGlyphs.check,
+                title = stringResource(Res.string.hide_success_dialog),
+                checked = hideSuccessDialog,
+                onCheckedChange = settingsViewModel::saveHideSuccessDialog,
+            )
+            Spacer(Modifier.height(CardGap))
+            // 生物识别那条：真正的开关由系统校验的回调决定，被取消就什么也不改。
+            AppToggleCard(
+                glyph = FlGlyphs.lock,
+                title = stringResource(Res.string.require_auth_setting),
+                checked = authEnabled,
+                onCheckedChange = { enabled ->
+                    platform.requireBiometric(title = authRequiredTitle, subtitle = authRequiredSubtitle) {
+                        settingsViewModel.saveAuthEnabled(enabled)
+                    }
+                },
+                subtitle = stringResource(Res.string.require_auth_setting_desc),
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 配色和深浅色在主题页里选；这张卡只说现在用的是哪一套，点开那页。
+            AppLinkCard(
+                glyph = FlGlyphs.settings,
+                title = stringResource(Res.string.settings_group_theme),
+                subtitle = "${FlAccent.ofArgb(themeAccent).label} · $themeModeLabel",
+                onClick = onOpenTheme,
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 底栏本身：五格一行，三个常亮，工具页与推荐页是两个开关。
+            AppBarSlotsCard(
+                showTweaks = showTweaksTab,
+                showRecommend = showRecommendTab,
+                onToggleTweaks = settingsViewModel::saveShowTweaksTab,
+                onToggleRecommend = settingsViewModel::saveShowRecommendTab,
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 安全页顶部的名字与机型照片：两者都是装饰，机型串有些人不想露在外面，
+            // 所以合成一个开关，出厂关着。
+            AppToggleCard(
+                glyph = FlGlyphs.iconTile,
+                title = "显示机型与照片",
+                checked = showDevicePhoto,
+                onCheckedChange = settingsViewModel::saveShowDevicePhoto,
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 启动问题：一道生日挡在一切前面，给那些递到别人手里会被乱点的手
+            // 机用。没设置之前是关着的，只在这里设。
+            AppLinkCard(
+                glyph = FlGlyphs.lock,
+                title = "启动密码",
+                subtitle = activeGate?.let { "${it.question.label} · 已开启" }
+                    ?: "未设置 · 设置后打开软件要先答一个生日",
+                onClick = { gateDialogShown = true },
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 有人发消息来的时候要不要在系统通知栏弹一条。
+            //
+            // 出厂是开的（proto 里存的是"静音"），但打开这个开关的同时得把系统权限要到：
+            // Android 13 起那是运行时权限，没有它 NotificationManagerCompat 会把通知静默
+            // 丢掉，开关看着是开的、却什么都不弹。拒绝了就把开关退回去，不留一个说谎的勾。
+            AppToggleCard(
+                glyph = FlGlyphs.send,
+                title = "消息通知",
+                checked = !muteChatNotices,
+                onCheckedChange = { wantOn ->
+                    when {
+                        !wantOn -> settingsViewModel.saveMuteChatNotices(true)
+                        // 早就有了权限（Android 12 及以下，或者之前点过允许）：直接开，不打扰。
+                        platform.canNotify() -> settingsViewModel.saveMuteChatNotices(false)
+                        else -> scope.launch {
+                            if (platform.requestNotifyPermission()) {
+                                settingsViewModel.saveMuteChatNotices(false)
+                            } else {
+                                platform.showMessage("没有通知权限，系统不会显示消息提醒")
+                            }
                         }
-                    },
-                )
-            }
+                    }
+                },
+            )
+            Spacer(Modifier.height(CardGap))
 
-            Spacer(modifier = Modifier.height(GroupGap))
-            // A page of its own, the way the reference app does it: this card only says which
-            // accent and which dark mode are in force, and opens it.
-            SettingsGroup {
-                SettingsItem(
-                    title = stringResource(Res.string.settings_group_theme),
-                    description = "${FlAccent.ofArgb(themeAccent).label} · $themeModeLabel",
-                    icon = Icons.Default.Settings,
-                    onClick = onOpenTheme,
-                    divider = false,
-                    trailing = { SettingsChevron() },
-                )
-            }
-
-            Spacer(modifier = Modifier.height(GroupGap))
-            SettingsGroup {
-                SettingsItem(
-                    title = stringResource(Res.string.advanced_settings),
-                    icon = Icons.Default.Settings,
-                    onClick = { advancedSettingsExpanded = !advancedSettingsExpanded },
-                    // The hairline is only there while something follows the row.
-                    divider = advancedSettingsExpanded,
-                    trailing = { ExpandIcon(advancedSettingsExpanded) },
-                )
-                AnimatedVisibility(
-                    visible = advancedSettingsExpanded,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column {
+            // 高级设置：地址和危险开关收在折叠里，平时看不见，免得一页里全是需要读的句子。
+            ExpandTriggerCard(
+                glyph = FlGlyphs.tools,
+                title = stringResource(Res.string.advanced_settings),
+                expanded = advancedExpanded,
+                onClick = { advancedExpanded = !advancedExpanded },
+            )
+            AnimatedVisibility(
+                visible = advancedExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column(modifier = Modifier.padding(top = CardGap)) {
+                    SettingsGroup {
                         SwitchSettingsItem(
                             title = stringResource(Res.string.allow_unsafe_selections),
                             description = stringResource(Res.string.allow_unsafe_uninstalls_description),
-                            icon = Icons.Default.Close,
                             checked = allowUnsafe,
                             onCheckedChange = settingsViewModel::saveAllowUnsafeUninstalls,
                         )
                         SettingsTextItem(
                             title = stringResource(Res.string.bloat_list_url),
                             description = stringResource(Res.string.bloat_list_url_description),
-                            icon = Icons.Default.Link,
                             keyboardType = KeyboardType.Uri,
                             storedValue = bloatListUrl,
                             onCommit = settingsViewModel::saveBloatListUrl,
@@ -373,7 +364,6 @@ fun SettingsScreen(
                         SettingsTextItem(
                             title = stringResource(Res.string.commits_url),
                             description = stringResource(Res.string.commits_url_description),
-                            icon = Icons.Default.Link,
                             keyboardType = KeyboardType.Uri,
                             storedValue = commitsUrl,
                             onCommit = settingsViewModel::saveCommitsUrl,
@@ -383,211 +373,79 @@ fun SettingsScreen(
                 }
             }
 
+            // 调试包的开关：只在开发版里出现，正式包里这一整块不存在。
             if (BuildFlags.IS_DEBUG) {
-                Spacer(modifier = Modifier.height(GroupGap))
-                SettingsGroup(title = stringResource(Res.string.debug_section)) {
-                    SwitchSettingsItem(
-                        title = stringResource(Res.string.fake_community_scores),
-                        description = stringResource(Res.string.fake_community_scores_description),
-                        icon = Icons.Default.BugReport,
-                        checked = fakeScores,
-                        onCheckedChange = onFakeScoresChange,
-                        divider = false,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(GroupGap))
-            SettingsGroup {
-                // What this install wrote in the community pages, and who answered: the comments
-                // live on the backend, so the page is one tap away rather than a local list.
-                SettingsItem(
-                    title = "我的评论",
-                    description = if (unreadReplies > 0) {
-                        "$unreadReplies 条新消息，点这里看"
-                    } else {
-                        "我评论过的方案和应用，别人给我的回复"
-                    },
-                    icon = Icons.AutoMirrored.Default.Message,
-                    onClick = onOpenMyComments,
-                    trailing = {
-                        if (unreadReplies > 0) {
-                            UnreadDot(modifier = Modifier.padding(end = 6.dp))
-                        }
-                        SettingsChevron()
-                    },
-                )
-                SettingsItem(
-                    title = stringResource(Res.string.about_us),
-                    description = BuildInfo.VERSION_NAME,
-                    icon = Icons.Default.Info,
-                    divider = false,
-                    onClick = onOpenAbout,
-                    trailing = {
-                        if (updateAvailable) {
-                            UnreadDot(modifier = Modifier.padding(end = 6.dp))
-                        }
-                        SettingsChevron()
-                    },
+                Spacer(Modifier.height(CardGap))
+                AppToggleCard(
+                    glyph = FlGlyphs.warning,
+                    title = stringResource(Res.string.fake_community_scores),
+                    checked = fakeScores,
+                    onCheckedChange = onFakeScoresChange,
+                    subtitle = stringResource(Res.string.fake_community_scores_description),
                 )
             }
         }
-    }
-}
 
-/**
- * Who the page belongs to: a letter avatar — the first character of the name, since the app has
- * no picture to show — the name itself, and a tap that renames it.
- */
-@Composable
-private fun UserCard(name: String, identityUserId: Long = 0L, onEdit: () -> Unit) {
-    val defaultName = stringResource(Res.string.profile_default_name)
-    // What this install is called when nobody picked a name: the number the backend gave it —
-    // "#10134" — which is also what every other reader sees beside its plans and comments. It is
-    // not a name, and showing it back is the point of the pulse below.
-    val identityTag = if (identityUserId > 0L) "#$identityUserId" else ""
-    val shown = name.trim().ifEmpty { identityTag.ifEmpty { defaultName } }
-    val unnamed = isDefaultIdentityName(name) || (name.isBlank() && identityTag.isNotEmpty())
-    // The pulse: pale yellow fading in and out for as long as the name is a number. Slow on
-    // purpose — a fast blink reads as an error to dismiss, while this is a request the page makes
-    // until it is answered, and nothing but picking a name switches it off.
-    val transition = rememberInfiniteTransition(label = "rename-pulse")
-    val glow by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "rename-glow",
-    )
-    // Kept inside 0.10..0.20 alpha: enough to notice out of the corner of an eye, soft enough that
-    // the row stays readable — a wall of colour would read as a warning, and this is a nudge.
-    val highlight = if (unnamed) 0.10f + 0.10f * glow else 0f
-    val glowText = Color(0xFF8A6D00)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 6.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (unnamed) Color(0xFFFFE96B).copy(alpha = highlight) else Color.Transparent)
-            .clickable(onClick = onEdit)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        LetterAvatar(name = shown, size = 38.dp)
-        Spacer(modifier = Modifier.width(11.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = shown,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = if (unnamed) glowText else Color.Unspecified,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (unnamed) {
-                    Spacer(Modifier.width(6.dp))
-                    // The one place the page says why it keeps pulsing, instead of a dialog the
-                    // reader would dismiss without reading.
-                    Text(
-                        text = "还没起名字",
-                        fontSize = 9.sp,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(Color(0xFFFFE96B).copy(alpha = 0.45f))
-                            .padding(horizontal = 5.dp, vertical = 1.dp),
-                        color = Color(0xFF6B5400),
-                    )
-                }
-            }
-            Text(
-                text = if (unnamed) {
-                    // The number is quoted back, so the request is about something the reader can
-                    // see on screen rather than an abstract "rename yourself".
-                    "点这里起个名字，别拿 $shown 当名字"
-                } else {
-                    stringResource(Res.string.profile_edit_name)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = if (unnamed) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
+        // 设置、换题、关锁都在这个对话框里完成；写进库之后，下次启动由锁屏页读回来。
+        if (gateDialogShown) {
+            LaunchGateDialog(
+                existing = activeGate,
+                onSave = { questionId, answer -> settingsViewModel.saveLaunchGate(questionId, answer) },
+                onClear = { settingsViewModel.clearLaunchGate() },
+                onDismiss = { gateDialogShown = false },
             )
         }
-        Icon(
-            imageVector = Icons.Default.Edit,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = if (unnamed) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
 /**
- * Whether [name] is still the identity the backend handed out rather than a name somebody picked.
+ * 多用户设备那一行：当前用户，外加一个下拉换人。
  *
- * Empty and "#10134" both mean "no name": the first is an install that never opened the dialog, the
- * second is one that saved the number it was shown. Nothing else counts — a user who calls
- * themselves "用户" made a choice, and telling them otherwise would be wrong.
+ * 手写而不是用 [AppLinkCard]，因为右端要放的是「当前用户 + 菜单」而不是箭头；
+ * 卡片几何与 [AppLinkCard] 逐项对齐，混在卡片流里看不出区别。
  */
-internal fun isDefaultIdentityName(name: String): Boolean {
-    val trimmed = name.trim()
-    if (trimmed.isEmpty()) return true
-    return trimmed.length > 1 && trimmed.startsWith("#") && trimmed.drop(1).all { it.isDigit() }
-}
-
-/** The first character of [name] is drawn by [LetterAvatar]; this dialog only edits the text. */
 @Composable
-private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var value by remember { mutableStateOf(current) }
-    val save = { onSave(value.trim()) }
-    CantaDialog(
-        onDismissRequest = onDismiss,
-        title = stringResource(Res.string.profile_name_title),
-        buttons = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
-            TextButton(onClick = save) { Text(stringResource(Res.string.ok)) }
-        },
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = { if (it.length <= MAX_NAME_LENGTH) value = it },
-            modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.bodyMedium,
-            shape = RoundedCornerShape(10.dp),
-            singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(Res.string.profile_name_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { save() }),
-        )
-    }
-}
-
-/** The "device user" row: the selected user, with a dropdown to switch to another one. */
-@Composable
-private fun DeviceUserItem(
+private fun DeviceUserCard(
     users: List<DeviceUser>,
     selectedId: Int?,
     onSelected: (Int) -> Unit,
-    divider: Boolean = true,
 ) {
+    val scheme = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(false) }
-    SettingsItem(
-        title = stringResource(Res.string.device_user),
-        description = stringResource(Res.string.device_user_description),
-        icon = Icons.Default.AccountCircle,
-        onClick = { expanded = true },
-        divider = divider,
-        trailing = {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppCardInset, vertical = 4.dp)
+            .clip(RoundedCornerShape(AppCardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .clickable { expanded = true }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIcon(glyph = FlGlyphs.profiles, size = 19.dp, tint = scheme.primary, fill = 0.2f)
+        Spacer(Modifier.width(11.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(Res.string.device_user),
+                style = FlText.subheadline,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(Res.string.device_user_description),
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Box {
             Text(
                 text = users.firstOrNull { it.id == selectedId }?.label().orEmpty(),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = FlText.caption1,
+                color = scheme.primary,
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 users.forEach { user ->
@@ -600,9 +458,45 @@ private fun DeviceUserItem(
                     )
                 }
             }
-        },
-    )
+        }
+    }
 }
 
-/** "Name (id)", or just the id when the user has no name. */
+/**
+ * 折叠区的触发行：[AppLinkCard] 的几何，右端换成展开/收起箭头，
+ * 让人看得出这一行下面还有东西。
+ */
+@Composable
+private fun ExpandTriggerCard(
+    glyph: FlGlyph,
+    title: String,
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppCardInset, vertical = 4.dp)
+            .clip(RoundedCornerShape(AppCardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIcon(glyph = glyph, size = 19.dp, tint = scheme.primary, fill = 0.2f)
+        Spacer(Modifier.width(11.dp))
+        Text(
+            text = title,
+            style = FlText.subheadline,
+            color = scheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        ExpandIcon(expanded)
+    }
+}
+
+/** "名字 (id)"，用户没起名字时就只写 id。 */
 private fun DeviceUser.label() = if (name.isBlank()) "$id" else "$name ($id)"
