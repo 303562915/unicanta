@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.samolego.canta.data.community.Conversation
+import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.InboxSummary
 import io.github.samolego.canta.data.community.MessageHit
 import io.github.samolego.canta.data.community.PlanRepository
@@ -126,12 +127,23 @@ fun MessagesScreen(
     onOpenGroups: () -> Unit = {},
     onMessage: (String) -> Unit = {},
 ) {
-    var loading by remember { mutableStateOf(true) }
-    var conversations by remember { mutableStateOf<List<Conversation>>(emptyList()) }
-    var followers by remember { mutableStateOf<List<SocialPerson>>(emptyList()) }
+    // 上一屏留下的快照：有它就先画它，画面不闪；没有才走一次完整的加载。
+    //
+    // 这一页每次被导航进来都是新实例，`remember` 跟着一起没了——所以快照放在
+    // [ConversationCache] 那个进程级对象里，而不是这里的 `remember` 中。
+    //
+    // `getRecent()` 兜第一帧：调用方是从 `DeviceIdentity.current(...)` 异步取身份的，
+    // 第一帧的 `owner` 是空串，按它查必然查不到。这台设备的身份是它自己生成的，
+    // 缓存里通常只有一份，拿它顶上是对的。
+    val cached = remember { ConversationCache.get(owner) ?: ConversationCache.getRecent() }
+    var loading by remember { mutableStateOf(cached == null) }
+    var conversations by remember {
+        mutableStateOf(sortedConversations(cached?.conversations.orEmpty()))
+    }
+    var followers by remember { mutableStateOf(cached?.followers.orEmpty()) }
     // 刚数回来的互动总数：这一版的副标题和红点都按调用方传进来的值画（见下面两行入口），
     // 这个数先留着，页面拿到它才算把「有多少条新互动」问过一遍。
-    var summary by remember { mutableStateOf(InboxSummary.EMPTY) }
+    var summary by remember { mutableStateOf(cached?.summary ?: InboxSummary.EMPTY) }
     var loadError by remember { mutableStateOf<String?>(null) }
     // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每十几秒整页闪一下骨架。
     var reloads by remember { mutableIntStateOf(0) }
@@ -161,18 +173,48 @@ fun MessagesScreen(
         if (resumedOnce) reloads++ else resumedOnce = true
     }
 
-    // 一页三次请求，一次拉完再画：先画骨架再补数据会让这一页闪两下。
+    // 一页三次请求，一次拉完再画。
     LaunchedEffect(owner, reloads) {
-        if (reloads == 0) loading = true
+        if (owner.isEmpty()) return@LaunchedEffect
+        // 首帧读到的那份可能来自 `getRecent()`，也可能什么都没读到（第一次装、刚清过缓存）。
+        // 这里再按真正的 owner 补一次：补到了就先铺上，画面不闪；补不到才转圈。
+        if (reloads == 0 && conversations.isEmpty()) {
+            ConversationCache.get(owner)?.let { snapshot ->
+                conversations = sortedConversations(snapshot.conversations)
+                followers = snapshot.followers
+                summary = snapshot.summary
+            }
+            loading = conversations.isEmpty()
+        }
         loadError = null
         val chats = repository.conversationsFor(owner)
         val people = repository.followersOf(owner)
-        summary = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
-        conversations = sortedConversations(chats)
-        followers = people
+        val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
+        // 失败时**不覆盖**已经画在屏幕上的那一份：`conversationsFor` 拉挂了给的也是空列表，
+        // 照着它画就等于因为一次断网把好端端的列表清空，然后人还得再等 15 秒才回来。
+        // 空列表和后端没通本来长得一样，区别只有下面那行 `loadError`。
+        if (repository.lastError == null) {
+            conversations = sortedConversations(chats)
+            followers = people
+            summary = counted
+            ConversationCache.put(owner, conversations, people, counted)
+        }
         // 拉不到就说一句：空列表和后端没通在界面上长得一样，这一行是唯一的区别。
         loadError = repository.lastError
         loading = false
+    }
+
+    /**
+     * 本地改完会话列表的地方都走这里。
+     *
+     * 两件事一起做：界面立刻变（等下一次 15 秒刷新太慢，人点了看不到变化会以为没生效），
+     * 缓存也跟着变（否则下一次从聊天页退回来，先画出来的还是改动之前那一份，看着像回退了）。
+     *
+     * 排序在这里统一做：置顶的那一行要当场跳到最上面，调用方只管把改好的列表递进来。
+     */
+    val commitConversations: (List<Conversation>) -> Unit = { next ->
+        conversations = sortedConversations(next)
+        ConversationCache.putConversations(owner, conversations)
     }
 
     /**
@@ -185,7 +227,7 @@ fun MessagesScreen(
         scope.launch {
             val pin = !conversation.pinned
             if (repository.pinConversation(owner, conversation.id, pin)) {
-                conversations = sortedConversations(
+                commitConversations(
                     conversations.map { row ->
                         if (row.id == conversation.id) row.copy(pinned = pin) else row
                     },
@@ -200,9 +242,11 @@ fun MessagesScreen(
     val markRowRead: (Conversation) -> Unit = { conversation ->
         scope.launch {
             repository.markRead(owner, conversation.id)
-            conversations = conversations.map { row ->
-                if (row.id == conversation.id) row.copy(unread = 0) else row
-            }
+            commitConversations(
+                conversations.map { row ->
+                    if (row.id == conversation.id) row.copy(unread = 0) else row
+                },
+            )
         }
     }
 
@@ -210,7 +254,7 @@ fun MessagesScreen(
     val hideRow: (Conversation) -> Unit = { conversation ->
         scope.launch {
             if (repository.hideConversation(owner, conversation.id)) {
-                conversations = conversations.filterNot { it.id == conversation.id }
+                commitConversations(conversations.filterNot { it.id == conversation.id })
             } else {
                 onMessage("没成功，检查代理后再试")
             }
@@ -226,9 +270,11 @@ fun MessagesScreen(
         scope.launch {
             val mute = !conversation.muted
             if (repository.setMuted(owner, conversation.id, mute)) {
-                conversations = conversations.map { row ->
-                    if (row.id == conversation.id) row.copy(muted = mute) else row
-                }
+                commitConversations(
+                    conversations.map { row ->
+                        if (row.id == conversation.id) row.copy(muted = mute) else row
+                    },
+                )
             } else {
                 onMessage("没成功，检查代理后再试")
             }
@@ -287,7 +333,7 @@ fun MessagesScreen(
                         // 返回值 0 分不清「全都读过了」和「没连上」，看这两个标记才分得清：
                         // 两个都干净才算成功，否则这一页的未读数不能假装已经清掉。
                         if (repository.lastError == null && !repository.lastFailureWasNetwork) {
-                            conversations = conversations.map { it.copy(unread = 0) }
+                            commitConversations(conversations.map { it.copy(unread = 0) })
                             onMessage("已全部标为已读")
                         } else {
                             onMessage("没成功，检查代理后再试")
