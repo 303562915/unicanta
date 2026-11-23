@@ -880,13 +880,13 @@ private fun PlanHero(
     // corners are rounded like every other card in the app.
     Surface(
         color = colors.primaryContainer,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
         ) {
             // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
             // first character of that person's name, like everywhere else. The name leads the line;
@@ -906,10 +906,10 @@ private fun PlanHero(
             ) {
                 LetterAvatar(
                     name = uploaderName,
-                    size = 22.dp,
+                    size = 20.dp,
                     background = colors.primary,
                 )
-                Spacer(Modifier.width(7.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     text = stringResource(Res.string.plan_detail_uploader, uploaderName),
                     fontSize = 11.sp,
@@ -919,29 +919,32 @@ private fun PlanHero(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+                // The date rides the uploader's line instead of owning one: on the card's own
+                // surface a standalone "2026-11-21" cost a whole row and read like a second title.
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = plan.rebootedAt.take(10),
+                    fontSize = 9.sp,
+                    color = colors.onPrimaryContainer.copy(alpha = 0.65f),
+                    maxLines = 1,
+                )
                 if (mine) {
                     Spacer(Modifier.width(6.dp))
                     Chip(label = "我的方案", color = colors.primary)
                 }
             }
-            Text(
-                text = plan.rebootedAt.take(10),
-                fontSize = 9.sp,
-                color = colors.onPrimaryContainer.copy(alpha = 0.7f),
-                modifier = Modifier.padding(top = 3.dp),
-            )
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = plan.title,
-                fontSize = 19.sp,
-                lineHeight = 25.sp,
+                fontSize = 18.sp,
+                lineHeight = 23.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.onPrimaryContainer,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Chip(
                     label = if (plan.isTest) {
@@ -971,9 +974,9 @@ private fun PlanHero(
             if (foreign) {
                 Column(
                     modifier = Modifier
-                        .padding(top = 10.dp)
+                        .padding(top = 8.dp)
                         .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Text(
                         text = "机型不符：这是「${plan.deviceLabel.ifBlank { "未知机型" }}」的方案",
@@ -992,11 +995,11 @@ private fun PlanHero(
                 }
             }
             if (plan.note.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = plan.note,
                     fontSize = 12.sp,
-                    lineHeight = 17.sp,
+                    lineHeight = 16.sp,
                     color = colors.onPrimaryContainer,
                 )
             }
@@ -1004,7 +1007,7 @@ private fun PlanHero(
             // whether anybody else lived with it. Only shown past the uploader's own row, so a plan
             // nobody else has tried stays as quiet as before.
             if (coverage.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = "也在这些机器上验过",
                     fontSize = 10.sp,
@@ -1042,7 +1045,7 @@ private fun PlanHero(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1070,22 +1073,22 @@ private fun PlanHero(
             // selection on the app list, where the uninstall button already is.
             Row(
                 modifier = Modifier
-                    .padding(top = 16.dp)
+                    .padding(top = 10.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(percent = 50))
                     .background(colors.onPrimaryContainer.copy(alpha = 0.12f))
                     .clickable(onClick = onUsePlan)
-                    .padding(vertical = 11.dp),
+                    .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.PlaylistAddCheck,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(15.dp),
                     tint = colors.onPrimaryContainer,
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(7.dp))
                 Text(
                     text = "使用这套方案（${plan.packages.size} 个包）",
                     fontSize = 12.sp,
@@ -1111,7 +1114,7 @@ private fun Stat(
     Column(modifier = modifier) {
         Text(
             text = value,
-            fontSize = 17.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             color = colors.onPrimaryContainer,
         )
@@ -1128,9 +1131,9 @@ private fun Stat(
 private fun StatDivider() {
     Box(
         modifier = Modifier
-            .padding(horizontal = 10.dp)
+            .padding(horizontal = 8.dp)
             .width(1.dp)
-            .height(26.dp)
+            .height(22.dp)
             .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.18f)),
     )
 }
@@ -1158,13 +1161,13 @@ private fun VoteAction(liked: Boolean, votes: Int, onVote: () -> Unit) {
                 }
                 onVote()
             }
-            .padding(horizontal = 14.dp, vertical = 7.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Default.ThumbUp,
             contentDescription = stringResource(Res.string.plan_vote),
-            modifier = Modifier.size(14.dp),
+            modifier = Modifier.size(13.dp),
             tint = content,
         )
         Spacer(Modifier.width(5.dp))
