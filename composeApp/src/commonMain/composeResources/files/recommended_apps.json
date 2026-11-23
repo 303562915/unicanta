@@ -39,6 +39,17 @@
    "summary": "把 adb / root 的权限借给普通应用。装上并授权之后，Canta、Hail、App Manager 这类工具才有活干。"
   },
   {
+   "id": "dhizuku",
+   "name": "Dhizuku",
+   "author": "iamr0s",
+   "category": "system",
+   "license": "GPL-3.0",
+   "mark": "D",
+   "accent": "#8B5CF6",
+   "url": "https://github.com/iamr0s/Dhizuku",
+   "summary": "把「设备所有者」（Device Owner）的权限分给普通应用，作用接近 Shizuku，但不需要 root，也不用每次开机重连 ADB：设成设备所有者后就一直有效。"
+  },
+  {
    "id": "canta",
    "name": "Canta",
    "author": "samolego",
