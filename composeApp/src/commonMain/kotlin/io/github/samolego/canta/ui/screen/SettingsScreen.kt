@@ -149,6 +149,8 @@ fun SettingsScreen(
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
     val allowUnsafe by settingsViewModel.allowUnsafeUninstalls.collectAsStateWithLifecycle()
     val hideSuccessDialog by settingsViewModel.hideSuccessDialog.collectAsStateWithLifecycle()
+    // 存的是「点一下弹小窗」，所以下面那个开关读的是它的反；见 AppSettingsProto.appTapOpensDialog。
+    val appTapOpensDialog by settingsViewModel.appTapOpensDialog.collectAsStateWithLifecycle()
     val authEnabled by settingsViewModel.authEnabled.collectAsStateWithLifecycle()
     val bloatListUrl by settingsViewModel.bloatListUrl.collectAsStateWithLifecycle()
     val commitsUrl by settingsViewModel.commitsUrl.collectAsStateWithLifecycle()
@@ -263,6 +265,16 @@ fun SettingsScreen(
                 title = stringResource(Res.string.hide_success_dialog),
                 checked = hideSuccessDialog,
                 onCheckedChange = settingsViewModel::saveHideSuccessDialog,
+            )
+            Spacer(Modifier.height(CardGap))
+            // 应用列表里点一个包去哪：出厂是直接开它的详情页，关掉这个开关就退回弹小窗。
+            // 放在第一页而不是「高级设置」里，因为这是每次点列表都会遇到的事。
+            AppToggleCard(
+                glyph = FlGlyphs.appsList,
+                title = "点击应用打开详情页",
+                checked = !appTapOpensDialog,
+                onCheckedChange = { openPage -> settingsViewModel.saveAppTapOpensDialog(!openPage) },
+                subtitle = "关掉就还是弹小窗",
             )
             Spacer(Modifier.height(CardGap))
             // 生物识别那条：真正的开关由系统校验的回调决定，被取消就什么也不改。
