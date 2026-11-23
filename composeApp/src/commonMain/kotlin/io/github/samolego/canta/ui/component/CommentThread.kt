@@ -218,11 +218,22 @@ internal fun replyHideKey(key: Long, reply: PlanComment, replyIndex: Int): Long 
  * exactly what a reader wants to see at a glance.
  */
 @Composable
-fun CommentOrderRow(order: CommentOrder, onOrderChange: (CommentOrder) -> Unit) {
+fun CommentOrderRow(
+    order: CommentOrder,
+    onOrderChange: (CommentOrder) -> Unit,
+    /**
+     * True when the switcher shares a line with a heading, instead of owning one: it then drops
+     * its own margins and stops filling the width, so the heading can take the left end.
+     */
+    inline: Boolean = false,
+) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
+            .then(if (inline) Modifier else Modifier.fillMaxWidth())
+            .padding(
+                horizontal = if (inline) 0.dp else 16.dp,
+                vertical = if (inline) 0.dp else 2.dp,
+            ),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

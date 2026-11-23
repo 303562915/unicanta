@@ -107,6 +107,8 @@ import io.github.samolego.canta.ui.component.PackageSearchField
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.fl.FlGlyphIcon
+import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlTopBarCompactHeight
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
@@ -606,12 +608,12 @@ fun PlanDetailScreen(
                                     query = ""
                                 }
                             },
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(32.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = "搜索方案里的包",
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(17.dp),
                                 tint = if (searchOpen) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
@@ -621,11 +623,11 @@ fun PlanDetailScreen(
                         }
                         // The share glyph, not the clipboard one: what the button does is hand the
                         // plan to somebody else, and only the mechanism is a copy.
-                        IconButton(onClick = { onShare(current) }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { onShare(current) }, modifier = Modifier.size(32.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = "分享方案",
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(17.dp),
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
@@ -816,16 +818,15 @@ private fun PlanDetailContent(
             )
         }
 
-        item {
-            SectionTitle(
-                title = "共 ${comments.size} 条评论",
-                subtitle = null,
+        // The count and the order switcher share one line: both answer "what am I looking at",
+        // and two stacked headers above the same list cost a whole row for nothing.
+        item(key = "comment-order") {
+            CommentSectionHeader(
+                count = comments.size,
+                order = order,
+                onOrderChange = onOrderChange,
+                showOrder = comments.isNotEmpty(),
             )
-        }
-        if (comments.isNotEmpty()) {
-            item(key = "comment-order") {
-                CommentOrderRow(order = order, onOrderChange = onOrderChange)
-            }
         }
         if (comments.isEmpty()) {
             item {
@@ -1292,16 +1293,22 @@ private fun PackageRankRow(
         }
         // One number, one line, the wording the ranking page uses: how many people marked it.
         // How many plans it was marked in is a detail — the package's own page has room for it.
-        Text(
-            text = rank?.let { stringResource(Res.string.ranking_marks, it.votes) }
-                ?: stringResource(Res.string.plan_detail_no_rank),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            color = if (rank != null) colors.onSurface else colors.outline,
-        )
-        Spacer(Modifier.width(6.dp))
+        // Only when it is ranked here: "Not ranked" beside a grey "未知" chip was two dim labels
+        // stacked in the spot where the number belongs.
+        rank?.let { marked ->
+            Text(
+                text = stringResource(Res.string.ranking_marks, marked.votes),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                color = colors.onSurface,
+            )
+            Spacer(Modifier.width(6.dp))
+        }
         SafetyChip(verdict)
+        // The row opens the package's own page; a chevron says that without a word of copy.
+        Spacer(Modifier.width(3.dp))
+        FlGlyphIcon(glyph = FlGlyphs.chevronForward, size = 12.dp, tint = colors.outline)
     }
 }
 
@@ -1322,6 +1329,38 @@ private fun SafetyChip(verdict: SafetyVerdict?) {
             .background(color.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
+}
+
+/**
+ * The comment section's one header: how many there are on the left, in the same voice as every
+ * other section title, and the order switcher on the right. The switcher is dropped while there
+ * are no comments — an ordering control over an empty list is a dead control.
+ */
+@Composable
+private fun CommentSectionHeader(
+    count: Int,
+    order: CommentOrder,
+    onOrderChange: (CommentOrder) -> Unit,
+    showOrder: Boolean,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "共 $count 条评论",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+            )
+            Spacer(Modifier.weight(1f))
+            if (showOrder) CommentOrderRow(order = order, onOrderChange = onOrderChange, inline = true)
+        }
+        HorizontalDivider(modifier = Modifier.padding(top = 6.dp))
+    }
 }
 
 /** A section heading over its own one-line explanation. */
