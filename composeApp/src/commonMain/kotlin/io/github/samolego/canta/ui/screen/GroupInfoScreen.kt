@@ -132,7 +132,17 @@ fun GroupInfoScreen(
     var inviting by remember { mutableStateOf(false) }
 
     // 详情：进来问一次，加完人再问一次。已经有详情时不摆「…」，免得刷新的时候整页闪一下。
-    LaunchedEffect(conversationId, reloads) {
+    //
+    // `owner` 也在 key 里，这不是可选项：调用方是从 `DeviceIdentity.current(...)` 异步拿到身份的，
+    // 第一帧传进来的是空串。`conversationDetail` 对空 owner 直接返回 null（它没法知道你是谁），
+    // 如果 key 里没有 owner，那次空请求就定了终身——身份加载好也不会再问一次，页面永远停在
+    // 「会话不存在或还没同步」。key 带上它，身份一到就重跑。
+    LaunchedEffect(conversationId, reloads, owner) {
+        if (owner.isEmpty()) {
+            // 还没读到身份。留着「…」比报「不存在」诚实：这时候我们确实还不知道。
+            loading = true
+            return@LaunchedEffect
+        }
         loading = detail == null
         loadError = null
         val loaded = repository.conversationDetail(owner, conversationId)
