@@ -35,6 +35,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -61,9 +62,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.community.ChatMessage
+import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionText
 import io.github.samolego.canta.ui.component.rememberEmotionPick
@@ -180,6 +183,25 @@ fun ChatScreen(
     var pendingMentions by remember { mutableStateOf<List<String>>(emptyList()) }
     /** 撤回失败亮一句：样式与位置照 [sendFailed] 那行。 */
     var recallFailed by remember { mutableStateOf(false) }
+    /**
+     * 正在回复哪一条，null 表示没在回复。
+     *
+     * 存整条消息而不是只存 id：输入栏上方那行要显示「回复 某某：正文摘要」，正文就在手里，
+     * 没必要为了画一行字再查一次。发送成功才清空——失败时要留着，重发还是回同一条。
+     */
+    var replyTarget by remember { mutableStateOf<ChatMessage?>(null) }
+    /**
+     * 正在转发哪一条，null 表示转发对话框没开。
+     *
+     * 和 [replyTarget] 分开：转发是一次性动作，选完会话就结束，不需要在输入栏上留痕。
+     */
+    var forwarding by remember { mutableStateOf<ChatMessage?>(null) }
+    /** 转发对话框里的会话候选；打开对话框时拉一次，没拉到就是空列表（显示「没有别的会话」）。 */
+    var forwardTargets by remember { mutableStateOf<List<Conversation>>(emptyList()) }
+    /** 只本机删掉失败亮一句，和 [recallFailed] 同一处显示。 */
+    var hideFailed by remember { mutableStateOf(false) }
+    /** 转发成/不成的一句话，2 秒后自己灭掉。 */
+    var forwardHint by remember { mutableStateOf<String?>(null) }
     /** 正在选图或传图：挡住重复点「图片」，同时底部那一行亮「正在发送图片…」。 */
     var sendingImage by remember { mutableStateOf(false) }
     /**
@@ -297,12 +319,16 @@ fun ChatScreen(
                     conversation = conversationId,
                     body = body,
                     mentions = pendingMentions,
+                    // 回的是哪一条。null 就是普通发言，后端那边 `p_reply_to` 走默认值。
+                    replyTo = replyTarget?.id,
                 )
                 if (sent != null) {
                     messages = messages + sent
                     draft = ""
                     // 名单跟着草稿一起清：下一条要 @ 谁得重新点。
                     pendingMentions = emptyList()
+                    // 引用也跟着清：这条已经发出去了，下一条默认不带引用。
+                    replyTarget = null
                 } else {
                     sendFailed = true
                 }
@@ -403,6 +429,58 @@ fun ChatScreen(
         }
     }
 
+    /**
+     * 只在自己这一侧删掉一条：调 [SocialRepository.hideMessage]，成了把这条从列表里摘掉。
+     *
+     * 摘掉而不是标成「已撤回」——那两个字的意思是「对所有人把正文拿掉了」，而这条对别人来说
+     * 原样还在，画成已撤回是在撒谎。下次重新拉这一页，后端也不会再把它带回来。
+     */
+    val hideMessageInPlace: (ChatMessage) -> Unit = { message ->
+        scope.launch {
+            if (repository.hideMessage(owner, message.id)) {
+                hideFailed = false
+                messages = messages.filterNot { it.id == message.id }
+            } else {
+                hideFailed = true
+            }
+        }
+    }
+
+    /**
+     * 打开转发对话框：先把能转发到的会话拉一遍。
+     *
+     * 拉失败就留空列表——对话框里显示「没有别的会话」，比弹一句红字有用：人至少知道现在
+     * 没得选，而不是以为整个功能坏了。
+     */
+    val openForward: (ChatMessage) -> Unit = { message ->
+        forwarding = message
+        forwardHint = null
+        scope.launch {
+            forwardTargets = runCatching { repository.conversationsFor(owner) }
+                .getOrDefault(emptyList())
+        }
+    }
+
+    /**
+     * 转发到 [target]。
+     *
+     * 成了就把对话框收起来并亮一句「已转发」；败了**留着对话框**——人还站在原地，再选一个
+     * 会话重试是显然的下一步，关掉反而要重新长按一次。
+     */
+    val forwardTo: (Conversation) -> Unit = { target ->
+        val message = forwarding
+        if (message != null) {
+            scope.launch {
+                if (repository.forwardMessage(owner, message.id, target.id)) {
+                    forwarding = null
+                    forwardHint = "已转发"
+                } else {
+                    forwardHint = "没转发成，检查代理后再试"
+                }
+            }
+        }
+    }
+
     // 剪贴板本身没有任何看得见的反应：不说一句，人不知道自己按成功没有。1.6 秒后自己灭掉。
     LaunchedEffect(copiedId) {
         if (copiedId != null) {
@@ -416,6 +494,15 @@ fun ChatScreen(
         if (imageHint != null) {
             delay(2000L)
             imageHint = null
+        }
+    }
+
+    // 转发那句结果也只借一次机会：成功是个很短的动作，一条「已转发」挂在输入框下面
+    // 超过两秒就变成噪音了。对话框里那一份跟着一起收，人已经看见了。
+    LaunchedEffect(forwardHint) {
+        if (forwardHint != null) {
+            delay(2000L)
+            forwardHint = null
         }
     }
 
@@ -523,10 +610,26 @@ fun ChatScreen(
                                         } else {
                                             null
                                         },
-                                        // 长按：别人的直接复制；自己的弹「复制 / 撤回」小菜单（见 [ChatBubble]）。
+                                        // 长按弹菜单；菜单第一项是复制，所以老习惯按下去还是那个结果。
                                         onLongPress = { copyMessage(message) },
-                                        onDelete = if (message.sender == owner) {
+                                        // 撤回：自己的、而且还在两分钟内才给这一项。超了就不出现——
+                                        // 按下去只会拿到服务端的 false，再亮一句「没撤回成」纯属添乱。
+                                        onDelete = if (
+                                            message.sender == owner &&
+                                            withinRecallWindow(message.createdAt)
+                                        ) {
                                             { recallMessage(message) }
+                                        } else {
+                                            null
+                                        },
+                                        // 回复：谁的消息都能引，包括自己的。
+                                        onReply = { replyTarget = message },
+                                        // 转发：也是谁的都行——转发别人的话是最常见的用法。
+                                        onForward = { openForward(message) },
+                                        // 删除（只本机）：只对自己的。它和能不能撤回无关：
+                                        // 老消息撤不了了，但自己仍然可以从这一侧把它拿掉。
+                                        onHide = if (message.sender == owner) {
+                                            { hideMessageInPlace(message) }
                                         } else {
                                             null
                                         },
@@ -580,6 +683,15 @@ fun ChatScreen(
                     members = detail?.members.orEmpty().filter { it.owner != owner },
                     onPick = mention,
                     onDismiss = { showMentions = false },
+                )
+            }
+            // 正在回复的那一条：贴在输入栏正上方，一边打字一边看得见在回谁。
+            // 放在三个面板之后、输入栏之前：面板一拉开就占掉输入区，这条夹在中间会被挤走形。
+            replyTarget?.let { target ->
+                ReplyComposerBar(
+                    name = target.label,
+                    body = if (target.kind == "text") target.body else "图片",
+                    onCancel = { replyTarget = null },
                 )
             }
             ChatComposer(
@@ -664,7 +776,51 @@ fun ChatScreen(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                 )
             }
+            if (hideFailed) {
+                Text(
+                    text = "没删成，检查代理后再试",
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                )
+            }
+            if (forwardHint != null) {
+                Text(
+                    // 成败共用这一行：转发成功是个很短的动作，单独再弹一个对话框去说"成功了"
+                    // 比这条消息本身还重。失败时这行是红的，成功时是灰的（见下面 color 的判断）。
+                    text = forwardHint.orEmpty(),
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = if (forwardHint == "已转发") {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                )
+            }
         }
+    }
+
+    // 转发去哪：列出所有会话让人点一个。对话框本身画在页面之外，所以它放在根作用域里，
+    // 不进上面那个 Column——进去会被当成最后一行内容排版。
+    forwarding?.let { message ->
+        ForwardDialog(
+            preview = when {
+                message.kind == "image" -> "图片"
+                message.removed -> "该消息已撤回"
+                else -> message.body
+            },
+            targets = forwardTargets,
+            hint = forwardHint,
+            onPick = forwardTo,
+            onDismiss = {
+                forwarding = null
+                // 收起对话框就把那句结果一起收掉：它说的是刚刚那次转发，离开这层就没意义了。
+                forwardHint = null
+            },
+        )
     }
 }
 
@@ -1021,6 +1177,55 @@ private fun ChatBubble(
 }
 
 /**
+ * 气泡里的引用块：左边一条竖线，右边「某某：原话前几句」。
+ *
+ * 只给两行：它回答的是「我在回哪句」，完整的原话在那条消息自己身上，往上翻就有。所以宁可
+ * 截断，也不让一条引用把一个短回复撑成一屏。
+ *
+ * 颜色跟着气泡底色走：自己的气泡是主色，竖线和字都得换成 onPrimary 的淡色，
+ * 否则一道主色竖线画在主色底上等于没画。
+ *
+ * 摘要是空的 = 被引的那条已经撤回：后端每次读的时候现取，撤回后就空了。这里必须说一句，
+ * 否则引用块只剩「某某：」后面一片空白，看着像界面出了问题。
+ */
+@Composable
+private fun ChatQuoteBlock(senderName: String, body: String, mine: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val lineColor = if (mine) {
+        scheme.onPrimary.copy(alpha = 0.5f)
+    } else {
+        scheme.primary.copy(alpha = 0.5f)
+    }
+    val textColor = if (mine) {
+        scheme.onPrimary.copy(alpha = 0.85f)
+    } else {
+        scheme.onSurfaceVariant
+    }
+    Row(modifier = Modifier.widthIn(max = 230.dp)) {
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                // 竖线跟着两行字的自然高度走；只有一行字时也不至于缩成一个点。
+                .heightIn(min = 24.dp)
+                .background(lineColor),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = if (body.isBlank()) {
+                "该消息已撤回"
+            } else {
+                "${senderName.ifBlank { "某人" }}：$body"
+            },
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
+            color = textColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
  * 气泡右上角那个长按菜单：复制 / 回复 / 转发 / 删除 / 撤回。
  *
  * 每一项都是先收起菜单再动手：菜单留着会把下面的气泡挡住，动作却已经发出去了，看着像没点上。
@@ -1258,6 +1463,141 @@ private fun ChatMoreCell(glyph: FlGlyph, label: String, onClick: () -> Unit) {
             color = scheme.onSurfaceVariant,
             maxLines = 1,
         )
+    }
+}
+
+/**
+ * 输入栏上方那条「回复 某某：…」。
+ *
+ * 用一条窄条而不是把输入框改成两行：人正在打字，不该因为引用了别人就让输入框跳高一块。
+ * 正文只给一行、超出打省略号——那行是个提示，不是让人在输入栏里重读一遍原话的地方。
+ */
+@Composable
+private fun ReplyComposerBar(name: String, body: String, onCancel: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(scheme.surfaceContainerHigh)
+            .padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 左边那道竖线：和气泡里的引用块用同一个记号，让人一眼对上"我引的就是那种块"。
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .height(26.dp)
+                .background(scheme.primary.copy(alpha = 0.5f)),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "回复 $name",
+                fontSize = 10.sp,
+                color = scheme.primary,
+                maxLines = 1,
+            )
+            Text(
+                text = body,
+                fontSize = 11.sp,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        FlBarButton(
+            glyph = FlGlyphs.close,
+            contentDescription = "取消回复",
+            onClick = onCancel,
+            size = 30.dp,
+            iconSize = 14.dp,
+            filled = false,
+        )
+    }
+}
+
+/**
+ * 转发去哪：一列会话，点一个就转过去。
+ *
+ * 不做搜索：会话通常就那么几条，翻一眼比打字快；真到几十条再加。
+ * 结果提示显示在正文下面而不是另弹一个 toast——对话框还开着的时候，人正需要知道刚才那一下
+ * 成没成，才好决定是再点一个还是关掉。
+ */
+@Composable
+private fun ForwardDialog(
+    preview: String,
+    targets: List<Conversation>,
+    hint: String?,
+    onPick: (Conversation) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = "转发到",
+        buttons = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    ) {
+        Text(
+            text = preview,
+            fontSize = 11.sp,
+            color = scheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (hint != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = hint,
+                fontSize = 10.sp,
+                color = if (hint == "已转发") scheme.primary else scheme.error,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        if (targets.isEmpty()) {
+            Text(
+                text = "没有别的会话可以转",
+                fontSize = 11.sp,
+                color = scheme.onSurfaceVariant,
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                items(targets, key = { it.id }) { target ->
+                    val label = target.title.ifBlank { target.peerName }.ifBlank { "会话" }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onPick(target) }
+                            .padding(horizontal = 6.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(scheme.primary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = label.take(1),
+                                fontSize = 13.sp,
+                                color = scheme.primary,
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = label,
+                            fontSize = 13.sp,
+                            color = scheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1540,4 +1880,70 @@ private fun chatErrorOf(reason: String?, network: Boolean): String? = when {
     network -> "没连上后端，检查代理或网络后再试。"
     !reason.isNullOrBlank() -> "后端没有返回消息：$reason"
     else -> null
+}
+
+/**
+ * 服务端允许撤回多久。这条线在 `message_delete` 里，客户端改不动也不该去改。
+ */
+private const val RECALL_WINDOW_SECONDS = 120L
+
+/**
+ * 客户端这一侧给的宽限，略大于 [RECALL_WINDOW_SECONDS]。
+ *
+ * 手机时钟和服务器差几秒是常态，卡死在 120 会让「刚发出去的消息突然撤不了」。所以这一侧
+ * 只做粗判：明显超时的（超过这条线）就不给撤回菜单项；落在 120~130 秒之间的仍然给，
+ * 真超了由服务端拒绝，那时显示的才是「没撤回成」。
+ */
+private const val RECALL_CLIENT_GRACE_SECONDS = RECALL_WINDOW_SECONDS + 10L
+
+/**
+ * 这条消息还来不来得及撤回。
+ *
+ * 解不出时间就当成「太旧」：宁可少给一个菜单项，也不要给一个按下去必然失败的。
+ */
+private fun withinRecallWindow(createdAt: String): Boolean {
+    val epoch = epochSecondsOf(createdAt) ?: return false
+    return currentTimeMillis() / 1000 - epoch <= RECALL_CLIENT_GRACE_SECONDS
+}
+
+/**
+ * 把 `YYYY-MM-DDTHH:MM:SS.ffffffZ` 解成 epoch 秒；形状不对返回 null。
+ *
+ * 自己算而不是上日期库：整个工程只用到这一处，为几行算术拉一个依赖不划算。
+ * 后端用 `to_char(..., 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` 拼的，形状是固定的，按下标取就够。
+ * 时区按 UTC——那个 `Z` 就是 UTC，所以这里不做任何偏移。
+ */
+private fun epochSecondsOf(stamp: String): Long? {
+    if (stamp.length < 19) return null
+    val year = stamp.substring(0, 4).toIntOrNull() ?: return null
+    val month = stamp.substring(5, 7).toIntOrNull() ?: return null
+    val day = stamp.substring(8, 10).toIntOrNull() ?: return null
+    val hour = stamp.substring(11, 13).toIntOrNull() ?: return null
+    val minute = stamp.substring(14, 16).toIntOrNull() ?: return null
+    val second = stamp.substring(17, 19).toIntOrNull() ?: return null
+    if (month !in 1..12 || day !in 1..31 || hour !in 0..23 || minute !in 0..59 || second !in 0..60) {
+        return null
+    }
+    var days = 0L
+    for (y in 1970 until year) {
+        days += if (isLeapYear(y)) 366L else 365L
+    }
+    days += daysBeforeMonth(year, month)
+    days += (day - 1)
+    return days * 86_400L + hour * 3_600L + minute * 60L + second
+}
+
+private fun isLeapYear(year: Int): Boolean =
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+
+/** [month] 之前这个月已经过了多少天（1 月是 0）。 */
+private fun daysBeforeMonth(year: Int, month: Int): Long {
+    val lengths = intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    var sum = 0L
+    for (index in 0 until month - 1) {
+        sum += lengths[index]
+        // 二月在闰年多一天，补在它自己那一格上。
+        if (index == 1 && isLeapYear(year)) sum += 1
+    }
+    return sum
 }
