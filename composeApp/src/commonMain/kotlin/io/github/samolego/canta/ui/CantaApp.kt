@@ -1351,6 +1351,9 @@ private fun CantaNavigation(
                 // and a direct chat says the other person's instead of a generic "私聊".
                 var chatTitle by remember { mutableStateOf("") }
                 var chatIsGroup by remember { mutableStateOf(false) }
+                // 草稿按会话存：离开这一页再回来，上次没说完的话还在。读取用 StateFlow，
+                // 所以在别处改了草稿这里也会跟着刷新。
+                val chatDrafts by settingsViewModel.chatDrafts.collectAsStateWithLifecycle()
                 LaunchedEffect(conversationId) {
                     chatName = DeviceIdentity.displayName(deps.settings)
                     val identity = DeviceIdentity.current(deps.settings)
@@ -1382,6 +1385,9 @@ private fun CantaNavigation(
                     },
                     // 发图片：相册由平台层拉起来，桌面/网页没有相册就回答 null，页面静默放弃。
                     pickImage = { platform.pickImage() },
+                    // 草稿：进来时把这一条上次没发完的话填回去，改动由页面防抖后写回。
+                    initialDraft = chatDrafts.firstOrNull { it.first == conversationId }?.second.orEmpty(),
+                    onDraftPersist = { text -> settingsViewModel.saveChatDraft(conversationId, text) },
                 )
             }
             composable(route = Screen.CreateGroup.route) {

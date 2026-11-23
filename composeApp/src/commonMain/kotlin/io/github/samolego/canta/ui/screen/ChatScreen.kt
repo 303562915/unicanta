@@ -5,6 +5,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,6 +54,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -60,6 +66,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.Conversation
@@ -101,6 +109,26 @@ private const val ChatPageSize = 30
 
 /** 会话开着时多久问一次新消息：没有推送，短了浪费额度，长了就"不准时"。 */
 private const val ChatPollMs: Long = 8_000L
+
+/**
+ * 草稿落盘的防抖时长。
+ *
+ * 600ms 是「一个词打完的停顿」：再短会在一个字一个字敲的时候反复写设置文件，
+ * 再长会让人觉得"我退出去怎么没存上"。它比一次 `ProtoBlobStore.update` 的落盘开销大得多，
+ * 所以宁可等这一会儿。
+ */
+private const val CHAT_DRAFT_PERSIST_MILLIS: Long = 600L
+
+/** 全屏看图能放大到几倍；双击在 1f 和它之间切换。 */
+private const val ChatImageMaxZoom = 4f
+
+/**
+ * 双击放大到几倍。
+ *
+ * 不是 4f（双击要的是"看清细节"，但一下顶到上限之后就只剩拖动了，回头还得再双击一次）；
+ * 2.5 大约是「一行小字能读清」的倍数，也留了继续往里捏的余地。
+ */
+private const val ChatImageDoubleTapZoom = 2.5f
 
 /**
  * 输入框上面那排快捷短语：左边是画出来的样子，右边是点下去真正填进输入框的字。
@@ -161,12 +189,27 @@ fun ChatScreen(
     onOpenProfile: (owner: String) -> Unit = {},
     /** 让平台挑一张图片：桌面/网页没有相册，返回 null。 */
     pickImage: suspend () -> ByteArray? = { null },
+    /**
+     * 这个会话上次没发出去的草稿；空串表示没有。
+     *
+     * 由上层从设置里读出来传进来（[io.github.samolego.canta.data.CantaSettings.chatDraftsFlow]），
+     * 这一层不自己去读存储：聊天页不该认识设置文件长什么样。只在进来那一刻回填一次，
+     * 之后以本地的 [draft] 为准——人正在打字，中途被存储里那个旧值盖掉是最糟的体验。
+     */
+    initialDraft: String = "",
+    /**
+     * 草稿变了要落盘时叫一声；null 表示这一层不做持久化。
+     *
+     * 调用方负责防抖之外的一切（写哪儿、怎么合并）。这里已经做了 600ms 防抖，
+     * 所以它收到的是"停下来之后的那一版"，不是每个按键。
+     */
+    onDraftPersist: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
-    var draft by rememberSaveable { mutableStateOf("") }
+    var draft by rememberSaveable(conversationId) { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var sendFailed by remember { mutableStateOf(false) }
     var loadingEarlier by remember { mutableStateOf(false) }
@@ -219,6 +262,29 @@ fun ChatScreen(
     /** 首屏已经落到底了没有：没落过底之前不往上翻页，否则一进页面就白拉一页历史。 */
     var settled by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    /** 正在全屏看哪张图（storage 路径）；null 表示查看器没开。 */
+    var viewingImage by remember { mutableStateOf<String?>(null) }
+    /**
+     * 已经解码好的图，按 storage 路径存。
+     *
+     * 只为了让查看器"点开就能看"：气泡那边刚解码完的那张直接拿来用，不必为了放大再下一次；
+     * 同一个会话里翻回去点第二次也是立刻出来。不设上限——它跟这个页面的生命周期一样长，
+     * 而一个会话里的图本来就有限（超过 10 天后端就标过期了）。
+     */
+    val decodedImages = remember { mutableStateMapOf<String, ImageBitmap>() }
+
+    // 草稿回填：只在本地还空着的时候接受一次。人在打字时存储里那个旧值不该把它盖掉。
+    LaunchedEffect(conversationId, initialDraft) {
+        if (draft.isEmpty() && initialDraft.isNotEmpty()) draft = initialDraft
+    }
+
+    // 草稿落盘：600ms 没再敲字才写一次。key 里带 draft，所以每敲一个字都会把上一次的
+    // LaunchedEffect 取消掉——这就是防抖，不用自己维护计时器。
+    LaunchedEffect(conversationId, draft) {
+        val persist = onDraftPersist ?: return@LaunchedEffect
+        delay(CHAT_DRAFT_PERSIST_MILLIS)
+        persist(draft)
+    }
 
     // 一个会话一页：进页面读最近 30 条，读完把已读位置推到现在，顺便问一次会话详情。
     // 详情排在消息之后，是为了不让它的失败覆盖掉下面读的 lastError 文案。
@@ -593,6 +659,8 @@ fun ChatScreen(
                                     ChatBubble(
                                         // 图片要自己按 storage 路径去取字节，所以把仓库也递进去。
                                         repository = repository,
+                                        // 和全屏查看器共用同一份解码结果：点开时不必再下一次。
+                                        imageCache = decodedImages,
                                         message = message,
                                         mine = message.sender == owner,
                                         // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
@@ -630,6 +698,13 @@ fun ChatScreen(
                                         // 老消息撤不了了，但自己仍然可以从这一侧把它拿掉。
                                         onHide = if (message.sender == owner) {
                                             { hideMessageInPlace(message) }
+                                        } else {
+                                            null
+                                        },
+                                        // 点开看大图：只有还活着的图片消息给这个回调——
+                                        // 过期的那条正文里已经没有对象了，点开只会是一个加载失败的黑屏。
+                                        onOpenImage = if (message.kind == "image") {
+                                            { viewingImage = message.body }
                                         } else {
                                             null
                                         },
@@ -750,13 +825,32 @@ fun ChatScreen(
                 )
             }
             if (sendFailed) {
-                Text(
-                    text = "没发出去，检查代理后再试",
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                )
+                // 失败时草稿、@ 名单、引用目标都还在（见 send 里那几条只在成功时清），
+                // 所以「重发」就是再按一次发送，正文不用人重打。
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "没发出去，检查代理后再试",
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "重发",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = !sending) { send() }
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
             }
             if (recallFailed) {
                 Text(
@@ -801,6 +895,17 @@ fun ChatScreen(
                 )
             }
         }
+    }
+
+    // 全屏看图。也放在根作用域：它是一个 Dialog，进 Column 只会被排成一行内容。
+    // 用 `?.let` 而不是三元：viewingImage 是可变状态，读一次存进局部量，免得在分支里反复读。
+    viewingImage?.let { path ->
+        ChatImageViewer(
+            repository = repository,
+            objectPath = path,
+            cache = decodedImages,
+            onDismiss = { viewingImage = null },
+        )
     }
 
     // 转发去哪：列出所有会话让人点一个。对话框本身画在页面之外，所以它放在根作用域里，
@@ -1020,6 +1125,8 @@ private fun ChatDayDivider(stamp: String) {
 @Composable
 private fun ChatBubble(
     repository: SocialRepository,
+    /** 解码好的图，气泡与全屏查看器共用一份；见 [ChatScreen] 里的 `decodedImages`。 */
+    imageCache: MutableMap<String, ImageBitmap>,
     message: ChatMessage,
     mine: Boolean,
     showSender: Boolean,
@@ -1033,6 +1140,12 @@ private fun ChatBubble(
     onForward: (() -> Unit)? = null,
     /** 只在自己这一侧删掉（对所有人还在）；只有自己的消息才给。 */
     onHide: (() -> Unit)? = null,
+    /**
+     * 点图片放大看。只有图片消息才会给这个回调，别的那几种类型没有可放大的东西。
+     *
+     * 它和长按是两回事：长按仍然是菜单（复制/回复/转发/撤回），点击才是看大图。
+     */
+    onOpenImage: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // 任何一条消息长按都弹菜单：回复和转发对别人的消息同样成立，而"长按即复制"那个老手势
@@ -1082,9 +1195,28 @@ private fun ChatBubble(
                 Box(
                     modifier = Modifier
                         .clip(ChatImageShape)
-                        .then(holdModifier),
+                        // 点击看大图，长按仍是菜单：两个手势分开挂，谁也不吃谁。
+                        // 没给 [onOpenImage]（比如过期的图）时就不挂点击，免得点下去什么反应都没有。
+                        .then(
+                            if (onOpenImage != null) {
+                                Modifier.combinedClickable(
+                                    onClickLabel = "查看大图",
+                                    onLongClickLabel = "打开图片菜单",
+                                    onClick = onOpenImage,
+                                    onLongClick = longPress,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
+                        // 给了点击那一路就不必再挂 holdModifier：它会和上面的 combinedClickable 抢事件。
+                        .then(if (onOpenImage == null) holdModifier else Modifier),
                 ) {
-                    ChatImageBody(repository = repository, objectPath = message.body)
+                    ChatImageBody(
+                        repository = repository,
+                        objectPath = message.body,
+                        cache = imageCache,
+                    )
                     if (menuable) {
                         // 图片的菜单不画「复制」（canCopy = false）：正文是 storage 路径不是话。
                         ChatBubbleMenu(
@@ -1316,12 +1448,29 @@ private fun ChatBubbleMenu(
  * 取不到或解不开 → 同一个灰框上写「图片加载失败」。占位先占住位置，图到了列表也不会跳。
  */
 @Composable
-private fun ChatImageBody(repository: SocialRepository, objectPath: String) {
+private fun ChatImageBody(
+    repository: SocialRepository,
+    objectPath: String,
+    /**
+     * 这张图解码好之后往哪儿放一份；进来时也先到这里找。
+     *
+     * 让全屏查看器能"点开立刻看到"：气泡刚解码完的那张就是查看器要的那张，
+     * 为了放大再下一次既慢又费流量。滚出列表再滚回来也省一次。
+     */
+    cache: MutableMap<String, ImageBitmap>,
+) {
     var bitmap by remember(objectPath) { mutableStateOf<ImageBitmap?>(null) }
     var failed by remember(objectPath) { mutableStateOf(false) }
 
     // 键是路径：同一个 slot 换了图就重新取。滚出去再滚回来会再取一次，但不会留着上一张。
     LaunchedEffect(objectPath) {
+        // 缓存里已经有就直接用，不再问一次网络。
+        val cached = cache[objectPath]
+        if (cached != null) {
+            bitmap = cached
+            failed = false
+            return@LaunchedEffect
+        }
         bitmap = null
         failed = false
         if (objectPath.isBlank()) {
@@ -1334,6 +1483,7 @@ private fun ChatImageBody(repository: SocialRepository, objectPath: String) {
             failed = true
         } else {
             bitmap = decoded
+            cache[objectPath] = decoded
         }
     }
 
@@ -1363,6 +1513,123 @@ private fun ChatImageBody(repository: SocialRepository, objectPath: String) {
                     color = MaterialTheme.colorScheme.outline,
                     maxLines = 1,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 全屏看一张图。
+ *
+ * 黑底铺满整块屏幕（`usePlatformDefaultWidth = false` 才不会被 Dialog 默认的窄边裁住），
+ * 图按 [ContentScale.Fit] 居中，怎么缩放都不裁掉边缘。
+ *
+ * 手势分两层挂，因为它们得同时成立：
+ *  * 一层只管点击/双击（`detectTapGestures`）—— 点任意处或右上角 × 关掉；双击在 1f 与
+ *    [ChatImageDoubleTapZoom] 之间来回。
+ *  * 另一层管缩放与拖动（`detectTransformGestures`）。`zoom` 是相对上一次的增量，所以乘上去
+ *    而不是直接赋值，捏合才顺。
+ *
+ * 缩回 1f（或更小被夹回 1f）时把位移清零：图小于画面时还留着位移，会歪在一边像没居中。
+ *
+ * [cache] 和气泡共用：气泡刚解好的那张直接拿来画，点开是立刻的，不再下一次网络。
+ */
+@Composable
+private fun ChatImageViewer(
+    repository: SocialRepository,
+    objectPath: String,
+    cache: MutableMap<String, ImageBitmap>,
+    onDismiss: () -> Unit,
+) {
+    var bitmap by remember(objectPath) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(objectPath) { mutableStateOf(false) }
+    var scale by remember(objectPath) { mutableStateOf(1f) }
+    var offset by remember(objectPath) { mutableStateOf(Offset.Zero) }
+
+    LaunchedEffect(objectPath) {
+        val cached = cache[objectPath]
+        if (cached != null) {
+            bitmap = cached
+            return@LaunchedEffect
+        }
+        val bytes = repository.downloadChatImage(objectPath)
+        val decoded = bytes?.let { raw -> runCatching { raw.decodeToImageBitmap() }.getOrNull() }
+        if (decoded == null) {
+            failed = true
+        } else {
+            bitmap = decoded
+            cache[objectPath] = decoded
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onDismiss() },
+                        onDoubleTap = {
+                            if (scale > 1f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                scale = ChatImageDoubleTapZoom
+                            }
+                        },
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val next = (scale * zoom).coerceIn(1f, ChatImageMaxZoom)
+                        scale = next
+                        offset = if (next <= 1f) Offset.Zero else offset + pan
+                    }
+                },
+        ) {
+            val loaded = bitmap
+            if (loaded != null) {
+                Image(
+                    bitmap = loaded,
+                    contentDescription = "图片",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = offset.x
+                            translationY = offset.y
+                        },
+                )
+            } else {
+                Text(
+                    text = if (failed) "图片加载失败" else "加载中…",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+            // 右上角的 ×：点图本身也能关，但放一个明确的出口，免得有人不敢点。
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(12.dp)
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(onClick = onDismiss),
+                contentAlignment = Alignment.Center,
+            ) {
+                FlGlyphIcon(glyph = FlGlyphs.close, size = 18.dp, tint = Color.White)
             }
         }
     }

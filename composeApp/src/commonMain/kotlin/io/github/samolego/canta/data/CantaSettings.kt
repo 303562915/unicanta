@@ -7,9 +7,62 @@ import io.github.samolego.canta.data.proto.PendingUninstallProto
 import io.github.samolego.canta.data.proto.ProtoBlobStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 
 /** Most restore suspects kept in the settings. */
 private const val MAX_RESTORE_SUSPECTS = 20
+
+/** 最多留几个会话的草稿；再多也没人会回到那么久以前。 */
+private const val MAX_CHAT_DRAFTS = 20
+
+/** 单条草稿最多存多少字：一条消息本身就被后端截到 4000，草稿存一半足够了。 */
+private const val MAX_CHAT_DRAFT_CHARS = 2000
+
+/**
+ * 把 [AppSettingsProto.chatDrafts] 那段 JSON 解回 `会话号 -> 正文`，最近的在后。
+ *
+ * 坏数据给空列表而不是抛：一段草稿撑不起一次崩溃，而这段文本是可能被手改过的
+ * （设置文件就在用户自己的存储里）。
+ */
+private fun decodeChatDrafts(raw: String): List<Pair<Long, String>> =
+    if (raw.isBlank()) {
+        emptyList()
+    } else {
+        runCatching {
+            Json.Default.parseToJsonElement(raw).jsonArray.mapNotNull { element ->
+                val row = element.jsonObject
+                val id = row["id"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+                val text = row["t"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                if (text.isBlank()) null else id to text
+            }
+        }.getOrDefault(emptyList())
+    }
+
+/** [decodeChatDrafts] 的反向；没有草稿就存空串，和这个字段的出厂值一致。 */
+private fun encodeChatDrafts(drafts: List<Pair<Long, String>>): String =
+    if (drafts.isEmpty()) {
+        ""
+    } else {
+        buildJsonArray {
+            drafts.forEach { (id, text) ->
+                add(
+                    buildJsonObject {
+                        put("id", id)
+                        put("t", text)
+                    },
+                )
+            }
+        }.toString()
+    }
 
 /** Settings used when nothing has been stored yet. */
 private val DEFAULT_SETTINGS = AppSettingsProto(
@@ -71,6 +124,14 @@ class CantaSettings(storage: AppBlobStorage) {
     val qqGroupSeenFlow: Flow<Boolean> = field { it.qqGroupSeen }
     /** 安全页顶部机型胶囊是不是点过了；点过就不再呼吸，见 [AppSettingsProto.scopeHintSeen]。 */
     val scopeHintSeenFlow: Flow<Boolean> = field { it.scopeHintSeen }
+
+    /**
+     * 各会话没发出去的草稿，已经是解好的 `会话号 -> 正文`，最近写的在最后。
+     *
+     * 解在 flow 这一层而不是让调用方自己解析原始 JSON：只有这里的 [setChatDraft] 知道格式，
+     * 界面不该跟着一起背。坏数据当空列表——一段草稿不值得让页面崩。
+     */
+    val chatDraftsFlow: Flow<List<Pair<Long, String>>> = field { decodeChatDrafts(it.chatDrafts) }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
@@ -129,6 +190,22 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setQqGroupSeen(seen: Boolean) = update { it.copy(qqGroupSeen = seen) }
     /** 记下顶部机型胶囊点过了，呼吸提示停掉。 */
     suspend fun setScopeHintSeen(seen: Boolean) = update { it.copy(scopeHintSeen = seen) }
+
+    /**
+     * 记下（或清掉）一个会话的草稿。[text] 空串等于删除这一条。
+     *
+     * 先过滤掉这个会话原有的那条再按需追加，所以重复改同一个会话不会在数组里堆一串。
+     * 超过 [MAX_CHAT_DRAFTS] 就从头部裁：头部是写得最早的那个，草稿本来就是"过一阵就不想要了"
+     * 的东西，先丢最旧的是唯一说得通的选择。
+     */
+    suspend fun setChatDraft(conversationId: Long, text: String) {
+        val trimmed = text.take(MAX_CHAT_DRAFT_CHARS)
+        update { current ->
+            val kept = decodeChatDrafts(current.chatDrafts).filterNot { it.first == conversationId }
+            val next = if (trimmed.isBlank()) kept else kept + (conversationId to trimmed)
+            current.copy(chatDrafts = encodeChatDrafts(next.takeLast(MAX_CHAT_DRAFTS)))
+        }
+    }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }

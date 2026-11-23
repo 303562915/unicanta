@@ -129,6 +129,14 @@ class SettingsViewModel(
     val qqGroupSeen = settingsStore.qqGroupSeenFlow.state(false)
 
     /**
+     * 各会话没发出去的草稿，`会话号 -> 正文`，最近写的在最后。
+     *
+     * 给界面读的是一份快照（`Map`）：`ChatScreen` 只需要在进来那一刻问一句「这个会话有没有草稿」，
+     * 之后由它自己拿着 `draft` 改，不需要跟着每条草稿的写入重组整个页面。
+     */
+    val chatDrafts = settingsStore.chatDraftsFlow.state(emptyList<Pair<Long, String>>())
+
+    /**
      * 安全页顶部机型胶囊是不是点过了。出厂是没点过（`false`），点一次就永久停止呼吸提示。
      */
     val scopeHintSeen = settingsStore.scopeHintSeenFlow.state(false)
@@ -242,6 +250,9 @@ class SettingsViewModel(
 
     /** 「作者的群」那行点过了：红点熄灭，而且不再亮起来。 */
     fun saveQqGroupSeen(seen: Boolean) = save { setQqGroupSeen(seen) }
+
+    /** 记下（或清掉，传空串）一个会话的草稿；防抖在调用方那边，这里每次都落盘。 */
+    fun saveChatDraft(conversationId: Long, text: String) = save { setChatDraft(conversationId, text) }
 
     /** 顶部机型胶囊点过了：呼吸提示停掉，以后只当普通按钮。 */
     fun saveScopeHintSeen(seen: Boolean) = save { setScopeHintSeen(seen) }

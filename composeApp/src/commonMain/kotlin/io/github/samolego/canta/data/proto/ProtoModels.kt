@@ -196,6 +196,16 @@ data class AppSettingsProto(
      * 和 [qqGroupSeen] 同一个道理：存"点过"，因为出厂状态是"还在闪"。
      */
     @ProtoNumber(39) val scopeHintSeen: Boolean = false,
+    /**
+     * 每个会话没发出去的草稿，存成一段 JSON 数组文本：`[{"id":12,"t":"你好"}]`。
+     *
+     * 为什么不是一个 map 字段：protobuf 的 map 在 proto3 里不保序，而这里需要"最旧的先丢"——
+     * 数组天然有序，写的时候追加到末尾、超过上限从头部裁。
+     *
+     * 为什么每敲一个字不直接落盘：见 `ChatScreen` 里那个 600ms 防抖，`CantaSettings` 只负责存。
+     * 上限 20 个会话（约 40KB 封顶，单条正文截到 2000 字），再多也没有人会回到那么久的草稿。
+     */
+    @ProtoNumber(40) val chatDrafts: String = "",
 )
 
 /**
