@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.github.samolego.canta.data.community.AiSender
+import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
@@ -141,14 +142,21 @@ private val ChatImageShape = RoundedCornerShape(12.dp)
 private const val ChatPageSize = 30
 
 /**
- * 会话开着时多久问一次新消息。
+ * 没有实时通道时多久问一次新消息。
  *
- * 没有推送通道，这一页靠轮询：数值就是「对方发完到你看得见」的上限，平均还要再折一半
- * （问到的那一刻之前刚好已经在等了）。8 秒那版实测体感是「卡一下才跳出来」，改成 2 秒：
- * 正在看这一页的时候多问几次换来「几乎是即时」的观感，退出页面就停了，不会一直耗流量。
- * 真要做到零延迟只有一条路——服务端推（Realtime 订阅或 FCM），那是另一件事。
+ * 这一页的兜底是轮询：数值就是「对方发完到你看得见」的上限，平均还要再折一半。
+ * 有 [ChatLiveSource] 的时候它退成 [ChatPollFallbackMs]，新消息走推送；只有网页版这种
+ * 没有 websocket 引擎的地方才用得上这个 2 秒。
  */
 private const val ChatPollMs: Long = 2_000L
+
+/**
+ * 有实时通道时的兜底轮询间隔。
+ *
+ * 推送会漏（断线、切后台回来、服务端广播丢一条），所以不能完全停；但这时它只是「保险」，
+ * 10 秒问一次足够——真有事，广播那一侧几百毫秒就到了。连不上就退回 [ChatPollMs]。
+ */
+private const val ChatPollFallbackMs: Long = 10_000L
 
 /**
  * 草稿落盘的防抖时长。
@@ -253,6 +261,13 @@ fun ChatScreen(
     onOpenShare: ((ShareCard) -> Unit)? = null,
     /** 点个人名片：进那个人的主页。 */
     onOpenCard: ((PersonCard) -> Unit)? = null,
+    /**
+     * 实时通道：服务端每有人发一条就往这里报一声。
+     *
+     * null 表示这一侧没有（网页版没有 websocket 引擎），页面就退回纯轮询。给了它以后轮询只当
+     * 兜底（30 秒），新消息靠推送——别再为了"准时"把轮询调密，那等于两套都在跑。
+     */
+    liveSource: ChatLiveSource? = null,
     /**
      * 这一页对面的人被本机拉黑了没有。
      *
@@ -388,21 +403,46 @@ fun ChatScreen(
         detail = repository.conversationDetail(owner, conversationId)
     }
 
-    // 会话开着时自己问新消息：没有推送通道，不轮询的话对方说什么都要等退出再进才看得见。
-    // 只并进尾巴，不动已经翻出来的历史。fresh 放在前面：同一 id 以后回来的为准，别的设备
-    // 撤回的消息才能在本机也变灰；最后按 id 排回正序。有实质变化才走一次已读。
-    LaunchedEffect(conversationId, owner) {
+    /**
+     * 把尾巴再拉一次并并进来。
+     *
+     * 只并尾巴，不动已经翻出来的历史。fresh 放在前面：同一 id 以后回来的为准，别的设备撤回
+     * 的消息才能在本机也变灰；最后按 id 排回正序。有实质变化才走一次已读。
+     *
+     * 轮询（没有推送的那一侧）和推送（[liveSource]）都调这一个，两条路的行为必须一模一样。
+     */
+    suspend fun refreshTail() {
+        val fresh = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
+        if (fresh.isEmpty()) return
+        val merged = (fresh + messages).distinctBy { it.id }.sortedBy { it.id }
+        if (merged != messages) {
+            messages = merged
+            repository.markRead(owner, conversationId)
+        }
+    }
+
+    // 实时通道能不能用：连上了才算数。连不上（网页版没有引擎、被墙、key 不对）就退回快轮询，
+    // 免得页面以为有人推、实际上 10 秒才问一次。
+    var liveUp by remember(conversationId) { mutableStateOf(false) }
+
+    // 实时通道：服务端在 `messages` 上有 INSERT 触发器，往 `chat:<id>` 广播一声，
+    // 这里收到就立刻拉一次——对方发完到你看见之间不再有「等下一个轮询点」。
+    LaunchedEffect(conversationId, owner, liveSource) {
+        val source = liveSource ?: return@LaunchedEffect
         if (conversationId <= 0L) return@LaunchedEffect
+        liveUp = true
+        // 传上来的是 Flow，异常已经在里面吞过；这里再兜一层，推送坏了也不能让页面停摆。
+        runCatching { source.updates(conversationId).collect { refreshTail() } }
+        liveUp = false
+    }
+
+    // 兜底轮询：实时通道在跑时只当保险（10 秒一次），没有它就是唯一的来源（2 秒一次）。
+    LaunchedEffect(conversationId, owner, liveUp) {
+        if (conversationId <= 0L) return@LaunchedEffect
+        val interval = if (liveUp) ChatPollFallbackMs else ChatPollMs
         while (true) {
-            delay(ChatPollMs)
-            val fresh = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
-            if (fresh.isNotEmpty()) {
-                val merged = (fresh + messages).distinctBy { it.id }.sortedBy { it.id }
-                if (merged != messages) {
-                    messages = merged
-                    repository.markRead(owner, conversationId)
-                }
-            }
+            delay(interval)
+            refreshTail()
         }
     }
 

@@ -307,6 +307,9 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.datetime)
                 implementation(libs.ktor.client.core)
+                // 实时聊天走 Supabase Realtime 的 websocket：只加插件，引擎由各平台那份提供
+                // （android/desktop 是 okhttp，web 上没有引擎，运行时失败后回落到轮询）。
+                implementation(libs.ktor.client.websockets)
                 implementation(libs.kotlincrypto.sha2)
             }
         }

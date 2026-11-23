@@ -51,6 +51,8 @@ import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.UpdateDownload
+import io.github.samolego.canta.data.community.ChatLiveSource
+import io.github.samolego.canta.data.community.ChatRealtimeHub
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.unreadSince
@@ -138,6 +140,7 @@ import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
+import io.github.samolego.canta.util.TelemetryConfig
 import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
@@ -238,6 +241,16 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     val socialRepository = remember {
         SocialRepository(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) })
     }
+    // 实时聊天：服务端在 messages 上挂的 INSERT 触发器往 `chat:<会话号>` 广播一声，这里订阅它。
+    // 网页版没有 websocket 引擎，构造得出来但连不上，聊天页会退回轮询（见 ChatScreen.liveSource）。
+    val chatLive: ChatLiveSource? = remember {
+        runCatching {
+            ChatRealtimeHub(
+                restUrl = TelemetryConfig.BASE_URL,
+                apiKey = TelemetryConfig.PUBLISHABLE_KEY,
+            )
+        }.getOrNull()
+    }
     val settingsViewModel: SettingsViewModel = viewModel {
         SettingsViewModel(
             deps.settings,
@@ -281,7 +294,7 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
                     // Composed only once the store has answered: before that there is nothing
                     // worth drawing, and the alternative is a flash of the app list under the
                     // question.
-                    CantaNavigation(deps, closeApp, crashReports, communityRepository, socialRepository, settingsViewModel)
+                    CantaNavigation(deps, closeApp, crashReports, communityRepository, socialRepository, settingsViewModel, chatLive)
                     // The lock is a cover rather than a replacement. Drawn over the pages, it
                     // keeps their state and their side effects — the telemetry flush on the way
                     // out, the one look at the update feed — alive; swapping the navigation out and
@@ -303,6 +316,8 @@ private fun CantaNavigation(
     communityRepository: PlanRepository,
     socialRepository: SocialRepository,
     settingsViewModel: SettingsViewModel,
+    /** 实时聊天的那条订阅；null 表示这一侧没有（网页版），聊天页会退回轮询。 */
+    chatLive: ChatLiveSource?,
 ) {
     val handler = deps.handler
     val platform = deps.platform
@@ -1381,6 +1396,8 @@ private fun CantaNavigation(
                     onDraftPersist = { text -> settingsViewModel.saveChatDraft(conversationId, text) },
                     // 拉黑只对私聊有意义：群里没有"那个人"，群不受本机名单影响。
                     blocked = !chatIsGroup && chatPeer.isNotEmpty() && chatPeer in chatBlockedPeers,
+                    // 实时：对方一发就到，不再等轮询那一下。
+                    liveSource = chatLive,
                 )
             }
             composable(route = Screen.CreateGroup.route) {
