@@ -83,7 +83,7 @@ fun MineScreen(
     onOpenMyComments: () -> Unit,
     /** 打开关于页：版本、更新与联系作者都在那边。 */
     onOpenAbout: () -> Unit = {},
-    /** 还没打开过的回复数；大于 0 时"我的评论"那行点一个红点。 */
+    /** 还没打开过的回复数；大于 0 时「我的方案」那行点一个红点，提醒去消息页看。 */
     unreadReplies: Int = 0,
     /** 有新版本：关于入口带同样的红点，和底栏那个一致。 */
     updateAvailable: Boolean = false,
@@ -125,17 +125,18 @@ fun MineScreen(
             }
             Spacer(Modifier.height(10.dp))
 
-            // 我写过的：评论、方案，以及别人在下面的回复。
+            // 我上传过的方案：点进去是「我的方案」，一行一个，能删。
+            //
+            // 「我的评论」搬去了「消息 → 互动消息」——它和互动是同一个问题的两面，摆在一起才对；
+            // 这一页剩下的只有「我上传过什么」，名字也就跟着改了。
+            //
+            // 这一行**不再挂红点**：新消息的去处是消息页，红点挂在「消息」那一栏上；挂在这里却
+            // 点进「我的方案」，等于写了「N 条新消息」却把人带到没有消息的页。
             AppLinkCard(
                 glyph = FlGlyphs.requests,
-                title = "我的评论",
-                subtitle = if (unreadReplies > 0) {
-                    "$unreadReplies 条新消息，点这里看"
-                } else {
-                    "我评论过的方案和应用，别人给我的回复"
-                },
+                title = "我的方案",
+                subtitle = "我上传过的方案，点进去管理和删除",
                 onClick = onOpenMyComments,
-                showDot = unreadReplies > 0,
             )
             Spacer(Modifier.height(10.dp))
 

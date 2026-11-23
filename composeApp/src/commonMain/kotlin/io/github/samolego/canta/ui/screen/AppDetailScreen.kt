@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -109,6 +110,14 @@ private val CANNOT_REMOVE = Color(0xFFE0453B)
 
 /** Height of the two-sided vote bar. */
 private val VOTE_BAR = 10.dp
+
+/**
+ * 列表里「评论 · N」那一行的位置：0 是这张卡的 hero，「评论」的段标题紧接在它后面。
+ *
+ * 从互动消息 / 我的评论点一条评论进来时滚到这里——应用页的头部比一屏还长，不滚过去的话，
+ * 读者点完还得自己滑半天才看见自己那条。
+ */
+private const val COMMENT_SECTION_INDEX = 1
 
 /**
  * One app's own page: what it is, whether this phone can live without it, and what other
@@ -405,9 +414,24 @@ fun AppDetailScreen(
         // The thread the reader came for is opened, not folded: an answer reached from the inbox is
         // behind "展开 N 条回复", and having to open it again means the tap did not really take them
         // there.
-        LaunchedEffect(anchorCommentId) {
+        //
+        // [visibleComments] is part of the key on purpose: on the first frame the comments have not
+        // arrived yet, so an effect keyed on the anchor alone never finds the row and leaves the
+        // thread folded.
+        //
+        // 找到那一条之后才滚：锚点是一条已经被删掉的旧评论时，`threadOf` 给 null，这时滚到评论区
+        // 只会让人落到一段跟他无关的评论里，停在页顶反而更诚实。
+        var anchorOpened by remember(anchorCommentId) { mutableStateOf(false) }
+        // 评论那一段的落点：头一张卡是 hero，「评论 · N」那一行接着它。
+        val commentListState = rememberLazyListState()
+        LaunchedEffect(anchorCommentId, threads) {
+            if (anchorCommentId <= 0L || anchorOpened) return@LaunchedEffect
             val anchored = threads.threadOf(anchorCommentId) ?: return@LaunchedEffect
+            anchorOpened = true
             expandedThreads = expandedThreads + anchored.comment.id
+            // 点一条评论进来，落点是评论那一段，不是这页的顶上：应用页的头几张卡（描述、投票、
+            // 修正）加起来比一屏还长，只把线程排到最前而不滚过去，人还是要自己滑半天才看见自己那条。
+            commentListState.scrollToItem(COMMENT_SECTION_INDEX)
         }
         Box(
             modifier = Modifier
@@ -423,6 +447,7 @@ fun AppDetailScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                state = commentListState,
                 // The slim bar's height is exactly the content's top edge: no gap of its own.
                 contentPadding = PaddingValues(
                     top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + FlTopBarCompactHeight - 8.dp,

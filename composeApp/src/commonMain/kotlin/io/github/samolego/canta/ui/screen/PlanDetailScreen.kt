@@ -740,12 +740,37 @@ private fun PlanDetailContent(
     val threads = remember(comments, order, anchorCommentId) {
         comments.threads().inOrder(order).withAnchorFirst(anchorCommentId)
     }
-    // The thread the reader came for is open when the page opens on it: an answer reached from the
-    // inbox is behind "展开 N 条回复", and a reader who has to open it again was not really taken
-    // there.
-    LaunchedEffect(anchorCommentId) {
-        val anchored = threads.threadOf(anchorCommentId) ?: return@LaunchedEffect
-        onToggleThread(anchored.comment.id)
+    // 从互动消息 / 我的评论点进来的那一条：它的线程由 [withAnchorFirst] 排到最前，这里负责
+    // 把它的回复展开，并把整页滚到评论那一段——一百多个包的行会把评论压在屏幕外好几屏，
+    // 只排到最前而不滚过去，等于什么都没做。
+    //
+    // effect 的 key 里带 [threads]：首帧评论还没到，`threads` 是空的，只在 [anchorCommentId]
+    // 上跑一次的话永远找不到那一条（评论到货时 key 没变，effect 不会重跑），折叠也就一直合着。
+    //
+    // 滚动是**一次性**的（[anchorScrolled]）：[commentSectionIndex] 也在 key 里，因为包列表的
+    // 排序会晚一步到货、索引会变；但要是每变一次就滚一次，之后打字过滤包、开关搜索框都会把页面
+    // 拽回评论区，跟「滚到包过滤框」那个 effect 抢滚动。
+    var anchorOpened by remember(anchorCommentId) { mutableStateOf(false) }
+    var anchorScrolled by remember(anchorCommentId) { mutableStateOf(false) }
+    // 评论头之前可能有这几块：hero(1)、段标题(1)、包过滤框(0/1)、过滤没命中的那行(0/1)、包行。
+    val filterMissed = needle.isNotEmpty() && ranked.isEmpty()
+    val commentSectionIndex = 2 + (if (searchOpen) 1 else 0) + (if (filterMissed) 1 else 0) + ranked.size
+    LaunchedEffect(anchorCommentId, threads, commentSectionIndex) {
+        if (anchorCommentId <= 0L) return@LaunchedEffect
+        if (!anchorOpened) {
+            threads.threadOf(anchorCommentId)?.let { anchored ->
+                anchorOpened = true
+                // 「展开」只能按 threadKey 交回去（线程开合在页面那一层），所以先补一次展开。
+                if (anchored.replies.isNotEmpty() && anchored.comment.id !in expandedThreads) {
+                    onToggleThread(anchored.comment.id)
+                }
+            }
+        }
+        // 评论那一段的头一行（「评论 · N」+ 换序）就是落点：排在最前的正是读者那条。
+        if (anchorOpened && !anchorScrolled) {
+            anchorScrolled = true
+            listState.scrollToItem(commentSectionIndex.coerceAtLeast(0))
+        }
     }
     // The uploader's current name (or the identity number before names were synced), in the form the
     // rest of the app shows: the plan card and this header must read the same.

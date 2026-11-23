@@ -207,16 +207,22 @@ fun InteractionsScreen(
         }
     }
 
-    // 我的评论：第一次切到这一栏才问，之后切回来只画已经有的那一份——这一栏是自己的历史，
-    // 别人动不了它，下一条只有在刷新时才值得再问。
+    // 我的评论：每次切到这一栏都问一次——这一栏是「我写过什么」，在别处新写的那一条只有在问过
+    // 之后才会出现；一次只一页，和关注列表同一套「进来就拉」的做法。
+    //
+    // [mineLoading] 用 try/finally 复位：切走那一栏会把 effect 取消，停在 `true` 的话这一栏就永久
+    // 停在「…」上，切回来也再不会拉。
     LaunchedEffect(tab, owner, token) {
-        if (tab != TAB_MINE || mineLoaded || mineLoading) return@LaunchedEffect
+        if (tab != TAB_MINE) return@LaunchedEffect
         mineLoading = true
         mineError = null
-        mine = repository.myCommentsPage(owner, token, offset = 0)
-        mineError = interactionErrorOf(repository.lastError, false)
-        mineLoaded = true
-        mineLoading = false
+        try {
+            mine = repository.myCommentsPage(owner, token, offset = 0)
+            mineError = interactionErrorOf(repository.lastError, false)
+            mineLoaded = true
+        } finally {
+            mineLoading = false
+        }
     }
 
     /** 「我的评论」滚到底时再问下一页；和互动消息那一栏同一套挡板与去重。 */
