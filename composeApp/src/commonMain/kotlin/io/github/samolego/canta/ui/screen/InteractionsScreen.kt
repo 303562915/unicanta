@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +25,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -69,6 +72,7 @@ import io.github.samolego.canta.data.community.matching
 import io.github.samolego.canta.data.community.newestInboxCommentId
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.MyCommentRow
+import io.github.samolego.canta.ui.component.UnreadBadge
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -174,6 +178,8 @@ fun InteractionsScreen(
     var pendingDelete by remember { mutableStateOf<MyComment?>(null) }
     // 删完 / 删不掉的回执，摆在这一栏顶上。
     var notice by remember { mutableStateOf<String?>(null) }
+    // 这一趟里我点过赞的评论：后端只回一个总数，这一页不回读，所以先按会话记住自己那条。
+    var likedRows by remember { mutableStateOf(setOf<Long>()) }
 
     val inboxListState = rememberLazyListState()
     val followersListState = rememberLazyListState()
@@ -356,6 +362,7 @@ fun InteractionsScreen(
                 section = section,
                 messages = messages,
                 mineCount = if (mineLoaded) mine.items.size else null,
+                unread = summary.total,
                 onSelectMessages = { messages = it },
                 onToggleSection = {
                     section = if (section == InteractionSection.MESSAGES) {
@@ -494,6 +501,26 @@ fun InteractionsScreen(
                                     item = row,
                                     onOpen = { open(row) },
                                     onOpenProfile = onOpenProfile,
+                                    liked = row.commentIdOrZero in likedRows,
+                                    // 赞落在这一行指向的那条评论上：先改本行，再把结果交给后端，
+                                    // 失败就把这一下撤回去（总数以后端下次给的为准）。
+                                    onLike = {
+                                        val id = row.commentIdOrZero
+                                        if (id > 0L) {
+                                            val wanted = id !in likedRows
+                                            likedRows = if (wanted) likedRows + id else likedRows - id
+                                            scope.launch {
+                                                val result = repository.likeComment(id, owner, wanted)
+                                                if (result == null) {
+                                                    likedRows = if (wanted) {
+                                                        likedRows - id
+                                                    } else {
+                                                        likedRows + id
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
                                 )
                             }
                             if (loadingMore) {
@@ -508,10 +535,11 @@ fun InteractionsScreen(
 }
 
 /**
- * 顶栏：左边是回去的箭头，中间偏左是「当前栏标题 + 向下箭头」，右边是另一个入口的一行灰字。
+ * 顶栏：左边返回（旁边挂未读数），中间两栏并排居中，右边留一块等宽的空白把中间压正。
  *
- * 标题不是一个标签，而是一个按钮：点它（含箭头）弹出分类菜单，菜单锚在标题下面。抖音 / 汽水
- * 音乐的通知页就是这么做的——分类有五个，一行摆不下；标题下面那条短粗下划线说明「这一栏是选中的」。
+ * 参考图（抖音 / 汽水音乐的通知页）里，「互动消息 ⌃」和「新关注我的」是**紧挨着居中**的一对：
+ * 当前那一栏是深色加粗、下面一条短下划线（点它弹分类菜单），另一栏是浅灰、点它换栏。返回箭头旁边
+ * 那个小圆徽标是没读的消息数——它和列表里的红点、底栏的角标是同一个数。
  *
  * [mineCount] 为 null 表示「我的评论」还没读过：没读过就不写数字，写了「· 0」等于先说了一句假话。
  */
@@ -520,15 +548,18 @@ private fun InteractionsTopBar(
     section: InteractionSection,
     messages: InteractionMessages,
     mineCount: Int?,
+    unread: Int,
     onSelectMessages: (InteractionMessages) -> Unit,
     onToggleSection: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(false) }
-    val title = if (section == InteractionSection.FOLLOWERS) FOLLOWERS_LABEL else messages.label
-    // 右边那行字永远是「另一栏」：在消息里就指向关注，在关注里就指回消息。
-    val other = if (section == InteractionSection.FOLLOWERS) "互动消息" else FOLLOWERS_LABEL
+    val inMessages = section != InteractionSection.FOLLOWERS
+    // 左边那一栏的名字：消息段是选中的分类，关注段就是「新关注我的」。
+    val title = if (inMessages) messages.label else FOLLOWERS_LABEL
+    // 紧挨着的另一个入口。
+    val other = if (inMessages) FOLLOWERS_LABEL else "互动消息"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -541,21 +572,32 @@ private fun InteractionsTopBar(
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FlBarButton(
-                glyph = FlGlyphs.chevronBack,
-                contentDescription = "返回",
-                onClick = onNavigateBack,
-                iconSize = 20.dp,
-                filled = false,
-            )
-            Spacer(Modifier.width(2.dp))
-            // 标题 + 菜单锚点：DropdownMenu 挂在 Box 里，就落在标题这一块的正下方。
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            // 左：返回 + 未读小徽标。留 weight(1f) 是为了让中间那一对真的落在屏幕正中。
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FlBarButton(
+                    glyph = FlGlyphs.chevronBack,
+                    contentDescription = "返回",
+                    onClick = onNavigateBack,
+                    iconSize = 20.dp,
+                    filled = false,
+                )
+                if (unread > 0) {
+                    Spacer(Modifier.width(4.dp))
+                    UnreadBadge(count = unread)
+                }
+            }
+            // 中：两栏并排，当前那一栏带下划线；消息段的标题同时是分类菜单的锚点。
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable { expanded = true }
+                            .then(
+                                if (inMessages) Modifier.clickable { expanded = true } else Modifier,
+                            )
                             .padding(horizontal = 4.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -565,11 +607,11 @@ private fun InteractionsTopBar(
                             color = colors.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            // 下划线画在标题自己的 bounds 上，宽度就跟着字走，而不是跟着整条栏。
+                            // 下划线画在标题自己的 bounds 上，宽度跟着字走，而不是跟着整条栏。
                             modifier = Modifier.titleUnderline(colors.primary),
                         )
                         // 关注那一栏没有分类，就不画箭头，免得点上去以为还有菜单。
-                        if (section == InteractionSection.MESSAGES) {
+                        if (inMessages) {
                             Spacer(Modifier.width(3.dp))
                             FlGlyphIcon(
                                 glyph = FlGlyphs.chevronDown,
@@ -627,17 +669,20 @@ private fun InteractionsTopBar(
                         }
                     }
                 }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = other,
+                    style = FlText.subheadline,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .clickable(onClick = onToggleSection)
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                )
             }
-            Text(
-                text = other,
-                fontSize = 12.sp,
-                color = colors.onSurfaceVariant,
-                maxLines = 1,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(percent = 50))
-                    .clickable(onClick = onToggleSection)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            )
+            // 右：等宽空白，什么都不放。
+            Spacer(Modifier.weight(1f))
         }
     }
 }
@@ -679,6 +724,9 @@ private fun InteractionRow(
     item: InboxItem,
     onOpen: () -> Unit,
     onOpenProfile: (owner: String) -> Unit,
+    /** 这一条后面那条评论我赞过没有（本机会话内记住的），决定小胶囊写「赞」还是「已赞」。 */
+    liked: Boolean = false,
+    onLike: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
@@ -692,14 +740,18 @@ private fun InteractionRow(
     ) {
         Row(verticalAlignment = Alignment.Top) {
             // 头像是一块自己的入口：点开那个人的主页。行本身的点击仍然是开那条消息指向的页。
-            InteractionAvatar(
-                name = item.actor,
-                size = 40.dp,
-                modifier = Modifier.clickable(
-                    enabled = item.actorId.isNotEmpty(),
-                    onClickLabel = "看主页",
-                ) { onOpenProfile(item.actorId) },
-            )
+            // 右下角那个小圆标按事件类型换图：赞是心，回复/评论是气泡——不读字也看得出发生了什么。
+            Box {
+                InteractionAvatar(
+                    name = item.actor,
+                    size = 40.dp,
+                    modifier = Modifier.clickable(
+                        enabled = item.actorId.isNotEmpty(),
+                        onClickLabel = "看主页",
+                    ) { onOpenProfile(item.actorId) },
+                )
+                InteractionKindBadge(kind = item.kind, modifier = Modifier.align(Alignment.BottomEnd))
+            }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -744,20 +796,137 @@ private fun InteractionRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "回复评论",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.primary,
-                    maxLines = 1,
+                // 动作行：左边去回复，右边一个赞。赞落在这一行指向的那条评论上，
+                // 没有评论可赞的（方案被认同）就不画第二个胶囊。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    InteractionPill(text = "回复评论", onClick = onOpen)
+                    if (item.commentIdOrZero > 0L) {
+                        Spacer(Modifier.width(8.dp))
+                        InteractionPill(
+                            text = if (liked) "已赞" else "赞",
+                            selected = liked,
+                            glyph = null,
+                            heart = true,
+                            onClick = onLike,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            // 右边那一列：纸飞机（同整行的动作）+ 一张小缩略图。真截图这里没有——后端只给标题和
+            // 包名，所以缩略图画的是目标的首字，形状和参考图一样，内容只能到这一步。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(percent = 50))
-                        .background(colors.primary.copy(alpha = 0.12f))
-                        .clickable(onClick = onOpen)
-                        .padding(horizontal = 10.dp, vertical = 3.dp),
-                )
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(colors.surfaceContainerHighest)
+                        .clickable(onClick = onOpen),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FlGlyphIcon(glyph = FlGlyphs.send, size = 13.dp, tint = colors.onSurfaceVariant)
+                }
+                Spacer(Modifier.width(6.dp))
+                InteractionThumbnail(label = item.title.ifEmpty { item.target })
             }
         }
+    }
+}
+
+/**
+ * 头像右下角那颗类型小圆标：赞是心，回复与方案下的评论是气泡。
+ *
+ * 圆标压在头像上，边框用卡片底色描一圈，这样头像和人名之间的边界还是清楚的。
+ */
+@Composable
+private fun InteractionKindBadge(kind: InboxKind, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val heart = kind == InboxKind.COMMENT_HEART || kind == InboxKind.PLAN_HEART
+    Box(
+        modifier = modifier
+            .size(17.dp)
+            .clip(CircleShape)
+            .background(if (heart) colors.error else colors.primary)
+            .border(1.5.dp, FlSurfaceLevel.Card.colorOf(colors), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = if (heart) Icons.Default.Favorite else Icons.Default.Chat,
+            contentDescription = if (heart) "赞" else "评论",
+            modifier = Modifier.size(9.dp),
+            tint = Color.White,
+        )
+    }
+}
+
+/**
+ * 行尾那张小缩略图：目标的首字画在圆角方块里。
+ *
+ * 参考图那儿是一张真截图，后端没有这类图片可拿（只有标题 / 包名），所以用首字占住同一个形状，
+ * 一行里"这是哪件事"的位置留着。
+ */
+@Composable
+private fun InteractionThumbnail(label: String) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label.trim().take(1).ifEmpty { "?" },
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onPrimaryContainer,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * 动作行里的小胶囊：「回复评论」「赞」「已赞」共用这一个形状。
+ *
+ * [selected] 是「已经赞过了」：底色换成主色的实底、文字反白，和没赞过那颗一眼分得开。
+ * [heart] 打开时在文字前面画一颗心。
+ */
+@Composable
+private fun InteractionPill(
+    text: String,
+    onClick: () -> Unit,
+    selected: Boolean = false,
+    glyph: FlGlyph? = null,
+    heart: Boolean = false,
+) {
+    val colors = MaterialTheme.colorScheme
+    val content = if (selected) colors.onPrimary else colors.primary
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (selected) colors.primary else colors.primary.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            heart -> Icon(
+                imageVector = if (selected) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = null,
+                modifier = Modifier.size(11.dp),
+                tint = content,
+            )
+
+            glyph != null -> FlGlyphIcon(glyph = glyph, size = 11.dp, tint = content)
+        }
+        if (heart || glyph != null) Spacer(Modifier.width(3.dp))
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = content,
+            maxLines = 1,
+        )
     }
 }
 
