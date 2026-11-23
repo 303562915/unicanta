@@ -129,6 +129,11 @@ class SettingsViewModel(
     val qqGroupSeen = settingsStore.qqGroupSeenFlow.state(false)
 
     /**
+     * 安全页顶部机型胶囊是不是点过了。出厂是没点过（`false`），点一次就永久停止呼吸提示。
+     */
+    val scopeHintSeen = settingsStore.scopeHintSeenFlow.state(false)
+
+    /**
      * Whether the lock has been answered in this process.
      *
      * It lives here rather than in the composition for two reasons. Turning on the lock from the
@@ -237,6 +242,9 @@ class SettingsViewModel(
 
     /** 「作者的群」那行点过了：红点熄灭，而且不再亮起来。 */
     fun saveQqGroupSeen(seen: Boolean) = save { setQqGroupSeen(seen) }
+
+    /** 顶部机型胶囊点过了：呼吸提示停掉，以后只当普通按钮。 */
+    fun saveScopeHintSeen(seen: Boolean) = save { setScopeHintSeen(seen) }
 
     /**
      * Renames this install: the value is stored at once, so the page and the next review use it

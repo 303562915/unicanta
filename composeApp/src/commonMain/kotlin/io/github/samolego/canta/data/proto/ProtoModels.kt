@@ -188,6 +188,14 @@ data class AppSettingsProto(
      * "有个点等着你去点"——所以字段反过来命名。点过群之后写 `true`，红点就再也不出现。
      */
     @ProtoNumber(38) val qqGroupSeen: Boolean = false,
+
+    /**
+     * 安全页顶部那个「本机机型」胶囊是不是点过。
+     *
+     * 胶囊在没被点过时会轻轻呼吸一下，提示"这里能换手机"；点过一次就写 `true`，之后不再闪。
+     * 和 [qqGroupSeen] 同一个道理：存"点过"，因为出厂状态是"还在闪"。
+     */
+    @ProtoNumber(39) val scopeHintSeen: Boolean = false,
 )
 
 /**

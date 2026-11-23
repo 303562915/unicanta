@@ -104,6 +104,11 @@ fun PlanScope.buildLabel(): String? = when (this) {
  * which one was the real one — and a reader who tapped the blank space between them got nothing at
  * all. The search button on the right belongs to the list under the switch, not to the phone: it
  * filters rows by package.
+ *
+ * The builds are a row of capsules of their own, not one capsule that opens another list: a build
+ * is a value the reader switches between, and a value that needs a sheet opened to see it is a
+ * choice the page could have shown in the same breath. [onSelectBuild] picks one directly; null
+ * keeps the older single capsule for callers with no reload story to hang on it.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -115,8 +120,14 @@ fun PlanScopeBar(
     /** Null hides the button: a page with no package list under it has nothing to filter. */
     onSearch: (() -> Unit)? = null,
     searching: Boolean = false,
+    /**
+     * Switch to another build of the opened model, right here, without opening the sheet. `null`
+     * means "every build". The caller does the reload — this only reports what was tapped.
+     */
+    onSelectBuild: ((CatalogBuild?) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
+    val openedScope = scope as? PlanScope.Other
     Row(
         // Not clickable as a row any more: a row-wide target under a lone chip is what made the
         // tap feel like it landed somewhere other than where the finger went.
@@ -145,16 +156,38 @@ fun PlanScopeBar(
                 // name on purpose, so the two never look like two different things to switch.
                 outlined = true,
             )
-            scope.buildLabel()?.let { build ->
-                // The build stays a plain capsule: it is the finer half of the scope, and two
-                // outline capsules side by side would read as two equal choices instead of
-                // "this phone, and then this build of it".
+            if (openedScope != null && onSelectBuild != null) {
+                // Every build laid out as its own capsule: "全部版本" first, because it is the
+                // step back, then the builds the backend knows of this model.
                 ScopeChip(
-                    text = build,
-                    selected = false,
-                    onClick = onOpen,
-                    chevron = true,
+                    text = "全部版本",
+                    selected = openedScope.build == null,
+                    onClick = { onSelectBuild(null) },
+                    outlined = true,
                 )
+                openedScope.model.builds.forEach { build ->
+                    val current = openedScope.build
+                    ScopeChip(
+                        text = build.versionLabel,
+                        selected = current != null &&
+                            current.rom == build.rom &&
+                            current.romVersion == build.romVersion,
+                        onClick = { onSelectBuild(build) },
+                        outlined = true,
+                    )
+                }
+            } else {
+                scope.buildLabel()?.let { build ->
+                    // The build stays a plain capsule: it is the finer half of the scope, and two
+                    // outline capsules side by side would read as two equal choices instead of
+                    // "this phone, and then this build of it".
+                    ScopeChip(
+                        text = build,
+                        selected = false,
+                        onClick = onOpen,
+                        chevron = true,
+                    )
+                }
             }
         }
         if (onSearch != null) {

@@ -205,6 +205,10 @@ fun SafetyRulesScreen(
     // back — and the picture is on by default, which is what a fresh install should start with.
     val showDevicePhoto by settings.showDevicePhotoFlow.collectAsStateWithLifecycle(initialValue = false)
 
+    // 顶部机型胶囊点过一次就不再呼吸：提示是为了让人知道那里能换手机，知道了就不该一直闪。
+    // 存的是"点过"，见 AppSettingsProto.scopeHintSeen。
+    val scopeHintSeen by settings.scopeHintSeenFlow.collectAsStateWithLifecycle(initialValue = false)
+
     val scope = rememberCoroutineScope()
     val fallbackRepository = remember { PlanRepository(HttpClient()) }
     val repo = repository ?: fallbackRepository
@@ -431,6 +435,18 @@ fun SafetyRulesScreen(
     }
 
     val ownLabel = profile?.displayModel.orEmpty()
+    // One place that changes the phone on screen: the sheet and the build capsules both go
+    // through it, so the list is never left showing another scope's rows for a frame.
+    val pickScope: (PlanScope) -> Unit = { picked ->
+        if (picked != planScope) {
+            // The old rows are another phone's: clearing them here means the list never shows a
+            // plan under a name it does not belong to, not even for one frame.
+            plans = emptyList()
+            loading = true
+            notice = null
+            planScope = picked
+        }
+    }
     val opened = planScope as? PlanScope.Other
     val allModels = planScope == PlanScope.All
     // The band names whatever the list below is about. This phone keeps the wording it had; an
@@ -469,7 +485,13 @@ fun SafetyRulesScreen(
                 showPhoto = showDevicePhoto && !allModels,
                 // The name is the way to another phone: it is drawn as a capsule that says
                 // "切换", and that capsule — not the whole heading — is what opens the chips.
-                onTitleClick = { pickerOpen = true },
+                onTitleClick = {
+                    pickerOpen = true
+                    // The first tap answers the hint: stop breathing, and remember it across starts.
+                    if (!scopeHintSeen) scope.launch { settings.setScopeHintSeen(true) }
+                },
+                // Breathes only while the reader has never opened the picker.
+                pulseTitleHint = !scopeHintSeen,
                 // No plan count on the band: the switch under it already says which tab is
                 // which, and a counter there only squeezed the model's system line.
                 counters = buildList {
@@ -500,6 +522,14 @@ fun SafetyRulesScreen(
                         scope = planScope,
                         ownLabel = ownLabel,
                         onOpen = { pickerOpen = true },
+                        // The builds are capsules of their own: picking one changes the list on the
+                        // spot instead of making the reader open the sheet for a value the bar can
+                        // already show.
+                        onSelectBuild = { build ->
+                            (planScope as? PlanScope.Other)?.let { open ->
+                                pickScope(PlanScope.Other(open.model, build))
+                            }
+                        },
                         // On the switch bar because that is where the list it filters is read from,
                         // and because the switch itself already owns the taps on the chips.
                         searching = searchPackages,
@@ -621,14 +651,7 @@ fun SafetyRulesScreen(
             scope = planScope,
             onSelect = { picked ->
                 pickerOpen = false
-                if (picked != planScope) {
-                    // The old rows are another phone's: clearing them here means the list never
-                    // shows a plan under a name it does not belong to, not even for one frame.
-                    plans = emptyList()
-                    loading = true
-                    notice = null
-                    planScope = picked
-                }
+                pickScope(picked)
             },
             onRetry = { reloads++ },
             onDismiss = { pickerOpen = false },

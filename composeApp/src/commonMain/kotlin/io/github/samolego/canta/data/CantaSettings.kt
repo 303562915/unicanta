@@ -69,6 +69,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val muteChatNoticesFlow: Flow<Boolean> = field { it.muteChatNotices }
     /** 关于页「作者的群」那一行的红点是不是点过了；点过就再也不亮，见 [AppSettingsProto.qqGroupSeen]。 */
     val qqGroupSeenFlow: Flow<Boolean> = field { it.qqGroupSeen }
+    /** 安全页顶部机型胶囊是不是点过了；点过就不再呼吸，见 [AppSettingsProto.scopeHintSeen]。 */
+    val scopeHintSeenFlow: Flow<Boolean> = field { it.scopeHintSeen }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
@@ -125,6 +127,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setMuteChatNotices(mute: Boolean) = update { it.copy(muteChatNotices = mute) }
     /** 记下「作者的群」那行已经点过了，红点不再出现。 */
     suspend fun setQqGroupSeen(seen: Boolean) = update { it.copy(qqGroupSeen = seen) }
+    /** 记下顶部机型胶囊点过了，呼吸提示停掉。 */
+    suspend fun setScopeHintSeen(seen: Boolean) = update { it.copy(scopeHintSeen = seen) }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }

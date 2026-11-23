@@ -1,5 +1,11 @@
 package io.github.samolego.canta.ui.component
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -164,6 +170,12 @@ fun DeviceHero(
      * thing the reader is looking at, and a chevron next to it says there is more than one.
      */
     onTitleClick: (() -> Unit)? = null,
+    /**
+     * The capsule breathes until it has been tapped once: it is the only way to another phone, and
+     * a still capsule reads as a label rather than a control. Off after the first tap — a hint that
+     * keeps going is a nag — and the caller owns that flag, so it survives leaving the page.
+     */
+    pulseTitleHint: Boolean = false,
 ) {
     var image by remember(model) { mutableStateOf<ImageBitmap?>(null) }
 
@@ -176,6 +188,25 @@ fun DeviceHero(
     val scheme = MaterialTheme.colorScheme
     val onBand = scheme.onSurface
     val onPicture = Color.White
+
+    // The breathing capsule. Kept to alpha on the capsule the reader already sees: no halo, no
+    // expanding ring, nothing that grows past the model name's own outline — a pulse that spills
+    // over the band reads as a warning about the phone, which this is not. 2.4s a cycle, slow
+    // enough to catch the eye without looking like a loading spinner.
+    val hintTransition = rememberInfiniteTransition(label = "scope-hint")
+    val hintGlow by hintTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "scope-hint-glow",
+    )
+    val hint = if (pulseTitleHint) hintGlow else 0f
+    val capsuleBackground = scheme.primary.copy(alpha = 0.10f + 0.09f * hint)
+    val capsuleBorder = scheme.primary.copy(alpha = 0.35f + 0.31f * hint)
+    val capsuleAccent = scheme.primary.copy(alpha = 0.72f + 0.28f * hint)
 
     Column(
         modifier = modifier
@@ -217,8 +248,8 @@ fun DeviceHero(
                         modifier = Modifier
                             .heightIn(min = 34.dp)
                             .clip(RoundedCornerShape(percent = 50))
-                            .background(scheme.primary.copy(alpha = 0.10f))
-                            .border(1.dp, scheme.primary.copy(alpha = 0.35f), RoundedCornerShape(percent = 50))
+                            .background(capsuleBackground)
+                            .border(1.dp, capsuleBorder, RoundedCornerShape(percent = 50))
                             .clickable(onClick = onTitleClick)
                             .padding(start = 11.dp, end = 7.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -237,13 +268,13 @@ fun DeviceHero(
                             text = "切换",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = scheme.primary,
+                            color = capsuleAccent,
                             maxLines = 1,
                         )
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = null,
-                            tint = scheme.primary,
+                            tint = capsuleAccent,
                             modifier = Modifier.size(16.dp),
                         )
                     }
