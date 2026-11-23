@@ -1,8 +1,10 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +28,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -50,6 +55,7 @@ import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
@@ -92,6 +98,9 @@ fun GroupInfoScreen(
     onMessage: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    // 邀请链接只做到"复制"这一步：这个 App 没有能接 `unicanta://` 的注册入口，
+    // 假装有一个再提示"已打开"会骗人。复制出去，粘给谁由人自己决定。
+    val clipboard = LocalClipboardManager.current
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -108,6 +117,19 @@ fun GroupInfoScreen(
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loadingCandidates by remember { mutableStateOf(false) }
     var savingMembers by remember { mutableStateOf(false) }
+
+    // 群公告：编辑态与草稿。只有建群的人能进这一态（后端也这么判，这里只是不给按钮）。
+    var editingAnnouncement by remember { mutableStateOf(false) }
+    var announcementDraft by remember { mutableStateOf("") }
+    var savingAnnouncement by remember { mutableStateOf(false) }
+
+    // 踢人：先弹确认，再发请求。要踢的那个人的身份挂在 [kickTarget] 上。
+    var kickTarget by remember { mutableStateOf<ConversationMember?>(null) }
+    var kicking by remember { mutableStateOf(false) }
+
+    // 邀请码：生成过一次就留着，反复点不该每次都请求。
+    var inviteCode by remember { mutableStateOf<String?>(null) }
+    var inviting by remember { mutableStateOf(false) }
 
     // 详情：进来问一次，加完人再问一次。已经有详情时不摆「…」，免得刷新的时候整页闪一下。
     LaunchedEffect(conversationId, reloads) {
@@ -204,6 +226,80 @@ fun GroupInfoScreen(
         }
     }
 
+    /**
+     * 存群公告。空串等于撤掉，所以这里不拦空——"把公告清掉"是正常操作。
+     *
+     * 失败只提示不保留编辑态：留着草稿会让人以为它已经存进去了，一退出页面就白写。
+     */
+    val saveAnnouncement: () -> Unit = {
+        if (!savingAnnouncement) {
+            scope.launch {
+                savingAnnouncement = true
+                val text = announcementDraft.trim()
+                if (repository.setAnnouncement(owner, conversationId, text)) {
+                    detail = detail?.copy(announcement = text)
+                    editingAnnouncement = false
+                    onMessage(if (text.isEmpty()) "公告已撤下" else "公告已更新")
+                } else {
+                    onMessage("改公告失败：只有建群的人能改")
+                }
+                savingAnnouncement = false
+            }
+        }
+    }
+
+    /**
+     * 踢掉确认框里的那个人。成了就把本地成员表里那一行拿掉并重拉一次详情。
+     *
+     * 本地先拿掉是为了让这一下立刻有反应；重拉才是准的（成员数、候选名单都跟着变）。
+     */
+    val kick: () -> Unit = {
+        val target = kickTarget
+        if (target != null && !kicking) {
+            scope.launch {
+                kicking = true
+                if (repository.kickMember(owner, conversationId, target.owner)) {
+                    detail = detail?.let { loaded ->
+                        loaded.copy(members = loaded.members.filterNot { it.owner == target.owner })
+                    }
+                    reloads++
+                    onMessage("已移出群聊")
+                } else {
+                    onMessage("没踢成：只有建群的人能踢")
+                }
+                kicking = false
+                kickTarget = null
+            }
+        }
+    }
+
+    /**
+     * 拿邀请码并复制成一条 `unicanta://group/<code>`。
+     *
+     * 生成的码是长期的：这个群只发一个，反复点拿到的都是同一个，所以第一次拿到就留在
+     * [inviteCode] 里，后面点只是重新复制一遍，不再请求后端。
+     */
+    val copyInvite: () -> Unit = {
+        val known = inviteCode
+        if (known != null) {
+            clipboard.setText(AnnotatedString(inviteLinkOf(known)))
+            onMessage("邀请链接已复制")
+        } else if (!inviting) {
+            scope.launch {
+                inviting = true
+                val code = repository.createInvite(owner, conversationId)
+                if (code != null) {
+                    inviteCode = code
+                    clipboard.setText(AnnotatedString(inviteLinkOf(code)))
+                    onMessage("邀请链接已复制")
+                } else {
+                    onMessage("生成邀请链接失败，检查代理后再试")
+                }
+                inviting = false
+            }
+        }
+    }
+
     Scaffold(
         topBar = { GroupInfoTopBar(onNavigateBack = onNavigateBack) },
     ) { padding ->
@@ -230,10 +326,41 @@ fun GroupInfoScreen(
                             onSaveTitle = saveTitle,
                         )
                     }
+                    // 没公告又不是群主时这一项根本不插：一张写着"暂无公告"的空卡只是占地方。
+                    if (current.announcement.isNotEmpty() || current.isOwner(owner)) {
+                        item(key = "group-announcement") {
+                            GroupAnnouncementCard(
+                                announcement = current.announcement,
+                                isOwner = current.isOwner(owner),
+                                editing = editingAnnouncement,
+                                draft = announcementDraft,
+                                saving = savingAnnouncement,
+                                onStartEdit = {
+                                    announcementDraft = current.announcement
+                                    editingAnnouncement = true
+                                },
+                                onDraftChange = { announcementDraft = it },
+                                onSave = saveAnnouncement,
+                                onCancel = { editingAnnouncement = false },
+                            )
+                        }
+                    }
+                    if (current.isGroup) {
+                        item(key = "group-invite") {
+                            GroupInviteRow(
+                                busy = inviting,
+                                generated = inviteCode != null,
+                                onClick = copyInvite,
+                            )
+                        }
+                    }
                     item(key = "group-members") {
                         GroupInfoMembers(
                             members = current.members,
                             adding = adding,
+                            // 踢人只给建群的人：成员表本身是公开的，能长按出菜单这件事不该人人都行。
+                            kickable = current.isOwner(owner) && !adding,
+                            onKick = { member -> kickTarget = member },
                             onTapAdd = { adding = !adding },
                             onOpenChat = { onOpenChat(conversationId) },
                             onOpenProfile = onOpenProfile,
@@ -300,6 +427,31 @@ fun GroupInfoScreen(
                     style = FlText.footnote,
                     color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
+                )
+            }
+        }
+
+        // 踢人要先问一遍：长按弹出菜单已经是一次确认了，但"移出群聊"是不可逆的
+        // （对方要重新被拉进来），多一次点击比事后解释便宜。
+        val target = kickTarget
+        if (target != null) {
+            CantaDialog(
+                onDismissRequest = { if (!kicking) kickTarget = null },
+                title = "移出群聊",
+                buttons = {
+                    TextButton(onClick = { if (!kicking) kickTarget = null }) {
+                        Text("取消")
+                    }
+                    TextButton(onClick = kick, enabled = !kicking) {
+                        Text(if (kicking) "处理中…" else "移出")
+                    }
+                },
+            ) {
+                Text(
+                    text = "把「${target.label}」移出这个群？移出之后他收不到群消息，历史也留在群里带不走。",
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    color = colors.onSurfaceVariant,
                 )
             }
         }
@@ -429,6 +581,172 @@ private fun GroupInfoHeader(
 }
 
 /**
+ * 邀请码拼成链接的唯一一处。
+ *
+ * 拼法只在这里出现一次：以后要换成网页落地页（`https://.../join/<code>`），改这一行就够，
+ * 不用去找每个用到的地方。
+ */
+private fun inviteLinkOf(code: String): String = "unicanta://group/$code"
+
+/**
+ * 群公告：一张卡。
+ *
+ * 有公告时谁都能看；没有公告时只有建群的人看到「设置群公告」这一行——别人看到的是**什么都不显示**
+ * （调用方在没内容又不是群主时根本不插这一项）。空着一张卡写着"暂无公告"只是占地方。
+ *
+ * [editing] 时整张卡变成一个输入框 + 存/取消：公告是一段话，不该用单行输入框。
+ */
+@Composable
+private fun GroupAnnouncementCard(
+    announcement: String,
+    isOwner: Boolean,
+    editing: Boolean,
+    draft: String,
+    saving: Boolean,
+    onStartEdit: () -> Unit,
+    onDraftChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.surfaceContainer)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "群公告",
+                style = FlText.caption2,
+                fontWeight = FlText.emphasized,
+                color = colors.primary,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            if (isOwner && !editing) {
+                Text(
+                    text = if (announcement.isEmpty()) "设置" else "编辑",
+                    fontSize = 11.sp,
+                    color = colors.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .clickable(onClickLabel = "编辑群公告", onClick = onStartEdit)
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        if (editing) {
+            BasicTextField(
+                value = draft,
+                onValueChange = onDraftChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colors.surfaceContainerHigh)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
+                cursorBrush = SolidColor(colors.primary),
+                maxLines = 6,
+                decorationBox = { inner ->
+                    if (draft.isEmpty()) {
+                        Text(
+                            text = "写点什么给全群看（留空保存就是撤下公告）",
+                            fontSize = 13.sp,
+                            color = colors.outline,
+                        )
+                    }
+                    inner()
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = if (saving) "保存中…" else "保存",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (saving) colors.outline else colors.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .clickable(enabled = !saving, onClickLabel = "保存公告", onClick = onSave)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+                Text(
+                    text = "取消",
+                    fontSize = 12.sp,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .clickable(enabled = !saving, onClickLabel = "取消编辑", onClick = onCancel)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        } else if (announcement.isEmpty()) {
+            Text(
+                text = "还没有公告",
+                style = FlText.caption2,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+            )
+        } else {
+            Text(
+                text = announcement,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = colors.onSurface,
+            )
+        }
+    }
+}
+
+/**
+ * 邀请链接那一行：点了生成并复制。
+ *
+ * 不显示二维码、也不显示那条链接本身：链接有几十个字符，摆在群资料页上又长又没法选，
+ * 而这个页面的用途是"给朋友发一条能进群的消息"——复制走就是全部。
+ */
+@Composable
+private fun GroupInviteRow(busy: Boolean, generated: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.surfaceContainer)
+            .clickable(enabled = !busy, onClickLabel = "复制邀请链接", onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIcon(glyph = FlGlyphs.link, size = 18.dp, tint = colors.primary)
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "邀请链接",
+                style = FlText.subheadline,
+                color = colors.onSurface,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = when {
+                    busy -> "正在生成…"
+                    generated -> "已生成 · 点一下复制"
+                    else -> "生成一条能发出去的进群链接"
+                },
+                style = FlText.caption2,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        FlGlyphIcon(glyph = FlGlyphs.copy, size = 16.dp, tint = colors.outline)
+    }
+}
+
+/**
  * 成员区：标题「群成员 (N)」+ 一句「进入聊天」，下面一行五个的网格。
  *
  * 网格末尾那一格是「+」：它和成员共用同一套列宽，所以按五个一组切，切到最后一行不满五格就用
@@ -440,6 +758,8 @@ private fun GroupInfoHeader(
 private fun GroupInfoMembers(
     members: List<ConversationMember>,
     adding: Boolean,
+    kickable: Boolean,
+    onKick: (ConversationMember) -> Unit,
     onTapAdd: () -> Unit,
     onOpenChat: () -> Unit,
     onOpenProfile: (String) -> Unit,
@@ -489,6 +809,13 @@ private fun GroupInfoMembers(
                             GroupMemberCell(
                                 label = member.label,
                                 owner = member.owner,
+                                // 建群的人长按别人的格子才弹「移出群聊」；自己的格子不给这个菜单，
+                                // 想走是「退出群聊」那个按钮的事。
+                                onKick = if (kickable && member.owner.isNotEmpty()) {
+                                    { onKick(member) }
+                                } else {
+                                    null
+                                },
                                 onOpenProfile = onOpenProfile,
                             )
                         }
@@ -507,17 +834,30 @@ private fun GroupInfoMembers(
  *
  * 整格（头像 + 名字）一起可点，点开 [owner] 的主页。没有身份号的人点了也没处去，
  * 所以 [owner] 为空时这一格不响应——不留一个点了没反应的格子。
+ *
+ * [onKick] 非空时（只有建群的人看别人时才非空）长按弹「移出群聊」。长按而不是加一个小叉：
+ * 格子只有五个像素那么宽，多一个叉会把名字挤成一团，而且踢人是要确认的动作，不该一点就中。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GroupMemberCell(label: String, owner: String, onOpenProfile: (String) -> Unit) {
+private fun GroupMemberCell(
+    label: String,
+    owner: String,
+    onKick: (() -> Unit)?,
+    onOpenProfile: (String) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = owner.isNotEmpty(), onClickLabel = "看主页") {
-                onOpenProfile(owner)
-            },
+            .combinedClickable(
+                enabled = owner.isNotEmpty(),
+                onClickLabel = "看主页",
+                onLongClickLabel = if (onKick != null) "移出群聊" else null,
+                onLongClick = onKick,
+                onClick = { onOpenProfile(owner) },
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         GroupInfoAvatar(label = label)

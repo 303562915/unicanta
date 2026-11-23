@@ -58,6 +58,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.InboxSummary
+import io.github.samolego.canta.data.community.MessageHit
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
@@ -134,9 +135,12 @@ fun MessagesScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每十几秒整页闪一下骨架。
     var reloads by remember { mutableIntStateOf(0) }
-    // 顶栏那条搜索：开没开、打了什么字。过滤只在本地做，拉回来的数据一个都不改。
+    // 顶栏那条搜索：开没开、打了什么字。会话与联系人是本地过滤（数据已经在手上），
+    // 第三段「消息」要问后端，所以单独存一份结果。
     var searchActive by remember { mutableStateOf(false) }
     var searchKeyword by remember { mutableStateOf("") }
+    var messageHits by remember { mutableStateOf<List<MessageHit>>(emptyList()) }
+    var searchingMessages by remember { mutableStateOf(false) }
     // 「全部标为已读」是一次网络调用：点完就把协程交出去，界面不等它。
     val scope = rememberCoroutineScope()
 
@@ -213,6 +217,24 @@ fun MessagesScreen(
         }
     }
 
+    /**
+     * 开关免打扰。只改自己那一行，所以本地也只改自己看到的这一行。
+     *
+     * 红点**不清**：静音是"别响"，不是"不重要"。清掉等于替这个人判断了哪条消息可以不看。
+     */
+    val toggleMute: (Conversation) -> Unit = { conversation ->
+        scope.launch {
+            val mute = !conversation.muted
+            if (repository.setMuted(owner, conversation.id, mute)) {
+                conversations = conversations.map { row ->
+                    if (row.id == conversation.id) row.copy(muted = mute) else row
+                }
+            } else {
+                onMessage("没成功，检查代理后再试")
+            }
+        }
+    }
+
     val scheme = MaterialTheme.colorScheme
     val groups = conversations.filter { it.isGroup }
     // 折叠的群聊那一行只亮「最近说过话的那个群」：它的最后一句就是这个入口的预览。
@@ -224,6 +246,20 @@ fun MessagesScreen(
     val keyword = searchKeyword.trim()
     val searching = searchActive && keyword.isNotEmpty()
     val hits = if (searching) searchHitsOf(conversations, followers, keyword) else emptyList()
+
+    // 消息搜索要问后端，所以按输入停顿去抖：每敲一个字就发一次请求，既费额度又会让结果乱跳。
+    // 300ms 是"还在打字"和"打完了"之间的常用分界。
+    LaunchedEffect(keyword) {
+        if (keyword.isEmpty()) {
+            messageHits = emptyList()
+            searchingMessages = false
+            return@LaunchedEffect
+        }
+        delay(300)
+        searchingMessages = true
+        messageHits = repository.searchMessages(owner, keyword)
+        searchingMessages = false
+    }
 
     Scaffold(
         topBar = {
@@ -322,8 +358,9 @@ fun MessagesScreen(
                 }
                 // 列表吃掉剩下的高度：上面那几块是固定的入口，只有这里可以滚。
                 when {
-                    // 有搜索词时列表只剩命中的人与会话；一个都没命中就说一句，不留一块空白。
-                    searching && hits.isEmpty() -> Text(
+                    // 有搜索词时列表只剩命中的人、会话与消息；三段都空才说一句，不留一块空白。
+                    // 消息那一段还在路上时先不判空——否则打完字会先闪一下"没找到"。
+                    searching && hits.isEmpty() && messageHits.isEmpty() && !searchingMessages -> Text(
                         text = "没有找到「${keyword}」",
                         style = FlText.footnote,
                         color = scheme.onSurfaceVariant,
@@ -348,6 +385,31 @@ fun MessagesScreen(
                                     }
                                 },
                             )
+                        }
+                        // 第三段：消息正文的命中。会话与联系人是本地过滤，这一段的每一条都在
+                        // "我参与过的会话"里，点一条直接进那个会话——搜索结果只是入口，不在这里读。
+                        if (messageHits.isNotEmpty()) {
+                            item(key = "hit-messages-head") {
+                                SearchSectionLabel(
+                                    text = "消息 · ${messageHits.size} 条",
+                                    modifier = Modifier.padding(top = 10.dp),
+                                )
+                            }
+                            items(messageHits, key = { "msg-${it.id}" }) { hit ->
+                                MessageHitRow(
+                                    hit = hit,
+                                    onClick = { onOpenChat(hit.conversationId) },
+                                )
+                            }
+                        } else if (searchingMessages) {
+                            item(key = "hit-messages-loading") {
+                                Text(
+                                    text = "正在搜索消息…",
+                                    style = FlText.caption2,
+                                    color = scheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                                )
+                            }
                         }
                     }
 
@@ -376,6 +438,7 @@ fun MessagesScreen(
                                 onOpen = { onOpenChat(conversation.id) },
                                 onTogglePin = { togglePin(conversation) },
                                 onMarkRead = { markRowRead(conversation) },
+                                onToggleMute = { toggleMute(conversation) },
                                 onDelete = { hideRow(conversation) },
                             )
                         }
@@ -745,6 +808,75 @@ private fun SearchHitRow(hit: SearchHit, onOpen: () -> Unit) {
 }
 
 /**
+ * 搜索结果里分段用的一行小标题（「消息 · 3 条」）。
+ *
+ * 会话和联系人混在一列里本来就靠头像区分，第三段是正文命中，性质完全不同——不隔一下，
+ * 人会以为某条消息也是一个会话。
+ */
+@Composable
+private fun SearchSectionLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = FlText.caption2,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+    )
+}
+
+/**
+ * 一条消息命中：谁说的、在哪个会话里、说了什么。
+ *
+ * 正文只给两行：搜索结果的用处是"找到那条消息"，不是在这儿读完它——点进去就到了原处。
+ * 关键词本身不标色：后端是 `ilike` 匹配，大小写和通配符展开之后，前端按字面去找会漏标，
+ * 标一半比不标更让人怀疑。
+ */
+@Composable
+private fun MessageHitRow(hit: MessageHit, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.surfaceContainer)
+            .clickable(onClickLabel = "打开这条消息所在的会话", onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        InitialAvatar(label = hit.senderName.ifBlank { hit.sender })
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = hit.senderName.ifBlank { "#${hit.sender}" },
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = hit.where,
+                    style = FlText.caption2,
+                    color = scheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = hit.body,
+                style = FlText.caption2,
+                color = scheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
  * 「限时日常」那一格和最近联系人共用的一排。
  *
  * 一个人都没有的时候不整排空着，而是画一格「还没有好友」：一排空的横线看起来像没加载出来。
@@ -924,6 +1056,7 @@ private fun ConversationRow(
     onOpen: () -> Unit,
     onTogglePin: () -> Unit,
     onMarkRead: () -> Unit,
+    onToggleMute: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -998,7 +1131,19 @@ private fun ConversationRow(
                 if (time.isNotEmpty()) {
                     Text(text = time, style = FlText.caption2, color = scheme.outline)
                 }
-                UnreadBadge(count = conversation.unread)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 免打扰的小标：挂在未读数左边而不是替换它。静音是"别响"，
+                    // 不是"这条不重要"，红点该在还得在。
+                    if (conversation.muted) {
+                        FlGlyphIcon(
+                            glyph = FlGlyphs.block,
+                            size = 11.dp,
+                            tint = scheme.outline,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    UnreadBadge(count = conversation.unread)
+                }
             }
         }
         DropdownMenu(
@@ -1018,6 +1163,18 @@ private fun ConversationRow(
                 onClick = {
                     menuOpen = false
                     onMarkRead()
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (conversation.muted) "关闭免打扰" else "开启免打扰",
+                        fontSize = 14.sp,
+                    )
+                },
+                onClick = {
+                    menuOpen = false
+                    onToggleMute()
                 },
             )
             DropdownMenuItem(

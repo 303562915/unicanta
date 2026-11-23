@@ -74,6 +74,13 @@ data class Conversation(
     val unread: Int = 0,
     val members: Int = 0,
     val pinned: Boolean = false,
+    /**
+     * 这个人给这个会话关了提醒。存在自己的成员行上，所以同一群里每个人可以不一样。
+     *
+     * 界面据此在行尾画一个静音小标；**不**改变未读数的计算——静音是"不打扰"，
+     * 不是"这条不重要"，红点仍然该出现。
+     */
+    val muted: Boolean = false,
 ) {
 
     /** 群聊与会话共用一张列表，界面靠这一位决定画头像还是画群标。 */
@@ -177,6 +184,13 @@ data class ConversationDetail(
     val title: String,
     val members: List<ConversationMember>,
     val createdAt: String = "",
+    /** 群公告，空串表示没设过。只有建群的人能改（见 `group_set_announcement`）。 */
+    val announcement: String = "",
+    /**
+     * 建群的人的身份号码。资料页拿它和 [ConversationDetail] 的访客身份比对，决定显示不显示
+     * 「编辑公告」「踢人」——**这只是画不画按钮**，真正的裁决在后端：自报身份不可信。
+     */
+    val createdBy: String = "",
 ) {
 
     /** 与 [Conversation.isGroup] 同一判据：`kind == "group"`。 */
@@ -186,6 +200,31 @@ data class ConversationDetail(
     /** 详情页的标题：没群名就叫「群聊」，不把会话号当名字摆在标题上。 */
     val label: String
         get() = title.ifBlank { "群聊" }
+
+    /** [viewer] 是不是这个群的建群者；私聊永远 false（私聊没有公告也没有人可踢）。 */
+    fun isOwner(viewer: String): Boolean = isGroup && createdBy.isNotEmpty() && createdBy == viewer
+}
+
+/**
+ * 搜索命中的一条消息。
+ *
+ * 比 [ChatMessage] 少一份会话内的上下文、多一份"它在哪个会话里"：[conversationId] 用来跳转，
+ * [conversationTitle] 是结果行上那句"来自某某群"。正文截断由后端做（本来就是整条），这里不再切。
+ */
+data class MessageHit(
+    val id: Long,
+    val conversationId: Long,
+    val conversationTitle: String,
+    val conversationKind: String,
+    val sender: String,
+    val senderName: String,
+    val body: String,
+    val createdAt: String,
+) {
+
+    /** 结果行的抬头：谁 + 来自哪里。个人会话（私聊）没有名字，直接写"私聊"。 */
+    val where: String
+        get() = if (conversationKind == "group") conversationTitle.ifBlank { "群聊" } else "私聊"
 }
 
 /**
@@ -440,6 +479,8 @@ class SocialRepository(
             title = row.textOf("title"),
             members = membersOf(row),
             createdAt = row.textOf("created_at"),
+            announcement = row.textOf("announcement"),
+            createdBy = row.textOf("created_by"),
         )
     }
 
@@ -750,6 +791,115 @@ class SocialRepository(
         }.toString()
         val text = rpc("conversation_hide", body) ?: return false
         return booleanFrom(text, "conversation_hide") ?: false
+    }
+
+    /**
+     * 给自己这个会话开/关免打扰。返回这件事成没成。
+     *
+     * 只影响自己的成员行：别人在同一个群里想不想收提醒跟你无关。后端只改 `member = me` 那一行，
+     * 所以即使这里传了别人也改不动。
+     */
+    suspend fun setMuted(owner: String, conversation: Long, muted: Boolean): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_muted", muted)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("conversation_mute", body) ?: return false
+        return booleanFrom(text, "conversation_mute") ?: false
+    }
+
+    /**
+     * 设群公告；空串等于撤掉。只有建群的人能改，别人调用后端会返回 false。
+     *
+     * 界面据此显示结果——返回 false 时不能假装成功，那会让建群者以为全群都看到了。
+     */
+    suspend fun setAnnouncement(owner: String, conversation: Long, text: String): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_text", text)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val response = rpc("group_set_announcement", body) ?: return false
+        return booleanFrom(response, "group_set_announcement") ?: false
+    }
+
+    /**
+     * 把 [member] 从群里踢出去；只有建群的人能踢，而且踢不掉自己（自己想走是退群）。
+     *
+     * 返回 false 的三种情况对界面是同一种：没踢成。要区分就得让后端返回错误码，
+     * 不值得为一个按钮加一层协议。
+     */
+    suspend fun kickMember(owner: String, conversation: Long, member: String): Boolean {
+        if (owner.isEmpty() || conversation <= 0L || member.isEmpty()) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_member", member)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("group_kick_member", body) ?: return false
+        return booleanFrom(text, "group_kick_member") ?: false
+    }
+
+    /**
+     * 拿这个群的邀请码；没生成过就现场生成一个，已经有过就返回同一个。
+     *
+     * 只有成员能拿：非成员返回 null。返回的只是码，链接怎么拼是界面的事
+     * （`unicanta://group/<code>`）——换一种拼接方式不用改这里。
+     */
+    suspend fun createInvite(owner: String, conversation: Long): String? {
+        if (owner.isEmpty() || conversation <= 0L) return null
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("group_invite_create", body) ?: return null
+        return scalarOf(text)?.contentOrNull?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 用邀请码进群，成功返回会话号。
+     *
+     * 已经在群里也算成功（返回同一个会话号）：点两次链接不该报错，也不该把"你本来就在这"当失败。
+     */
+    suspend fun joinByInvite(owner: String, code: String): Long? {
+        if (owner.isEmpty() || code.isBlank()) return null
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_code", code.trim())
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("group_invite_join", body) ?: return null
+        return scalarOf(text)?.longOrNull
+    }
+
+    /**
+     * 在"我是成员的所有会话"里搜消息正文，按新到旧。
+     *
+     * 后端只搜 `kind = 'text'`、未撤回、自己没隐藏的那些，所以这里不做二次过滤——
+     * 多做一层反而会和后端的判据漂移。空查询、非成员身份都由后端返回空数组。
+     */
+    suspend fun searchMessages(owner: String, query: String, limit: Int = 50): List<MessageHit> {
+        val trimmed = query.trim()
+        if (owner.isEmpty() || trimmed.isEmpty()) return emptyList()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_query", trimmed)
+            put("p_limit", limit)
+        }.toString()
+        val text = rpc("messages_search", body) ?: return emptyList()
+        return rowsOf(text).mapNotNull { row -> messageHitOf(row) }
     }
 
     /**
@@ -1104,6 +1254,26 @@ class SocialRepository(
             unread = row.intOf("unread"),
             members = row.intOf("members"),
             pinned = row.flagOf("pinned") ?: false,
+            muted = row.flagOf("muted") ?: false,
+        )
+    }
+
+    /**
+     * 一条搜索命中（`messages_search`）。`conversation_id` 缺失的行跳不过去，直接丢掉——
+     * 一条点了没反应的结果比没有这条结果更让人困惑。
+     */
+    private fun messageHitOf(row: JsonObject): MessageHit? {
+        val id = row.longOf("id") ?: return null
+        val conversation = row.longOf("conversation_id") ?: return null
+        return MessageHit(
+            id = id,
+            conversationId = conversation,
+            conversationTitle = row.textOf("conversation_title"),
+            conversationKind = row.textOf("conversation_kind"),
+            sender = row.textOf("sender"),
+            senderName = row.textOf("sender_name"),
+            body = row.textOf("body"),
+            createdAt = row.textOf("created_at"),
         )
     }
 
