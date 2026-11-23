@@ -126,22 +126,111 @@ fun familyOf(brand: String, model: String = ""): DeviceFamily {
     }
 }
 
-/** One heading of the model list: a family and the models in it, most joined first. */
+/** One heading of the model list: a family and the models in it, biggest number first. */
 data class FamilyGroup(
     val family: DeviceFamily,
     val models: List<CatalogModel>,
 )
 
 /**
+ * The lines inside a family, in the order a picker shows them: the parent brand first, its
+ * sub-brands after it. "小米系" is Xiaomi, then Redmi, then POCO; "vivo 系" is vivo, then iQOO.
+ *
+ * A brand that is not named here sorts after every named one, so an unknown maker never pushes a
+ * flagship line out of the top of the list.
+ */
+private val SUB_BRAND_LINES = listOf(
+    listOf("xiaomi", "小米"),
+    listOf("redmi", "红米"),
+    listOf("poco"),
+    listOf("vivo"),
+    listOf("iqoo"),
+    listOf("oppo"),
+    listOf("oneplus", "one plus", "一加"),
+    listOf("realme"),
+    listOf("honor", "荣耀"),
+    listOf("huawei", "华为"),
+    listOf("samsung", "三星", "galaxy"),
+    listOf("meizu", "魅族"),
+    listOf("nubia", "redmagic", "red magic", "努比亚", "红魔"),
+    listOf("motorola", "moto"),
+    listOf("google", "pixel"),
+)
+
+/**
+ * Which line of [SUB_BRAND_LINES] a model belongs to.
+ *
+ * The marketing name is read first: a Redmi uploads with `ro.product.manufacturer` = "Xiaomi", so
+ * the brand alone would put every Redmi in the parent line. The brand is only the fallback for a
+ * model that has no marketing name and shows its retail id.
+ */
+fun subBrandRankOf(brand: String, label: String): Int {
+    val fromName = SUB_BRAND_LINES.indexOfFirst { line -> line.any { it in label.lowercase() } }
+    if (fromName >= 0) return fromName
+    val fromBrand = SUB_BRAND_LINES.indexOfFirst { line -> line.any { it in brand.lowercase() } }
+    return if (fromBrand >= 0) fromBrand else SUB_BRAND_LINES.size
+}
+
+private val DIGITS = Regex("""\d+""")
+
+/**
+ * The generation in a model's name: "小米 18 Pro Max" -> 18, "REDMI K100 Pro Max" -> 100,
+ * "Galaxy S25 Ultra" -> 25.
+ *
+ * A retail model number is not a generation: "PHK110", "SM-F9710", "V2337A" are pure ASCII with no
+ * space in them, and read as 0 so they land after the phones whose name says how new they are.
+ * "K100" on its own would be read the same way, which is why the picker's order relies on the
+ * marketing name ("REDMI K100 Pro Max") rather than on a bare code.
+ */
+fun modelNumber(label: String): Int {
+    val text = label.trim()
+    if (text.isEmpty()) return 0
+    if (text.none { it == ' ' } && text.all { it.code < 128 }) return 0
+    return DIGITS.findAll(text).mapNotNull { it.value.toIntOrNull() }.maxOrNull() ?: 0
+}
+
+private val SE_WORD = Regex("""\bse\b""")
+private val LITE_WORD = Regex("""\blite\b""")
+
+/**
+ * How far up a name sits within its own generation: "18 Pro Max" over "18 Pro" over "18", and any
+ * of them over the "SE"/"青春版" of the same number.
+ */
+fun modelVariantRank(label: String): Int {
+    val text = label.lowercase()
+    val budget = SE_WORD.containsMatchIn(text) || LITE_WORD.containsMatchIn(text) ||
+        "青春" in text || "活力" in text
+    return when {
+        "ultra" in text -> 5
+        "max" in text -> 4
+        "pro+" in text || "pro plus" in text -> 4
+        "pro" in text -> 3
+        "plus" in text || '+' in text || "至尊" in text -> 2
+        budget -> 0
+        else -> 1
+    }
+}
+
+/**
+ * The order the picker lists models in: the parent brand's line first, then each sub-brand, and
+ * inside every line the biggest number first — "小米 18 Pro Max", "小米 18", "小米 17", … then
+ * "REDMI K100 Pro Max" downwards. Ties go to the stronger variant, then to the name.
+ *
+ * People counts do not take part: the list is a line-up, and a well-known phone is not a newer one.
+ */
+fun List<CatalogModel>.sortedForPicker(): List<CatalogModel> = sortedWith(
+    compareBy<CatalogModel> { subBrandRankOf(it.brand, it.label) }
+        .thenByDescending { modelNumber(it.label) }
+        .thenByDescending { modelVariantRank(it.label) }
+        .thenBy { it.label }
+)
+
+/**
  * Groups models under their family headings, in a fixed order (小米系 first, "其他机型" last), and
- * sorted inside a heading by how many people joined — the model worth opening is the one at the top.
+ * ordered inside a heading by [sortedForPicker] — flagship line first, biggest number first.
  */
 fun List<CatalogModel>.groupedByFamily(): List<FamilyGroup> {
-    val groups = sortedWith(
-        compareByDescending<CatalogModel> { it.people }
-            .thenByDescending { it.plans }
-            .thenBy { it.label }
-    ).groupBy { familyOf(it.brand, it.model) }
+    val groups = sortedForPicker().groupBy { familyOf(it.brand, it.model) }
     return groups.entries
         .sortedBy { it.key.order }
         .map { FamilyGroup(it.key, it.value) }

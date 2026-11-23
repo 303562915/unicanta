@@ -92,17 +92,42 @@ class DeviceCatalogTest {
     }
 
     @Test
-    fun modelsInsideAFamilySortByPeople() {
+    fun modelsInsideAFamilyGoByNumberNotByPeople() {
         val groups = listOf(
-            build(model = "a", marketName = "Redmi A", modelPeople = 2),
-            build(model = "b", marketName = "Redmi B", modelPeople = 30),
-            build(model = "c", marketName = "Redmi C", modelPeople = 7),
+            build(model = "a", marketName = "REDMI K70", modelPeople = 900),
+            build(model = "b", marketName = "REDMI K100 Pro Max", modelPeople = 2),
+            build(model = "c", marketName = "Xiaomi 17 Pro", modelPeople = 30),
+            build(model = "d", marketName = "Xiaomi 18", modelPeople = 7),
         ).toCatalogModels().groupedByFamily()
 
         assertEquals(
-            listOf("Redmi B", "Redmi C", "Redmi A"),
+            listOf("Xiaomi 18", "Xiaomi 17 Pro", "REDMI K100 Pro Max", "REDMI K70"),
             groups.single().models.map { it.label },
         )
+    }
+
+    @Test
+    fun aStrongerVariantOfTheSameNumberComesFirst() {
+        val ordered = listOf(
+            build(model = "1", marketName = "Xiaomi 18"),
+            build(model = "2", marketName = "Xiaomi 18 SE"),
+            build(model = "3", marketName = "Xiaomi 18 Pro"),
+            build(model = "4", marketName = "Xiaomi 18 Pro Max"),
+        ).toCatalogModels().sortedForPicker().map { it.label }
+
+        assertEquals(
+            listOf("Xiaomi 18 Pro Max", "Xiaomi 18 Pro", "Xiaomi 18", "Xiaomi 18 SE"),
+            ordered,
+        )
+    }
+
+    @Test
+    fun aRetailIdHasNoGenerationAndGoesLast() {
+        assertEquals(0, modelNumber("23113RKC6C"))
+        assertEquals(0, modelNumber("SM-F9710"))
+        assertEquals(18, modelNumber("小米 18 Pro Max"))
+        assertEquals(100, modelNumber("REDMI K100 Pro Max"))
+        assertEquals(25, modelNumber("Galaxy S25 Ultra"))
     }
 
     @Test
