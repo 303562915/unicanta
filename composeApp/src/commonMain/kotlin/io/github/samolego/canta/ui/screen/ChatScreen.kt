@@ -1178,7 +1178,9 @@ private fun ChatTopBar(
                 )
                 if (isGroup) {
                     Text(
-                        text = if (memberCount > 0) "群聊 · ${memberCount} 人" else "群聊",
+                        // 只写「群聊」，不写人数：内测群人少，人数是主办方的事。
+                        // （memberCount 仍然收着，进资料页时用它决定画不画成员名单。）
+                        text = "群聊",
                         style = FlText.caption2,
                         color = scheme.onSurfaceVariant,
                         maxLines = 1,

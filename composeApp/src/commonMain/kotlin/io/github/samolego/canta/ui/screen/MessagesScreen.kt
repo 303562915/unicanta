@@ -64,6 +64,7 @@ import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.InboxSummary
 import io.github.samolego.canta.data.community.MessageHit
+import io.github.samolego.canta.data.community.OfficialGroup
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
@@ -180,6 +181,8 @@ fun MessagesScreen(
     var searchingMessages by remember { mutableStateOf(false) }
     // 「全部标为已读」是一次网络调用：点完就把协程交出去，界面不等它。
     val scope = rememberCoroutineScope()
+    /** 正在加入官方内测群：挡住连点，也把那一行的小字换成「加入中…」。 */
+    var joiningOfficial by remember { mutableStateOf(false) }
 
     // 没有推送通道，页面开着的时候只能自己问。15 秒一次，比"退出再进"快得多，又不至于把
     // 每分钟 120 次的后端额度吃满（一次刷新是三四个查询）。
@@ -341,7 +344,13 @@ fun MessagesScreen(
     // 所以在画的时候过滤：取消拉黑那一刻这一行会当场回来，不必等一次重新拉取。
     val reachableConversations = conversations.filterNot { it.blockedBy(blockedPeers) }
     // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
-    val visibleConversations = reachableConversations.filterNot { it.isFoldedGroup() }
+    // 官方内测群也不进主列表：它固定在最上面那一行（见 [OfficialGroupRow]），这里再列一次就是两份。
+    val visibleConversations = reachableConversations
+        .filterNot { it.isFoldedGroup() || it.title == OfficialGroup.TITLE }
+    // 已经在群里的话，上面那一行点下去直接进这个会话，不必再走一次加入。
+    val officialConversation = conversations.firstOrNull {
+        it.kind == "group" && it.title == OfficialGroup.TITLE
+    }
     // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
     val foldedGroups = conversations.filter { it.isFoldedGroup() }
     // 折叠的群聊那一行只亮「最近说过话的那个群」：它的最后一句就是这个入口的预览。
@@ -419,6 +428,33 @@ fun MessagesScreen(
                         lineHeight = 13.sp,
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    )
+                }
+                // 官方内测群固定在最上面：**还没进群的人**也看得到这一行，点一下就加入。
+                // 不写人数——这个群还在内测，人数是主办方的事，不该摆在列表上让每个人读。
+                if (!searching) {
+                    OfficialGroupRow(
+                        joined = officialConversation != null,
+                        joining = joiningOfficial,
+                        onClick = {
+                            val existing = officialConversation
+                            if (existing != null) {
+                                onOpenChat(existing.id)
+                            } else if (!joiningOfficial) {
+                                scope.launch {
+                                    joiningOfficial = true
+                                    // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
+                                    val id = repository.joinByInvite(owner, OfficialGroup.INVITE_CODE)
+                                    joiningOfficial = false
+                                    if (id != null) {
+                                        reloads++
+                                        onOpenChat(id)
+                                    } else {
+                                        onMessage("没进成内测群，检查代理后再试")
+                                    }
+                                }
+                            }
+                        },
                     )
                 }
                 RecentContactsRow(
@@ -1109,6 +1145,74 @@ private fun NoFriendsCell() {
             style = FlText.caption2,
             color = scheme.onSurfaceVariant,
             maxLines = 1,
+        )
+    }
+}
+
+/**
+ * 官方内测群那一行，钉在消息页最上面。
+ *
+ * 它和会话行长得像，但不是会话行：没进群的人列表里根本没有这个会话，所以它由 [OfficialGroup]
+ * 那份常量长出来，点一下走 `group_invite_join`（幂等）加入再进去；已经在群里就直接进去。
+ *
+ * **不写人数**：这是内测群，人还少，人数不该摆在谁都能看见的地方。
+ */
+@Composable
+private fun OfficialGroupRow(
+    joined: Boolean,
+    joining: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.surfaceContainer)
+            .clickable(
+                enabled = !joining,
+                onClickLabel = if (joined) "进入内测群" else "加入内测群",
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        InitialAvatar(label = "测")
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = OfficialGroup.TITLE,
+                style = FlText.subheadline,
+                fontWeight = FlText.emphasized,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = when {
+                    joining -> "正在加入…"
+                    joined -> OfficialGroup.TAGLINE
+                    else -> "官方内测群 · 点一下加入"
+                },
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = if (joined) "进入" else "加入",
+            style = FlText.caption2,
+            fontWeight = FlText.emphasized,
+            color = Color.White,
+            maxLines = 1,
+            modifier = Modifier
+                .clip(RoundedCornerShape(percent = 50))
+                .background(if (joined) scheme.outline else scheme.primary)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
         )
     }
 }

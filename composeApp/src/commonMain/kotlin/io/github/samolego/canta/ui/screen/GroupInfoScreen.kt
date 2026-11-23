@@ -370,6 +370,8 @@ fun GroupInfoScreen(
                             adding = adding,
                             // 踢人只给建群的人：成员表本身是公开的，能长按出菜单这件事不该人人都行。
                             kickable = current.isOwner(owner) && !adding,
+                            // 名单也只给建群的人；别人只看得到「群成员」和进入聊天的入口。
+                            showRoster = current.isOwner(owner),
                             onKick = { member -> kickTarget = member },
                             onTapAdd = { adding = !adding },
                             onOpenChat = { onOpenChat(conversationId) },
@@ -769,6 +771,13 @@ private fun GroupInfoMembers(
     members: List<ConversationMember>,
     adding: Boolean,
     kickable: Boolean,
+    /**
+     * 看不看得到这份名单。
+     *
+     * 只有建群的人为 true。别人进来只看得到一行「群成员」和「进入聊天」——人数是内测群的
+     * 主办方的事，人少的时候摆在谁都能点开的地方只会让人尴尬。
+     */
+    showRoster: Boolean,
     onKick: (ConversationMember) -> Unit,
     onTapAdd: () -> Unit,
     onOpenChat: () -> Unit,
@@ -781,7 +790,7 @@ private fun GroupInfoMembers(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "群成员 (${members.size})",
+                text = if (showRoster) "群成员 (${members.size})" else "群成员",
                 style = FlText.footnote,
                 fontWeight = FlText.emphasized,
                 color = colors.onSurface,
@@ -801,38 +810,41 @@ private fun GroupInfoMembers(
             )
         }
         Spacer(Modifier.height(8.dp))
-        // 末尾补一个 null 当「+」那一格：它混在同一张名单里，才和成员排在同一行网格上。
-        val cells: List<ConversationMember?> = buildList {
-            members.forEach { member -> add(member) }
-            add(null)
-        }
-        cells.chunked(GroupMembersPerRow).forEach { line ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                line.forEach { member ->
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
-                        if (member == null) {
-                            GroupAddCell(expanded = adding, onClick = onTapAdd)
-                        } else {
-                            GroupMemberCell(
-                                label = member.label,
-                                owner = member.owner,
-                                // 建群的人长按别人的格子才弹「移出群聊」；自己的格子不给这个菜单，
-                                // 想走是「退出群聊」那个按钮的事。
-                                onKick = if (kickable && member.owner.isNotEmpty()) {
-                                    { onKick(member) }
-                                } else {
-                                    null
-                                },
-                                onOpenProfile = onOpenProfile,
-                            )
+        // 名单只给建群的人：别人看到的是"这里有一群人"，看不到有几个。
+        if (showRoster) {
+            // 末尾补一个 null 当「+」那一格：它混在同一张名单里，才和成员排在同一行网格上。
+            val cells: List<ConversationMember?> = buildList {
+                members.forEach { member -> add(member) }
+                add(null)
+            }
+            cells.chunked(GroupMembersPerRow).forEach { line ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    line.forEach { member ->
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                            if (member == null) {
+                                GroupAddCell(expanded = adding, onClick = onTapAdd)
+                            } else {
+                                GroupMemberCell(
+                                    label = member.label,
+                                    owner = member.owner,
+                                    // 建群的人长按别人的格子才弹「移出群聊」；自己的格子不给这个菜单，
+                                    // 想走是「退出群聊」那个按钮的事。
+                                    onKick = if (kickable && member.owner.isNotEmpty()) {
+                                        { onKick(member) }
+                                    } else {
+                                        null
+                                    },
+                                    onOpenProfile = onOpenProfile,
+                                )
+                            }
                         }
                     }
-                }
-                repeat(GroupMembersPerRow - line.size) {
-                    Spacer(Modifier.weight(1f))
+                    repeat(GroupMembersPerRow - line.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
             }
         }

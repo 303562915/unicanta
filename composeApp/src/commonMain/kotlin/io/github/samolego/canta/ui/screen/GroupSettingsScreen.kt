@@ -287,15 +287,19 @@ fun GroupSettingsScreen(
                         onInviteMembers = { adding = true },
                     )
                 }
-                item(key = "members") {
-                    GroupMembersCard(
-                        members = current.members,
-                        cap = GROUP_MEMBER_CAP,
-                        kickable = current.isOwner(owner),
-                        onKick = { member -> kickTarget = member },
-                        onAdd = { adding = true },
-                        onOpenProfile = onOpenProfile,
-                    )
+                // 成员卡上有「3/200」这种人数，也有一整排头像（数一下就知道了）。
+                // 只有建群的人看得到：内测群人少，人数是主办方的事，不该摆在别人点得到的地方。
+                if (current.isOwner(owner)) {
+                    item(key = "members") {
+                        GroupMembersCard(
+                            members = current.members,
+                            cap = GROUP_MEMBER_CAP,
+                            kickable = current.isOwner(owner),
+                            onKick = { member -> kickTarget = member },
+                            onAdd = { adding = true },
+                            onOpenProfile = onOpenProfile,
+                        )
+                    }
                 }
                 if (adding) {
                     item(key = "add-panel") {
