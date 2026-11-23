@@ -696,6 +696,11 @@ private fun PlanDetailContent(
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
+    // What this phone no longer has, the same answer the uninstall ranking paints red: a plan is a
+    // list of things to remove, so the rows that already went have to be told apart on the page too.
+    val removedPkgs = remember(apps) {
+        apps.filter { it.isUninstalled }.mapTo(mutableSetOf()) { it.packageName }
+    }
     val needle = query.trim()
     // Ranking order, not upload order: the point of the section is where each package stands here.
     // The filter narrows that order without re-sorting it: a filtered ranking is still a ranking.
@@ -785,6 +790,7 @@ private fun PlanDetailContent(
                 rank = rank,
                 app = byPackage[pkg],
                 verdict = rules?.verdict(pkg, profile),
+                removed = pkg in removedPkgs,
                 onClick = { onOpenApp(pkg) },
             )
         }
@@ -1190,9 +1196,14 @@ private fun PackageRankRow(
     rank: PackageRank?,
     app: AppInfo?,
     verdict: SafetyVerdict?,
+    /** True when this phone no longer has the package: its package line is painted red. */
+    removed: Boolean = false,
     onClick: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
+    // Only the package line turns red, exactly as the uninstall ranking does it: the app's name is
+    // how the row is read, while the package name is the thing that actually went.
+    val goneColor = colors.error
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1244,7 +1255,7 @@ private fun PackageRankRow(
                 lineHeight = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = colors.onSurfaceVariant,
+                color = if (removed) goneColor else colors.onSurfaceVariant,
             )
         }
         // One number, one line, the wording the ranking page uses: how many people marked it.
