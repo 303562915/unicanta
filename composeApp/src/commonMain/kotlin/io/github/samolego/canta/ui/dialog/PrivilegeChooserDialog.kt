@@ -1,18 +1,31 @@
 package io.github.samolego.canta.ui.dialog
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
@@ -21,25 +34,28 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.close
 import io.github.samolego.canta.generated.resources.onboarding_privilege_detect
 import io.github.samolego.canta.generated.resources.onboarding_privilege_grant
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_active
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_authorized
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_available
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
 import io.github.samolego.canta.generated.resources.privilege_chooser_current
 import io.github.samolego.canta.generated.resources.privilege_chooser_dhizuku_note
 import io.github.samolego.canta.generated.resources.privilege_chooser_download
 import io.github.samolego.canta.generated.resources.privilege_chooser_no_root
 import io.github.samolego.canta.generated.resources.privilege_chooser_open_dhizuku
 import io.github.samolego.canta.generated.resources.privilege_chooser_open_manager
-import io.github.samolego.canta.generated.resources.privilege_chooser_root_title
+import io.github.samolego.canta.generated.resources.privilege_chooser_root_note
 import io.github.samolego.canta.generated.resources.privilege_chooser_switch
 import io.github.samolego.canta.generated.resources.privilege_chooser_title
+import io.github.samolego.canta.generated.resources.privilege_state_active
+import io.github.samolego.canta.generated.resources.privilege_state_none
+import io.github.samolego.canta.generated.resources.privilege_state_not_authorized
+import io.github.samolego.canta.generated.resources.privilege_state_not_running
+import io.github.samolego.canta.generated.resources.privilege_state_pending
 import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku
+import io.github.samolego.canta.generated.resources.settings_privilege_root
 import io.github.samolego.canta.generated.resources.settings_privilege_shizuku
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.ui.fl.FlSurfaceLevel
+import io.github.samolego.canta.ui.fl.FlText
+import io.github.samolego.canta.ui.fl.colorOf
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -100,8 +116,9 @@ fun PrivilegeChooserDialog(
 }
 
 /**
- * One route: what it is, how far it got, and the one button that moves it forward — none when it
- * already works, because there is nothing left to do there.
+ * One route as a tappable card: a status dot, its name with an "in use" tag, one word for the
+ * state, and the single button that moves it forward. The whole card does what that button does,
+ * so the switch is as wide as the row instead of a 3-character word on the right.
  */
 @Composable
 private fun PrivilegeChoiceRow(
@@ -111,84 +128,148 @@ private fun PrivilegeChoiceRow(
     onDownload: (PrivilegeKind) -> Unit,
     onSwitch: (PrivilegeKind) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                // The row the app is actually running on is named as such: two rows can read
-                // "granted" at once, and without this the dialog would leave the user to guess
-                // which of them is the one doing the work.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = when (choice.kind) {
-                            PrivilegeKind.ROOT -> stringResource(Res.string.privilege_chooser_root_title)
-                            // The same name the settings row uses, so both pages read as one thing.
-                            PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
-                            PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
-                            // Filtered out above: NONE is not a privilege, there is nothing to name.
-                            PrivilegeKind.NONE -> ""
-                        },
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    if (choice.current) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(Res.string.privilege_chooser_current),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val action = actionOf(choice, onGrantRoot, onOpenManager, onDownload, onSwitch)
+    val granted = choice.status == PrivilegeStatus.ACTIVE
+    // A dot carries the whole state at a glance: working, reachable but not ready, or not there.
+    val accent = when {
+        granted -> scheme.primary
+        choice.installed -> scheme.tertiary
+        else -> scheme.outline
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (choice.current) scheme.primary.copy(alpha = 0.10f) else FlSurfaceLevel.Card.colorOf(scheme))
+            .then(
+                if (choice.current) {
+                    Modifier.border(1.dp, scheme.primary.copy(alpha = 0.55f), shape)
+                } else {
+                    Modifier
+                },
+            )
+            .then(if (action != null) Modifier.clickable(onClick = action.second) else Modifier)
+            .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(accent),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            // The row the app is actually running on is tagged as such: two rows can read "granted"
+            // at once, and without this the dialog would leave the user to guess which one works.
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = statusText(choice),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = titleOf(choice),
+                    style = FlText.subheadline,
+                    fontWeight = FontWeight.Medium,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
-                // Dhizuku is the one route whose powers stop before removal: said on the row itself,
-                // because the difference only shows up later, as a refused uninstall.
-                if (choice.kind == PrivilegeKind.DHIZUKU) {
-                    Text(
-                        text = stringResource(Res.string.privilege_chooser_dhizuku_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                if (choice.current) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    CurrentTag()
                 }
             }
-            actionOf(choice, onGrantRoot, onOpenManager, onDownload, onSwitch)?.let { (label, onClick) ->
-                TextButton(onClick = onClick) { Text(label) }
+            Text(
+                text = statusText(choice),
+                style = FlText.caption2,
+                color = if (granted) accent else scheme.onSurfaceVariant,
+            )
+            // Dhizuku is the one route whose powers stop before removal: said on the row itself,
+            // because the difference only shows up later, as a refused restore.
+            if (choice.kind == PrivilegeKind.DHIZUKU) {
+                Text(
+                    text = stringResource(Res.string.privilege_chooser_dhizuku_note),
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            if (choice.kind == PrivilegeKind.ROOT && choice.installed) {
+                Text(
+                    text = stringResource(Res.string.privilege_chooser_root_note),
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (action != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            FilledTonalButton(
+                onClick = action.second,
+                shape = RoundedCornerShape(9.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                Text(
+                    text = action.first,
+                    style = FlText.caption1,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
             }
         }
     }
 }
 
+/** The same name the settings row uses, so both pages read as one thing. */
+@Composable
+private fun titleOf(choice: PrivilegeChoice): String = when (choice.kind) {
+    PrivilegeKind.ROOT -> stringResource(Res.string.settings_privilege_root)
+    PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
+    PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
+    // Filtered out above: NONE is not a privilege, there is nothing to name.
+    PrivilegeKind.NONE -> ""
+}
+
+/** The little "in use" tag next to the row the app is running on. */
+@Composable
+private fun CurrentTag() {
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        text = stringResource(Res.string.privilege_chooser_current),
+        style = FlText.caption2,
+        fontWeight = FontWeight.SemiBold,
+        color = scheme.onPrimary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(scheme.primary)
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
+}
+
 /**
- * How far [choice] got, in the words the setup page already uses. Root has two sentences of its
- * own: "not authorized" there means the root manager has not answered yet, not that a service is
- * running without Canta in it, and a phone without a `su` at all has nothing to grant.
+ * How far [choice] got, in one word: the settings row says the same thing, so the two pages agree
+ * without either of them repeating a sentence. Root has a case of its own — a phone with no `su`
+ * at all has nothing to grant.
  */
 @Composable
 private fun statusText(choice: PrivilegeChoice): String = when {
-    choice.kind == PrivilegeKind.ROOT && choice.status == PrivilegeStatus.ACTIVE ->
-        stringResource(Res.string.onboarding_privilege_state_root_active)
-
     choice.kind == PrivilegeKind.ROOT && !choice.installed ->
         stringResource(Res.string.privilege_chooser_no_root)
 
-    choice.kind == PrivilegeKind.ROOT ->
-        stringResource(Res.string.onboarding_privilege_state_root_pending)
-
     choice.status == PrivilegeStatus.ACTIVE ->
-        stringResource(Res.string.onboarding_privilege_state_active)
+        stringResource(Res.string.privilege_state_active)
+
+    choice.kind == PrivilegeKind.ROOT ->
+        stringResource(Res.string.privilege_state_pending)
 
     choice.status == PrivilegeStatus.NOT_AUTHORIZED ->
-        stringResource(Res.string.onboarding_privilege_state_not_authorized)
+        stringResource(Res.string.privilege_state_not_authorized)
 
     choice.status == PrivilegeStatus.NOT_RUNNING ->
-        stringResource(Res.string.onboarding_privilege_state_not_running)
+        stringResource(Res.string.privilege_state_not_running)
 
-    else -> stringResource(Res.string.onboarding_privilege_state_not_available)
+    else -> stringResource(Res.string.privilege_state_none)
 }
 
 /**

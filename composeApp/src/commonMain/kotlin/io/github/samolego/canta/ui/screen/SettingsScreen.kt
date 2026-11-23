@@ -59,12 +59,10 @@ import io.github.samolego.canta.generated.resources.device_user_description
 import io.github.samolego.canta.generated.resources.fake_community_scores
 import io.github.samolego.canta.generated.resources.fake_community_scores_description
 import io.github.samolego.canta.generated.resources.hide_success_dialog
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_active
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_authorized
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_available
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
-import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
+import io.github.samolego.canta.generated.resources.privilege_state_active
+import io.github.samolego.canta.generated.resources.privilege_state_not_authorized
+import io.github.samolego.canta.generated.resources.privilege_state_not_running
+import io.github.samolego.canta.generated.resources.privilege_state_pending
 import io.github.samolego.canta.generated.resources.require_auth_setting
 import io.github.samolego.canta.generated.resources.require_auth_setting_desc
 import io.github.samolego.canta.generated.resources.settings
@@ -203,10 +201,10 @@ fun SettingsScreen(
                 },
                 subtitle = when {
                     privilegeKind == PrivilegeKind.ROOT && privilegeStatus == PrivilegeStatus.ACTIVE ->
-                        stringResource(Res.string.onboarding_privilege_state_root_active)
+                        stringResource(Res.string.privilege_state_active)
 
                     privilegeKind == PrivilegeKind.ROOT ->
-                        stringResource(Res.string.onboarding_privilege_state_root_pending)
+                        stringResource(Res.string.privilege_state_pending)
 
                     // Dhizuku 也是「已授权」，但能做的事更窄：这一行写明白，
                     // 否则第一次被拒的卸载会被当成 bug。
@@ -214,15 +212,16 @@ fun SettingsScreen(
                         stringResource(Res.string.settings_privilege_dhizuku_active)
 
                     privilegeStatus == PrivilegeStatus.ACTIVE ->
-                        stringResource(Res.string.onboarding_privilege_state_active)
+                        stringResource(Res.string.privilege_state_active)
 
                     privilegeStatus == PrivilegeStatus.NOT_AUTHORIZED ->
-                        stringResource(Res.string.onboarding_privilege_state_not_authorized)
+                        stringResource(Res.string.privilege_state_not_authorized)
 
                     privilegeStatus == PrivilegeStatus.NOT_RUNNING ->
-                        stringResource(Res.string.onboarding_privilege_state_not_running)
+                        stringResource(Res.string.privilege_state_not_running)
 
-                    else -> stringResource(Res.string.onboarding_privilege_state_not_available)
+                    // 一条也没检测到：标题已经写「没检测到」，副标题不再说第二遍。
+                    else -> ""
                 },
                 // 点它就是换路由：链路自己会挑一条，这里是唯一能手选的地方。
                 onClick = onOpenPrivilegeChooser,
