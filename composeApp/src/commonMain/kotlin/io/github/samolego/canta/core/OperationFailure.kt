@@ -67,6 +67,22 @@ private fun keywordFailure(message: String): FailureExplanation? {
                 advice = "重新从列表里勾选这个应用，不要手抄包名。",
             )
 
+        // The lookup before the call found nothing: on a system package the first uninstall removes
+        // the whole registration, so a second tap on a stale row reports this instead of a success.
+        mentions("unknown package") ->
+            FailureExplanation(
+                reason = "设备上已经找不到这个包了：多半上一次已经卸掉，或者系统把它清掉了。",
+                advice = "下拉刷新一次列表再决定要不要重试；它不影响同一批里的其它应用。",
+            )
+
+        // vivo's own restriction, applied to dozens of its system packages: the user is not allowed
+        // to remove this one at all, whatever the caller's identity is.
+        mentions("user_restricted", "user restricted") ->
+            FailureExplanation(
+                reason = "这台 ROM 把这个包标成了受限应用，shell 身份删不掉它。",
+                advice = "只有 root 能试；没有 root 就改用「停用」，或把它留在原地——它不占什么资源。",
+            )
+
         // Android's own protection list (`canPackageBeChanged`), checked before anything runs: no
         // shell — and therefore no Shizuku route — can change these, whoever asks. Seen on packages
         // a vendor preloads as essential (an IME, a launcher, the store that ships with the build).

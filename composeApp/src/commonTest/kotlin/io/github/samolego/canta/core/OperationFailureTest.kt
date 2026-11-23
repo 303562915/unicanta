@@ -106,6 +106,25 @@ class OperationFailureTest {
     }
 
     @Test
+    fun aPackageThatIsAlreadyGoneIsNotAnError() {
+        // The uninstall path looks the package up first; a system package that was already removed
+        // leaves nothing to look up, and the old wording sent people to retry a finished job.
+        val explanation = assertNotNull(
+            failed(OperationResult.STATUS_NO_RESULT, "Unknown package").explainFailure()
+        )
+        assertTrue("找不到" in explanation.reason, explanation.reason)
+        assertTrue("刷新" in explanation.advice, explanation.advice)
+    }
+
+    @Test
+    fun aVivoUserRestrictionIsNamed() {
+        val explanation = assertNotNull(
+            failed(OperationResult.STATUS_NO_RESULT, "DELETE_FAILED_USER_RESTRICTED").explainFailure()
+        )
+        assertTrue("受限" in explanation.reason, explanation.reason)
+    }
+
+    @Test
     fun theMessageIsMatchedWithoutCase() {
         assertNotNull(failed(1, "Permission Denial: not allowed").explainFailure())
         assertEquals(
