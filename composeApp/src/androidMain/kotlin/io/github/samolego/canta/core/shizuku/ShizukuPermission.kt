@@ -30,6 +30,12 @@ object ShizukuPermission {
     }
 
     /**
+     * Sui hands Canta its binder directly instead of running a manager's own service, so `pingBinder`
+     * is not what tells whether the runtime is there on that setup: [isSui] is.
+     */
+    val isSuiRuntime: Boolean get() = isSui
+
+    /**
      * Requests the Shizuku permission, reporting the result to
      * [onPermissionResult] (immediately if already decided). Call from the
      * main thread only!

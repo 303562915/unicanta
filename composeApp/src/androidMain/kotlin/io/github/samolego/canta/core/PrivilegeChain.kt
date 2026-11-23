@@ -3,11 +3,16 @@ import android.content.pm.PackageManager
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.core.root.RootCantaHandler
 import io.github.samolego.canta.core.root.suBinaryPath
+import io.github.samolego.canta.core.shizuku.ShizukuServices
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.util.DeviceContext
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.LogUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -25,6 +30,9 @@ import kotlinx.coroutines.sync.withLock
  * Everything that only reports state reads [active] directly: a property cannot suspend, and by the
  * time the UI asks, [loadApps] has already settled the question. Everything that touches the device
  * goes through [picked], so a refusal cannot leave half the calls on a privilege that is not there.
+ *
+ * Installs are the one exception: they ask every time which privilege can do the job fastest, see
+ * [installRoute], because the route worth using for a reinstall is not always the settled one.
  */
 class PrivilegeChain(
     private val root: RootCantaHandler?,
@@ -36,6 +44,10 @@ class PrivilegeChain(
      */
     private val dhizuku: DhizukuCantaHandler? = null,
 ) : CantaHandler {
+
+    private companion object {
+        const val TAG = "PrivilegeChain"
+    }
 
     /**
      * Starts on root when the phone has a su binary: that is the privilege to try first. A phone
@@ -170,8 +182,109 @@ class PrivilegeChain(
     override fun uninstallApps(packageNames: List<String>, resetToFactory: Boolean): Flow<OperationResult> =
         active.uninstallApps(packageNames, resetToFactory)
 
-    override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> =
-        active.reinstallApps(packageNames)
+    /**
+     * Reinstalls through the fastest privilege that is available right now — see [installRoute].
+     *
+     * A batch that the first route refuses is retried once on the other one, and each package is
+     * emitted exactly once either way: the batch log counts results, so a package that reached the
+     * list twice would be counted twice.
+     */
+    override fun reinstallApps(packageNames: List<String>): Flow<OperationResult> = flow {
+        val primary = installRoute()
+        LogUtils.i(TAG, "Installing ${packageNames.size} package(s) through ${primary.privilegeKind.wire}")
+        val answered = mutableSetOf<String>()
+        val failures = linkedMapOf<String, OperationResult>()
+        primary.reinstallApps(packageNames).collect { result ->
+            answered += result.packageName
+            if (result.success) emit(result) else failures[result.packageName] = result
+        }
+        // A route that never connects hands back an empty flow: without this, those packages would
+        // reach the batch as neither a success nor a failure, and the dialog would explain nothing.
+        packageNames.distinct().filterNot { it in answered }.forEach { name ->
+            failures[name] = OperationResult(
+                packageName = name,
+                success = false,
+                status = OperationResult.STATUS_NO_RESULT,
+                message = "No result from the install",
+            )
+        }
+        if (failures.isEmpty()) return@flow
+        val retry = retryRoute(primary)
+        if (retry == null) {
+            failures.values.forEach { emit(it) }
+            return@flow
+        }
+        LogUtils.i(
+            TAG,
+            "${failures.size} install(s) refused through ${primary.privilegeKind.wire}; " +
+                "retrying through ${retry.privilegeKind.wire}",
+        )
+        // Emitted as they arrive, not collected first: the caller counts progress off each result,
+        // and a slow route (root cold-starting the helper) would otherwise freeze the counter.
+        val retried = mutableSetOf<String>()
+        retry.reinstallApps(failures.keys.toList()).collect { result ->
+            retried += result.packageName
+            emit(result)
+        }
+        failures.values.filterNot { it.packageName in retried }.forEach { emit(it) }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * The route a reinstall takes: the fastest privilege this phone can offer right now, which is
+     * not necessarily the one the chain settled on.
+     *
+     * A reinstall through root costs a `su -c` that cold-starts `app_process` and the helper for
+     * every batch; Shizuku's binder answers inside this process, so an install is the one operation
+     * where the runtime is worth preferring even on a phone that runs everything else through root.
+     *
+     * The binder is checked live: the cached grant survives the runtime being killed, and a batch
+     * sent into a dead binder fails every package with the same "start it again".
+     */
+    private suspend fun installRoute(): CantaHandler {
+        if (shizukuCanInstallNow()) return shizuku
+        val rootHandler = root
+        if (rootHandler != null && rootHandler.prepare()) return rootHandler
+        if (shizukuCanInstallNow()) return shizuku
+        // Neither answered: the settled route reports its own refusal, which is the one whose
+        // setup page the user has to open.
+        return active
+    }
+
+    /**
+     * Whether Shizuku is up, granted, and pointed at the right user — i.e. whether an install sent
+     * through it can succeed right now.
+     *
+     * The liveness check comes first and [isAuthorized] is guarded: the cached grant outlives a
+     * runtime that was killed, and asking a dead binder throws, which would abort the whole batch.
+     */
+    private fun shizukuCanInstallNow(): Boolean =
+        shizuku.isRuntimeUp &&
+            runCatching { shizuku.isAuthorized }.getOrDefault(false) &&
+            shizukuActsOnSelectedUser()
+
+    /**
+     * Whether Shizuku would install into the same user the phone is being managed for.
+     *
+     * The root route can be pointed at another user or a work profile ([selectUser]); Shizuku acts
+     * on the user Canta itself runs in. When those two differ, the faster binder would put the app
+     * back into the wrong profile, so the route that owns the choice keeps the job.
+     */
+    private fun shizukuActsOnSelectedUser(): Boolean {
+        val target = selectedUserId ?: return true
+        return target == ShizukuServices.userId
+    }
+
+    /** The other route worth retrying a refused install on, or null when there is only one. */
+    private suspend fun retryRoute(primary: CantaHandler): CantaHandler? = when {
+        primary === shizuku -> {
+            // Asked again rather than trusted from the earlier answer: [RootCantaHandler.prepare]
+            // caches a "no" for the whole process, and a grant the user gave since must count.
+            val handler = root
+            if (handler != null && handler.prepare()) handler else null
+        }
+        primary === root -> shizuku.takeIf { shizukuCanInstallNow() }
+        else -> null
+    }
 
     override fun setDisabledApps(packageNames: List<String>, disabled: Boolean): Flow<OperationResult> =
         active.setDisabledApps(packageNames, disabled)

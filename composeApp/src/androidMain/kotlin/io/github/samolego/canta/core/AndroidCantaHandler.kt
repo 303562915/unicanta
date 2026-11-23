@@ -74,8 +74,12 @@ class AndroidCantaHandler(
         const val BINDER_GONE = "Shizuku binder haven't been received"
     }
 
-    /** Shizuku's binder *right now*; the cached [ShizukuPermission] status lags a runtime that just died. */
-    private fun runtimeReady(): Boolean = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+    /**
+     * Shizuku's binder *right now*; the cached [ShizukuPermission] status lags a runtime that just
+     * died. Sui counts as up without a binder ping: it hands Canta the binder from its own process.
+     */
+    val isRuntimeUp: Boolean
+        get() = ShizukuPermission.isSuiRuntime || runCatching { Shizuku.pingBinder() }.getOrDefault(false)
 
     /**
      * One result per package, in order. Without a binder there is nothing to try, so every package
@@ -89,7 +93,7 @@ class AndroidCantaHandler(
     ): Flow<OperationResult> = flow {
         packageNames.forEach { name ->
             emit(
-                if (runtimeReady()) {
+                if (isRuntimeUp) {
                     operation(name)
                 } else {
                     OperationResult(
