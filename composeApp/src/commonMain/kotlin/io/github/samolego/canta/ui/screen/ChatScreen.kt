@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -51,6 +53,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
@@ -59,6 +64,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +86,7 @@ import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionText
+import io.github.samolego.canta.ui.component.dropLastSticker
 import io.github.samolego.canta.ui.component.rememberEmotionPick
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -94,6 +102,22 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 
 /** 一个气泡最宽多少：一行字到这儿换行，免得一条长消息把整块屏幕占满。 */
 private val ChatBubbleMaxWidth = 260.dp
+
+/**
+ * 输入栏那几处固定色，按截图取值，不跟主题走。
+ *
+ * 聊天页是有牌子的页面：主题换到别的强调色，输入栏的灰底、占位字、发送键也该还是这副样子，
+ * 否则换一次主题整条栏会跟着偏色。
+ */
+private val ComposerBarBg = Color(0xFFF7F7F7)
+private val ComposerFieldBg = Color(0xFFF2F2F2)
+private val ComposerPlaceholder = Color(0xFF999999)
+
+/** 发送键：截图里是粉的（#FE2C55），输入栏和表情面板共用这一个。 */
+private val ChatSendPink = Color(0xFFFE2C55)
+
+/** 同一段对话隔了这么久就再起一条居中时间：微信是 5 分钟。 */
+private const val ChatStampGapSeconds = 5 * 60L
 
 /**
  * 卡片（分享 / 名片）最宽多少。
@@ -237,6 +261,32 @@ fun ChatScreen(
     /** @ 面板开没开：只有群聊才给这个入口，私聊 @ 谁都没有意义。 */
     var showMentions by remember { mutableStateOf(false) }
     /**
+     * 输入框有没有焦点。
+     *
+     * 它决定占位文案（有焦点才说「按住说话」），也决定面板要不要让位：面板开着的时候
+     * 点一下输入框，键盘会起来、面板必须同时收起，否则两半屏幕各占一块。
+     */
+    var composerFocused by remember { mutableStateOf(false) }
+    /** 三个面板里有没有开着的：只有互斥成立，这条才成立。 */
+    val panelOpen = showMore || showEmotions || showMentions
+    // 焦点与键盘的唯一持有处：开面板要收键盘、面板要回键盘，都从这里走。
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val composerFocus = remember { FocusRequester() }
+
+    /** 三个面板一起收掉：互斥从此只有一个出口，不必每个回调手抄一遍。 */
+    fun closePanels() {
+        showMore = false
+        showEmotions = false
+        showMentions = false
+    }
+
+    /** 面板打开前先落这一步：清焦点 + 收输入法，否则面板会画在键盘底下。 */
+    fun dismissKeyboard() {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
+    /**
      * 这一条草稿里点名了谁，存身份号码而不是名字：人可能在发出之前改名，号码不会。
      *
      * 发出成功就清空；发送失败保留着——重发的时候还是同一批人。
@@ -307,6 +357,11 @@ fun ChatScreen(
     // 一个会话一页：进页面读最近 30 条，读完把已读位置推到现在，顺便问一次会话详情。
     // 详情排在消息之后，是为了不让它的失败覆盖掉下面读的 lastError 文案。
     LaunchedEffect(conversationId, owner) {
+        // 换一个会话就把面板全收掉：上一个会话开着的表情面板不该跟着过来。
+        showMore = false
+        showEmotions = false
+        showMentions = false
+        composerFocused = false
         loading = true
         loadError = null
         detail = null
@@ -612,7 +667,15 @@ fun ChatScreen(
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // 整页吃输入法 inset：edge-to-edge 下系统不再缩窗口，只有 imePadding 才会把输入栏
+        // 顶到键盘上方（不加的话键盘直接盖住输入栏）。手势条那条 inset 同理。
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .imePadding()
+                .navigationBarsPadding(),
+        ) {
             loadError?.let { reason -> ChatErrorLine(reason) }
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -648,9 +711,21 @@ fun ChatScreen(
                             val previous = if (index > 0) messages[index - 1] else null
                             val newDay = previous == null ||
                                 chatDayOf(previous.createdAt) != chatDayOf(message.createdAt)
+                            // 同一天里隔得久了也起一条居中时间（微信是 5 分钟）：
+                            // 换天显示完整日期，同一天只显示 HH:mm。
+                            val gap = previous?.let { prev ->
+                                val before = epochSecondsOf(prev.createdAt)
+                                val now = epochSecondsOf(message.createdAt)
+                                if (before != null && now != null) now - before else null
+                            }
+                            val showStamp = newDay || (gap != null && gap >= ChatStampGapSeconds)
                             Column(modifier = Modifier.fillMaxWidth()) {
-                                if (newDay) {
-                                    val stamp = chatDayStampOf(message.createdAt)
+                                if (showStamp) {
+                                    val stamp = if (newDay) {
+                                        chatDayStampOf(message.createdAt)
+                                    } else {
+                                        chatClockOf(message.createdAt)
+                                    }
                                     if (stamp.isNotEmpty()) ChatDayDivider(stamp)
                                 }
                                 if (message.removed) {
@@ -681,6 +756,8 @@ fun ChatScreen(
                                         imageCache = decodedImages,
                                         message = message,
                                         mine = message.sender == owner,
+                                        // 自己那张头像上画名字首字：后端没有头像字段，首字就是兜底。
+                                        myLabel = userName.ifBlank { "我" },
                                         // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
                                         showSender = grouped && message.sender != owner,
                                         // 点头像看那个人的主页：自己那条不画头像，这个回调也就不给。
@@ -754,7 +831,8 @@ fun ChatScreen(
                     }
                 }
             }
-            ChatQuickPhraseRow(onInsert = insert)
+            // 快捷短语只在「默认态」出现：面板一拉开，这一行就挤在面板和输入栏中间了。
+            if (!panelOpen && draft.isEmpty()) ChatQuickPhraseRow(onInsert = insert)
             if (showMore) {
                 // 四个钮里只有「图片」真能用：其余三个点一下给一句话，不当哑巴按钮。
                 ChatMorePanel(
@@ -763,14 +841,23 @@ fun ChatScreen(
                 )
             }
             if (showEmotions) {
-                // 表情面板：贴在输入栏上方，点一颗把 token（如 [偷笑]）填进草稿，「键盘」把它收回去。
+                // 表情面板：贴在输入栏上方。点一颗只是把 token（如 [偷笑]）放进草稿，
+                // 不会立刻发出去——要发就按右下角那颗「发送」，走的是同一个 send。
                 EmotionPicker(
                     onPick = { emotion ->
                         rememberEmotionPick(emotion.name)
-                        draft = draft + emotion.token
+                        // 和别的插入走同一条路：前面有字又没空格时先补一个空格。
+                        insert(emotion.token)
                     },
-                    onDelete = {},
-                    onKeyboard = { showEmotions = false },
+                    // × 删的是草稿里最后一整颗 token，不是半个 "[偷"。
+                    onDelete = { draft = dropLastSticker(draft) },
+                    onKeyboard = {
+                        showEmotions = false
+                        composerFocus.requestFocus()
+                        keyboardController?.show()
+                    },
+                    onSend = send,
+                    canSend = draft.isNotBlank() && !sending,
                 )
             }
             if (showMentions) {
@@ -798,34 +885,48 @@ fun ChatScreen(
                 onInsert = insert,
                 showMore = showMore,
                 onToggleMore = {
-                    showMore = !showMore
-                    // 两个面板互斥：拉开一个就把另一个收回去。
                     if (showMore) {
-                        showEmotions = false
-                        showMentions = false
+                        showMore = false
+                    } else {
+                        closePanels()
+                        showMore = true
+                        dismissKeyboard()
                     }
                 },
                 showEmotions = showEmotions,
                 onToggleEmotions = {
-                    showEmotions = !showEmotions
                     if (showEmotions) {
-                        showMore = false
-                        showMentions = false
+                        showEmotions = false
+                    } else {
+                        closePanels()
+                        showEmotions = true
+                        dismissKeyboard()
                     }
                 },
                 // 私聊没有 @：只有群聊、而且确实有别人可点时，才给这个入口。
                 onMention = if (grouped && detail?.members.orEmpty().any { it.owner != owner }) {
                     {
-                        showMentions = !showMentions
                         if (showMentions) {
-                            showMore = false
-                            showEmotions = false
+                            showMentions = false
+                        } else {
+                            closePanels()
+                            showMentions = true
+                            dismissKeyboard()
                         }
                     }
                 } else {
                     null
                 },
                 showMentions = showMentions,
+                // 占位文案与「点输入框收面板」都看这两个：面板开着只说「发消息」，
+                // 点进输入框（键盘起来）就把三个面板让位。
+                panelOpen = panelOpen,
+                focused = composerFocused,
+                onFocusedChange = { nowFocused ->
+                    composerFocused = nowFocused
+                    if (nowFocused && panelOpen) closePanels()
+                },
+                fieldFocus = composerFocus,
             )
             // 图片这一路的提示与文字那条同款：传的时候一直亮，失败了才说话，成功了不说话。
             if (sendingImage) {
@@ -1150,6 +1251,8 @@ private fun ChatBubble(
     imageCache: MutableMap<String, ImageBitmap>,
     message: ChatMessage,
     mine: Boolean,
+    /** 自己这一侧那张头像上画什么字：没有头像照片时用它兜底（见 [ChatRowAvatar]）。 */
+    myLabel: String = "我",
     showSender: Boolean,
     onAvatarClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
@@ -1208,10 +1311,14 @@ private fun ChatBubble(
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
-        if (!mine) {
+        // 私聊里对方不画头像（截图上就是干净的）；群里谁发言谁有自己的一张头像，
+        // 身份是 message.sender，点了进那个人的主页。
+        if (!mine && showSender) {
             ChatRowAvatar(label = message.label, onClick = onAvatarClick)
             Spacer(Modifier.width(8.dp))
         }
+        // 头像只挂在自己这一侧：截图里对方那条是干净的（没有头像也没有昵称），
+        // 自己的每条消息右边都跟着一张圆头像。点自己的头像不跳主页。
         Column(
             modifier = Modifier.widthIn(max = ChatBubbleMaxWidth),
             horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
@@ -1400,6 +1507,12 @@ private fun ChatBubble(
                     }
                 }
             }
+        }
+        // 自己那一侧的头像：群聊里别人的名字靠 showSender 那行小字说清，私聊本来只有两个人，
+        // 所以这一张只在「我」这边。点自己不跳主页，因此不挂点击。
+        if (mine) {
+            Spacer(Modifier.width(8.dp))
+            ChatRowAvatar(label = myLabel)
         }
     }
 }
@@ -2200,12 +2313,16 @@ private fun MentionPanel(
 }
 
 /**
- * 底部那一行：九宫格（展开更多）+ 可选的 @ + 会长的输入框 + 三个圆按钮。
+ * 底部那一行：四宫格（展开更多）+ 可选的 @ + 会长的输入框 + 语音/发送 + 表情 + 加号。
  *
- * 右边的第一个圆按钮是**会变的那一个**：输入框里有字它就是发送（[FlGlyphs.send]，主色），
- * 没字的时候才是语音按钮。发送是这个页面唯一的出口，不能让它藏在别处。
- * 表情钮拉开输入栏上方的表情面板（再点一次收起），加号和左边的九宫格一样拉开更多面板。
- * 群聊时九宫格右边多一个 @，点开是成员列表（见 [MentionPanel]）。
+ * 右边第一个圆按钮是**会变的那一个**：草稿非空时它变成粉色「发送」，空着时才是语音。
+ * 发送是这个页面唯一的出口，输入栏和表情面板都走它（[ChatSendPill]），不能让它藏在别处。
+ *
+ * 输入框的占位三态：面板开着只说「发消息」，点进去（键盘起来）才说「发消息或按住说话...」。
+ * 输入框本身从 40dp 起，最多长到 120dp（约五行）之后自己滚，不再把消息区挤没。
+ *
+ * 表情钮拉开输入栏上方的表情面板（再点一次收起），加号和左边的四宫格一样拉开更多面板。
+ * 群聊时四宫格右边多一个 @，点开是成员列表（见 [MentionPanel]）。
  */
 @Composable
 private fun ChatComposer(
@@ -2221,11 +2338,20 @@ private fun ChatComposer(
     /** @ 面板的开关；null 表示这个会话不该有 @（私聊，或者群里没有别人）。 */
     onMention: (() -> Unit)? = null,
     showMentions: Boolean = false,
+    /** 三个面板里有没有开着的：面板开着时占位文案回落到「发消息」。 */
+    panelOpen: Boolean = false,
+    /** 输入框现在有没有焦点。 */
+    focused: Boolean = false,
+    /** 焦点变化回给调用方：面板开着时被聚焦要顺手把面板收掉。 */
+    onFocusedChange: (Boolean) -> Unit = {},
+    /** 输入框的焦点请求器：面板要回键盘时从这里把焦点还回去。 */
+    fieldFocus: FocusRequester = remember { FocusRequester() },
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(ComposerBarBg)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2248,18 +2374,28 @@ private fun ChatComposer(
             onValueChange = onDraftChange,
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(18.dp))
-                .background(colors.surfaceContainerHigh)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                // 40dp 起、120dp 封顶：先长到五行，再往上翻，消息区始终留着。
+                .heightIn(min = 40.dp, max = 120.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(ComposerFieldBg)
+                .focusRequester(fieldFocus)
+                .onFocusChanged { onFocusedChange(it.isFocused) }
+                .padding(horizontal = 12.dp, vertical = 9.dp),
             textStyle = TextStyle(fontSize = 14.sp, color = colors.onSurface),
-            cursorBrush = SolidColor(colors.primary),
-            maxLines = 4,
+            // 光标用发送键那个粉：同一个动作的两种表示。
+            cursorBrush = SolidColor(ChatSendPink),
+            maxLines = 5,
             decorationBox = { inner ->
                 if (draft.isEmpty()) {
                     Text(
-                        text = "发消息或按住说话…",
+                        // 面板开着：只说「发消息」；点进去（键盘在）：加上「按住说话」。
+                        text = when {
+                            panelOpen -> "发消息"
+                            focused -> "发消息或按住说话..."
+                            else -> "发消息"
+                        },
                         fontSize = 14.sp,
-                        color = colors.outline,
+                        color = ComposerPlaceholder,
                     )
                 }
                 inner()
@@ -2267,31 +2403,26 @@ private fun ChatComposer(
         )
         Spacer(Modifier.width(6.dp))
         if (draft.isNotBlank()) {
-            FlBarButton(
-                glyph = FlGlyphs.send,
-                contentDescription = "发送",
-                onClick = onSend,
-                size = 36.dp,
-                iconSize = 17.dp,
-                selected = true,
-                enabled = !sending,
-            )
+            ChatSendPill(text = "发送", enabled = !sending, onClick = onSend)
         } else {
+            // 语音：波形图标。这一侧还没有真的录音，按下去仍然是往草稿里放一句「（语音）」。
             FlBarButton(
-                glyph = FlGlyphs.profiles,
+                glyph = FlGlyphs.voiceWave,
                 contentDescription = "语音",
                 onClick = { onInsert("（语音）") },
                 size = 36.dp,
-                iconSize = 17.dp,
+                iconSize = 18.dp,
+                filled = false,
             )
         }
         Spacer(Modifier.width(4.dp))
         FlBarButton(
-            glyph = FlGlyphs.add,
+            glyph = FlGlyphs.smile,
             contentDescription = if (showEmotions) "收起表情" else "表情",
             onClick = onToggleEmotions,
             size = 36.dp,
-            iconSize = 17.dp,
+            iconSize = 18.dp,
+            filled = false,
         )
         Spacer(Modifier.width(4.dp))
         FlBarButton(
@@ -2299,9 +2430,26 @@ private fun ChatComposer(
             contentDescription = "更多",
             onClick = onToggleMore,
             size = 36.dp,
-            iconSize = 17.dp,
+            iconSize = 18.dp,
         )
     }
+}
+
+/** 输入栏和表情面板共用的发送键：粉底白字，禁用时淡下去。 */
+@Composable
+private fun ChatSendPill(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Text(
+        text = text,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White.copy(alpha = if (enabled) 1f else 0.75f),
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (enabled) ChatSendPink else ChatSendPink.copy(alpha = 0.4f))
+            .clickable(enabled = enabled, onClickLabel = text, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    )
 }
 
 /** 一行说明「没拿到消息」的灰字，摆在列表顶上。 */

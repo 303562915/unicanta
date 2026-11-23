@@ -500,6 +500,38 @@ object FlGlyphs {
         ),
     )
 
+    /** 语音：五根高低交替的竖线，中间那根最长。手机聊天栏左侧那个「按住说话」的图标。 */
+    val voiceWave = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(listOf(GlyphVertex(3.6f, 10.6f, 0f), GlyphVertex(3.6f, 13.4f, 0f)), role = GlyphRole.Line),
+            GlyphPolyline(listOf(GlyphVertex(7.8f, 7.4f, 0f), GlyphVertex(7.8f, 16.6f, 0f)), role = GlyphRole.Line),
+            GlyphPolyline(listOf(GlyphVertex(12f, 4.4f, 0f), GlyphVertex(12f, 19.6f, 0f)), role = GlyphRole.Line),
+            GlyphPolyline(listOf(GlyphVertex(16.2f, 7.4f, 0f), GlyphVertex(16.2f, 16.6f, 0f)), role = GlyphRole.Line),
+            GlyphPolyline(listOf(GlyphVertex(20.4f, 10.6f, 0f), GlyphVertex(20.4f, 13.4f, 0f)), role = GlyphRole.Line),
+        ),
+    )
+
+    /** 表情：一个圆脸、两只实心眼、一道上扬的嘴。输入栏上那个笑脸。 */
+    val smile = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphCircle(x = 12f, y = 12f, radius = 8.6f),
+            GlyphCircle(x = 8.9f, y = 9.7f, radius = 1.05f, role = GlyphRole.Detail, solid = true),
+            GlyphCircle(x = 15.1f, y = 9.7f, radius = 1.05f, role = GlyphRole.Detail, solid = true),
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(8.3f, 14.1f, 0f),
+                    GlyphVertex(10.1f, 16.3f, 0.9f),
+                    GlyphVertex(12f, 16.9f, 0.7f),
+                    GlyphVertex(13.9f, 16.3f, 0.9f),
+                    GlyphVertex(15.7f, 14.1f, 0f),
+                ),
+                role = GlyphRole.Detail,
+            ),
+        ),
+    )
+
     val send = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(

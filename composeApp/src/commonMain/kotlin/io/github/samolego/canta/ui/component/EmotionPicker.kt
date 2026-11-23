@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,7 +22,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -56,8 +57,8 @@ import org.jetbrains.compose.resources.painterResource
  */
 private val recentEmotions = mutableStateListOf<String>()
 
-/** How many stickers the 常用 row remembers: one row of thumbs, not a second grid. */
-private const val RECENT_LIMIT = 12
+/** How many stickers the 常用 row remembers: one row of eight, filling the panel's width once. */
+private const val RECENT_LIMIT = 8
 
 /** Remembers that [key] was picked, moving it to the front of the 常用 row. */
 fun rememberEmotionPick(key: String) {
@@ -382,25 +383,38 @@ internal class EmotionFieldTransformation(
 }
 
 /**
- * The sticker panel the comment bar opens: the last ones picked on top, everything below.
+ * The sticker panel the composer opens: the last ones picked on top, everything below.
  *
  * A panel rather than a dialog because it belongs to the field it types into — it sits under the
- * composer, the keyboard stays down, and a tap puts the sticker in the draft at once. It also ends
- * with the two keys that only exist while it is open: a backspace that takes one sticker out, and
- * the way back to the keyboard.
+ * composer, the keyboard stays down, and a tap puts the sticker in the draft at once. The two keys
+ * that only exist while it is open float in the grid's bottom-right corner: a round × that takes one
+ * sticker out, and the send key the caller hands in.
+ *
+ * [onKeyboard] is kept for the callers that still own a keyboard button of their own; the panel
+ * itself no longer draws one — tapping the field is the way back to the keyboard (see the chat
+ * screen's focus handling), and a panel that looks like the one in the screenshots has no such row.
  */
 @Composable
 fun EmotionPicker(
     onPick: (Emotion) -> Unit,
     onDelete: () -> Unit,
-    onKeyboard: () -> Unit,
+    @Suppress("UNUSED_PARAMETER") onKeyboard: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 网格右下角那颗粉色「发送」要走的回调；null 时这一格不画（评论区那种没有发送动作的地方）。
+     *
+     * 走的是调用方自己那个 send，不要在这里另开一条发送路径：引用、@ 名单、失败重发的语义
+     * 都在那一侧，面板里再抄一份迟早会跟输入栏对不上。
+     */
+    onSend: (() -> Unit)? = null,
+    /** 发送键能不能按：草稿为空或者正在发的时候画成禁用色，按下去不动作。 */
+    canSend: Boolean = true,
     /**
      * How tall the grid gets. The caller passes a share of the room it has rather than a constant:
      * the panel sits under the field in the same column, and a fixed height would push the field
      * off the top of a short screen — which is the bug that made the input box disappear.
      */
-    panelHeight: androidx.compose.ui.unit.Dp = 236.dp,
+    panelHeight: androidx.compose.ui.unit.Dp = 300.dp,
 ) {
     val colors = MaterialTheme.colorScheme
     val recent = recentEmotions.toList()
@@ -411,74 +425,118 @@ fun EmotionPicker(
             .background(colors.surfaceContainerLow),
     ) {
         if (recent.isNotEmpty()) {
-            SectionLabel("最常使用", top = 10.dp)
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 8.dp),
+            SectionHeader(title = "最近使用", action = "装扮 >")
+            // 一行八格正好铺满：最近那颗在最左，不横向滚动（横滑的话第八颗以后永远看不见）。
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                items(recent, key = { "recent-$it" }) { key ->
+                recent.forEach { key ->
                     val emotion = emotionOf(key)
-                    if (emotion != null) EmotionCell(emotion = emotion, onPick = { onPick(emotion) })
+                    if (emotion == null) {
+                        Spacer(Modifier.weight(1f))
+                    } else {
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            EmotionCell(emotion = emotion, onPick = { onPick(emotion) })
+                        }
+                    }
+                }
+                // 不满八颗时把剩下的格子占住，否则前几颗会被拉成一样大的巨图。
+                repeat((RECENT_LIMIT - recent.size).coerceAtLeast(0)) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
         SectionLabel("全部表情", top = if (recent.isEmpty()) 10.dp else 6.dp)
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(8),
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            gridItems(EMOTIONS, key = { it.key }) { emotion ->
-                EmotionCell(emotion = emotion, onPick = { onPick(emotion) })
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(8),
+                modifier = Modifier.fillMaxSize(),
+                // 底部空出两个浮动钮的高度：最后一行不会被它们压住。
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 56.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                gridItems(EMOTIONS, key = { it.key }) { emotion ->
+                    EmotionCell(emotion = emotion, onPick = { onPick(emotion) })
+                }
             }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(colors.surfaceContainerHigh)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "退格",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .clickable(onClick = onDelete)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-            Spacer(Modifier.weight(1f))
+            // 右下角那两个浮动钮：一个是删掉最后一颗，一个是把草稿发出去。
+            // 删的是一整颗 token，不是半个 "[偷"——见 dropLastSticker。
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .clickable(onClick = onKeyboard)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 10.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.Keyboard,
-                    contentDescription = null,
-                    modifier = Modifier.size(15.dp),
-                    tint = colors.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "键盘",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.onSurfaceVariant,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(colors.surfaceContainerHighest)
+                        .clickable(onClickLabel = "删掉最后一颗表情", onClick = onDelete),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "删掉最后一颗表情",
+                        modifier = Modifier.size(15.dp),
+                        tint = colors.onSurfaceVariant,
+                    )
+                }
+                if (onSend != null) {
+                    Text(
+                        text = "发送",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (canSend) Color.White else colors.outline,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(
+                                if (canSend) EmotionSendPink else colors.surfaceContainerHighest,
+                            )
+                            .clickable(
+                                enabled = canSend,
+                                onClickLabel = "发送",
+                                onClick = onSend,
+                            )
+                            .padding(horizontal = 20.dp, vertical = 7.dp),
+                    )
+                }
             }
         }
     }
 }
 
-/** "最常使用" / "全部表情": the two headings the panel is split by. */
+/** 表情面板右下角那颗「发送」的颜色：截图里是粉的，不跟主题走。 */
+private val EmotionSendPink = Color(0xFFFE2C55)
+
+/** 「最近使用 + 装扮 >」那样的一行：左边标题，右边一个灰字入口。 */
+@Composable
+private fun SectionHeader(title: String, action: String?) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = title, fontSize = 11.sp, lineHeight = 14.sp, color = colors.outline)
+        Spacer(Modifier.weight(1f))
+        if (action != null) {
+            Text(text = action, fontSize = 11.sp, lineHeight = 14.sp, color = colors.outline)
+        }
+    }
+}
+
+/** "最近使用" / "全部表情": the two headings the panel is split by. */
 @Composable
 private fun SectionLabel(text: String, top: androidx.compose.ui.unit.Dp) {
     Text(
