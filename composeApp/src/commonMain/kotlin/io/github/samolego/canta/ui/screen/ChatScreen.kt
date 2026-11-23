@@ -140,8 +140,15 @@ private val ChatImageShape = RoundedCornerShape(12.dp)
 /** 一页读多少条：首屏和往上翻历史用同一个数，翻页就用这个数往回退一屏。 */
 private const val ChatPageSize = 30
 
-/** 会话开着时多久问一次新消息：没有推送，短了浪费额度，长了就"不准时"。 */
-private const val ChatPollMs: Long = 8_000L
+/**
+ * 会话开着时多久问一次新消息。
+ *
+ * 没有推送通道，这一页靠轮询：数值就是「对方发完到你看得见」的上限，平均还要再折一半
+ * （问到的那一刻之前刚好已经在等了）。8 秒那版实测体感是「卡一下才跳出来」，改成 2 秒：
+ * 正在看这一页的时候多问几次换来「几乎是即时」的观感，退出页面就停了，不会一直耗流量。
+ * 真要做到零延迟只有一条路——服务端推（Realtime 订阅或 FCM），那是另一件事。
+ */
+private const val ChatPollMs: Long = 2_000L
 
 /**
  * 草稿落盘的防抖时长。
@@ -246,6 +253,13 @@ fun ChatScreen(
     onOpenShare: ((ShareCard) -> Unit)? = null,
     /** 点个人名片：进那个人的主页。 */
     onOpenCard: ((PersonCard) -> Unit)? = null,
+    /**
+     * 这一页对面的人被本机拉黑了没有。
+     *
+     * 拉黑没有后端接口，名单在设置里（[io.github.samolego.canta.data.CantaSettings.blockedPeersFlow]），
+     * 由上层读出来传进来。被拉黑时这一页照旧能看历史，只是输入栏整个收起来（见 [ChatComposer]）。
+     */
+    blocked: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -927,6 +941,7 @@ fun ChatScreen(
                     if (nowFocused && panelOpen) closePanels()
                 },
                 fieldFocus = composerFocus,
+                blocked = blocked,
             )
             // 图片这一路的提示与文字那条同款：传的时候一直亮，失败了才说话，成功了不说话。
             if (sendingImage) {
@@ -2346,7 +2361,13 @@ private fun ChatComposer(
     onFocusedChange: (Boolean) -> Unit = {},
     /** 输入框的焦点请求器：面板要回键盘时从这里把焦点还回去。 */
     fieldFocus: FocusRequester = remember { FocusRequester() },
+    /** 对面这个人被本机拉黑了：输入栏整条换成一行灰字，见 [BlockedComposerBar]。 */
+    blocked: Boolean = false,
 ) {
+    if (blocked) {
+        BlockedComposerBar()
+        return
+    }
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -2433,6 +2454,26 @@ private fun ChatComposer(
             iconSize = 18.dp,
         )
     }
+}
+
+/**
+ * 拉黑之后的输入区：一行灰字，没有输入框。
+ *
+ * 拉黑是本机的（后端没有这个接口），历史消息照旧能看；这里只说清"你不会再回这个人"，并把发送
+ * 这条路整个收起来。留一个能点却发不出去的框，比直接收起来更像坏了。
+ */
+@Composable
+private fun BlockedComposerBar() {
+    Text(
+        text = "已拉黑，不再接收这个人的消息",
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ComposerBarBg)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    )
 }
 
 /** 输入栏和表情面板共用的发送键：粉底白字，禁用时淡下去。 */
