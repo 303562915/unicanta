@@ -192,11 +192,22 @@ fun FollowListScreen(
 private fun List<SocialPerson>.withIFollow(id: String, value: Boolean): List<SocialPerson> =
     map { row -> if (row.id == id) row.copy(iFollow = value) else row }
 
-/** 第二行那句小字：后端给了关系开始的时间就原样显示，没给就按页签说清方向。 */
+/** 第二行那句小字：后端给了关系开始的时间就显示日期，没给就按页签说清方向。 */
 private fun followNoteOf(since: String, tab: Int): String = when {
-    since.isNotEmpty() -> since
+    since.isNotEmpty() -> followDateOf(since)
     tab == FOLLOWS_TAB_FOLLOWERS -> "关注了你"
     else -> "你关注的"
+}
+
+/**
+ * 后端盖的是 `2026-11-22T13:09:33.572926Z`：只留日期那一段。
+ *
+ * 原来的写法把整串原样贴上去，列表里就是一行 ISO 时间——既读不懂也把行撑长。不是这个形状
+ * （没有 T、或者被截短了）就原样返回，宁可难看也别把有意义的内容吃掉。
+ */
+private fun followDateOf(stamp: String): String {
+    val at = stamp.indexOf('T')
+    return if (at > 0) stamp.substring(0, at) else stamp
 }
 
 /**

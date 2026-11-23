@@ -490,7 +490,9 @@ private fun FollowerRow(person: SocialPerson, busy: Boolean, onToggleFollow: () 
                 text = if (person.since.isBlank()) {
                     "最近关注了你"
                 } else {
-                    "${person.since} 关注了你"
+                    // 后端给的是 `2026-11-22T13:09:33.5Z`：只留日期，整串贴上去读不懂也太长。
+                    val day = person.since.substringBefore('T')
+                    "$day 关注了你"
                 },
                 fontSize = 10.sp,
                 color = colors.onSurfaceVariant,
