@@ -869,18 +869,22 @@ private fun ChatBubble(
     showSender: Boolean,
     onAvatarClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
-    /** 撤回这条的回调；只有自己的消息给了它，长按才弹菜单，别人的长按仍旧直接复制。 */
+    /** 撤回这条的回调；只有自己的消息、且还在时限内才给，菜单里才出现「撤回」。 */
     onDelete: (() -> Unit)? = null,
+    /** 引用这一条；别人的消息也能引用，所以它和 [onDelete] 不是同一批。 */
+    onReply: (() -> Unit)? = null,
+    /** 转发这一条到别的会话。 */
+    onForward: (() -> Unit)? = null,
+    /** 只在自己这一侧删掉（对所有人还在）；只有自己的消息才给。 */
+    onHide: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    // 自己的气泡带了撤回回调：长按弹「复制 / 撤回」菜单；其余情况维持各自原来的长按。
-    val menuable = mine && onDelete != null
+    // 任何一条消息长按都弹菜单：回复和转发对别人的消息同样成立，而"长按即复制"那个老手势
+    // 把这两个入口逼没了。菜单里第一项仍然是复制，所以习惯长按复制的人按下去还是一样的结果。
+    val menuable = onLongPress != null || onReply != null || onForward != null ||
+        onDelete != null || onHide != null
     var menuOpen by remember { mutableStateOf(false) }
-    val longPress = when {
-        menuable -> ({ menuOpen = true })
-        mine -> null
-        else -> onLongPress
-    }
+    val longPress = if (menuable) ({ menuOpen = true }) else null
     // 图片不是文字：气泡的底色和 12 的内边距会在图四周多出一圈主色，那一路换成一张裸图。
     val isImage = message.kind == "image"
     // 长按的手套：文字和图片两条路都要挂一次，包成值免得写两遍修饰符链。
@@ -889,7 +893,7 @@ private fun ChatBubble(
     } else {
         Modifier.combinedClickable(
             onClickLabel = "这条消息",
-            onLongClickLabel = if (menuable) "打开这条消息的菜单" else "复制这条消息",
+            onLongClickLabel = "打开这条消息的菜单",
             onLongClick = longPress,
             onClick = {},
         )
@@ -926,14 +930,21 @@ private fun ChatBubble(
                 ) {
                     ChatImageBody(repository = repository, objectPath = message.body)
                     if (menuable) {
-                        // 图片的菜单只有「撤回」：canCopy = false 把「复制」那一项拿掉。
+                        // 图片的菜单不画「复制」（canCopy = false）：正文是 storage 路径不是话。
                         ChatBubbleMenu(
                             modifier = Modifier.align(Alignment.TopEnd),
                             open = menuOpen,
                             canCopy = false,
+                            canRetract = onDelete != null,
+                            canReply = onReply != null,
+                            canForward = onForward != null,
+                            canHide = onHide != null,
                             onDismiss = { menuOpen = false },
                             onCopy = { onLongPress?.invoke() },
-                            onDelete = { onDelete?.invoke() },
+                            onDelete = onDelete,
+                            onReply = onReply,
+                            onForward = onForward,
+                            onHide = onHide,
                         )
                     }
                 }
@@ -956,6 +967,16 @@ private fun ChatBubble(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
                     Column {
+                        // 引用块画在正文上方：左边一条竖线加两行小字，像把被引的那句话
+                        // 折起来压在下面。有引用才画，没引用时这一列和以前一模一样。
+                        if (message.replyTo != null) {
+                            ChatQuoteBlock(
+                                senderName = message.replySenderName,
+                                body = message.replyBody,
+                                mine = mine,
+                            )
+                            Spacer(Modifier.height(5.dp))
+                        }
                         EmotionText(
                             body = message.body,
                             fontSize = 14,
@@ -981,9 +1002,16 @@ private fun ChatBubble(
                             modifier = Modifier.align(Alignment.TopEnd),
                             open = menuOpen,
                             canCopy = true,
+                            canRetract = onDelete != null,
+                            canReply = onReply != null,
+                            canForward = onForward != null,
+                            canHide = onHide != null,
                             onDismiss = { menuOpen = false },
                             onCopy = { onLongPress?.invoke() },
-                            onDelete = { onDelete?.invoke() },
+                            onDelete = onDelete,
+                            onReply = onReply,
+                            onForward = onForward,
+                            onHide = onHide,
                         )
                     }
                 }
@@ -993,19 +1021,29 @@ private fun ChatBubble(
 }
 
 /**
- * 气泡右上角那个长按菜单：「复制」（[canCopy] 时才画）与「撤回」。
+ * 气泡右上角那个长按菜单：复制 / 回复 / 转发 / 删除 / 撤回。
  *
- * 两项都是先收起菜单再动手：菜单留着会把下面的气泡挡住，动作却已经发出去了，看着像没点上。
+ * 每一项都是先收起菜单再动手：菜单留着会把下面的气泡挡住，动作却已经发出去了，看着像没点上。
  * 图片消息传 [canCopy] = false —— 它的正文是 storage 路径，不是人写的字。
+ *
+ * 「删除」和「撤回」的差别是这五个里唯一需要想一下的：删除只让自己这一侧看不见（别人那里
+ * 原样还在），撤回是对所有人把正文拿掉。所以删除排在撤回前面，破坏力小的先出现。
  */
 @Composable
 private fun ChatBubbleMenu(
     modifier: Modifier = Modifier,
     open: Boolean,
     canCopy: Boolean,
+    canRetract: Boolean = false,
+    canReply: Boolean = false,
+    canForward: Boolean = false,
+    canHide: Boolean = false,
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onReply: (() -> Unit)? = null,
+    onForward: (() -> Unit)? = null,
+    onHide: (() -> Unit)? = null,
 ) {
     DropdownMenu(
         expanded = open,
@@ -1021,13 +1059,44 @@ private fun ChatBubbleMenu(
                 },
             )
         }
-        DropdownMenuItem(
-            text = { Text("撤回", fontSize = 14.sp) },
-            onClick = {
-                onDismiss()
-                onDelete()
-            },
-        )
+        if (canReply && onReply != null) {
+            DropdownMenuItem(
+                text = { Text("回复", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onReply()
+                },
+            )
+        }
+        if (canForward && onForward != null) {
+            DropdownMenuItem(
+                text = { Text("转发", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onForward()
+                },
+            )
+        }
+        // 「删除」和「撤回」都只对自己的消息出现，但它们是两件事：删除只影响自己这一侧，
+        // 撤回对所有人。放在同一张菜单里靠措辞分开，顺序是破坏力从小到大。
+        if (canHide && onHide != null) {
+            DropdownMenuItem(
+                text = { Text("删除", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onHide()
+                },
+            )
+        }
+        if (canRetract && onDelete != null) {
+            DropdownMenuItem(
+                text = { Text("撤回", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onDelete()
+                },
+            )
+        }
     }
 }
 

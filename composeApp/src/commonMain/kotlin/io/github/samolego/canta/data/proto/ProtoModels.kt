@@ -181,6 +181,13 @@ data class AppSettingsProto(
      * only, like every other setting.
      */
     @ProtoNumber(37) val launchAnswer: String = "",
+    /**
+     * 关于页「作者的群」那一行的小红点是不是点过了。
+     *
+     * 存的是"看过"而不是"没看过"：proto3 省略零值，默认值只能是 `false`，而这件事的出厂状态是
+     * "有个点等着你去点"——所以字段反过来命名。点过群之后写 `true`，红点就再也不出现。
+     */
+    @ProtoNumber(38) val qqGroupSeen: Boolean = false,
 )
 
 /**

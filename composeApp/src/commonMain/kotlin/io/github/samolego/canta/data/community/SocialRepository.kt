@@ -124,6 +124,17 @@ data class ChatMessage(
      * 而「谁被点到」要的是人。后端只收本会话的成员，也去掉了自己。
      */
     val mentions: List<String> = emptyList(),
+    /**
+     * 这条消息引用了哪一条，没引用就是 null。
+     *
+     * 只存 id 不存副本：引用块里的摘要（[replyBody]）是后端每次读的时候现取的，所以原消息
+     * 后来被撤回，那块摘要也会跟着变空，不会留着一段已经不存在的话。
+     */
+    val replyTo: Long? = null,
+    /** 被引用那条的正文前 60 字；原消息撤回过了就是空串。 */
+    val replyBody: String = "",
+    /** 被引用那条是谁说的，给引用块抬头用。 */
+    val replySenderName: String = "",
 ) {
 
     /**
@@ -491,6 +502,7 @@ class SocialRepository(
         conversation: Long,
         body: String,
         mentions: List<String> = emptyList(),
+        replyTo: Long? = null,
     ): ChatMessage? {
         if (owner.isEmpty() || conversation <= 0L) return null
         val proof = callerToken()
@@ -504,6 +516,8 @@ class SocialRepository(
             if (mentions.isNotEmpty()) {
                 put("p_mentions", buildJsonArray { mentions.forEach { add(it) } })
             }
+            // 同理：没引用就不发，后端拿到 null 就是"不引用"。
+            if (replyTo != null && replyTo > 0L) put("p_reply_to", replyTo)
         }.toString()
         val text = rpc("message_send", payload) ?: return null
         val row = firstRowOf(text) ?: return null
@@ -516,6 +530,9 @@ class SocialRepository(
             createdAt = row.textOf("created_at"),
             // 后端会筛掉非成员和自己，所以本机这一条也用后端回来的名单，不是传进去那个。
             mentions = row.stringsOf("mentions"),
+            replyTo = replyTo,
+            // 刚发出去这条的引用摘要后端没回（它只回 id），界面那一格先空着，
+            // 下一次 messagesFor 会带着真摘要回来——比在本地拼一份可能对不上的强。
         )
     }
 
@@ -568,6 +585,46 @@ class SocialRepository(
         }.toString()
         val text = rpc("message_delete", body) ?: return false
         return booleanFrom(text, "message_delete") ?: false
+    }
+
+    /**
+     * 只在自己这一侧删掉一条消息（对所有人还在）。
+     *
+     * 和 [deleteMessage] 是两件事：那个把 `removed` 置真、所有人都看不见正文；这个只在
+     * `private.message_hidden` 里记一行"这个人不想再看到"，别人那里原样不动。
+     *
+     * 成功之后本地要把这条从列表里摘掉，而不是标成已撤回——它没有"撤回"这个说法。
+     */
+    suspend fun hideMessage(owner: String, messageId: Long): Boolean {
+        if (owner.isEmpty() || messageId <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_message", messageId)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("message_hide", body) ?: return false
+        return booleanFrom(text, "message_hide") ?: false
+    }
+
+    /**
+     * 把 [messageId] 转发到 [conversation]，返回是否成功。
+     *
+     * 后端会把正文和 kind 复制一条新的过去，发的人是本机这位，所以转发之后两边都有这条消息。
+     * 被 @ 的名单和引用不跟着走：那些都只对原会话成立。
+     */
+    suspend fun forwardMessage(owner: String, messageId: Long, conversation: Long): Boolean {
+        if (owner.isEmpty() || messageId <= 0L || conversation <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_message", messageId)
+            put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("message_forward", body) ?: return false
+        // 成功时后端回的是一个对象 `{id, created_at}`，失败回 `null` 或者根本没响应。
+        return firstRowOf(text)?.longOf("id") != null
     }
 
     /**
@@ -1062,6 +1119,11 @@ class SocialRepository(
             removed = row.flagOf("removed") ?: false,
             kind = row.textOf("kind").ifBlank { "text" },
             mentions = row.stringsOf("mentions"),
+            // 后端给的是 0 或 null 都算"没有引用"：`longOf` 对 null 返回 null，
+            // 对 0 返回 0，而消息 id 从 1 起，所以 <= 0 一律当没有。
+            replyTo = row.longOf("reply_to")?.takeIf { it > 0L },
+            replyBody = row.textOf("reply_body"),
+            replySenderName = row.textOf("reply_sender_name"),
         )
     }
 }

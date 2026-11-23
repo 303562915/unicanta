@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -30,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -197,19 +200,50 @@ fun DeviceHero(
         ) {
             Column(
                 // No rounded clip on the text column: a clip here used to cut the last glyph of
-                // the system line as it reached the column's edge. The click area is the whole
-                // column either way.
-                modifier = Modifier
-                    .weight(1f)
-                    .then(
-                        if (onTitleClick != null) {
-                            Modifier.clickable(onClick = onTitleClick)
-                        } else {
-                            Modifier
-                        }
-                    ),
+                // the system line as it reached the column's edge.
+                modifier = Modifier.weight(1f),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onTitleClick != null) {
+                    // The name is the way to another phone, and now it looks like one: a capsule
+                    // drawn around the name, the word "切换机型" and a chevron inside it. The tap
+                    // target is that capsule and nothing else — the system line under it is text
+                    // to read, and a reader aiming at the name used to switch the phone by
+                    // brushing the line below it.
+                    Row(
+                        modifier = Modifier
+                            .heightIn(min = 32.dp)
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(scheme.primary.copy(alpha = 0.10f))
+                            .border(1.dp, scheme.primary.copy(alpha = 0.35f), RoundedCornerShape(percent = 50))
+                            .clickable(onClick = onTitleClick)
+                            .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = title,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onBand,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "切换机型",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = scheme.primary,
+                            maxLines = 1,
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = scheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                } else {
                     Text(
                         text = title,
                         fontSize = 19.sp,
@@ -217,17 +251,7 @@ fun DeviceHero(
                         color = onBand,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (onTitleClick != null) {
-                        Spacer(Modifier.width(3.dp))
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = scheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
                 }
                 if (subtitle.isNotBlank()) {
                     Text(
@@ -237,6 +261,7 @@ fun DeviceHero(
                         color = scheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }

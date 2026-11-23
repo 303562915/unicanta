@@ -467,7 +467,8 @@ fun SafetyRulesScreen(
                 title = heroTitle,
                 subtitle = heroSubtitle,
                 showPhoto = showDevicePhoto && !allModels,
-                // The name is the way to another phone: tapping it opens the model chips.
+                // The name is the way to another phone: it is drawn as a capsule that says
+                // "切换机型", and that capsule — not the whole heading — is what opens the chips.
                 onTitleClick = { pickerOpen = true },
                 // No plan count on the band: the switch under it already says which tab is
                 // which, and a counter there only squeezed the model's system line.

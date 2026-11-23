@@ -1,8 +1,11 @@
 package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -13,15 +16,17 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,8 +94,14 @@ fun PlanScope.buildLabel(): String? = when (this) {
 
 /**
  * The two chips under the page switch: which phone, and which of its builds — the state the list
- * below is drawn from. Tapping either opens the picker; the chevron says so. The search button on
- * the right belongs to the list under the switch, not to the phone: it filters rows by package.
+ * below is drawn from.
+ *
+ * The chip *is* the button: it carries the chevron that says "there is a list behind this", and the
+ * tap target is the capsule itself, not the empty row it sits in. There used to be a "切换" word to
+ * the right of it; that word is gone, because two targets for one action only made the reader guess
+ * which one was the real one — and a reader who tapped the blank space between them got nothing at
+ * all. The search button on the right belongs to the list under the switch, not to the phone: it
+ * filters rows by package.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -104,9 +116,10 @@ fun PlanScopeBar(
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
+        // Not clickable as a row any more: a row-wide target under a lone chip is what made the
+        // tap feel like it landed somewhere other than where the finger went.
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpen)
             .padding(start = 16.dp, top = 2.dp, end = 6.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -122,19 +135,16 @@ fun PlanScopeBar(
                 text = scope.label(ownLabel),
                 selected = true,
                 onClick = onOpen,
+                // The chevron is the hint: a filled capsule with an arrow under it is read as a
+                // list that opens, which is exactly what it does.
+                chevron = true,
             )
             scope.buildLabel()?.let { build ->
-                ScopeChip(text = build, selected = false, onClick = onOpen)
+                ScopeChip(text = build, selected = false, onClick = onOpen, chevron = true)
             }
         }
-        Text(
-            text = "切换",
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.primary,
-        )
         if (onSearch != null) {
-            // Its own tap target: the row switches the phone, this narrows the list, so one never
+            // Its own tap target: the chip switches the phone, this narrows the list, so one never
             // shadows the other.
             IconButton(onClick = onSearch) {
                 Icon(
@@ -149,14 +159,18 @@ fun PlanScopeBar(
 }
 
 /**
- * The picker: every model the backend has plans for, grouped by family, with how many people joined
- * each one — printed only when it is more than a handful — and, one level down, the builds of the
- * model that was opened.
+ * The picker, drawn as a sheet that comes up from the bottom of the screen with the whole list in
+ * it: every model the backend has plans for, grouped by family, with how many people joined each
+ * one — printed only when it is more than a handful — and, one level down, the builds of the model
+ * that was opened.
  *
- * Near-fullscreen on purpose: the model list grows with the community, and a floating box that caps
- * at a few hundred pixels turns the choice into a scrollbar inside a window smaller than the page it
- * came from. A title bar on top, the rest of the height for the list, and the hint lines where they
- * are read — above the models, under the builds.
+ * A sheet rather than a centred box: the phone is held in one hand and the chip that opened this
+ * sits at the bottom of the page, so the list arrives under the thumb instead of above it, and the
+ * page behind it stays visible as a dimmed band on top. It is drawn to 92% of the height on
+ * purpose — the model list grows with the community, and a peek-sized sheet turns the choice into a
+ * scrollbar inside a window smaller than the page it came from. It is a dialog, not
+ * `ModalBottomSheet`, for the same reason the upload sheet is one: the platform sheet would take
+ * the scroll of the list over to drag itself.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -178,62 +192,112 @@ fun PlanScopeDialog(
         // after the first few models and cap the list at a third of the screen.
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = FlSurfaceLevel.Block.colorOf(MaterialTheme.colorScheme),
-            modifier = Modifier
-                .padding(horizontal = 10.dp, vertical = 12.dp)
-                .fillMaxWidth()
-                .fillMaxHeight(),
-        ) {
-            Column(
+        Box(modifier = Modifier.fillMaxSize()) {
+            // The scrim: the dialog owns the window, so the dimmed band above the sheet is drawn
+            // here, and a tap on it closes the sheet the way a platform one does.
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding(),
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            Surface(
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = FlSurfaceLevel.Block.colorOf(MaterialTheme.colorScheme),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(SHEET_HEIGHT_FRACTION),
             ) {
-                Row(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 10.dp, end = 8.dp, top = 10.dp, bottom = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .fillMaxSize()
+                        .navigationBarsPadding(),
                 ) {
-                    if (current != null) {
-                        TextButton(onClick = { opened = null }) { Text("‹ 机型") }
+                    SheetGrip(onClose = onDismiss)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 14.dp, end = 8.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (current != null) {
+                            TextButton(onClick = { opened = null }) { Text("‹ 机型") }
+                        }
+                        Text(
+                            text = if (current == null) "选择机型" else current.label,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = if (current == null) 4.dp else 0.dp),
+                        )
+                        TextButton(onClick = onDismiss) { Text("取消") }
                     }
-                    Text(
-                        text = if (current == null) "选择机型" else current.label,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onDismiss) { Text("取消") }
-                }
-                HorizontalDivider()
+                    HorizontalDivider()
 
-                if (current == null) {
-                    ModelPicker(
-                        models = models,
-                        ownLabel = ownLabel,
-                        loading = loading,
-                        scope = scope,
-                        onOpenModel = { opened = it },
-                        onRetry = onRetry,
-                        onSelectAll = { onSelect(PlanScope.All) },
-                        onSelectThisPhone = { onSelect(PlanScope.ThisPhone) },
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    BuildPicker(
-                        model = current,
-                        scope = scope,
-                        onSelect = onSelect,
-                        modifier = Modifier.weight(1f),
-                    )
+                    if (current == null) {
+                        ModelPicker(
+                            models = models,
+                            ownLabel = ownLabel,
+                            loading = loading,
+                            scope = scope,
+                            onOpenModel = { opened = it },
+                            onRetry = onRetry,
+                            onSelectAll = { onSelect(PlanScope.All) },
+                            onSelectThisPhone = { onSelect(PlanScope.ThisPhone) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        BuildPicker(
+                            model = current,
+                            scope = scope,
+                            onSelect = onSelect,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+/** How tall the sheet is: most of the screen, so the list is the list and not a peek at it. */
+private const val SHEET_HEIGHT_FRACTION: Float = 0.92f
+
+/**
+ * The sheet's grip line and the way out. The pill is decoration only — the surface does not follow
+ * a drag here, because the list inside is the thing being scrolled — so the close button beside it
+ * is what a finger reaching for the top of the sheet finds.
+ */
+@Composable
+private fun SheetGrip(onClose: () -> Unit) {
+    Box(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(width = 40.dp, height = 4.dp)
+                .background(
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    RoundedCornerShape(50),
+                ),
+        )
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp).size(32.dp),
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "关闭",
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -260,7 +324,7 @@ private fun ModelPicker(
             fontSize = 10.sp,
             lineHeight = 14.sp,
             color = colors.onSurfaceVariant,
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 10.dp),
         )
         FlowRow(
             modifier = Modifier.padding(horizontal = 18.dp),
@@ -408,20 +472,42 @@ private fun BuildPicker(
 
 /** One chip of the picker: the model, the build, or this phone. */
 @Composable
-private fun ScopeChip(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun ScopeChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    /** The chip opens a list: the arrow says so, and the chip stops looking like a label. */
+    chevron: Boolean = false,
+) {
     val colors = MaterialTheme.colorScheme
     val container = if (selected) colors.primary else colors.surfaceContainerHighest
     val content = if (selected) colors.onPrimary else colors.onSurface
-    Text(
-        text = text,
-        fontSize = 11.sp,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = content,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    Row(
+        // The capsule is the whole tap target and a comfortable one to hit: a label with 4dp of
+        // padding reads as text, and text is what nobody thinks to tap.
         modifier = Modifier
+            .heightIn(min = 32.dp)
             .background(container, RoundedCornerShape(percent = 50))
             .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 6.dp),
-    )
+            .padding(start = 12.dp, end = if (chevron) 8.dp else 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = content,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (chevron) {
+            Spacer(Modifier.width(2.dp))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = content,
+            )
+        }
+    }
 }

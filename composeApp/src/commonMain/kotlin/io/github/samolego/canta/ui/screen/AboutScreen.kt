@@ -164,6 +164,8 @@ fun AboutScreen(
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
     val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
+    // 「作者的群」那一行的红点：点过一次群就永久熄灭。
+    val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
     val client = remember { HttpClient() }
@@ -378,7 +380,10 @@ fun AboutScreen(
                 glyph = FlGlyphs.link,
                 title = stringResource(Res.string.about_qq_group),
                 subtitle = stringResource(Res.string.about_qq_group_hint),
+                // 这个小点只有"点过群"才熄灭：它是这一页唯一在说"来这里问"的地方。
+                showDot = !qqGroupSeen,
                 onClick = {
+                    settingsViewModel.saveQqGroupSeen(true)
                     // No web page can join a group without an invite key, so there is nothing to
                     // fall back to: no QQ means the number is copied instead.
                     val opened = platform.openLink("", *QQ_GROUP_SCHEMES.toTypedArray())

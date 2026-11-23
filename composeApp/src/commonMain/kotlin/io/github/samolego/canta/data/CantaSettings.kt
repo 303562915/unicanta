@@ -60,14 +60,15 @@ class CantaSettings(storage: AppBlobStorage) {
     /** Whether the "no VPN" reminder was switched off on this install; see [AppSettingsProto.hideVpnNotice]. */
     val hideVpnNoticeFlow = field { it.hideVpnNotice }
     /** The question the start-up lock asks, by id; empty means the app opens straight away. */
-    val launchQuestionFlow: Flow<String> = field { it.launchQuestion }
-    /** The `YYYY-MM-DD` date that answers [launchQuestionFlow]; empty means the lock is off. */
+    val launchQuestionFlow: Flow<String> = field { it.launchQuestion }    /** The `YYYY-MM-DD` date that answers [launchQuestionFlow]; empty means the lock is off. */
     val launchAnswerFlow: Flow<String> = field { it.launchAnswer }
     /**
      * 新消息要不要往系统通知栏弹。存的是"静音"，所以 `false`（出厂值）就是提醒开着；
      * 为什么反过来命名见 [AppSettingsProto.muteChatNotices]。
      */
     val muteChatNoticesFlow: Flow<Boolean> = field { it.muteChatNotices }
+    /** 关于页「作者的群」那一行的红点是不是点过了；点过就再也不亮，见 [AppSettingsProto.qqGroupSeen]。 */
+    val qqGroupSeenFlow: Flow<Boolean> = field { it.qqGroupSeen }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
@@ -122,6 +123,8 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     /** 静音（`true`）或恢复（`false`）新消息的通知栏提醒。 */
     suspend fun setMuteChatNotices(mute: Boolean) = update { it.copy(muteChatNotices = mute) }
+    /** 记下「作者的群」那行已经点过了，红点不再出现。 */
+    suspend fun setQqGroupSeen(seen: Boolean) = update { it.copy(qqGroupSeen = seen) }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }

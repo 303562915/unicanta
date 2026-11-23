@@ -90,6 +90,8 @@ fun MineScreen(
 ) {
     val userName by settingsViewModel.userName.collectAsStateWithLifecycle()
     val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
+    // 关于页「作者的群」是否点过：没点过时，关于入口也跟着点一个。
+    val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
     var showRename by rememberSaveable { mutableStateOf(false) }
 
     if (showRename) {
@@ -149,7 +151,8 @@ fun MineScreen(
                 title = "关于",
                 subtitle = "版本、检查更新与联系作者",
                 onClick = onOpenAbout,
-                showDot = updateAvailable,
+                // 两个理由任一成立就点一个：有新版本；或者还没点过作者的群（那一行里面带点）。
+                showDot = updateAvailable || !qqGroupSeen,
             )
         }
     }
