@@ -184,11 +184,11 @@ private const val ChatImageDoubleTapZoom = 2.5f
  * 「@ 群聊AI」带上一个尾巴空格，点完接着打字就是 @ 了一个人，不用再自己补一个空格。
  */
 private val ChatQuickPhrases = listOf(
-    ChatQuickPhrase(label = "🌟 晚上好", insert = "晚上好"),
-    ChatQuickPhrase(label = "🥰 比心", insert = "比心"),
-    ChatQuickPhrase(label = "@ 群聊AI", insert = "@群聊AI "),
+    ChatQuickPhrase(label = "👋 打招呼", insert = "打招呼"),
+    ChatQuickPhrase(label = "🔥 续火花", insert = "续火花"),
     ChatQuickPhrase(label = "👍 赞", insert = "赞"),
     ChatQuickPhrase(label = "😂 捂脸", insert = "捂脸"),
+    ChatQuickPhrase(label = "🌹 玫瑰", insert = "玫瑰"),
 )
 
 /** 一条快捷短语：显示的文字与填进输入框的文字分开，因为 emoji 不该跟着发出去。 */
@@ -199,9 +199,11 @@ private data class ChatQuickPhrase(val label: String, val insert: String)
  *
  * 样子照着抖音私信做，但只做能落到这一层数据上的东西：
  *
- *  * 顶栏：回去的箭头、首字头像、名字（群聊挂人数），右边两个圆形按钮（通话 / 更多）。
+ *  * 顶栏：回去的箭头、首字头像、名字（**不挂人数**，内测群人少），右边两个圆形按钮（通话 / 更多）。
  *    头像和名字是一块入口：群聊进群资料，私聊进对面那个人的主页（[onOpenProfile]）。
- *  * 消息区：别人的消息左边一张小圆头像，自己的靠右；换一天的头上压一条居中的灰字日期。
+ *  * 消息区：自己的消息靠右、右边跟一张自己的圆头像；群里别人的消息左边也有头像，私聊里对方不画。
+ *    换一天的头上压一条居中的灰字日期，同一天隔了五分钟再起一条 HH:mm；气泡里不再塞时间
+ *    （微信就是这样，时间是行与行之间的事，不是某一条的装饰）。
  *    点头像看那个人的主页，别人的长按气泡复制正文，自己的长按弹「复制 / 撤回」小菜单，
  *    撤回过的消息画成一行居中灰字，三者与头像点击是各自独立的触摸区域。
  *    图片消息（`kind == "image"`）画成一张图，自己的靠右、别人的带头像，过期的画一行灰字。
@@ -1127,8 +1129,8 @@ private fun ChatTopBar(
     onOpenProfile: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    // 群聊有人数就挂在名字后面，和抖音一样是名字的一部分，不另起一个角标。
-    val heading = if (isGroup && memberCount > 0) "${title}(${memberCount})" else title
+    // 标题就是群名，**不挂人数**：内测群人少，人数不该出现在顶栏（见 ChatScreen 里 members 的注释）。
+    val heading = title
     // 私聊的入口需要一个具体的人：拿不到身份（空串）就返回 null，整块不响应。
     val openPeer: (() -> Unit)? = if (!isGroup && peerOwner.isNotEmpty()) {
         { onOpenProfile(peerOwner) }
@@ -1436,22 +1438,12 @@ private fun ChatBubble(
                         )
                     }
                 }
-                val clock = chatClockOf(message.createdAt)
-                if (clock.isNotEmpty()) {
-                    Text(
-                        text = clock,
-                        fontSize = 8.sp,
-                        color = colors.outline,
-                        maxLines = 1,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
             } else if (isCard) {
                 // 卡片不套气泡底色：它自己就是一张卡，外面再垫一层主色会显得脏。
                 // 点击与长按分开挂，理由和图片那段一样——叠两层修饰符会抢事件。
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .then(
                             if (cardClick != null) {
                                 Modifier.combinedClickable(
@@ -1496,20 +1488,10 @@ private fun ChatBubble(
                         )
                     }
                 }
-                val clock = chatClockOf(message.createdAt)
-                if (clock.isNotEmpty()) {
-                    Text(
-                        text = clock,
-                        fontSize = 8.sp,
-                        color = colors.outline,
-                        maxLines = 1,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
             } else {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (mine) colors.primary else colors.surfaceVariant)
                         .then(holdModifier)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -1533,16 +1515,6 @@ private fun ChatBubble(
                             // 自己的气泡底色是主色，@ 再上主色就看不见了：用 onPrimary 反过来提亮。
                             mentionColor = if (mine) colors.onPrimary else colors.primary,
                         )
-                        val clock = chatClockOf(message.createdAt)
-                        if (clock.isNotEmpty()) {
-                            Text(
-                                text = clock,
-                                fontSize = 8.sp,
-                                color = if (mine) colors.onPrimary.copy(alpha = 0.7f) else colors.outline,
-                                maxLines = 1,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
                     }
                     if (menuable) {
                         // 菜单锚在气泡上：Box 包着的 DropdownMenu 贴着气泡右上角弹出来。
@@ -2419,7 +2391,7 @@ private fun ChatComposer(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FlBarButton(
-            glyph = FlGlyphs.appsList,
+            glyph = FlGlyphs.grid2x2,
             contentDescription = if (showMore) "收起更多" else "展开更多",
             onClick = onToggleMore,
             size = 40.dp,
@@ -2459,6 +2431,9 @@ private fun ChatComposer(
                         },
                         fontSize = 14.sp,
                         color = ComposerPlaceholder,
+                        // 一行放不下就截断：折成两行会把输入框从 40dp 撑高，一行栏变两行。
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 inner()

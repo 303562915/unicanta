@@ -500,6 +500,17 @@ object FlGlyphs {
         ),
     )
 
+    /** 四宫格：聊天输入栏最左边那个入口（「更多」面板）。 */
+    val grid2x2 = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphBox(3.6f, 3.6f, 10.4f, 10.4f, 2f),
+            GlyphBox(13.6f, 3.6f, 20.4f, 10.4f, 2f),
+            GlyphBox(3.6f, 13.6f, 10.4f, 20.4f, 2f),
+            GlyphBox(13.6f, 13.6f, 20.4f, 20.4f, 2f),
+        ),
+    )
+
     /** 语音：五根高低交替的竖线，中间那根最长。手机聊天栏左侧那个「按住说话」的图标。 */
     val voiceWave = FlGlyph(
         matchTextDirection = false,
