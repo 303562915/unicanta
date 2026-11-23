@@ -102,6 +102,15 @@ data class Conversation(
  * 对象路径（不是 URL）。认不出来的值原样保留，页面按"不认识"处理即可——不回退成 `"text"`，
  * 免得把一张图当文字画出来。缺失才是 `"text"`。
  */
+
+/**
+ * 群聊 AI 发言时用的 `sender` 值。
+ *
+ * 它**不是** `canta_users` 里的号码，别拿它去查人：查不到，`social_name` 会返回空串。
+ * 服务端写这一条时已经把 `sender_name` 填成「群聊AI」，这个常量只在那一列意外为空时兜底。
+ */
+const val AiSender: String = "ai"
+
 data class ChatMessage(
     val id: Long,
     val sender: String,
@@ -117,9 +126,17 @@ data class ChatMessage(
     val mentions: List<String> = emptyList(),
 ) {
 
-    /** 气泡上方那个署名；后端没给名字就退回编号。 */
+    /**
+     * 气泡上方那个署名；后端没给名字就退回编号。
+     *
+     * `sender = "ai"` 那条单独认一下：它不是 `canta_users` 里的人，编号前面挂个 `#` 会显示成
+     * `#ai`，看着像谁漏填了名字。后端正常会给 `sender_name = "群聊AI"`，这里只是兜底——
+     * 比如某次查询没带上那一列。
+     */
     val label: String
-        get() = senderName.ifBlank { "#$sender" }
+        get() = senderName.ifBlank {
+            if (sender == AiSender) "群聊AI" else "#$sender"
+        }
 }
 
 /**

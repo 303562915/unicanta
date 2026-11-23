@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
@@ -511,7 +512,13 @@ fun ChatScreen(
                                         showSender = grouped && message.sender != owner,
                                         // 点头像看那个人的主页：自己那条不画头像，这个回调也就不给。
                                         // 群里谁发言谁有自己的一张头像，身份就是 message.sender。
-                                        onAvatarClick = if (message.sender != owner && message.sender.isNotEmpty()) {
+                                        // AI 那条除外：它的 sender 是个占位值，主页上根本没有这个人，
+                                        // 点了只会进一个查不到的空页——所以它是一张不可点的头像。
+                                        onAvatarClick = if (
+                                            message.sender != owner &&
+                                            message.sender.isNotEmpty() &&
+                                            message.sender != AiSender
+                                        ) {
                                             { onOpenProfile(message.sender) }
                                         } else {
                                             null
