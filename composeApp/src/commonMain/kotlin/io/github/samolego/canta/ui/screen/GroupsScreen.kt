@@ -21,7 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,12 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.SocialRepository
-import io.github.samolego.canta.ui.component.UnreadBadge
+import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
@@ -166,6 +170,19 @@ fun GroupsScreen(
                         items(foldedGroups, key = { "group-${it.id}" }) { group ->
                             GroupRow(group = group, onOpen = { onOpenChat(group.id) })
                         }
+                        // 列表末尾那一句：微信「折叠的群聊」这一页也是这样收尾的，说明到这儿就是全部，
+                        // 不是还没加载出来。
+                        item(key = "groups-end") {
+                            Text(
+                                text = "暂时没有更多了",
+                                style = FlText.caption2,
+                                color = scheme.outline,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 18.dp),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
                 }
             }
@@ -216,14 +233,18 @@ private fun GroupsTopBar(onNavigateBack: () -> Unit, onCreateGroup: () -> Unit) 
 }
 
 /**
- * 一个群：圆头像里放群名首字，中间两行（群名、最后一句），右边一列（时间、未读数）。
+ * 一个群：圆头像里放群名首字，右边两行（群名 + 静音标，[N条] + 最后一句），行尾一个红点。
  *
- * 形状与消息页的会话行一致，只是不带长按菜单：这一页是「找到那个群然后进去」，
- * 置顶与删除留在消息页做，免得同一个动作在两个地方长得不一样。
+ * 形状照微信的「折叠的群聊」：群名后面挂一个划掉的铃说明它被静音了，摘要前面写「[61条]」
+ * 表示攒了多少条没看——折叠起来的群里，未读数比「谁说了什么」更值得先看见。
+ *
+ * 这一页是「找到那个群然后进去」，所以不带长按菜单：置顶、免打扰、删除都留在消息页做，
+ * 免得同一个动作在两个地方长得不一样。
  */
 @Composable
 private fun GroupRow(group: Conversation, onOpen: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val time = groupClockOf(group.lastAt)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -237,37 +258,61 @@ private fun GroupRow(group: Conversation, onOpen: () -> Unit) {
         GroupAvatar(label = group.label)
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = group.label,
-                style = FlText.subheadline,
-                fontWeight = FlText.emphasized,
-                color = scheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = group.lastBody.ifBlank { "还没有消息" },
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            val time = groupClockOf(group.lastAt)
-            if (time.isNotEmpty()) {
-                Text(text = time, style = FlText.caption2, color = scheme.outline)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = group.label,
+                    style = FlText.subheadline,
+                    fontWeight = FlText.emphasized,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // 静音小标：和微信一样挂在群名后面，说明这个群被设成免打扰了。
+                if (group.muted) {
+                    Spacer(Modifier.width(5.dp))
+                    Icon(
+                        imageVector = Icons.Default.NotificationsOff,
+                        contentDescription = "已设为免打扰",
+                        modifier = Modifier.size(12.dp),
+                        tint = scheme.outline,
+                    )
+                }
+                if (time.isNotEmpty()) {
+                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(6.dp))
+                    Text(text = time, style = FlText.caption2, color = scheme.outline)
+                }
             }
-            if (group.unread > 0) {
-                UnreadBadge(count = group.unread)
+            Spacer(Modifier.height(3.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = groupDigest(group),
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                // 未读只画一个红点，不写数字：摘要前面已经有「[N条]」，一个红点够了。
+                if (group.unread > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    UnreadDot(size = 7.dp)
+                }
             }
         }
     }
+}
+
+/**
+ * 那一行摘要：有未读就写「[N条] 最后一句」，没有就只写最后一句。
+ *
+ * 「[N条]」是微信折叠群聊的写法，一眼看得出「这个群攒了多少」，而不是只有一句旧话在那儿。
+ * 最后一条是谁说的，后端 `conversations_for` 没给，这里不猜。
+ */
+private fun groupDigest(group: Conversation): String {
+    val body = group.lastBody.ifBlank { "还没有消息" }
+    return if (group.unread > 0) "[${group.unread}条] $body" else body
 }
 
 /** 群头像：群名首字画圆，和消息页的头像同一个尺寸与同一个底色。没有名字就画一个问号。 */
