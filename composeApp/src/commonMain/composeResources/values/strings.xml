@@ -511,6 +511,8 @@
     <string name="plan_vote">Helpful</string>
     <string name="plan_verified_chip">Reboot-verified</string>
     <string name="plan_test_chip">Test</string>
+    <string name="plan_reboot_note">Reboot-checked by UniCanta. Submitted after a normal test run.</string>
+    <string name="plan_test_note">Test plan, reboot-checked by UniCanta.</string>
     <string name="ranking_scope">Plans for %1$s</string>
     <string name="ranking_empty">No plans for %1$s yet, so there is no ranking.</string>
     <string name="ranking_votes">%1$d say removable</string>

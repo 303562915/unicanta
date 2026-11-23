@@ -449,6 +449,8 @@
     <string name="plan_vote">有用</string>
     <string name="plan_verified_chip">重启验证</string>
     <string name="plan_test_chip">测试</string>
+    <string name="plan_reboot_note">该方案由 UniCanta 重启检查。正常测试后提交</string>
+    <string name="plan_test_note">测试方案，由 UniCanta 重启检查。</string>
     <string name="ranking_scope">%1$s 上的方案</string>
     <string name="ranking_empty">%1$s 还没有人上传方案，所以没有排行。</string>
     <string name="ranking_votes">%1$d 人标记可卸</string>

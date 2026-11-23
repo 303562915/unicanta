@@ -95,9 +95,9 @@ import io.github.samolego.canta.generated.resources.plan_detail_stats_packages
 import io.github.samolego.canta.generated.resources.plan_detail_stats_votes
 import io.github.samolego.canta.generated.resources.plan_detail_title
 import io.github.samolego.canta.generated.resources.plan_detail_uploader
-import io.github.samolego.canta.generated.resources.plan_test_chip
+import io.github.samolego.canta.generated.resources.plan_reboot_note
+import io.github.samolego.canta.generated.resources.plan_test_note
 import io.github.samolego.canta.generated.resources.plan_upload_failed
-import io.github.samolego.canta.generated.resources.plan_verified_chip
 import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentOrderRow
@@ -996,19 +996,20 @@ private fun PlanHero(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Chip(
-                    label = if (plan.isTest) {
-                        stringResource(Res.string.plan_test_chip)
-                    } else {
-                        stringResource(Res.string.plan_verified_chip)
-                    },
+            Column {
+                // The verdict is Canta's own reboot check, not a claim the uploader made: the line
+                // says who ran it, and the phone it belongs to is the uploader's, not this one.
+                Text(
+                    text = stringResource(
+                        if (plan.isTest) Res.string.plan_test_note else Res.string.plan_reboot_note
+                    ),
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = if (plan.isTest) colors.tertiary else colors.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.width(8.dp))
-                // The phone the verdict belongs to is the uploader's, not this one: the reboot check
-                // passed on a real device someone else held, and the reader still needs to know
-                // whether that device is theirs.
                 Text(
                     text = plan.deviceLabel.ifBlank { "上传者机型未知" },
                     fontSize = 10.sp,
@@ -1017,7 +1018,7 @@ private fun PlanHero(
                     color = colors.onPrimaryContainer.copy(alpha = 0.85f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.padding(top = 1.dp),
                 )
             }
             // The plan names the phone it was proven on. When that is not this one, the page says
@@ -1030,8 +1031,8 @@ private fun PlanHero(
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        // The phone is already named on the chip line right above; repeating it
-                        // here made the warning read as a second device line instead of a warning.
+                        // The phone is already named on the line right above; repeating it here
+                        // made the warning read as a second device line instead of a warning.
                         text = "这不是本机机型的方案",
                         fontSize = 11.sp,
                         lineHeight = 14.sp,
