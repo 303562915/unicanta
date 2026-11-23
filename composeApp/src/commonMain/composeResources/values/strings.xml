@@ -374,6 +374,8 @@
     <string name="privilege_chooser_open_dhizuku">Open Dhizuku</string>
     <string name="privilege_chooser_dhizuku_note">Shares the DeviceOwner role: freeze and uninstall, restoring needs Shizuku or root.</string>
     <string name="privilege_chooser_download">Download</string>
+    <string name="privilege_chooser_current">In use</string>
+    <string name="privilege_chooser_switch">Use this one</string>
     <string name="privilege_root_refused">No root came back: allow UniCanta in the manager's Superuser list, or this phone is not rooted.</string>
     <string name="privilege_root_opened">The manager is open — allow UniCanta there, then come back and check again.</string>
     <string name="settings_group_interface">Interface</string>

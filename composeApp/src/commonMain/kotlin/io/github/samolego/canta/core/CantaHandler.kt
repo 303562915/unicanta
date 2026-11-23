@@ -71,6 +71,15 @@ data class PrivilegeChoice(
     val status: PrivilegeStatus,
     /** Installed at all: the manager app for Shizuku, the su binary for root. */
     val installed: Boolean,
+    /**
+     * Whether the chain is running on this route right now.
+     *
+     * Two routes can both be [PrivilegeStatus.ACTIVE] on the same phone (Shizuku and Dhizuku
+     * granted at once), and only one of them is the one operations actually go through. The
+     * chooser marks it, so "which one am I using" is a thing the dialog answers rather than
+     * something the user has to infer from the settings row.
+     */
+    val current: Boolean = false,
 )
 
 /**

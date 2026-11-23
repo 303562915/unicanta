@@ -3,7 +3,9 @@ package io.github.samolego.canta.ui.dialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,12 +27,14 @@ import io.github.samolego.canta.generated.resources.onboarding_privilege_state_n
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_not_running
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_active
 import io.github.samolego.canta.generated.resources.onboarding_privilege_state_root_pending
+import io.github.samolego.canta.generated.resources.privilege_chooser_current
 import io.github.samolego.canta.generated.resources.privilege_chooser_dhizuku_note
 import io.github.samolego.canta.generated.resources.privilege_chooser_download
 import io.github.samolego.canta.generated.resources.privilege_chooser_no_root
 import io.github.samolego.canta.generated.resources.privilege_chooser_open_dhizuku
 import io.github.samolego.canta.generated.resources.privilege_chooser_open_manager
 import io.github.samolego.canta.generated.resources.privilege_chooser_root_title
+import io.github.samolego.canta.generated.resources.privilege_chooser_switch
 import io.github.samolego.canta.generated.resources.privilege_chooser_title
 import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku
 import io.github.samolego.canta.generated.resources.settings_privilege_shizuku
@@ -55,6 +59,8 @@ import org.jetbrains.compose.resources.stringResource
  *   start there, Dhizuku has an approval screen to answer.
  * @param onDownload install the manager app of [PrivilegeKind] (root has nothing to download).
  * @param onRefresh read the two states again, after the user did a step in another app.
+ * @param onSwitch move the chain onto a route that is already granted, e.g. away from Shizuku to
+ *   the Dhizuku grant this phone also holds. Only offered for rows that are not [PrivilegeChoice.current].
  */
 @Composable
 fun PrivilegeChooserDialog(
@@ -64,6 +70,7 @@ fun PrivilegeChooserDialog(
     onOpenManager: (PrivilegeKind) -> Unit,
     onDownload: (PrivilegeKind) -> Unit,
     onRefresh: () -> Unit,
+    onSwitch: (PrivilegeKind) -> Unit,
 ) {
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -85,6 +92,7 @@ fun PrivilegeChooserDialog(
                         onGrantRoot = onGrantRoot,
                         onOpenManager = onOpenManager,
                         onDownload = onDownload,
+                        onSwitch = onSwitch,
                     )
                 }
         }
@@ -101,23 +109,38 @@ private fun PrivilegeChoiceRow(
     onGrantRoot: () -> Unit,
     onOpenManager: (PrivilegeKind) -> Unit,
     onDownload: (PrivilegeKind) -> Unit,
+    onSwitch: (PrivilegeKind) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when (choice.kind) {
-                        PrivilegeKind.ROOT -> stringResource(Res.string.privilege_chooser_root_title)
-                        // The same name the settings row uses, so both pages read as one thing.
-                        PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
-                        PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
-                        // Filtered out above: NONE is not a privilege, there is nothing to name.
-                        PrivilegeKind.NONE -> ""
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                // The row the app is actually running on is named as such: two rows can read
+                // "granted" at once, and without this the dialog would leave the user to guess
+                // which of them is the one doing the work.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = when (choice.kind) {
+                            PrivilegeKind.ROOT -> stringResource(Res.string.privilege_chooser_root_title)
+                            // The same name the settings row uses, so both pages read as one thing.
+                            PrivilegeKind.SHIZUKU -> stringResource(Res.string.settings_privilege_shizuku)
+                            PrivilegeKind.DHIZUKU -> stringResource(Res.string.settings_privilege_dhizuku)
+                            // Filtered out above: NONE is not a privilege, there is nothing to name.
+                            PrivilegeKind.NONE -> ""
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (choice.current) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(Res.string.privilege_chooser_current),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
                 Text(
                     text = statusText(choice),
                     style = MaterialTheme.typography.bodySmall,
@@ -133,7 +156,7 @@ private fun PrivilegeChoiceRow(
                     )
                 }
             }
-            actionOf(choice, onGrantRoot, onOpenManager, onDownload)?.let { (label, onClick) ->
+            actionOf(choice, onGrantRoot, onOpenManager, onDownload, onSwitch)?.let { (label, onClick) ->
                 TextButton(onClick = onClick) { Text(label) }
             }
         }
@@ -171,6 +194,10 @@ private fun statusText(choice: PrivilegeChoice): String = when {
 /**
  * The button for [choice], or null when there is nothing left to do: a granted root, an authorized
  * runtime, or a phone with no `su` — root is not something to download.
+ *
+ * A route that is granted but not [PrivilegeChoice.current] keeps one button: switching to it. Two
+ * grants can coexist (Shizuku and Dhizuku on the same phone), and the row that is not in use is
+ * exactly where the user expects to be able to pick it.
  */
 @Composable
 private fun actionOf(
@@ -178,6 +205,7 @@ private fun actionOf(
     onGrantRoot: () -> Unit,
     onOpenManager: (PrivilegeKind) -> Unit,
     onDownload: (PrivilegeKind) -> Unit,
+    onSwitch: (PrivilegeKind) -> Unit,
 ): Pair<String, () -> Unit>? = when {
     // Nothing installed yet: the fix is to install the runtime, and the row's button goes there.
     // Root is not something to download, so it keeps the branch below.
@@ -192,7 +220,12 @@ private fun actionOf(
     choice.kind == PrivilegeKind.ROOT && choice.status != PrivilegeStatus.ACTIVE ->
         stringResource(Res.string.onboarding_privilege_grant) to onGrantRoot
 
-    choice.status == PrivilegeStatus.ACTIVE -> null
+    // The route in use: nothing left to do on it.
+    choice.status == PrivilegeStatus.ACTIVE && choice.current -> null
+
+    // Granted, but the chain is running on another route: this is the hand-picked switch.
+    choice.status == PrivilegeStatus.ACTIVE ->
+        stringResource(Res.string.privilege_chooser_switch) to { onSwitch(choice.kind) }
 
     // Installed but not authorized or not running: both are answered inside the manager app — the
     // service to start for Stellar/Shizuku, the approval screen for Dhizuku.

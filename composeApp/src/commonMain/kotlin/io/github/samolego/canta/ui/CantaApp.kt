@@ -951,6 +951,16 @@ private fun CantaNavigation(
                                 else -> Unit
                             }
                         },
+                        onSwitch = { kind ->
+                            // A route that already holds its grant needs no screen of its own: the
+                            // chain moves onto it, and the settings row names it from then on.
+                            coroutineScope.launch {
+                                showPrivilegeChooser = false
+                                handler.authorize(kind)
+                                privilegeChoices = handler.privilegeChoices()
+                                appListViewModel.loadApps()
+                            }
+                        },
                     )
                 }
                 LaunchedEffect(Unit) {

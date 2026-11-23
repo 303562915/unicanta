@@ -117,6 +117,11 @@ class PrivilegeChain(
                     else -> PrivilegeStatus.NOT_AUTHORIZED
                 },
                 installed = hasSu,
+                // Reference comparison on purpose: this list is built from the same two handlers
+                // the chain holds, so identity is the exact answer to "which one is in use". The
+                // grant is checked too: root that has not answered yet is not in use, it is about
+                // to be asked.
+                current = active === handler && handler.isAuthorized,
             )
         }
         val shizukuStatus = shizuku.privilegeStatus
@@ -127,6 +132,7 @@ class PrivilegeChain(
             // status reads the package list for it, and the two answers that skip that check (Sui
             // granting Canta directly, and Canta already authorized) both mean a runtime is there.
             installed = shizukuStatus != PrivilegeStatus.NOT_AVAILABLE,
+            current = active === shizuku && shizuku.isAuthorized,
         )
         // No root entry at all when the phone has no su binary: the chain is not even built with a
         // root handler then, and a row offering something that does not exist would be a dead end.
@@ -141,6 +147,7 @@ class PrivilegeChain(
                     kind = PrivilegeKind.DHIZUKU,
                     status = status,
                     installed = status != PrivilegeStatus.NOT_AVAILABLE,
+                    current = active === handler && handler.isAuthorized,
                 )
             }
         }
@@ -230,15 +237,18 @@ class PrivilegeChain(
                 active = shizuku
                 settled = true
             }
-            shizuku.requestAuthorization()
+            // Already allowed: requesting again would put Shizuku's own prompt over a grant that
+            // exists, and switching back from Dhizuku is not a new question.
+            if (!shizuku.isAuthorized) shizuku.requestAuthorization()
             shizuku.isAuthorized
         }
 
         PrivilegeKind.DHIZUKU -> {
             val candidate = dhizuku ?: return false
             // Asked again rather than trusted from the last look: the grant lives in Dhizuku's own
-            // screen, and the user may have just come back from it.
-            val granted = candidate.grant()
+            // screen, and the user may have just come back from it. A grant that is already there
+            // is not asked for a second time — this is also the switch back from Shizuku.
+            val granted = candidate.isAuthorized || candidate.grant()
             if (granted) {
                 settleLock.withLock {
                     active = candidate
