@@ -2,9 +2,11 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -752,6 +754,9 @@ private fun PlanDetailContent(
     // 拽回评论区，跟「滚到包过滤框」那个 effect 抢滚动。
     var anchorOpened by remember(anchorCommentId) { mutableStateOf(false) }
     var anchorScrolled by remember(anchorCommentId) { mutableStateOf(false) }
+    // 闪光：哪一行（[flashId]）该亮，亮度从 [flash] 里读。0L 表示没有行在亮。
+    var flashId by remember { mutableStateOf(0L) }
+    val flash = remember { Animatable(0f) }
     // 评论头之前可能有这几块：hero(1)、段标题(1)、包过滤框(0/1)、过滤没命中的那行(0/1)、包行。
     val filterMissed = needle.isNotEmpty() && ranked.isEmpty()
     val commentSectionIndex = 2 + (if (searchOpen) 1 else 0) + (if (filterMissed) 1 else 0) + ranked.size
@@ -766,11 +771,34 @@ private fun PlanDetailContent(
                 }
             }
         }
-        // 评论那一段的头一行（「评论 · N」+ 换序）就是落点：排在最前的正是读者那条。
+        // 落点是锚点线程自己那一行，不是评论区头：`withAnchorFirst` 把它排到第一，所以目标就是
+        // 评论区头的下一行。滚到评论区头的话，读者那条还压在标题下面半屏外。
         if (anchorOpened && !anchorScrolled) {
             anchorScrolled = true
-            listState.scrollToItem(commentSectionIndex.coerceAtLeast(0))
+            val targetIndex = (commentSectionIndex + 1).coerceAtLeast(0)
+            listState.scrollToItem(targetIndex)
+            // 再往屏幕中间挪一下：先滚到「第一行」，再按这一行此刻的位置补一段 scrollBy，
+            // 让它落在竖直中间附近。用 scrollBy 而不是 scrollToItem(负偏移)，是因为负偏移
+            // 在量测里会被夹回 0，补不回中间。
+            val layout = listState.layoutInfo
+            val row = layout.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+            val viewport = layout.viewportSize.height
+            if (row != null && viewport > 0) {
+                val delta = (row.offset + row.size / 2f) - viewport / 2f
+                if (kotlin.math.abs(delta) > 1f) listState.scrollBy(delta)
+            }
+            flashId = anchorCommentId
         }
+    }
+    // 闪光单独一个 effect，只跟 [flashId] 走：滚动那个 effect 的 key 里有 [commentSectionIndex]，
+    // 包列表晚一步到货会让它重跑；闪到一半被取消的话，那一行会永远停在半亮。
+    LaunchedEffect(flashId) {
+        if (flashId == 0L) return@LaunchedEffect
+        repeat(2) {
+            flash.animateTo(0.9f, tween(170))
+            flash.animateTo(0f, tween(240))
+        }
+        flashId = 0L
     }
     // The uploader's current name (or the identity number before names were synced), in the form the
     // rest of the app shows: the plan card and this header must read the same.
@@ -890,6 +918,8 @@ private fun PlanDetailContent(
             onLike = onLikeComment,
             hidden = hiddenComments,
             onHide = onHideComment,
+            highlightId = flashId,
+            highlight = flash.value,
         )
     }
 }

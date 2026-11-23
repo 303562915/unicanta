@@ -23,7 +23,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,6 +45,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +56,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.COMMENT_KIND_APP
+import io.github.samolego.canta.data.community.InboxFilter
 import io.github.samolego.canta.data.community.InboxItem
 import io.github.samolego.canta.data.community.InboxKind
 import io.github.samolego.canta.data.community.InboxSummary
@@ -55,13 +65,13 @@ import io.github.samolego.canta.data.community.Page
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.data.community.matching
 import io.github.samolego.canta.data.community.newestInboxCommentId
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.MyCommentRow
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
-import io.github.samolego.canta.ui.fl.FlSegment
-import io.github.samolego.canta.ui.fl.FlSegmentedControl
+import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
@@ -73,19 +83,40 @@ import kotlinx.coroutines.launch
 /** 一页互动消息从每个来源各取多少行。 */
 private const val INTERACTION_PER_SOURCE = 8
 
-/** 三栏的编号：分段控件的顺序就是这三个值。 */
-private const val TAB_INBOX = 0
-private const val TAB_MINE = 1
-private const val TAB_FOLLOWERS = 2
+/** 顶栏现在只有两段：消息（标题带下拉菜单）和关注名单。 */
+private enum class InteractionSection { MESSAGES, FOLLOWERS }
+
+/** 关注那一栏的标题，左边菜单之外就它一个入口。 */
+private const val FOLLOWERS_LABEL = "新关注我的"
+
+/**
+ * 消息这一栏里的分类，顺序就是下拉菜单的顺序。
+ *
+ * [filter] 是它落到 [InboxFilter] 的那一组；[InteractionMessages.MINE] 不在消息流里（那是「我
+ * 写过的评论」，走 [PlanRepository.myCommentsPage]），所以为 null——这一栏是本地判断的，不看后端。
+ */
+private enum class InteractionMessages(
+    val label: String,
+    val filter: InboxFilter?,
+    /** 菜单里的名字：顶栏那条叫「互动消息」，菜单第一项按后端的分组叫「全部消息」。 */
+    val menuLabel: String = label,
+) {
+    ALL_MESSAGES("互动消息", InboxFilter.ALL, "全部消息"),
+    REPLY("回复我的", InboxFilter.REPLY),
+    PLAN_COMMENT("方案评论", InboxFilter.PLAN_COMMENT),
+    HEART("赞与收藏", InboxFilter.HEART),
+    MINE("我的评论", null),
+}
 
 /**
  * 「互动消息」页：别人对我做过什么、我自己写过什么，以及谁新近关注了我。
  *
  * 三件事画在一个页面里，因为它们是同一个消息中心的三个问题：*别人对我做过什么*（回复、方案下的
  * 评论、点赞、认同）走 [PlanRepository.inboxPage]，*我自己写过什么* 走
- * [PlanRepository.myCommentsPage]，*谁刚关注了我* 走 [SocialRepository.followersOf]。顶上一条
- * 分段控件选这三栏——「我的评论」从「我的」页搬到了这里，因为它和互动是同一件事的两面：一个看
- * 别人对我做了什么，一个看我做过什么。
+ * [PlanRepository.myCommentsPage]，*谁刚关注了我* 走 [SocialRepository.followersOf]。顶栏标题点开
+ * 是一个下拉菜单，五条分类（全部消息 / 回复我的 / 方案评论 / 赞与收藏 / 我的评论）在那里选；
+ * 「我的评论」从「我的」页搬到了这里，因为它和互动是同一件事的两面：一个看别人对我做了什么，
+ * 一个看我做过什么。
  *
  * 「我的评论」里的每一行点下去都带着评论 id 交给调用方，落到方案 / 应用详情页的那条评论上：
  * 那一页会把它排到评论最前面、自动展开它的回复，并滚到评论那一段——不然一百多个包的行会把答案
@@ -114,8 +145,9 @@ fun InteractionsScreen(
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // 0 = 互动消息，1 = 我的评论，2 = 新关注我的。
-    var tab by remember { mutableIntStateOf(TAB_INBOX) }
+    // 顶栏的两段；消息段里再选分类。两个状态分开记，是因为「切到关注再切回来」要回到原来的分类。
+    var section by remember { mutableStateOf(InteractionSection.MESSAGES) }
+    var messages by remember { mutableStateOf(InteractionMessages.ALL_MESSAGES) }
     var inbox by remember { mutableStateOf<Page<InboxItem>>(Page.EMPTY) }
     // 每个来源读到哪儿：一页从同一个 offset 各取 [INTERACTION_PER_SOURCE] 行，所以 offset 按
     // 这个窗口往前推，而不是按回来多少行数——某一路只回了三行，不该把别路的七行一起往前拖。
@@ -133,7 +165,7 @@ fun InteractionsScreen(
 
     // 「我的评论」：这台设备写过的评论，按身份取，一页一页往下读。
     var mine by remember { mutableStateOf<Page<MyComment>>(Page.EMPTY) }
-    // 只有第一次选中那一栏才去问后端：从互动消息进来、不点「我的评论」的人不该为它付一次请求。
+    // 只有读过一次之后，菜单里才写得出条数；没读过就画「我的评论」四个字，不先报一个 0。
     var mineLoaded by remember { mutableStateOf(false) }
     var mineLoading by remember { mutableStateOf(false) }
     var mineLoadingMore by remember { mutableStateOf(false) }
@@ -186,9 +218,12 @@ fun InteractionsScreen(
     }
 
     // 消息这一栏被真正看见了，才算读过：交回去的是「最新的一条」和「后端计数时的那个瞬间」，
-    // 后者才是游标，本页记住看了几行没有意义。
-    LaunchedEffect(tab, inbox, summary) {
-        if (tab == TAB_INBOX && inbox.items.isNotEmpty()) {
+    // 后者才是游标，本页记住看了几行没有意义。「我的评论」不是消息流，不该把别的分类标成读过。
+    LaunchedEffect(section, messages, inbox, summary) {
+        if (section == InteractionSection.MESSAGES &&
+            messages != InteractionMessages.MINE &&
+            inbox.items.isNotEmpty()
+        ) {
             onInboxSeen(
                 maxOf(newestInboxCommentId(inbox.items), summary.newestCommentId),
                 summary.checkedAt,
@@ -197,8 +232,8 @@ fun InteractionsScreen(
     }
 
     // 关注列表：每次切到这一栏都重新问一次，别人刚关注你那一眼就该在。
-    LaunchedEffect(tab, owner) {
-        if (tab == TAB_FOLLOWERS) {
+    LaunchedEffect(section, owner) {
+        if (section == InteractionSection.FOLLOWERS) {
             followersLoading = true
             followersError = null
             followers = social.followersOf(owner)
@@ -212,8 +247,10 @@ fun InteractionsScreen(
     //
     // [mineLoading] 用 try/finally 复位：切走那一栏会把 effect 取消，停在 `true` 的话这一栏就永久
     // 停在「…」上，切回来也再不会拉。
-    LaunchedEffect(tab, owner, token) {
-        if (tab != TAB_MINE) return@LaunchedEffect
+    LaunchedEffect(section, messages, owner, token) {
+        if (section != InteractionSection.MESSAGES || messages != InteractionMessages.MINE) {
+            return@LaunchedEffect
+        }
         mineLoading = true
         mineError = null
         try {
@@ -316,60 +353,72 @@ fun InteractionsScreen(
     Scaffold(
         topBar = {
             InteractionsTopBar(
-                tab = tab,
+                section = section,
+                messages = messages,
                 mineCount = if (mineLoaded) mine.items.size else null,
-                onSelectTab = { tab = it },
+                onSelectMessages = { messages = it },
+                onToggleSection = {
+                    section = if (section == InteractionSection.MESSAGES) {
+                        InteractionSection.FOLLOWERS
+                    } else {
+                        // 切回消息时保留上次选的分类，只有第一次进来才是「全部消息」。
+                        InteractionSection.MESSAGES
+                    }
+                },
                 onNavigateBack = onNavigateBack,
             )
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // 这一栏该看的行：ALL 就是全部，其余按 kind 过一遍。过滤在本地做，不额外问后端。
+            val visibleInbox = messages.filter?.let { filter -> inbox.items.matching(filter) }
+                ?: inbox.items
             // 下一页只在这一栏、还有页、而且没有正在加载的时候才问。
             InteractionEndlessScroll(
                 state = inboxListState,
-                enabled = tab == TAB_INBOX && inbox.hasMore && !loadingMore,
+                enabled = section == InteractionSection.MESSAGES &&
+                    messages != InteractionMessages.MINE &&
+                    inbox.hasMore &&
+                    !loadingMore,
                 onEnd = loadMore,
             )
             InteractionEndlessScroll(
                 state = mineListState,
-                enabled = tab == TAB_MINE && mine.hasMore && !mineLoadingMore,
+                enabled = section == InteractionSection.MESSAGES &&
+                    messages == InteractionMessages.MINE &&
+                    mine.hasMore &&
+                    !mineLoadingMore,
                 onEnd = loadMoreMine,
             )
-            if (tab == TAB_INBOX) {
+            if (section == InteractionSection.FOLLOWERS) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // 「后端没回答」和「真的没人理你」长得一样，所以原因要摆在列表顶上。
-                    loadError?.let { reason -> InteractionErrorLine(reason) }
+                    followersError?.let { reason -> InteractionErrorLine(reason) }
                     when {
-                        loading -> Text("…", fontSize = 12.sp, modifier = Modifier.padding(14.dp))
+                        followersLoading && followers.isEmpty() ->
+                            Text("…", fontSize = 12.sp, modifier = Modifier.padding(14.dp))
 
-                        inbox.items.isEmpty() -> InteractionEmptyNotice(
-                            title = "还没有新的互动。",
-                            hint = "有人回复你、评论你上传的方案，或者赞了你的评论和方案时，会出现在这里。",
+                        followers.isEmpty() -> InteractionEmptyNotice(
+                            title = "还没有人关注你",
+                            hint = "别人关注你之后，会出现在这里，你可以从这里回关。",
                         )
 
                         else -> LazyColumn(
-                            state = inboxListState,
+                            state = followersListState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(vertical = 6.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            items(
-                                items = inbox.items,
-                                key = { row -> "${row.kind}-${row.id}-${row.createdAt}" },
-                            ) { row ->
-                                InteractionRow(
-                                    item = row,
-                                    onOpen = { open(row) },
-                                    onOpenProfile = onOpenProfile,
+                            items(followers) { person ->
+                                FollowerRow(
+                                    person = person,
+                                    busy = followBusy == person.id,
+                                    onToggleFollow = { toggleFollow(person) },
                                 )
-                            }
-                            if (loadingMore) {
-                                item(key = "interactions-more") { InteractionLoadingMore() }
                             }
                         }
                     }
                 }
-            } else if (tab == TAB_MINE) {
+            } else if (messages == InteractionMessages.MINE) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     mineError?.let { reason -> InteractionErrorLine(reason) }
                     notice?.let { line ->
@@ -417,28 +466,38 @@ fun InteractionsScreen(
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    followersError?.let { reason -> InteractionErrorLine(reason) }
+                    // 「后端没回答」和「真的没人理你」长得一样，所以原因要摆在列表顶上。
+                    loadError?.let { reason -> InteractionErrorLine(reason) }
                     when {
-                        followersLoading && followers.isEmpty() ->
-                            Text("…", fontSize = 12.sp, modifier = Modifier.padding(14.dp))
+                        loading -> Text("…", fontSize = 12.sp, modifier = Modifier.padding(14.dp))
 
-                        followers.isEmpty() -> InteractionEmptyNotice(
-                            title = "还没有人关注你",
-                            hint = "别人关注你之后，会出现在这里，你可以从这里回关。",
+                        visibleInbox.isEmpty() -> InteractionEmptyNotice(
+                            title = if (messages == InteractionMessages.ALL_MESSAGES) {
+                                "还没有新的互动。"
+                            } else {
+                                "「${messages.label}」这一栏还没有消息。"
+                            },
+                            hint = "有人回复你、评论你上传的方案，或者赞了你的评论和方案时，会出现在这里。",
                         )
 
                         else -> LazyColumn(
-                            state = followersListState,
+                            state = inboxListState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(vertical = 6.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            items(followers) { person ->
-                                FollowerRow(
-                                    person = person,
-                                    busy = followBusy == person.id,
-                                    onToggleFollow = { toggleFollow(person) },
+                            items(
+                                items = visibleInbox,
+                                key = { row -> "${row.kind}-${row.id}-${row.createdAt}" },
+                            ) { row ->
+                                InteractionRow(
+                                    item = row,
+                                    onOpen = { open(row) },
+                                    onOpenProfile = onOpenProfile,
                                 )
+                            }
+                            if (loadingMore) {
+                                item(key = "interactions-more") { InteractionLoadingMore() }
                             }
                         }
                     }
@@ -449,22 +508,27 @@ fun InteractionsScreen(
 }
 
 /**
- * 顶栏：左边是回去的箭头，标题固定是「互动消息」，下面一条分段控件在这三栏之间换：
- * 互动消息 / 我的评论 / 新关注。
+ * 顶栏：左边是回去的箭头，中间偏左是「当前栏标题 + 向下箭头」，右边是另一个入口的一行灰字。
  *
- * 从「标题 + 另一个入口」改成三段，是因为栏数从两栏变成了三栏：两栏时「标题 + 一行字」读起来
- * 像抖音，三栏时那行字放不下（「新关注我的」五个字 + 「我的评论」四个字），挤在一起就分不清
- * 哪边是当前。分段控件一行摆平，选中的那一格自带滑块，一眼看得出在哪一栏。
+ * 标题不是一个标签，而是一个按钮：点它（含箭头）弹出分类菜单，菜单锚在标题下面。抖音 / 汽水
+ * 音乐的通知页就是这么做的——分类有五个，一行摆不下；标题下面那条短粗下划线说明「这一栏是选中的」。
  *
- * [mineCount] 为 null 表示这一栏还没读过：没读过就不写数字，写了「· 0」等于先说了一句假话。
+ * [mineCount] 为 null 表示「我的评论」还没读过：没读过就不写数字，写了「· 0」等于先说了一句假话。
  */
 @Composable
 private fun InteractionsTopBar(
-    tab: Int,
+    section: InteractionSection,
+    messages: InteractionMessages,
     mineCount: Int?,
-    onSelectTab: (Int) -> Unit,
+    onSelectMessages: (InteractionMessages) -> Unit,
+    onToggleSection: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
+    val colors = MaterialTheme.colorScheme
+    var expanded by remember { mutableStateOf(false) }
+    val title = if (section == InteractionSection.FOLLOWERS) FOLLOWERS_LABEL else messages.label
+    // 右边那行字永远是「另一栏」：在消息里就指向关注，在关注里就指回消息。
+    val other = if (section == InteractionSection.FOLLOWERS) "互动消息" else FOLLOWERS_LABEL
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -485,26 +549,123 @@ private fun InteractionsTopBar(
                 filled = false,
             )
             Spacer(Modifier.width(2.dp))
+            // 标题 + 菜单锚点：DropdownMenu 挂在 Box 里，就落在标题这一块的正下方。
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                Box {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { expanded = true }
+                            .padding(horizontal = 4.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = title,
+                            style = FlText.headline,
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            // 下划线画在标题自己的 bounds 上，宽度就跟着字走，而不是跟着整条栏。
+                            modifier = Modifier.titleUnderline(colors.primary),
+                        )
+                        // 关注那一栏没有分类，就不画箭头，免得点上去以为还有菜单。
+                        if (section == InteractionSection.MESSAGES) {
+                            Spacer(Modifier.width(3.dp))
+                            FlGlyphIcon(
+                                glyph = FlGlyphs.chevronDown,
+                                size = 13.dp,
+                                tint = colors.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                        modifier = Modifier.width(196.dp),
+                    ) {
+                        InteractionMessages.entries.forEach { option ->
+                            val selected = option == messages
+                            val tint = if (selected) colors.primary else colors.onSurfaceVariant
+                            // 选中项的勾：自己画在 trailingIcon 里，没选中就什么都不放。
+                            val trailing: (@Composable () -> Unit)? = if (selected) {
+                                { FlGlyphIcon(glyph = FlGlyphs.check, size = 14.dp, tint = tint) }
+                            } else {
+                                null
+                            }
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (option == InteractionMessages.MINE && mineCount != null) {
+                                            "${option.menuLabel} · $mineCount"
+                                        } else {
+                                            option.menuLabel
+                                        },
+                                        fontSize = 13.sp,
+                                        color = if (selected) colors.primary else colors.onSurface,
+                                        maxLines = 1,
+                                    )
+                                },
+                                onClick = {
+                                    expanded = false
+                                    onSelectMessages(option)
+                                },
+                                leadingIcon = {
+                                    // 只有「赞与收藏」用 Material 的心形，FlGlyph 里没有真·心形图标。
+                                    if (option == InteractionMessages.HEART) {
+                                        Icon(
+                                            imageVector = Icons.Default.Favorite,
+                                            contentDescription = null,
+                                            tint = tint,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    } else {
+                                        FlGlyphIcon(glyph = menuGlyphOf(option), size = 16.dp, tint = tint)
+                                    }
+                                },
+                                trailingIcon = trailing,
+                            )
+                        }
+                    }
+                }
+            }
             Text(
-                text = "互动消息",
-                style = FlText.headline,
-                color = MaterialTheme.colorScheme.onSurface,
+                text = other,
+                fontSize = 12.sp,
+                color = colors.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 4.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .clickable(onClick = onToggleSection)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             )
         }
-        FlSegmentedControl(
-            segments = listOf(
-                FlSegment("inbox", "互动消息"),
-                FlSegment("mine", mineCount?.let { "我的评论 · $it" } ?: "我的评论"),
-                FlSegment("followers", "新关注"),
-            ),
-            selectedIndex = tab,
-            onSelect = onSelectTab,
-            insetHorizontal = 10.dp,
-        )
     }
+}
+
+/** 菜单里每一项的小图标；「赞与收藏」走 Material 的心形，不在这里。 */
+private fun menuGlyphOf(option: InteractionMessages): FlGlyph = when (option) {
+    InteractionMessages.ALL_MESSAGES -> FlGlyphs.appsList
+    InteractionMessages.REPLY -> FlGlyphs.send
+    InteractionMessages.PLAN_COMMENT -> FlGlyphs.profiles
+    InteractionMessages.HEART -> FlGlyphs.info
+    InteractionMessages.MINE -> FlGlyphs.edit
+}
+
+/**
+ * 标题下面那条短粗下划线。
+ *
+ * 画在标题自己的绘制区域上（而不是另起一个 Box），所以宽度天然等于文字宽度。线的位置贴在文字
+ * bounds 的**里面**（`size.height - stroke`）：画到 bounds 外面会被外层 Row 的 `clip` 切掉一截，
+ * 看起来像条虚线。
+ */
+private fun Modifier.titleUnderline(color: Color): Modifier = drawBehind {
+    val stroke = 2.dp.toPx()
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(0f, size.height - stroke),
+        size = Size(size.width, stroke),
+        cornerRadius = CornerRadius(stroke / 2f),
+    )
 }
 
 /**

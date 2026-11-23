@@ -297,6 +297,12 @@ fun LazyListScope.commentThreads(
     onLike: (PlanComment) -> Unit = {},
     hidden: Set<Long> = emptySet(),
     onHide: (Long) -> Unit = {},
+    /**
+     * 从「我的评论 / 互动消息」点进来的那一条：[highlightId] 是它，[highlight] 是此刻的闪光强度。
+     * 详情页把这一行滚到屏幕中间之后连闪两下，位置和亮度一起说明「就是这一条」。
+     */
+    highlightId: Long = 0L,
+    highlight: Float = 0f,
 ) {
     threads.forEachIndexed { index, thread ->
         val starter = thread.comment
@@ -318,6 +324,7 @@ fun LazyListScope.commentThreads(
                 onLike = { onLike(starter) },
                 folded = starterHidden,
                 onHide = { onHide(hideKey(starter, key)) },
+                highlight = if (starter.id == highlightId) highlight else 0f,
             )
         }
         shown.forEach { (replyIndex, answer) ->
@@ -335,6 +342,7 @@ fun LazyListScope.commentThreads(
                     onLike = { onLike(answer) },
                     folded = replyHideKey(key, answer, replyIndex) in hidden,
                     onHide = { onHide(replyHideKey(key, answer, replyIndex)) },
+                    highlight = if (answer.id == highlightId) highlight else 0f,
                 )
             }
         }
@@ -558,16 +566,24 @@ fun CommentRow(
     /** Folds this comment's text for this reader, this session only; taps again to open it back. */
     onHide: () -> Unit = {},
     folded: Boolean = false,
+    /**
+     * 0f..1f 的闪光强度：从消息页点进来时，目标那一行会闪两下，好让眼睛落在正确的那一行。
+     * 0f 时叠上去的背景是全透明的，布局和颜色跟没这个参数时完全一样。
+     */
+    highlight: Float = 0f,
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = me.isNotEmpty() &&
         (comment.author == me || comment.author == "#$me" || comment.authorId == me)
     var sheet by remember(comment.id, comment.author, comment.body) { mutableStateOf(false) }
     val openSheet = { sheet = true }
+    val highlightColor = colors.primary.copy(alpha = highlight.coerceIn(0f, 1f) * 0.22f)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // 高亮只是一层背景，画在整行底下（原先行本身没有背景），0f 时不改任何东西。
+            .background(color = highlightColor, shape = RoundedCornerShape(12.dp))
             // One gesture pair for the whole row: a thumb lands anywhere on the comment and gets
             // the same two actions, the way a short-video comment list does it. The buttons keep
             // their own taps.

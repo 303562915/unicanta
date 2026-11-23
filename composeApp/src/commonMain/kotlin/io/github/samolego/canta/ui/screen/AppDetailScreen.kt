@@ -6,7 +6,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -424,6 +427,9 @@ fun AppDetailScreen(
         var anchorOpened by remember(anchorCommentId) { mutableStateOf(false) }
         // 评论那一段的落点：头一张卡是 hero，「评论 · N」那一行接着它。
         val commentListState = rememberLazyListState()
+        // 闪光：哪一行（[flashId]）该亮，亮度从 [flash] 里读。0L 表示没有行在亮。
+        var flashId by remember { mutableStateOf(0L) }
+        val flash = remember { Animatable(0f) }
         LaunchedEffect(anchorCommentId, threads) {
             if (anchorCommentId <= 0L || anchorOpened) return@LaunchedEffect
             val anchored = threads.threadOf(anchorCommentId) ?: return@LaunchedEffect
@@ -431,7 +437,30 @@ fun AppDetailScreen(
             expandedThreads = expandedThreads + anchored.comment.id
             // 点一条评论进来，落点是评论那一段，不是这页的顶上：应用页的头几张卡（描述、投票、
             // 修正）加起来比一屏还长，只把线程排到最前而不滚过去，人还是要自己滑半天才看见自己那条。
-            commentListState.scrollToItem(COMMENT_SECTION_INDEX)
+            //
+            // 目标是锚点那一行本身，不是「评论 · N」那一行：`withAnchorFirst` 把线程排到第一，
+            // 所以是评论段头下面一行；段头和线程之间还可能有那行「只看本机：另有 N 条…」。
+            val scopedGap = if (visibleComments.size < comments.size) 1 else 0
+            val targetIndex = COMMENT_SECTION_INDEX + 1 + scopedGap
+            commentListState.scrollToItem(targetIndex)
+            // 再补一段 scrollBy 把这一行挪到竖直中间：负偏移的 scrollToItem 会被量测夹回 0。
+            val layout = commentListState.layoutInfo
+            val row = layout.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+            val viewport = layout.viewportSize.height
+            if (row != null && viewport > 0) {
+                val delta = (row.offset + row.size / 2f) - viewport / 2f
+                if (kotlin.math.abs(delta) > 1f) commentListState.scrollBy(delta)
+            }
+            flashId = anchorCommentId
+        }
+        // 闪光单独一个 effect，只跟 [flashId] 走：上面那个 effect 找的是线程，两件事互不牵连。
+        LaunchedEffect(flashId) {
+            if (flashId == 0L) return@LaunchedEffect
+            repeat(2) {
+                flash.animateTo(0.9f, tween(170))
+                flash.animateTo(0f, tween(240))
+            }
+            flashId = 0L
         }
         Box(
             modifier = Modifier
@@ -515,6 +544,8 @@ fun AppDetailScreen(
                     onHide = { key ->
                         hiddenComments = if (key in hiddenComments) hiddenComments - key else hiddenComments + key
                     },
+                    highlightId = flashId,
+                    highlight = flash.value,
                 )
 
                 // Nothing from the community: what this install wrote itself is still worth
