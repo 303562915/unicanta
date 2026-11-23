@@ -203,6 +203,8 @@ fun UserProfileScreen(
                                 bioDraft = profile?.bio.orEmpty()
                                 showBioEditor = true
                             },
+                            // 用 [shown] 而不是 [profile]：改简介时本地那份会先变，属地跟着它一起走就好。
+                            ipRegion = shown?.ipRegion.orEmpty(),
                         )
                         Spacer(Modifier.height(2.dp))
                         ProfileActionRow(
@@ -504,10 +506,13 @@ private fun ProfileStat(value: Int, label: String, modifier: Modifier = Modifier
 }
 
 /**
- * 简介区：本人写过的那句话，或「这个人很懒」的灰字占位，下面跟着「IP：未知」小灰标。
+ * 简介区：本人写过的那句话，或「这个人很懒」的灰字占位，下面跟着「IP：某省」小灰标。
  *
  * bio 与占位二选一：有简介就放开多行写，颜色用 onSurface；没有时保持原来的灰字。
  * [editable] 表示看主页的人就是本人：那一行右侧放一支笔，点开改简介；别人看时只有字。
+ *
+ * [ipRegion] 是后端算好的省/州名，还没查出来就是空串，那时照旧显示「未知」——这一行从来不空着，
+ * 空着会让人以为界面坏了。
  */
 @Composable
 private fun ProfileBio(
@@ -515,6 +520,11 @@ private fun ProfileBio(
     editable: Boolean,
     problem: String?,
     onEdit: () -> Unit,
+    /**
+     * 上一次从哪来，后端算好的省/州名。空串表示后端还没查出来——那台机器可能是在一个
+     * 拿不到真实出口 IP 的网络里装的，或者刚装上还没轮到 cron 那一分钟。
+     */
+    ipRegion: String = "",
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -547,7 +557,9 @@ private fun ProfileBio(
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "IP：未知",
+            // 模板里别把中文直接拼在 `$` 后面：Kotlin 会把紧跟着的汉字当成标识符的一部分
+            // （`"$ipRegion未知"` 会被读成变量 `ipRegion未知`），所以这里用 `${}` 括起来。
+            text = "IP：${ipRegion.ifBlank { "未知" }}",
             style = FlText.caption2,
             color = scheme.onSurfaceVariant,
             maxLines = 1,

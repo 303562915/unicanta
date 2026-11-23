@@ -183,6 +183,12 @@ data class SocialUserProfile(
     val followsMe: Boolean,
     val since: String = "",
     val bio: String = "",
+    /**
+     * 上一次从哪来，后端算好的省/州名（「广东」「California」这种），空串表示还没查出来。
+     *
+     * 只到省一级、不存原始 IP：这是给别人看的一行灰字，不是定位。
+     */
+    val ipRegion: String = "",
 ) {
 
     /** 主页标题那一行字：有名字用名字，没有就亮编号。 */
@@ -348,8 +354,12 @@ class SocialRepository(
             following = row.intOf("following"),
             iFollow = row.flagOf("i_follow") ?: false,
             followsMe = row.flagOf("follows_me") ?: false,
-            since = row.textOf("since"),
+            // 后端 `user_profile` 返回的键叫 `created_at`，没有 `since`：一直读 `since` 的结果
+            // 是这一行永远是空串。两层都认，先新名后旧名，和 [personOf] 那边一致。
+            since = row.textOf("created_at").ifBlank { row.textOf("since") },
             bio = row.textOf("bio"),
+            // 后端还没查出来、或者这个人的请求没带回 IP，这里就是空串，页面显示「未知」。
+            ipRegion = row.textOf("ip_region"),
         )
     }
 
