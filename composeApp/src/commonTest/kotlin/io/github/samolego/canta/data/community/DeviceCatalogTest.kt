@@ -106,10 +106,11 @@ class DeviceCatalogTest {
     }
 
     @Test
-    fun onlyMoreThanFivePeopleAreWorthPrinting() {
+    fun onlyMoreThanFiftyPeopleAreWorthPrinting() {
         assertEquals("", peopleSuffix(0))
-        assertEquals("", peopleSuffix(5))
-        assertEquals(" · 6人", peopleSuffix(6))
+        assertEquals("", peopleSuffix(50))
+        assertEquals("", peopleSuffix(49))
+        assertEquals(" · 51人", peopleSuffix(51))
         assertEquals(" · 120人", peopleSuffix(120))
     }
 

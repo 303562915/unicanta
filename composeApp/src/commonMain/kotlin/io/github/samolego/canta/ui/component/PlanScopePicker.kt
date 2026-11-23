@@ -54,6 +54,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.samolego.canta.data.community.CatalogBuild
 import io.github.samolego.canta.data.community.CatalogModel
 import io.github.samolego.canta.data.community.FamilyGroup
+import io.github.samolego.canta.data.community.PEOPLE_COUNT_THRESHOLD
 import io.github.samolego.canta.data.community.groupedByFamily
 import io.github.samolego.canta.data.community.peopleSuffix
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
@@ -483,7 +484,9 @@ private fun BuildPicker(
             }
         }
         Text(
-            text = "${model.label} 一共有 ${model.plans} 个方案、${model.people} 人加入。",
+            // The same line as the chips above: no "12 人加入" while the chip itself stays quiet.
+            text = "${model.label} 一共有 ${model.plans} 个方案" +
+                if (model.people > PEOPLE_COUNT_THRESHOLD) "、${model.people} 人加入。" else "。",
             fontSize = 10.sp,
             color = colors.onSurfaceVariant,
             maxLines = 2,

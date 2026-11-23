@@ -148,12 +148,21 @@ fun List<CatalogModel>.groupedByFamily(): List<FamilyGroup> {
 }
 
 /**
+ * How many people it takes before a count is worth printing at all.
+ *
+ * Under 50 the number reads as "almost nobody", which is worse than saying nothing: the chip is
+ * there to point at a model the community actually uses, and a small count argues against itself.
+ * One constant, so the chip suffix and any sentence carrying the same number agree.
+ */
+const val PEOPLE_COUNT_THRESHOLD = 50
+
+/**
  * The count shown next to a model or build, or "" when there is nothing worth saying.
  *
  * A handful of people is not a community yet, and a number under every chip would read as one: only
  * more than [threshold] people are worth printing.
  */
-fun peopleSuffix(people: Int, threshold: Int = 5): String =
+fun peopleSuffix(people: Int, threshold: Int = PEOPLE_COUNT_THRESHOLD): String =
     if (people > threshold) " · ${people}人" else ""
 
 /**

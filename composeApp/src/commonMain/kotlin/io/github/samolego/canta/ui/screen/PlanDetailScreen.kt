@@ -74,6 +74,7 @@ import io.github.samolego.canta.data.community.NOTE_MAX_LENGTH
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.inOrder
+import io.github.samolego.canta.data.community.peopleSuffix
 import io.github.samolego.canta.data.community.threadOf
 import io.github.samolego.canta.data.community.withAnchorFirst
 import io.github.samolego.canta.data.community.keyed
@@ -1017,7 +1018,9 @@ private fun PlanHero(
                 coverage.forEach { device ->
                     Text(
                         text = device.buildLabel +
-                            if (device.verified > 1) " · ${device.verified} 人" else "",
+                            // Same line as the model chips: a count that is not a crowd (see
+                            // peopleSuffix) is noise on a line that is already one phone long.
+                            peopleSuffix(device.verified),
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
                         color = colors.onPrimaryContainer.copy(alpha = 0.9f),
