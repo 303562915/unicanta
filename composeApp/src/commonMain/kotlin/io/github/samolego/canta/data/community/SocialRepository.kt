@@ -81,6 +81,13 @@ data class Conversation(
      * 不是"这条不重要"，红点仍然该出现。
      */
     val muted: Boolean = false,
+    /**
+     * 这个人把这个群折起来了。折叠的群不占消息页的主列表，收进一个「折叠的群聊」入口里。
+     *
+     * 和 [pinned] 是两件事：置顶是「这件事我先看」，折叠是「这件事平时不用看」。
+     * 两个都开着时以置顶为准——人把它拎到最上面，说明现在要看它。
+     */
+    val folded: Boolean = false,
 ) {
 
     /** 群聊与会话共用一张列表，界面靠这一位决定画头像还是画群标。 */
@@ -238,6 +245,16 @@ data class ConversationDetail(
      * 「编辑公告」「踢人」——**这只是画不画按钮**，真正的裁决在后端：自报身份不可信。
      */
     val createdBy: String = "",
+    /** 群简介，空串表示没填过。和公告一样只有建群的人能改（见 `group_set_intro`）。 */
+    val intro: String = "",
+    /**
+     * 我在这个群里的昵称，空串表示没设过（那就用全局名字）。
+     *
+     * 只影响**显示**，不影响认人：认的永远是 [ConversationMember.owner]。
+     */
+    val myNickname: String = "",
+    /** 我把这个群折起来了没有。 */
+    val myFolded: Boolean = false,
 ) {
 
     /** 与 [Conversation.isGroup] 同一判据：`kind == "group"`。 */
@@ -528,6 +545,9 @@ class SocialRepository(
             createdAt = row.textOf("created_at"),
             announcement = row.textOf("announcement"),
             createdBy = row.textOf("created_by"),
+            intro = row.textOf("intro"),
+            myNickname = row.textOf("my_nickname"),
+            myFolded = row.flagOf("my_folded") ?: false,
         )
     }
 
@@ -947,6 +967,72 @@ class SocialRepository(
         }.toString()
         val response = rpc("group_set_announcement", body) ?: return false
         return booleanFrom(response, "group_set_announcement") ?: false
+    }
+
+    /**
+     * 改群简介。和公告一样，只有建群的人能改——返回 false 就说明没改成，界面别自作聪明地先画出来。
+     */
+    suspend fun setIntro(owner: String, conversation: Long, text: String): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_text", text)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val response = rpc("group_set_intro", body) ?: return false
+        return booleanFrom(response, "group_set_intro") ?: false
+    }
+
+    /**
+     * 改我在这个群里的昵称；空串就是清掉，退回全局名字。
+     *
+     * 只能改自己那一行，所以这里没有 `member` 参数——要改别人的昵称是另一件事，而且群主也没这个权力。
+     */
+    suspend fun setMyNickname(owner: String, conversation: Long, nickname: String): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_nickname", nickname)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val response = rpc("conversation_set_nickname", body) ?: return false
+        return booleanFrom(response, "conversation_set_nickname") ?: false
+    }
+
+    /** 折叠 / 取消折叠一个群。和免打扰一样只动自己那一行。 */
+    suspend fun setFolded(owner: String, conversation: Long, folded: Boolean): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_folded", folded)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val response = rpc("conversation_fold", body) ?: return false
+        return booleanFrom(response, "conversation_fold") ?: false
+    }
+
+    /**
+     * 清空这个会话的聊天记录——**只对自己生效**。
+     *
+     * 后端做的是把它们记进 `message_hidden`，不是删行：对方那边一条都不会少。返回被隐藏的条数，
+     * 0 表示本来就没有可见的消息。
+     */
+    suspend fun clearHistory(owner: String, conversation: Long): Int? {
+        if (owner.isEmpty() || conversation <= 0L) return null
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val response = rpc("conversation_clear_history", body) ?: return null
+        return scalarOf(response)?.intOrNull
     }
 
     /**
@@ -1374,6 +1460,7 @@ class SocialRepository(
             members = row.intOf("members"),
             pinned = row.flagOf("pinned") ?: false,
             muted = row.flagOf("muted") ?: false,
+            folded = row.flagOf("folded") ?: false,
         )
     }
 
