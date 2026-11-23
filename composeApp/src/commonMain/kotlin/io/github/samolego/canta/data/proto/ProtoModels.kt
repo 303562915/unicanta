@@ -206,6 +206,14 @@ data class AppSettingsProto(
      * 上限 20 个会话（约 40KB 封顶，单条正文截到 2000 字），再多也没有人会回到那么久的草稿。
      */
     @ProtoNumber(40) val chatDrafts: String = "",
+    /**
+     * 在应用列表里点一个包，是弹小窗（[AppSettingsProto] 的老样子）还是直接进它的详情页。
+     *
+     * 存的是"弹窗"而不是"进详情页"：proto3 省略零值，默认值只能是 `false`，而这件事的出厂状态
+     * 是"直接开详情页"——所以字段反过来命名，`false` 就是出厂行为，老安装读出来正是这个意思，
+     * 不用迁移。界面把它读成「点击应用打开详情页」那个开关。
+     */
+    @ProtoNumber(41) val appTapOpensDialog: Boolean = false,
 )
 
 /**

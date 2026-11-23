@@ -136,6 +136,11 @@ class CantaSettings(storage: AppBlobStorage) {
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
     val clearRecordsAfterBootFlow = field { it.clearRecordsAfterBoot }
+    /**
+     * 列表里点一个包是弹小窗（`true`）还是直接进详情页（`false`，出厂）；
+     * 为什么反过来命名见 [AppSettingsProto.appTapOpensDialog]。
+     */
+    val appTapOpensDialogFlow: Flow<Boolean> = field { it.appTapOpensDialog }
     /** The boot the records check last ran on; see [AppSettingsProto.recordsBootId]. */
     val recordsBootIdFlow = field { it.recordsBootId }
     /** The vote queue as this install last saw it; see [AppSettingsProto.votesSeen]. */
@@ -210,6 +215,8 @@ class CantaSettings(storage: AppBlobStorage) {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }
     suspend fun setClearRecordsAfterBoot(clear: Boolean) = update { it.copy(clearRecordsAfterBoot = clear) }
+    /** 列表里点一个包：弹小窗（`true`）或直接进详情页（`false`，出厂）。 */
+    suspend fun setAppTapOpensDialog(showsDialog: Boolean) = update { it.copy(appTapOpensDialog = showsDialog) }
     suspend fun setRecordsBootId(bootId: String) = update { it.copy(recordsBootId = bootId) }
 
     suspend fun setVotesSeen(fingerprint: String) = update { it.copy(votesSeen = fingerprint) }

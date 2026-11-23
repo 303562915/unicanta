@@ -203,11 +203,20 @@ class MainViewModel(
     fun dismissDialog() {
         dialog = null
         afterConnect = null
+        pendingRemoval = emptyList()
     }
 
     fun showBadgesExplanation() {
         dialog = MainDialog.ExplainBadges
     }
+
+    /**
+     * 确认框正在处理的那批包：列表页是选中集合的快照，应用详情页只有那一个包。
+     *
+     * 不现读 [AppListViewModel.selectedApps]，是因为两个页面共用同一套确认、生物识别与结果
+     * 流程，而详情页不该碰用户的勾选；执行途中勾选被清空也不该影响已经在跑的批次。
+     */
+    private var pendingRemoval: List<String> = emptyList()
 
     /** The FAB: uninstall ([AppsType.INSTALLED]) or reinstall the selected apps. */
     fun applyToSelected(type: AppsType) {
@@ -217,6 +226,29 @@ class MainViewModel(
                 return@launch
             }
             whenAuthorized { confirm(type) }
+        }
+    }
+
+    /**
+     * 应用详情页的「卸载」：一个包，走和列表页完全相同的路——设备规则、占用检查、确认框、
+     * 生物识别、成功/失败提示，所以两个页面的措辞与拒绝理由不会走样。
+     */
+    fun uninstallPackage(packageName: String) {
+        viewModelScope.launch {
+            if (packageName == CANTA_PACKAGE_NAME) {
+                platform.showMessage(getString(Res.string.cannot_uninstall_canta))
+                return@launch
+            }
+            whenAuthorized { confirmRemoval(listOf(packageName)) }
+        }
+    }
+
+    /** 应用详情页的「恢复」：把已卸载的包放回去，提示与列表页的恢复一致。 */
+    fun reinstallPackage(packageName: String) {
+        viewModelScope.launch {
+            whenAuthorized {
+                authenticateAndApply(AppsType.UNINSTALLED, listOf(packageName), resetToFactory = false)
+            }
         }
     }
 
@@ -244,11 +276,20 @@ class MainViewModel(
 
     private suspend fun confirm(type: AppsType) {
         if (type != AppsType.INSTALLED) {
-            authenticateAndApply(type, resetToFactory = false)
+            authenticateAndApply(type, appList.selectedApps.toList(), resetToFactory = false)
             return
         }
         val selected = appList.selectedApps.toList()
         if (selected.isEmpty()) return
+        confirmRemoval(selected)
+    }
+
+    /**
+     * 卸载前的唯一那条路：列表页的 FAB 与一个应用自己的页面都从这里走，所以两处的弹窗、
+     * 规则与结果提示必然一致。
+     */
+    private suspend fun confirmRemoval(selected: List<String>) {
+        pendingRemoval = selected
         // The device rules are not the confirmation dialog: they are the thing that stops a package
         // known to strand *this* model or ROM. They therefore run whether or not the user asked to
         // be asked twice — turning the "are you sure" prompt off must not turn the safety check off
@@ -269,7 +310,7 @@ class MainViewModel(
         if (!settings.confirmBeforeUninstallFlow.first()) {
             // Confirmation is off, so "有代价" packages go through without a prompt. The route is
             // the same one the dialog would have taken, which keeps the two paths behaving alike.
-            authenticateAndApply(type, resetToFactory = false)
+            authenticateAndApply(AppsType.INSTALLED, selected, resetToFactory = false)
             return
         }
         if (risky.isNotEmpty()) {
@@ -346,40 +387,45 @@ class MainViewModel(
     fun onUnsafeSelectionAccepted() {
         val unsafe = dialog as? MainDialog.UnsafeSelection ?: return
         val blocked = unsafe.blocked.map { it.pkg }.toSet()
+        // The batch that was confirmed, not the current selection: an app's own page confirms a
+        // single package without ever touching what the list has ticked.
+        val remaining = pendingRemoval.filterNot { it in blocked }
         viewModelScope.launch {
             blocked.forEach { appList.selectedApps.remove(it) }
             dialog = null
-            if (appList.selectedApps.isEmpty()) return@launch
-            authenticateAndApply(AppsType.INSTALLED, resetToFactory = false)
+            if (remaining.isEmpty()) return@launch
+            authenticateAndApply(AppsType.INSTALLED, remaining, resetToFactory = false)
         }
     }
 
     fun onUninstallConfirmed(resetToFactory: Boolean) {
+        val packages = pendingRemoval
         dialog = null
-        viewModelScope.launch { authenticateAndApply(AppsType.INSTALLED, resetToFactory) }
+        viewModelScope.launch { authenticateAndApply(AppsType.INSTALLED, packages, resetToFactory) }
     }
 
     /**
-     * Freeze the selection instead of removing it: the same packages, the same login and data,
-     * and an undo that needs no copy of anything.
+     * Freeze the confirmed packages instead of removing them: the same apps, the same login and
+     * data, and an undo that needs no copy of anything.
      */
     fun onFreezeConfirmed() {
+        val packages = pendingRemoval
         dialog = null
         viewModelScope.launch {
             if (settings.authEnabledFlow.first()) {
                 platform.requireBiometric(
                     title = getString(Res.string.auth_required),
                     subtitle = getString(Res.string.auth_required_description),
-                ) { viewModelScope.launch { freezeSelected() } }
+                ) { viewModelScope.launch { freezePackages(packages) } }
             } else {
-                freezeSelected()
+                freezePackages(packages)
             }
         }
     }
 
-    private suspend fun freezeSelected() {
-        val attempted = appList.selectedApps.toList()
-        val count = appList.applyPackages(attempted, OperationKind.DISABLE)
+    private suspend fun freezePackages(packages: List<String>) {
+        if (packages.isEmpty()) return
+        val count = appList.applyPackages(packages, OperationKind.DISABLE)
         if (count > 0 && !settings.hideSuccessDialogFlow.first()) {
             // Reported as a freeze, not as a removal: "1 app uninstalled" would be a lie.
             dialog = MainDialog.Success(count = count, kind = OperationKind.DISABLE)
@@ -395,21 +441,26 @@ class MainViewModel(
         }
     }
 
-    private suspend fun authenticateAndApply(type: AppsType, resetToFactory: Boolean) {
+    private suspend fun authenticateAndApply(
+        type: AppsType,
+        packages: List<String>,
+        resetToFactory: Boolean,
+    ) {
+        if (packages.isEmpty()) return
         if (settings.authEnabledFlow.first()) {
             platform.requireBiometric(
                 title = getString(Res.string.auth_required),
                 subtitle = getString(Res.string.auth_required_description),
-            ) { viewModelScope.launch { apply(type, resetToFactory) } }
+            ) { viewModelScope.launch { apply(type, packages, resetToFactory) } }
         } else {
-            apply(type, resetToFactory)
+            apply(type, packages, resetToFactory)
         }
     }
 
-    private suspend fun apply(type: AppsType, resetToFactory: Boolean) {
-        // Remembered before applying: the selection is cleared as every app succeeds.
-        val attempted = if (type == AppsType.INSTALLED) appList.selectedApps.toList() else emptyList()
-        val count = appList.applyToSelected(type, resetToFactory)
+    private suspend fun apply(type: AppsType, packages: List<String>, resetToFactory: Boolean) {
+        // Remembered before applying: a successful package leaves the list it was picked from.
+        val attempted = if (type == AppsType.INSTALLED) packages else emptyList()
+        val count = appList.applyPackages(packages, type.operationKind, resetToFactory)
         if (attempted.isNotEmpty()) settings.setLastConfirmedPackages(attempted)
         val kind = type.operationKind
         if (count > 0) {

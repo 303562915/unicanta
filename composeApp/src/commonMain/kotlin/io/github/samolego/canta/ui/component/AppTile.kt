@@ -59,7 +59,8 @@ fun AppTile(
     isSelected: Boolean,
     enabled: Boolean = true,
     onCheckChanged: (Boolean) -> Unit,
-    onShowDialog: () -> Unit,
+    /** 点这一行：弹详情小窗，还是直接开这个应用的详情页，由设置里的开关决定。 */
+    onOpen: () -> Unit,
     showBorder: Boolean = isSelected,
     /** On the uninstalled list: whether the ROM never installed this for the user, instead of Canta removing it. */
     neverInstalled: Boolean = false,
@@ -90,7 +91,7 @@ fun AppTile(
         Row(
             modifier =
                     Modifier.fillMaxWidth()
-                            .clickable(onClick = onShowDialog)
+                            .clickable(onClick = onOpen)
                             .padding(
                                     start = 10.dp,
                                     end = 2.dp,
@@ -160,7 +161,7 @@ fun SelectedAppTile(
     appInfo: AppInfo,
     score: CommunityScore? = null,
     onCheckChanged: (Boolean) -> Unit,
-    onShowDialog: () -> Unit,
+    onOpen: () -> Unit,
     /** Same meaning as in [AppTile]: the ROM never installed it, Canta did not remove it. */
     neverInstalled: Boolean = false,
 ) {
@@ -171,7 +172,7 @@ fun SelectedAppTile(
         isSelected = true,
         showBorder = false,
         onCheckChanged = onCheckChanged,
-        onShowDialog = onShowDialog,
+        onOpen = onOpen,
         neverInstalled = neverInstalled,
         checkedColor = MaterialTheme.colorScheme.error,
         checkedBackgroundColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),

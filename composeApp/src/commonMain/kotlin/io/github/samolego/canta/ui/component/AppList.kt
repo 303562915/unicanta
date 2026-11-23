@@ -81,8 +81,21 @@ fun AppList(
      * believing they removed it (see [NeverInstalledBadge]).
      */
     uninstalledByCanta: Set<String> = emptySet(),
+    /**
+     * 点一个包要去的详情页（包名进路由）。设置里「点击应用打开详情页」关着的时候不用它，
+     * 那时点一下还是弹 [AppInfoDialog]。
+     */
+    onOpenAppPage: (String) -> Unit = {},
 ) {
     var showAppDialog by remember { mutableStateOf<AppInfo?>(null) }
+
+    // 存的是"弹窗"，所以这里读的是它的反：出厂是"点一下直接进详情页"。
+    val appTapOpensDialog by settingsViewModel.appTapOpensDialog.collectAsStateWithLifecycle()
+
+    /** 点一行：默认开详情页，开关关掉就退回弹窗。 */
+    fun openApp(app: AppInfo) {
+        if (appTapOpensDialog) showAppDialog = app else onOpenAppPage(app.packageName)
+    }
 
     val appList by remember { derivedStateOf { appListModel.appList.filter(appType::matches) } }
     val selectedAppList by remember { derivedStateOf { appListModel.selectedAppsSorted.filter(appType::matches) } }
@@ -193,7 +206,7 @@ fun AppList(
                                         onCheckChanged = {
                                             appListModel.selectedApps.remove(appInfo.packageName)
                                         },
-                                        onShowDialog = { showAppDialog = appInfo },
+                                        onOpen = { openApp(appInfo) },
                                     )
                                 }
                             }
@@ -235,7 +248,7 @@ fun AppList(
                                     appListModel.selectedApps.remove(appInfo.packageName)
                                 }
                             },
-                            onShowDialog = { showAppDialog = appInfo }
+                            onOpen = { openApp(appInfo) }
                         )
                     }
                     item(span = { GridItemSpan(maxLineSpan) }) {

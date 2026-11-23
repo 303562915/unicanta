@@ -55,6 +55,7 @@ import io.github.samolego.canta.ui.component.CantaTopBar
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
+import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.dialog.AppListPermissionDialog
 import io.github.samolego.canta.ui.dialog.DeviceChooserDialog
 import io.github.samolego.canta.ui.dialog.ExplainBadgesDialog
@@ -214,6 +215,11 @@ fun MainScreen(
                             handler = handler,
                             enableSelectAll = enableSelectAll,
                             uninstalledByCanta = uninstalledByCanta,
+                            // 设置里那个开关决定要不要走这里：默认点一下就进这个包的详情页，
+                            // 关掉之后列表自己弹小窗，不会叫到这个回调。
+                            onOpenAppPage = { packageName ->
+                                navigateToPage(Screen.AppDetail.routeForApp(packageName))
+                            },
                         )
                     }
                 }
@@ -318,9 +324,15 @@ private fun AppsTabs(pagerState: PagerState) {
     )
 }
 
-/** Renders [MainViewModel.dialog] (once, outside the pager) */
+/**
+ * Renders [MainViewModel.dialog] (once, outside the pager).
+ *
+ * Shared with the app page: an app's own page removes one package through the same view model, so
+ * the confirmation, the blocklist, the biometric prompt and the success/failure report are drawn by
+ * this same code there — two pages cannot drift into two different wordings for one action.
+ */
 @Composable
-private fun MainDialogs(
+internal fun MainDialogs(
     handler: CantaHandler,
     platform: CantaPlatform,
     mainViewModel: MainViewModel,

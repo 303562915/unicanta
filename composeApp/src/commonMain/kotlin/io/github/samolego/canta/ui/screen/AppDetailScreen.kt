@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -154,6 +155,15 @@ fun AppDetailScreen(
     social: SocialRepository? = null,
     /** 分享时署谁的名字；和 [voter] 是同一个身份，分开一个参数只是让调用点读起来更清楚。 */
     owner: String = "",
+    /**
+     * 直接在这一页卸载这个包；null 表示这个调用点没有接上卸载能力。
+     *
+     * 它不是另一套流程：确认框、设备规则、生物识别和结果提示都来自列表页那一套（同一个
+     * view model），所以两处点的都是同一件事。
+     */
+    onUninstall: (() -> Unit)? = null,
+    /** 已卸载的包直接装回去；null 与 [onUninstall] 同理。 */
+    onReinstall: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var reviews by remember { mutableStateOf<List<AppReview>>(emptyList()) }
@@ -439,6 +449,8 @@ fun AppDetailScreen(
                     onVote = castVote,
                     fixes = descriptionFixes,
                     onOpenDescriptionFixes = { onOpenDescriptionFixes(packageName) },
+                    onUninstall = onUninstall,
+                    onReinstall = onReinstall,
                 )
             }
             item { SectionHeading("评论 · ${visibleComments.size}") }
@@ -594,23 +606,36 @@ private fun AppHero(
     /** The community's corrections of this app's description; empty when nobody filed one. */
     fixes: List<DescriptionFix> = emptyList(),
     onOpenDescriptionFixes: () -> Unit = {},
+    /** 卸载这个包；null 表示这一页不提供这个动作。 */
+    onUninstall: (() -> Unit)? = null,
+    /** 把已卸载的包装回去；null 与 [onUninstall] 同理。 */
+    onReinstall: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val recommended = remember(recommendations, packageName) {
         recommendations?.apps?.firstOrNull { packageName in it.replacesPackages }
     }
     val appliedFix = remember(fixes) { fixes.firstOrNull { it.applied } }
+    val uninstalled = app?.isUninstalled == true
     Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (app != null) {
-                AppIconImage(app, size = 56.dp)
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(scheme.surfaceContainerHighest),
-                )
+            // 图标和它的状态一起：那个「未卸载 / 已卸载」的胶囊就贴在图标底下，说明的是这颗
+            // 图标本身；右侧那块位置留给真正能做的事——卸载，或者把它装回去。
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (app != null) {
+                    AppIconImage(app, size = 56.dp)
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(scheme.surfaceContainerHighest),
+                    )
+                }
+                if (app != null) {
+                    Spacer(Modifier.height(5.dp))
+                    UninstallStatus(app)
+                }
             }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -624,7 +649,10 @@ private fun AppHero(
                 Text(
                     text = packageName,
                     style = FlText.caption2.copy(fontFamily = FontFamily.Monospace),
-                    color = scheme.onSurfaceVariant,
+                    // 卸载完了就划掉：包名上一条和状态同一个颜色的横杠，一眼能看出这一页说的是
+                    // 一个这台手机上已经没有了的包。
+                    color = if (uninstalled) CANNOT_REMOVE else scheme.onSurfaceVariant,
+                    textDecoration = if (uninstalled) TextDecoration.LineThrough else null,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -641,10 +669,14 @@ private fun AppHero(
                     )
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            // Whether it is still on the phone is the first thing a reader checks, so it is a state
-            // of its own — a coloured dot and a word — not a caption that happens to say "已卸载".
-            UninstallStatus(app)
+            if (app != null) {
+                Spacer(Modifier.width(8.dp))
+                UninstallAction(
+                    uninstalled = uninstalled,
+                    onUninstall = onUninstall,
+                    onReinstall = onReinstall,
+                )
+            }
         }
 
         // What can stand in for this app, as a card of its own: the tile, the name, and a plain
@@ -947,6 +979,38 @@ private fun UninstallStatus(app: AppInfo?) {
         Text(
             text = label,
             style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+            color = color,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * 这个应用右边那个按钮：还在手机上就是「卸载」，已经没了就是「恢复」。
+ *
+ * 形状和颜色与 [UninstallStatus] 同一套，所以一行里读起来是「状态 + 动作」，而不是两个互不
+ * 相干的小玩意儿。真正发生的事不在这里：点击只是把动作交给同一个 view model，确认、规则、
+ * 生物识别的提示都由列表页用的那套代码画出来。
+ */
+@Composable
+private fun UninstallAction(
+    uninstalled: Boolean,
+    onUninstall: (() -> Unit)?,
+    onReinstall: (() -> Unit)?,
+) {
+    val onClick = (if (uninstalled) onReinstall else onUninstall) ?: return
+    val color = if (uninstalled) CAN_REMOVE else CANNOT_REMOVE
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(color.copy(alpha = 0.14f))
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (uninstalled) "恢复" else "卸载",
+            style = FlText.caption1.copy(fontWeight = FlText.emphasized),
             color = color,
             maxLines = 1,
         )

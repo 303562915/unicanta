@@ -94,6 +94,7 @@ import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.DescriptionFixScreen
 import io.github.samolego.canta.ui.screen.LaunchLockScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
+import io.github.samolego.canta.ui.screen.MainDialogs
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.ChatScreen
 import io.github.samolego.canta.ui.screen.CreateGroupScreen
@@ -1131,6 +1132,7 @@ private fun CantaNavigation(
                     communityRepository = communityRepository,
                     appListViewModel = appListViewModel,
                     platform = platform,
+                    mainViewModel = mainViewModel,
                 )
             }
             composable(route = Screen.AppDetail.route) { entry ->
@@ -1151,6 +1153,7 @@ private fun CantaNavigation(
                     communityRepository = communityRepository,
                     appListViewModel = appListViewModel,
                     platform = platform,
+                    mainViewModel = mainViewModel,
                 )
             }
             composable(route = Screen.Uploader.route) { entry ->
@@ -1798,6 +1801,7 @@ private fun AppDetailRoute(
     communityRepository: PlanRepository,
     appListViewModel: AppListViewModel,
     platform: CantaPlatform,
+    mainViewModel: MainViewModel,
 ) {
     var appProfile by remember { mutableStateOf<DeviceProfile?>(null) }
     var appAuthor by remember { mutableStateOf("") }
@@ -1832,7 +1836,13 @@ private fun AppDetailRoute(
         // can go back to the app they were reading about.
         onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
         anchorCommentId = anchorCommentId,
+        // 卸载与恢复交给主屏那一个 view model：确认框、设备规则、占用检查、生物识别和结果
+        // 提示因此和列表页是同一套代码，而不是这一页自己另写一遍。
+        onUninstall = { mainViewModel.uninstallPackage(packageName) },
+        onReinstall = { mainViewModel.reinstallPackage(packageName) },
     )
+    // 上面那两个动作的弹窗由主屏用的那份实现来画：同一个 dialog 状态，同样的措辞。
+    MainDialogs(handler = handler, platform = platform, mainViewModel = mainViewModel)
 }
 
 /**
