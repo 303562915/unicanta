@@ -378,6 +378,13 @@ internal fun MainDialogs(
             reasons = dialog.reasons,
             kind = dialog.kind,
             onDismissRequest = mainViewModel::dismissDialog,
+            // The one failure worth a hand-off: an app that will not come back has to be fetched
+            // from somewhere, and our own download page is the link to pass on.
+            onOpenDownloadPage = if (dialog.kind == OperationKind.REINSTALL) {
+                ({ platform.openUrl(DOWNLOAD_PAGE_URL) })
+            } else {
+                null
+            },
         )
         MainDialog.ShizukuSetup -> ShizukuRequirementDialog(
             onClose = mainViewModel::onShizukuSetupClosed,

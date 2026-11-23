@@ -14,6 +14,7 @@ import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -26,6 +27,8 @@ import org.jetbrains.compose.resources.stringResource
  * @param attempts how many packages the batch tried in total.
  * @param reasons what the device said and what to do about it, already distinct.
  * @param kind what was being attempted: it titles the dialog.
+ * @param onOpenDownloadPage where to send someone whose apps would not come back: our own download
+ *   page, printed in full so the link can also be copied and passed on by hand.
  */
 @Composable
 fun FailureDialog(
@@ -33,6 +36,7 @@ fun FailureDialog(
     reasons: List<Pair<String, String>>,
     kind: OperationKind,
     onDismissRequest: () -> Unit,
+    onOpenDownloadPage: (() -> Unit)? = null,
 ) {
     CantaDialog(
         onDismissRequest = onDismissRequest,
@@ -80,6 +84,15 @@ fun FailureDialog(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (onOpenDownloadPage != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "这台手机实在装不回去的话，到我们的 GitHub 下载页取安装包，发给对方手动装：$DOWNLOAD_PAGE_URL",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onOpenDownloadPage) { Text("打开 GitHub 下载页") }
+            }
         }
     }
 }

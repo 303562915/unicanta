@@ -319,7 +319,14 @@ fun TweaksScreen(
             onDismiss = {},
         )
         is RestoreStep.Done -> BusyDialog(
-            text = stringResource(Res.string.tweaks_restore_done, current.restored, current.failed),
+            text = stringResource(Res.string.tweaks_restore_done, current.restored, current.failed) +
+                // The link is printed rather than only linked: a phone that could not take its apps
+                // back is exactly the case where someone passes the download page on by hand.
+                if (current.failed > 0) {
+                    "\n\n装不回去的可以到我们的 GitHub 下载页取安装包：$DOWNLOAD_PAGE_URL"
+                } else {
+                    ""
+                },
             onDismiss = { step = null },
         )
     }
