@@ -209,7 +209,7 @@ gh run download <run-id> -n app-debug -D artifacts
 **再遇到「某台机器显示编号」，按这个顺序处理**（不要先去翻客户端日志，那里没有）：
 
 ```sql
--- 1. 谁没有名字（凭据见 SUPABASE.local.md，走 Management API，一条一条发）
+-- 1. 谁没有名字（凭据与连法见 SUPABASE.local.md + 第 10.1 节）
 select brand, model, coalesce(codename,'') as codename, rom, rom_version, sdk
   from plans where coalesce(market_name,'') = '' order by brand, model;
 ```
@@ -259,7 +259,16 @@ function Q($sql) {
 Q 'select 1 as ok'   # 先证明：地址通、token 对、代理没坏
 ```
 
-`api.supabase.com` 必须走 `$env:HTTPS_PROXY`，否则报 SSL 握手失败。**一次请求只能带一条语句。**
+`api.supabase.com` 必须走 `$env:HTTPS_PROXY`，否则报 SSL 握手失败。
+
+**多语句是支持的，而且走隐式事务（2026-11-23 实测）**：把整段 SQL 拼成一条 `query` 发过去，Postgres 在
+simple query protocol 下把它们当**一个隐式事务**执行——中途任一条报错则全部回滚。实测：发
+`create table _atomic_probe; select 1/0;` 之后表不存在，证明原子。所以推迁移时**整包发一次**，
+不要逐条发：逐条发会在 `drop function` 和 `create function` 之间留出空窗，那段时间线上调这个函数就是 404。
+整包发没有空窗，也不可能留下半成品。
+
+> 早前这一节写的是「一次请求只能带一条语句」，那是错的（从未验证过）。真正需要注意的是**拆语句用于核对**
+> （看每条边界对不对），不是用于发送。
 
 ### 10.2 推一个迁移：七步，顺序不能换
 
@@ -267,13 +276,18 @@ Q 'select 1 as ok'   # 先证明：地址通、token 对、代理没坏
    `Q "select pg_get_functiondef('public.xxx(sig)'::regprocedure) as d"`，写进
    `backups/db-local-only/<name>_before_<date>.sql`。
 2. **数行数**：`Q 'select count(*) from public.<table>'`，把数字记下来。
-3. **拆语句**：带 `$$ … $$` 的 `create or replace function` **不能按分号硬拆**。
-   按顶层关键字切块（`create or replace function …` / `revoke …` / `do $$ … $$;`），
-   照 `20261122100000_comment_delete_owner_match.sql` 那次的三段切法。
-4. **逐条发**，每条都要看到 OK；任何一条报错就停下，别继续发后面的。
+3. **核对语句边界**：带 `$$ … $$` 的 `create or replace function` **不能按分号硬拆**。
+   按顶层关键字切块（`create or replace function …` / `revoke …` / `do $$ … $$;`）**只是为了核对**
+   每条边界对不对、有没有漏掉 `grant`、`$$` 是否配成对——**不是**为了逐条发送。
+4. **整包发一次**（见 10.1）：把整个文件当一条 `query` 发过去。隐式事务保证要么全成、要么全回滚，
+   中间没有 `drop → create` 的空窗。**不要逐条发**，那会把空窗留到线上。
 5. **再数一遍行数**，必须和步骤 2 一样。不一样就是出事了，立刻用步骤 1 的备份回滚。
-6. **验定义真的换了**：`pg_get_functiondef(...)` 里能搜到新逻辑的关键字。
+   `canta_users` 例外：它是真实装机表，会自己增长，要按 `created_at` 判断是注册还是迁移副作用。
+6. **验定义真的换了**：`pg_get_functiondef(...)` 里能搜到新逻辑的关键字；或查
+   `pg_proc` 的 `pg_get_function_identity_arguments` 看新参数在不在。
 7. **空跑一次**：拿明显无效的入参调一次，确认走的是拒绝分支、不抛异常。
+   注意有些函数对空参数是 `raise exception` 而不是返回 false（比如 `message_send` 的空正文），
+   那也算走对了分支，但要看清异常是不是**你自己改出来的**。挑无副作用的入参（假号码 + 不存在的 id）。
 
 ### 10.3 不要做的事
 
@@ -302,9 +316,21 @@ Q 'select 1 as ok'   # 先证明：地址通、token 对、代理没坏
 - 改函数的做法：先用 `pg_get_functiondef` 取线上原文、插一行、再 `create or replace` 回去；
   原文备份在 `backups/db-local-only/functions-before-throttle/`。
 
-**身份收口还没做**（投票/评论/方案的身份仍由客户端自报）。它要么给每个函数加可选 `p_token`
-参数（要 drop 旧签名，有秒级 404 窗口），要么新起 `*_v2` 函数——两条都得等客户端先发版
-带上 token，否则 v2 是死代码。顺序固定：客户端补 token → 服务端认 token → 再收紧。
+### 10.5 身份 token 收口（2026-11-23 第一批已上线）
+
+`20261123110000_identity_token_write.sql`：`private.identity_of(token)` + 17 个写函数（社交 14 + 方案/投票/评论 3）
+末尾加 `p_token text default ''`，身份取 `coalesce(private.identity_of(p_token), 自报值)`。
+
+- **必须是 drop 旧签名再建新的**，不能用 `create or replace`：多一个参数就是新重载，PostgREST 会报
+  `Could not choose the best candidate function`。drop 带走 grant，末尾的 DO 块会重发 anon/authenticated。
+- **灰度靠两件事撑着**：`p_token` 有默认值（老客户端不带也能调）、`identity_of` 查不到返回 **null 而不是抛错**
+  （认不出来就退回自报）。**别把这两条改掉**，否则线上老客户端直接挂。
+- **顺序固定：服务端先、客户端后**。客户端接线在 `CantaApp.kt` 的两个仓储构造（`identityToken = { DeviceIdentity.ensure(...) }`，
+  提交 `7cc728c`）。反序会让新客户端在旧库上报 `function ... does not exist`。
+- **还没收的**：`comment_like`、`package_vote`、`description_fix_add`、`description_fix_vote`、
+  `recommend_suggestion_add`、`recommend_suggestion_vote` 六个仍信自报，配方同上。
+- **还没做"强制"**：现在认不出仍退回自报。要收紧得等所有在线客户端都升级完之后单独一轮。
+- 回滚材料：`backups/db-local-only/functions-before-identity-token/functions_before_20261123.sql`（17 个函数原文）。
 
 ---
 
