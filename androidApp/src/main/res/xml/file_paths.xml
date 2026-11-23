@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- What the FileProvider may hand out: the folder downloaded updates wait in
-     (Context.getExternalFilesDir("updates")), seen from the app's external files root. -->
+     (Context.getExternalFilesDir("updates")), seen from the app's external files root; and the
+     staging folder a file handed to the share sheet is written to when the Download folder is
+     out of reach (Context.getExternalFilesDir("share")). -->
 <paths>
     <external-files-path
         name="updates"
         path="updates/" />
+    <external-files-path
+        name="share"
+        path="share/" />
+    <cache-path
+        name="share-cache"
+        path="share/" />
 </paths>

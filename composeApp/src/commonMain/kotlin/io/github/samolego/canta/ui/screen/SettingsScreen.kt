@@ -136,6 +136,11 @@ fun SettingsScreen(
     onUserSelected: (Int) -> Unit = {},
     fakeScores: Boolean = false,
     onFakeScoresChange: (Boolean) -> Unit = {},
+    /**
+     * 生成"最近删掉的包名"的恢复脚本并交给分享面板，好发到电脑上双击运行。
+     * 具体的文件生成在 [io.github.samolego.canta.data.history.OperationLogStore.shareRestoreScript]。
+     */
+    onExportRestoreScript: () -> Unit = {},
 ) {
     val autoUpdateBloatList by settingsViewModel.autoUpdateBloatList.collectAsStateWithLifecycle()
     val confirmBeforeUninstall by settingsViewModel.confirmBeforeUninstall.collectAsStateWithLifecycle()
@@ -331,6 +336,17 @@ fun SettingsScreen(
                         }
                     }
                 },
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 撤回卸载的最后一条线：删掉的包其实还在系统分区里，install-existing 能把标记取消，
+            // 但那条命令只能在电脑上通过 adb 打。这里生成一个批处理发出去，双击就跑：
+            // 先按 Canta 的记录逐个装回来，再保底把系统里所有已卸载的包全恢复一遍。
+            AppLinkCard(
+                glyph = FlGlyphs.send,
+                title = "导出最近删除的包名",
+                subtitle = "生成 ADB 恢复脚本，发送到电脑上双击运行；保底恢复所有已卸载的包",
+                onClick = onExportRestoreScript,
             )
             Spacer(Modifier.height(CardGap))
 

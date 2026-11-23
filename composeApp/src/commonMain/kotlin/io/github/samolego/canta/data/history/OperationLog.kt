@@ -4,6 +4,7 @@ import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.AppBlobStorage
 import io.github.samolego.canta.data.app.PackageSnapshot
 import io.github.samolego.canta.util.LogUtils
+import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -134,6 +135,15 @@ class OperationLogStore(
         /** Name of the CSV under the platform's download folder. */
         const val FILE_NAME = "canta-operations.csv"
 
+        /**
+         * The rescue script the settings page hands to the share sheet: a Windows batch file that
+         * puts back what was removed, since that has to run on a computer with adb, not here.
+         */
+        const val RESTORE_FILE_NAME = "canta-restore.bat"
+
+        /** What the share sheet is told the rescue script is; `.bat` has no registered MIME. */
+        private const val RESTORE_MIME = "application/octet-stream"
+
         private const val CSV_HEADER =
             "time,action,result,package,label,batch_index,batch_size,reset_to_factory,device,user," +
                 "message,reason,advice,version_name,version_code,is_system,installer,first_install_time"
@@ -243,6 +253,96 @@ class OperationLogStore(
      */
     suspend fun export(): String? = writeCsv(_records.value)
 
+    /**
+     * 最近被 Canta 删掉、到现在还没装回来的包名，最新的在前。
+     *
+     * 每个包只看最后一条卸载/恢复记录：最后一条是成功卸载的，才算"这台手机现在没有它"。
+     * 冻结/解冻不算，它们不改包在不在。
+     */
+    suspend fun recentlyRemovedPackages(): List<String> {
+        ensureReady()
+        val latest = LinkedHashMap<String, OperationRecord>()
+        _records.value.sortedByDescending { it.timestamp }.forEach { record ->
+            if (record.kind == OperationKind.UNINSTALL || record.kind == OperationKind.REINSTALL) {
+                // Newest first: the first record seen for a package is its last word.
+                if (!latest.containsKey(record.packageName)) latest[record.packageName] = record
+            }
+        }
+        return latest.filterValues { it.kind == OperationKind.UNINSTALL && it.success }.keys.toList()
+    }
+
+    /**
+     * 生成"把删掉的装回来"的脚本，交给分享面板发到电脑上双击运行。
+     *
+     * 为什么是一个文件而不是一页清单：`install-existing` 只能在电脑上通过 adb 打，
+     * 手机自己救不了自己；而人手里真正要的是"插上数据线、双击、等它跑完"。
+     * 脚本先按记录逐个恢复，再保底把系统里所有已卸载的包恢复一遍——即使记录丢了、
+     * 或者删的时候 Canta 不在，第二次也还在。
+     */
+    suspend fun shareRestoreScript(): RestoreExport {
+        ensureReady()
+        val packages = recentlyRemovedPackages()
+        // 拼字符串放后台；分享面板得在调用者的线程上开（Android 从应用上下文启 Activity 要主线程）。
+        val script = withContext(Dispatchers.Default) { restoreScript(packages) }
+        val shared = runCatching { platform.shareFile(RESTORE_FILE_NAME, script, RESTORE_MIME) }
+            .getOrDefault(false)
+        // 没有分享面板的构建（桌面、网页）至少把文件放到用户找得到的地方。
+        val path = if (shared) {
+            null
+        } else {
+            runCatching { platform.exportLog(RESTORE_FILE_NAME, script) }.getOrNull()
+        }
+        return RestoreExport(packages = packages.size, shared = shared, path = path)
+    }
+
+    /** The batch file itself; CRLF because it is a Windows script, whoever writes it. */
+    private fun restoreScript(packages: List<String>): String = buildString {
+        append("@echo off\r\n")
+        append("chcp 65001 >nul\r\n")
+        append("rem ==== Canta 恢复脚本（生成于 ${OperationTime.stamp(currentTimeMillis())}）====\r\n")
+        append("rem 用法：手机打开「USB 调试」，用数据线连上电脑，电脑装好 adb，然后双击本文件。\r\n")
+        append("rem 先按 Canta 的记录把删掉的包装回来，再保底把系统里所有「已卸载但文件还在」\r\n")
+        append("rem 的包恢复一次。两者都是 install-existing，不碰数据，不会清手机。\r\n")
+        append("setlocal enabledelayedexpansion\r\n")
+        append("set \"ADB=adb\"\r\n")
+        append("\r\n")
+        append("%ADB% version >nul 2>&1 || (\r\n")
+        append("  echo [x] 找不到 adb，请把 platform-tools 放进 PATH 再试一次。\r\n")
+        append("  pause\r\n")
+        append("  exit /b 1\r\n")
+        append(")\r\n")
+        append("%ADB% get-state >nul 2>&1 || (\r\n")
+        append("  echo [x] 手机没连上：检查数据线、USB 调试授权，看看 adb devices 里有没有这台设备。\r\n")
+        append("  pause\r\n")
+        append("  exit /b 1\r\n")
+        append(")\r\n")
+        append("\r\n")
+        if (packages.isEmpty()) {
+            append("rem 记录里没有未恢复的卸载，直接走保底。\r\n")
+        } else {
+            append("echo [1/2] 按 Canta 的记录恢复 ${packages.size} 个包...\r\n")
+            append("for %%P in (\r\n")
+            packages.forEach { append(it).append("\r\n") }
+            append(") do (\r\n")
+            append("  echo   %%P\r\n")
+            append("  %ADB% shell cmd package install-existing --user 0 %%P\r\n")
+            append(")\r\n")
+            append("\r\n")
+        }
+        append("echo [2/2] 保底：恢复系统里所有已卸载的包...\r\n")
+        // 循环放在手机上跑：adb 的输出带 CRLF，批处理的 for /f 会把行尾回车一起读进变量，
+        // 拼出来的包名带着 \r 传给 install-existing 必然对不上。只依赖 cut 与 while read，
+        // 已安装的包再 install-existing 一次是无害的，所以这里不做差集，宁可多跑几个。
+        append(
+            "%ADB% shell \"pm list packages -u | cut -d: -f2 | while read p; do " +
+                "echo   \$p; cmd package install-existing --user 0 \$p; done\"\r\n"
+        )
+        append("\r\n")
+        append("echo.\r\n")
+        append("echo 跑完了，重启手机看看应用回来没有。\r\n")
+        append("pause\r\n")
+    }
+
     private suspend fun persist(
         records: List<OperationRecord>,
         pending: PendingBatchBlob,
@@ -320,6 +420,15 @@ class OperationLogStore(
     private fun String.csvCell(): String =
         if (any { it == ',' || it == '"' || it == '\n' }) "\"" + replace("\"", "\"\"") + "\"" else this
 }
+
+/**
+ * 分享恢复脚本的结果：脚本里写进了几个包名、分享面板有没有打开、以及没有面板时文件落在了哪里。
+ */
+data class RestoreExport(
+    val packages: Int,
+    val shared: Boolean,
+    val path: String?,
+)
 
 /**
  * Wall-clock formatting for the record list and its CSV, in the phone's own time zone: a log read

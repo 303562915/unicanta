@@ -74,6 +74,9 @@ class AndroidCantaPlatform(
         /** Bytes per read, and the unit progress moves in when the server announces no size. */
         private const val DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
+        /** Where a file handed to the share sheet is staged when the Download folder is out of reach. */
+        private const val SHARE_DIRECTORY = "share"
+
         /**
          * How many times one APK is attempted before the page is told it failed. Every attempt
          * after the first resumes from the bytes already on disk, so this is not "download it six
@@ -462,7 +465,11 @@ class AndroidCantaPlatform(
      */
     override fun exportLog(fileName: String, content: String): String? = try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            writeDownload(fileName, content)
+            if (writeDownload(fileName, content, "text/csv") != null) {
+                "Download/Canta/$fileName"
+            } else {
+                writeExternalFile(fileName, content)
+            }
         } else {
             writeExternalFile(fileName, content)
         }
@@ -471,7 +478,52 @@ class AndroidCantaPlatform(
         null
     }
 
-    private fun writeDownload(fileName: String, content: String): String? {
+    /**
+     * Hands [content] to the share sheet as [fileName], so it can be sent to a computer instead of
+     * being looked for in a folder. Download first (the file manager sees it too), and when the
+     * system has no Downloads collection the copy in the app's own folder is served through the
+     * FileProvider instead.
+     */
+    override fun shareFile(fileName: String, content: String, mimeType: String): Boolean = try {
+        val downloaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            writeDownload(fileName, content, mimeType)
+        } else {
+            null
+        }
+        val uri = downloaded ?: externalFileUri(fileName, content)
+
+        if (uri == null) {
+            false
+        } else {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, fileName)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(send, "发送到电脑")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+            true
+        }
+    } catch (e: Exception) {
+        LogUtils.e(TAG, "Could not share '$fileName'", e)
+        false
+    }
+
+    /** A shareable URI for a copy under the app's external share folder, or null when unwritable. */
+    private fun externalFileUri(fileName: String, content: String): Uri? {
+        val directory = context.getExternalFilesDir(SHARE_DIRECTORY)
+            ?: File(context.cacheDir, SHARE_DIRECTORY)
+        if (!directory.exists() && !directory.mkdirs()) return null
+        val file = File(directory, fileName)
+        file.writeText(content)
+        return runCatching {
+            FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+        }.getOrNull()
+    }
+
+    private fun writeDownload(fileName: String, content: String, mimeType: String): Uri? {
         val resolver = context.contentResolver
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val folder = "${Environment.DIRECTORY_DOWNLOADS}/Canta/"
@@ -491,16 +543,15 @@ class AndroidCantaPlatform(
         } else {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
             }
-            resolver.insert(collection, values) ?: return writeExternalFile(fileName, content)
+            resolver.insert(collection, values) ?: return null
         }
 
         // "wt" truncates: the file always holds the whole log, never the tail of an older one.
-        resolver.openOutputStream(uri, "wt")?.use { it.write(content.toByteArray()) }
-            ?: return writeExternalFile(fileName, content)
-        return "Download/Canta/$fileName"
+        resolver.openOutputStream(uri, "wt")?.use { it.write(content.toByteArray()) } ?: return null
+        return uri
     }
 
     /**

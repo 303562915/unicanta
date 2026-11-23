@@ -795,10 +795,6 @@ private fun CantaNavigation(
                     navigateToPage = { navController.navigate(it) },
                     closeApp = closeApp,
                     enableSelectAll = versionTapCounter >= SECRET_TAPS,
-                    // One number for the bell and for the bar entry: what is waiting in the
-                    // messages page, news and chats alike.
-                    unreadReplies = unreadReplies + unreadChats,
-                    onOpenInbox = { navController.navigate(Screen.Messages.route) { launchSingleTop = true } },
                 )
             }
             composable(route = Screen.Rules.route) {
@@ -1025,6 +1021,25 @@ private fun CantaNavigation(
                         }
                     },
                     onOpenTheme = { navController.navigate(Screen.Theme.route) },
+                    // 救急用的文件：删掉的包还在系统分区里，恢复命令得在电脑上跑。
+                    // 生成的批处理交给分享面板（发到电脑），打不开面板的构建就留在下载目录。
+                    onExportRestoreScript = {
+                        coroutineScope.launch {
+                            val exported = deps.history.shareRestoreScript()
+                            platform.showMessage(
+                                when {
+                                    exported.shared && exported.packages > 0 ->
+                                        "已生成 ${exported.packages} 个包名的恢复脚本，选「发送到电脑」即可"
+
+                                    exported.shared -> "已生成恢复脚本（记录里没有待恢复的包），选「发送到电脑」即可"
+                                    exported.path != null ->
+                                        "已保存到 ${exported.path}，拷到电脑上双击运行"
+
+                                    else -> "这个版本不能导出文件"
+                                }
+                            )
+                        }
+                    },
                 )
             }
             composable(route = Screen.Presets.route) {

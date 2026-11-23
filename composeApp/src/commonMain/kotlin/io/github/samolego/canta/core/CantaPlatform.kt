@@ -93,6 +93,16 @@ interface CantaPlatform {
     fun exportLog(fileName: String, content: String): String? = null
 
     /**
+     * 把一份文本当成文件交给系统的分享面板，让用户自己选去处——发到电脑（微信文件传输助手、
+     * QQ、附近分享、邮件），或者存下来再用数据线拷走。
+     *
+     * 用在"这个手机马上要被救回来"这种文件上：恢复脚本要在电脑上双击运行，手机自己跑不了，
+     * 所以不能只写进下载目录等用户去找。Android 写成 `Download/Canta/[fileName]` 再分享那个
+     * URI；没有分享面板的平台（桌面、网页、测试）沿用默认实现回答 false，调用方改成提示保存路径。
+     */
+    fun shareFile(fileName: String, content: String, mimeType: String = "text/plain"): Boolean = false
+
+    /**
      * A stable, hashed identifier of this device, used only to hand a reinstall its old identity
      * back: the identity token itself is random and stays the secret, this is just the lookup key.
      *
