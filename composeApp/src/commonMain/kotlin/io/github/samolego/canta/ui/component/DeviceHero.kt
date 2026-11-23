@@ -205,18 +205,22 @@ fun DeviceHero(
             ) {
                 if (onTitleClick != null) {
                     // The name is the way to another phone, and now it looks like one: a capsule
-                    // drawn around the name, the word "切换机型" and a chevron inside it. The tap
+                    // drawn around the name, with the word "切换" and a chevron in it. The tap
                     // target is that capsule and nothing else — the system line under it is text
                     // to read, and a reader aiming at the name used to switch the phone by
                     // brushing the line below it.
+                    //
+                    // The hint is two characters, not four: the capsule shares the band with the
+                    // counters, and every dp the hint takes is a dp the model name loses — a long
+                    // name ("Galaxy Z Fold8") would be the first thing to go under an ellipsis.
                     Row(
                         modifier = Modifier
-                            .heightIn(min = 32.dp)
+                            .heightIn(min = 34.dp)
                             .clip(RoundedCornerShape(percent = 50))
                             .background(scheme.primary.copy(alpha = 0.10f))
                             .border(1.dp, scheme.primary.copy(alpha = 0.35f), RoundedCornerShape(percent = 50))
                             .clickable(onClick = onTitleClick)
-                            .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                            .padding(start = 11.dp, end = 7.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -228,9 +232,9 @@ fun DeviceHero(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false),
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(5.dp))
                         Text(
-                            text = "切换机型",
+                            text = "切换",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = scheme.primary,

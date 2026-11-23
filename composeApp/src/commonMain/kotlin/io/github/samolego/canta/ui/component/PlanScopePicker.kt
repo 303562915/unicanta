@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -129,18 +130,30 @@ fun PlanScopeBar(
         FlowRow(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             ScopeChip(
                 text = scope.label(ownLabel),
                 selected = true,
                 onClick = onOpen,
-                // The chevron is the hint: a filled capsule with an arrow under it is read as a
-                // list that opens, which is exactly what it does.
+                // The chevron is the hint: a capsule with an arrow on it is read as a list that
+                // opens, which is exactly what it does.
                 chevron = true,
+                // Outlined, not filled: the filled capsule is the heading's job, where it says
+                // which phone the page is about. This one is the list's scope — the same model
+                // name on purpose, so the two never look like two different things to switch.
+                outlined = true,
             )
             scope.buildLabel()?.let { build ->
-                ScopeChip(text = build, selected = false, onClick = onOpen, chevron = true)
+                // The build stays a plain capsule: it is the finer half of the scope, and two
+                // outline capsules side by side would read as two equal choices instead of
+                // "this phone, and then this build of it".
+                ScopeChip(
+                    text = build,
+                    selected = false,
+                    onClick = onOpen,
+                    chevron = true,
+                )
             }
         }
         if (onSearch != null) {
@@ -151,7 +164,9 @@ fun PlanScopeBar(
                     imageVector = if (searching) Icons.Default.Close else Icons.Default.Search,
                     contentDescription = if (searching) "关闭搜索" else "搜索包名",
                     modifier = Modifier.size(18.dp),
-                    tint = colors.primary,
+                    // Muted, not primary: the chip beside it is the page's one action here, and a
+                    // second equally loud icon reads as a second way to switch the phone.
+                    tint = colors.onSurfaceVariant,
                 )
             }
         }
@@ -187,22 +202,31 @@ fun PlanScopeDialog(
     val current = opened
 
     BasicAlertDialog(
-        onDismissRequest = onDismiss,
+        // The system back button steps one level down before it closes the sheet: at "builds of a
+        // model" a back press used to throw the whole sheet away, taking the reader back to the
+        // page instead of to the model list they came from.
+        onDismissRequest = { if (opened != null) opened = null else onDismiss() },
         // The dialog owns the window: a platform-default dialog width would clip the chips row
         // after the first few models and cap the list at a third of the screen.
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // The scrim: the dialog owns the window, so the dimmed band above the sheet is drawn
-            // here, and a tap on it closes the sheet the way a platform one does.
+            // The scrim covers only the band the sheet does not: a full-screen scrim under the
+            // sheet itself meant a tap on any part of the sheet with no handler of its own — the
+            // rounded corner notches, the gap beside the title, the hint lines right above the
+            // chips — fell through to it and closed the whole sheet. Now the only thing that
+            // closes it by tapping is the dimmed area the reader can actually see.
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .fillMaxHeight(1f - SHEET_HEIGHT_FRACTION)
                     .background(Color.Black.copy(alpha = 0.32f))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = onDismiss,
+                        // The same one-level step as the back button: the scrim is the "outside"
+                        // of the sheet, but it is also still inside the picker.
+                        onClick = { if (opened != null) opened = null else onDismiss() },
                     ),
             )
             Surface(
@@ -236,9 +260,8 @@ fun PlanScopeDialog(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(start = if (current == null) 4.dp else 0.dp),
+                                .padding(start = if (current == null) 8.dp else 2.dp, end = 12.dp),
                         )
-                        TextButton(onClick = onDismiss) { Text("取消") }
                     }
                     HorizontalDivider()
 
@@ -478,18 +501,45 @@ private fun ScopeChip(
     onClick: () -> Unit,
     /** The chip opens a list: the arrow says so, and the chip stops looking like a label. */
     chevron: Boolean = false,
+    /** Drawn as an outline instead of a filled capsule: a filter, not the page's subject. */
+    outlined: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    val container = if (selected) colors.primary else colors.surfaceContainerHighest
-    val content = if (selected) colors.onPrimary else colors.onSurface
+    val container = when {
+        outlined && selected -> colors.primary.copy(alpha = 0.12f)
+        outlined -> Color.Transparent
+        selected -> colors.primary
+        else -> colors.surfaceContainerHighest
+    }
+    // Filled capsule: the label sits on the primary colour. Outline capsule: the label sits on the
+    // page, where primary itself is too thin at 11sp — the accent lives in the border and arrow.
+    val content = when {
+        selected && !outlined -> colors.onPrimary
+        else -> colors.onSurface
+    }
+    val shape = RoundedCornerShape(percent = 50)
     Row(
         // The capsule is the whole tap target and a comfortable one to hit: a label with 4dp of
-        // padding reads as text, and text is what nobody thinks to tap.
+        // padding reads as text, and text is what nobody thinks to tap. 40dp rather than Material's
+        // 48dp because these chips wrap onto several rows, and pads that reach past the capsule
+        // would overlap the row above — which turns one tap into a coin toss.
         modifier = Modifier
-            .heightIn(min = 32.dp)
-            .background(container, RoundedCornerShape(percent = 50))
+            .heightIn(min = 40.dp)
+            // Clipped before the tap: an unclipped ripple draws a square inside a capsule.
+            .clip(shape)
+            .background(container, shape)
+            .then(
+                if (outlined) {
+                    // 0.6, not 0.4: this border sits on the hero's own band, and a 40% primary
+                    // line over it is close to invisible in the dark theme — the capsule would
+                    // stop reading as a control at all.
+                    Modifier.border(1.dp, colors.primary.copy(alpha = 0.60f), shape)
+                } else {
+                    Modifier
+                }
+            )
             .clickable(onClick = onClick)
-            .padding(start = 12.dp, end = if (chevron) 8.dp else 12.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 13.dp, end = if (chevron) 9.dp else 13.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
