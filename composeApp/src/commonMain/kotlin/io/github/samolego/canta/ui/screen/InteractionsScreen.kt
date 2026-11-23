@@ -27,6 +27,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -49,13 +50,18 @@ import io.github.samolego.canta.data.community.COMMENT_KIND_APP
 import io.github.samolego.canta.data.community.InboxItem
 import io.github.samolego.canta.data.community.InboxKind
 import io.github.samolego.canta.data.community.InboxSummary
+import io.github.samolego.canta.data.community.MyComment
 import io.github.samolego.canta.data.community.Page
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.newestInboxCommentId
+import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.MyCommentRow
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
@@ -67,13 +73,23 @@ import kotlinx.coroutines.launch
 /** 一页互动消息从每个来源各取多少行。 */
 private const val INTERACTION_PER_SOURCE = 8
 
+/** 三栏的编号：分段控件的顺序就是这三个值。 */
+private const val TAB_INBOX = 0
+private const val TAB_MINE = 1
+private const val TAB_FOLLOWERS = 2
+
 /**
- * 「互动消息」页：别人对我做过什么，以及谁新近关注了我。
+ * 「互动消息」页：别人对我做过什么、我自己写过什么，以及谁新近关注了我。
  *
- * 两件事画在一个页面里，因为它们是同一个问题的两面：*别人对我做过什么*（回复、方案下的评论、
- * 点赞、认同）走 [PlanRepository.inboxPage]，*谁刚关注了我* 走 [SocialRepository.followersOf]。
- * 顶栏把两栏做成左右两个文字入口，选中的那一栏在左边当标题，另一边是去另一栏的入口，
- * 宽度不会因为页签数量而跳动。
+ * 三件事画在一个页面里，因为它们是同一个消息中心的三个问题：*别人对我做过什么*（回复、方案下的
+ * 评论、点赞、认同）走 [PlanRepository.inboxPage]，*我自己写过什么* 走
+ * [PlanRepository.myCommentsPage]，*谁刚关注了我* 走 [SocialRepository.followersOf]。顶上一条
+ * 分段控件选这三栏——「我的评论」从「我的」页搬到了这里，因为它和互动是同一件事的两面：一个看
+ * 别人对我做了什么，一个看我做过什么。
+ *
+ * 「我的评论」里的每一行点下去都带着评论 id 交给调用方，落到方案 / 应用详情页的那条评论上：
+ * 那一页会把它排到评论最前面、自动展开它的回复，并滚到评论那一段——不然一百多个包的行会把答案
+ * 埋到屏幕下面去。
  *
  * 名单只翻一页：消息流是一年一年长出来的历史，所以要分页（滚到底再问下一段 offset）；
  * 关注列表是当下的状态，一次给全。
@@ -87,6 +103,8 @@ fun InteractionsScreen(
     social: SocialRepository,
     owner: String,
     token: String,
+    /** 这台设备签评论用的名字：只是「我的评论」那一行的头像首字。 */
+    author: String = "",
     seenAt: String = "",
     onInboxSeen: (newestCommentId: Long, checkedAt: String) -> Unit = { _, _ -> },
     onOpenPlanComment: (planId: Long, commentId: Long) -> Unit = { id, _ -> },
@@ -96,8 +114,8 @@ fun InteractionsScreen(
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // 0 = 互动消息，1 = 新关注我的。
-    var tab by remember { mutableIntStateOf(0) }
+    // 0 = 互动消息，1 = 我的评论，2 = 新关注我的。
+    var tab by remember { mutableIntStateOf(TAB_INBOX) }
     var inbox by remember { mutableStateOf<Page<InboxItem>>(Page.EMPTY) }
     // 每个来源读到哪儿：一页从同一个 offset 各取 [INTERACTION_PER_SOURCE] 行，所以 offset 按
     // 这个窗口往前推，而不是按回来多少行数——某一路只回了三行，不该把别路的七行一起往前拖。
@@ -113,8 +131,21 @@ fun InteractionsScreen(
     // 正在写关注关系的那一行：写的时候按钮先别理手指，免得一次点击写两遍。
     var followBusy by remember { mutableStateOf("") }
 
+    // 「我的评论」：这台设备写过的评论，按身份取，一页一页往下读。
+    var mine by remember { mutableStateOf<Page<MyComment>>(Page.EMPTY) }
+    // 只有第一次选中那一栏才去问后端：从互动消息进来、不点「我的评论」的人不该为它付一次请求。
+    var mineLoaded by remember { mutableStateOf(false) }
+    var mineLoading by remember { mutableStateOf(false) }
+    var mineLoadingMore by remember { mutableStateOf(false) }
+    var mineError by remember { mutableStateOf<String?>(null) }
+    // 点了垃圾桶的那条：删评论是要收走的，先问一句。
+    var pendingDelete by remember { mutableStateOf<MyComment?>(null) }
+    // 删完 / 删不掉的回执，摆在这一栏顶上。
+    var notice by remember { mutableStateOf<String?>(null) }
+
     val inboxListState = rememberLazyListState()
     val followersListState = rememberLazyListState()
+    val mineListState = rememberLazyListState()
 
     // 首屏：一次计数 + 一次消息页。计数是为了拿到「最新一条」和「从哪个瞬间开始算」，
     // 没有它，红点就只能靠本页自己猜。
@@ -157,7 +188,7 @@ fun InteractionsScreen(
     // 消息这一栏被真正看见了，才算读过：交回去的是「最新的一条」和「后端计数时的那个瞬间」，
     // 后者才是游标，本页记住看了几行没有意义。
     LaunchedEffect(tab, inbox, summary) {
-        if (tab == 0 && inbox.items.isNotEmpty()) {
+        if (tab == TAB_INBOX && inbox.items.isNotEmpty()) {
             onInboxSeen(
                 maxOf(newestInboxCommentId(inbox.items), summary.newestCommentId),
                 summary.checkedAt,
@@ -167,12 +198,66 @@ fun InteractionsScreen(
 
     // 关注列表：每次切到这一栏都重新问一次，别人刚关注你那一眼就该在。
     LaunchedEffect(tab, owner) {
-        if (tab == 1) {
+        if (tab == TAB_FOLLOWERS) {
             followersLoading = true
             followersError = null
             followers = social.followersOf(owner)
             followersError = interactionErrorOf(social.lastError, social.lastFailureWasNetwork)
             followersLoading = false
+        }
+    }
+
+    // 我的评论：第一次切到这一栏才问，之后切回来只画已经有的那一份——这一栏是自己的历史，
+    // 别人动不了它，下一条只有在刷新时才值得再问。
+    LaunchedEffect(tab, owner, token) {
+        if (tab != TAB_MINE || mineLoaded || mineLoading) return@LaunchedEffect
+        mineLoading = true
+        mineError = null
+        mine = repository.myCommentsPage(owner, token, offset = 0)
+        mineError = interactionErrorOf(repository.lastError, false)
+        mineLoaded = true
+        mineLoading = false
+    }
+
+    /** 「我的评论」滚到底时再问下一页；和互动消息那一栏同一套挡板与去重。 */
+    val loadMoreMine: () -> Unit = {
+        if (!mineLoadingMore) {
+            scope.launch {
+                mineLoadingMore = true
+                val next = repository.myCommentsPage(owner, token, offset = mine.items.size)
+                mine = Page(
+                    items = (mine.items + next.items).distinctBy { it.id },
+                    hasMore = next.hasMore,
+                )
+                mineError = interactionErrorOf(repository.lastError, false)
+                mineLoadingMore = false
+            }
+        }
+    }
+
+    pendingDelete?.let { comment ->
+        CantaDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = "删除评论",
+            buttons = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                TextButton(onClick = {
+                    pendingDelete = null
+                    scope.launch {
+                        val ok = repository.deleteComment(comment.id, owner, token)
+                        notice = if (ok) "已删除这条评论" else "删不掉：这条评论不是本机写的，或者后端没通。"
+                        // 删完当场从列表里拿掉：等下一次进这一栏太慢，人也看不出来删没删掉。
+                        if (ok) mine = Page(mine.items.filterNot { it.id == comment.id }, mine.hasMore)
+                    }
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        ) {
+            Text(
+                text = "「${comment.body.take(40)}」会被删除，下面别人给的回复一起去掉。",
+                fontSize = 12.sp,
+            )
         }
     }
 
@@ -183,6 +268,22 @@ fun InteractionsScreen(
             if (item.target.isNotEmpty()) onOpenAppComment(item.target, commentId)
         } else {
             item.planIdOrNull()?.let { planId -> onOpenPlanComment(planId, commentId) }
+        }
+    }
+
+    /**
+     * 打开我写的一条评论：带的是**这条评论自己的 id**，不是它下面某条回复的 id。
+     *
+     * 于是详情页会把这一条排到评论最前面、展开它的回复、并滚到评论那一段——「我的评论」点一条，
+     * 看到的就是自己写的那一行，而不是一整页包的列表头。
+     */
+    val openMine: (MyComment) -> Unit = { comment ->
+        val plan = comment.planIdOrNull()
+        val pkg = comment.packageOrNull()
+        when {
+            pkg != null -> onOpenAppComment(pkg, comment.id)
+            plan != null -> onOpenPlanComment(plan, comment.id)
+            else -> Unit
         }
     }
 
@@ -210,6 +311,7 @@ fun InteractionsScreen(
         topBar = {
             InteractionsTopBar(
                 tab = tab,
+                mineCount = if (mineLoaded) mine.items.size else null,
                 onSelectTab = { tab = it },
                 onNavigateBack = onNavigateBack,
             )
@@ -219,10 +321,15 @@ fun InteractionsScreen(
             // 下一页只在这一栏、还有页、而且没有正在加载的时候才问。
             InteractionEndlessScroll(
                 state = inboxListState,
-                enabled = tab == 0 && inbox.hasMore && !loadingMore,
+                enabled = tab == TAB_INBOX && inbox.hasMore && !loadingMore,
                 onEnd = loadMore,
             )
-            if (tab == 0) {
+            InteractionEndlessScroll(
+                state = mineListState,
+                enabled = tab == TAB_MINE && mine.hasMore && !mineLoadingMore,
+                onEnd = loadMoreMine,
+            )
+            if (tab == TAB_INBOX) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     // 「后端没回答」和「真的没人理你」长得一样，所以原因要摆在列表顶上。
                     loadError?.let { reason -> InteractionErrorLine(reason) }
@@ -252,6 +359,52 @@ fun InteractionsScreen(
                             }
                             if (loadingMore) {
                                 item(key = "interactions-more") { InteractionLoadingMore() }
+                            }
+                        }
+                    }
+                }
+            } else if (tab == TAB_MINE) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    mineError?.let { reason -> InteractionErrorLine(reason) }
+                    notice?.let { line ->
+                        Text(
+                            text = line,
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                        )
+                    }
+                    when {
+                        (mineLoading || !mineLoaded) && mine.items.isEmpty() ->
+                            Text("…", fontSize = 12.sp, modifier = Modifier.padding(14.dp))
+
+                        mine.items.isEmpty() -> InteractionEmptyNotice(
+                            title = "你还没有写过评论。",
+                            hint = "在方案详情或应用详情里写一条，这里就会出现；点一条就能回到你写的那一行。",
+                        )
+
+                        else -> LazyColumn(
+                            state = mineListState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            items(mine.items, key = { comment -> "mine-${comment.id}" }) { comment ->
+                                MyCommentRow(
+                                    // 头像首字：这台设备的名字，没名字时用「我」，反正这一栏全是自己的。
+                                    author = author.ifBlank { "我" },
+                                    body = comment.body,
+                                    targetLabel = mineTargetLabel(comment),
+                                    createdAt = comment.createdAt,
+                                    replies = comment.replies,
+                                    likes = comment.likes,
+                                    onOpen = { openMine(comment) },
+                                    onDelete = { pendingDelete = comment },
+                                )
+                            }
+                            if (mineLoadingMore) {
+                                item(key = "mine-more") { InteractionLoadingMore() }
                             }
                         }
                     }
@@ -290,23 +443,22 @@ fun InteractionsScreen(
 }
 
 /**
- * 顶栏：左边是回去的箭头，中间偏左是当前这一栏的名字（后面那个小箭头是装饰，不弹菜单），
- * 右边是去另一栏的文字入口。
+ * 顶栏：左边是回去的箭头，标题固定是「互动消息」，下面一条分段控件在这三栏之间换：
+ * 互动消息 / 我的评论 / 新关注。
  *
- * 两栏做成「标题 + 入口」而不是分段控件，是抖音那一套：同一时刻只有一件事在标题上，
- * 另一件事缩成一行字，页面因此不会因为页签宽度不一而左右跳。
+ * 从「标题 + 另一个入口」改成三段，是因为栏数从两栏变成了三栏：两栏时「标题 + 一行字」读起来
+ * 像抖音，三栏时那行字放不下（「新关注我的」五个字 + 「我的评论」四个字），挤在一起就分不清
+ * 哪边是当前。分段控件一行摆平，选中的那一格自带滑块，一眼看得出在哪一栏。
+ *
+ * [mineCount] 为 null 表示这一栏还没读过：没读过就不写数字，写了「· 0」等于先说了一句假话。
  */
 @Composable
 private fun InteractionsTopBar(
     tab: Int,
+    mineCount: Int?,
     onSelectTab: (Int) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val title = if (tab == 0) "互动消息" else "新关注我的"
-    val other = if (tab == 0) "新关注我的" else "互动消息"
-    val otherTab = if (tab == 0) 1 else 0
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -327,46 +479,26 @@ private fun InteractionsTopBar(
                 filled = false,
             )
             Spacer(Modifier.width(2.dp))
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                InteractionTabText(label = title, active = true, onClick = null)
-                Spacer(Modifier.width(1.dp))
-                // 装饰：说明这一栏是个可以换的地方，但点它不弹任何菜单。
-                FlGlyphIcon(
-                    glyph = FlGlyphs.chevronDown,
-                    size = 13.dp,
-                    tint = colors.onSurfaceVariant,
-                )
-            }
-            InteractionTabText(
-                label = other,
-                active = false,
-                onClick = { onSelectTab(otherTab) },
+            Text(
+                text = "互动消息",
+                style = FlText.headline,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
+        FlSegmentedControl(
+            segments = listOf(
+                FlSegment("inbox", "互动消息"),
+                FlSegment("mine", mineCount?.let { "我的评论 · $it" } ?: "我的评论"),
+                FlSegment("followers", "新关注"),
+            ),
+            selectedIndex = tab,
+            onSelect = onSelectTab,
+            insetHorizontal = 10.dp,
+        )
     }
-}
-
-/**
- * 顶栏上的一栏文字。选中的那一栏是标题：大一号、加粗、用正文色；另一边是入口：小一号、灰。
- */
-@Composable
-private fun InteractionTabText(label: String, active: Boolean, onClick: (() -> Unit)?) {
-    val colors = MaterialTheme.colorScheme
-    Text(
-        text = label,
-        style = if (active) FlText.headline else FlText.subheadline,
-        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (active) colors.onSurface else colors.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .clip(RoundedCornerShape(percent = 50))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-    )
 }
 
 /**
@@ -610,6 +742,13 @@ private fun InteractionEndlessScroll(state: LazyListState, enabled: Boolean, onE
     LaunchedEffect(nearEnd, enabled) {
         if (enabled && nearEnd) onEnd()
     }
+}
+
+/** 「方案 · 标题」或「应用 · com.example.app」：我这条评论写在哪儿。 */
+private fun mineTargetLabel(comment: MyComment): String {
+    val kind = if (comment.kind == COMMENT_KIND_APP) "应用" else "方案"
+    val name = comment.title.ifEmpty { comment.target }
+    return "$kind · $name"
 }
 
 /** 一行互动的动词：做了什么，落在什么上。 */
