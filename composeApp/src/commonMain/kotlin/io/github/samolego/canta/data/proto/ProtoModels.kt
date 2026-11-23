@@ -214,6 +214,15 @@ data class AppSettingsProto(
      * 不用迁移。界面把它读成「点击应用打开详情页」那个开关。
      */
     @ProtoNumber(41) val appTapOpensDialog: Boolean = false,
+    /**
+     * 被本机拉黑的人，存的是对方身份号。
+     *
+     * 后端没有拉黑接口（也不想为它编一套 RPC 和迁移），所以拉黑只在这一台手机上生效：消息页
+     * 不再列出这些人的私聊，聊天页把输入框关掉。空列表就是谁都没拉黑，也就是出厂状态。
+     *
+     * 存身份号而不是名字：人随时能改名，号码不变。
+     */
+    @ProtoNumber(42) val blockedPeers: List<String> = emptyList(),
 )
 
 /**

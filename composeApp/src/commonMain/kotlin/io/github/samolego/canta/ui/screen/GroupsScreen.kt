@@ -51,11 +51,14 @@ import kotlinx.coroutines.delay
 private const val GroupsPollMs: Long = 15_000L
 
 /**
- * 「群聊」页：我参与的每一个群，一个不折叠的列表。
+ * 「折叠的群聊」页：我折叠起来的那些群，一个不折叠的列表。
  *
  * 结构照抖音的群聊列表从上到下排：自绘顶栏（返回 / 标题 / 建群）、群列表、没有群时的空态。
- * 消息页那一行「折叠的群聊」只看得见最近说话的那个群，要翻全部群就走这一页——所以这里的
+ * 消息页那一行「折叠的群聊」只看得见最近说话的那个群，要翻全部折叠的群就走这一页——所以这里的
  * 排序只看时间，不分置顶：这一页的用处是「找那个群」，不是「按聊天习惯排」。
+ *
+ * 只列 [Conversation.folded] 的群：折叠是人在群设置里自己开的，没折叠的群留在消息页的主列表里，
+ * 这边列出来就变成同一个群在两个地方各有一份。
  *
  * 这一页只做两件事：把群列表画出来、点一行进对话。会话数据来自 [SocialRepository]，一次拉一页，
  * 拉不到就画空态并留一句原因（[SocialRepository.lastError]）。
@@ -70,7 +73,7 @@ fun GroupsScreen(
     onMessage: (String) -> Unit = {},
 ) {
     var loading by remember { mutableStateOf(true) }
-    var groups by remember { mutableStateOf<List<Conversation>>(emptyList()) }
+    var foldedGroups by remember { mutableStateOf<List<Conversation>>(emptyList()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每十几秒整页闪一下骨架。
     var reloads by remember { mutableIntStateOf(0) }
@@ -87,9 +90,10 @@ fun GroupsScreen(
     LaunchedEffect(owner, reloads) {
         if (reloads == 0) loading = true
         loadError = null
-        // 一个查询就够：群聊是会话的一种，后端已经把两者放在同一张表里返回，这里只挑 groups。
-        groups = repository.conversationsFor(owner)
-            .filter { it.isGroup }
+        // 一个查询就够：群聊是会话的一种，后端已经把两者放在同一张表里返回，这里挑出折叠的群。
+        // 只看 `folded`：没折叠的群留在消息页主列表里，这边不该再列一遍。
+        foldedGroups = repository.conversationsFor(owner)
+            .filter { it.isGroup && it.folded }
             .sortedByDescending { it.lastAt }
         // 拉不到就是空列表，和「真的一个群都没有」在界面上长得一样，所以要留一句原因。
         loadError = repository.lastError
@@ -115,7 +119,7 @@ fun GroupsScreen(
                     CircularProgressIndicator()
                 }
 
-                groups.isEmpty() -> Column(
+                foldedGroups.isEmpty() -> Column(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -129,7 +133,7 @@ fun GroupsScreen(
                         )
                     }
                     Text(
-                        text = "还没有群聊",
+                        text = "还没有折叠的群聊",
                         style = FlText.subheadline,
                         fontWeight = FlText.emphasized,
                         color = scheme.onSurface,
@@ -137,7 +141,7 @@ fun GroupsScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "点右上角建一个",
+                        text = "在群设置里打开「折叠群聊」，那个群就收进这里",
                         style = FlText.caption2,
                         color = scheme.onSurfaceVariant,
                         maxLines = 1,
@@ -159,7 +163,7 @@ fun GroupsScreen(
                         contentPadding = PaddingValues(vertical = 6.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        items(groups, key = { "group-${it.id}" }) { group ->
+                        items(foldedGroups, key = { "group-${it.id}" }) { group ->
                             GroupRow(group = group, onOpen = { onOpenChat(group.id) })
                         }
                     }
@@ -192,7 +196,7 @@ private fun GroupsTopBar(onNavigateBack: () -> Unit, onCreateGroup: () -> Unit) 
             )
             Spacer(Modifier.width(4.dp))
             Text(
-                text = "群聊",
+                text = "折叠的群聊",
                 style = FlText.headline,
                 color = scheme.onSurface,
                 maxLines = 1,

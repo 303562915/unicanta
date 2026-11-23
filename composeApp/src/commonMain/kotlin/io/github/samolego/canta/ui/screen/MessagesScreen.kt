@@ -28,9 +28,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -92,6 +96,14 @@ private val ContactCellWidth = 64.dp
 /** 「还没有好友」那一格的宽度：比头像格宽一点，五个字不用折行。 */
 private val HintCellWidth = 88.dp
 
+/**
+ * 会话长按菜单的宽度。
+ *
+ * 菜单里最长的一句是「取消免打扰」（五个字），加上左边的图标和内边距，210dp 足够一行放下；
+ * 不定宽的话它会跟着每条文字自己变，一列菜单宽窄不一。
+ */
+private val ConversationMenuWidth = 210.dp
+
 /** 折叠群聊那个圆底的绿：和互动消息的红一样，一个颜色一件事。 */
 private val GroupGreen: Color = Color(0xFF07C160)
 
@@ -99,14 +111,18 @@ private val GroupGreen: Color = Color(0xFF07C160)
  * 「消息」页：私聊与群聊的入口，摆在互动消息下面。
  *
  * 结构照抖音的消息页从上到下排：自绘顶栏（菜单 / 标题 / 搜索 + 建群）、一排最近联系人、
- * 两行整块的入口（互动消息、折叠的群聊）、最后是会话列表。
+ * 整块的入口（互动消息，以及确实有折叠群时的「折叠的群聊」）、最后是会话列表。
+ *
+ * 两种群分两处：折叠过的群只出现在「折叠的群聊」那一行后面，没折叠的群照旧留在主列表里。
+ * 一个折叠的群都没有时那一行整块不画——入口里没有内容，摆一个「还没有群聊」在那儿等于请人点进
+ * 一个空页面。
  *
  * 这一页只负责「去哪儿」：点会话把会话号交给 [onOpenChat]，点互动把页面交给
  * [onOpenInteractions]，群聊列表交给 [onOpenGroups]，还没做的入口一律 [onMessage]。什么都不自己
  * 写：会话、关注、未读数全部来自 [SocialRepository] 和 [PlanRepository]，一页一次拉，失败就画空态。
  *
  * 顶栏两处以前只弹「还没做」的按钮现在是真做事的：放大镜展开一条本地搜索（只过滤已经拉回来的
- * 会话与关注的人，不发请求），汉堡菜单给出「全部标为已读 / 群聊 / 发起群聊」三项。
+ * 会话与关注的人，不发请求），汉堡菜单给出「全部标为已读 / 折叠的群聊 / 发起群聊」三项。
  */
 @Composable
 fun MessagesScreen(
@@ -123,8 +139,17 @@ fun MessagesScreen(
     onOpenCreateGroup: () -> Unit = {},
     /** 打开和某人的私聊：没有会话就先开一个（后端 dm_open 是幂等的）。 */
     onOpenDm: (peerOwner: String) -> Unit = {},
-    /** 打开「群聊」页：这一页只折叠一行，全部群在那边看。 */
+    /** 打开「折叠的群聊」页：这一页只露最近说话的那个折叠群，全部折叠群在那边看。 */
     onOpenGroups: () -> Unit = {},
+    /**
+     * 本机拉黑过的人（身份号）：这些人的私聊不上这一页的列表。
+     *
+     * 页面不自己去读设置——名单由 [io.github.samolego.canta.ui.CantaApp] 从
+     * [io.github.samolego.canta.data.CantaSettings.blockedPeersFlow] 读出来传进来，这一层只画。
+     */
+    blockedPeers: Set<String> = emptySet(),
+    /** 拉黑 / 取消拉黑某个人；落盘是上层的事，这里只把动作交出去。 */
+    onBlockPeer: (peer: String, blocked: Boolean) -> Unit = { _, _ -> },
     onMessage: (String) -> Unit = {},
 ) {
     // 上一屏留下的快照：有它就先画它，画面不闪；没有才走一次完整的加载。
@@ -218,9 +243,9 @@ fun MessagesScreen(
     }
 
     /**
-     * 长按菜单里的三个动作：置顶、标记已读、删除会话。
+     * 长按菜单里的几条动作：免打扰、置顶、不显示、拉黑、删除。
      *
-     * 三个都是「先发一次请求，再把结果落到本地列表上」：等下一次 15 秒刷新太慢，人点了看不到变化
+     * 都是「先发一次请求，再把结果落到本地列表上」：等下一次 15 秒刷新太慢，人点了看不到变化
      * 就会以为没生效。会话行由 [sortedConversations] 统一重排，置顶的那一行才会当场跳到最上面。
      */
     val togglePin: (Conversation) -> Unit = { conversation ->
@@ -238,22 +263,27 @@ fun MessagesScreen(
         }
     }
 
-    /** 标记已读：后端不回成败（读回执丢了不算错），本地照旧把这一行的红点清掉。 */
-    val markRowRead: (Conversation) -> Unit = { conversation ->
-        scope.launch {
-            repository.markRead(owner, conversation.id)
-            commitConversations(
-                conversations.map { row ->
-                    if (row.id == conversation.id) row.copy(unread = 0) else row
-                },
-            )
-        }
-    }
-
-    /** 删除会话：后端叫 hide——消息还在，只是这一行不再出现在列表里；成功才从本地列表拿掉。 */
+    /** 不显示：后端叫 hide——消息还在，只是这一行不再出现在列表里；成功才从本地列表拿掉。 */
     val hideRow: (Conversation) -> Unit = { conversation ->
         scope.launch {
             if (repository.hideConversation(owner, conversation.id)) {
+                commitConversations(conversations.filterNot { it.id == conversation.id })
+            } else {
+                onMessage("没成功，检查代理后再试")
+            }
+        }
+    }
+
+    /**
+     * 删除（菜单里那个红字）：先清掉自己这边的消息，再把这一行藏起来。
+     *
+     * 两步都要成：只清了历史、行还留着，看起来就像没删；只藏了行、消息还在，下次它冒出来
+     * 又是一整屏旧话。所以两件事都成功才把行从本地列表拿掉，否则一句实话。
+     */
+    val deleteRow: (Conversation) -> Unit = { conversation ->
+        scope.launch {
+            val cleared = repository.clearHistory(owner, conversation.id)
+            if (cleared != null && repository.hideConversation(owner, conversation.id)) {
                 commitConversations(conversations.filterNot { it.id == conversation.id })
             } else {
                 onMessage("没成功，检查代理后再试")
@@ -281,17 +311,49 @@ fun MessagesScreen(
         }
     }
 
+    /**
+     * 拉黑 / 取消拉黑。
+     *
+     * 后端没有拉黑接口，所以名单是本机的（[blockedPeers]），这里只做三件事：把这一位交出去落盘、
+     * 拉黑时顺手让后端把这一行藏掉（免得下次装上又冒出来）、群聊直接说一句——群不是一个人，
+     * 拉黑无从谈起。列表的过滤在读的时候做，见下面的 `visibleConversations`。
+     */
+    val toggleBlock: (Conversation) -> Unit = { conversation ->
+        val peer = conversation.peer.ifEmpty { conversation.peerName }
+        if (conversation.isGroup || peer.isEmpty()) {
+            onMessage("群聊不能拉黑")
+        } else {
+            val blocked = peer in blockedPeers
+            onBlockPeer(peer, !blocked)
+            if (!blocked) {
+                scope.launch {
+                    // 拉黑之后这一行本来就会被过滤掉；这里只是顺手让后端也别再给它。
+                    if (!repository.hideConversation(owner, conversation.id)) {
+                        onMessage("没成功，检查代理后再试")
+                    }
+                }
+            }
+        }
+    }
+
     val scheme = MaterialTheme.colorScheme
-    val groups = conversations.filter { it.isGroup }
+    // 拉黑过的人的私聊不上列表。会话列表本身没变（后端没有拉黑接口，也没地方"变"），
+    // 所以在画的时候过滤：取消拉黑那一刻这一行会当场回来，不必等一次重新拉取。
+    val reachableConversations = conversations.filterNot { it.blockedBy(blockedPeers) }
+    // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
+    val visibleConversations = reachableConversations.filterNot { it.isFoldedGroup() }
+    // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
+    val foldedGroups = conversations.filter { it.isFoldedGroup() }
     // 折叠的群聊那一行只亮「最近说过话的那个群」：它的最后一句就是这个入口的预览。
-    val latestGroup = groups.maxByOrNull { it.lastAt }
-    val groupUnread = groups.sumOf { it.unread }
+    val latestGroup = foldedGroups.maxByOrNull { it.lastAt }
+    val groupUnread = foldedGroups.sumOf { it.unread }
     val mutual = mutualKeysOf(followers)
-    val recentContacts = recentContactsOf(conversations, followers)
+    val recentContacts = recentContactsOf(visibleConversations, followers)
     // 搜索是本地过滤：只有打了字才算在搜，打完又删掉就回到原样。
     val keyword = searchKeyword.trim()
     val searching = searchActive && keyword.isNotEmpty()
-    val hits = if (searching) searchHitsOf(conversations, followers, keyword) else emptyList()
+    // 搜索仍能找到折叠的群：主列表不列它是为了别占地方，人是特意去找它的时候得找得到。
+    val hits = if (searching) searchHitsOf(reachableConversations, followers, keyword) else emptyList()
 
     // 消息搜索要问后端，所以按输入停顿去抖：每敲一个字就发一次请求，既费额度又会让结果乱跳。
     // 300ms 是"还在打字"和"打完了"之间的常用分界。
@@ -383,24 +445,26 @@ fun MessagesScreen(
                         unread = inboxUnread,
                         onClick = onOpenInteractions,
                     )
-                    MessageEntryRow(
-                        glyph = FlGlyphs.appsList,
-                        circle = GroupGreen,
-                        title = "折叠的群聊",
-                        subtitle = latestGroup?.lastBody?.ifBlank { "还没有消息" } ?: "还没有群聊",
-                        unread = groupUnread,
-                        onClick = {
-                            val group = latestGroup
-                            if (group != null) onOpenChat(group.id) else onMessage("还没有群聊")
-                        },
-                        // 群不止一个时，这一行右边再给一个「全部 N 个群」的小字入口：折叠起来只剩
-                        // 最近说话的那个群可以点，剩下的得有地方去。
-                        trailing = {
-                            if (groups.isNotEmpty()) {
-                                AllGroupsLink(count = groups.size, onClick = onOpenGroups)
-                            }
-                        },
-                    )
+                    // 一个折叠的群都没有时这一行整块不画：入口里没有内容，摆一个「还没有群聊」
+                    // 在那儿等于请人点进一个空页面。折叠是人在群设置里自己开的，不是自动的。
+                    if (foldedGroups.isNotEmpty()) {
+                        MessageEntryRow(
+                            glyph = FlGlyphs.appsList,
+                            circle = GroupGreen,
+                            title = "折叠的群聊",
+                            subtitle = latestGroup?.lastBody?.ifBlank { "还没有消息" } ?: "",
+                            unread = groupUnread,
+                            onClick = {
+                                val group = latestGroup
+                                if (group != null) onOpenChat(group.id) else onMessage("还没有折叠的群聊")
+                            },
+                            // 折叠的群不止一个时，这一行右边再给一个「全部 N 个群」的小字入口：
+                            // 这里只剩最近说话的那个群可以点，剩下的得有地方去。
+                            trailing = {
+                                AllGroupsLink(count = foldedGroups.size, onClick = onOpenGroups)
+                            },
+                        )
+                    }
                 }
                 // 列表吃掉剩下的高度：上面那几块是固定的入口，只有这里可以滚。
                 when {
@@ -459,7 +523,7 @@ fun MessagesScreen(
                         }
                     }
 
-                    conversations.isEmpty() -> Box(
+                    visibleConversations.isEmpty() -> Box(
                         modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 24.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -475,17 +539,20 @@ fun MessagesScreen(
                         contentPadding = PaddingValues(vertical = 6.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        items(conversations, key = { it.conversationKey() }) { conversation ->
+                        items(visibleConversations, key = { it.conversationKey() }) { conversation ->
                             ConversationRow(
                                 conversation = conversation,
                                 // 只有两个方向都成立的人，名字右边才挂那个灰标。
                                 mutual = mutual.contains(conversation.peer) ||
                                     mutual.contains(conversation.peerName),
+                                // 拉黑过的行本来就被过滤掉了，长按不到；这里按名单决定文案就行。
+                                blocked = conversation.blockedBy(blockedPeers),
                                 onOpen = { onOpenChat(conversation.id) },
                                 onTogglePin = { togglePin(conversation) },
-                                onMarkRead = { markRowRead(conversation) },
                                 onToggleMute = { toggleMute(conversation) },
-                                onDelete = { hideRow(conversation) },
+                                onHide = { hideRow(conversation) },
+                                onToggleBlock = { toggleBlock(conversation) },
+                                onDelete = { deleteRow(conversation) },
                             )
                         }
                     }
@@ -546,7 +613,7 @@ private fun MessagesTopBar(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("群聊") },
+                        text = { Text("折叠的群聊") },
                         onClick = {
                             menuExpanded = false
                             onOpenGroups()
@@ -677,7 +744,7 @@ private fun AllGroupsLink(count: Int, onClick: () -> Unit) {
         maxLines = 1,
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
-            .clickable(onClickLabel = "全部群聊", onClick = onClick)
+            .clickable(onClickLabel = "全部折叠的群聊", onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 4.dp),
     )
 }
@@ -691,6 +758,25 @@ private data class RecentContact(
 
 /** 会话行在列表里的 key：会话号本身就是唯一的。 */
 private fun Conversation.conversationKey(): String = "conversation-$id"
+
+/**
+ * 这一行是不是拉黑过的那个人的私聊。
+ *
+ * 群聊一律不算：群不是一个人，拉黑无从谈起，名单里也不可能出现群。命中身份号或今天用的名字
+ * 都算——后端给的 `peer` 和 `peer_name` 是同一件事的两种写法，名单里存的可能只是其中一个。
+ */
+private fun Conversation.blockedBy(blocked: Set<String>): Boolean =
+    !isGroup && blocked.isNotEmpty() &&
+        ((peer.isNotEmpty() && peer in blocked) || (peerName.isNotEmpty() && peerName in blocked))
+
+/**
+ * 这一行是不是一个折叠起来的群。
+ *
+ * 折叠与置顶是两件事：置顶是「这件事我先看」，折叠是「这件事平时不用看」。折叠的群整行挪进
+ * 「折叠的群聊」那个入口，主列表里不再重复一遍。`folded` 默认 `false`，所以后端还没给这个
+ * 字段的会话一律按「没折叠」处理——老会话不会莫名其妙被收进折叠。
+ */
+private fun Conversation.isFoldedGroup(): Boolean = isGroup && folded
 
 /**
  * 会话列表的排法：置顶的永远在最前，其余按最后一条的时间倒序。
@@ -1090,19 +1176,25 @@ private fun MessageEntryRow(
 /**
  * 一条会话：头像、名字（互相关注带灰标）、最后一句、时间与未读数。
  *
- * 点一下进会话，长按弹三个动作（置顶 / 标记已读 / 删除）。置顶的那一行在头像右上角点一个主色
- * 小圆点，底色换成 [FlSurfaceLevel.Card]——比在名字后面再写「置顶」两个字更省一行空间，扫一眼
- * 也够用。
+ * 点一下进会话，长按弹五条动作，顺序照抖音的消息页：免打扰 / 置顶 / 不显示 / 拉黑 / 删除。
+ * 「标记已读」不在这里——进会话本身就标了，再多一个按钮只是让人多按一次。置顶的那一行在头像
+ * 右上角点一个主色小圆点，底色换成 [FlSurfaceLevel.Card]——比在名字后面再写「置顶」两个字
+ * 更省一行空间，扫一眼也够用。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationRow(
     conversation: Conversation,
     mutual: Boolean,
+    /** 这个会话对面的人是不是已经在本机拉黑名单里；决定菜单里那条写「拉黑」还是「取消拉黑」。 */
+    blocked: Boolean,
     onOpen: () -> Unit,
     onTogglePin: () -> Unit,
-    onMarkRead: () -> Unit,
     onToggleMute: () -> Unit,
+    /** 不显示：消息留着，只是这一行从列表里消失。 */
+    onHide: () -> Unit,
+    onToggleBlock: () -> Unit,
+    /** 删除：清掉自己这边的消息再把行拿走，所以它和「不显示」是两条，不合并。 */
     onDelete: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -1195,43 +1287,108 @@ private fun ConversationRow(
         DropdownMenu(
             expanded = menuOpen,
             onDismissRequest = { menuOpen = false },
-            modifier = Modifier.align(Alignment.TopEnd),
+            // 宽度定死：默认宽度跟着内容走，五条里长短不一，弹出来会一条比一条窄；窄到放不下
+            // 「文字 + 图标」时文字就折成两行，一行菜单里出现两行字最难看。
+            modifier = Modifier.align(Alignment.TopEnd).width(ConversationMenuWidth),
         ) {
-            DropdownMenuItem(
-                text = { Text(if (conversation.pinned) "取消置顶" else "置顶", fontSize = 14.sp) },
-                onClick = {
-                    menuOpen = false
-                    onTogglePin()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("标记已读", fontSize = 14.sp) },
-                onClick = {
-                    menuOpen = false
-                    onMarkRead()
-                },
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        if (conversation.muted) "关闭免打扰" else "开启免打扰",
-                        fontSize = 14.sp,
-                    )
-                },
+            // 顺序照抖音的消息页：免打扰、置顶、不显示、拉黑、删除。
+            ConversationMenuItem(
+                label = if (conversation.muted) "取消免打扰" else "设为免打扰",
                 onClick = {
                     menuOpen = false
                     onToggleMute()
                 },
+                // FlGlyphs 里没有铃铛，这一条借用 Material 的图：开着是一条划斜线的铃，
+                // 已经静音时换回普通铃铛——菜单写的是「取消」，图标就不该还带那道斜线。
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (conversation.muted) {
+                            Icons.Default.Notifications
+                        } else {
+                            Icons.Default.NotificationsOff
+                        },
+                        contentDescription = null,
+                        tint = scheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
             )
-            DropdownMenuItem(
-                text = { Text("删除会话", fontSize = 14.sp) },
+            ConversationMenuItem(
+                label = if (conversation.pinned) "取消置顶" else "置顶",
+                onClick = {
+                    menuOpen = false
+                    onTogglePin()
+                },
+                leadingIcon = {
+                    FlGlyphIcon(glyph = FlGlyphs.pin, size = 16.dp, tint = scheme.onSurfaceVariant)
+                },
+            )
+            ConversationMenuItem(
+                label = "不显示",
+                onClick = {
+                    menuOpen = false
+                    onHide()
+                },
+                leadingIcon = {
+                    FlGlyphIcon(glyph = FlGlyphs.eyeOff, size = 16.dp, tint = scheme.onSurfaceVariant)
+                },
+            )
+            // 群聊不给这一条：拉黑是对一个人做的事，群里没有"那个人"。
+            if (!conversation.isGroup) {
+                ConversationMenuItem(
+                    label = if (blocked) "取消拉黑" else "拉黑",
+                    onClick = {
+                        menuOpen = false
+                        onToggleBlock()
+                    },
+                    leadingIcon = {
+                        FlGlyphIcon(glyph = FlGlyphs.block, size = 16.dp, tint = scheme.onSurfaceVariant)
+                    },
+                )
+            }
+            ConversationMenuItem(
+                label = "删除",
+                danger = true,
                 onClick = {
                     menuOpen = false
                     onDelete()
                 },
+                leadingIcon = {
+                    FlGlyphIcon(glyph = FlGlyphs.delete, size = 16.dp, tint = scheme.error)
+                },
             )
         }
     }
+}
+
+/**
+ * 会话长按菜单的一行：左边一个图标，右边一句 13sp 的字，不折行。
+ *
+ * 图标由调用方给：免打扰用的是 Material 的铃铛（[FlGlyphs] 里没有），其余几条都是 FlGlyphs
+ * 里本来就有的图形。文字大小与 [io.github.samolego.canta.ui.screen.InteractionsScreen] 里那几个
+ * 菜单一致，两个页面的下拉菜单看起来才是一套。
+ */
+@Composable
+private fun ConversationMenuItem(
+    label: String,
+    onClick: () -> Unit,
+    /** 删除那一行：图标和文字都用 error 色，看得出来它和上面几条不同。 */
+    danger: Boolean = false,
+    leadingIcon: @Composable () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    DropdownMenuItem(
+        text = {
+            Text(
+                text = label,
+                fontSize = 13.sp,
+                color = if (danger) scheme.error else scheme.onSurface,
+                maxLines = 1,
+            )
+        },
+        onClick = onClick,
+        leadingIcon = leadingIcon,
+    )
 }
 
 /** 名字右边那个小灰标：两个人互相都关注了，说一句。 */

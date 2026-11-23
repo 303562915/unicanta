@@ -154,6 +154,13 @@ class CantaSettings(storage: AppBlobStorage) {
     val interruptedBatchFlow: Flow<List<String>> = field { it.interruptedBatch }
     val interruptedBatchStartedAtFlow: Flow<Long> = field { it.interruptedBatchStartedAt }
 
+    /**
+     * 本机拉黑过的人（对方身份号）；见 [AppSettingsProto.blockedPeers]。
+     *
+     * 后端没有拉黑接口，这份名单只活在这台手机上：消息页用它过滤私聊，聊天页用它关输入框。
+     */
+    val blockedPeersFlow: Flow<List<String>> = field { it.blockedPeers }
+
     /** This install's identity token; empty until the plans page has created one. */
     val identityTokenFlow: Flow<String> = field { it.identityToken }
 
@@ -262,6 +269,31 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setIdentityToken(token: String) = update { it.copy(identityToken = token) }
     suspend fun setIdentityUserId(id: Long) = update { it.copy(identityUserId = id) }
+
+    /**
+     * 整份改写拉黑名单。
+     *
+     * 去空白再 distinct：名单里出现一个空串或重复项，界面按名字去比对时会莫名其妙地命中
+     * 所有人。空列表就是"谁都没拉黑"，也就是出厂状态，不用删字段。
+     */
+    suspend fun setBlockedPeers(peers: List<String>) = update {
+        it.copy(blockedPeers = peers.map { peer -> peer.trim() }.filter { peer -> peer.isNotEmpty() }.distinct())
+    }
+
+    /**
+     * 拉黑或取消拉黑 [peer] 这一个人。
+     *
+     * 单条改动走这里而不是让调用方读出整份名单再写回去：拉黑是从列表里一行一行点的，
+     * 两条几乎同时落下时，"读→改→写"会丢掉其中一条。
+     */
+    suspend fun setBlockedPeer(peer: String, blocked: Boolean) {
+        val id = peer.trim()
+        if (id.isEmpty()) return
+        update { current ->
+            val next = if (blocked) current.blockedPeers + id else current.blockedPeers - id
+            current.copy(blockedPeers = next.map { it.trim() }.filter { it.isNotEmpty() }.distinct())
+        }
+    }
 
     /** Adds [packages] to the restore suspects, keeping the list short and ordered. */
     suspend fun addRestoreSuspects(packages: List<String>) = update {

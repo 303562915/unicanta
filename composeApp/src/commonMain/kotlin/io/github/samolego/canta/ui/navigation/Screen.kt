@@ -71,7 +71,7 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
         fun routeFor(id: Long) = "group/$id"
     }
 
-    /** 这个身份所在的全部群聊，从消息页「折叠的群聊」进去。 */
+    /** 这个身份折叠起来的那些群，从消息页「折叠的群聊」进去；没折叠的群留在消息页主列表里。 */
     data object Groups : Screen("groups")
 
     /**

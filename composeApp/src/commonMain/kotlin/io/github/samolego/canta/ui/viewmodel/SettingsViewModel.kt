@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -144,6 +145,15 @@ class SettingsViewModel(
     val chatDrafts = settingsStore.chatDraftsFlow.state(emptyList<Pair<Long, String>>())
 
     /**
+     * 本机拉黑过的人（身份号）。
+     *
+     * 后端没有拉黑接口，这份名单只落在设置文件里：消息页据此把这些人的私聊从列表里滤掉。
+     * 界面只问「这个人在不在里面」，所以在这一层就换成 `Set`，别让每个调用点各转一次。
+     */
+    val blockedPeers: StateFlow<Set<String>> =
+        settingsStore.blockedPeersFlow.map { peers -> peers.toSet() }.state(emptySet<String>())
+
+    /**
      * 安全页顶部机型胶囊是不是点过了。出厂是没点过（`false`），点一次就永久停止呼吸提示。
      */
     val scopeHintSeen = settingsStore.scopeHintSeenFlow.state(false)
@@ -262,6 +272,9 @@ class SettingsViewModel(
 
     /** 记下（或清掉，传空串）一个会话的草稿；防抖在调用方那边，这里每次都落盘。 */
     fun saveChatDraft(conversationId: Long, text: String) = save { setChatDraft(conversationId, text) }
+
+    /** 拉黑或取消拉黑一个人；后端没有这个接口，落的是本机设置里的那份名单。 */
+    fun saveBlockedPeer(peer: String, blocked: Boolean) = save { setBlockedPeer(peer, blocked) }
 
     /** 顶部机型胶囊点过了：呼吸提示停掉，以后只当普通按钮。 */
     fun saveScopeHintSeen(seen: Boolean) = save { setScopeHintSeen(seen) }

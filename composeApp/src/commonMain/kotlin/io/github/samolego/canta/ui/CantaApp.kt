@@ -1242,6 +1242,9 @@ private fun CantaNavigation(
                 // with, and the number plus token that prove it to the backend.
                 var messagesName by remember { mutableStateOf("") }
                 var messagesIdentity by remember { mutableStateOf(Identity("")) }
+                // 拉黑名单是本机记录（后端没有这个接口），来源只有设置里那一份；消息页据此把
+                // 这些人的私聊从列表里滤掉。用 StateFlow，所以在别处改了这一页也会跟着刷新。
+                val blockedPeers by settingsViewModel.blockedPeers.collectAsStateWithLifecycle()
                 LaunchedEffect(Unit) {
                     messagesName = DeviceIdentity.displayName(deps.settings)
                     messagesIdentity = DeviceIdentity.current(deps.settings)
@@ -1273,6 +1276,11 @@ private fun CantaNavigation(
                                 platform.showMessage("开不了私聊，检查代理后再试")
                             }
                         }
+                    },
+                    // 拉黑：本机名单 + 藏掉那一行；落盘交给 view model，这一页不碰设置文件。
+                    blockedPeers = blockedPeers,
+                    onBlockPeer = { peer, blocked ->
+                        settingsViewModel.saveBlockedPeer(peer, blocked)
                     },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
                 )
@@ -1330,9 +1338,12 @@ private fun CantaNavigation(
                 // and a direct chat says the other person's instead of a generic "私聊".
                 var chatTitle by remember { mutableStateOf("") }
                 var chatIsGroup by remember { mutableStateOf(false) }
+                // 私聊对面是谁：拉黑名单里存的是身份号，所以这里要的是 peer 而不是标题。
+                var chatPeer by remember { mutableStateOf("") }
                 // 草稿按会话存：离开这一页再回来，上次没说完的话还在。读取用 StateFlow，
                 // 所以在别处改了草稿这里也会跟着刷新。
                 val chatDrafts by settingsViewModel.chatDrafts.collectAsStateWithLifecycle()
+                val chatBlockedPeers by settingsViewModel.blockedPeers.collectAsStateWithLifecycle()
                 LaunchedEffect(conversationId) {
                     chatName = DeviceIdentity.displayName(deps.settings)
                     val identity = DeviceIdentity.current(deps.settings)
@@ -1345,6 +1356,7 @@ private fun CantaNavigation(
                             ?.let { row -> row.title.ifBlank { row.peerName.ifBlank { row.peer } } }
                             .orEmpty()
                         chatIsGroup = opened?.isGroup == true
+                        chatPeer = opened?.peer.orEmpty().ifEmpty { opened?.peerName.orEmpty() }
                     }
                 }
                 ChatScreen(
@@ -1367,6 +1379,8 @@ private fun CantaNavigation(
                     // 草稿：进来时把这一条上次没发完的话填回去，改动由页面防抖后写回。
                     initialDraft = chatDrafts.firstOrNull { it.first == conversationId }?.second.orEmpty(),
                     onDraftPersist = { text -> settingsViewModel.saveChatDraft(conversationId, text) },
+                    // 拉黑只对私聊有意义：群里没有"那个人"，群不受本机名单影响。
+                    blocked = !chatIsGroup && chatPeer.isNotEmpty() && chatPeer in chatBlockedPeers,
                 )
             }
             composable(route = Screen.CreateGroup.route) {
