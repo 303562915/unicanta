@@ -59,8 +59,15 @@ class CantaSettings(storage: AppBlobStorage) {
     val themeModeFlow: Flow<Int> = field { it.themeMode }
     /** Whether the "no VPN" reminder was switched off on this install; see [AppSettingsProto.hideVpnNotice]. */
     val hideVpnNoticeFlow = field { it.hideVpnNotice }
-    /** The four digits the app asks for before it draws anything; empty means no lock. */
-    val launchPinFlow: Flow<String> = field { it.launchPin }
+    /** The question the start-up lock asks, by id; empty means the app opens straight away. */
+    val launchQuestionFlow: Flow<String> = field { it.launchQuestion }
+    /** The `YYYY-MM-DD` date that answers [launchQuestionFlow]; empty means the lock is off. */
+    val launchAnswerFlow: Flow<String> = field { it.launchAnswer }
+    /**
+     * 新消息要不要往系统通知栏弹。存的是"静音"，所以 `false`（出厂值）就是提醒开着；
+     * 为什么反过来命名见 [AppSettingsProto.muteChatNotices]。
+     */
+    val muteChatNoticesFlow: Flow<Boolean> = field { it.muteChatNotices }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** Whether the records tab empties itself at the next system start; off by default. */
@@ -104,8 +111,17 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setThemeMode(mode: Int) = update { it.copy(themeMode = mode.coerceIn(0, 2)) }
     /** Remembers that the "no VPN" reminder must never come back; see [AppSettingsProto.hideVpnNotice]. */
     suspend fun setHideVpnNotice(hide: Boolean) = update { it.copy(hideVpnNotice = hide) }
-    /** Sets the four-digit start-up lock; an empty string turns the lock off. */
-    suspend fun setLaunchPin(pin: String) = update { it.copy(launchPin = pin) }
+    /**
+     * Sets or clears the start-up lock. Both halves are written in one call: a question without an
+     * answer and an answer without a question are both "no lock", and a state where only one of
+     * them landed would leave the page describing a lock the lock screen does not agree with.
+     * Empty strings turn the lock off.
+     */
+    suspend fun setLaunchGate(question: String, answer: String) = update {
+        it.copy(launchQuestion = question, launchAnswer = answer)
+    }
+    /** 静音（`true`）或恢复（`false`）新消息的通知栏提醒。 */
+    suspend fun setMuteChatNotices(mute: Boolean) = update { it.copy(muteChatNotices = mute) }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
     }

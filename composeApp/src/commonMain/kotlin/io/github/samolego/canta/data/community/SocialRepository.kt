@@ -205,8 +205,26 @@ class SocialRepository(
     private val client: HttpClient,
     private val baseUrl: String = TelemetryConfig.BASE_URL,
     private val apiKey: String = TelemetryConfig.PUBLISHABLE_KEY,
+    /**
+     * 这台手机的身份凭据。写调用会把它一起交给后端，后端据此认出是谁在写，而不是采信
+     * 每个方法第一个参数里那个谁都能填的号码。
+     *
+     * 默认值拿不到凭据（空串），那时一个 `p_token` 也不发，后端照旧按自报的号码处理——灰度
+     * 期间新旧服务端、新旧客户端四种组合都能跑，撑住这件事的就是这个默认值。构造函数不提它
+     * 也不会编译失败，接上凭据是上层一行的事。
+     */
+    private val identityToken: suspend () -> String = { "" },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * 这一次写调用要带上的凭据；取不到就是空串。
+     *
+     * 凭据出错不该让一次发消息整个失败，所以 [identityToken] 抛什么都吞掉：少了凭据最坏只是
+     * 回到"信自报号码"的老样子，和今天完全一样。
+     */
+    private suspend fun callerToken(): String =
+        runCatching { identityToken() }.getOrDefault("").trim()
 
     /**
      * 上一次调用为什么失败：服务端拒绝时是它自己那句话（函数不存在、参数被否、密钥不对），
@@ -287,10 +305,12 @@ class SocialRepository(
      */
     suspend fun setFollow(actor: String, target: String, follow: Boolean): Boolean {
         if (actor.isEmpty() || target.isEmpty()) return false
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_actor", actor)
             put("p_target", target)
             put("p_follow", follow)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("follow_set", body) ?: return false
         return followingFrom(text) ?: false
@@ -336,9 +356,11 @@ class SocialRepository(
      */
     suspend fun setBio(owner: String, bio: String): Boolean {
         if (owner.isEmpty()) return false
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_bio", bio)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("profile_set_bio", body) ?: return false
         return booleanFrom(text, "profile_set_bio") ?: false
@@ -434,10 +456,12 @@ class SocialRepository(
      */
     suspend fun sendMessage(owner: String, conversation: Long, body: String): ChatMessage? {
         if (owner.isEmpty() || conversation <= 0L) return null
+        val proof = callerToken()
         val payload = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
             put("p_body", body)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("message_send", payload) ?: return null
         val row = firstRowOf(text) ?: return null
@@ -463,10 +487,12 @@ class SocialRepository(
      */
     suspend fun sendImageMessage(owner: String, conversation: Long, path: String): ChatMessage? {
         if (owner.isEmpty() || conversation <= 0L || path.isEmpty()) return null
+        val proof = callerToken()
         val payload = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
             put("p_path", path)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("message_send_image", payload) ?: return null
         val row = firstRowOf(text) ?: return null
@@ -490,9 +516,11 @@ class SocialRepository(
      */
     suspend fun deleteMessage(owner: String, messageId: Long): Boolean {
         if (owner.isEmpty() || messageId <= 0L) return false
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_message", messageId)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("message_delete", body) ?: return false
         return booleanFrom(text, "message_delete") ?: false
@@ -506,9 +534,11 @@ class SocialRepository(
      */
     suspend fun openDm(owner: String, peer: String): Long? {
         if (owner.isEmpty() || peer.isEmpty()) return null
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_peer", peer)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("dm_open", body) ?: return null
         return idFrom(text)
@@ -517,10 +547,12 @@ class SocialRepository(
     /** 建一个群，[members] 是除 [owner] 以外的人；返回新会话号，失败 null。 */
     suspend fun createGroup(owner: String, title: String, members: List<String>): Long? {
         if (owner.isEmpty()) return null
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_title", title)
             put("p_members", buildJsonArray { members.forEach { add(it) } })
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("group_create", body) ?: return null
         return idFrom(text)
@@ -534,10 +566,12 @@ class SocialRepository(
      */
     suspend fun addGroupMembers(owner: String, conversation: Long, members: List<String>): Int? {
         if (owner.isEmpty() || conversation <= 0L) return null
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
             put("p_members", buildJsonArray { members.forEach { add(it) } })
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("group_add_members", body) ?: return null
         return intFrom(text, "members")
@@ -551,10 +585,12 @@ class SocialRepository(
      */
     suspend fun renameGroup(owner: String, conversation: Long, title: String): Boolean {
         if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
             put("p_title", title)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("group_rename", body) ?: return false
         return booleanFrom(text, "group_rename") ?: false
@@ -568,9 +604,11 @@ class SocialRepository(
      */
     suspend fun leaveConversation(owner: String, conversation: Long): Boolean {
         if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("conversation_leave", body) ?: return false
         return booleanFrom(text, "conversation_leave") ?: false
@@ -584,10 +622,12 @@ class SocialRepository(
      */
     suspend fun pinConversation(owner: String, conversation: Long, pin: Boolean): Boolean {
         if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
             put("p_pin", pin)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("conversation_pin", body) ?: return false
         return booleanFrom(text, "conversation_pin") ?: false
@@ -601,9 +641,11 @@ class SocialRepository(
      */
     suspend fun hideConversation(owner: String, conversation: Long): Boolean {
         if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("conversation_hide", body) ?: return false
         return booleanFrom(text, "conversation_hide") ?: false
@@ -616,9 +658,11 @@ class SocialRepository(
      */
     suspend fun markRead(owner: String, conversation: Long) {
         if (owner.isEmpty() || conversation <= 0L) return
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_owner", owner)
             put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         rpc("message_read", body)
     }
@@ -631,7 +675,11 @@ class SocialRepository(
      */
     suspend fun markAllConversationsRead(owner: String): Int {
         if (owner.isEmpty()) return 0
-        val body = buildJsonObject { put("p_owner", owner) }.toString()
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
         val text = rpc("conversations_mark_all_read", body) ?: return 0
         return intFrom(text, "conversations_mark_all_read") ?: 0
     }

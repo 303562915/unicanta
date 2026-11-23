@@ -37,6 +37,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -121,6 +125,36 @@ class AndroidCantaPlatform(
     /** 正在等哪一次挑选的结果；同一时刻只会有一个。 */
     private var pendingImage: CompletableDeferred<ByteArray?>? = null
 
+    /**
+     * 通知栏那一条。第一次真正要弹（或被问"能不能弹"）的时候才建：一个从不看消息的启动不该
+     * 顺手去碰系统通知服务。
+     */
+    private val chatNotifier by lazy { ChatNotifier(context) }
+
+    /** 通知权限的申请器；和相册挑选器一样，只能在 [attachActivity] 里注册。 */
+    private var notifyPermissionLauncher: ActivityResultLauncher<String>? = null
+
+    /** 正在等哪一次权限申请的结果；同一时刻只会有一个。 */
+    private var pendingNotifyPermission: CompletableDeferred<Boolean>? = null
+
+    /**
+     * 从通知栏点进来的会话号。
+     *
+     * 用 `SharedFlow` 而不是 `StateFlow`：这是一次性事件，"点了一条通知"发生过一次就该让页面
+     * 走一次，状态式的值会让界面每重组一次又把那一页推一遍。
+     */
+    private val chatIntentFlow = MutableSharedFlow<Long>(extraBufferCapacity = 8)
+
+    /**
+     * 还没有订阅者时要补发的那一个会话号。
+     *
+     * 冷启动的顺序是 `attachActivity` → 交 intent → 才轮到 Compose 开始收集，所以第一条必然是
+     * 在没人听的时候到的。`SharedFlow` 在没有订阅者时会把值丢掉（replay 是 0），于是这一格就是
+     * 那份"先存着"：第一个收集者上来时先把它交出去，再转去听后面的。
+     */
+    @Volatile
+    private var pendingChatIntent: Long = 0L
+
     /** Attach the activity (from `onCreate`); used for biometric prompts and the photo picker. */
     fun attachActivity(activity: FragmentActivity) {
         biometricActivity = activity
@@ -137,6 +171,14 @@ class AndroidCantaPlatform(
                 waiting?.complete(bytes)
             }
         }
+        // 通知权限同理：`registerForActivityResult` 必须在 Activity 进入 STARTED 之前登记。
+        notifyPermissionLauncher = activity.registerForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            val waiting = pendingNotifyPermission
+            pendingNotifyPermission = null
+            waiting?.complete(granted)
+        }
     }
 
     /** Detach the activity when it is destroyed. */
@@ -147,6 +189,8 @@ class AndroidCantaPlatform(
         // 活动没了，挂着的挑选器也就没用了：再点图片会重新进 attachActivity 注册。
         imagePicker = null
         pendingImage = null
+        notifyPermissionLauncher = null
+        pendingNotifyPermission = null
     }
 
     /**
@@ -166,6 +210,68 @@ class AndroidCantaPlatform(
         }
         return bytes
     }
+
+    // ------------------------------------------------------------------ 通知
+
+    /**
+     * 入口（`MainActivity`）把拿到的 intent 交进来，解析出"从哪条通知点进来的"。
+     *
+     * 不是从通知来的 intent 直接返回：正常点图标启动时 extra 是空的，这里什么也不会发生。
+     * 解析完就把 extra 摘掉——同一个 intent 可能被再交一次（配置变化重建 Activity），摘掉之后
+     * 第二次不会再导航一遍。
+     */
+    fun takeChatIntent(intent: Intent?) {
+        val conversation = chatNotifier.conversationOf(intent)
+        if (conversation <= 0L) return
+        intent?.removeExtra(ChatNotifier.EXTRA_CONVERSATION_ID)
+        // 没人听的时候先存着（见 [pendingChatIntent]）；有人在听就直接投进去。
+        if (chatIntentFlow.subscriptionCount.value == 0) {
+            pendingChatIntent = conversation
+        } else {
+            chatIntentFlow.tryEmit(conversation)
+        }
+    }
+
+    override val chatIntents: Flow<Long> = flow {
+        val waiting = pendingChatIntent
+        if (waiting > 0L) {
+            pendingChatIntent = 0L
+            emit(waiting)
+        }
+        emitAll(chatIntentFlow)
+    }
+
+    override fun canNotify(): Boolean = chatNotifier.canPost()
+
+    /**
+     * 申请通知权限，回答最后给没给。
+     *
+     * 没有活动可以挂申请器、或者这台机器根本不需要这一步（Android 13 以下）时，直接回答
+     * [canNotify]——调用方拿它当"现在能不能弹"，不当成"用户拒绝了一次"。
+     */
+    override suspend fun requestNotifyPermission(): Boolean {
+        if (canNotify()) return true
+        val launcher = notifyPermissionLauncher ?: return false
+        val waiting = CompletableDeferred<Boolean>()
+        pendingNotifyPermission = waiting
+        withContext(Dispatchers.Main) {
+            launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        // 和相册一样的耐心上限：人可能把系统对话框放着不管，界面不能永远挂在那里。
+        val granted = withTimeoutOrNull(180_000L) { waiting.await() } ?: false
+        if (pendingNotifyPermission === waiting) {
+            pendingNotifyPermission = null
+        }
+        return granted
+    }
+
+    override fun notifyChat(conversationId: Long, title: String, body: String, unread: Int) {
+        // 权限没给就什么也不弹：这一步不申请，申请是设置页那个开关的事。
+        if (!canNotify()) return
+        chatNotifier.notify(conversationId, title, body, unread)
+    }
+
+    override fun clearChatNotices() = chatNotifier.clearAll()
 
     override fun showMessage(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()

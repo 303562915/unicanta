@@ -81,12 +81,12 @@ import io.github.samolego.canta.ui.component.CollapsingBottomBar
 import io.github.samolego.canta.ui.component.FloatingPillBar
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.dockScroll
-import io.github.samolego.canta.ui.component.isUsablePin
 import io.github.samolego.canta.ui.component.rememberDockVisibility
 import io.github.samolego.canta.ui.fl.FlAccent
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlThemeMode
+import io.github.samolego.canta.ui.lock.launchGateOf
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
@@ -173,6 +173,14 @@ private const val VPN_NOTICE_INTERVAL_MILLIS = 60_000L
 private const val VPN_NOTICE_VISIBLE_MILLIS = 12_000L
 
 /**
+ * App 退到后台之后多久问一次「有没有新消息」，用来决定要不要弹通知栏。
+ *
+ * 一分钟和上面那个未读计数同一个节奏：更勤只是白花电和流量，更慢则人已经走了才提醒。
+ * 它只在 `appVisible` 为 false 时跑，回前台第一个 effect 就把循环取消掉。
+ */
+private const val CHAT_NOTICE_POLL_MILLIS = 60_000L
+
+/**
  * Where the manager behind Stellar/Shizuku comes from. The app points at the fork it recommends,
  * and this is also the fallback for "open the manager": shared code has no way to launch another
  * app by package name yet, so the page it is installed from is the closest thing available.
@@ -231,11 +239,12 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
 
-    // The start-up lock: null until the store has been read, so an install with a password never
-    // shows the app list for a frame. Once read, a non-empty value keeps the keypad over everything
-    // until the four digits match — and again every time the app is left, which is what
-    // "打开软件要先输密码" means to the person who set it.
-    val launchPin by settingsViewModel.launchPin.collectAsStateWithLifecycle()
+    // The start-up lock: both halves are null until the store has been read, so an install with a
+    // lock never shows the app list for a frame. Once read, a usable pair keeps the question over
+    // everything until its date is typed — and again every time the app is left, which is what
+    // "打开软件要先回答问题" means to the person who set it.
+    val lockQuestion by settingsViewModel.launchQuestion.collectAsStateWithLifecycle()
+    val lockAnswer by settingsViewModel.launchAnswer.collectAsStateWithLifecycle()
     val unlocked by settingsViewModel.sessionUnlocked.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { settingsViewModel.markSessionLocked() }
 
@@ -247,23 +256,27 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     }
     CantaTheme(darkTheme = darkTheme, accent = FlAccent.ofArgb(themeAccent)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            val storedPin = launchPin
-            // A stored value that is not four digits — a file edited by hand, a format from some
-            // future build — is ignored instead of becoming a keypad nobody could satisfy: the
-            // one mistake this lock must never make is locking the owner out for good.
-            val lockPin = storedPin?.takeIf(::isUsablePin)
+            // Plain locals, so the two are smart-cast together: a delegated property is not.
+            val question = lockQuestion
+            val answer = lockAnswer
             Box(modifier = Modifier.fillMaxSize()) {
-                // Composed only once the store has answered: before that there is nothing worth
-                // drawing, and the alternative is a flash of the app list under the keypad.
-                if (storedPin != null) {
+                if (question != null && answer != null) {
+                    // A pair that is not a question this build knows plus a real date — a file
+                    // edited by hand, a retired format — is ignored instead of becoming a question
+                    // nobody could answer: the one mistake this lock must never make is locking
+                    // the owner out for good.
+                    val gate = launchGateOf(question, answer)
+                    // Composed only once the store has answered: before that there is nothing
+                    // worth drawing, and the alternative is a flash of the app list under the
+                    // question.
                     CantaNavigation(deps, closeApp, crashReports, communityRepository, socialRepository, settingsViewModel)
-                }
-                // The lock is a cover rather than a replacement. Drawn over the pages, it keeps
-                // their state and their side effects — the telemetry flush on the way out, the one
-                // look at the update feed — alive; swapping the navigation out and back would
-                // throw the back stack away and cancel the work that was running.
-                if (lockPin != null && !unlocked) {
-                    LaunchLockScreen(pin = lockPin, onUnlock = { settingsViewModel.markSessionUnlocked() })
+                    // The lock is a cover rather than a replacement. Drawn over the pages, it
+                    // keeps their state and their side effects — the telemetry flush on the way
+                    // out, the one look at the update feed — alive; swapping the navigation out and
+                    // back would throw the back stack away and cancel the work that was running.
+                    if (gate != null && !unlocked) {
+                        LaunchLockScreen(gate = gate, onUnlock = { settingsViewModel.markSessionUnlocked() })
+                    }
                 }
             }
         }
@@ -334,6 +347,67 @@ private fun CantaNavigation(
     var appVisible by remember { mutableStateOf(true) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { appVisible = true }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { appVisible = false }
+
+    // ---------------------------------------------------------------- 新消息的通知栏提醒
+    //
+    // 这一段的边界要先说清：它只在**进程还活着**的时候有用。消息是下面那个后台轮询问出来的，
+    // 轮询是协程，协程活在进程里；App 被系统回收之后没有任何东西在跑，也就没有人在那一刻调用
+    // 通知栏。真正的后台推送要 FCM 或者一条常驻长连接，这一轮不做，所以这里也不假装做了——
+    // 被杀掉就是没有通知，直到人再次打开 App 为止。
+    //
+    // 为什么不复用上面那个 60 秒的未读计数：那一个只在四个带数字的页面上跑，而且它手里只有
+    // 一个「一共几条」的总数，说不出「哪个会话来了几条」。人从聊天页退到后台的时候，正好是
+    // 那一处不跑、而这条通知最该来的时候。
+    val muteChatNotices by settingsViewModel.muteChatNotices.collectAsStateWithLifecycle()
+
+    // 点通知进来的：把会话号交给导航。冷启动那一条由入口先存着（进程刚起来时还没人在听），
+    // 这里第一次收集时补发，之后才是后续的推送。
+    LaunchedEffect(navController) {
+        platform.chatIntents.collect { conversation ->
+            navController.navigate(Screen.Chat.routeFor(conversation)) { launchSingleTop = true }
+        }
+    }
+
+    // 回到前台就把通知栏上的聊天提醒收掉：人已经在看着 app 了，那几条没有意义。
+    LaunchedEffect(appVisible) {
+        if (appVisible) platform.clearChatNotices()
+    }
+
+    LaunchedEffect(appVisible, muteChatNotices) {
+        // 只在后台、且开关是开的时候跑。开关默认就是开的（proto 存的是"静音"）。
+        if (appVisible || muteChatNotices) return@LaunchedEffect
+        // 基线：上一次看到的「每个会话几条未读」。第一圈只记不弹——否则一退到后台就会把此前
+        // 积攒的未读一口气补成一屏通知，那不是提醒，是把历史重播一遍。
+        var baseline: Map<Long, Int>? = null
+        while (true) {
+            val identity = DeviceIdentity.current(deps.settings)
+            val owner = identity.owner.ifEmpty { identity.token }
+            if (owner.isNotEmpty()) {
+                val conversations = runCatching { socialRepository.conversationsFor(owner) }.getOrNull()
+                if (conversations != null) {
+                    baseline?.let { before ->
+                        for (conversation in conversations) {
+                            // 只有数字往上走才算「来了新的」。同一个数字反复看到不弹，这就是
+                            // 同一条消息不会连弹三次的第一层；第二层在平台那一侧——通知 id 用
+                            // 会话号，同一会话的提醒互相覆盖而不是堆成一列。
+                            if (conversation.unread > (before[conversation.id] ?: 0)) {
+                                platform.notifyChat(
+                                    conversationId = conversation.id,
+                                    title = conversation.title
+                                        .ifBlank { conversation.peerName }
+                                        .ifBlank { "新消息" },
+                                    body = noticeBody(conversation.lastBody),
+                                    unread = conversation.unread,
+                                )
+                            }
+                        }
+                    }
+                    baseline = conversations.associate { it.id to it.unread }
+                }
+            }
+            delay(CHAT_NOTICE_POLL_MILLIS)
+        }
+    }
 
     LaunchedEffect(autoInstallUpdates, updateChannel) {
         autoUpdate = null
@@ -1698,4 +1772,22 @@ private fun AppDetailRoute(
         onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
         anchorCommentId = anchorCommentId,
     )
+}
+
+/**
+ * 通知栏那一行的正文。
+ *
+ * 后端的 `last_body` 对图片消息存的是 Storage 的对象路径而不是一句话（`message_send_image`
+ * 把路径写进 `body`），把它原样摆进通知栏等于糊一串谁也读不懂的字符。所以"/" 开头又没有空格
+ * 的那种字符串按图片处理——宁可说「[图片]」，也不假装那是一句话。
+ */
+private fun noticeBody(lastBody: String): String {
+    val text = lastBody.trim()
+    return when {
+        text.isEmpty() -> "新消息"
+        text.startsWith("/") && !text.contains(' ') -> "[图片]"
+        // 通知栏正文两三行就是极限，长消息在通知里截断比撑成一大块更容易读；点进去是全文。
+        text.length > 120 -> text.take(117) + "…"
+        else -> text
+    }
 }

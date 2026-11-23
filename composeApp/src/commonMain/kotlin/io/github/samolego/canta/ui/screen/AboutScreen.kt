@@ -105,14 +105,14 @@ import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.SettingsSwitch
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.UnreadDot
-import io.github.samolego.canta.ui.component.isUsablePin
-import io.github.samolego.canta.ui.dialog.LaunchPinDialog
+import io.github.samolego.canta.ui.dialog.LaunchGateDialog
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.ui.lock.launchGateOf
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
@@ -179,13 +179,18 @@ fun AboutScreen(
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
     val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
+    // 存的是"静音"，所以下面那个开关读的是它的反；见 AppSettingsProto.muteChatNotices。
+    val muteChatNotices by settingsViewModel.muteChatNotices.collectAsStateWithLifecycle()
 
-    // The start-up lock, as the store holds it: empty means the app opens straight away. A stored
-    // value that is not four digits is shown as "not set" here too, so the page that turns the
-    // lock off is never itself behind an untypeable number.
-    val launchPin by settingsViewModel.launchPin.collectAsStateWithLifecycle()
-    val activePin = launchPin?.takeIf(::isUsablePin).orEmpty()
-    var pinDialogShown by remember { mutableStateOf(false) }
+    // The start-up lock, as the store holds it. A pair that is not a question this build knows
+    // plus a real date is shown as "not set" here too, so the page that turns the lock off is
+    // never itself behind a question nobody can answer.
+    val lockQuestion by settingsViewModel.launchQuestion.collectAsStateWithLifecycle()
+    val lockAnswer by settingsViewModel.launchAnswer.collectAsStateWithLifecycle()
+    val activeGate = lockQuestion?.let { question ->
+        lockAnswer?.let { answer -> launchGateOf(question, answer) }
+    }
+    var gateDialogShown by remember { mutableStateOf(false) }
 
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
@@ -432,17 +437,40 @@ fun AboutScreen(
                 onCheckedChange = settingsViewModel::saveShowDevicePhoto,
             )
 
-            // The start-up lock: four digits in front of everything, for the phone that gets
+            // The start-up question: one birthday in front of everything, for the phone that gets
             // handed to somebody who taps before reading. Off until it is set here.
             LinkCard(
                 glyph = FlGlyphs.lock,
                 title = "启动密码",
-                subtitle = if (activePin.isEmpty()) {
-                    "未设置 · 设置后打开软件要先输四位生日"
-                } else {
-                    "已开启 · 打开软件要先输四位生日"
+                subtitle = activeGate?.let { "${it.question.label} · 已开启" }
+                    ?: "未设置 · 设置后打开软件要先答一个生日",
+                onClick = { gateDialogShown = true },
+            )
+
+            // 有人发消息来的时候要不要在系统通知栏弹一条。
+            //
+            // 出厂是开的（proto 里存的是"静音"，见 AppSettingsProto.muteChatNotices），但打开
+            // 这个开关的同时得把系统权限要到：Android 13 起那是运行时权限，没有它
+            // NotificationManagerCompat 会把通知静默丢掉，开关看着是开的、却什么都不弹。
+            // 拒绝了就把开关退回去，不留一个说谎的勾。
+            ToggleCard(
+                glyph = FlGlyphs.send,
+                title = "消息通知",
+                checked = !muteChatNotices,
+                onCheckedChange = { wantOn ->
+                    when {
+                        !wantOn -> settingsViewModel.saveMuteChatNotices(true)
+                        // 早就有了权限（Android 12 及以下，或者之前点过允许）：直接开，不打扰。
+                        platform.canNotify() -> settingsViewModel.saveMuteChatNotices(false)
+                        else -> scope.launch {
+                            if (platform.requestNotifyPermission()) {
+                                settingsViewModel.saveMuteChatNotices(false)
+                            } else {
+                                platform.showMessage("没有通知权限，系统不会显示消息提醒")
+                            }
+                        }
+                    }
                 },
-                onClick = { pinDialogShown = true },
             )
 
             Spacer(Modifier.height(6.dp))
@@ -503,14 +531,14 @@ fun AboutScreen(
             )
         }
 
-        // Setting, replacing and turning off the start-up lock all happen here; the number itself
-        // is only ever written to the store, and the lock screen reads it back on the next start.
-        if (pinDialogShown) {
-            LaunchPinDialog(
-                existingPin = activePin,
-                onSave = { settingsViewModel.saveLaunchPin(it) },
-                onClear = { settingsViewModel.saveLaunchPin("") },
-                onDismiss = { pinDialogShown = false },
+        // Setting, replacing and turning off the start-up question all happen here; the pair is
+        // only ever written to the store, and the lock screen reads it back on the next start.
+        if (gateDialogShown) {
+            LaunchGateDialog(
+                existing = activeGate,
+                onSave = { questionId, answer -> settingsViewModel.saveLaunchGate(questionId, answer) },
+                onClear = { settingsViewModel.clearLaunchGate() },
+                onDismiss = { gateDialogShown = false },
             )
         }
     }

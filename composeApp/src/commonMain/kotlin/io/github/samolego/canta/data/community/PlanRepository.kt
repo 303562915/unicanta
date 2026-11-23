@@ -217,8 +217,25 @@ class PlanRepository(
     private val client: HttpClient,
     private val baseUrl: String = TelemetryConfig.BASE_URL,
     private val apiKey: String = TelemetryConfig.PUBLISHABLE_KEY,
+    /**
+     * 这台手机的身份凭据。上传方案、投票、写评论这三件"署上自己的名"的事会把它一起交给后端，
+     * 后端据此确认号码真是这个 token 的，而不是信客户端自报的那一串——号码在界面上是公开的，
+     * 只认它等于谁都能替别人署名。
+     *
+     * 默认拿不到凭据（空串），那时一个 `p_token` 也不发，后端照旧按自报的号码处理。
+     * [delete] / [setNote] / [deleteComment] 那几条本来就把 token 当必填参数收，不受这个默认值影响。
+     */
+    private val identityToken: suspend () -> String = { "" },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * 这一次写调用要带上的凭据；取不到就是空串。
+     *
+     * 出错吞掉：凭据读失败不该让一次投票整个失败，最坏只是回到"信自报号码"的老样子。
+     */
+    private suspend fun callerToken(): String =
+        runCatching { identityToken() }.getOrDefault("").trim()
 
     /**
      * Why the last call came back empty: the backend's own message when it refused (a missing
@@ -564,7 +581,14 @@ class PlanRepository(
             put("owner", owner)
             put("test", test)
         }.toString()
-        return rpc("plan_submit", buildJsonObject { put("p_plan", Json.parseToJsonElement(body)) }.toString())
+        val proof = callerToken()
+        return rpc(
+            "plan_submit",
+            buildJsonObject {
+                put("p_plan", Json.parseToJsonElement(body))
+                if (proof.isNotEmpty()) put("p_token", proof)
+            }.toString(),
+        )
             ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.longOrNull }.getOrNull() }
     }
 
@@ -707,9 +731,11 @@ class PlanRepository(
     }
 
     suspend fun vote(planId: Long, voter: String): Int? {
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_id", planId)
             put("p_voter", voter)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         return rpc("plan_vote", body)?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.longOrNull?.toInt() }.getOrNull() }
     }
@@ -853,6 +879,7 @@ class PlanRepository(
         replyToName: String = "",
     ): Long? {
         if (target.isEmpty() || body.isBlank()) return null
+        val proof = callerToken()
         val payload = buildJsonObject {
             put("p_kind", kind)
             put("p_target", target)
@@ -862,6 +889,7 @@ class PlanRepository(
             put("p_model", deviceModel)
             put("p_system", systemName)
             if (replyTo > 0L) put("p_parent", replyTo)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         rpc("comment_add", payload)?.let { text ->
             return runCatching { json.parseToJsonElement(text).jsonPrimitive.longOrNull }.getOrNull()

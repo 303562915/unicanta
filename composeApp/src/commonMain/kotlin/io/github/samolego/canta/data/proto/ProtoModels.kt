@@ -146,16 +146,41 @@ data class AppSettingsProto(
      */
     @ProtoNumber(33) val hideVpnNotice: Boolean = false,
     /**
-     * The birthday the app asks for before it shows anything, as four digits (`MMDD` or any four
-     * the owner picked). Empty means no lock at all, which is the default: an app that opens
-     * straight into the list is what everyone expects, and this is for the phone that gets handed
-     * to somebody who taps first and reads later.
-     *
-     * Stored in plain text on purpose: it protects against a stray tap, not against somebody who
-     * has the phone and its files, and a hash would only make "I forgot which four digits" harder
-     * to answer. Local only, like every other setting on this page.
+     * 34 was a four-digit start-up lock during development and never shipped: the lock is a
+     * question plus a date now ([launchQuestion] / [launchAnswer]). Kept so a build that stored
+     * the old form still decodes, and never reused — the number stays spent.
      */
-    @ProtoNumber(34) val launchPin: String = "",
+    @ProtoNumber(34) val launchRetiredPin: String = "",
+    /**
+     * 有人发消息来的时候，不要往系统通知栏弹。
+     *
+     * 存的是"静音"而不是"开启"，因为 proto3 会把零值省略、缺失的字段读回 Kotlin 默认值：默认值
+     * 只能是 `false`，而这件事的出厂状态是"要提醒"。所以字段反过来命名——`false` 就是提醒开着，
+     * 一个从没写过设置的老安装读出来正是这个意思，不必迁移。
+     *
+     * 它只管"要不要弹"，不管权限：权限没给的时候即使这里是 `false` 也弹不出来，
+     * 那条申请在设置的同一格上（见 `CantaPlatform.requestNotifyPermission`）。
+     */
+    @ProtoNumber(35) val muteChatNotices: Boolean = false,
+    /**
+     * Which question the start-up lock asks, by `LaunchQuestion.id` (see `LAUNCH_QUESTIONS`).
+     * Empty means no lock at all, which is the default: an app that opens straight into the list
+     * is what everyone expects, and this is for the phone that gets handed to somebody who taps
+     * first and reads later.
+     *
+     * The id, never the index: inserting a question in the middle of the list must not change
+     * what an install that locked itself a year ago is being asked.
+     */
+    @ProtoNumber(36) val launchQuestion: String = "",
+    /**
+     * The date that answers [launchQuestion], written `YYYY-MM-DD` (for example `2000-11-01`).
+     * Empty means no lock.
+     *
+     * Stored in plain text on purpose: this protects against a stray tap, not against somebody who
+     * has the phone and its files, and the owner has to be able to read back what they set. Local
+     * only, like every other setting.
+     */
+    @ProtoNumber(37) val launchAnswer: String = "",
 )
 
 /**

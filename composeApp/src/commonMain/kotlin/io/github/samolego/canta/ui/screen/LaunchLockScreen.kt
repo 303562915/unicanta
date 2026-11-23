@@ -2,102 +2,73 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import io.github.samolego.canta.ui.component.PIN_LENGTH
-import io.github.samolego.canta.ui.component.PinDots
-import io.github.samolego.canta.ui.component.PinPad
-import io.github.samolego.canta.ui.fl.FlGlyphIcon
-import io.github.samolego.canta.ui.fl.FlGlyphs
+import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.ui.component.DateField
 import io.github.samolego.canta.ui.fl.FlText
-import kotlinx.coroutines.delay
-
-/** How long a wrong entry stays on screen before the dots clear themselves. */
-private const val WRONG_PIN_PAUSE_MILLIS = 700L
-
-/** Height of everything above and below the keys: icon, title, dots, error line and the gaps. */
-private val FixedContent = 241.dp
-
-/** Key sizes between which the grid may shrink to fit a short screen or a large system font. */
-private val MinKey = 38.dp
-private val MaxKey = 68.dp
+import io.github.samolego.canta.ui.lock.LaunchGate
+import io.github.samolego.canta.ui.lock.answersGate
+import io.github.samolego.canta.ui.lock.normalizeBirthday
 
 /**
- * The gate in front of everything: four dots, a keypad, and the birthday the app was locked with.
+ * The gate in front of everything: one question, one line for the date, one button.
  *
  * This exists for the phone that gets handed around — a grandparent tapping at the icon in a
  * pocket, a child swiping through the list. It is a lock against a stray tap rather than against
  * somebody who owns the phone, so it is deliberately plain: no attempt counter, no timeout, no
- * lockout that would leave the owner outside their own app. An entry that comes out wrong just
- * clears the dots and is asked for again.
+ * lockout that would leave the owner outside their own app. A date that does not match says so
+ * once and leaves what was typed where it is, so a mistyped digit can be fixed instead of retyped.
+ *
+ * Everything on this page is text on an empty surface — a small label, the question at reading
+ * size, the date under it, one button. That is the whole design: there is nothing here to look at
+ * except what is being asked.
  *
  * It is drawn as an opaque cover over the pages rather than replacing them, so what was on screen
- * before the app was put down is still there behind the keypad, unchanged.
+ * before the app was put down is still there behind it, unchanged.
  *
- * [onUnlock] runs as soon as the fourth digit matches [pin].
+ * [onUnlock] runs when [gate]'s date has been typed correctly.
  */
 @Composable
-fun LaunchLockScreen(pin: String, onUnlock: () -> Unit) {
+fun LaunchLockScreen(gate: LaunchGate, onUnlock: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    var typed by remember { mutableStateOf("") }
-    var wrong by remember { mutableStateOf(false) }
+    var digits by remember { mutableStateOf("") }
+    var rejected by remember { mutableStateOf(false) }
 
-    // The check lives here rather than inside the tap handler: the fourth digit is what triggers
-    // it, and a handler that both stores the value and reacts to it fights the recomposition the
-    // store causes.
-    LaunchedEffect(typed) {
-        if (typed.length < PIN_LENGTH) return@LaunchedEffect
-        if (typed == pin) {
+    val submit = {
+        if (answersGate(digits, gate.answer)) {
             onUnlock()
         } else {
-            wrong = true
-            delay(WRONG_PIN_PAUSE_MILLIS)
-            // The red dots stay only while they carry digits; the line under them stays until the
-            // next digit, which is what says why the row emptied itself.
-            typed = ""
+            rejected = true
         }
     }
 
-    val append: (Char) -> Unit = { digit ->
-        if (typed.length < PIN_LENGTH) {
-            wrong = false
-            typed += digit
-        }
-    }
-    // Clearing the error as well: the line says "that was wrong", and a backspace is already the
-    // next attempt.
-    val backspace: () -> Unit = {
-        typed = typed.dropLast(1)
-        wrong = false
-    }
-
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             // Opaque, because this sits on top of the pages rather than in place of them.
             .background(scheme.background)
-            // A cover that lets a tap through to the list underneath is not a lock. The keys take
+            // A cover that lets a tap through to the list underneath is not a lock. Children take
             // their own taps first; whatever is left is swallowed here instead of reaching the
             // page below, which is otherwise still composed and still listening.
             .pointerInput(Unit) {
@@ -107,71 +78,75 @@ fun LaunchLockScreen(pin: String, onUnlock: () -> Unit) {
                     }
                 }
             }
-            // Edge to edge: the dots and the keypad both have to stay off the status bar and off
-            // the navigation bar, or the last row of keys sits under the system's own buttons.
             .safeDrawingPadding()
-            .padding(horizontal = 26.dp, vertical = 20.dp),
+            .padding(horizontal = 30.dp, vertical = 24.dp),
     ) {
-        // The keys give way before the last row is cut off: a phone with a large system font has
-        // less room than the design assumes, and a keypad whose "0" cannot be reached is a keypad
-        // that can lock somebody out of their own app.
-        val keyGap = 14.dp
-        val keySize = ((maxHeight - FixedContent - keyGap * 3) / 4).coerceIn(MinKey, MaxKey)
-        val gap = if (keySize < 60.dp) 10.dp else keyGap
-
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.weight(1f))
 
-            Box(
-                modifier = Modifier
-                    .size(74.dp)
-                    .clip(CircleShape)
-                    .background(scheme.primary.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                FlGlyphIcon(glyph = FlGlyphs.lock, size = 30.dp, tint = scheme.primary, fill = 1f)
-            }
-            Spacer(Modifier.height(18.dp))
+            // A label, not a title: the question under it is the thing being read.
             Text(
-                text = "输入生日密码",
-                style = FlText.title2,
+                text = "已锁定",
+                style = FlText.caption2.copy(letterSpacing = 2.sp),
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = gate.question.label,
+                style = FlText.title1,
                 color = scheme.onSurface,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
-                text = "这台手机给软件上了锁，输入四位数字才能打开。",
-                style = FlText.caption2,
+                text = "输入这一天的日期来解锁",
+                style = FlText.footnote,
                 color = scheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(26.dp))
 
-            PinDots(filled = typed.length, wrong = wrong)
+            Spacer(Modifier.height(40.dp))
+            DateField(
+                value = digits,
+                onValueChange = {
+                    digits = it
+                    // A fresh digit means a fresh attempt; a red line left over from the previous
+                    // one would still be sitting there while the right date is being typed.
+                    rejected = false
+                },
+                isError = rejected,
+            )
             Spacer(Modifier.height(10.dp))
-            // A fixed height whether or not there is an error: a line that appears and disappears
-            // would move the keypad under the thumb in the middle of an entry.
+            // Fixed height whether or not there is an error: a line that appears and disappears
+            // would move the field under the finger in the middle of an entry.
             Box(modifier = Modifier.height(20.dp), contentAlignment = Alignment.Center) {
-                if (wrong) {
+                if (rejected) {
                     Text(
-                        text = "密码不对，再试一次",
+                        text = "日期不对，再试一次",
                         style = FlText.caption2,
                         color = scheme.error,
                     )
                 }
             }
 
-            Spacer(Modifier.weight(1f))
-            PinPad(
-                onDigit = append,
-                onBackspace = backspace,
-                keySize = keySize,
-                keyGap = gap,
-            )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(18.dp))
+            Button(
+                onClick = submit,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = CircleShape,
+                // Flat on purpose: a raised button would be the only piece of depth on a page that
+                // is otherwise nothing but text.
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                // The one filled thing here, so "this is the tap" needs no reading.
+                enabled = normalizeBirthday(digits) != null,
+            ) {
+                Text(text = "解锁", fontSize = 16.sp)
+            }
+
+            Spacer(Modifier.weight(1.2f))
         }
     }
 }

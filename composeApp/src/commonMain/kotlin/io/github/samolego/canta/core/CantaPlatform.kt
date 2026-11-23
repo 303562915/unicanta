@@ -158,4 +158,44 @@ interface CantaPlatform {
      * 目标沿用默认实现回答 null，调用方把 null 当成"没有图片"（用户取消也是这样），不报错。
      */
     suspend fun pickImage(): ByteArray? = null
+
+    /**
+     * 有人给这个身份发了新消息，在系统通知栏提醒一次。
+     *
+     * [conversationId] 同时是"点开去哪一页"的钥匙和通知的 id：同一会话的新消息覆盖上一条，
+     * 不同会话各占一格，所以一个人连发三条不会堆成三条通知。
+     *
+     * 这一条只负责"显示"，判断"该不该显示"是调用方的事（它才知道基线、知道用户有没有关开关）。
+     * 没有通知栏的平台（桌面、网页、测试）沿用默认实现，什么也不做。
+     */
+    fun notifyChat(conversationId: Long, title: String, body: String, unread: Int) = Unit
+
+    /**
+     * 把通知栏上关于聊天的提醒全部收掉。回到前台时调用：人已经在看着 app，那几条没有意义了。
+     */
+    fun clearChatNotices() = Unit
+
+    /**
+     * 通知权限现在是不是拿到了。没有这一步的平台回答 false，调用方据此不去申请。
+     *
+     * Android 13 起这是一项运行时权限，不给就什么都弹不出来；更早的版本装上就有。
+     */
+    fun canNotify(): Boolean = false
+
+    /**
+     * 申请通知权限，回答最后给没给。
+     *
+     * 平台没有这一步（桌面、网页、Android 13 以下）时回答 false——不是"失败"，是"不需要"，
+     * 调用方只看 [canNotify] 决定要不要真的弹。
+     */
+    suspend fun requestNotifyPermission(): Boolean = false
+
+    /**
+     * 用户从通知栏点开的那条消息属于哪个会话；平台没有通知栏的一侧是空流。
+     *
+     * 这是一次性事件而不是状态：冷启动时由入口把 intent 里的会话号塞进来，界面收一次就导航过去。
+     * 用流而不是属性，是因为"点了一条通知"这件事发生过一次就是一次，重复读它会把页面又推一遍。
+     */
+    val chatIntents: Flow<Long>
+        get() = emptyFlow()
 }

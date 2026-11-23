@@ -104,13 +104,24 @@ class SettingsViewModel(
     val hideVpnNotice = settingsStore.hideVpnNoticeFlow.state(false)
 
     /**
-     * The four-digit birthday the app asks for before it shows anything; empty means no lock.
+     * The question the start-up lock asks and the date that answers it; both empty means no lock.
      *
      * Null until the store has been read, like [onboardingVersion]: the lock screen must never be
-     * decided from a "not loaded yet" empty string, or an install with a password would flash the
-     * app list for a frame before the lock appeared.
+     * decided from a "not loaded yet" empty answer, or an install with a lock would flash the app
+     * list for a frame before the question appeared. The two are read separately because they are
+     * two fields, and the caller builds the gate with `launchGateOf`, which is also what decides
+     * whether a stored pair is usable at all.
      */
-    val launchPin: StateFlow<String?> = settingsStore.launchPinFlow.state<String?>(null)
+    val launchQuestion: StateFlow<String?> = settingsStore.launchQuestionFlow.state<String?>(null)
+    val launchAnswer: StateFlow<String?> = settingsStore.launchAnswerFlow.state<String?>(null)
+
+    /**
+     * 新消息要不要往系统通知栏弹；`false` 是出厂状态（要弹）。
+     *
+     * 存的是"静音"而不是"开启"，理由在 `AppSettingsProto.muteChatNotices` 上：proto3 省略零值，
+     * 默认值只能是 `false`，而这件事的出厂状态是开着的。界面把它读成"消息通知"那个开关。
+     */
+    val muteChatNotices = settingsStore.muteChatNoticesFlow.state(false)
 
     /**
      * Whether the lock has been answered in this process.
@@ -118,7 +129,7 @@ class SettingsViewModel(
      * It lives here rather than in the composition for two reasons. Turning on the lock from the
      * about page must not lock the page that just turned it on — the writer is obviously the
      * owner — and a configuration change (rotation, dark mode, font size) rebuilds the activity,
-     * which would otherwise ask for the number again although the person never left the app.
+     * which would otherwise ask for the answer again although the person never left the app.
      *
      * A ViewModel does not survive the process, so a real restart still asks: that is the whole
      * point of the feature.
@@ -131,7 +142,7 @@ class SettingsViewModel(
         _sessionUnlocked.value = true
     }
 
-    /** The app left the screen: the next look at it starts behind the keypad again. */
+    /** The app left the screen: the next look at it starts behind the question again. */
     fun markSessionLocked() {
         _sessionUnlocked.value = false
     }
@@ -201,16 +212,23 @@ class SettingsViewModel(
     fun saveHideVpnNotice(hide: Boolean) = save { setHideVpnNotice(hide) }
 
     /**
-     * Sets (four digits) or clears (empty) the start-up lock.
+     * Sets the start-up lock to [questionId] answered by [answer] (`YYYY-MM-DD`), or clears it when
+     * both are empty.
      *
-     * The session counts as answered either way: whoever just typed the number in is the owner, and
-     * dropping them onto their own lock screen the instant they set it would look like the app
-     * forgot what they were doing.
+     * The session counts as answered either way: whoever just picked the question and typed the
+     * date in is the owner, and dropping them onto their own lock screen the instant they set it
+     * would look like the app forgot what they were doing.
      */
-    fun saveLaunchPin(pin: String) {
+    fun saveLaunchGate(questionId: String, answer: String) {
         markSessionUnlocked()
-        save { setLaunchPin(pin) }
+        save { setLaunchGate(questionId, answer) }
     }
+
+    /** Turns the start-up lock off. */
+    fun clearLaunchGate() = saveLaunchGate("", "")
+
+    /** 静音（`true`）或恢复（`false`）新消息的通知栏提醒。 */
+    fun saveMuteChatNotices(mute: Boolean) = save { setMuteChatNotices(mute) }
 
     /**
      * Renames this install: the value is stored at once, so the page and the next review use it

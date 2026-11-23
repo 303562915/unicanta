@@ -21,6 +21,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Android 13 起通知是运行时权限。不给的话新消息只在 app 里计数，通知栏什么也不弹；
+         申请入口在设置的「消息通知」开关上（见 AndroidCantaPlatform.requestNotifyPermission）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Lets analytics (if enabled) report, after a reboot, whether uninstalled packages stayed gone. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.software.leanback"
@@ -47,9 +50,12 @@
              that animation runs over whatever the page does — the page always looked like a
              dialog zooming away instead of a page being left. Off, the back gesture is a plain
              back and the page's own transition (fade + slide to the right) is what is seen. -->
+        <!-- singleTop：点消息通知要把 intent 送到已经在跑的那一个实例（onNewIntent），
+             而不是在它上面再叠一层。没有它，点三条通知要按三次返回才回到原来的页面。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:enableOnBackInvokedCallback="false"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Canta">
