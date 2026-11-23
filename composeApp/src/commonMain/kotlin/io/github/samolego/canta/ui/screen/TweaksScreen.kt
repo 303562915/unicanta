@@ -66,7 +66,6 @@ import io.github.samolego.canta.generated.resources.tweaks_restore_needs_privile
 import io.github.samolego.canta.generated.resources.tweaks_restore_nothing
 import io.github.samolego.canta.generated.resources.tweaks_restore_running
 import io.github.samolego.canta.generated.resources.tweaks_restore_start
-import io.github.samolego.canta.generated.resources.tweaks_restore_tool_why
 import io.github.samolego.canta.generated.resources.tweaks_run
 import io.github.samolego.canta.generated.resources.tweaks_run_broken
 import io.github.samolego.canta.generated.resources.tweaks_run_done
@@ -216,8 +215,7 @@ fun TweaksScreen(
                     ToolRow(
                         icon = iconOf(tweak),
                         title = tweak.title,
-                        why = tweak.why,
-                        // A card Canta cannot act on gets no button, only its explanation.
+                        // A card Canta cannot act on gets no button; its explanation lives in the detail.
                         canRun = runnable(tweak),
                         running = (run as? RunStep.Running)?.tweak?.id == tweak.id,
                         onRun = { runTweak(tweak) },
@@ -242,7 +240,6 @@ fun TweaksScreen(
                 ToolRow(
                     icon = Icons.Default.Restore,
                     title = stringResource(Res.string.tweaks_restore_button),
-                    why = stringResource(Res.string.tweaks_restore_tool_why),
                     canRun = true,
                     running = step is RestoreStep.Loading || step is RestoreStep.Running,
                     onRun = { askToRestoreAll() },
@@ -351,14 +348,14 @@ private fun GroupHeading(family: String, mine: Boolean) {
 }
 
 /**
- * One tool: icon, name, a two-line explanation, and — when it can actually do something — an icon
- * button that runs it. Tapping the row itself opens the full text and the copyable command.
+ * One tool: icon, name, and — when it can actually do something — an icon button that runs it.
+ * Tapping the row itself opens the full text and the copyable command, so the row stays one line
+ * and does not repeat the explanation that dialog already shows.
  */
 @Composable
 private fun ToolRow(
     icon: ImageVector,
     title: String,
-    why: String,
     canRun: Boolean,
     running: Boolean,
     onRun: () -> Unit,
@@ -383,24 +380,14 @@ private fun ToolRow(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (why.isNotEmpty()) {
-                    Text(
-                        text = why,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
             if (canRun) {
                 FilledTonalIconButton(
                     onClick = onRun,
