@@ -594,7 +594,7 @@ fun GroupSettingsScreen(
                     false
                 } else {
                     inviteCode = code
-                    repository.sendMessage(owner, conversation, inviteLinkOf(code)) != null
+                    repository.sendMessage(owner, conversation.id, inviteLinkOf(code)) != null
                 }
             },
             onDismiss = { sharing = false },
