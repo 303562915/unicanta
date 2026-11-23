@@ -376,6 +376,11 @@ private fun CantaNavigation(
     LaunchedEffect(appVisible, muteChatNotices) {
         // 只在后台、且开关是开的时候跑。开关默认就是开的（proto 存的是"静音"）。
         if (appVisible || muteChatNotices) return@LaunchedEffect
+        // 弹不出来的设备就别轮询了。权限要人自己去设置里开，而绝大多数人不会去开——
+        // 对他们来说这个循环一分钟一次请求，只换来一个被系统丢掉的 notify，纯属白耗电和流量。
+        // 权限是在设置页给的，那一刻 app 可见，回前台会让本 effect 以新的 key 重启，所以
+        // 这里只看一次不会漏掉"中途给了权限"的情况。
+        if (!platform.canNotify()) return@LaunchedEffect
         // 基线：上一次看到的「每个会话几条未读」。第一圈只记不弹——否则一退到后台就会把此前
         // 积攒的未读一口气补成一屏通知，那不是提醒，是把历史重播一遍。
         var baseline: Map<Long, Int>? = null
