@@ -110,6 +110,11 @@ data class ChatMessage(
     val createdAt: String,
     val removed: Boolean = false,
     val kind: String = "text",
+    /**
+     * 这条消息点了谁的名字，存的是身份号码而不是正文里那几个字：人改了名之后字就对不上了，
+     * 而「谁被点到」要的是人。后端只收本会话的成员，也去掉了自己。
+     */
+    val mentions: List<String> = emptyList(),
 ) {
 
     /** 气泡上方那个署名；后端没给名字就退回编号。 */
@@ -454,7 +459,12 @@ class SocialRepository(
      * 所以界面可以先拿它直接把气泡画出来，不用等下一次 [messagesFor]。
      * 名字优先用后端回来的 `sender_name`；后端没给就留空，由 [ChatMessage.label] 退回编号。
      */
-    suspend fun sendMessage(owner: String, conversation: Long, body: String): ChatMessage? {
+    suspend fun sendMessage(
+        owner: String,
+        conversation: Long,
+        body: String,
+        mentions: List<String> = emptyList(),
+    ): ChatMessage? {
         if (owner.isEmpty() || conversation <= 0L) return null
         val proof = callerToken()
         val payload = buildJsonObject {
@@ -462,6 +472,11 @@ class SocialRepository(
             put("p_conversation", conversation)
             put("p_body", body)
             if (proof.isNotEmpty()) put("p_token", proof)
+            // 空名单就不发这个键：后端默认值是空数组，少传一个键比传 [] 更省事，
+            // 也让"这条根本没 @ 人"和"@ 了但后端筛掉"在请求里长得不一样。
+            if (mentions.isNotEmpty()) {
+                put("p_mentions", buildJsonArray { mentions.forEach { add(it) } })
+            }
         }.toString()
         val text = rpc("message_send", payload) ?: return null
         val row = firstRowOf(text) ?: return null
@@ -472,6 +487,8 @@ class SocialRepository(
             senderName = row.textOf("sender_name"),
             body = body,
             createdAt = row.textOf("created_at"),
+            // 后端会筛掉非成员和自己，所以本机这一条也用后端回来的名单，不是传进去那个。
+            mentions = row.stringsOf("mentions"),
         )
     }
 
@@ -900,6 +917,17 @@ class SocialRepository(
     private fun JsonObject.flagOf(key: String): Boolean? =
         runCatching { get(key)?.jsonPrimitive?.booleanOrNull }.getOrNull()
 
+    /**
+     * 字符串数组字段。后端给的是 JSON 数组；缺字段、不是数组、元素不是字符串，都当空。
+     *
+     * 单个元素可能是数字也可能是字符串，按 [jsonPrimitive] 取文本而不是强转
+     * `jsonArray`——`mentions` 里存的是身份号码，早前后端有把它序列化成数字的可能。
+     */
+    private fun JsonObject.stringsOf(key: String): List<String> =
+        runCatching {
+            get(key)?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.filter { it.isNotBlank() }
+        }.getOrNull().orEmpty()
+
     /** `follow_set` 的答案：对象里的 `following`，或者直接就是一个布尔。 */
     private fun followingFrom(text: String): Boolean? =
         firstRowOf(text)?.flagOf("following") ?: scalarOf(text)?.booleanOrNull
@@ -1006,6 +1034,7 @@ class SocialRepository(
             createdAt = row.textOf("created_at"),
             removed = row.flagOf("removed") ?: false,
             kind = row.textOf("kind").ifBlank { "text" },
+            mentions = row.stringsOf("mentions"),
         )
     }
 }

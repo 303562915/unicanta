@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.ConversationDetail
+import io.github.samolego.canta.data.community.ConversationMember
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionText
@@ -167,6 +169,14 @@ fun ChatScreen(
     var showMore by remember { mutableStateOf(false) }
     /** 表情面板开没开：和 [showMore] 互斥，拉开一个就把另一个收回去。 */
     var showEmotions by remember { mutableStateOf(false) }
+    /** @ 面板开没开：只有群聊才给这个入口，私聊 @ 谁都没有意义。 */
+    var showMentions by remember { mutableStateOf(false) }
+    /**
+     * 这一条草稿里点名了谁，存身份号码而不是名字：人可能在发出之前改名，号码不会。
+     *
+     * 发出成功就清空；发送失败保留着——重发的时候还是同一批人。
+     */
+    var pendingMentions by remember { mutableStateOf<List<String>>(emptyList()) }
     /** 撤回失败亮一句：样式与位置照 [sendFailed] 那行。 */
     var recallFailed by remember { mutableStateOf(false) }
     /** 正在选图或传图：挡住重复点「图片」，同时底部那一行亮「正在发送图片…」。 */
@@ -281,10 +291,17 @@ fun ChatScreen(
             scope.launch {
                 sending = true
                 sendFailed = false
-                val sent = repository.sendMessage(owner, conversationId, body)
+                val sent = repository.sendMessage(
+                    owner = owner,
+                    conversation = conversationId,
+                    body = body,
+                    mentions = pendingMentions,
+                )
                 if (sent != null) {
                     messages = messages + sent
                     draft = ""
+                    // 名单跟着草稿一起清：下一条要 @ 谁得重新点。
+                    pendingMentions = emptyList()
                 } else {
                     sendFailed = true
                 }
@@ -338,6 +355,24 @@ fun ChatScreen(
         } else {
             "${draft} ${piece}"
         }
+    }
+
+    /**
+     * 把一个人点进草稿：正文里加 `@名字`，名单里加他的号码。
+     *
+     * 正文里那串只是一句给人看的话，后端不拿它反查是谁——名字会变，号码不会。所以两处都要加，
+     * 而且名单要先去重：同一个人点两次只该有一条记录，正文里也只会多一个 `@名字`。
+     */
+    val mention: (ConversationMember) -> Unit = { member ->
+        val handle = member.name.ifBlank { "#${member.owner}" }
+        if (pendingMentions.none { it == member.owner }) {
+            pendingMentions = pendingMentions + member.owner
+            insert("@$handle")
+        } else {
+            // 已经点过就只把正文补上，名单不动。
+            insert("@$handle")
+        }
+        showMentions = false
     }
 
     /**
@@ -532,6 +567,14 @@ fun ChatScreen(
                     onKeyboard = { showEmotions = false },
                 )
             }
+            if (showMentions) {
+                // @ 面板：只列别人，自己 @ 自己不会有任何人收到反应。和另外两个面板互斥。
+                MentionPanel(
+                    members = detail?.members.orEmpty().filter { it.owner != owner },
+                    onPick = mention,
+                    onDismiss = { showMentions = false },
+                )
+            }
             ChatComposer(
                 draft = draft,
                 onDraftChange = { draft = it },
@@ -542,13 +585,32 @@ fun ChatScreen(
                 onToggleMore = {
                     showMore = !showMore
                     // 两个面板互斥：拉开一个就把另一个收回去。
-                    if (showMore) showEmotions = false
+                    if (showMore) {
+                        showEmotions = false
+                        showMentions = false
+                    }
                 },
                 showEmotions = showEmotions,
                 onToggleEmotions = {
                     showEmotions = !showEmotions
-                    if (showEmotions) showMore = false
+                    if (showEmotions) {
+                        showMore = false
+                        showMentions = false
+                    }
                 },
+                // 私聊没有 @：只有群聊、而且确实有别人可点时，才给这个入口。
+                onMention = if (grouped && detail?.members.orEmpty().any { it.owner != owner }) {
+                    {
+                        showMentions = !showMentions
+                        if (showMentions) {
+                            showMore = false
+                            showEmotions = false
+                        }
+                    }
+                } else {
+                    null
+                },
+                showMentions = showMentions,
             )
             // 图片这一路的提示与文字那条同款：传的时候一直亮，失败了才说话，成功了不说话。
             if (sendingImage) {
@@ -892,6 +954,8 @@ private fun ChatBubble(
                             fontSize = 14,
                             lineHeight = 19,
                             color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
+                            // 自己的气泡底色是主色，@ 再上主色就看不见了：用 onPrimary 反过来提亮。
+                            mentionColor = if (mine) colors.onPrimary else colors.primary,
                         )
                         val clock = chatClockOf(message.createdAt)
                         if (clock.isNotEmpty()) {
@@ -1122,11 +1186,129 @@ private fun ChatMoreCell(glyph: FlGlyph, label: String, onClick: () -> Unit) {
 }
 
 /**
- * 底部那一行：九宫格（展开更多）+ 会长的输入框 + 三个圆按钮。
+ * 输入栏上那个 @。
+ *
+ * 图标集里没有这个字形，而 `profiles` 已经被「语音」那个钮占着——两个一样的人像摆在边上会分不清，
+ * 所以这里直接写字。四十年前的键盘上就有它，不用教。
+ */
+@Composable
+private fun MentionKey(active: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (active) scheme.primary.copy(alpha = 0.14f) else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "@",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (active) scheme.primary else scheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * 群里能被点到的人。只列别人：@ 自己不会有任何人有反应，后端也会把它从名单里筛掉。
+ *
+ * 横向一条而不是下拉菜单：群成员通常不超过十个，横向一眼扫完比展开一层菜单快，
+ * 而且它和表情面板挤在同一块位置，上下两个面板长得一样才不会让人找。
+ */
+@Composable
+private fun MentionPanel(
+    members: List<ConversationMember>,
+    onPick: (ConversationMember) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(scheme.surfaceContainerLow)
+            .padding(vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "提醒谁看",
+                fontSize = 11.sp,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "收起",
+                fontSize = 11.sp,
+                color = scheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        if (members.isEmpty()) {
+            Text(
+                text = "群里还没有别人",
+                fontSize = 11.sp,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        } else {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                items(members, key = { it.owner }) { member ->
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onPick(member) }
+                            .padding(2.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(scheme.primary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = member.label.take(1),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = scheme.primary,
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = member.label,
+                            fontSize = 10.sp,
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                            modifier = Modifier.widthIn(max = 56.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 底部那一行：九宫格（展开更多）+ 可选的 @ + 会长的输入框 + 三个圆按钮。
  *
  * 右边的第一个圆按钮是**会变的那一个**：输入框里有字它就是发送（[FlGlyphs.send]，主色），
  * 没字的时候才是语音按钮。发送是这个页面唯一的出口，不能让它藏在别处。
  * 表情钮拉开输入栏上方的表情面板（再点一次收起），加号和左边的九宫格一样拉开更多面板。
+ * 群聊时九宫格右边多一个 @，点开是成员列表（见 [MentionPanel]）。
  */
 @Composable
 private fun ChatComposer(
@@ -1139,6 +1321,9 @@ private fun ChatComposer(
     onToggleMore: () -> Unit,
     showEmotions: Boolean = false,
     onToggleEmotions: () -> Unit = {},
+    /** @ 面板的开关；null 表示这个会话不该有 @（私聊，或者群里没有别人）。 */
+    onMention: (() -> Unit)? = null,
+    showMentions: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
@@ -1155,6 +1340,11 @@ private fun ChatComposer(
             iconSize = 20.dp,
             filled = false,
         )
+        // 群聊才有的 @：放在输入框左边，点开就是成员列表。
+        if (onMention != null) {
+            Spacer(Modifier.width(2.dp))
+            MentionKey(active = showMentions, onClick = onMention)
+        }
         Spacer(Modifier.width(4.dp))
         BasicTextField(
             value = draft,

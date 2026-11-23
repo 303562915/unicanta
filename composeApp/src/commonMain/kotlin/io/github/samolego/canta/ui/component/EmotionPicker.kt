@@ -170,6 +170,26 @@ internal data class EmotionDocument(
 )
 
 /**
+ * 正文里被点到的那一截：`@` 开头，一直到空白或下一个 `@` 为止。
+ *
+ * 只认形态不认名单：正文里的名字是发的人当时打的那几个字，可能早改过了，也可能根本不是群里
+ * 任何一个人（手动打的 `@`）。标色只是让它在一段话里显眼，确认"点到了谁"是后端名单的事。
+ */
+private val MentionPattern = Regex("@[^\\s@]+")
+
+/** 把 [body] 里的 `@某某` 上成 [color]，其余原样。 */
+private fun mentionStyled(body: String, color: Color): AnnotatedString = buildAnnotatedString {
+    append(body)
+    MentionPattern.findAll(body).forEach { hit ->
+        addStyle(
+            SpanStyle(color = color, fontWeight = FontWeight.SemiBold),
+            hit.range.first,
+            hit.range.last + 1,
+        )
+    }
+}
+
+/**
  * A comment body with its stickers drawn as pictures.
  *
  * Text and stickers live in one annotated string rather than a row of views: a paragraph wraps, and
@@ -186,11 +206,22 @@ fun EmotionText(
     fontWeight: FontWeight? = null,
     maxLines: Int = Int.MAX_VALUE,
     modifier: Modifier = Modifier,
+    /**
+     * 正文里 `@某某` 那一截用什么颜色标出来；null 表示这段正文不做这个处理。
+     *
+     * 只作用于没有表情图的那一路：一段话里同时有表情和 @ 时，表情那一路要按 inline 占位符的
+     * 位置排版，为一个颜色去动它不划算——而且那种消息本来也不常见，@ 少一个颜色不是错。
+     */
+    mentionColor: Color? = null,
 ) {
     val spans = remember(body) { parseEmotionBody(body) }
     if (spans.none { it is EmotionSpan.Sticker }) {
         Text(
-            text = body,
+            text = if (mentionColor == null) {
+                AnnotatedString(body)
+            } else {
+                mentionStyled(body, mentionColor)
+            },
             fontSize = fontSize.sp,
             lineHeight = lineHeight.sp,
             color = color,
