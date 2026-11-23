@@ -223,9 +223,18 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     // One client for the community pages, and the settings view model that owns how the app
     // looks: both are made here rather than inside the navigation, because the theme is applied
     // above it and has to read the stored accent and dark mode before anything is drawn.
-    val communityRepository = remember { PlanRepository(HttpClient()) }
+    //
+    // 两个仓储都带上身份凭据。写函数的身份一直是客户端自报的（`p_owner => '10003'`），知道别人的
+    // 号码就能替别人发消息、投票；带上 token 之后服务端以 token 认出来的号码为准，自报的只在没带
+    // token 时才采信。**顺序不能反**：这一条依赖服务端已经推过 20261123110000 那个迁移，先发客户端
+    // 会在旧库上报 "function ... does not exist"。
+    val communityRepository = remember {
+        PlanRepository(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) })
+    }
     // Direct messages, groups and follows: their own calls, against the same backend.
-    val socialRepository = remember { SocialRepository(HttpClient()) }
+    val socialRepository = remember {
+        SocialRepository(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) })
+    }
     val settingsViewModel: SettingsViewModel = viewModel {
         SettingsViewModel(
             deps.settings,
