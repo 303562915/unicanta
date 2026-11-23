@@ -81,6 +81,7 @@ import io.github.samolego.canta.ui.component.CollapsingBottomBar
 import io.github.samolego.canta.ui.component.FloatingPillBar
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.dockScroll
+import io.github.samolego.canta.ui.component.isUsablePin
 import io.github.samolego.canta.ui.component.rememberDockVisibility
 import io.github.samolego.canta.ui.fl.FlAccent
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -90,6 +91,7 @@ import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.DescriptionFixScreen
+import io.github.samolego.canta.ui.screen.LaunchLockScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.ChatScreen
@@ -228,6 +230,15 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     }
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
+
+    // The start-up lock: null until the store has been read, so an install with a password never
+    // shows the app list for a frame. Once read, a non-empty value keeps the keypad over everything
+    // until the four digits match — and again every time the app is left, which is what
+    // "打开软件要先输密码" means to the person who set it.
+    val launchPin by settingsViewModel.launchPin.collectAsStateWithLifecycle()
+    val unlocked by settingsViewModel.sessionUnlocked.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { settingsViewModel.markSessionLocked() }
+
     val systemDark = isSystemInDarkTheme()
     val darkTheme = when (FlThemeMode.ofStored(themeMode)) {
         FlThemeMode.Light -> false
@@ -236,7 +247,25 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     }
     CantaTheme(darkTheme = darkTheme, accent = FlAccent.ofArgb(themeAccent)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            CantaNavigation(deps, closeApp, crashReports, communityRepository, socialRepository, settingsViewModel)
+            val storedPin = launchPin
+            // A stored value that is not four digits — a file edited by hand, a format from some
+            // future build — is ignored instead of becoming a keypad nobody could satisfy: the
+            // one mistake this lock must never make is locking the owner out for good.
+            val lockPin = storedPin?.takeIf(::isUsablePin)
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Composed only once the store has answered: before that there is nothing worth
+                // drawing, and the alternative is a flash of the app list under the keypad.
+                if (storedPin != null) {
+                    CantaNavigation(deps, closeApp, crashReports, communityRepository, socialRepository, settingsViewModel)
+                }
+                // The lock is a cover rather than a replacement. Drawn over the pages, it keeps
+                // their state and their side effects — the telemetry flush on the way out, the one
+                // look at the update feed — alive; swapping the navigation out and back would
+                // throw the back stack away and cancel the work that was running.
+                if (lockPin != null && !unlocked) {
+                    LaunchLockScreen(pin = lockPin, onUnlock = { settingsViewModel.markSessionUnlocked() })
+                }
+            }
         }
     }
 }

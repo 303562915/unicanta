@@ -145,6 +145,17 @@ data class AppSettingsProto(
      * to avoid.
      */
     @ProtoNumber(33) val hideVpnNotice: Boolean = false,
+    /**
+     * The birthday the app asks for before it shows anything, as four digits (`MMDD` or any four
+     * the owner picked). Empty means no lock at all, which is the default: an app that opens
+     * straight into the list is what everyone expects, and this is for the phone that gets handed
+     * to somebody who taps first and reads later.
+     *
+     * Stored in plain text on purpose: it protects against a stray tap, not against somebody who
+     * has the phone and its files, and a hash would only make "I forgot which four digits" harder
+     * to answer. Local only, like every other setting on this page.
+     */
+    @ProtoNumber(34) val launchPin: String = "",
 )
 
 /**

@@ -8,8 +8,10 @@ import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.PackageTelemetry
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -101,6 +103,39 @@ class SettingsViewModel(
     /** Whether the "no VPN" reminder was turned off for good; off unless the reader said so. */
     val hideVpnNotice = settingsStore.hideVpnNoticeFlow.state(false)
 
+    /**
+     * The four-digit birthday the app asks for before it shows anything; empty means no lock.
+     *
+     * Null until the store has been read, like [onboardingVersion]: the lock screen must never be
+     * decided from a "not loaded yet" empty string, or an install with a password would flash the
+     * app list for a frame before the lock appeared.
+     */
+    val launchPin: StateFlow<String?> = settingsStore.launchPinFlow.state<String?>(null)
+
+    /**
+     * Whether the lock has been answered in this process.
+     *
+     * It lives here rather than in the composition for two reasons. Turning on the lock from the
+     * about page must not lock the page that just turned it on — the writer is obviously the
+     * owner — and a configuration change (rotation, dark mode, font size) rebuilds the activity,
+     * which would otherwise ask for the number again although the person never left the app.
+     *
+     * A ViewModel does not survive the process, so a real restart still asks: that is the whole
+     * point of the feature.
+     */
+    private val _sessionUnlocked = MutableStateFlow(false)
+    val sessionUnlocked: StateFlow<Boolean> = _sessionUnlocked.asStateFlow()
+
+    /** The keypad was answered, or the owner just set or cleared the lock. */
+    fun markSessionUnlocked() {
+        _sessionUnlocked.value = true
+    }
+
+    /** The app left the screen: the next look at it starts behind the keypad again. */
+    fun markSessionLocked() {
+        _sessionUnlocked.value = false
+    }
+
     /** Null until the stored settings have loaded, so the UI doesn't flash the wrong screen. */
     val onboardingVersion: StateFlow<Int?> = settingsStore.onboardingVersionFlow.state<Int?>(null)
 
@@ -164,6 +199,18 @@ class SettingsViewModel(
 
     /** "不再提示" on the proxy reminder: persisted, so the next start does not ask again. */
     fun saveHideVpnNotice(hide: Boolean) = save { setHideVpnNotice(hide) }
+
+    /**
+     * Sets (four digits) or clears (empty) the start-up lock.
+     *
+     * The session counts as answered either way: whoever just typed the number in is the owner, and
+     * dropping them onto their own lock screen the instant they set it would look like the app
+     * forgot what they were doing.
+     */
+    fun saveLaunchPin(pin: String) {
+        markSessionUnlocked()
+        save { setLaunchPin(pin) }
+    }
 
     /**
      * Renames this install: the value is stored at once, so the page and the next review use it

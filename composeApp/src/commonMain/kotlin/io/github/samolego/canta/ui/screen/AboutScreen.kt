@@ -105,6 +105,8 @@ import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.SettingsSwitch
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.UnreadDot
+import io.github.samolego.canta.ui.component.isUsablePin
+import io.github.samolego.canta.ui.dialog.LaunchPinDialog
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -177,6 +179,13 @@ fun AboutScreen(
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
     val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
+
+    // The start-up lock, as the store holds it: empty means the app opens straight away. A stored
+    // value that is not four digits is shown as "not set" here too, so the page that turns the
+    // lock off is never itself behind an untypeable number.
+    val launchPin by settingsViewModel.launchPin.collectAsStateWithLifecycle()
+    val activePin = launchPin?.takeIf(::isUsablePin).orEmpty()
+    var pinDialogShown by remember { mutableStateOf(false) }
 
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
@@ -423,6 +432,19 @@ fun AboutScreen(
                 onCheckedChange = settingsViewModel::saveShowDevicePhoto,
             )
 
+            // The start-up lock: four digits in front of everything, for the phone that gets
+            // handed to somebody who taps before reading. Off until it is set here.
+            LinkCard(
+                glyph = FlGlyphs.lock,
+                title = "启动密码",
+                subtitle = if (activePin.isEmpty()) {
+                    "未设置 · 设置后打开软件要先输四位生日"
+                } else {
+                    "已开启 · 打开软件要先输四位生日"
+                },
+                onClick = { pinDialogShown = true },
+            )
+
             Spacer(Modifier.height(6.dp))
             // The author first: the two entries people look for when they want to ask something,
             // each opened in its own app when it is installed and on the web page otherwise.
@@ -478,6 +500,17 @@ fun AboutScreen(
                         Text(stringResource(Res.string.about_install_cancel))
                     }
                 },
+            )
+        }
+
+        // Setting, replacing and turning off the start-up lock all happen here; the number itself
+        // is only ever written to the store, and the lock screen reads it back on the next start.
+        if (pinDialogShown) {
+            LaunchPinDialog(
+                existingPin = activePin,
+                onSave = { settingsViewModel.saveLaunchPin(it) },
+                onClear = { settingsViewModel.saveLaunchPin("") },
+                onDismiss = { pinDialogShown = false },
             )
         }
     }
