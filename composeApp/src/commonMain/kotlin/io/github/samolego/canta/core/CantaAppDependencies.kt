@@ -51,7 +51,7 @@ object StoredData {
     /** The uninstall/restore log behind the records tab: see [OperationLogStore]. */
     const val OPERATION_LOG = "operation_log.json"
 
-    /** The last plans list this phone loaded: see [PlanCache]. */
+    /** The last plans lists the ranking/plans page loaded — this phone's and every model's: see [PlanCache]. */
     const val PLAN_CACHE = "plan_cache.json"
 }
 

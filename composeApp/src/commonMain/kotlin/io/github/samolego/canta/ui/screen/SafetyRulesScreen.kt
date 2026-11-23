@@ -248,6 +248,23 @@ fun SafetyRulesScreen(
     val awaitingFirstReboot = pending.count { it.baseline && !it.survived && it.pkg in deletedPackages }
     val owner = identity.owner
 
+    /**
+     * 把屏幕上这份列表写回缓存。
+     *
+     * 只在一个范围里写：缓存分「全机型」和「本机」两份，他机的列表从不入缓存。
+     *
+     * 调用点都是「真的变了」的地方——刷新拿到了新数据、本机投了一票、删掉了一条、上传后重读——
+     * 而不是每次重画都写：界面上的列表和缓存必须同步，否则下次进来先画出来的是改动之前那一版，
+     * 看着像回退。
+     */
+    val persistPlans: suspend (List<CommunityPlan>) -> Unit = { next ->
+        when (planScope) {
+            PlanScope.All -> planCache?.writeAll(next)
+            PlanScope.ThisPhone -> profile?.let { planCache?.write(it, next) }
+            is PlanScope.Other -> Unit
+        }
+    }
+
     LaunchedEffect(Unit) {
         rules = SafetyRules.bundled()
         if (appListViewModel.apps.isEmpty()) appListViewModel.loadApps()
@@ -292,9 +309,14 @@ fun SafetyRulesScreen(
     LaunchedEffect(profile, reloads, planScope) {
         when (val scope = planScope) {
             PlanScope.All -> {
-                // Nothing is cached here: this list is every model's, and a cached copy of it would
-                // outlive the rows it was built from after the first vote.
-                loading = true
+                // 上一份先画出来再问后端：「全部机型」是默认范围，这一页永远用它打开，没缓存就等于
+                // 每次进来都要盯着加载符等一圈网络。排行和方案读的是同一份，所以两页一起受益。
+                if (plans.isEmpty()) {
+                    planCache?.readAll()?.takeIf { it.isNotEmpty() }?.let { cached ->
+                        plans = cached.withoutDuplicates()
+                    }
+                }
+                loading = plans.isEmpty()
                 offline = false
                 var fetched: List<CommunityPlan>? = null
                 for (attempt in 0 until PLAN_ATTEMPTS) {
@@ -306,7 +328,17 @@ fun SafetyRulesScreen(
                     if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
                 }
                 offline = fetched == null
-                plans = fetched.orEmpty().withoutDuplicates()
+                // 拉不到就保持屏幕上那一份：清空等于因为一次断网把整页排行抹掉，而「后端没通」和
+                // 「社区里没有方案」在界面上长得一样，区别只剩下面那个重试提示。
+                if (fetched != null) {
+                    val clean = fetched.withoutDuplicates()
+                    // 内容没变就什么都不做：屏幕上已经是这一份，重写一遍只是白写一次磁盘。
+                    // 有变化才换掉画面、写回缓存——这就是「没更新用缓存，更新了就加载更新」。
+                    if (clean != plans) {
+                        plans = clean
+                        persistPlans(clean)
+                    }
+                }
                 loading = false
             }
 
@@ -321,7 +353,6 @@ fun SafetyRulesScreen(
                 if (plans.isEmpty()) {
                     planCache?.read(target)?.takeIf { it.isNotEmpty() }?.let { cached ->
                         plans = cached.withoutDuplicates()
-                        loading = false
                     }
                 }
                 loading = plans.isEmpty()
@@ -335,9 +366,13 @@ fun SafetyRulesScreen(
                     if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
                 }
                 offline = fetched == null
+                // Nothing fetched keeps what is on screen — the cache is the list in that case.
                 if (fetched != null) {
-                    plans = fetched.withoutDuplicates()
-                    planCache?.write(target, fetched)
+                    val clean = fetched.withoutDuplicates()
+                    if (clean != plans) {
+                        plans = clean
+                        persistPlans(clean)
+                    }
                 }
                 loading = false
             }
@@ -430,6 +465,8 @@ fun SafetyRulesScreen(
                     owner.ifEmpty { "u-" + Random.nextLong().toString(16) },
                 ) ?: return@launch
                 plans = plans.map { if (it.id == plan.id) it.copy(votes = votes) else it }
+                // 这一票也要进缓存：不然退出再进来，先画出来的还是投票之前那一份票数。
+                persistPlans(plans)
             }
         }
     }
@@ -722,7 +759,7 @@ fun SafetyRulesScreen(
                         // Re-read either way: a failed upload simply leaves the list as it was.
                         val refreshed = repo.plansFor(target).withoutDuplicates()
                         plans = refreshed
-                        if (refreshed.isNotEmpty()) planCache?.write(target, refreshed)
+                        if (refreshed.isNotEmpty()) persistPlans(refreshed)
                     }
                 }
             },
@@ -756,11 +793,12 @@ fun SafetyRulesScreen(
                                     rom = current.build?.rom.orEmpty(),
                                     romVersion = current.build?.romVersion ?: 0,
                                 )
-                            }.orEmpty().withoutDuplicates()
-                            plans = refreshed
-                            val target = profile
-                            if (planScope == PlanScope.ThisPhone && target != null && refreshed.isNotEmpty()) {
-                                planCache?.write(target, refreshed)
+                            }
+                            // 删掉的那一行也得从缓存里消失，否则下次进来会先把它画回来再刷掉。
+                            // 请求没到（null）就别动缓存：那次什么都没删成，屏幕上也还是原来那一份。
+                            if (refreshed != null) {
+                                plans = refreshed.withoutDuplicates()
+                                persistPlans(plans)
                             }
                         }
                     },
