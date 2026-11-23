@@ -767,6 +767,8 @@ class PlanRepository(
         profile: DeviceProfile?,
     ): PackageVotes? {
         if (voter.isEmpty()) return null
+        // 凭据要在 buildJsonObject 之前取：那个 lambda 不是 suspend，里面调不了 callerToken()。
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_pkg", pkg)
             put("p_voter", voter)
@@ -777,6 +779,7 @@ class PlanRepository(
             put("p_rom", profile?.rom.orEmpty())
             put("p_rom_version", profile?.romVersion ?: 0)
             put("p_sdk", profile?.sdk ?: 0)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("package_vote", body) ?: return null
         return parseVotes(text)
@@ -986,10 +989,12 @@ class PlanRepository(
      */
     suspend fun likeComment(id: Long, voter: String, liked: Boolean): CommentLikes? {
         if (id <= 0L || voter.isEmpty()) return null
+        val proof = callerToken()
         val body = buildJsonObject {
             put("p_id", id)
             put("p_voter", voter)
             put("p_liked", liked)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         return rpc("comment_like", body)?.let(::parseCommentLikes)
     }
@@ -1223,12 +1228,14 @@ class PlanRepository(
         authorId: String = "",
     ): Long? {
         if (packageName.isEmpty() || body.isBlank()) return null
+        val proof = callerToken()
         val payload = buildJsonObject {
             put("p_pkg", packageName)
             put("p_body", body)
             put("p_note", note)
             put("p_author", author)
             put("p_author_id", authorId)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("description_fix_add", payload) ?: return null
         return runCatching {
@@ -1244,10 +1251,12 @@ class PlanRepository(
      */
     suspend fun voteDescriptionFix(id: Long, voter: String, agree: Boolean): DescriptionFixVote? {
         if (id <= 0L || voter.isEmpty()) return null
+        val proof = callerToken()
         val payload = buildJsonObject {
             put("p_id", id)
             put("p_voter", voter)
             put("p_agree", agree)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("description_fix_vote", payload) ?: return null
         return runCatching {
@@ -1313,6 +1322,7 @@ class PlanRepository(
         authorId: String = "",
     ): Long? {
         if (name.isBlank() || url.isBlank()) return null
+        val proof = callerToken()
         val payload = buildJsonObject {
             put("p_name", name)
             put("p_url", url)
@@ -1321,6 +1331,7 @@ class PlanRepository(
             put("p_license", license)
             put("p_author", author)
             put("p_author_id", authorId)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("recommend_suggestion_add", payload) ?: return null
         return runCatching {
@@ -1336,10 +1347,12 @@ class PlanRepository(
      */
     suspend fun voteSuggestedApp(id: Long, voter: String, agree: Boolean): SuggestedAppVote? {
         if (id <= 0L || voter.isEmpty()) return null
+        val proof = callerToken()
         val payload = buildJsonObject {
             put("p_id", id)
             put("p_voter", voter)
             put("p_agree", agree)
+            if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc("recommend_suggestion_vote", payload) ?: return null
         return runCatching {
