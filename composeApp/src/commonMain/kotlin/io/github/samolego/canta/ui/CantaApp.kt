@@ -98,12 +98,12 @@ import io.github.samolego.canta.ui.screen.MainDialogs
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.ChatScreen
 import io.github.samolego.canta.ui.screen.CreateGroupScreen
-import io.github.samolego.canta.ui.screen.GroupInfoScreen
+import io.github.samolego.canta.ui.screen.GroupSettingsScreen
 import io.github.samolego.canta.ui.screen.FollowListScreen
 import io.github.samolego.canta.ui.screen.GroupsScreen
 import io.github.samolego.canta.ui.screen.InteractionsScreen
 import io.github.samolego.canta.ui.screen.MessagesScreen
-import io.github.samolego.canta.ui.screen.MyCommentsScreen
+import io.github.samolego.canta.ui.screen.MyPlansScreen
 import io.github.samolego.canta.ui.screen.UserProfileScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
@@ -1218,53 +1218,21 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.MyComments.route) {
-                // The page is about one identity: the name its comments are signed with, and the
-                // number plus token that prove it when one of them is deleted.
-                var myName by remember { mutableStateOf("") }
+                // 这一页现在是「我的方案」：只问身份（上传记录按身份挂着），不写评论、不收消息——
+                // 评论和互动都在「消息 → 互动消息」里，这一页只剩「我上传过什么」。
                 var myIdentity by remember { mutableStateOf(Identity("")) }
                 // "My plans" asks for them by identity; this phone is only the fallback for a
                 // deployment that predates `plans_by_owner`.
                 var myProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 LaunchedEffect(Unit) {
-                    myName = DeviceIdentity.displayName(deps.settings)
                     myIdentity = DeviceIdentity.current(deps.settings)
                     myProfile = handler.deviceProfile()
                 }
-                MyCommentsScreen(
+                MyPlansScreen(
                     repository = communityRepository,
-                    author = myName,
                     owner = myIdentity.owner.ifEmpty { myIdentity.token },
                     token = myIdentity.token,
-                    // Opened from the red dot: the news is what the reader came for.
-                    startOnInbox = unreadReplies > 0,
-                    unreadSince = lastSeenReplyId,
-                    seenAt = inboxSeenAt,
-                    onInboxSeen = { newest, checkedAt ->
-                        // Opening the list is what clears the dot, and it stays cleared — after a
-                        // restart too, and on the next count — because the backend is told to count
-                        // from this instant rather than from the beginning of time.
-                        coroutineScope.launch {
-                            // The ids this visit came in with stay as they are: the rows the reader
-                            // has not reached yet keep their marker until the page is opened again.
-                            val moved = deps.notes.markInboxSeen(checkedAt)
-                            deps.notes.markRepliesSeen(newest)
-                            inboxSeenAt = deps.notes.inboxSeenAt.value
-                            // Only when the cursor really moved. A backend that sends no
-                            // `checked_at` leaves it where it was, so clearing here would hide a
-                            // count that comes back on the next look — the dot blinking.
-                            if (moved) unreadReplies = 0
-                        }
-                    },
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
-                    onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
-                    // A row with a comment behind it opens the page on that comment, so "somebody
-                    // answered you" lands on the answer instead of the top of a long page.
-                    onOpenPlanComment = { id, commentId ->
-                        navController.navigate(Screen.PlanComment.routeFor(id, commentId))
-                    },
-                    onOpenAppComment = { pkg, commentId ->
-                        navController.navigate(Screen.AppComment.routeFor(pkg, commentId))
-                    },
                     profile = myProfile,
                     onNavigateBack = { navController.navigateUp() },
                 )
@@ -1311,14 +1279,18 @@ private fun CantaNavigation(
             }
             composable(route = Screen.Interactions.route) {
                 var interactionsIdentity by remember { mutableStateOf(Identity("")) }
+                // 「我的评论」那一栏的头像首字：这台设备的显示名。
+                var interactionsName by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
                     interactionsIdentity = DeviceIdentity.current(deps.settings)
+                    interactionsName = DeviceIdentity.displayName(deps.settings)
                 }
                 InteractionsScreen(
                     repository = communityRepository,
                     social = socialRepository,
                     owner = interactionsIdentity.owner.ifEmpty { interactionsIdentity.token },
                     token = interactionsIdentity.token,
+                    author = interactionsName,
                     seenAt = inboxSeenAt,
                     onInboxSeen = { newest, checkedAt ->
                         // The same closing of the loop the bar does: reading a row is what moves
@@ -1423,17 +1395,21 @@ private fun CantaNavigation(
                     ?.toLongOrNull() ?: 0L
                 var infoIdentity by remember { mutableStateOf(Identity("")) }
                 LaunchedEffect(Unit) { infoIdentity = DeviceIdentity.current(deps.settings) }
-                GroupInfoScreen(
+                GroupSettingsScreen(
                     repository = socialRepository,
                     owner = infoIdentity.owner.ifEmpty { infoIdentity.token },
                     conversationId = groupId,
                     onNavigateBack = { navController.navigateUp() },
-                    onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
                     // 群成员网格里点谁的头像就看谁的主页。
                     onOpenProfile = { person ->
                         navController.navigate(Screen.Uploader.routeFor(person))
                     },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
+                    // 「查找聊天内容」：回到消息页，那里有搜索框（会话 / 联系人 / 消息三段）。
+                    // 不把搜索词带过去——从群资料页出发时还没有词，人是要去**开始**找。
+                    onOpenSearch = {
+                        navController.navigate(Screen.Messages.route) { launchSingleTop = true }
+                    },
                 )
             }
             composable(route = Screen.Groups.route) {
