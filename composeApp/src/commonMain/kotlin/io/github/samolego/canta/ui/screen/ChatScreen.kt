@@ -73,6 +73,8 @@ import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
+import io.github.samolego.canta.data.community.PersonCard
+import io.github.samolego.canta.data.community.ShareCard
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.EmotionPicker
@@ -92,6 +94,13 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 
 /** 一个气泡最宽多少：一行字到这儿换行，免得一条长消息把整块屏幕占满。 */
 private val ChatBubbleMaxWidth = 260.dp
+
+/**
+ * 卡片（分享 / 名片）最宽多少。
+ *
+ * 比气泡窄一点：卡片里只有一个标题和一行备注，撑到气泡那么宽会让聊天列表看起来半屏都是方块。
+ */
+private val ChatCardMaxWidth = 220.dp
 
 /** 一张图最多占多大：竖图再高也不能把一屏撑满，宽高两条都收着。 */
 private val ChatImageMaxWidth = 220.dp
@@ -204,6 +213,15 @@ fun ChatScreen(
      * 所以它收到的是"停下来之后的那一版"，不是每个按键。
      */
     onDraftPersist: ((String) -> Unit)? = null,
+    /**
+     * 点分享卡片时的去处；null 表示这一层不跳转，卡片照旧画但不响应点击。
+     *
+     * 传出来的是整张卡而不是一个拼好的路由：App 走包名、方案走方案号，两种参数形状不同，
+     * 拼路由的事该由认识路由的那一层做。
+     */
+    onOpenShare: ((ShareCard) -> Unit)? = null,
+    /** 点个人名片：进那个人的主页。 */
+    onOpenCard: ((PersonCard) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -708,6 +726,9 @@ fun ChatScreen(
                                         } else {
                                             null
                                         },
+                                        // 卡片：跳哪儿由上层决定，这一层只把"点了哪张"递出去。
+                                        onOpenShare = onOpenShare,
+                                        onOpenCard = onOpenCard,
                                     )
                                 }
                             }
@@ -1146,6 +1167,10 @@ private fun ChatBubble(
      * 它和长按是两回事：长按仍然是菜单（复制/回复/转发/撤回），点击才是看大图。
      */
     onOpenImage: (() -> Unit)? = null,
+    /** 点分享卡片（App / 方案）；没给就说明这一页不跳转，卡片照旧画但不响应点击。 */
+    onOpenShare: ((ShareCard) -> Unit)? = null,
+    /** 点名片：进那个人的主页。 */
+    onOpenCard: ((PersonCard) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // 任何一条消息长按都弹菜单：回复和转发对别人的消息同样成立，而"长按即复制"那个老手势
@@ -1156,6 +1181,17 @@ private fun ChatBubble(
     val longPress = if (menuable) ({ menuOpen = true }) else null
     // 图片不是文字：气泡的底色和 12 的内边距会在图四周多出一圈主色，那一路换成一张裸图。
     val isImage = message.kind == "image"
+    // 卡片（分享 / 名片）：和图片一样不带气泡底色，但里面的内容是可点的。
+    // 先取到局部变量，省得下面每处都写 `message.share`——那样 Kotlin 不一定能智能转换。
+    val shareCard = message.share
+    val personCard = message.card
+    val isCard = shareCard != null || personCard != null
+    // 卡片点了去哪儿，由上层决定；这一层只负责把"点了哪张卡"传出去。
+    val cardClick: (() -> Unit)? = when {
+        shareCard != null && onOpenShare != null -> ({ onOpenShare.invoke(shareCard) })
+        personCard != null && onOpenCard != null -> ({ onOpenCard.invoke(personCard) })
+        else -> null
+    }
     // 长按的手套：文字和图片两条路都要挂一次，包成值免得写两遍修饰符链。
     val holdModifier = if (longPress == null) {
         Modifier
@@ -1246,6 +1282,66 @@ private fun ChatBubble(
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
+            } else if (isCard) {
+                // 卡片不套气泡底色：它自己就是一张卡，外面再垫一层主色会显得脏。
+                // 点击与长按分开挂，理由和图片那段一样——叠两层修饰符会抢事件。
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .then(
+                            if (cardClick != null) {
+                                Modifier.combinedClickable(
+                                    onClickLabel = "打开这张卡片",
+                                    onLongClickLabel = "打开这条消息的菜单",
+                                    onClick = cardClick,
+                                    onLongClick = longPress,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .then(if (cardClick == null) holdModifier else Modifier),
+                ) {
+                    when {
+                        shareCard != null -> ChatShareCard(share = shareCard, mine = mine)
+                        personCard != null -> ChatPersonCard(card = personCard, mine = mine)
+                        // 解析不出卡片（后端换了格式、或者库被人手改过）：说一句，不画个空框。
+                        else -> Text(
+                            text = "这条卡片打不开",
+                            fontSize = 13.sp,
+                            color = colors.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        )
+                    }
+                    if (menuable) {
+                        ChatBubbleMenu(
+                            modifier = Modifier.align(Alignment.TopEnd),
+                            open = menuOpen,
+                            // 卡片的正文是 JSON 或者一个号码，复制过去没有意义。
+                            canCopy = false,
+                            canRetract = onDelete != null,
+                            canReply = onReply != null,
+                            canForward = onForward != null,
+                            canHide = onHide != null,
+                            onDismiss = { menuOpen = false },
+                            onCopy = { onLongPress?.invoke() },
+                            onDelete = onDelete,
+                            onReply = onReply,
+                            onForward = onForward,
+                            onHide = onHide,
+                        )
+                    }
+                }
+                val clock = chatClockOf(message.createdAt)
+                if (clock.isNotEmpty()) {
+                    Text(
+                        text = clock,
+                        fontSize = 8.sp,
+                        color = colors.outline,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             } else {
                 Box(
                     modifier = Modifier
@@ -1304,6 +1400,122 @@ private fun ChatBubble(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 分享卡片：左边一个图标方块，右边标题加一行备注，最下面一行小字说这是应用还是方案。
+ *
+ * 底色不跟气泡走主色：卡片是一块内容，不是"我说的一句话"。自己的分享给一层很淡的主色底，
+ * 只是为了让右边一眼看出是谁发的，不至于把里面的字都逼着反过来排。
+ *
+ * 宽度卡在 [ChatCardMaxWidth]：一个长应用名不该把整条消息撑到屏幕边上，那会让人找不到哪儿是头。
+ */
+@Composable
+private fun ChatShareCard(share: ShareCard, mine: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .widthIn(max = ChatCardMaxWidth)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (mine) colors.primary.copy(alpha = 0.10f) else colors.surfaceContainerHigh,
+            )
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(colors.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            FlGlyphIcon(
+                // 应用用九宫格、方案用清单：两种卡片标题旁边的小字已经写了类型，
+                // 图标只是让它们在聊天列表里扫过去时能分开。
+                glyph = if (share.kind == "app") FlGlyphs.iconTile else FlGlyphs.appsList,
+                size = 20.dp,
+                tint = colors.primary,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                text = share.title.ifBlank { share.target },
+                fontSize = 13.sp,
+                color = colors.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (share.note.isNotBlank()) {
+                Text(
+                    text = share.note,
+                    fontSize = 11.sp,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = if (share.kind == "app") "应用" else "方案",
+                fontSize = 9.sp,
+                color = colors.outline,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * 个人名片：一个圆头像加名字，底下一行「个人名片」。
+ *
+ * 名字是发出那一刻的名字（后端写进 body 的），所以别人后来改了名，这张卡还印着旧字——
+ * 和真名片一样，也和有意的：聊天记录是当时的样子。
+ */
+@Composable
+private fun ChatPersonCard(card: PersonCard, mine: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .widthIn(max = ChatCardMaxWidth)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (mine) colors.primary.copy(alpha = 0.10f) else colors.surfaceContainerHigh,
+            )
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(colors.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = card.label.take(1),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.primary,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(
+                text = card.label,
+                fontSize = 13.sp,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "个人名片",
+                fontSize = 9.sp,
+                color = colors.outline,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -1564,10 +1776,12 @@ private fun ChatImageViewer(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
+        // 只关掉 dialog 自己的默认宽度，让它铺满整屏。
+        //
+        // 不写 `decorFitsSystemWindows`：那是 Android 版 DialogProperties 才有的参数，
+        // Compose Multiplatform 的这份没有，写了必编译不过（CI 上就是这么红的）。
+        // 全屏要盖住状态栏，靠的是黑底 fillMaxSize 本身，而不是这个开关。
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Box(
             modifier = Modifier

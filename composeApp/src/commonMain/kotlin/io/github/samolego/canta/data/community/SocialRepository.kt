@@ -118,6 +118,44 @@ data class Conversation(
  */
 const val AiSender: String = "ai"
 
+/**
+ * `kind == "share"` 的那条消息里装的东西：一个 App 或一个方案。
+ *
+ * [target] 是包名（`kind == "app"`）或方案 id 的十进制字符串（`kind == "plan"`）；两种卡片
+ * 打开方式不同，所以类型和目标是分开的两个字段，而不是一坨拼好的 URL——拼好了也还要再拆开。
+ *
+ * [title] / [note] 是**发出时**的那份措辞：对方改了应用名或方案名，已经发出去的这张卡不该
+ * 跟着变，就像转发出去的一条消息不会因为原消息被编辑而变化。
+ */
+data class ShareCard(
+    /** `"app"` 或 `"plan"`；后端只放行这两种。 */
+    val kind: String,
+    val target: String,
+    val title: String = "",
+    val note: String = "",
+) {
+
+    /** 方案那条要走 `plan/{id}`，而路由要的是数字：不是数字就当没有，别拼出一个打不开的路由。 */
+    val planId: Long?
+        get() = target.toLongOrNull()?.takeIf { it > 0L }
+}
+
+/**
+ * `kind == "card"` 的那条消息里装的东西：一个人的名片。
+ *
+ * 名字是发出那一刻的名字（后端写进去的），和真名片一样，之后改了名这张不变。
+ */
+data class PersonCard(
+    val owner: String,
+    val name: String = "",
+) {
+
+    /** 卡片上那行名字；没有就用编号，总比空着强。 */
+    val label: String
+        get() = name.ifBlank { if (owner.isNotEmpty()) "#$owner" else "" }
+}
+
+
 data class ChatMessage(
     val id: Long,
     val sender: String,
@@ -142,6 +180,15 @@ data class ChatMessage(
     val replyBody: String = "",
     /** 被引用那条是谁说的，给引用块抬头用。 */
     val replySenderName: String = "",
+    /**
+     * `kind == "share"` 时解析出来的卡片；别的类型、或者 body 的 JSON 坏了就是 null。
+     *
+     * 解析一次放在这儿而不是每帧在界面里解：一个会话翻上去几十条，每条每帧都解一遍 JSON
+     * 没有意义，而且解析失败要在同一个地方兜住。
+     */
+    val share: ShareCard? = null,
+    /** `kind == "card"` 时解析出来的名片；别的类型是 null。 */
+    val card: PersonCard? = null,
 ) {
 
     /**
@@ -606,6 +653,78 @@ class SocialRepository(
             body = path,
             createdAt = row.textOf("created_at"),
             kind = "image",
+        )
+    }
+
+    /**
+     * 分享一个 App（[kind] = "app"，[target] 是包名）或一个方案（[kind] = "plan"，[target] 是方案号）
+     * 到 [conversation]，返回后端落库的那一行。
+     *
+     * 和 [sendMessage] 分开是有意的：那个要求正文非空、并把 body 当"人说的话"。卡片不是话，
+     * 它有三个字段和一个类型，所以服务端也另开了 `message_send_share`。
+     */
+    suspend fun sendShare(
+        owner: String,
+        conversation: Long,
+        kind: String,
+        target: String,
+        title: String,
+        note: String = "",
+    ): ChatMessage? {
+        if (owner.isEmpty() || conversation <= 0L || target.isBlank()) return null
+        if (kind != "app" && kind != "plan") return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_kind", kind)
+            put("p_target", target)
+            put("p_title", title)
+            put("p_note", note)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("message_send_share", payload) ?: return null
+        val row = firstRowOf(text) ?: return null
+        val id = row.longOf("id") ?: return null
+        return ChatMessage(
+            id = id,
+            sender = owner,
+            senderName = "",
+            body = "",
+            createdAt = row.textOf("created_at"),
+            kind = "share",
+            share = ShareCard(kind = kind, target = target, title = title, note = note),
+        )
+    }
+
+    /**
+     * 把 [target] 这个人的名片发到 [conversation]。
+     *
+     * 名字不由调用方给：后端按号码去查，查不到就不发。这样卡片上的名字和那一刻的他是同一个人，
+     * 而不是"发的人以为他是谁"。
+     */
+    suspend fun sendCard(owner: String, conversation: Long, target: String): ChatMessage? {
+        if (owner.isEmpty() || conversation <= 0L || target.isBlank()) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_target", target)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("message_send_card", payload) ?: return null
+        val row = firstRowOf(text) ?: return null
+        val id = row.longOf("id") ?: return null
+        return ChatMessage(
+            id = id,
+            sender = owner,
+            senderName = "",
+            body = "",
+            createdAt = row.textOf("created_at"),
+            kind = "card",
+            // 名字暂时空着：这一条要等重拉才准。手里的列表已经在用它，空名字会退回编号，
+            // 比编一个名字诚实。
+            card = PersonCard(owner = target),
         )
     }
 
@@ -1278,6 +1397,36 @@ class SocialRepository(
     }
 
     /** 一行消息（`messages_for` / `messages_before` 同一解析）；连 id 都没有的行画不成气泡，丢掉。 */
+    /**
+     * `kind == "share"` 那条的卡片；别的类型、body 不是 JSON、或者少字段都算"没有卡片"。
+     *
+     * 坏数据只让这一条画不出来，不让整页加载失败：body 是后端写的，但它是用户可见的文本字段，
+     * 客户端不该假设它一定完好。
+     */
+    private fun shareOf(row: JsonObject): ShareCard? {
+        if (row.textOf("kind") != "share") return null
+        val obj = runCatching { parse(row.textOf("body"))?.jsonObject }.getOrNull() ?: return null
+        val kind = obj.textOf("k")
+        val target = obj.textOf("t")
+        if (kind != "app" && kind != "plan") return null
+        if (target.isBlank()) return null
+        return ShareCard(
+            kind = kind,
+            target = target,
+            title = obj.textOf("n"),
+            note = obj.textOf("d"),
+        )
+    }
+
+    /** `kind == "card"` 那条的名片；认不出就当没有。 */
+    private fun cardOf(row: JsonObject): PersonCard? {
+        if (row.textOf("kind") != "card") return null
+        val obj = runCatching { parse(row.textOf("body"))?.jsonObject }.getOrNull() ?: return null
+        val owner = obj.textOf("o")
+        if (owner.isBlank()) return null
+        return PersonCard(owner = owner, name = obj.textOf("n"))
+    }
+
     private fun messageOf(row: JsonObject): ChatMessage? {
         val id = row.longOf("id") ?: return null
         return ChatMessage(
@@ -1294,6 +1443,8 @@ class SocialRepository(
             replyTo = row.longOf("reply_to")?.takeIf { it > 0L },
             replyBody = row.textOf("reply_body"),
             replySenderName = row.textOf("reply_sender_name"),
+            share = shareOf(row),
+            card = cardOf(row),
         )
     }
 }

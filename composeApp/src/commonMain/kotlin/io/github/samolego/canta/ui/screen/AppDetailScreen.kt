@@ -72,6 +72,7 @@ import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PackageVotes
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
 import io.github.samolego.canta.data.community.NEXT_REPLY_BATCH
 import io.github.samolego.canta.data.community.threadOf
@@ -145,6 +146,14 @@ fun AppDetailScreen(
      * "somebody answered you" lands on the answer rather than on the top of the page.
      */
     anchorCommentId: Long = 0L,
+    /**
+     * 聊天那一侧的仓储，只用于「把这个应用分享到某个会话」。
+     *
+     * null 表示这一页不提供分享——顶栏那个按钮会整颗不画，而不是点了以后报错。
+     */
+    social: SocialRepository? = null,
+    /** 分享时署谁的名字；和 [voter] 是同一个身份，分开一个参数只是让调用点读起来更清楚。 */
+    owner: String = "",
 ) {
     val scope = rememberCoroutineScope()
     var reviews by remember { mutableStateOf<List<AppReview>>(emptyList()) }
@@ -180,6 +189,8 @@ fun AppDetailScreen(
     // Why the last vote or comment did not go through, when the backend said something.
     var voteError by remember { mutableStateOf<String?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
+    /** 分享到聊天的会话选择开着没有。 */
+    var sharing by remember { mutableStateOf(false) }
     /** Threads the reader opened with "展开 N 条回复"; the rest keep their answers folded. */
     var expandedThreads by remember { mutableStateOf(setOf<Long>()) }
     /** How many answers each open thread shows; absent means the first batch. */

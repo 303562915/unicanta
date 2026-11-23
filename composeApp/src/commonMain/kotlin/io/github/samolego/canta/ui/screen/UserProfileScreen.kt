@@ -54,6 +54,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.SocialUserProfile
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.PickConversationDialog
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.component.avatarLetter
 import io.github.samolego.canta.ui.fl.FlBarButton
@@ -128,6 +129,8 @@ fun UserProfileScreen(
     var plans by remember(owner, viewer) { mutableStateOf<List<CommunityPlan>>(emptyList()) }
     var following by remember(owner, viewer) { mutableStateOf(false) }
     var busy by remember(owner, viewer) { mutableStateOf(false) }
+    // 名片分享：点开时弹会话选择，选完由对话框自己调接口。
+    var sharing by remember(owner, viewer) { mutableStateOf(false) }
     var tab by remember(owner, viewer) { mutableStateOf(ProfileTab.Plans) }
     // 改简介的对话框三位一体：开没开、框里的草稿、保存请求在不在路上。
     var showBioEditor by remember(owner, viewer) { mutableStateOf(false) }
@@ -235,12 +238,32 @@ fun UserProfileScreen(
                                 }
                             },
                             onOpenChat = { onOpenChat(owner) },
+                            // 自己都还没有身份，就没有"谁在分享"这件事，按钮不出现。
+                            onShare = if (viewer.isNotBlank()) {
+                                { sharing = true }
+                            } else {
+                                null
+                            },
                         )
                         ProfileTabs(
                             planCount = planCount,
                             selected = tab,
                             onSelect = { tab = it },
                         )
+                        // 名片分享的会话选择：Dialog 不占布局，放在这一列里也不会把下面顶开。
+                        if (sharing) {
+                            PickConversationDialog(
+                                repository = social,
+                                owner = viewer,
+                                title = "分享名片",
+                                preview = profile?.name?.ifBlank { "#$owner" } ?: "#$owner",
+                                doneHint = "已发送",
+                                onPick = { conversation ->
+                                    social.sendCard(viewer, conversation.id, owner) != null
+                                },
+                                onDismiss = { sharing = false },
+                            )
+                        }
                         Spacer(Modifier.height(2.dp))
                     }
                 }
@@ -590,6 +613,8 @@ private fun ProfileActionRow(
     busy: Boolean,
     onToggleFollow: () -> Unit,
     onOpenChat: () -> Unit,
+    /** 把这个人的名片发给谁；null 表示这一处不提供（比如自己都还没有身份）。 */
+    onShare: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -636,6 +661,20 @@ private fun ProfileActionRow(
             contentAlignment = Alignment.Center,
         ) {
             FlGlyphIcon(glyph = FlGlyphs.send, size = 20.dp, tint = scheme.onSurface)
+        }
+        // 名片：和私信钮同形，放在它右边。图标用「链接」，因为它做的事就是把人递出去。
+        if (onShare != null) {
+            Box(
+                modifier = Modifier
+                    .width(MessageButtonWidth)
+                    .height(FollowHeight)
+                    .clip(ActionShape)
+                    .background(scheme.surfaceContainerHigh)
+                    .clickable(onClick = onShare),
+                contentAlignment = Alignment.Center,
+            ) {
+                FlGlyphIcon(glyph = FlGlyphs.link, size = 20.dp, tint = scheme.onSurface)
+            }
         }
     }
 }
