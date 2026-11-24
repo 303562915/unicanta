@@ -56,7 +56,7 @@ import io.github.samolego.canta.generated.resources.about_checking
 import io.github.samolego.canta.generated.resources.about_contributors
 import io.github.samolego.canta.generated.resources.about_coolapk
 import io.github.samolego.canta.generated.resources.about_coolapk_hint
-import io.github.samolego.canta.generated.resources.about_source_repo
+import io.github.samolego.canta.generated.resources.about_latest_download
 import io.github.samolego.canta.generated.resources.about_qq_group
 import io.github.samolego.canta.generated.resources.about_qq_group_copied
 import io.github.samolego.canta.generated.resources.about_qq_group_hint
@@ -297,10 +297,12 @@ internal fun AboutScreen(
                 onClick = { platform.openUrl(CONTRIBUTORS_URL) },
             )
             AppLinkCard(
-                glyph = FlGlyphs.link,
-                title = stringResource(Res.string.about_source_repo),
-                subtitle = REPO_URL,
-                onClick = { platform.openUrl(REPO_URL) },
+                glyph = FlGlyphs.cloudDownload,
+                // 这一栏原来指向 GitHub 仓库。人点它是为了「装最新版」，而仓库首页到安装包还要再跳两次，
+                // 下载页才是那条捷径：版本号、APK、校验和都在同一屏。
+                title = stringResource(Res.string.about_latest_download),
+                subtitle = DOWNLOAD_PAGE_URL,
+                onClick = { platform.openUrl(DOWNLOAD_PAGE_URL) },
             )
         }
 

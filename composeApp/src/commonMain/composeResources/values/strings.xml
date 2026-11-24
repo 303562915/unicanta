@@ -458,6 +458,7 @@
     <string name="about_qq_group_copied">Group number 913795959 copied</string>
     <string name="about_contributors">Contributors</string>
     <string name="about_source_repo">Source code</string>
+    <string name="about_latest_download">Latest download</string>
     <string name="description_source">Description from the UAD list, published in English</string>
     <string name="description_translated_source">Description translated by Canta from the UAD list</string>
     <string name="bloat_description_language">en</string>
