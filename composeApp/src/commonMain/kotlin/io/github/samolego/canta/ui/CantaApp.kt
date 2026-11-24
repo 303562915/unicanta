@@ -919,8 +919,6 @@ private fun CantaNavigation(
                     platform = platform,
                     repository = communityRepository,
                     cdk = cdkStore,
-                    // 帖子是独立一页（带自己的编辑器与草稿），这里只留一个入口。
-                    onOpenPosts = { navController.navigate(Screen.Posts.route) },
                     author = recommendAuthor,
                     authorId = recommendIdentity,
                     asGrid = !listMode,
@@ -1817,8 +1815,8 @@ private fun bottomBarItems(
     route: String?,
     showTweaks: Boolean,
     showRecommend: Boolean,
-    /** 帖子页要不要占一格：与工具页、推荐页同类，设置里点亮才出现。 */
-    showPosts: Boolean = false,
+    /** 帖子页要不要占一格：出厂就在（见 [showPostsTab][io.github.samolego.canta.data.proto.AppSettingsProto]），设置里可以关掉。 */
+    showPosts: Boolean = true,
     showVoteDot: Boolean = false,
     /** How many votes are new: shown as the number in the marker, when there is one to show. */
     showVoteCount: Int = 0,

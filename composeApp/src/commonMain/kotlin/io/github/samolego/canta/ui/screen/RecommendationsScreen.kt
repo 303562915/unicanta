@@ -232,8 +232,6 @@ fun RecommendationsScreen(
     onOpenApp: (String) -> Unit = {},
     /** 自上次看过投票那一格以来，新进精选的条目数：那个点就画在投票标签上。 */
     newApplied: Int = 0,
-    /** 去社区帖子页。那一页有自己的编辑器与草稿，不放成这里的第四格。 */
-    onOpenPosts: () -> Unit = {},
     onVoteQueueSeen: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -383,9 +381,6 @@ fun RecommendationsScreen(
                 ScreenTopBar(
                     title = stringResource(Res.string.recommend_title),
                     actions = {
-                        // 帖子是独立一页：那里有列表，也有一个带草稿的编辑器，塞成这里的
-                        // 第四格会把这一页变成四件事。入口留在右上角，一行字就够了。
-                        TextButton(onClick = onOpenPosts) { Text("帖子") }
                         if (tab == TAB_LIST) {
                             IconButton(onClick = onToggleLayout) {
                                 Icon(
