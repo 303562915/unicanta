@@ -1,5 +1,5 @@
 {
- "version": 8,
+ "version": 9,
  "updated": "2026-11-24",
  "tweaks": [
   {
@@ -32,6 +32,20 @@
    "command": "PKG={{pkg}}\nif pm list packages -u | sed 's/^package://' | grep -qx \"$PKG\"; then :; else echo \"没有这个包：$PKG\"; exit 1; fi\nif pm disable-user --user 0 \"$PKG\" 2>&1; then echo \"已停用 $PKG\"; else echo \"停用被拒绝 DISABLE_REFUSED\"; exit 1; fi",
    "action": "shell-with-package",
    "prompt": "包名"
+  },
+  {
+   "id": "xiaomi-audio-whitelist",
+   "rom": "hyperos",
+   "title": "解除音频白名单（声音变大、低频回来）",
+   "needs": "Shizuku 就够，不用 root；万一报 NO_KEY，说明这台机器把开关换了名字，报 SET_FAIL 则说明该属性只允许 root 写，那就用 root 身份再跑一次",
+   "why": "澎湃OS / MIUI 的音频引擎会读 /odm/etc/audio/track_efx_config.xml 里的白名单，对抖音、小红书、快手、淘宝这类短视频和电商应用按场景施加 280 Hz 高通滤波加约 -5.5 dB 衰减，听感就是外放变小、低频没了。把它的开关属性写成 1，音频引擎就跳过白名单处理：只有名单里的应用变响、低频回来，其余应用不受影响。原值记在 /data/local/tmp 里，点「恢复」写回去即可，重启后仍然有效。",
+   "command": "S=/data/local/tmp/canta_audio_whitelist.state\nCFG=\nfor f in /odm/etc/audio/track_efx_config.xml /vendor/etc/audio/track_efx_config.xml /system/etc/audio/track_efx_config.xml; do\nif [ -f \"$f\" ]; then CFG=\"$f\"; break; fi\ndone\nif [ -n \"$CFG\" ]; then\necho \"白名单配置：$CFG\"\nL=$(grep -oE 'com\\.[A-Za-z0-9_.]+' \"$CFG\" 2>/dev/null | sort -u)\nif [ -n \"$L\" ]; then\necho \"被加处理的名单应用共 $(echo \"$L\" | wc -l) 个，前几个：\"\necho \"$L\" | head -n 8\nelse\necho \"配置读到了但没解析出包名，开头 200 字节：$(head -c 200 \"$CFG\")\"\nfi\nelse\necho \"白名单配置：没找到 track_efx_config.xml，这台机器可能没有这道音频处理\"\nfi\nKEY=\nfor k in persist.vendor.audio.track_efx.enable persist.vendor.audio.track_efx.disable persist.vendor.audio.trackefx.enable persist.vendor.audio.audio_whitelist.enable persist.vendor.audio.whitelist.enable persist.vendor.audio.rate_limit.whitelist.enable persist.vendor.audio.sampling_rate_whitelist persist.sys.audio.track_efx.enable persist.vendor.audio.effect.whitelist.enable persist.vendor.audio.effect.whitelist; do\nV=$(getprop \"$k\")\nif [ -n \"$V\" ]; then KEY=$k; break; fi\ndone\nif [ -z \"$KEY\" ]; then\nKEY=$(getprop | sed -n 's/^\\[\\([^]]*\\)\\]: .*/\\1/p' | grep -iE 'track.?efx|audio[._-].*(white|wl)[._-]?list|audio[._-].*whitelist.?(enable|disable)' | sort -u | head -n 1)\nfi\nif [ -z \"$KEY\" ]; then\necho \"属性：没找到已存在的音频白名单开关 NO_KEY\"\necho \"这台机器的开关不在已知命名里，把下面这些 audio 属性发给我们就能补进去：\"\ngetprop | grep -i audio\nexit 1\nfi\nOLD=$(getprop \"$KEY\")\nif [ \"$OLD\" = \"1\" ]; then echo \"已经是解除状态：$KEY = 1，不用再改\"; exit 0; fi\necho \"目标属性：$KEY（当前值 ${OLD:-未设置}）\"\necho \"$KEY\" > \"$S\"\necho \"${OLD:-}\" >> \"$S\"\nsetprop \"$KEY\" 1 2>/dev/null\nif [ \"$(getprop \"$KEY\")\" != \"1\" ] && [ \"$(id -u)\" != \"0\" ] && command -v su >/dev/null 2>&1; then\nsu -c \"setprop $KEY 1\" </dev/null >/dev/null 2>&1\nfi\nNEW=$(getprop \"$KEY\")\nif [ \"$NEW\" = \"1\" ]; then\necho \"已解除：$KEY = 1（原值 ${OLD:-未设置}）\"\necho \"去听一下抖音这类应用：外放会变大、低频回来，其他应用不受影响。重启后仍然有效，点「恢复」可以写回去。\"\nelse\necho \"写入被拒绝 SET_FAIL（原值 ${OLD:-未设置}）：Shizuku 的 shell 改不动这个属性，这台机器上要用 root 身份跑一次\"\nexit 1\nfi",
+   "runLabel": "解除",
+   "restore": {
+    "label": "恢复",
+    "command": "S=/data/local/tmp/canta_audio_whitelist.state\nif [ ! -f \"$S\" ]; then echo \"没有记录：先点一次「解除」，原值才会被记下来\"; exit 1; fi\nKEY=$(sed -n '1p' \"$S\")\nOLD=$(sed -n '2p' \"$S\")\nif [ -z \"$KEY\" ]; then echo \"记录里没有属性名 RESTORE_NO_KEY\"; exit 1; fi\nCV=$(getprop \"$KEY\")\necho \"目标属性：$KEY（当前 ${CV:-未设置}，原值 ${OLD:-未设置}）\"\nsetprop \"$KEY\" \"${OLD:-0}\" 2>/dev/null\nif [ \"$(getprop \"$KEY\")\" != \"${OLD:-0}\" ] && [ \"$(id -u)\" != \"0\" ] && command -v su >/dev/null 2>&1; then\nsu -c \"setprop $KEY ${OLD:-0}\" </dev/null >/dev/null 2>&1\nfi\nNV=$(getprop \"$KEY\")\nif [ \"$NV\" = \"${OLD:-0}\" ]; then\necho \"已恢复：$KEY = $NV，白名单处理重新生效\"\nelse\necho \"恢复被拒绝 RESTORE_FAIL：$KEY 仍然是 ${NV:-未设置}，这台机器上要用 root 身份跑一次\"\nexit 1\nfi"
+   },
+   "action": "shell"
   },
   {
    "id": "oppo-disable-package",
