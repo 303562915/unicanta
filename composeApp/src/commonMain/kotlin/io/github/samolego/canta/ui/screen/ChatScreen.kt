@@ -468,7 +468,10 @@ fun ChatScreen(
      */
     suspend fun markReadNow() {
         repository.markRead(owner, conversationId)
-        ConversationCache.markRead(owner, conversationId)
+        // 推失败就别动本机：清掉之后服务端还挂着未读，下一趟全量会把它加回来，数字先消失再复活。
+        if (repository.lastError == null && !repository.lastFailureWasNetwork) {
+            ConversationCache.markRead(owner, conversationId)
+        }
     }
 
     /**

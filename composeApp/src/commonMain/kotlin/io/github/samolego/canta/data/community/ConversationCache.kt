@@ -132,19 +132,20 @@ object ConversationCache {
     fun markRead(owner: String, conversationId: Long) {
         val key = owner.ifEmpty { lastOwner }
         val entry = entries[key] ?: return
-        val next = entry.conversations.map { row ->
-            if (row.id == conversationId && (row.unread != 0 || row.unreadMentions != 0)) {
-                row.copy(unread = 0, unreadMentions = 0)
+        val row = entry.conversations.firstOrNull { it.id == conversationId } ?: return
+        if (row.unread == 0 && row.unreadMentions == 0) return
+        val next = entry.conversations.map { conversation ->
+            if (conversation.id == conversationId) {
+                conversation.copy(unread = 0, unreadMentions = 0)
             } else {
-                row
+                conversation
             }
         }
-        if (next != entry.conversations) {
-            entries[key] = Entry(next, entry.followers, entry.summary, currentTimeMillis())
-            store?.write(key, next)
-        }
-        // 变没变都把数字对齐到这份列表：这一趟的语义是「这一行已经读过」。
-        ChatUnread.from(next)
+        entries[key] = Entry(next, entry.followers, entry.summary, currentTimeMillis())
+        store?.write(key, next)
+        // 只扣这一行自己的未读，**不是**拿整份快照重算：快照可能比 [ChatUnread] 那个数旧
+        // （底栏刚拉过全量、消息页刚刷过），重算等于把更准的数字覆盖回去。相减只影响这一行。
+        ChatUnread.set(ChatUnread.total - row.unread)
     }
 
     /** 扔掉这个身份的快照；下次进来重新走加载。 */

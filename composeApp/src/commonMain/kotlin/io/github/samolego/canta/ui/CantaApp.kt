@@ -789,7 +789,12 @@ private fun CantaNavigation(
             } else {
                 chatsCountedAt = now
                 chatsCountedOn = currentRoute
-                ChatUnread.from(socialRepository.conversationsFor(owner))
+                val rows = socialRepository.conversationsFor(owner)
+                // 拉失败时它回的是空列表，不是「一个会话都没有」。照它写等于把消息页刚推上来的
+                // 真数字擦成 0，而且同一个页面十秒内不会再问一次——只在请求真的成功时才写。
+                if (socialRepository.lastError == null && !socialRepository.lastFailureWasNetwork) {
+                    ChatUnread.from(rows)
+                }
             }
         }
     }

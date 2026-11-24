@@ -338,7 +338,10 @@ fun MessagesScreen(
             // 已经读完的群还挂着未读数等这一趟请求回来。
             ConversationCache.get(owner)?.conversations?.takeIf { it.isNotEmpty() }?.let { rows ->
                 conversations = sortedConversations(rows)
-                ChatUnread.from(conversations)
+                // 这一份是本机快照（读过的行已经清零），只该把数字往下带；不能因为快照比底栏
+                // 刚拉回来的那份旧，就把一个更准的数字顶高。
+                val snapshotTotal = rows.sumOf { it.unread }
+                if (snapshotTotal <= ChatUnread.total) ChatUnread.set(snapshotTotal)
             }
             if (!loadBusy) reloads++
         } else {
@@ -729,14 +732,27 @@ fun MessagesScreen(
             // 骨架这一支没有列表，顶栏照样画：否则首屏只有四个灰块，连页名和菜单都不在。
             // 用 Column 排是必要的：PullToRefreshBox 的内容是 Box，两个 fillMaxSize 的子节点会叠在
             // 一起，骨架那四个灰块会直接盖住顶栏。
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 和列表那一支同一个位移：加载中被人拽一下，骨架也该跟着下来。
+                    .offset {
+                        val fraction = if (refreshing) {
+                            1f
+                        } else {
+                            refreshState.distanceFraction.coerceIn(0f, 1f)
+                        }
+                        IntOffset(0, (fraction * pullTravelPx).roundToInt())
+                    },
+            ) {
                 topBar()
                 // 只有「内存没有、盘上也没有」才走到这里（第一次装、或者那份解不出来）。
                 // 画骨架而不是转圈：转圈看起来像卡住，骨架至少说明「马上会出现一列会话」。
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        // 底下让出一条：骨架卡片不该压在悬浮底栏上（和列表那一支的 contentPadding 对齐）。
+                        .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     repeat(4) {
