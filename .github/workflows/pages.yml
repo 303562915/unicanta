@@ -396,6 +396,7 @@ jobs:
         id: notice
         # 只在「这次真的部署了一版」时准备通知参数：release published 与开发版发布成功后的
         # workflow_run。手工 dispatch 默认不发（要补发就自己把 announce 打开）。
+        # 通道判定见下面那段 run：dispatch 的 tag 是 dev 才算开发版，其余都算稳定版。
         if: |
           steps.development_publication.outputs.proceed == 'true' &&
           (github.event_name == 'release' ||
@@ -405,18 +406,30 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_SHA: ${{ github.sha }}
           DEV_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          # 参数一律从刚生成的 json 取，不另抄一份：通知里说的版本必须就是下载页上那一版。
+          # 通道不能只看事件：正式版也可能是 workflow_dispatch 派起来的。release.yml 建 release 用的是
+          # GITHUB_TOKEN，GitHub 的递归保护让 `release: published` 不会触发别的 workflow，所以它只能
+          # 自己 dispatch（v4.3.6 那次就是这么发的）。dispatch 时按 tag 判：明确给 dev 才算开发版，
+          # 其余（v*、空 = 最新稳定版）都算稳定版 —— 手工补发基本都是在补正式版。
           if [ "$EVENT_NAME" = "release" ]; then
-            JSON=_site/latest.json
             KIND=stable
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
+            KIND=development
+          elif [ "${DISPATCH_TAG:-}" = "dev" ]; then
+            KIND=development
+          else
+            KIND=stable
+          fi
+          # 参数一律从刚生成的 json 取，不另抄一份：通知里说的版本必须就是下载页上那一版。
+          if [ "$KIND" = "stable" ]; then
+            JSON=_site/latest.json
             TAG=$(jq -r '.tag // ""' "$JSON")
             BUILD=""
             COMMIT="$RELEASE_SHA"
           else
             JSON=_site/development.json
-            KIND=development
             TAG=dev
             BUILD=$(jq -r '.build_number // ""' "$JSON")
             COMMIT="$DEV_SHA"
