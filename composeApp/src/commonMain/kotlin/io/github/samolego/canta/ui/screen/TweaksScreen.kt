@@ -215,7 +215,6 @@ fun TweaksScreen(
                     ToolRow(
                         icon = iconOf(tweak),
                         title = tweak.title,
-                        hint = tweak.hint,
                         // A card Canta cannot act on gets no button; its explanation lives in the detail.
                         canRun = runnable(tweak),
                         running = (run as? RunStep.Running)?.tweak?.id == tweak.id,
@@ -356,9 +355,9 @@ private fun GroupHeading(family: String, mine: Boolean) {
 }
 
 /**
- * One tool: icon, name, the one line that says what it costs, and — when it can actually do
- * something — an icon button that runs it. Tapping the row itself opens the full text and the
- * copyable command, so the row stays short and does not repeat the explanation that dialog shows.
+ * One tool: icon, name, and — when it can actually do something — an icon button that runs it.
+ * Tapping the row itself opens the full text and the copyable command, so the row stays one line
+ * and does not repeat the explanation that dialog shows.
  */
 @Composable
 private fun ToolRow(
@@ -368,7 +367,6 @@ private fun ToolRow(
     running: Boolean,
     onRun: () -> Unit,
     onClick: (() -> Unit)?,
-    hint: String = "",
 ) {
     Card(
         modifier = Modifier
@@ -389,25 +387,14 @@ private fun ToolRow(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                // The price of the tool, in one line: a card whose title says it all has none.
-                if (hint.isNotEmpty()) {
-                    Text(
-                        text = hint,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
             if (canRun) {
                 FilledTonalIconButton(
                     onClick = onRun,
@@ -451,6 +438,17 @@ private fun TweakDetailDialog(
             }
         },
     ) {
+        // What the card demands comes before what it does: a phone without that privilege gets
+        // nothing but a refusal from the button, so it has to be visible before the button is used.
+        if (tweak.needs.isNotEmpty()) {
+            Text(
+                text = tweak.needs,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
         if (tweak.why.isNotEmpty()) {
             Text(
                 text = tweak.why,

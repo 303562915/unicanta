@@ -14,9 +14,9 @@
    "id": "xiaomi-disable-preload",
    "rom": "hyperos",
    "title": "关闭预加载与预启动（要 root）",
-   "hint": "关闭省电、可能卡顿；开启流畅、更耗电",
+   "needs": "必须 root：这两项是 persist 属性，Shizuku 的 shell 权限关不掉，要用 root 身份运行 Canta",
    "why": "澎湃OS / MIUI 的桌面会把常用应用提前拉进内存：persist.sys.preload.enable 控制预加载，persist.sys.prestart.proc 控制手指还没点下去就先启动的预启动。两项都写成 false，重启手机后仍然保持，内存小的机型后台会更稳，代价是冷启动稍慢。这两个是 persist 属性，Shizuku 的普通 shell 写不进去，被拒的那一项会原样报出来。",
-   "command": "FAIL=0\nDONE=0\ntry_set(){\nK=\"$1\"\nB=$(getprop \"$K\")\nif [ \"$B\" = \"false\" ]; then echo \"${K}：本来就是 false\"; return; fi\nsetprop \"$K\" false 2>/dev/null\nif [ \"$(getprop \"$K\")\" != \"false\" ] && [ \"$(id -u)\" != \"0\" ] && command -v su >/dev/null 2>&1; then su -c \"setprop $K false\" </dev/null >/dev/null 2>&1; fi\nA=$(getprop \"$K\")\nif [ \"$A\" = \"false\" ]; then echo \"${K}：已关闭（原值 ${B:-未设置}）\"; DONE=1\nelif [ -z \"$B\" ] && [ -z \"$A\" ]; then echo \"${K}：本机没有这一项，跳过\"\nelse echo \"${K}：写入被拒绝（原值 ${B}）\"; FAIL=1; fi\n}\ntry_set persist.sys.preload.enable\ntry_set persist.sys.prestart.proc\nif [ \"${FAIL}\" != \"0\" ]; then echo \"PRELOAD_NEEDS_ROOT\"; exit 1; fi\nif [ \"${DONE}\" = \"1\" ]; then echo \"预加载与预启动已关闭，重启手机后生效\"; else echo \"没有可关的预加载项：这台机器上两项都不存在，或本来就是关的\"; fi",
+   "command": "FAIL=0\nDONE=0\ntry_set(){\nK=\"$1\"\nB=$(getprop \"$K\")\nif [ \"$B\" = \"false\" ]; then echo \"${K}：本来就是 false\"; return; fi\nsetprop \"$K\" false 2>/dev/null\nif [ \"$(getprop \"$K\")\" != \"false\" ] && [ \"$(id -u)\" != \"0\" ] && command -v su >/dev/null 2>&1; then su -c \"setprop $K false\" </dev/null >/dev/null 2>&1; fi\nA=$(getprop \"$K\")\nif [ \"$A\" = \"false\" ]; then echo \"${K}：已关闭（原值 ${B:-未设置}）\"; DONE=1\nelif [ -z \"$B\" ] && [ -z \"$A\" ]; then echo \"${K}：本机没有这一项，跳过\"\nelse echo \"${K}：写入被拒绝（原值 ${B}）\"; FAIL=1; fi\n}\ntry_set persist.sys.preload.enable\ntry_set persist.sys.prestart.proc\nif [ \"${FAIL}\" != \"0\" ]; then echo \"需要 root：这两项是 persist 属性，Shizuku 的 shell 权限关不掉\"; exit 1; fi\nif [ \"${DONE}\" = \"1\" ]; then echo \"预加载与预启动已关闭，重启手机后生效\"; else echo \"没有可关的预加载项：这台机器上两项都不存在，或本来就是关的\"; fi",
    "action": "shell"
   },
   {
