@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -26,8 +29,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,11 +61,14 @@ import io.github.samolego.canta.data.community.PostDraftStore
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.PostThread
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.MiniMarkdown
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
-import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.ui.component.PostAvatar
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.rememberRememberedListState
+import io.github.samolego.canta.ui.fl.FlGlyphIcon
+import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.BeijingTime
@@ -106,20 +115,26 @@ private const val TAG_LIMIT = 20
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
 private val PostPinned = Color(0xFF2FA84F)
 
+/** 列表上方的三个口径：最新（后端原序）、热门（赞与回复算出来的热度）、我的。 */
+private enum class PostBoard(val label: String) {
+    Latest("最新"),
+    Hot("热门"),
+    Mine("我的"),
+}
+
 /**
- * 「社区帖子」这一页：发帖、看帖、回帖、点赞，带本地草稿。
+ * 「社区帖子」这一页：列表 → 帖子详情 → 编辑器，三种形态在同一个 composable 里切。
  *
- * 一页两种形态，同一个 composable 里切（`composing`），不另开路由：
+ * 样子照 fluxdo（Linux.do 第三方客户端）的帖子页取的：
  *
- *  1. **列表** —— 顶上先是「草稿 N 篇 · 继续编辑」和那几篇草稿（有草稿时才画），下面是帖子：
- *     置顶在前、其余按时间倒序，每条显示置顶标记、标题、摘要、作者、时间、回帖数、赞数。
- *     点一条打开详情对话框（正文全文、点赞、回帖列表、回复框、作者本人的删除）。
- *  2. **编辑器** —— 标题 + 正文 + 字数，底下「取消」「发布」。输入停顿 700 毫秒自动存成草稿，
- *     顶部一行「已自动保存 · HH:mm」；取消时把内容存成草稿并明说，发布成功后草稿从盘上删掉。
+ *  1. **列表** —— 顶上「最新 / 热门 / 我的」+ 分类横向筛选，下面是卡片：左边作者字母头像，
+ *     右边标题、分类与标签、摘要、一行元信息（时间、回复数、赞数）。点卡片进详情。
+ *  2. **详情** —— 整页而不是对话框：主楼与回帖按楼层排（楼主 / #1 / #2…），正文按 Markdown
+ *     渲染，底下一个吸底的回复栏。作者本人能删。
+ *  3. **编辑器** —— 标题 + 分类 + 标签 + Markdown 正文（可切预览），输入停顿自动存草稿。
  *
  * 身份：写操作只认后端从 token 认出来的身份（见 `PostStore`），草稿按同一个身份分开存
- * （见 `PostDraftStore`）。[authorId] 为空时这一页只读：点「写帖子」会说"还没认出身份"，
- * 而不是让后端记在一串自报号码上、或者把草稿存在没有主人的名下。
+ * （见 `PostDraftStore`）。[authorId] 为空时这一页只读：点「写帖子」会说"还没认出身份"。
  *
  * @param platform 用来提示（[CantaPlatform.showMessage]）。
  * @param store 帖子数据层；null 时列表只显示一句说明，不装作有数据。
@@ -147,17 +162,23 @@ internal fun PostsScreen(
     ScrollToTopEffect(postListState)
 
     // 这一屏上一次画出来的帖子列表（见 [ScreenCache]）：进来先画它，网络回来再顶上去。
-    // 有缓存时第一帧就是一张有内容的表，不是转圈。
     var posts by remember {
         mutableStateOf(ScreenCache.get<List<CommunityPost>>(POSTS_CACHE_KEY).orEmpty())
     }
     var loading by remember { mutableStateOf(posts.isEmpty()) }
+    var refreshing by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     /** 发帖、回帖、点赞、删帖之后 +1：只有它变了才重新拉。 */
     var reloadKey by remember { mutableIntStateOf(0) }
     /** 正在进行的那一件事：`like:7` / `reply:7` / `delete:7`。 */
     var busyKey by remember { mutableStateOf<String?>(null) }
+
+    // ---- 列表筛选 ----
+    var board by remember { mutableStateOf(PostBoard.Latest) }
+    var categoryPick by remember { mutableStateOf("") }
+    var searchOpen by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
 
     /** 盘上这个身份的草稿，最近改过的在前。首帧同步读一次（`read()` 是同步的）。 */
     var draftList by remember(who) {
@@ -181,8 +202,8 @@ internal fun PostsScreen(
     var posting by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
 
-    // ---- 详情对话框 ----
-    /** 打开的那条帖子的 id；0 表示没开。 */
+    // ---- 详情 ----
+    /** 打开的那条帖子的 id；0 表示还在列表上。 */
     var openId by remember { mutableStateOf(0L) }
     var thread by remember { mutableStateOf<PostThread?>(null) }
     var threadLoading by remember { mutableStateOf(false) }
@@ -196,6 +217,7 @@ internal fun PostsScreen(
         val current = store
         if (current == null) {
             loading = false
+            refreshing = false
             return@LaunchedEffect
         }
         if (posts.isEmpty()) loading = true
@@ -214,6 +236,7 @@ internal fun PostsScreen(
             error = current.reason ?: "帖子没拉到，检查一下网络或代理。"
         }
         loading = false
+        refreshing = false
     }
 
     // 详情：打开哪条拉哪条；回帖/点赞之后 reloadKey 变了也跟着刷一遍，数字与后端一致。
@@ -497,24 +520,109 @@ internal fun PostsScreen(
         onNavigateBack?.invoke()
     }
 
+    /** 关掉详情：把这条的临时状态清干净，回列表时不会闪上一跳的旧内容。 */
+    val closeThread: () -> Unit = close@{
+        openId = 0L
+        thread = null
+        threadError = null
+        reply = ""
+    }
+
+    /** 打开详情：先清空上一次的正文，免得新帖刷新前先显示上一条的字。 */
+    val openThread: (CommunityPost) -> Unit = open@{ post ->
+        thread = null
+        threadError = null
+        reply = ""
+        openId = post.id
+    }
+
+    /** 引用某一楼：把那句话做成 Markdown 引用塞进回复框，接着写就行。 */
+    val quoteComment: (PostComment) -> Unit = quote@{ comment ->
+        val snippet = comment.body.lineSequence().firstOrNull().orEmpty().trim().take(40)
+        val head = if (snippet.isEmpty()) "" else "> ${comment.author.ifBlank { "匿名" }}：$snippet\n"
+        reply = (head + reply).take(POST_BODY_LIMIT)
+        platform.showMessage("已引用，写完点发送")
+    }
+
+    /** 当前这一屏的口径算出来的列表：分类、搜索词、排序都只在这一层做，不动网络。 */
+    val shown = remember(posts, board, categoryPick, query, authorId) {
+        val keyword = query.trim()
+        val byFilter = posts.filter { post ->
+            (categoryPick.isBlank() || post.category == categoryPick) &&
+                (keyword.isEmpty() ||
+                    post.title.contains(keyword, ignoreCase = true) ||
+                    post.excerpt.contains(keyword, ignoreCase = true)) &&
+                (board != PostBoard.Mine || (authorId.isNotBlank() && post.authorId == authorId))
+        }
+        if (board == PostBoard.Hot) {
+            // 置顶永远在前，其余按"赞 3 分、回复 2 分"排：这个权重只是让热闹的浮上来，
+            // 不参与任何排序决定，改动它不会改变数据。
+            byFilter.sortedWith(
+                compareByDescending<CommunityPost> { it.pinned }
+                    .thenByDescending { it.likes * 3 + it.comments * 2 },
+            )
+        } else {
+            byFilter
+        }
+    }
+
+    val canDeleteOpen = authorId.isNotBlank() && thread?.post?.authorId == authorId
+
     Scaffold(
         topBar = {
-            ScreenTopBar(
-                title = "帖子",
-                // 底栏一级页面不给返回箭头（null 时 ScreenTopBar 自己就不画）；
-                // 有返回的时候才把「先存草稿再走」挂上去。
-                onNavigateBack = onNavigateBack?.let { leave },
-                actions = {
-                    // 编辑器开着的时候不再重复一个「写帖子」：那会让人以为能同时写两篇。
-                    if (!composing) {
+            when {
+                openId > 0L -> ScreenTopBar(
+                    title = thread?.post?.title?.ifBlank { "帖子" } ?: "帖子",
+                    onNavigateBack = closeThread,
+                    actions = {
+                        val open = thread?.post
+                        if (canDeleteOpen && open != null) {
+                            TextButton(
+                                enabled = busyKey == null,
+                                onClick = { confirmTarget = open },
+                            ) { Text(if (busyKey == "delete:${open.id}") "正在删…" else "删除") }
+                        }
+                    },
+                )
+
+                composing -> ScreenTopBar(
+                    title = "写帖子",
+                    onNavigateBack = cancelEditor,
+                )
+
+                else -> ScreenTopBar(
+                    title = "帖子",
+                    // 底栏一级页面不给返回箭头（null 时 ScreenTopBar 自己就不画）；
+                    // 有返回的时候才把「先存草稿再走」挂上去。
+                    onNavigateBack = onNavigateBack?.let { leave },
+                    actions = {
+                        // 编辑器开着的时候不再重复一个「写帖子」：那会让人以为能同时写两篇。
+                        if (!searchOpen) {
+                            TextButton(onClick = { searchOpen = true }) { Text("搜索") }
+                        }
                         TextButton(onClick = { openEditor(null) }) { Text("写帖子") }
-                    }
-                },
-            )
+                    },
+                )
+            }
         },
     ) { padding ->
-        if (composing) {
-            PostEditorPane(
+        when {
+            openId > 0L -> PostThreadPane(
+                post = thread?.post,
+                comments = thread?.comments.orEmpty(),
+                loading = threadLoading,
+                error = threadError,
+                busyKey = busyKey,
+                reply = reply,
+                authorId = authorId,
+                onReplyChange = { reply = it.take(POST_BODY_LIMIT) },
+                onSend = sendReply,
+                onToggleLike = { thread?.post?.let(toggleLike) },
+                onQuote = quoteComment,
+                modifier = Modifier.padding(padding),
+            )
+
+            composing -> PostEditorPane(
                 title = title,
                 body = body,
                 category = category,
@@ -533,115 +641,43 @@ internal fun PostsScreen(
                 onCancel = cancelEditor,
                 modifier = Modifier.padding(padding),
             )
-        } else {
-            val listError = error
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                state = postListState,
-                contentPadding = PaddingValues(bottom = 96.dp),
-            ) {
-                if (draftList.isNotEmpty()) {
-                    val newest = draftList.first()
-                    item(key = "drafts-head") {
-                        DraftBanner(
-                            count = draftList.size,
-                            newest = newest,
-                            onContinue = { openEditor(newest) },
-                        )
+
+            else -> PostListPane(
+                posts = posts,
+                shown = shown,
+                loading = loading,
+                refreshing = refreshing,
+                loadingMore = loadingMore,
+                error = error,
+                drafts = draftList,
+                board = board,
+                category = categoryPick,
+                query = query,
+                searchOpen = searchOpen,
+                authorId = authorId,
+                canWrite = canWrite,
+                listState = postListState,
+                onBoardChange = { board = it },
+                onCategoryChange = { categoryPick = it },
+                onQueryChange = { query = it },
+                onCloseSearch = {
+                    searchOpen = false
+                    query = ""
+                },
+                onRefresh = {
+                    if (!refreshing) {
+                        refreshing = true
+                        reloadKey++
                     }
-                    items(draftList, key = { "draft-${it.id}" }) { draft ->
-                        DraftRow(
-                            draft = draft,
-                            onClick = { openEditor(draft) },
-                            onDelete = { discardDraft(draft) },
-                        )
-                    }
-                }
-
-                item(key = "posts-head") {
-                    PostSectionHeader(label = "帖子", count = posts.size)
-                }
-
-                if (listError != null) {
-                    item(key = "posts-error") { PostNote(text = listError) }
-                }
-
-                if (loading && posts.isEmpty()) {
-                    // 还不知道有没有帖子的时候只转圈，不说"还没有人发帖"：那是两件事。
-                    item(key = "posts-loading") {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(top = 36.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                }
-
-                if (posts.isEmpty() && !loading && listError == null) {
-                    item(key = "posts-empty") {
-                        PostNote(text = "还没有人发帖。第一帖可以是你在用的某个方案、某台机器，或者一句吐槽。")
-                    }
-                }
-
-                items(posts, key = { "post-${it.id}" }) { post ->
-                    PostRow(
-                        post = post,
-                        mine = authorId.isNotBlank() && post.authorId == authorId,
-                        onClick = {
-                            thread = null
-                            threadError = null
-                            reply = ""
-                            openId = post.id
-                        },
-                    )
-                }
-
-                if (posts.size >= POSTS_PAGE) {
-                    item(key = "posts-more") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            TextButton(onClick = loadMore, enabled = !loadingMore && busyKey == null) {
-                                Text(if (loadingMore) "正在拉…" else "加载更多")
-                            }
-                        }
-                    }
-                }
-
-                item(key = "posts-foot") {
-                    PostNote(
-                        text = "帖子只经后端读写：认不出身份就发不出去，也删不了别人的帖子。" +
-                            "写下的字每 700 毫秒存一次本地草稿，发出去成功之后才删。",
-                    )
-                }
-            }
+                },
+                onLoadMore = loadMore,
+                onOpen = openThread,
+                onOpenDraft = { openEditor(it) },
+                onDeleteDraft = { discardDraft(it) },
+                onWrite = { openEditor(null) },
+                modifier = Modifier.padding(padding),
+            )
         }
-    }
-
-    if (openId > 0L) {
-        val current = thread?.takeIf { it.post.id == openId }
-        PostThreadDialog(
-            post = current?.post,
-            comments = current?.comments.orEmpty(),
-            loading = threadLoading,
-            error = threadError,
-            busyKey = busyKey,
-            reply = reply,
-            locked = current?.post?.locked == true,
-            canDelete = authorId.isNotBlank() && current?.post?.authorId == authorId,
-            onReplyChange = { reply = it.take(POST_BODY_LIMIT) },
-            onSend = sendReply,
-            onToggleLike = { current?.post?.let(toggleLike) },
-            onDeleteRequest = { current?.post?.let { confirmTarget = it } },
-            onDismiss = {
-                openId = 0L
-                thread = null
-                threadError = null
-                reply = ""
-            },
-        )
     }
 
     confirmTarget?.let { target ->
@@ -654,7 +690,591 @@ internal fun PostsScreen(
 }
 
 /**
- * 编辑器：标题、分类、标签、正文、字数、自动保存的那一行，以及「取消」「发布」。
+ * 列表：筛选栏（口径 + 分类 + 搜索）和帖子卡片。
+ *
+ * [shown] 是已经在上面算好的口径（分类/搜索/排序），这里只负责画；点一条交给 [onOpen]。
+ * 之所以把口径在外面算：筛选改动不该触发一次网络请求，也不该重置列表滚动位置。
+ */
+@Composable
+private fun PostListPane(
+    posts: List<CommunityPost>,
+    shown: List<CommunityPost>,
+    loading: Boolean,
+    refreshing: Boolean,
+    loadingMore: Boolean,
+    error: String?,
+    drafts: List<PostDraft>,
+    board: PostBoard,
+    category: String,
+    query: String,
+    searchOpen: Boolean,
+    authorId: String,
+    canWrite: Boolean,
+    listState: LazyListState,
+    onBoardChange: (PostBoard) -> Unit,
+    onCategoryChange: (String) -> Unit,
+    onQueryChange: (String) -> Unit,
+    onCloseSearch: () -> Unit,
+    onRefresh: () -> Unit,
+    onLoadMore: () -> Unit,
+    onOpen: (CommunityPost) -> Unit,
+    onOpenDraft: (PostDraft) -> Unit,
+    onDeleteDraft: (PostDraft) -> Unit,
+    onWrite: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val refreshState = rememberPullToRefreshState()
+
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        state = refreshState,
+        modifier = modifier.fillMaxSize(),
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = PaddingValues(bottom = 96.dp),
+        ) {
+            if (searchOpen) {
+                item(key = "search") {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                        singleLine = true,
+                        label = { Text("搜标题或摘要") },
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        trailingIcon = {
+                            TextButton(onClick = onCloseSearch) { Text("收起") }
+                        },
+                    )
+                }
+            }
+
+            item(key = "boards") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PostBoard.entries.forEach { entry ->
+                        PostChip(
+                            text = entry.label,
+                            picked = entry == board,
+                            onClick = { onBoardChange(entry) },
+                        )
+                    }
+                    // 一条细竖线把"口径"和"分类"分开：两者能同时生效，但含义不是一件事。
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(18.dp)
+                            .background(scheme.outlineVariant),
+                    )
+                    PostChip(
+                        text = "全部",
+                        picked = category.isBlank(),
+                        onClick = { onCategoryChange("") },
+                    )
+                    POST_CATEGORIES.forEach { label ->
+                        PostChip(
+                            text = label,
+                            picked = label == category,
+                            onClick = { onCategoryChange(if (label == category) "" else label) },
+                        )
+                    }
+                }
+            }
+
+            if (drafts.isNotEmpty()) {
+                val newest = drafts.first()
+                item(key = "drafts-head") {
+                    DraftBanner(
+                        count = drafts.size,
+                        newest = newest,
+                        onContinue = { onOpenDraft(newest) },
+                    )
+                }
+                items(drafts, key = { "draft-${it.id}" }) { draft ->
+                    DraftRow(
+                        draft = draft,
+                        onClick = { onOpenDraft(draft) },
+                        onDelete = { onDeleteDraft(draft) },
+                    )
+                }
+            }
+
+            item(key = "posts-head") {
+                PostSectionHeader(
+                    label = when {
+                        board == PostBoard.Mine -> "我发的"
+                        board == PostBoard.Hot -> "热门"
+                        category.isNotBlank() -> category
+                        else -> "帖子"
+                    },
+                    count = shown.size,
+                )
+            }
+
+            if (error != null) {
+                item(key = "posts-error") { PostNote(text = error) }
+            }
+
+            if (loading && posts.isEmpty()) {
+                // 还不知道有没有帖子的时候只转圈，不说"还没有人发帖"：那是两件事。
+                item(key = "posts-loading") {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(top = 36.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator() }
+                }
+            }
+
+            if (!loading && posts.isNotEmpty() && shown.isEmpty()) {
+                item(key = "posts-filtered-empty") {
+                    PostNote(
+                        text = if (board == PostBoard.Mine && authorId.isBlank()) {
+                            "还没认出身份，「我的」这一栏要等身份就绪。"
+                        } else {
+                            "这个口径下没有帖子，换个分类或者点「最新」看看。"
+                        },
+                    )
+                }
+            }
+
+            if (posts.isEmpty() && !loading && error == null) {
+                item(key = "posts-empty") {
+                    PostNote(text = "还没有人发帖。第一帖可以是你在用的某个方案、某台机器，或者一句吐槽。")
+                }
+            }
+
+            items(shown, key = { "post-${it.id}" }) { post ->
+                PostCard(
+                    post = post,
+                    mine = authorId.isNotBlank() && post.authorId == authorId,
+                    onClick = { onOpen(post) },
+                )
+            }
+
+            if (posts.size >= POSTS_PAGE) {
+                item(key = "posts-more") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        TextButton(onClick = onLoadMore, enabled = !loadingMore) {
+                            Text(if (loadingMore) "正在拉…" else "加载更多")
+                        }
+                    }
+                }
+            }
+
+            item(key = "posts-foot") {
+                PostNote(
+                    text = if (canWrite) {
+                        "帖子只经后端读写：认不出身份就发不出去，也删不了别人的帖子。" +
+                            "写下的字每 700 毫秒存一次本地草稿，发出去成功之后才删。"
+                    } else {
+                        "现在只能看：还没认出身份，写帖子会提示重新进一次社区页。"
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 列表上的一张帖子卡片。
+ *
+ * 左边是作者字母头像（同一个人永远同一个色），右边四行：标题、分类与标签、摘要、元信息。
+ * 摘要只放两行：列表是用来扫的，点进去才是读。
+ */
+@Composable
+private fun PostCard(
+    post: CommunityPost,
+    mine: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(FlSurfaceLevel.Block.colorOf(scheme))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        PostAvatar(
+            name = post.author.ifBlank { "匿" },
+            seed = post.authorId.ifEmpty { post.author },
+            size = 38.dp,
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (post.pinned) {
+                    FlGlyphIcon(
+                        glyph = FlGlyphs.pin,
+                        size = 13.dp,
+                        tint = PostPinned,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                if (post.locked) {
+                    FlGlyphIcon(
+                        glyph = FlGlyphs.lock,
+                        size = 13.dp,
+                        tint = scheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                Text(
+                    text = post.title.ifBlank { "（无标题）" },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            // 分类 + 标签紧贴标题下面：扫列表的人是按"这帖属于哪一类"挑，而不是按摘要第一句。
+            PostMetaChips(category = post.category, tags = post.tags, maxTags = 2)
+            if (post.excerpt.isNotBlank()) {
+                Text(
+                    text = post.excerpt,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = buildString {
+                        append(post.author.ifBlank { "匿名" })
+                        val stamp = relativeStamp(post.createdAt)
+                        if (stamp.isNotBlank()) {
+                            append(" · ")
+                            append(stamp)
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                PostStat(count = post.comments, label = "回复", mine = false)
+                Spacer(modifier = Modifier.width(8.dp))
+                PostStat(count = post.likes, label = "赞", mine = post.mineLike)
+                if (mine) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    PostBadge(text = "我的", color = scheme.primary)
+                }
+            }
+        }
+    }
+}
+
+/** 元信息里的一个数：大于零才算"有"，零只画一个灰色 0，不抢注意力。 */
+@Composable
+private fun PostStat(count: Int, label: String, mine: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        text = "$count $label",
+        style = MaterialTheme.typography.labelSmall,
+        color = if (mine && count > 0) scheme.primary else scheme.onSurfaceVariant,
+        maxLines = 1,
+    )
+}
+
+/**
+ * 一条帖子的详情：主楼 + 回帖按楼层排，底下吸着一个回复栏。
+ *
+ * 用整页而不是对话框：回帖一多，对话框里那点高度连三层都看不完，「楼层」这个概念也就没了。
+ */
+@Composable
+private fun PostThreadPane(
+    post: CommunityPost?,
+    comments: List<PostComment>,
+    loading: Boolean,
+    error: String?,
+    busyKey: String?,
+    reply: String,
+    authorId: String,
+    onReplyChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onToggleLike: () -> Unit,
+    onQuote: (PostComment) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val listState = rememberLazyListState()
+    // 收进一个局部 val：下面几个 lambda 里要读它的字段，写一处最稳。
+    val shown = post
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (shown == null) {
+            if (loading) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
+                ) {
+                    Text(
+                        text = error ?: "这条帖子没拉到。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.error,
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item(key = "op") {
+                    PostFloorCard(
+                        floorLabel = "楼主",
+                        author = shown.author,
+                        authorSeed = shown.authorId.ifEmpty { shown.author },
+                        stamp = relativeStamp(shown.createdAt),
+                        body = shown.body,
+                        badges = buildList {
+                            if (shown.pinned) add("置顶")
+                            if (shown.locked) add("已锁")
+                            if (authorId.isNotBlank() && shown.authorId == authorId) add("我")
+                        },
+                        footer = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    enabled = busyKey == null || busyKey == "like:${shown.id}",
+                                    onClick = onToggleLike,
+                                ) {
+                                    Text(
+                                        if (busyKey == "like:${shown.id}") "…"
+                                        else if (shown.mineLike) "已赞 ${shown.likes}"
+                                        else "赞 ${shown.likes}",
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "${shown.comments} 条回复",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = scheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                    )
+                }
+
+                item(key = "thread-head") {
+                    PostSectionHeader(label = "回复", count = shown.comments)
+                }
+
+                if (comments.isEmpty()) {
+                    item(key = "thread-empty") {
+                        PostNote(text = "还没有人回。")
+                    }
+                }
+
+                // 楼层号就是时间序里的位置：后端按时间正序给，这里 index + 1 直接对得上。
+                itemsIndexed(comments, key = { _, item -> "c-${item.id}" }) { index, comment ->
+                    PostFloorCard(
+                        floorLabel = "#${index + 1}",
+                        author = comment.author,
+                        authorSeed = comment.authorId.ifEmpty { comment.author },
+                        stamp = relativeStamp(comment.createdAt),
+                        body = comment.body,
+                        badges = if (authorId.isNotBlank() && comment.authorId == authorId) {
+                            listOf("我")
+                        } else {
+                            emptyList()
+                        },
+                        footer = {
+                            if (!shown.locked) {
+                                TextButton(onClick = { onQuote(comment) }) { Text("引用回复") }
+                            }
+                        },
+                    )
+                }
+
+                item(key = "thread-foot") {
+                    PostNote(
+                        text = "回帖按时间正序，最多显示 200 层；正文支持 Markdown（标题、列表、引用、代码块）。",
+                    )
+                }
+            }
+
+            if (shown.locked) {
+                Surface(color = FlSurfaceLevel.Block.colorOf(scheme)) {
+                    Text(
+                        text = "这条帖已经锁了，回不了。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            } else {
+                ReplyBar(
+                    reply = reply,
+                    busy = busyKey == "reply:${shown.id}",
+                    onChange = onReplyChange,
+                    onSend = onSend,
+                )
+            }
+        }
+        }
+    }
+
+/**
+ * 一层楼：左边头像，右边作者、楼层号、时间与正文，底下一行动作。
+ *
+ * [floorLabel] 是"楼主"或者 "#3" —— 楼层号让"第几层"这件事一眼对得上，也是引用回复的抓手。
+ */
+@Composable
+private fun PostFloorCard(
+    floorLabel: String,
+    author: String,
+    authorSeed: String,
+    stamp: String,
+    body: String,
+    badges: List<String>,
+    footer: @Composable () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(FlSurfaceLevel.Block.colorOf(scheme))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        PostAvatar(name = author.ifBlank { "匿" }, seed = authorSeed, size = 34.dp)
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = author.ifBlank { "匿名" },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = floorLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                badges.forEach { badge ->
+                    Spacer(modifier = Modifier.width(4.dp))
+                    PostBadge(
+                        text = badge,
+                        color = if (badge == "置顶") PostPinned else scheme.primary,
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                if (stamp.isNotBlank()) {
+                    Text(
+                        text = stamp,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+            if (body.isBlank()) {
+                Text(
+                    text = "（没有正文）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            } else {
+                MiniMarkdown(
+                    text = body,
+                    baseStyle = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurface,
+                )
+            }
+            footer()
+        }
+    }
+}
+
+/** 吸底回复栏：一行输入 + 发送。点一下就开始写，不占整屏。 */
+@Composable
+private fun ReplyBar(
+    reply: String,
+    busy: Boolean,
+    onChange: (String) -> Unit,
+    onSend: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(color = FlSurfaceLevel.Block.colorOf(scheme)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            OutlinedTextField(
+                value = reply,
+                onValueChange = onChange,
+                modifier = Modifier.weight(1f),
+                minLines = 1,
+                maxLines = 4,
+                placeholder = { Text("回复…") },
+                textStyle = MaterialTheme.typography.bodySmall,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (reply.isBlank() || busy) scheme.surfaceVariant else scheme.primary)
+                    .clickable(enabled = reply.isNotBlank() && !busy, role = Role.Button, onClick = onSend),
+                contentAlignment = Alignment.Center,
+            ) {
+                FlGlyphIcon(
+                    glyph = FlGlyphs.send,
+                    size = 20.dp,
+                    tint = if (reply.isBlank() || busy) scheme.onSurfaceVariant else scheme.onPrimary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 编辑器：标题、分类、标签、正文（可切 Markdown 预览）、字数、自动保存的那一行，以及「取消」「发布」。
  *
  * 整页可滚：正文一长，键盘一弹，按钮就在屏幕外了；`verticalScroll` 让它们跟着走。
  */
@@ -680,6 +1300,8 @@ private fun PostEditorPane(
 ) {
     val scheme = MaterialTheme.colorScheme
     val savedClock = draftClock(savedAt)
+    // 预览只是看一眼：不跨离开保存，所以放在这里 remember 就够。
+    var previewing by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -725,16 +1347,47 @@ private fun PostEditorPane(
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         )
 
-        OutlinedTextField(
-            value = body,
-            onValueChange = onBodyChange,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 10,
-            label = { Text("正文") },
-            placeholder = { Text("细节、机型、ROM、试过什么") },
-            textStyle = MaterialTheme.typography.bodySmall,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-        )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            FieldLabel(text = if (previewing) "正文 · 预览" else "正文（支持 Markdown）")
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = { previewing = !previewing }) {
+                Text(if (previewing) "改文字" else "预览")
+            }
+        }
+        if (previewing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+                    .padding(10.dp),
+            ) {
+                if (body.isBlank()) {
+                    Text(
+                        text = "（没有正文）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                } else {
+                    MiniMarkdown(
+                        text = body,
+                        baseStyle = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurface,
+                    )
+                }
+            }
+        } else {
+            OutlinedTextField(
+                value = body,
+                onValueChange = onBodyChange,
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 10,
+                label = { Text("正文") },
+                placeholder = { Text("细节、机型、ROM、试过什么") },
+                textStyle = MaterialTheme.typography.bodySmall,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+            )
+        }
         Text(
             text = "${body.length}/$POST_BODY_LIMIT",
             style = MaterialTheme.typography.labelSmall,
@@ -1012,78 +1665,7 @@ private fun PostNote(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** 列表上一行帖子：置顶/锁定标记、标题、摘要、作者与时间、两个数。 */
-@Composable
-private fun PostRow(
-    post: CommunityPost,
-    mine: Boolean,
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(FlSurfaceLevel.Block.colorOf(scheme))
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (post.pinned) {
-                PostBadge(text = "置顶", color = PostPinned)
-                Spacer(modifier = Modifier.width(6.dp))
-            }
-            if (post.locked) {
-                PostBadge(text = "已锁", color = scheme.outline)
-                Spacer(modifier = Modifier.width(6.dp))
-            }
-            Text(
-                text = post.title.ifBlank { "（无标题）" },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = scheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        // 分类 + 标签紧贴标题下面：扫列表的人是按"这帖属于哪一类"挑，而不是按摘要第一句。
-        PostMetaChips(category = post.category, tags = post.tags)
-        if (post.excerpt.isNotBlank()) {
-            Text(
-                text = post.excerpt,
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Text(
-            text = buildString {
-                append(post.author.ifBlank { "匿名" })
-                val stamp = relativeStamp(post.createdAt)
-                if (stamp.isNotBlank()) {
-                    append(" · ")
-                    append(stamp)
-                }
-                append(" · ")
-                append(post.comments)
-                append(" 回复 · ")
-                append(post.likes)
-                append(" 赞")
-                if (mine) append(" · 我的")
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** 一枚小标记：置顶、已锁。 */
+/** 一枚小标记：置顶、已锁、我的。 */
 @Composable
 private fun PostBadge(text: String, color: Color) {
     Text(
@@ -1097,217 +1679,6 @@ private fun PostBadge(text: String, color: Color) {
     )
 }
 
-/**
- * 一条帖子的详情：正文全文、点赞、回帖列表、回复框。
- *
- * 回帖放在可滚动的对话框里而不是 LazyColumn：`CantaDialog(scrollable = true)` 已经给了一个
- * 纵向滚动，里面再套一个滚动列表会互相抢手势。后端一次最多给 200 条，撑得住。
- */
-@Composable
-private fun PostThreadDialog(
-    post: CommunityPost?,
-    comments: List<PostComment>,
-    loading: Boolean,
-    error: String?,
-    busyKey: String?,
-    reply: String,
-    locked: Boolean,
-    canDelete: Boolean,
-    onReplyChange: (String) -> Unit,
-    onSend: () -> Unit,
-    onToggleLike: () -> Unit,
-    onDeleteRequest: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    // 收进一个 val 再用：参数在下面几层 lambda 里要 smart cast，写作一处最省心。
-    val target = post
-    CantaDialog(
-        onDismissRequest = onDismiss,
-        title = target?.title?.ifBlank { "帖子" } ?: "帖子",
-        widthFraction = WIDE_DIALOG_WIDTH,
-        scrollable = true,
-        buttons = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
-            if (canDelete) {
-                target?.let { shown ->
-                    TextButton(
-                        enabled = busyKey == null,
-                        onClick = onDeleteRequest,
-                    ) { Text(if (busyKey == "delete:${shown.id}") "正在删…" else "删除") }
-                }
-            }
-        },
-    ) {
-        when {
-            target == null && loading -> {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-
-            target == null -> {
-                Text(
-                    text = error ?: "这条帖子没拉到。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.error,
-                )
-            }
-
-            else -> {
-                Text(
-                    text = buildString {
-                        append(target.author.ifBlank { "匿名" })
-                        val stamp = relativeStamp(target.createdAt)
-                        if (stamp.isNotBlank()) {
-                            append(" · ")
-                            append(stamp)
-                        }
-                        if (target.pinned) append(" · 置顶")
-                        if (target.locked) append(" · 已锁定")
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                )
-                // 详情里把分类和标签全列出来（列表那一行只放得下三个）。
-                if (target.category.isNotBlank() || target.tags.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    PostMetaChips(
-                        category = target.category,
-                        tags = target.tags,
-                        maxTags = target.tags.size,
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                if (target.body.isNotBlank()) {
-                    Text(
-                        text = target.body,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
-                            .padding(10.dp),
-                    )
-                } else {
-                    Text(
-                        text = "（没有正文）",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        enabled = busyKey == null || busyKey == "like:${target.id}",
-                        onClick = onToggleLike,
-                    ) {
-                        Text(
-                            if (busyKey == "like:${target.id}") "…"
-                            else if (target.mineLike) "已赞 ${target.likes}"
-                            else "赞 ${target.likes}",
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "${target.comments} 条回复",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "回复",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.primary,
-                )
-                if (comments.isEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "还没有人回。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                    )
-                } else {
-                    comments.forEach { comment ->
-                        PostCommentRow(comment = comment)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                if (locked) {
-                    Text(
-                        text = "这条帖已经锁了，回不了。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = reply,
-                        onValueChange = onReplyChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                        label = { Text("写一句回复") },
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        Button(
-                            enabled = reply.isNotBlank() && busyKey == null,
-                            onClick = onSend,
-                        ) { Text(if (busyKey == "reply:${target.id}") "正在回…" else "回复") }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 详情里的一行回帖：作者、时间、正文。 */
-@Composable
-private fun PostCommentRow(comment: PostComment) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 6.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(scheme.surfaceContainerLow)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            text = buildString {
-                append(comment.author.ifBlank { "匿名" })
-                val stamp = relativeStamp(comment.createdAt)
-                if (stamp.isNotBlank()) {
-                    append(" · ")
-                    append(stamp)
-                }
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = comment.body,
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurface,
-        )
-    }
-}
-
 /** 删帖的二次确认：删了回帖和赞一起没了，不能只靠一次点错。 */
 @Composable
 private fun PostDeleteDialog(
@@ -1318,7 +1689,6 @@ private fun PostDeleteDialog(
     CantaDialog(
         onDismissRequest = onDismiss,
         title = "删除这条帖子？",
-        widthFraction = WIDE_DIALOG_WIDTH,
         buttons = {
             TextButton(onClick = onDismiss) { Text("取消") }
             Button(enabled = !busy, onClick = onConfirm) {
@@ -1366,3 +1736,4 @@ private fun tagsWithPending(tags: List<String>, pending: String): List<String> {
     if (tags.size >= TAG_MAX) return tags
     return tags + tag
 }
+
