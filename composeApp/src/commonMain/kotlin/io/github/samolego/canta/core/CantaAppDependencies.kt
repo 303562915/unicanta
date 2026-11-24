@@ -6,6 +6,8 @@ import io.github.samolego.canta.data.bloat.BloatDescriptions
 import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.bloat.BundledBloatList
 import io.github.samolego.canta.data.community.AppNoteStore
+import io.github.samolego.canta.data.community.ChatMessageCache
+import io.github.samolego.canta.data.community.ChatMessageStore
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
@@ -58,6 +60,9 @@ object StoredData {
 
     /** 消息页上一次画出来的那份会话列表：冷启动时先画它，不等网络（见 [ConversationStore]）。 */
     const val CONVERSATIONS = "conversations.json"
+
+    /** 最近几个会话的最后几条消息：点进会话时先画它（见 [ChatMessageStore]）。 */
+    const val CHAT_MESSAGES = "chat_messages.json"
 }
 
 /**
@@ -78,6 +83,8 @@ fun cantaAppDependencies(
     // 消息页的会话列表落盘：冷启动那一屏要能先画出来，而不是转几秒等网络。
     // 这里绑一次就够，之后写入由 ConversationCache 自己派到后台。
     ConversationCache.bind(ConversationStore(storage(StoredData.CONVERSATIONS)))
+    // 聊天页同理：最近几个会话的最后几条也落盘，点进去先有东西看。
+    ChatMessageCache.bind(ChatMessageStore(storage(StoredData.CHAT_MESSAGES)))
     val telemetry = Telemetry(
         client = client,
         platform = platformName,

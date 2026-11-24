@@ -20,9 +20,26 @@ object ChatMessageCache {
 
     private val entries = mutableMapOf<Long, List<ChatMessage>>()
 
+    /**
+     * 盘上那一份（见 [ChatMessageStore]）。
+     *
+     * 内存这份活不过进程，冷启动时它是空的——那正是「点进会话还要等几秒」的原因。接上磁盘之后，
+     * 最近几个会话的首屏从本地文件里直接读出来。
+     */
+    private var store: ChatMessageStore? = null
+
+    /** 接上磁盘缓存。App 启动时调一次。 */
+    fun bind(store: ChatMessageStore) {
+        this.store = store
+    }
+
     /** 这个会话上次画出来的那些；没看过就是 null（第一次进，或者刚被清掉）。 */
-    fun get(conversationId: Long): List<ChatMessage>? =
-        if (conversationId <= 0L) null else entries[conversationId]
+    fun get(conversationId: Long): List<ChatMessage>? {
+        if (conversationId <= 0L) return null
+        entries[conversationId]?.let { return it }
+        // 冷启动：内存空，但盘上可能有最近几个会话的最后几条。
+        return store?.read(conversationId)?.takeIf { it.isNotEmpty() }
+    }
 
     /**
      * 整份换掉。
@@ -41,6 +58,7 @@ object ChatMessageCache {
         } else {
             messages.sortedBy { it.id }.takeLast(LIMIT)
         }
+        store?.write(conversationId, messages)
     }
 
     /** 丢掉一条会话的缓存（清空聊天记录之后用）。 */
