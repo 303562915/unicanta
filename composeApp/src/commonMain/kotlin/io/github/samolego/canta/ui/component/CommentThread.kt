@@ -8,9 +8,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -913,8 +913,21 @@ private fun CommentActions(
 private val CommentSendPink = Color(0xFFFE2C55)
 
 /**
+ * 评论输入框的形状：14dp 圆角矩形，不是胶囊。
+ *
+ * 按截图量的：1080px 宽的画面上，框高约 152px、圆角按左边缘 8px 处下沉 18px 反推约 43px，
+ * 43px / 3x ≈ 14dp。抖音那种框是「一块圆角灰板」，做成 percent = 50 的胶囊会跟它不像。
+ */
+private val CommentFieldShape = RoundedCornerShape(14.dp)
+
+/** 评论输入框的底色：浅色 #F3F3F3、深色 #2C2C2E，都不带描边（截图里框上没有边线）。 */
+@Composable
+private fun commentFieldFill(): Color =
+    if (isSystemInDarkTheme()) Color(0xFF2C2C2E) else Color(0xFFF3F3F3)
+
+/**
  * The composer every comment page ends with: one quiet pill field and the send button. The field
- * asks for a comment on its own — "发条评论，和大家一起讨论" — and names the person it answers once
+ * asks for a comment on its own — "分享你此刻的想法" — and names the person it answers once
  * one was picked, the way a short-video composer does it. Picking a comment brings the field up
  * focused, so the answer starts where the thumb landed.
  */
@@ -1062,11 +1075,14 @@ fun CommentComposer(
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The field: a white pill with a hairline for an edge, the height of the keys that
-                    // sit in it. White rather than a tint — a comment box is paper under the text,
-                    // and the theme's container colour turned it into a pale blue control. The
-                    // hairline is what keeps white on a white page.
+                    // 输入框：抖音是**浅灰底、无描边、圆角约 14dp 的圆角矩形**，不是白底胶囊。
+                    // 截图取色：底色 #F3F3F3，左右各留 32px（约 11dp）贴边，高约 152px（约 50dp），
+                    // 圆角按左边缘在 8px 处下沉 18px 反推约 14dp。所以这里不能用 percent=50 的胶囊，
+                    // 也不能留一圈边框——灰底自己在浅色页面上就有边界。
                     //
+                    // 它会随写的字长高——一行写满就换行、整条变高——上限是一掌的行数，超过就滚动。
+                    // 滚动器挂在这个 Box 上而不是字段里：字段本身从不在内部滚，贴纸才能按自己那一行的
+                    // 量测盖在它代表的那一个字上面。
                     // It grows with what is written — a comment that runs past the edge of the line
                     // wraps and the bar gets taller — up to a palm's worth of lines; past that the
                     // box stops growing and scrolls. The scroll sits outside the field on purpose:
@@ -1076,11 +1092,10 @@ fun CommentComposer(
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            // One line's height at the least, a palm's worth at most.
-                            .heightIn(min = 46.dp, max = 140.dp)
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(inputFieldColor())
-                            .border(1.dp, inputFieldBorderColor(), RoundedCornerShape(percent = 50))
+                            // 一行高最少 48dp（截图里约 50dp），最多一掌。
+                            .heightIn(min = 48.dp, max = 140.dp)
+                            .clip(CommentFieldShape)
+                            .background(commentFieldFill())
                             .clickable { focusRequester.requestFocus() },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -1088,7 +1103,7 @@ fun CommentComposer(
                             modifier = Modifier
                                 .weight(1f)
                                 .verticalScroll(fieldScroll)
-                                .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                                .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
                         ) {
                             // The field shows the stickers, not the tokens: "[偷笑]" is how a
                             // comment travels through the clipboard and the backend, but a person
@@ -1194,7 +1209,7 @@ fun CommentComposer(
                                         text = if (replyToName.isNotEmpty()) {
                                             "回复 @$replyToName"
                                         } else {
-                                            "发条评论，和大家一起讨论"
+                                            "分享你此刻的想法"
                                         },
                                         fontSize = 14.sp,
                                         lineHeight = 19.sp,
