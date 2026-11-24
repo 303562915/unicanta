@@ -1,12 +1,7 @@
--- 只读核对三件事：
---   1. 「群聊AI」(member = 'ai') 是不是两个官方群的成员；
---   2. 群主看 conversation_detail 拿得到人数与成员表；
---   3. 普通成员看同一个群，人数是 0、成员表是空（他们不该读到这两个群的规模）。
-
-select conversation_id, member, member_name
-  from public.conversation_members
- where member = 'ai'
- order by conversation_id;
+-- 只读核对三件事（Management API 只回最后一条语句的结果，所以最要紧的放最后）：
+--   1. 群主看 conversation_detail 拿得到人数与成员表；
+--   2. 普通成员看同一个群，人数是 0、成员表是空（他们不该读到这两个群的规模）；
+--   3. 「群聊AI」(member = 'ai') 是不是两个官方群的成员。
 
 select (public.conversation_detail('10003', 18) ->> 'member_count') as owner_sees_count,
        jsonb_array_length(public.conversation_detail('10003', 18) -> 'members') as owner_sees_members,
@@ -23,3 +18,8 @@ with other as (
 select (select member from other) as sampled_member,
        (public.conversation_detail((select member from other), 18) ->> 'member_count') as other_sees_count,
        jsonb_array_length(public.conversation_detail((select member from other), 18) -> 'members') as other_sees_members;
+
+select conversation_id, member, member_name
+  from public.conversation_members
+ where member = 'ai'
+ order by conversation_id;
