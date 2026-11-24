@@ -320,43 +320,71 @@ jobs:
 
       - name: 🖼️ Mirror to image bed
         if: steps.development_publication.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # 图床（cloudflare-imgbed）的直链是公开免鉴权的，`/file/<id>` 会按扩展名给出
-          # `text/html` + `Content-Disposition: inline`，所以整份页面 + 两份 json 直接挂上去就是
-          # 一个能用的下载页：https://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html
+          # `text/html` / `application/json` + `Content-Disposition: inline`，所以整份页面 + 两份 json
+          # 直接挂上去就是一个能用的下载页：https://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html
           #
-          # 用固定的文件名覆盖（overwrite=1），直链才稳定；图床那边有 30 天边缘缓存，
-          # 页面里的 fetch 已经带了 `?v=<时间戳>`，所以数据每次都是新的。
+          # APK 也挂上去（`unicanta/apk/latest.apk`，固定名覆盖上传）：图床只有一个文件名，
+          # 每次发布覆盖掉旧的那份，**旧的 APK 自动消失**，不会在图床上越堆越多。
+          # 覆盖后同一个直链还带 30 天边缘缓存，所以写进 json 的链接带 `?v=<版本>`，页面每次拿到新的。
           BED_URL="https://cloudflare-imgbed-erh.pages.dev/api/upload"
+          BED_BASE="https://cloudflare-imgbed-erh.pages.dev/file"
           BED_TOKEN="imgbed_a9ca1aaf9b3ada8ef67725bc04122824f1db3123dc4a5b46434f1fad2c24cb20"
-          FOLDER="unicanta/download"
-          MIRROR_URL="https://cloudflare-imgbed-erh.pages.dev/file/$FOLDER/index.html"
+          PAGE_FOLDER="unicanta/download"
+          APK_FOLDER="unicanta/apk"
+          MIRROR_URL="$BED_BASE/$PAGE_FOLDER/index.html"
 
+          # upload <本地路径> <文件名> <MIME> <目录> → stdout 只有图床直链
           upload() {
-            local path="$1" name="$2" type="$3"
             local resp
             resp=$(curl -sS --fail-with-body -X POST "$BED_URL" \
-              -F "file=@$path;type=$type;filename=$name" \
+              -F "file=@$1;type=$3;filename=$2" \
               -F "uid=$BED_TOKEN" \
-              -F "fileName=$name" \
-              -F "folder=$FOLDER" \
+              -F "fileName=$2" \
+              -F "folder=$4" \
               -F "overwrite=1") || return 1
-            echo "$resp"
-            echo "$resp" | jq -e '.code == 0 and (.url | length > 0)' > /dev/null || return 1
+            echo "$resp" >&2
+            echo "$resp" | jq -er '.url' || return 1
+          }
+
+          # mirror_apk <json> <通道名> <release tag>
+          mirror_apk() {
+            local json="$1" channel="$2" tag="$3" name ver url stamped
+            name=$(jq -r '.file_name // empty' "$json")
+            ver=$(jq -r '.version_name // empty' "$json")
+            if [ -z "$name" ] || [ -z "$tag" ]; then
+              echo "$channel: 没有可镜像的 APK（跳过）"
+              return 0
+            fi
+            mkdir -p apk
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir apk --clobber
+            url=$(upload "apk/$name" latest.apk application/vnd.android.package-archive "$APK_FOLDER") || return 1
+            stamped="$url?v=$ver"
+            jq --arg u "$stamped" '.file_bed = $u' "$json" > "$json.tmp" && mv "$json.tmp" "$json"
+            echo "$channel: APK → $stamped"
           }
 
           # 镜像是锦上添花：失败只在日志里记一条，不让下载页本身的发布变红。
           OK=true
-          upload _site/index.html index.html text/html || OK=false
-          upload _site/latest.json latest.json application/json || OK=false
-          upload _site/development.json development.json application/json || OK=false
+          mirror_apk _site/development.json development dev || OK=false
+          STABLE_TAG=$(jq -r '.tag // empty' _site/latest.json)
+          if [ -n "$STABLE_TAG" ]; then
+            mirror_apk _site/latest.json stable "$STABLE_TAG" || OK=false
+          fi
+          upload _site/index.html index.html text/html "$PAGE_FOLDER" > /dev/null || OK=false
+          upload _site/latest.json latest.json application/json "$PAGE_FOLDER" > /dev/null || OK=false
+          upload _site/development.json development.json application/json "$PAGE_FOLDER" > /dev/null || OK=false
           if [ "$OK" != true ]; then
             echo "::warning::图床镜像没传全，GitHub Pages 那一份不受影响"
           fi
           {
             echo ""
             echo "- 图床镜像：$MIRROR_URL"
+            echo "- 图床 APK：$BED_BASE/$APK_FOLDER/latest.apk"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🚀 Push to gh-pages
