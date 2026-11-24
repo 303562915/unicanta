@@ -362,6 +362,10 @@ fun ChatScreen(
     var sending by remember { mutableStateOf(false) }
     var sendFailed by remember { mutableStateOf(false) }
     var loadingEarlier by remember { mutableStateOf(false) }
+    // 顶栏「更多」菜单里的两个开关。状态来自会话列表那一行——会话详情里没有置顶/免打扰这两列，
+    // 而菜单要按真实状态说话（已经置顶就该写「取消置顶」，写反了等于每次点都在猜）。
+    var pinned by remember(conversationId) { mutableStateOf(false) }
+    var muted by remember(conversationId) { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
     /** 表情面板开没开：和 [showMore] 互斥，拉开一个就把另一个收回去。 */
     var showEmotions by remember { mutableStateOf(false) }
@@ -392,6 +396,32 @@ fun ChatScreen(
     fun dismissKeyboard() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
+    }
+
+    /**
+     * 顶栏菜单里的「置顶 / 免打扰」：先按点击后的样子画，服务端说不行再退回去。
+     *
+     * 这两下是「我这么想」而不是「这样一定行」——会话列表是下一次进消息页才重新拉的，
+     * 乐观更新让人立刻看到勾选变了，失败时退回原样，不需要弹一句错误提示。
+     */
+    fun togglePin() {
+        val target = !pinned
+        pinned = target
+        scope.launch {
+            val ok = runCatching { repository.pinConversation(owner, conversationId, target) }
+                .getOrDefault(false)
+            if (!ok) pinned = !target
+        }
+    }
+
+    fun toggleMute() {
+        val target = !muted
+        muted = target
+        scope.launch {
+            val ok = runCatching { repository.setMuted(owner, conversationId, target) }
+                .getOrDefault(false)
+            if (!ok) muted = !target
+        }
     }
     /**
      * 这一条草稿里点名了谁，存身份号码而不是名字：人可能在发出之前改名，号码不会。
@@ -480,6 +510,12 @@ fun ChatScreen(
         loading = false
         repository.markRead(owner, conversationId)
         detail = repository.conversationDetail(owner, conversationId)
+        // 顺手把「我把它置顶了没有 / 免打扰了没有」取回来：顶栏菜单的那两项要按它写文案。
+        // 失败就当没有（保持不置顶、不免打扰），点一下仍然会真的改一次。
+        val row = runCatching { repository.conversationsFor(owner) }
+            .getOrNull()?.firstOrNull { it.id == conversationId }
+        pinned = row?.pinned == true
+        muted = row?.muted == true
     }
 
     /**
@@ -991,6 +1027,10 @@ fun ChatScreen(
                 onNavigateBack = onNavigateBack,
                 onOpenGroupInfo = onOpenGroupInfo,
                 onOpenProfile = onOpenProfile,
+                pinned = pinned,
+                muted = muted,
+                onTogglePin = { togglePin() },
+                onToggleMute = { toggleMute() },
             )
         },
     ) { padding ->
@@ -1423,8 +1463,9 @@ fun ChatScreen(
 /**
  * 顶栏：回去的箭头 + 首字头像 + 名字（群聊挂人数）+ 右边两个圆按钮。
  *
- * 图标集里没有电话和相机，通话用 [FlGlyphs.profiles]、更多用 [FlGlyphs.more]；
- * 两个都走 [onOpenGroupInfo]——这一层没有单独的通话实现，点开的是同一个资料页。
+ * 图标集里没有电话和相机，通话用 [FlGlyphs.profiles]、更多用 [FlGlyphs.more]。
+ * [FlGlyphs.profiles] 直接走 [onOpenGroupInfo]（这一层没有通话实现，点开的是群资料）；
+ * [FlGlyphs.more] 不再直接跳页，而是展开一列操作（置顶 / 免打扰 / 群设置），照抖音群聊那一下。
  *
  * 左边的圆头像和标题也是一块入口：群聊点进群资料（[onOpenGroupInfo]），
  * 私聊点进对面那个人的主页（[onOpenProfile]，身份用 [peerOwner]）。私聊还没拿到对方身份时
@@ -1441,8 +1482,20 @@ private fun ChatTopBar(
     onNavigateBack: () -> Unit,
     onOpenGroupInfo: () -> Unit,
     onOpenProfile: (String) -> Unit,
+    /**
+     * 这一页的置顶 / 免打扰现状。菜单按它说话：「置顶聊天」还是「取消置顶」。
+     *
+     * 两个回调都可空：私聊那一侧将来若不给，菜单里就少那一项，而不是留一个点了没反应的入口。
+     */
+    pinned: Boolean = false,
+    muted: Boolean = false,
+    onTogglePin: (() -> Unit)? = null,
+    onToggleMute: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    // 右上角那个「更多」菜单开没开。锚在按钮上的 DropdownMenu：抖音把这几项展开成一列，
+    // 而不是直接跳页——跳转本身没变，只是先让人看见有哪些动作。
+    var topMenuOpen by remember { mutableStateOf(false) }
     // 标题就是群名，**不挂人数**：内测群人少，人数不该出现在顶栏（见 ChatScreen 里 members 的注释）。
     val heading = title
     // 私聊的入口需要一个具体的人：拿不到身份（空串）就返回 null，整块不响应。
@@ -1512,13 +1565,57 @@ private fun ChatTopBar(
                 iconSize = 18.dp,
             )
             Spacer(Modifier.width(2.dp))
-            FlBarButton(
-                glyph = FlGlyphs.more,
-                contentDescription = "更多",
-                onClick = onOpenGroupInfo,
-                size = 36.dp,
-                iconSize = 18.dp,
-            )
+            // 右上角这个圆按钮照抖音群聊：点开在右侧展开一列操作（置顶 / 免打扰 / 群设置），
+            // 而不是像以前那样整块直接跳资料页——那两个入口现在都在这个菜单里，跳转逻辑一模一样。
+            Box {
+                FlBarButton(
+                    glyph = FlGlyphs.more,
+                    contentDescription = "更多",
+                    onClick = { topMenuOpen = true },
+                    size = 36.dp,
+                    iconSize = 18.dp,
+                )
+                DropdownMenu(
+                    expanded = topMenuOpen,
+                    onDismissRequest = { topMenuOpen = false },
+                ) {
+                    onTogglePin?.let { toggle ->
+                        DropdownMenuItem(
+                            text = { Text(if (pinned) "取消置顶" else "置顶聊天", fontSize = 14.sp) },
+                            onClick = {
+                                topMenuOpen = false
+                                toggle()
+                            },
+                        )
+                    }
+                    onToggleMute?.let { toggle ->
+                        DropdownMenuItem(
+                            text = { Text(if (muted) "取消消息免打扰" else "消息免打扰", fontSize = 14.sp) },
+                            onClick = {
+                                topMenuOpen = false
+                                toggle()
+                            },
+                        )
+                    }
+                    // 群聊这一项是群设置；私聊没有群设置，给的是对面那个人的主页。
+                    val secondary: (() -> Unit)? = if (isGroup) {
+                        onOpenGroupInfo
+                    } else if (openPeer != null) {
+                        openPeer
+                    } else {
+                        null
+                    }
+                    secondary?.let { open ->
+                        DropdownMenuItem(
+                            text = { Text(if (isGroup) "群设置" else "查看资料", fontSize = 14.sp) },
+                            onClick = {
+                                topMenuOpen = false
+                                open()
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }
