@@ -111,6 +111,8 @@ import io.github.samolego.canta.ui.component.PackageSearchField
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.CheckboxRow
+import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlTopBarCompactHeight
@@ -243,8 +245,12 @@ fun PlanDetailScreen(
      * nothing on the server changes, and the page forgets it on the way out.
      */
     var hiddenComments by remember { mutableStateOf(setOf<Long>()) }
-    /** The "use this plan" tap that has to be confirmed, because the plan is for another phone. */
-    var confirmForeign by remember { mutableStateOf(false) }
+    /**
+     * The "use this plan" tap waiting for confirmation. Every plan is asked about, not only one for
+     * another phone: what a plan proves is that somebody else's phone survived it, and that is a
+     * claim the reader has to check against their own build before turning it into uninstalls.
+     */
+    var confirmUse by remember { mutableStateOf(false) }
     /**
      * How the comment threads are ordered. A reading preference, not a stored one: the page opens
      * on newest every time, because that is what "what did people say about this plan" means.
@@ -633,9 +639,7 @@ fun PlanDetailScreen(
                     foreign = !loaded.matches(profile),
                     // Another model's plan is applied the same way — Canta does not block it — but the
                     // tap asks first, because nothing about it was proven on this phone.
-                    onUsePlan = {
-                        if (loaded.matches(profile)) onUsePlan(loaded.packages) else confirmForeign = true
-                    },
+                    onUsePlan = { confirmUse = true },
                     onReply = { comment ->
                         replyTo = comment
                         submitFailed = false
@@ -710,29 +714,133 @@ fun PlanDetailScreen(
         }
     }
 
-    // The one place a plan for another phone is turned into a selection on this one: say what will
-    // happen, then do exactly that. The wording states the limit — nothing here blocks an uninstall.
-    if (confirmForeign) {
-        val planDevice = plan?.deviceLabel.orEmpty().ifBlank { "未知机型" }
-        val thisDevice = profile?.shortLabel() ?: "-"
-        CantaDialog(
-            onDismissRequest = { confirmForeign = false },
-            title = "机型不符",
-            buttons = {
-                TextButton(onClick = { confirmForeign = false }) { Text("取消") }
-                Button(onClick = {
-                    confirmForeign = false
-                    plan?.let { onUsePlan(it.packages) }
-                }) { Text("仍然使用") }
-            },
-        ) {
+    // The one place a plan becomes a selection on this phone: say whose phone it was proven on and
+    // what this phone runs, then do exactly what the reader confirmed.
+    if (confirmUse) {
+        plan?.let { current ->
+            PlanUseDialog(
+                plan = current,
+                profile = profile,
+                onDismiss = { confirmUse = false },
+                onConfirm = {
+                    confirmUse = false
+                    onUsePlan(current.packages)
+                },
+            )
+        }
+    }
+}
+
+/** A plan past this many packages is one tap away from a phone that will not boot again. */
+private const val BIG_PLAN_PACKAGES = 100
+
+/** How many packages a first try should carry: few enough to name the one that broke it. */
+private const val FIRST_TRY_PACKAGES = 10
+
+/**
+ * 使用方案前的确认。
+ *
+ * 方案不是安全承诺——它只证明了别人那台手机重启后还在。所以这里不拦截，只把判断依据摊开：
+ * 这张清单是在哪台机器上验的、本机跑的是什么、哪些对不上。机型/版本有出入、方案没标注机型，
+ * 或者一次要卸一百个包，就得把话读进心里并勾选确认，按钮才点得下去。
+ */
+@Composable
+private fun PlanUseDialog(
+    plan: CommunityPlan,
+    profile: DeviceProfile?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    var acknowledged by remember { mutableStateOf(false) }
+    val big = plan.packages.size >= BIG_PLAN_PACKAGES
+    val unknownPlan = plan.model.isBlank()
+    val modelSame = unknownPlan || profile == null ||
+        plan.model.equals(profile.model, ignoreCase = true)
+    val romSame = plan.rom.isBlank() || profile == null ||
+        (plan.rom.equals(profile.rom, ignoreCase = true) && plan.romVersion == profile.romVersion)
+    val buildSame = plan.sameBuild(profile)
+    val mismatch = !modelSame || !romSame || !buildSame
+    // Unknown counts as needing a confirmation: "nobody said" is not "it fits".
+    val needsAck = mismatch || big || unknownPlan
+    val planLabel = plan.deviceLabel.ifBlank { "没有标注机型和系统版本" }
+    val thisLabel = profile?.shortLabel() ?: "读不到本机机型"
+
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = if (big) "大批量方案，先看一眼" else "使用前确认",
+        widthFraction = WIDE_DIALOG_WIDTH,
+        scrollable = true,
+        buttons = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+            Button(
+                onClick = { if (acknowledged || !needsAck) onConfirm() },
+                enabled = acknowledged || !needsAck,
+            ) {
+                Text(if (big) "仍然使用这 ${plan.packages.size} 个包" else "仍然使用")
+            }
+        },
+    ) {
+        Text(
+            text = "方案来自：$planLabel",
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = colors.onSurface,
+        )
+        Text(
+            text = "本机：$thisLabel",
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = colors.onSurface,
+            modifier = Modifier.padding(top = 3.dp),
+        )
+        // 一行判定，用颜色说话：对上不是"可以放心"，对不上也不是"一定出事"。
+        val verdict = when {
+            profile == null -> "读不到本机机型，没法替你核对——请自己对照下面的说明判断。"
+            unknownPlan -> "这个方案没有标注机型（或标注不全），无法核对——按包名自己判断。"
+            !modelSame || !romSame -> "机型和/或系统版本对不上：这不是在本机上验证过的方案。"
+            !buildSame -> "机型一致，但 build 不同（方案 ${plan.romBuild}，本机 ${profile?.romBuild ?: "未知"}）：包列表可能已经变了。"
+            else -> "机型与系统版本一致；同一机型换了 build 也可能有出入，用前再核一遍。"
+        }
+        Text(
+            text = verdict,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            fontWeight = if (mismatch) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (mismatch) colors.error else colors.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Text(
+            text = "这是别人在自己手机上验过的一张包名清单，不是对你手机的安全承诺。" +
+                "卸载后能否装回，取决于系统分区和手上有没有安装包；设备起不来时，能走的路通常只剩刷机。" +
+                "用不用、用哪几个，由你自己核对，并承担全部结果。",
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        if (big) {
             Text(
-                text = "这套方案来自「$planDevice」，本机是「$thisDevice」。\n\n" +
-                    "使用不会被拦截：Canta 只把方案里的包选上，不会因为机型不同而阻止卸载，" +
-                    "也不会替你校验这些包在这台手机上安不安全。",
+                text = "一次套用 ${plan.packages.size} 个包：出问题时往往连开机都进不去，也就没法逐个排除。" +
+                    "建议先只挑 $FIRST_TRY_PACKAGES 个以内的包试一遍，重启确认正常，再分批往下走" +
+                    "（方案页的搜索框可以按包名挑）。",
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = colors.error,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        if (needsAck) {
+            CheckboxRow(
+                checked = acknowledged,
+                onCheckedChange = { acknowledged = it },
+                label = if (big) {
+                    "我已核对机型与系统版本，并知道 ${plan.packages.size} 个包一次卸完的后果由我自己承担"
+                } else {
+                    "我已核对机型与系统版本，后果由我自己承担"
+                },
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
             )
         }
     }

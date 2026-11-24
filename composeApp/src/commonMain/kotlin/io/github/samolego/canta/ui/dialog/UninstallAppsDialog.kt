@@ -15,6 +15,7 @@ import io.github.samolego.canta.generated.resources.community_bootloop_warning
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.generated.resources.records_action_disable
 import io.github.samolego.canta.generated.resources.reset_to_factory_version
+import io.github.samolego.canta.generated.resources.uninstall_huge_batch_warning
 import io.github.samolego.canta.generated.resources.uninstall_large_batch_warning
 import io.github.samolego.canta.generated.resources.uninstall_new_packages
 import io.github.samolego.canta.generated.resources.uninstall_new_packages_more
@@ -27,6 +28,12 @@ import org.jetbrains.compose.resources.stringResource
 
 /** Most newly added package names listed in the dialog; the rest is summarised. */
 private const val MAX_SHOWN_NEW = 8
+
+/**
+ * Past this many packages the dialog stops talking about "a large batch" and says what actually
+ * happens: a phone that does not come back, and no way to tell which of them did it.
+ */
+private const val HUGE_BATCH = 100
 
 @Composable
 fun UninstallAppsDialog(
@@ -43,6 +50,7 @@ fun UninstallAppsDialog(
 ) {
     var resetToFactory by rememberSaveable { mutableStateOf(false) }
     val largeBatch = isLargeBatch(appCount)
+    val hugeBatch = appCount >= HUGE_BATCH
     val shownNew = newPackages.take(MAX_SHOWN_NEW)
 
     CantaDialog(
@@ -82,7 +90,12 @@ fun UninstallAppsDialog(
                 Text(stringResource(Res.string.uninstall_new_packages_more, newPackages.size - shownNew.size))
             }
         }
-        if (largeBatch) {
+        if (hugeBatch) {
+            Text(
+                text = stringResource(Res.string.uninstall_huge_batch_warning, appCount),
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else if (largeBatch) {
             Text(stringResource(Res.string.uninstall_large_batch_warning))
         }
         // A single app from the list is routine, so the reminder stays out of the way; the moment a

@@ -323,6 +323,7 @@
     <string name="app_list_incomplete">Shizuku 没在运行，这次只读到系统允许本应用看到的那部分应用，列表可能不全。启动 Shizuku 后下拉刷新。</string>
     <string name="tweaks_package_refused">包名不对，或者是那几类动不得的包（桌面、系统界面、设置、电话、安装器、输入法）。</string>
     <string name="uninstall_large_batch_warning">一次卸这么多太多：建议分小批卸载，中间重启一次，出问题时才知道是哪个包。</string>
+    <string name="uninstall_huge_batch_warning">一次卸 %1$d 个包太多：真起不来时屏幕上没有任何东西告诉你坏在哪个包，通常只能双清或刷机。建议先挑十个以内的包试一遍，重启确认正常，再分批继续。</string>
     <string name="uninstall_recovery_hint">先留好退路：保持 USB 调试开启，记下包名，并备份重要数据。卸错包可能让手机开不了机。</string>
     <string name="uninstall_or_freeze_hint">停用只是把它冻住，应用和数据都还在设备上，点一下就能解冻；卸载会腾出空间，但没有副本就装不回来。</string>
     <string name="uninstall_new_packages">这些包不在你上次确认的批次里，确认你认识它们：%1$s</string>

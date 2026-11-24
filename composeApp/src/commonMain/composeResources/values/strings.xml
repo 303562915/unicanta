@@ -221,6 +221,7 @@
     <string name="community_verdict_unclear">Unclear</string>
     <string name="community_bootloop_warning">Community reports say at least one of these apps can cause a bootloop.</string>
     <string name="uninstall_large_batch_warning">That is a large batch. Uninstall a few apps at a time and reboot in between, so you can tell which package caused a problem.</string>
+    <string name="uninstall_huge_batch_warning">%1$d apps in one go: if the phone does not boot afterwards, nothing on screen tells you which package did it, and a factory reset or a ROM flash is usually the only way back. Try ten or fewer first, reboot, then continue in batches.</string>
     <string name="uninstall_recovery_hint">Make sure you can recover first: keep USB debugging enabled, write down the package names, and back up what matters. A wrong package can stop the phone from booting.</string>
     <string name="uninstall_or_freeze_hint">Freezing keeps the app on the device, data included, and undoes with one tap. Uninstalling saves the space and cannot be undone without a copy of the app.</string>
     <string name="safety_tab_apps">Top removed</string>
