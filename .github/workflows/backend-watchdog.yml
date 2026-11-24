@@ -121,7 +121,7 @@ jobs:
           # 标题里必须带 UniCanta：仓库这个钉钉机器人配了自定义关键词，不含关键词的消息会被它丢掉（errcode 310000）。
           title="unicanta 后端存储变慢（还没挂，提前预警）"
           payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg w "${WORST:-?}" \
-            '{msgtype:"markdown",markdown:{title:$t,text:("### ⚠️ "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n- checkpoint 最慢："+$w+"s（正常 < 1s，> 5s 就开始拖慢查询）\n- 建议：现在去 Dashboard 看实例状态；继续恶化会变成连接池耗尽、全站 5xx")}}')
+            '{msgtype:"markdown",markdown:{title:$t,text:("### ⚠️ "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n- checkpoint 最慢："+$w+"s（正常 < 1s，> 5s 就开始拖慢查询）\n- 建议：现在去 Dashboard 看实例状态；继续恶化会变成连接池耗尽、全站 5xx\n\nrr")}}')
           resp=$(curl -sS -m 20 -X POST "$DING" -H 'Content-Type: application/json' -d "$payload" || echo '{"errcode":"curl-failed"}')
           echo "钉钉返回：$resp"
           echo "$resp" | grep -q '"errcode":0' || echo "::warning::钉钉没有接受这条消息（检查机器人关键词/签名）"
@@ -143,7 +143,7 @@ jobs:
             line="- 处理：自动重启后 8 分钟内仍未恢复"
           fi
           payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg l "$line" \
-            '{msgtype:"markdown",markdown:{title:$t,text:("### "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n"+$l+"\n- 现象：数据库连续 3 次探测失败（App 会看到所有社区页面空着）")}}')
+            '{msgtype:"markdown",markdown:{title:$t,text:("### "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n"+$l+"\n- 现象：数据库连续 3 次探测失败（App 会看到所有社区页面空着）\n\nrr")}}')
           resp=$(curl -sS -m 20 -X POST "$DING" -H 'Content-Type: application/json' -d "$payload" || echo '{"errcode":"curl-failed"}')
           echo "钉钉返回：$resp"
           echo "$resp" | grep -q '"errcode":0' || echo "::warning::钉钉没有接受这条消息（检查机器人关键词/签名）"
