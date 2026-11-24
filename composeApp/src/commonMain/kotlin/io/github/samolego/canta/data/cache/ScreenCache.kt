@@ -66,6 +66,19 @@ object ScreenCache {
     }
 
     /**
+     * 快照格式的版本。
+     *
+     * 改它就是一次性作废所有旧快照：盘上那些键在 `v2:` 前缀下全部落空，页面退回一次正常加载，
+     * 而不是继续把一份可能写坏/格式过时的数据画出来。用户不必去清数据。
+     */
+    @PublishedApi
+    internal const val SCHEMA_VERSION = 2
+
+    /** 把调用方的键映射到带版本号的槽位。 */
+    @PublishedApi
+    internal fun versioned(key: String): String = "v$SCHEMA_VERSION:$key"
+
+    /**
      * 把盘上那份读进 [texts]（只读文本，不反序列化）。
      *
      * 第一次 `get`/`put` 时调；读失败（文件坏了、权限没了）就当盘上是空的，不把异常抛给界面。
@@ -83,11 +96,12 @@ object ScreenCache {
     inline fun <reified T> get(key: String): T? {
         if (key.isEmpty()) return null
         ensureLoaded()
-        (entries[key] as? T)?.let { return it }
+        val slot = versioned(key)
+        (entries[slot] as? T)?.let { return it }
         // 冷启动：内存空，盘上那份文本还在，解出来先用。
-        val text = texts[key] ?: return null
+        val text = texts[slot] ?: return null
         val decoded = runCatching { json.decodeFromString<T>(text) }.getOrNull() ?: return null
-        entries[key] = decoded as Any
+        entries[slot] = decoded as Any
         return decoded
     }
 
@@ -95,17 +109,19 @@ object ScreenCache {
     inline fun <reified T> put(key: String, value: T) {
         if (key.isEmpty()) return
         ensureLoaded()
-        entries[key] = value as Any
+        val slot = versioned(key)
+        entries[slot] = value as Any
         // 编码失败（模型没加 @Serializable 之类）不该让页面崩：退回「只在内存里」，下一次还是会画对。
-        runCatching { json.encodeToString(value) }.onSuccess { texts[key] = it }
+        runCatching { json.encodeToString(value) }.onSuccess { texts[slot] = it }
         scheduleFlush()
     }
 
     /** 丢掉一屏（清空记录、退出某个对象之后用）。 */
     fun remove(key: String) {
         if (key.isEmpty()) return
-        entries.remove(key)
-        texts.remove(key)
+        val slot = versioned(key)
+        entries.remove(slot)
+        texts.remove(slot)
         scheduleFlush()
     }
 

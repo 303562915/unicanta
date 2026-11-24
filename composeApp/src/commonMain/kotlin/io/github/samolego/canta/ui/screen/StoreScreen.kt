@@ -174,7 +174,8 @@ internal fun StoreScreen(
         orders = repo.myPointOrders(who)
         loading = false
         // 存回本地：下次进来先画这一份，再等网络顶上去。
-        if (who.isNotEmpty()) {
+        // 空货架不写：一次失败/空响应不该把已经看到的商品从本地抹掉。
+        if (who.isNotEmpty() && offers.isNotEmpty()) {
             ScreenCache.put(storeCacheKey(who), StoreSnapshot(balance, offers, orders))
         }
     }

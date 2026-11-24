@@ -205,7 +205,9 @@ internal fun PostsScreen(
             val merged = stableMerge(posts, fresh) { it.id }
             if (merged !== posts) {
                 posts = merged
-                ScreenCache.put(POSTS_CACHE_KEY, merged)
+                // 空回答不写缓存：一次失败或者后端返回空，不该把已经看到过的帖子从本地抹掉，
+                // 否则下次进来先画的是一张空表，看着就像「什么都没有」。
+                if (merged.isNotEmpty()) ScreenCache.put(POSTS_CACHE_KEY, merged)
             }
             error = null
         } else {
