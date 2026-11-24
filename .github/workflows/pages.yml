@@ -320,22 +320,21 @@ jobs:
 
       - name: 🖼️ Mirror to image bed
         if: steps.development_publication.outputs.proceed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # 图床（cloudflare-imgbed）的直链是公开免鉴权的，`/file/<id>` 会按扩展名给出
           # `text/html` / `application/json` + `Content-Disposition: inline`，所以整份页面 + 两份 json
           # 直接挂上去就是一个能用的下载页：https://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html
           #
-          # APK 也挂上去（`unicanta/apk/latest.apk`，固定名覆盖上传）：图床只有一个文件名，
-          # 每次发布覆盖掉旧的那份，**旧的 APK 自动消失**，不会在图床上越堆越多。
-          # 覆盖后同一个直链还带 30 天边缘缓存，所以写进 json 的链接带 `?v=<版本>`，页面每次拿到新的。
+          # **APK 不在这里传**：开发版包由 `development-release.yml` 的「Mirror APK to the image bed」
+          # 以 `unicanta/apk/latest-<构建号>.apk` 上传（每次一个新对象、带 sha256 校验，并删掉更早的
+          # `latest-<旧构建号>.apk`），`file_bed` 字段也在上面「🧬 Assemble site」里按构建号写好。
+          # 这一步骤曾经把两个通道都覆盖成固定名 `latest.apk`，结果是 dev 的链接指向了稳定版包——
+          # 别再往这里加 APK 上传，`file_bed` 也不要在这里改写。
           BED_URL="https://cloudflare-imgbed-erh.pages.dev/api/upload"
           BED_BASE="https://cloudflare-imgbed-erh.pages.dev/file"
           BED_TOKEN="imgbed_a9ca1aaf9b3ada8ef67725bc04122824f1db3123dc4a5b46434f1fad2c24cb20"
           PAGE_FOLDER="unicanta/download"
-          APK_FOLDER="unicanta/apk"
           MIRROR_URL="$BED_BASE/$PAGE_FOLDER/index.html"
 
           # upload <本地路径> <文件名> <MIME> <目录> → stdout 只有图床直链
@@ -351,30 +350,8 @@ jobs:
             echo "$resp" | jq -er '.url' || return 1
           }
 
-          # mirror_apk <json> <通道名> <release tag>
-          mirror_apk() {
-            local json="$1" channel="$2" tag="$3" name ver url stamped
-            name=$(jq -r '.file_name // empty' "$json")
-            ver=$(jq -r '.version_name // empty' "$json")
-            if [ -z "$name" ] || [ -z "$tag" ]; then
-              echo "$channel: 没有可镜像的 APK（跳过）"
-              return 0
-            fi
-            mkdir -p apk
-            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir apk --clobber
-            url=$(upload "apk/$name" latest.apk application/vnd.android.package-archive "$APK_FOLDER") || return 1
-            stamped="$url?v=$ver"
-            jq --arg u "$stamped" '.file_bed = $u' "$json" > "$json.tmp" && mv "$json.tmp" "$json"
-            echo "$channel: APK → $stamped"
-          }
-
           # 镜像是锦上添花：失败只在日志里记一条，不让下载页本身的发布变红。
           OK=true
-          mirror_apk _site/development.json development dev || OK=false
-          STABLE_TAG=$(jq -r '.tag // empty' _site/latest.json)
-          if [ -n "$STABLE_TAG" ]; then
-            mirror_apk _site/latest.json stable "$STABLE_TAG" || OK=false
-          fi
           upload _site/index.html index.html text/html "$PAGE_FOLDER" > /dev/null || OK=false
           upload _site/latest.json latest.json application/json "$PAGE_FOLDER" > /dev/null || OK=false
           upload _site/development.json development.json application/json "$PAGE_FOLDER" > /dev/null || OK=false
