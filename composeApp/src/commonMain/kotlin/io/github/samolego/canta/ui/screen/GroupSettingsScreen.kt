@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
+import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
@@ -942,16 +943,24 @@ private fun GroupMembersCard(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             items(members, key = { it.owner }) { member ->
+                // 「群聊AI」是群里的机器人，不是一个人：点它没有主页可进，也不该被群主踢掉。
+                val isBot = member.owner == AiSender
                 Column(
                     modifier = Modifier
                         .widthIn(max = 56.dp)
                         .clip(RoundedCornerShape(8.dp))
                         // 点开主页、长按踢人：两个动作挂在同一个手势上，分成两层会抢事件。
-                        // 不踢的人（非群主）长按没有回调，行为退化成"点了没反应"，和以前一样。
-                        .combinedClickable(
-                            onClick = { onOpenProfile(member.owner) },
-                            onLongClickLabel = if (kickable) "把这个人移出群聊" else null,
-                            onLongClick = if (kickable) ({ onKick(member) }) else null,
+                        // 机器人那一格两个都不挂——它没有主页，也不该从群里被移出去。
+                        .then(
+                            if (isBot) {
+                                Modifier
+                            } else {
+                                Modifier.combinedClickable(
+                                    onClick = { onOpenProfile(member.owner) },
+                                    onLongClickLabel = if (kickable) "把这个人移出群聊" else null,
+                                    onLongClick = if (kickable) ({ onKick(member) }) else null,
+                                )
+                            },
                         )
                         .padding(2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
