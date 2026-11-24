@@ -60,6 +60,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.history.RestoreMode
+import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.data.recommend.hasNewApplied
 import io.github.samolego.canta.data.recommend.newAppliedSince
 import io.github.samolego.canta.generated.resources.Res
@@ -1521,6 +1522,9 @@ private fun CantaNavigation(
                     },
                     // 发图片：相册由平台层拉起来，桌面/网页没有相册就回答 null，页面静默放弃。
                     pickImage = { platform.pickImage() },
+                    // 超 2.5MB 的图先压：平台有解码能力（Android）就压，没有就回答 null，
+                    // 页面据此说"换一张"，不会把原图硬塞上去。
+                    compressImage = { bytes -> platform.compressImage(bytes, ImageBed.MAX_BYTES) },
                     // 草稿：进来时把这一条上次没发完的话填回去，改动由页面防抖后写回。
                     initialDraft = chatDrafts.firstOrNull { it.first == conversationId }?.second.orEmpty(),
                     onDraftPersist = { text -> settingsViewModel.saveChatDraft(conversationId, text) },
@@ -1983,15 +1987,20 @@ private fun AppDetailRoute(
 /**
  * 通知栏那一行的正文。
  *
- * 后端的 `last_body` 对图片消息存的是 Storage 的对象路径而不是一句话（`message_send_image`
- * 把路径写进 `body`），把它原样摆进通知栏等于糊一串谁也读不懂的字符。所以"/" 开头又没有空格
- * 的那种字符串按图片处理——宁可说「[图片]」，也不假装那是一句话。
+ * 后端的 `last_body` 对图片消息存的是图片地址而不是一句话（`message_send_image` 把地址写进 `body`）：
+ * 新消息是图床的 `https://.../file/<id>`，老消息是 `chat-images` 的对象路径。把它原样摆进通知栏
+ * 等于糊一串谁也读不懂的字符，所以两种形状都按图片处理、只写「[图片]」：
+ * "/" 开头又没有空格的老路径，以及 http(s) 且带 `/file/` 的图床直链（人发的一句裸链接不会长这样，
+ * 所以这一条不会把分享的网址误判成图片）。
  */
 private fun noticeBody(lastBody: String): String {
     val text = lastBody.trim()
+    val looksLikeImageUrl = (text.startsWith("https://") || text.startsWith("http://")) &&
+        text.contains("/file/") && !text.contains(' ')
     return when {
         text.isEmpty() -> "新消息"
         text.startsWith("/") && !text.contains(' ') -> "[图片]"
+        looksLikeImageUrl -> "[图片]"
         // 通知栏正文两三行就是极限，长消息在通知里截断比撑成一大块更容易读；点进去是全文。
         text.length > 120 -> text.take(117) + "…"
         else -> text

@@ -6,6 +6,8 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -48,6 +50,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -60,6 +63,18 @@ class AndroidCantaPlatform(
 
     companion object {
         private const val TAG = "AndroidCantaPlatform"
+
+        /**
+         * 压缩后长边的上限（像素）。2048 够聊天里点开放大看，再大就只是流量：一张 4000×3000 的
+         * 手机照片按这个采样先减到 2000×1500，内存从 48MB 掉到 12MB，后面的质量循环才跑得动。
+         */
+        private const val COMPRESS_LONG_EDGE = 2048
+
+        /**
+         * 尺寸最多退几轮，每轮 ×0.75：2048 → 1536 → 1152 → 864。配合质量 90/80/70/60 四档，
+         * 一次调用最坏 4 轮 × 4 档 = 16 次 JPEG 编码；正常照片第一轮第一档就落地。
+         */
+        private const val COMPRESS_ROUNDS = 4
 
         /** One channel's error line in the install report: the cause, not the whole `pm` dump. */
         private const val INSTALL_ERROR_CHARS = 160
@@ -243,6 +258,74 @@ class AndroidCantaPlatform(
             pendingImage = null
         }
         return bytes
+    }
+
+    /**
+     * 把一张图压到 [maxBytes] 以内，返回 JPEG 字节；解不开、压不下去就回答 null。
+     *
+     * **同步、会占住线程几十到几百毫秒**（一张两千万像素的照片光是解码就要这么久），调用方
+     * （`ChatScreen.sendImage`）已经把它挪到 `Dispatchers.Default` 上再调，别在组合或主线程里直接调。
+     *
+     * 三步，上一步不够就进下一步：
+     *  1. 只读尺寸（`inJustDecodeBounds`，不解码像素），按 2 的幂设 `inSampleSize`，让长边落地
+     *     不超过 [COMPRESS_LONG_EDGE]（2048）。这一步决定后面会不会 OOM：原图 4000×3000 直接解
+     *     ARGB_8888 要 48MB，采样到 4 之后只剩 12MB。
+     *  2. 质量从 90 往下试到 60（每 10 一档），第一档 ≤ [maxBytes] 就返回。多数照片到这儿就完了。
+     *  3. 还不够就把尺寸乘 0.75 重来，最多 [COMPRESS_ROUNDS] 轮（2048 → 1536 → 1152 → 864）。
+     *     到最后一轮还超就回答 null——回去让人换一张，比硬塞一张 3MB 的进聊天好。
+     *
+     * 中间那张缩放过的位图用完就 `recycle()`：一段聊天连着发几张图时，不回收会攒出一堆
+     * 十几 MB 的 native 内存。
+     */
+    override fun compressImage(bytes: ByteArray, maxBytes: Int): ByteArray? {
+        if (bytes.isEmpty() || maxBytes <= 0) return null
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        // 2 的幂采样：BitmapFactory 只认 2 的幂，其余值会向下取到最近的 2 的幂。
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > COMPRESS_LONG_EDGE) {
+            sample *= 2
+        }
+        var current = runCatching {
+            BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sample },
+            )
+        }.getOrNull() ?: return null
+
+        try {
+            var round = 0
+            while (true) {
+                for (quality in 90 downTo 60 step 10) {
+                    val out = ByteArrayOutputStream()
+                    val encoded = runCatching {
+                        current.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                    }.getOrDefault(false)
+                    if (encoded && out.size() <= maxBytes) return out.toByteArray()
+                }
+                round++
+                if (round >= COMPRESS_ROUNDS) return null
+                val scaled = runCatching {
+                    Bitmap.createScaledBitmap(
+                        current,
+                        (current.width * 3 / 4).coerceAtLeast(1),
+                        (current.height * 3 / 4).coerceAtLeast(1),
+                        true,
+                    )
+                }.getOrNull() ?: return null
+                if (scaled !== current) {
+                    current.recycle()
+                    current = scaled
+                }
+            }
+        } finally {
+            if (!current.isRecycled) current.recycle()
+        }
     }
 
     // ------------------------------------------------------------------ 通知

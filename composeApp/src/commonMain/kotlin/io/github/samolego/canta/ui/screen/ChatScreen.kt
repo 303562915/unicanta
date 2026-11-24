@@ -86,6 +86,7 @@ import io.github.samolego.canta.data.community.LivePresence
 import io.github.samolego.canta.data.community.PersonCard
 import io.github.samolego.canta.data.community.ShareCard
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
@@ -101,8 +102,10 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlin.random.Random
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.jetbrains.compose.resources.painterResource
 
@@ -230,12 +233,12 @@ private val ChatQuickStickers = listOf("zan", "wulian", "meigui", "weixiao", "da
  *    滚到最顶时自动往回翻一页历史（[SocialRepository.messagesBefore]）。
  *  * 底部：一排快捷短语胶囊 + 输入栏（九宫格 / 输入框 / 语音或发送 / 表情 / 加号），
  *    表情拉开输入栏上方的表情面板（[EmotionPicker]），九宫格和加号拉开「更多」面板；
- *    面板里只有「图片」能用（[pickImage] 选图 → 上传 → 登记），视频/位置/文件点一下只给一句
+ *    面板里只有「图片」能用（[pickImage] 选图 → 超 2.5MB 先压 → 上图床 → 登记），视频/位置/文件点一下只给一句
  *    「只支持发图片」；两个面板互斥，拉开一个收起另一个。
  *
  * 后端只提供读一页（[SocialRepository.messagesFor]、[SocialRepository.messagesBefore]）、写一条
  * （[SocialRepository.sendMessage]、[SocialRepository.sendImageMessage]）、传一张图
- * （[SocialRepository.uploadChatImage]、[SocialRepository.downloadChatImage]）、撤回一条
+ * （[SocialRepository.uploadChatImageToImageBed]、[SocialRepository.downloadChatImage]）、撤回一条
  * （[SocialRepository.deleteMessage]）和一次会话详情（[SocialRepository.conversationDetail]）；
  * 写成功的那一条直接用后端回来的行画出来，不等下一次拉取，撤回成功把本地那条标成已撤回。
  * 详情拉不到就当没有，聊天照常。
@@ -258,6 +261,15 @@ fun ChatScreen(
     onOpenProfile: (owner: String) -> Unit = {},
     /** 让平台挑一张图片：桌面/网页没有相册，返回 null。 */
     pickImage: suspend () -> ByteArray? = { null },
+    /**
+     * 把一张图压到 2.5MB（[ImageBed.MAX_BYTES]）以内：由上层接平台能力
+     * （`{ platform.compressImage(it, ImageBed.MAX_BYTES) }`），压不动就回答 null。
+     *
+     * 这一层只负责"超了就调它、压不下来就别发"，怎么压是平台的事（Android 那侧解码 + 重编码
+     * JPEG，桌面/网页沿用默认回答 null）。默认值是"什么也压不了"，所以漏传它的调用方看到的
+     * 行为是"大图发不出去"，而不是悄悄传一张 8MB 的原图上去。
+     */
+    compressImage: (ByteArray) -> ByteArray? = { null },
     /**
      * 这个会话上次没发出去的草稿；空串表示没有。
      *
@@ -386,10 +398,10 @@ fun ChatScreen(
     /** 首屏已经落到底了没有：没落过底之前不往上翻页，否则一进页面就白拉一页历史。 */
     var settled by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    /** 正在全屏看哪张图（storage 路径）；null 表示查看器没开。 */
+    /** 正在全屏看哪张图（消息体里那个图片地址）；null 表示查看器没开。 */
     var viewingImage by remember { mutableStateOf<String?>(null) }
     /**
-     * 已经解码好的图，按 storage 路径存。
+     * 已经解码好的图，按图片地址存。
      *
      * 只为了让查看器"点开就能看"：气泡那边刚解码完的那张直接拿来用，不必为了放大再下一次；
      * 同一个会话里翻回去点第二次也是立刻出来。不设上限——它跟这个页面的生命周期一样长，
@@ -597,11 +609,18 @@ fun ChatScreen(
     }
 
     /**
-     * 发一张图：选 → 传 → 登记，三步都走完才把气泡画出来。
+     * 发一张图：选 → （超了就压）→ 传 → 登记，都走完才把气泡画出来。
      *
      * 选图返回 null 就静默退出：用户取消不是错误，桌面/网页本来也没有相册（[pickImage] 的默认实现
-     * 就返回 null），这时候弹一句红字只会让人以为自己做错了什么。上传成功但登记失败时，对象已经
-     * 躺在 bucket 里了，这一层没有删对象的接口，所以只提示，不假装撤回过。
+     * 就返回 null），这时候弹一句红字只会让人以为自己做错了事。
+     *
+     * 2.5MB 是**我们自己的规则**（图床不限大小，见 [ImageBed.MAX_BYTES]）：超了就交给
+     * [compressImage] 压一次；压不动（null）或者压完还超，就说一句实话然后不发——不硬塞一张
+     * 8MB 的原图上去，也不偷偷把图降到看不清。
+     *
+     * 上传走图床（[SocialRepository.uploadChatImageToImageBed]），消息体里存的是**完整地址**
+     * （`https://.../file/...`），气泡照着它直接 GET 就能画。上传成功但登记失败时，图已经躺在图床
+     * 上了，这一层没有删它的接口，所以只提示，不假装撤回过。
      */
     val sendImage: () -> Unit = {
         if (!sendingImage) {
@@ -609,20 +628,36 @@ fun ChatScreen(
                 sendingImage = true
                 imageHint = null
                 try {
-                    val bytes = pickImage()
-                    if (bytes != null) {
-                        // 路径按 owner 分目录：bucket 是大家共用的，时间戳加随机数让同一张图重发也不撞名。
-                        val path = "$owner/${currentTimeMillis()}-${Random.nextInt(1_000_000)}.jpg"
-                        if (!repository.uploadChatImage(owner, path, bytes, "image/jpeg")) {
-                            imageHint = "图片没上传成，检查代理后再试"
+                    val picked = pickImage()
+                    if (picked != null) {
+                        // 压图是同步的重活，挪到后台线程：直接在这儿调会让那几百毫秒卡在界面上。
+                        val bytes = if (picked.size > ImageBed.MAX_BYTES) {
+                            withContext(Dispatchers.Default) { compressImage(picked) }
                         } else {
-                            val sent = repository.sendImageMessage(owner, conversationId, path)
-                            if (sent == null) {
-                                imageHint = "图片没发出去"
+                            picked
+                        }
+                        if (bytes == null || bytes.size > ImageBed.MAX_BYTES) {
+                            imageHint = "这张图超过 2.5MB，压不下来，换一张或先在相册里裁一下"
+                        } else {
+                            // 目录按会话分（`unicanta/群聊/<会话号>/`）：时间戳加随机数让同一张图重发
+                            // 也不撞名，图床是"重名就 409"的。
+                            val id = ImageBed.chatImageId(
+                                conversationId = conversationId,
+                                stamp = currentTimeMillis(),
+                                salt = Random.nextInt(1_000_000),
+                            )
+                            val url = repository.uploadChatImageToImageBed(id, bytes, "image/jpeg")
+                            if (url == null) {
+                                imageHint = "图片没上传成，检查代理后再试"
                             } else {
-                                messages = chatAppend(messages, sent)
-                                // 发出去就把面板收起来：让人直接看见那张图落到了最下面。
-                                showMore = false
+                                val sent = repository.sendImageMessage(owner, conversationId, url)
+                                if (sent == null) {
+                                    imageHint = "图片没发出去"
+                                } else {
+                                    messages = chatAppend(messages, sent)
+                                    // 发出去就把面板收起来：让人直接看见那张图落到了最下面。
+                                    showMore = false
+                                }
                             }
                         }
                     }
@@ -664,7 +699,8 @@ fun ChatScreen(
     /**
      * 复制一条消息：整条正文进剪贴板，底部亮一句。别人的长按直接进来，自己的从长按菜单的「复制」进来。
      *
-     * 图片消息的 [ChatMessage.body] 是 storage 路径，不是人写的字：复制过去也没法用，所以给空串。
+     * 图片消息的 [ChatMessage.body] 是图片地址（图床的 URL 或老消息的 bucket 路径），不是人写的字：
+     * 复制过去也没法用，所以给空串。
      */
     val copyMessage: (ChatMessage) -> Unit = { message ->
         clipboard.setText(AnnotatedString(if (message.kind == "text") message.body else ""))
@@ -1442,9 +1478,9 @@ private fun ChatDayDivider(stamp: String) {
  * （[DropdownMenu]，写法照 MessagesScreen 的 ConversationRow）：「复制」走 [onLongPress]，
  * 「撤回」只在给了 [onDelete] 时出现。正文里的表情 token 由 [EmotionText] 画成图。
  *
- * `kind == "image"` 的那一条不走文字那一套：不套气泡、不喂 [EmotionText]，正文（storage 路径）
+ * `kind == "image"` 的那一条不走文字那一套：不套气泡、不喂 [EmotionText]，正文（图片地址）
  * 交给 [ChatImageBody] 去取字节画成一张图。图片消息自己也带时间，位置挪到图下面一行小字。
- * 图片的菜单只有「撤回」：正文是路径不是话，复制过去没有意义（见 [ChatBubbleMenu] 的 canCopy）。
+ * 图片的菜单只有「撤回」：正文是地址不是话，复制过去没有意义（见 [ChatBubbleMenu] 的 canCopy）。
  *
  * 头像上的点击是**另一块区域**（[onAvatarClick]）：头像在 [Row] 里是气泡的兄弟节点，气泡自己
  * 挂的是长按，两处手势不重叠，点头像不会顺手触发菜单，长按气泡也不会跳走。
@@ -1573,7 +1609,7 @@ private fun ChatBubble(
                         cache = imageCache,
                     )
                     if (menuable) {
-                        // 图片的菜单不画「复制」（canCopy = false）：正文是 storage 路径不是话。
+                        // 图片的菜单不画「复制」（canCopy = false）：正文是图片地址不是话。
                         ChatBubbleMenu(
                             modifier = Modifier.align(Alignment.TopEnd),
                             open = menuOpen,
@@ -1889,7 +1925,7 @@ private fun ChatQuoteBlock(senderName: String, body: String, mine: Boolean) {
  * 气泡右上角那个长按菜单：复制 / 回复 / 转发 / 删除 / 撤回。
  *
  * 每一项都是先收起菜单再动手：菜单留着会把下面的气泡挡住，动作却已经发出去了，看着像没点上。
- * 图片消息传 [canCopy] = false —— 它的正文是 storage 路径，不是人写的字。
+ * 图片消息传 [canCopy] = false —— 它的正文是图片地址，不是人写的字。
  *
  * 「删除」和「撤回」的差别是这五个里唯一需要想一下的：删除只让自己这一侧看不见（别人那里
  * 原样还在），撤回是对所有人把正文拿掉。所以删除排在撤回前面，破坏力小的先出现。

@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.community
 
+import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.util.TelemetryConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -32,6 +33,14 @@ import kotlinx.serialization.json.put
 
 /** How long one backend call may take before the app treats it as never having arrived. */
 private const val RPC_TIMEOUT_MS = 30_000L
+
+/**
+ * 传一张图能等多久。
+ *
+ * 比 [RPC_TIMEOUT_MS] 宽一倍：那张图最多 2.5MB，一个普通 4G 上传要十几秒，30 秒在弱网里
+ * 会把"其实还在传"判成失败，用户看到的是"图片没上传成"却已经传上去了。
+ */
+private const val IMAGE_UPLOAD_TIMEOUT_MS = 60_000L
 
 /**
  * 翻译走 MyMemory 的公开接口：它不要 key、每天 5 000 字符（带邮箱 50 000），够「按条翻」用。
@@ -767,14 +776,18 @@ class SocialRepository(
     }
 
     /**
-     * 把已经传到 storage 的一张图发成一条消息，返回后端落库的那一行。
+     * 把一张已经传上去的图登记成一条消息，返回后端落库的那一行。
      *
-     * 两步的顺序是死的：先 [uploadChatImage] 把字节放进 bucket，拿到 [path] 之后再调这一条。
-     * 返回的 [ChatMessage] 里 `kind = "image"`，而它那个 `body`（即 [ChatMessage.body]）里放的
-     * 是图片路径而不是文字，这样气泡可以直接照着画，不用等下一次 [messagesFor]。
+     * [path] 是**图片地址**：图床的完整 URL（`https://.../file/...`），或者老消息那种 `chat-images`
+     * bucket 里的对象路径。后端只是把它写进 `body`、不理解它，所以两种都收；读回来时
+     * [downloadChatImage] 按 `http` 前缀分流。
      *
-     * 失败返回 null；此时图可能已经在 bucket 里了（上传成功、登记失败），所以重试之前要允许
-     * `x-upsert` 覆盖——[uploadChatImage] 本来就带这个头。
+     * 顺序是死的：先上传（[uploadChatImageToImageBed]）拿到地址，再调这一条。返回的 [ChatMessage]
+     * 里 `kind = "image"`，而它的 `body`（[ChatMessage.body]）里放的是地址而不是文字，气泡照着它
+     * 直接画，不用等下一次 [messagesFor]。
+     *
+     * 失败返回 null；此时图可能已经传上去了（上传成功、登记失败）。重试会再传一张新的——id 里带
+     * 时间戳和随机数，不会盖掉上一条消息用的那张。
      */
     suspend fun sendImageMessage(owner: String, conversation: Long, path: String): ChatMessage? {
         if (owner.isEmpty() || conversation <= 0L || path.isEmpty()) return null
@@ -1286,6 +1299,10 @@ class SocialRepository(
     /**
      * 把 [bytes] 传进 `chat-images` bucket 的 [objectPath]，成功（HTTP 2xx）返回 true。
      *
+     * **老路**：2026-12 起聊天发图走图床（[uploadChatImageToImageBed]），这条留在仓库里是为了
+     * 「图床挂了能不能立刻退回 Supabase」这件事还有一条现成的路由；正常发图不再经过它，所以
+     * [downloadChatImage] 那一支兼容老消息的代码也不能跟着删。
+     *
      * [owner] 不参与定位：对象路径完全由 [objectPath] 决定（谁传的、放在哪个会话目录下，都是
      * 调用方的事）。这里只用它挡一下"身份是空的就别传"。
      *
@@ -1324,7 +1341,92 @@ class SocialRepository(
     }
 
     /**
+     * 把 [bytes] 传到图床的 [id]，返回能直接读的完整地址；失败返回 null，原因进 [lastError]。
+     *
+     * [id] 形如 `unicanta/群聊/12/1699999-314.jpg`（见 [ImageBed.chatImageId]）：目录那一段交给
+     * `folder`、文件名交给 `fileName`。图床的 `folder` 优先于 `fileName` 里的目录，两个都传是为了
+     * 让"放在哪"在请求里看得见，不用去猜谁优先。
+     *
+     * **为什么挂在 [SocialRepository] 里而不是 [ImageBed] 自己 new 一个 HttpClient**：这一层已经有
+     * 一个 client、一个 [json]、一套 [lastError] / [lastFailureWasNetwork] 的失败约定，复用它们比再养
+     * 一个客户端稳——多一个客户端就多一份超时、一份连接池、一处"这个页面为什么读不到失败原因"。
+     * [ImageBed] 那边只留协议（地址、目录、上限、请求体怎么拼）。
+     *
+     * 成功取响应里的 `url`（图床回的是百分号编码过的直链，直接放进消息体）；万一没给就自己用
+     * [ImageBed.fileUrl] 拼一个。失败按 [Call] 那三支记账：4xx/5xx 或 `code != 0` 是服务端拒绝，
+     * 连不上是 [lastFailureWasNetwork]。
+     */
+    suspend fun uploadChatImageToImageBed(
+        id: String,
+        bytes: ByteArray,
+        contentType: String = "image/jpeg",
+    ): String? {
+        if (id.isBlank() || bytes.isEmpty()) return null
+        val boundary = ImageBed.newBoundary()
+        val body = ImageBed.multipartBody(
+            boundary = boundary,
+            fields = listOf(
+                "uid" to ImageBed.TOKEN,
+                "folder" to ImageBed.folderOf(id),
+                "fileName" to ImageBed.fileNameOf(id),
+                // 重名就 409、不覆盖：id 里已经有时间戳和随机数，撞上的概率可以不管；真撞上了
+                // 也该是"这一条失败"，而不是悄悄把上一条消息的图换成这张。
+                "overwrite" to "0",
+            ),
+            fileName = ImageBed.fileNameOf(id),
+            contentType = contentType,
+            bytes = bytes,
+        )
+        val answered = runCatching {
+            withTimeoutOrNull(IMAGE_UPLOAD_TIMEOUT_MS) {
+                val response = client.post(ImageBed.UPLOAD_URL) {
+                    header(HttpHeaders.ContentType, "multipart/form-data; boundary=$boundary")
+                    setBody(body)
+                }
+                val text = runCatching { response.bodyAsText() }.getOrDefault("")
+                val fields = parse(text)?.let { root -> runCatching { root.jsonObject }.getOrNull() }
+                val code = fields?.get("code")
+                    ?.let { element -> runCatching { element.jsonPrimitive.intOrNull }.getOrNull() }
+                val said = fields?.get("msg")
+                    ?.let { element -> runCatching { element.jsonPrimitive.contentOrNull }.getOrNull() }
+                    .orEmpty()
+                if (response.status.isSuccess() && (code == null || code == 0)) {
+                    Call.Ok(text)
+                } else {
+                    Call.Refused(
+                        said.ifBlank { text.take(200) }.ifBlank { "HTTP ${response.status.value}" },
+                    )
+                }
+            }
+        }
+        return when (val result = answered.getOrNull() ?: Call.Unreachable) {
+            is Call.Ok -> {
+                lastFailureWasNetwork = false
+                lastError = null
+                val url = parse(result.text)?.let { root ->
+                    runCatching { root.jsonObject["url"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+                }
+                url?.takeIf { it.startsWith("http") } ?: ImageBed.fileUrl(id)
+            }
+            is Call.Refused -> {
+                lastFailureWasNetwork = false
+                lastError = result.reason
+                null
+            }
+            Call.Unreachable -> {
+                lastFailureWasNetwork = true
+                lastError = null
+                null
+            }
+        }
+    }
+
+    /**
      * 把 [objectPath] 那张图读回来，2xx 返回字节，别的一律 null。
+     *
+     * [objectPath] 是消息体里那一格，两种形状都认：**图床的完整地址**（`https://.../file/...`，公开
+     * 免鉴权）或**老消息的 bucket 对象路径**（`<owner>/<时间戳>-<随机数>.jpg`，要拼 storage 的地址
+     * 再加鉴权头）。气泡和全屏查看器都只调这一个入口，所以这里一处兼容，两条路的消息都能显示。
      *
      * 字节走 Ktor 自带的 `body<ByteArray>()`（仓库里读远程图片的现成先例是
      * `ui/component/DeviceHero.kt`），不需要 ContentNegotiation；解码成图片是界面的事，
@@ -1332,11 +1434,21 @@ class SocialRepository(
      */
     suspend fun downloadChatImage(objectPath: String): ByteArray? {
         if (objectPath.isBlank()) return null
+        // 两种地址都在这儿汇合：
+        //  * 新消息的 body 是图床的完整直链（`https://.../file/...`）——公开免鉴权，直接 GET；
+        //  * 老消息的 body 还是 `chat-images` bucket 里的对象路径，照旧拼 storage 的地址并带那两个
+        //    鉴权头。**老消息必须还能点开**，所以这一支不能删。
+        val isDirect = objectPath.startsWith("https://", ignoreCase = true) ||
+            objectPath.startsWith("http://", ignoreCase = true)
+        val address = if (isDirect) objectPath else chatImageUrl(objectPath)
         val answered = runCatching {
             withTimeoutOrNull(RPC_TIMEOUT_MS) {
-                val response = client.get(chatImageUrl(objectPath)) {
-                    header("apikey", apiKey)
-                    header(HttpHeaders.Authorization, "Bearer $apiKey")
+                val response = client.get(address) {
+                    // 图床的 /file/<id> 是公开的，带 Supabase 的两个头只会多余；storage 那一支才需要。
+                    if (!isDirect) {
+                        header("apikey", apiKey)
+                        header(HttpHeaders.Authorization, "Bearer $apiKey")
+                    }
                 }
                 if (response.status.isSuccess()) {
                     // 状态码对了，但正文仍可能读不出来（连接被掐断）：那两个字节算"服务端没给"，

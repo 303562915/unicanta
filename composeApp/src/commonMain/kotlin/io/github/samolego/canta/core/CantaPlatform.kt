@@ -170,6 +170,19 @@ interface CantaPlatform {
     suspend fun pickImage(): ByteArray? = null
 
     /**
+     * 把一张图压到 [maxBytes] 以内；压不动就回答 null。平台没有解码能力时也回答 null。
+     *
+     * 聊天里发图要先过这一关：图床不限制大小，2.5MB 是我们自己的产品规则（见
+     * `data/imagebed/ImageBed.MAX_BYTES`）。压不动的老实现（桌面、网页、测试）沿用默认回答
+     * null，调用方据此说"这张图太大，换一张"——它们本来也没有相册，[pickImage] 先一步回了 null。
+     *
+     * **这是同步的、会占住线程几百毫秒**：解码一张两千万像素的照片就是这个代价。调用方必须
+     * 在协程里、并且自己挪到 `Dispatchers.Default` 之类的后台上下文再调它，不要在组合里直接调。
+     * 输出是 JPEG，原图的透明通道会变成黑底（聊天图是相册里的照片，这个代价换来的体积更划算）。
+     */
+    fun compressImage(bytes: ByteArray, maxBytes: Int): ByteArray? = null
+
+    /**
      * 有人给这个身份发了新消息，在系统通知栏提醒一次。
      *
      * [conversationId] 同时是"点开去哪一页"的钥匙和通知的 id：同一会话的新消息覆盖上一条，
