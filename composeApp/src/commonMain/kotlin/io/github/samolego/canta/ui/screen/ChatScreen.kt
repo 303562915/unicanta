@@ -496,6 +496,16 @@ fun ChatScreen(
         }
     }
 
+    /**
+     * 刚点了群聊 AI、正在等它回答。
+     *
+     * 只影响顶栏那一行（「群聊AI 正在思考…」）和一次短轮询；不写库、不发消息——
+     * 真正的回答由后端写回来，这里只是让人知道"它收到了"，而不是盯着屏幕猜。
+     *
+     * 声明必须在 [waitForAiReply] 之前：Kotlin 的局部函数不能引用晚于它声明的本地变量。
+     */
+    var aiThinking by remember(conversationId) { mutableStateOf(false) }
+
     // 每变一次（新来的、发出的、撤回的、往上翻的）都把这一屏写回缓存：下一次进这个会话先画它。
     LaunchedEffect(conversationId, messages) {
         if (conversationId > 0L && messages.isNotEmpty()) {
@@ -891,14 +901,6 @@ fun ChatScreen(
     // 一次调用两样东西：别人的读位置和谁在打字（见 `SocialRepository.conversationLive`）。
     // 拉到 null 就留着上一次的——"这一次没问到"不该让「正在输入」突然消失。
     var presence by remember(conversationId) { mutableStateOf<LivePresence?>(null) }
-
-    /**
-     * 刚点了群聊 AI、正在等它回答。
-     *
-     * 只影响顶栏那一行（「群聊AI 正在思考…」）和一次短轮询；不写库、不发消息——
-     * 真正的回答由后端写回来，这里只是让人知道"它收到了"，而不是盯着屏幕猜。
-     */
-    var aiThinking by remember(conversationId) { mutableStateOf(false) }
     LaunchedEffect(conversationId, owner) {
         if (conversationId <= 0L || owner.isEmpty()) return@LaunchedEffect
         while (true) {
@@ -908,7 +910,9 @@ fun ChatScreen(
     }
 
     // 我在打字：4 秒最多告诉服务端一次。失败不提示——下一键还会再发一遍。
-    var typingPingAt by remember(conversationId) { mutableStateOf(0L) }    fun noteTyping() {
+    var typingPingAt by remember(conversationId) { mutableStateOf(0L) }
+
+    fun noteTyping() {
         if (conversationId <= 0L || owner.isEmpty()) return
         val now = currentTimeMillis()
         if (now - typingPingAt < ChatTypingPingMs) return
