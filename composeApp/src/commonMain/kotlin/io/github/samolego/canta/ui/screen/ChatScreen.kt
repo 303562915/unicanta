@@ -1087,8 +1087,7 @@ fun ChatScreen(
                                         mine = message.sender == owner,
                                         // 自己那张头像上画名字首字：后端没有头像字段，首字就是兜底。
                                         myLabel = userName.ifBlank { "我" },
-                                        // 自己这张头像的直链：在图床 `unicanta/头像/<owner>.jpg` 上，
-                                        // 换过头像的人这里就是那张照片。
+                                        // 自己那张头像：换了头像之后同一个 URL 就是新图（覆盖式上传）。
                                         myAvatarUrl = avatarUrlOf(owner),
                                         // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
                                         showSender = grouped && message.sender != owner,
@@ -1645,12 +1644,7 @@ private fun ChatBubble(
     mine: Boolean,
     /** 自己这一侧那张头像上画什么字：没有头像照片时用它兜底（见 [ChatRowAvatar]）。 */
     myLabel: String = "我",
-    /**
-     * 自己那张头像的直链（图床 `unicanta/头像/<owner>.jpg`）；空串就是没设过，退回首字母圆。
-     *
-     * 由调用方算好传进来：气泡这一层拿不到"我是谁"（它只看得到消息本身的 sender），
-     * 而 `owner` 在 [ChatScreen] 那一层才有。
-     */
+    /** 我自己那张头像的直链；空串就是首字母圆。由调用点按 owner 拼好递进来。 */
     myAvatarUrl: String = "",
     showSender: Boolean,
     onAvatarClick: (() -> Unit)? = null,
