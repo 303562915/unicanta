@@ -1,11 +1,14 @@
-# 提交到 fdroiddata 用的 recipe 草稿。
+# 提交到 fdroiddata 用的 recipe。
 #
-# 这个文件不属于本仓库的构建流程，只在上架时复制到 fdroiddata 的
-# metadata/io.github.a303562915.unicanta.yml。改版本号时同步 Builds 里的最后一条。
+# 这个文件不属于本仓库的构建流程；上架时由 tools/fdroid/submit-mr.ps1 读出来，
+# 写到 fork 的 metadata/io.github.a303562915.unicanta.yml 并开 MR（见 docs/fdroid.md）。
+# 改版本号时同步 Builds 的最后一条与 CurrentVersion / CurrentVersionCode。
 #
-# 待 reviewer 复核的点（见 docs/fdroid.md）：
-#   - gradle task 用了完整路径，若 F-Droid 构建机不接受，改成 subdir + assembleRelease
+# 待 reviewer 复核的点：
+#   - 构建需要 Gradle 9.x（AGP 9.4.1）：若构建机的系统 gradle 版本不够，需要
+#     在 prebuild 里补一条 install 或改走 wrapper
 #   - UpdateCheckMode 是否需要 VercodeOperation 由 reviewer 决定
+#   - 仓库根 metadata/<locale>/ 提供 fastlane 结构文案（标题、简介、截图）
 
 Categories:
   - System
@@ -16,17 +19,27 @@ SourceCode: https://github.com/303562915/unicanta
 IssueTracker: https://github.com/303562915/unicanta/issues
 Changelog: https://github.com/303562915/unicanta/releases
 
+# 应用内的匿名使用事件上报走自建端点（非第三方统计 SDK），按 Inclusion Policy
+# 如实标注，不隐瞒。上报内容只含版本、失败 code、阶段、机型和 ROM。
+AntiFeatures:
+  - Tracking
+
 AutoName: unicanta
 
 RepoType: git
 Repo: https://github.com/303562915/unicanta.git
 
 Builds:
-  - versionName: 4.3.0
-    versionCode: 239
-    commit: v4.3.0
+  - versionName: 4.3.4
+    versionCode: 243
+    commit: v4.3.4
+    # `yes` = 无 flavor，跑 `gradle assembleRelease`。根 build.gradle.kts 里有一个
+    # 委托任务把它转到 :androidApp:assembleRelease（多模块工程，根项目原本没有该任务；
+    # recipe 的 gradle 字段只接受 flavor 名，写不了模块路径）。
     gradle:
-      - ':androidApp:assembleRelease'
+      - yes
+    # 多模块工程的 APK 不在 <root>/build/outputs，显式指到 androidApp 的产物目录。
+    output: androidApp/build/outputs/apk/release/*.apk
     prebuild:
       # 只出 Android 包：wasm/desktop 两个模块会连带拉 Node.js、Yarn、Binaryen
       # 分发包，构建服务器上没有必要，也省掉一类网络依赖。
@@ -36,5 +49,5 @@ Builds:
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 4.3.0
-CurrentVersionCode: 239
+CurrentVersion: 4.3.4
+CurrentVersionCode: 243
