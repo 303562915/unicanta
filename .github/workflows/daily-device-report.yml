@@ -64,13 +64,23 @@ jobs:
       - name: 📝 What changed in this release
         id: changes
         if: inputs.release_kind == 'development' || inputs.release_kind == 'stable'
+        env:
+          KIND: ${{ inputs.release_kind }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          KIND="${{ inputs.release_kind }}"
           if [ "$KIND" = "stable" ]; then
-            # 正式版：上一个 v* tag 到这次提交，就是这一版新增的全部内容。
-            PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
-            RANGE="${PREV:+$PREV..HEAD}"
+            # 正式版要的是「这一版比上一版多了什么」：区间是「上一个 v* tag .. 本次发版的 tag」。
+            # 不能拿 HEAD^ 算 —— 通知跑在发版之后，那时 master 早又往前走了，算出来的是发版之后的
+            # 提交（往往只有几条 fix(ci)），真正的更新内容会被漏掉。
+            END="${RELEASE_TAG:-HEAD}"
+            if git rev-parse -q --verify "refs/tags/$END" >/dev/null 2>&1; then
+              PREV=$(git describe --tags --abbrev=0 --match 'v*' "${END}^" 2>/dev/null || true)
+              RANGE="${PREV:+$PREV..$END}"
+            else
+              PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+              RANGE="${PREV:+$PREV..HEAD}"
+            fi
           else
             # 开发版：每次推送都发一版，最近这几条提交就是这次改的东西。
             RANGE="HEAD"
@@ -78,6 +88,11 @@ jobs:
           LIST=$(git log --no-merges -n 12 --pretty=format:'%s' ${RANGE:-HEAD} 2>/dev/null \
                  | grep -vE '^(chore\(release\)|chore: 发版|Revert "|fix\(ci\)|docs\(agents\)|Merge )' \
                  | head -n 6 || true)
+          if [ -z "$LIST" ]; then
+            # 过滤完什么都不剩（整段都是发版/CI 提交）：退回未过滤的那几条，空着比不准确更糟。
+            LIST=$(git log --no-merges -n 6 --pretty=format:'%s' ${RANGE:-HEAD} 2>/dev/null \
+                   | grep -vE '^(chore\(release\)|chore: 发版|Merge )' || true)
+          fi
           if [ -z "$LIST" ]; then
             LIST="（这次没有可读的提交说明，改动见发布页）"
           fi
