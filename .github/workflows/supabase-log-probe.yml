@@ -1,51 +1,56 @@
 name: 🔎 Supabase log probe
 
-# 一次性诊断入口：给「App 里什么都没有」这类问题取后端日志 / 查库用。只读。
+# 只读诊断入口：从 Supabase 管理 API 取最近一段时间的后端日志。
+#
+# 用法要点（新端点，老 `logs.all` 已下线）：
+#   * `POST /v1/projects/{ref}/analytics/endpoints/logs`
+#   * body 只认 `sql` / `lql` / `iso_timestamp_start` / `iso_timestamp_end`
+#   * **必须给时间窗**（≤24h，按分钟取整），不给只查最近 1 分钟
+#   * SQL 是 ClickHouse 方言，单张 `logs` 表，用 `where source='…'` 过滤
+#
+# 典型问题：App 里页面全空 → 跑一次 postgrest_logs，看有没有请求、状态码是什么。
 
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: Supabase project ref
+      minutes:
+        description: 往回看多少分钟（1–1440）
         required: false
-        default: axuhfogeovtsbxokqccf
+        default: "15"
+      source:
+        description: 日志来源
+        required: false
+        type: choice
+        default: postgrest_logs
+        options:
+          - postgrest_logs
+          - postgres_logs
+          - pgbouncer_logs
+          - edge_logs
+          - storage_logs
+          - realtime_logs
 
 jobs:
   probe:
-    name: 🧾 probe
+    name: 🧾 logs
     runs-on: ubuntu-latest
-    env:
-      TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      PROJECT_REF: ${{ inputs.ref }}
     steps:
-      - name: Logs by source
+      - name: Query logs
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SOURCE: ${{ inputs.source }}
+          MINUTES: ${{ inputs.minutes }}
         run: |
-          set +e
-          B="https://api.supabase.com/v1/projects/${PROJECT_REF}/analytics/endpoints/logs"
-          show() { echo "### $1"; echo "http: $(cat /tmp/code)"; head -c 3000 /tmp/out; echo; echo; }
-          try() {
-            shift 2>/dev/null
-            curl -sS -m 90 -o /tmp/out -w '%{http_code}' -G "$B" "$@" -H "Authorization: Bearer ${TOKEN}" > /tmp/code 2>/dev/null
-          }
-          try x --data-urlencode "source=postgres_logs" --data-urlencode "sql=select timestamp, event_message from postgres_logs order by timestamp desc limit 15"
-          show "A source=postgres_logs + sql"
-          try x --data-urlencode "source=postgres_logs"
-          show "B source=postgres_logs only"
-          try x --data-urlencode "source=postgrest_logs" --data-urlencode "sql=select timestamp, event_message from postgrest_logs order by timestamp desc limit 15"
-          show "C source=postgrest_logs + sql"
-
-      - name: Query database
-        run: |
-          set +e
-          Q() {
-            echo "### $1"
-            curl -sS -m 90 -o /tmp/o -w 'http:%{http_code}\n' -X POST \
-              "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query" \
-              -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-              --data "$(printf '{\"query\":%s}' "$(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")"
-            head -c 3000 /tmp/o; echo; echo
-          }
-          Q "users" "select count(*) as users, max(created_at) as last_user from public.canta_users"
-          Q "plans" "select count(*) as plans, max(created_at) as last_plan from public.plans"
-          Q "comments" "select count(*) as comments, max(created_at) as last_comment from public.community_comments"
-          Q "messages" "select count(*) as messages, max(created_at) as last_message from public.messages"
+          set -euo pipefail
+          REF=axuhfogeovtsbxokqccf
+          END=$(date -u +%Y-%m-%dT%H:%M:00Z)
+          START=$(date -u -d "-${MINUTES} minutes" +%Y-%m-%dT%H:%M:00Z)
+          SQL="select timestamp, event_message from logs where source='${SOURCE}' order by timestamp desc limit 50"
+          echo "window: ${START} .. ${END}"
+          echo "source: ${SOURCE}"
+          PAYLOAD=$(SQL="$SQL" START="$START" END="$END" python3 -c \
+            'import json,os; print(json.dumps({"sql":os.environ["SQL"],"iso_timestamp_start":os.environ["START"],"iso_timestamp_end":os.environ["END"]}))')
+          echo "--- response ---"
+          curl -sS -m 90 -X POST "https://api.supabase.com/v1/projects/${REF}/analytics/endpoints/logs" \
+            -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+            --data "$PAYLOAD" -w '\nhttp:%{http_code}\n' | head -c 60000
