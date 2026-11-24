@@ -1,5 +1,7 @@
 package io.github.samolego.canta.data.recommend
 
+import kotlinx.serialization.Serializable
+
 /**
  * One app the community proposed for the recommendations page, and how the votes stand.
  *
@@ -12,6 +14,7 @@ package io.github.samolego.canta.data.recommend
  * @param url the GitHub project page, normalized by [githubProjectUrl]; the backend refuses
  *   anything else, because "open source and on GitHub" is the only thing this list promises.
  */
+@Serializable
 data class SuggestedApp(
     /** The entry's own id; 0 when the server did not send one. */
     val id: Long = 0L,

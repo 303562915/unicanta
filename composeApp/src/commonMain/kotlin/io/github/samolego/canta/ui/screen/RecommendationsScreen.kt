@@ -169,7 +169,13 @@ private val FallbackAccents = listOf(
  */
 @Serializable
 private data class RecommendationsSnapshot(
-    val catalog: Recommendations,
+    /**
+     * 只存社区队列。
+     *
+     * 打包目录（[Recommendations]）**不进来**：它是随包发出去的静态资源，`Recommendations.bundled()`
+     * 读一次就有，存进缓存既没有收益，还要求那个类本身可序列化——它带着非数据的内部集合，
+     * 为了缓存去改它的形状不划算。
+     */
     val suggested: List<SuggestedApp>,
 )
 
@@ -234,7 +240,8 @@ fun RecommendationsScreen(
     // 机场/积分那一块的跨 tab 状态：它只在 tab == TAB_AIRPORT 时组合，切走会整棵丢掉，
     // 所以由这一页（常驻）持有，回来时数据还在就不重拉。键带身份：钱包是某个身份自己的。
     val airportState = remember(cacheKey) { AirportTabState() }
-    var catalog by remember(cacheKey) { mutableStateOf(cached?.catalog) }
+    // 打包目录是本地资源，不经过缓存：读一次就有，冷启动也不会慢。
+    var catalog by remember(cacheKey) { mutableStateOf<Recommendations?>(null) }
     var detail by remember { mutableStateOf<RecommendedApp?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
     var query by rememberSaveable { mutableStateOf("") }
@@ -280,9 +287,10 @@ fun RecommendationsScreen(
     val loaded = catalog
     // 每拿到新的一屏就写回缓存：下次进来先画它，再在后台刷新。写的就是「屏幕上现在这一份」——
     // 队列那趟拉失败时 `suggested` 没被清空，所以一次断网不会把已经看到的队列从缓存里抹掉。
-    LaunchedEffect(cacheKey, loaded, suggested) {
-        val current = loaded ?: return@LaunchedEffect
-        ScreenCache.put(cacheKey, RecommendationsSnapshot(current, suggested))
+    LaunchedEffect(cacheKey, suggested) {
+        if (cacheKey.isNotEmpty()) {
+            ScreenCache.put(cacheKey, RecommendationsSnapshot(suggested))
+        }
     }
     // Looking at the queue is what makes it read: the fingerprint goes back to the caller, which
     // stores it and takes the dot off the tab. Opening the page is not enough — the list half says
