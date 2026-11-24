@@ -392,8 +392,9 @@
     <string name="onboarding_network_enable">去开科学上网</string>
     <string name="onboarding_network_recheck">重新检测</string>
     <string name="onboarding_network_note">不开也能用：本地规则、应用列表和卸载都不受影响。</string>
-    <string name="vpn_notice_text">本机没有检测到 VPN。我们的数据库在日本，必须开启科学上网才能访问完整数据。</string>
+    <string name="vpn_notice_text">没连上社区服务器：网络请求没有回音。可能是这张网不通，也可能是需要开启科学上网。</string>
     <string name="vpn_notice_open">开启科学上网</string>
+    <string name="vpn_notice_switch_network">切换网络</string>
     <string name="vpn_notice_never">不再提示</string>
     <string name="onboarding_privilege_title">最后一步：拿到权限</string>
     <string name="onboarding_privilege_subtitle">卸载系统应用需要一个特权运行时。两个都行，我们推荐 Stellar。</string>

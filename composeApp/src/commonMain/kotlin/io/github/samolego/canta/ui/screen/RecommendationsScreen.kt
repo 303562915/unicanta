@@ -78,7 +78,6 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.PlanRepository
-import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.data.recommend.SuggestedApp
@@ -140,9 +139,6 @@ private const val TAB_VOTE = 1
 
 /** The third half: 机场投票、钱包和积分商城（见 [RecommendationsAirportTab]）。 */
 private const val TAB_AIRPORT = 2
-
-/** 第四块：社区帖子——发帖、看帖、回帖、点赞。 */
-private const val TAB_POSTS = 3
 
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
 private val SuggestAgree = Color(0xFF2FA84F)
@@ -228,8 +224,6 @@ fun RecommendationsScreen(
     repository: PlanRepository? = null,
     /** 兑换中心（码池）：机场那一块里的「发布一批码 / 兑换 / 我的码」。 */
     cdk: CdkStore? = null,
-    /** 社区帖子：发帖、回帖、点赞，自己一页。 */
-    posts: PostStore? = null,
     author: String = "",
     authorId: String = "",
     asGrid: Boolean = true,
@@ -238,6 +232,8 @@ fun RecommendationsScreen(
     onOpenApp: (String) -> Unit = {},
     /** 自上次看过投票那一格以来，新进精选的条目数：那个点就画在投票标签上。 */
     newApplied: Int = 0,
+    /** 去社区帖子页。那一页有自己的编辑器与草稿，不放成这里的第四格。 */
+    onOpenPosts: () -> Unit = {},
     onVoteQueueSeen: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -378,7 +374,6 @@ fun RecommendationsScreen(
     val listTabLabel = stringResource(Res.string.recommend_tab_list)
     val voteTabLabel = stringResource(Res.string.recommend_tab_vote)
     val airportTabLabel = "机场"
-    val postsTabLabel = "帖子"
 
     Scaffold(
         topBar = {
@@ -388,6 +383,9 @@ fun RecommendationsScreen(
                 ScreenTopBar(
                     title = stringResource(Res.string.recommend_title),
                     actions = {
+                        // 帖子是独立一页：那里有列表，也有一个带草稿的编辑器，塞成这里的
+                        // 第四格会把这一页变成四件事。入口留在右上角，一行字就够了。
+                        TextButton(onClick = onOpenPosts) { Text("帖子") }
                         if (tab == TAB_LIST) {
                             IconButton(onClick = onToggleLayout) {
                                 Icon(
@@ -400,14 +398,13 @@ fun RecommendationsScreen(
                         }
                     },
                 )
-                // 四块当一个控制：应用目录、社区投票、机场与兑换、帖子。数字进标签，没打开
-                // 也知道有多少东西等着投；后面两块没有全局计数（在各自的列表里），只写名字。
+                // 三块当一个控制：应用目录、社区投票、机场与兑换。数字进标签，没打开也知道
+                // 有多少东西等着投；机场那一块没有全局计数（在它自己的列表里），只写名字。
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("list", if (loaded == null) listTabLabel else "$listTabLabel ${loaded.apps.size}"),
                         FlSegment("vote", if (suggested.isEmpty()) voteTabLabel else "$voteTabLabel ${suggested.size}"),
                         FlSegment("airport", airportTabLabel),
-                        FlSegment("posts", postsTabLabel),
                     ),
                     selectedIndex = tab,
                     onSelect = { tab = it },
@@ -437,15 +434,6 @@ fun RecommendationsScreen(
                 author = author,
                 authorId = authorId,
                 state = airportState,
-                modifier = Modifier.fillMaxSize().padding(padding),
-            )
-        } else if (tab == TAB_POSTS) {
-            // 帖子自己一页：一张列表就够长了，塞进机场那一块的滚动容器里会互相抢手势。
-            PostsSection(
-                store = posts,
-                platform = platform,
-                author = author,
-                authorId = authorId,
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         } else if (tab == TAB_VOTE) {

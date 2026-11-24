@@ -485,16 +485,19 @@ class SocialRepository(
         is Call.Ok -> {
             lastFailureWasNetwork = false
             lastError = null
+            BackendHealth.reportReachable()
             true
         }
         is Call.Refused -> {
             lastFailureWasNetwork = false
             lastError = result.reason
+            BackendHealth.reportReachable()
             false
         }
         Call.Unreachable -> {
             lastFailureWasNetwork = true
             lastError = null
+            BackendHealth.reportUnreachable()
             false
         }
     }
@@ -1503,6 +1506,7 @@ class SocialRepository(
             is Call.Ok -> {
                 lastFailureWasNetwork = false
                 lastError = null
+                BackendHealth.reportReachable()
                 val url = parse(result.text)?.let { root ->
                     runCatching { root.jsonObject["url"]?.jsonPrimitive?.contentOrNull }.getOrNull()
                 }
@@ -1511,11 +1515,13 @@ class SocialRepository(
             is Call.Refused -> {
                 lastFailureWasNetwork = false
                 lastError = result.reason
+                BackendHealth.reportReachable()
                 null
             }
             Call.Unreachable -> {
                 lastFailureWasNetwork = true
                 lastError = null
+                BackendHealth.reportUnreachable()
                 null
             }
         }
@@ -1648,16 +1654,19 @@ class SocialRepository(
         is Call.Ok -> {
             lastFailureWasNetwork = false
             lastError = null
+            BackendHealth.reportReachable()
             result.text
         }
         is Call.Refused -> {
             lastFailureWasNetwork = false
             lastError = result.reason
+            BackendHealth.reportReachable()
             null
         }
         Call.Unreachable -> {
             lastFailureWasNetwork = true
             lastError = null
+            BackendHealth.reportUnreachable()
             null
         }
     }

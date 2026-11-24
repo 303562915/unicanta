@@ -55,6 +55,7 @@ import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.core.InstallStage
+import io.github.samolego.canta.data.community.BackendHealth
 import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatRealtimeHub
@@ -189,15 +190,13 @@ private const val SECRET_TAPS_HINT_AFTER = 3
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
 
 /**
- * How often the "no VPN" reminder is asked again while the app is on screen. The community
- * deployment sits in Japan, so a phone without a proxy reads as "everything is offline"; a minute
- * is short enough to catch a proxy that was switched off mid-session or a client that was opened
- * but never connected, and long enough not to sit in the way of reading.
+ * 连不上后端时的提示，多久重新确认一次「现在是真断了吗」。
+ *
+ * 提示本身由事实驱动（[BackendHealth.networkTrouble]，任何一次请求没答上来才置 true），不是
+ * 靠 `isVpnActive()` 硬判。开着提示的这段时间里隔一分钟探一次：人可能已经出去把 VPN 打开了，
+ * 回来一看提示还挂着，那就是在说假话。
  */
-private const val VPN_NOTICE_INTERVAL_MILLIS = 60_000L
-
-/** How long that reminder stays on screen before it takes itself away; it returns a minute later. */
-private const val VPN_NOTICE_VISIBLE_MILLIS = 12_000L
+private const val BACKEND_PROBE_INTERVAL_MILLIS = 60_000L
 
 /**
  * App 退到后台之后多久问一次「有没有新消息」，用来决定要不要弹通知栏。
@@ -775,32 +774,30 @@ private fun CantaNavigation(
     // A page arrives at its top, so the bar is always there until something is scrolled.
     LaunchedEffect(currentRoute) { dock.show() }
 
-    // Without a proxy this phone reads the community backend across a border it cannot reach: the
-    // pages then show cached or empty data while the network itself is fine, which looks like a
-    // broken app. The platform is asked once a minute while a page is open — the reminder goes away
-    // by itself as soon as a VPN carries the traffic, and a reader who picked "不再提示" never sees
-    // it again, because that answer is stored rather than remembered for this session.
-    val hideVpnNotice by settingsViewModel.hideVpnNotice.collectAsStateWithLifecycle()
-    var vpnNoticeVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(hideVpnNotice, currentRoute, appVisible) {
-        val onOnboarding = currentRoute == null || currentRoute == Screen.Onboarding.route
-        if (hideVpnNotice || onOnboarding || !appVisible || !platform.supportsVpnDetection()) {
-            vpnNoticeVisible = false
-            return@LaunchedEffect
-        }
+    // 不在启动时问"有没有 VPN"。那是在猜原因：分流规则、公司网络、桌面版都没有 VPN 网卡照样通，
+    // 节点挂了的 VPN 有网卡也照样不通，猜错就是每次启动都打扰一遍用得好好的人。
+    // 顺序反过来：先把社区数据正常拉一遍（预加载），拉得动就什么都不说；任何一次请求真的没答上来，
+    // BackendHealth 才置位，提示才出现。
+    var backendProbeTick by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { backendProbeTick++ }
+    val backendTrouble by BackendHealth.networkTrouble.collectAsStateWithLifecycle()
+    // 提示挂着的时候才轮询：一分钟一次 HEAD，成本可以忽略，但只在"正在怀疑链路"时才花这份钱。
+    LaunchedEffect(backendTrouble, backendProbeTick, appVisible) {
+        if (!appVisible) return@LaunchedEffect
         while (true) {
-            if (!platform.isVpnActive()) {
-                // Shown, then taken away again: a notice that never leaves is a banner, and this one
-                // comes back by itself a minute later while no VPN carries the traffic.
-                vpnNoticeVisible = true
-                delay(VPN_NOTICE_VISIBLE_MILLIS)
-                vpnNoticeVisible = false
-            }
-            // Re-checked every round: a proxy opened from the reminder, then closed again, has to
-            // bring the notice back without waiting for the next launch.
-            delay(VPN_NOTICE_INTERVAL_MILLIS)
+            communityRepository.isReachable()
+            if (!backendTrouble) break
+            delay(BACKEND_PROBE_INTERVAL_MILLIS)
         }
     }
+
+    val hideVpnNotice by settingsViewModel.hideVpnNotice.collectAsStateWithLifecycle()
+    // 提示只在"真的连不上"时出现，链路恢复（任何一次请求答了话）就自己走开。
+    // "不再提示"是持久化的用户选择；点掉一次只算这一次故障，下一次故障仍然会说话。
+    var vpnNoticeDismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(backendTrouble) { if (!backendTrouble) vpnNoticeDismissed = false }
+    val vpnNoticeVisible = backendTrouble && !hideVpnNotice && !vpnNoticeDismissed && appVisible &&
+        currentRoute != null && currentRoute != Screen.Onboarding.route
 
     // The inbox: everything that happened to what this install wrote, counted for the red dot on
     // the app list's bar and in Settings. That is no longer "replies" alone — a heart on a comment
@@ -1056,7 +1053,8 @@ private fun CantaNavigation(
                     platform = platform,
                     repository = communityRepository,
                     cdk = cdkStore,
-                    posts = postStore,
+                    // 帖子是独立一页（带自己的编辑器与草稿），这里只留一个入口。
+                    onOpenPosts = { navController.navigate(Screen.Posts.route) },
                     author = recommendAuthor,
                     authorId = recommendIdentity,
                     asGrid = !listMode,
@@ -1806,20 +1804,23 @@ private fun CantaNavigation(
             }
         }
 
-        // The proxy reminder covers every page: it is about the app sitting on the wrong side of
-        // the network, not about whichever page happens to be open.
+        // The reminder covers every page: it is about the request that did not come back, not about
+        // whichever page happens to be open. It appears only after a real failure — see the
+        // BackendHealth check above — so a working network never sees it.
         if (vpnNoticeVisible) {
             VpnNoticeCard(
                 text = stringResource(Res.string.vpn_notice_text),
                 openLabel = stringResource(Res.string.vpn_notice_open),
+                switchLabel = stringResource(Res.string.vpn_notice_switch_network),
                 neverLabel = stringResource(Res.string.vpn_notice_never),
                 onOpenProxy = {
-                    // Out of the way as soon as the proxy screen answers; the next round of the
-                    // check above brings it back while no VPN carries the traffic.
-                    if (platform.openProxySettings()) vpnNoticeVisible = false
+                    if (platform.openProxySettings()) vpnNoticeDismissed = true
+                },
+                onSwitchNetwork = {
+                    if (platform.openNetworkSettings()) vpnNoticeDismissed = true
                 },
                 onNeverShow = {
-                    vpnNoticeVisible = false
+                    vpnNoticeDismissed = true
                     settingsViewModel.saveHideVpnNotice(true)
                 },
                 modifier = Modifier
@@ -1837,18 +1838,19 @@ private fun CantaNavigation(
 }
 
 /**
- * The proxy reminder: one line saying why the community data is out of reach, and the only two
- * answers that matter — switch a proxy on, or stop being asked.
+ * 连不上后端时的提示：一句说清现在发生了什么，和三个真正有用的动作——开代理、换网络、别再提醒。
  *
- * It is deliberately not a dialog: it rides on top of the page, so the app list stays usable while
- * the phone is offline, which is the whole point of "不开也能用".
+ * 它故意不是对话框：它浮在页面上，断网时应用列表照样能用，这也正是"不开也能用"的意思。
+ * 触发条件是**请求真的没答上来**，不是"没看到 VPN 网卡"，所以它出现时说的就是事实。
  */
 @Composable
 private fun VpnNoticeCard(
     text: String,
     openLabel: String,
+    switchLabel: String,
     neverLabel: String,
     onOpenProxy: () -> Unit,
+    onSwitchNetwork: () -> Unit,
     onNeverShow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1872,6 +1874,15 @@ private fun VpnNoticeCard(
                         text = openLabel,
                         style = FlText.caption1,
                         fontWeight = FontWeight.SemiBold,
+                        color = scheme.primary,
+                    )
+                }
+                // 另一个同样常见的解法：不是代理的问题，是 Wi-Fi 本身不通（校园网、酒店网、
+                // 家里路由器），这时要动的是流量/Wi-Fi 开关，不是 VPN 客户端。
+                TextButton(onClick = onSwitchNetwork) {
+                    Text(
+                        text = switchLabel,
+                        style = FlText.caption1,
                         color = scheme.primary,
                     )
                 }

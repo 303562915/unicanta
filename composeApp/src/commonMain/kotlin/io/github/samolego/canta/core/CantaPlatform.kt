@@ -86,6 +86,17 @@ interface CantaPlatform {
     fun openProxySettings(): Boolean = false
 
     /**
+     * 打开系统的网络开关：Wi-Fi / 移动数据的那一块面板。
+     *
+     * 与 [openProxySettings] 分开，因为"连不上"有两种很不一样的解法：代理没开是前者，Wi-Fi
+     * 自己不通（校园网要认证、酒店网要登录、家里路由器掉线）是后者。提示里给出两个入口，
+     * 让人一眼选对，而不是把「换网络」也塞进 VPN 设置里。
+     *
+     * 默认 false：桌面、网页和测试没有这样一块面板，调用方据此自己收场。
+     */
+    fun openNetworkSettings(): Boolean = false
+
+    /**
      * Open [appSchemes] in the app that claims them — the author's Coolapk page, a QQ group card —
      * and fall back to [web] when none of them is handled.
      *

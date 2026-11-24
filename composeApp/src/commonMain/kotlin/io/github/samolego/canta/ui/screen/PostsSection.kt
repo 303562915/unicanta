@@ -15,12 +15,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,49 +46,75 @@ import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.community.CommunityPost
 import io.github.samolego.canta.data.community.PostComment
+import io.github.samolego.canta.data.community.PostDraft
+import io.github.samolego.canta.data.community.PostDraftStore
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.PostThread
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.BeijingTime
+import io.github.samolego.canta.util.currentTimeMillis
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /** 一页拉多少条。后端把 `p_limit` 夹在 1..50，这里取一屏够看的数。 */
 private const val POSTS_PAGE = 20
+
+/** 标题、正文的上限，与后端 `community_posts` 的约束同一个数。 */
+private const val POST_TITLE_LIMIT = 120
+private const val POST_BODY_LIMIT = 8000
+
+/**
+ * 自动存草稿的防抖窗口：还在敲就重新计时，700 毫秒没再动才写一次盘。
+ *
+ * 不是每一键都写：写盘一次比一次内存赋值贵得多，而且草稿要的是"手停下来那一刻的样子"，
+ * 不是每一次中间态。
+ */
+private const val AUTOSAVE_DELAY_MS = 700L
 
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
 private val PostPinned = Color(0xFF2FA84F)
 
 /**
- * 推荐页里的「社区帖子」：发帖、看帖、回帖、点赞。
+ * 「社区帖子」这一页：发帖、看帖、回帖、点赞，带本地草稿。
  *
- * 排布就是阅读顺序：
+ * 一页两种形态，同一个 composable 里切（`composing`），不另开路由：
  *
- *  1. 顶部一行「发一帖」入口 —— 点开是标题 + 正文的表单。标题必填，正文可以留空。
- *  2. 帖子列表 —— 置顶在前、其余按时间倒序；每条显示置顶标记、标题、摘要、作者、时间、
- *     回帖数、赞数。点一条打开详情。
- *  3. 详情对话框 —— 正文全文、点赞按钮、回帖列表（后端最多给 200 条，按时间正序）、底下的
- *     回复框；自己发的帖子在按钮行里多一个「删除」，点了还要再确认一次。
+ *  1. **列表** —— 顶上先是「草稿 N 篇 · 继续编辑」和那几篇草稿（有草稿时才画），下面是帖子：
+ *     置顶在前、其余按时间倒序，每条显示置顶标记、标题、摘要、作者、时间、回帖数、赞数。
+ *     点一条打开详情对话框（正文全文、点赞、回帖列表、回复框、作者本人的删除）。
+ *  2. **编辑器** —— 标题 + 正文 + 字数，底下「取消」「发布」。输入停顿 700 毫秒自动存成草稿，
+ *     顶部一行「已自动保存 · HH:mm」；取消时把内容存成草稿并明说，发布成功后草稿从盘上删掉。
  *
- * 身份：写操作只认后端从 token 认出来的身份（见 `PostStore`）。[authorId] 为空时这一块只读：
- * 「发一帖」的入口还在，但点开会说"还没认出身份"，而不是让后端悄悄记在一串自报号码上。
+ * 身份：写操作只认后端从 token 认出来的身份（见 `PostStore`），草稿按同一个身份分开存
+ * （见 `PostDraftStore`）。[authorId] 为空时这一页只读：点「写帖子」会说"还没认出身份"，
+ * 而不是让后端记在一串自报号码上、或者把草稿存在没有主人的名下。
  *
- * @param store 帖子数据层；null 时这一块只显示一句说明，不装作有数据。
  * @param platform 用来提示（[CantaPlatform.showMessage]）。
+ * @param store 帖子数据层；null 时列表只显示一句说明，不装作有数据。
+ * @param drafts 草稿；null 时编辑器照样能写，只是关掉就没了。
  * @param author 署名：发帖、回帖时一起发上去，只当名字显示，不当身份。
- * @param authorId 身份码：只有它等于某条帖子的 `author_id` 时，页面才给那条帖子显示删除。
+ * @param authorId 身份码：草稿按它分开，删除按钮也只在作者本人的帖子上出现。
+ * @param onNavigateBack 顶栏返回。
  */
 @Composable
-internal fun PostsSection(
-    store: PostStore?,
+internal fun PostsScreen(
     platform: CantaPlatform,
+    store: PostStore?,
+    drafts: PostDraftStore?,
     author: String,
     authorId: String,
-    modifier: Modifier = Modifier,
+    onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
+    val who = remember(authorId, author) { authorId.ifEmpty { author } }
     val canWrite = authorId.isNotBlank()
 
     var posts by remember { mutableStateOf<List<CommunityPost>>(emptyList()) }
@@ -97,10 +126,23 @@ internal fun PostsSection(
     /** 正在进行的那一件事：`like:7` / `reply:7` / `delete:7`。 */
     var busyKey by remember { mutableStateOf<String?>(null) }
 
-    var composerOpen by remember { mutableStateOf(false) }
-    var composerBusy by remember { mutableStateOf(false) }
-    var composerError by remember { mutableStateOf<String?>(null) }
+    /** 盘上这个身份的草稿，最近改过的在前。首帧同步读一次（`read()` 是同步的）。 */
+    var draftList by remember(who) {
+        mutableStateOf(if (drafts != null) drafts.drafts(who) else emptyList())
+    }
 
+    // ---- 编辑器 ----
+    var composing by remember { mutableStateOf(false) }
+    /** 正在编辑的那篇草稿的本地 id；空串表示没在编辑。 */
+    var editorId by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+    /** 最后一次自动保存的时刻（epoch 毫秒）；0 表示这次还没存过。 */
+    var savedAt by remember { mutableStateOf(0L) }
+    var posting by remember { mutableStateOf(false) }
+    var editorError by remember { mutableStateOf<String?>(null) }
+
+    // ---- 详情对话框 ----
     /** 打开的那条帖子的 id；0 表示没开。 */
     var openId by remember { mutableStateOf(0L) }
     var thread by remember { mutableStateOf<PostThread?>(null) }
@@ -144,6 +186,111 @@ internal fun PostsSection(
         threadLoading = false
     }
 
+    /*
+     * 自动存草稿：键变了就重新计时，所以"一直在敲"不会写盘，手停下来 700 毫秒才写一次。
+     *
+     * 延时之后要再确认一次还在同一条草稿上：发布成功会把 `composing` / `editorId` 清掉，但那个
+     * 协程可能还没被取消，照旧写下去就等于把刚发出去的帖子又存成了草稿。
+     */
+    LaunchedEffect(composing, editorId, title, body) {
+        if (!composing) return@LaunchedEffect
+        val draftStore = drafts ?: return@LaunchedEffect
+        val id = editorId
+        if (id.isEmpty() || who.isEmpty()) return@LaunchedEffect
+        if (title.isBlank() && body.isBlank()) return@LaunchedEffect
+        delay(AUTOSAVE_DELAY_MS)
+        if (!composing || editorId != id) return@LaunchedEffect
+        val stamp = currentTimeMillis()
+        draftStore.save(who, PostDraft(id = id, title = title, body = body, updatedAt = stamp))
+        savedAt = stamp
+        draftList = draftStore.drafts(who)
+    }
+
+    /** 打开编辑器：[draft] 为 null 就是一篇新的（本地新 id，空标题空正文）。 */
+    val openEditor: (PostDraft?) -> Unit = edit@{ draft ->
+        if (!canWrite) {
+            platform.showMessage("还没认出身份，帖子记不上")
+            return@edit
+        }
+        editorId = draft?.id?.takeIf { it.isNotEmpty() } ?: currentTimeMillis().toString()
+        title = draft?.title.orEmpty()
+        body = draft?.body.orEmpty()
+        savedAt = draft?.updatedAt ?: 0L
+        editorError = null
+        composing = true
+    }
+
+    /** 取消：有内容就存成草稿并说一声；空的一次什么都不留。 */
+    val cancelEditor: () -> Unit = cancel@{
+        val draftStore = drafts
+        val hasText = title.isNotBlank() || body.isNotBlank()
+        if (!hasText) {
+            draftStore?.delete(who, editorId)
+            draftList = draftStore?.drafts(who).orEmpty()
+            composing = false
+            editorId = ""
+            return@cancel
+        }
+        if (draftStore != null && who.isNotEmpty()) {
+            draftStore.save(
+                who,
+                PostDraft(id = editorId, title = title, body = body, updatedAt = currentTimeMillis()),
+            )
+            draftList = draftStore.drafts(who)
+        }
+        composing = false
+        platform.showMessage("已存为草稿")
+    }
+
+    /** 发布：成功后删草稿、关编辑器、刷新列表；失败就把后端那句话摆在编辑器里。 */
+    val publish: () -> Unit = pub@{
+        val current = store
+        if (current == null) {
+            editorError = "社区后端没连上，帖子没发出去。"
+            return@pub
+        }
+        if (posting) return@pub
+        val cleanTitle = title.trim()
+        if (cleanTitle.isEmpty()) {
+            editorError = "标题不能空"
+            return@pub
+        }
+        val draftId = editorId
+        posting = true
+        editorError = null
+        scope.launch {
+            val id = current.add(cleanTitle, body, author)
+            posting = false
+            if (id == null) {
+                editorError = current.reason ?: "没发出去：检查一下网络再试"
+                return@launch
+            }
+            composing = false
+            editorId = ""
+            title = ""
+            body = ""
+            savedAt = 0L
+            drafts?.delete(who, draftId)
+            draftList = drafts?.drafts(who).orEmpty()
+            reloadKey++
+            platform.showMessage("已发布")
+        }
+    }
+
+    /** 从草稿列表里删掉一篇（用户明确不要了）。 */
+    val discardDraft: (PostDraft) -> Unit = discarded@{ draft ->
+        drafts?.delete(who, draft.id)
+        draftList = drafts?.drafts(who).orEmpty()
+        if (composing && editorId == draft.id) {
+            composing = false
+            editorId = ""
+            title = ""
+            body = ""
+            savedAt = 0L
+        }
+        platform.showMessage("草稿已删除")
+    }
+
     val loadMore: () -> Unit = more@{
         val current = store ?: return@more
         if (loadingMore || busyKey != null) return@more
@@ -155,27 +302,6 @@ internal fun PostsSection(
                 fresh == null -> platform.showMessage("没拉到更多：${current.reason ?: "检查一下网络"}")
                 fresh.isEmpty() -> platform.showMessage("到底了")
                 else -> posts = posts + fresh.filterNot { next -> posts.any { it.id == next.id } }
-            }
-        }
-    }
-
-    val submitPost: (String, String) -> Unit = submit@{ title, body ->
-        val current = store
-        if (current == null) {
-            composerError = "社区后端没连上，帖子没发出去。"
-            return@submit
-        }
-        composerBusy = true
-        composerError = null
-        scope.launch {
-            val id = current.add(title, body, author)
-            composerBusy = false
-            if (id == null) {
-                composerError = current.reason ?: "没发出去：检查一下网络再试"
-            } else {
-                composerOpen = false
-                reloadKey++
-                platform.showMessage("已发布")
             }
         }
     }
@@ -233,40 +359,73 @@ internal fun PostsSection(
         }
     }
 
-    when {
-        store == null -> {
-            PostNote(
-                text = "社区后端没连上，帖子暂时读不了。",
-                modifier = modifier.padding(top = 8.dp),
+    /**
+     * 顶栏返回：编辑器里还有字就先存成草稿再走。
+     *
+     * 防抖窗口是 700 毫秒 —— 敲完立刻按返回，那一刻还没写盘；这里补一次，人才不会因为
+     * "点错了返回"丢掉半篇。
+     */
+    val leave: () -> Unit = leave@{
+        if (composing && who.isNotEmpty() && (title.isNotBlank() || body.isNotBlank())) {
+            drafts?.save(
+                who,
+                PostDraft(id = editorId, title = title, body = body, updatedAt = currentTimeMillis()),
             )
+            platform.showMessage("已存为草稿")
         }
+        onNavigateBack()
+    }
 
-        loading && posts.isEmpty() -> {
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        }
-
-        else -> {
+    Scaffold(
+        topBar = {
+            ScreenTopBar(
+                title = "帖子",
+                onNavigateBack = leave,
+                actions = {
+                    // 编辑器开着的时候不再重复一个「写帖子」：那会让人以为能同时写两篇。
+                    if (!composing) {
+                        TextButton(onClick = { openEditor(null) }) { Text("写帖子") }
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        if (composing) {
+            PostEditorPane(
+                title = title,
+                body = body,
+                savedAt = savedAt,
+                error = editorError,
+                posting = posting,
+                canPublish = canWrite && !posting,
+                onTitleChange = { title = it.take(POST_TITLE_LIMIT) },
+                onBodyChange = { body = it.take(POST_BODY_LIMIT) },
+                onPublish = publish,
+                onCancel = cancelEditor,
+                modifier = Modifier.padding(padding),
+            )
+        } else {
             val listError = error
             LazyColumn(
-                modifier = modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
-                item(key = "post-new") {
-                    PostEntryRow(
-                        title = "发一帖",
-                        hint = if (canWrite) "标题加正文，有话说就写下来。"
-                        else "还没认出身份，登录之后才能发。",
-                        onClick = {
-                            composerError = null
-                            if (canWrite) {
-                                composerOpen = true
-                            } else {
-                                platform.showMessage("还没认出身份，发帖记不上")
-                            }
-                        },
-                    )
+                if (draftList.isNotEmpty()) {
+                    val newest = draftList.first()
+                    item(key = "drafts-head") {
+                        DraftBanner(
+                            count = draftList.size,
+                            newest = newest,
+                            onContinue = { openEditor(newest) },
+                        )
+                    }
+                    items(draftList, key = { "draft-${it.id}" }) { draft ->
+                        DraftRow(
+                            draft = draft,
+                            onClick = { openEditor(draft) },
+                            onDelete = { discardDraft(draft) },
+                        )
+                    }
                 }
 
                 item(key = "posts-head") {
@@ -277,7 +436,19 @@ internal fun PostsSection(
                     item(key = "posts-error") { PostNote(text = listError) }
                 }
 
-                if (posts.isEmpty()) {
+                if (loading && posts.isEmpty()) {
+                    // 还不知道有没有帖子的时候只转圈，不说"还没有人发帖"：那是两件事。
+                    item(key = "posts-loading") {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(top = 36.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                }
+
+                if (posts.isEmpty() && !loading && listError == null) {
                     item(key = "posts-empty") {
                         PostNote(text = "还没有人发帖。第一帖可以是你在用的某个方案、某台机器，或者一句吐槽。")
                     }
@@ -312,23 +483,11 @@ internal fun PostsSection(
                 item(key = "posts-foot") {
                     PostNote(
                         text = "帖子只经后端读写：认不出身份就发不出去，也删不了别人的帖子。" +
-                            "刚发过一帖要等一分钟才能再发。",
+                            "写下的字每 700 毫秒存一次本地草稿，发出去成功之后才删。",
                     )
                 }
             }
         }
-    }
-
-    if (composerOpen) {
-        PostComposerDialog(
-            submitting = composerBusy,
-            error = composerError,
-            onDismiss = {
-                composerOpen = false
-                composerError = null
-            },
-            onSubmit = submitPost,
-        )
     }
 
     if (openId > 0L) {
@@ -342,7 +501,7 @@ internal fun PostsSection(
             reply = reply,
             locked = current?.post?.locked == true,
             canDelete = authorId.isNotBlank() && current?.post?.authorId == authorId,
-            onReplyChange = { reply = it.take(4000) },
+            onReplyChange = { reply = it.take(POST_BODY_LIMIT) },
             onSend = sendReply,
             onToggleLike = { current?.post?.let(toggleLike) },
             onDeleteRequest = { current?.post?.let { confirmTarget = it } },
@@ -364,60 +523,182 @@ internal fun PostsSection(
     }
 }
 
-/** 一行能点的入口：加号、标题、一句说明。与机场那一块的入口同一副样子。 */
+/**
+ * 编辑器：标题、正文、字数、自动保存的那一行，以及「取消」「发布」。
+ *
+ * 整页可滚：正文一长，键盘一弹，按钮就在屏幕外了；`verticalScroll` 让它们跟着走。
+ */
 @Composable
-private fun PostEntryRow(
+private fun PostEditorPane(
     title: String,
-    hint: String,
-    onClick: () -> Unit,
+    body: String,
+    savedAt: Long,
+    error: String?,
+    posting: Boolean,
+    canPublish: Boolean,
+    onTitleChange: (String) -> Unit,
+    onBodyChange: (String) -> Unit,
+    onPublish: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Row(
+    val savedClock = draftClock(savedAt)
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = if (savedClock.isNotEmpty()) "已自动保存 · $savedClock" else "还没存过草稿",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = title,
+            onValueChange = onTitleChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("标题") },
+            placeholder = { Text("一句话说清这帖讲什么") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        )
+        Text(
+            text = "${title.length}/$POST_TITLE_LIMIT",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = body,
+            onValueChange = onBodyChange,
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 10,
+            label = { Text("正文") },
+            placeholder = { Text("细节、机型、ROM、试过什么") },
+            textStyle = MaterialTheme.typography.bodySmall,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+        )
+        Text(
+            text = "${body.length}/$POST_BODY_LIMIT",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+        if (error != null) {
+            Text(text = error, style = MaterialTheme.typography.labelSmall, color = scheme.error)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onCancel) { Text("取消") }
+            Button(enabled = canPublish, onClick = onPublish) {
+                Text(if (posting) "正在发…" else "发布")
+            }
+        }
+        Text(
+            text = "写下的字自动存成本地草稿，取消也不会丢；发出去成功之后草稿才删掉。" +
+                "同一身份一分钟只能发一帖。",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** 「草稿 N 篇 · 继续编辑」那一行：点它接着写最新那篇。 */
+@Composable
+private fun DraftBanner(
+    count: Int,
+    newest: PostDraft,
+    onContinue: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 10.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button, onClick = onContinue)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(9.dp))
-                .background(scheme.primary)
-                .padding(horizontal = 7.dp, vertical = 3.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "+",
-                color = scheme.onPrimary,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = title,
+                text = "草稿 $count 篇 · 继续编辑",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = scheme.onSurface,
+                color = scheme.primary,
+                modifier = Modifier.weight(1f),
             )
             Text(
-                text = hint,
+                text = "最近 ${draftClock(newest.updatedAt)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         }
+        Text(
+            text = newest.title.ifBlank { newest.body.take(40).ifBlank { "（空草稿）" } },
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
-/** 一个区块的标题：名字 + 条数。 */
+/** 草稿列表里的一行：标题、一句预览、时间，右边一个删除。 */
 @Composable
-private fun PostSectionHeader(label: String, count: Int) {
+private fun DraftRow(
+    draft: PostDraft,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(FlSurfaceLevel.Block.colorOf(scheme))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = draft.title.ifBlank { "未命名草稿" },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = buildString {
+                    val preview = draft.body.replace('\n', ' ').trim()
+                    if (preview.isNotEmpty()) {
+                        append(preview.take(40))
+                        append(" · ")
+                    }
+                    append(draftClock(draft.updatedAt))
+                    append(" 改过")
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TextButton(onClick = onDelete) { Text("删除") }
+    }
+}
+
+/** 一个区块的标题：名字，带条数时再跟一个数字。 */
+@Composable
+private fun PostSectionHeader(label: String, count: Int? = null) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -428,12 +709,14 @@ private fun PostSectionHeader(label: String, count: Int) {
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
         )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (count != null) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -531,65 +814,6 @@ private fun PostBadge(text: String, color: Color) {
             .background(color)
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
-}
-
-/** 发帖的表单：标题（必填）+ 正文。 */
-@Composable
-private fun PostComposerDialog(
-    submitting: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onSubmit: (String, String) -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    var title by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
-    val canSend = title.trim().isNotEmpty() && !submitting
-
-    CantaDialog(
-        onDismissRequest = onDismiss,
-        title = "发一帖",
-        widthFraction = WIDE_DIALOG_WIDTH,
-        scrollable = true,
-        buttons = {
-            TextButton(onClick = onDismiss) { Text("取消") }
-            Button(
-                enabled = canSend,
-                onClick = { onSubmit(title.trim(), body) },
-            ) { Text(if (submitting) "正在发…" else "发布") }
-        },
-    ) {
-        Text(
-            text = "标题必填，正文可以留空。发出去之后只有你自己能删；同一身份一分钟只能发一帖。",
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = title,
-            onValueChange = { title = it.take(120) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("标题") },
-            placeholder = { Text("一句话说清这帖讲什么") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        OutlinedTextField(
-            value = body,
-            onValueChange = { body = it.take(8000) },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 4,
-            label = { Text("正文（可留空）") },
-            placeholder = { Text("细节、机型、ROM、试过什么") },
-            textStyle = MaterialTheme.typography.bodySmall,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        )
-        if (error != null) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = error, style = MaterialTheme.typography.labelSmall, color = scheme.error)
-        }
-    }
 }
 
 /**
@@ -818,4 +1042,20 @@ private fun PostDeleteDialog(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * 草稿时间：`HH:mm`（**北京时间**，和页面上其它时间同一个时区）。
+ *
+ * 这里不用 `relativeStamp`：那是"3 分钟前"，而自动保存要的是"几点几分存的"，一眼能对上墙上的钟。
+ * 0 或者算不出来就返回空串，调用方据此不画那一行。
+ */
+private fun draftClock(updatedAt: Long): String {
+    if (updatedAt <= 0L) return ""
+    return runCatching {
+        val local = Instant.fromEpochMilliseconds(updatedAt).toLocalDateTime(BeijingTime.zone)
+        val hour = if (local.hour < 10) "0${local.hour}" else local.hour.toString()
+        val minute = if (local.minute < 10) "0${local.minute}" else local.minute.toString()
+        "$hour:$minute"
+    }.getOrNull().orEmpty()
 }

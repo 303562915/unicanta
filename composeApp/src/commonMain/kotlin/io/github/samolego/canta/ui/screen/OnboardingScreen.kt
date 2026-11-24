@@ -173,7 +173,6 @@ import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.theme.GreenOk
-import io.github.samolego.canta.ui.theme.Orange
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -661,16 +660,13 @@ private fun VerifyCard(chips: List<String>) {
  * unreachable.
  * The page states the situation, gives the shortest path to a working proxy, and lets the user walk
  * on either way — local rules and removal never touch the network.
+ *
+ * 这一页**不检测** VPN。网卡在不在和连不连得上不是一回事：分流规则、公司网络、节点失效都会让两者
+ * 相反，硬判就会对用得好好的人说"你没开代理"。真正回答这个问题的是请求本身——主界面在数据拉不
+ * 到时才提示；这一页只把两条出路（开代理 / 换网络）放在手边。
  */
 @Composable
 private fun NetworkPage(platform: CantaPlatform, onBack: () -> Unit, onDone: () -> Unit) {
-    var hasProxy by remember { mutableStateOf(platform.isVpnActive()) }
-
-    LifecycleResumeEffect(Unit) {
-        hasProxy = platform.isVpnActive()
-        onPauseOrDispose {}
-    }
-
     OnboardingPage(
         pageIndex = PAGE_NETWORK,
         badge = { IconBadge(Icons.Default.Info) },
@@ -691,43 +687,20 @@ private fun NetworkPage(platform: CantaPlatform, onBack: () -> Unit, onDone: () 
             )
         },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (hasProxy) MaterialTheme.colorScheme.primaryContainer else FlSurfaceLevel.Card.colorOf(MaterialTheme.colorScheme))
-                .padding(14.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(9.dp)
-                        .background(if (hasProxy) GreenOk else Orange, CircleShape),
-                )
-                Text(
-                    text = stringResource(
-                        if (hasProxy) Res.string.onboarding_network_vpn_on else Res.string.onboarding_network_vpn_off
-                    ),
-                    style = FlText.subheadline,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!hasProxy) {
-                    OnboardingButton(
-                        onClick = { platform.openProxySettings() },
-                        primary = true,
-                        label = stringResource(Res.string.onboarding_network_enable),
-                    )
-                }
-                OnboardingButton(
-                    onClick = { hasProxy = platform.isVpnActive() },
-                    primary = false,
-                    label = stringResource(Res.string.onboarding_network_recheck),
-                )
-            }
+            OnboardingButton(
+                onClick = { platform.openProxySettings() },
+                primary = true,
+                label = stringResource(Res.string.onboarding_network_enable),
+            )
+            OnboardingButton(
+                onClick = { platform.openNetworkSettings() },
+                primary = false,
+                label = stringResource(Res.string.vpn_notice_switch_network),
+            )
         }
         Spacer(Modifier.height(12.dp))
         Text(

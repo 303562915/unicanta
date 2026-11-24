@@ -479,6 +479,30 @@ class AndroidCantaPlatform(
     }
 
     /**
+     * 打开系统那块 Wi-Fi / 移动数据面板。
+     *
+     * API 29 起有专门的面板（`ACTION_INTERNET_CONNECTIVITY`），拉下来就是网络开关，换 Wi-Fi 或
+     * 切流量一步到位；旧系统退回无线设置页。与 [openProxySettings] 分开，是因为"连不上"的原因
+     * 不一样：代理没开、还是这张网自己不通，解法不是同一个按钮。
+     */
+    override fun openNetworkSettings(): Boolean {
+        val candidates = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                add(Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY))
+            }
+            add(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+        }
+        for (intent in candidates) {
+            val opened = runCatching {
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.isSuccess
+            if (opened) return true
+        }
+        LogUtils.w(TAG, "No network settings screen answered")
+        return false
+    }
+
+    /**
      * Asks the package manager who installed this package. `getInstallSourceInfo` needs API 30;
      * below that the deprecated `getInstallerPackageName` answers the same question and is the only
      * thing available, so the warning is suppressed rather than worked around.

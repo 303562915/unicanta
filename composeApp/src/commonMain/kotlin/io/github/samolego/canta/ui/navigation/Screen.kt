@@ -41,6 +41,14 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Recommendations : Screen("recommend")
 
     /**
+     * 社区帖子：一页自己的讨论区——发帖、看帖、回帖、点赞，带本地草稿。
+     *
+     * 从推荐页右上角的「帖子」进。不挂在推荐页的顶部分段里：那是一张要滚很久的列表，
+     * 还要自己带一个编辑器，塞进推荐页会让那一页同时是目录、投票、机场和论坛。
+     */
+    data object Posts : Screen("posts")
+
+    /**
      * The messages page: what other people did around this install, the chats it is in, and the
      * way into both.
      *

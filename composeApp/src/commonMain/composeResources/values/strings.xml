@@ -179,8 +179,9 @@
     <string name="onboarding_network_enable">Turn on proxy</string>
     <string name="onboarding_network_recheck">Check network</string>
     <string name="onboarding_network_note">Without it the app still works: local rules, app list and removal are unaffected.</string>
-    <string name="vpn_notice_text">No VPN detected on this phone. Our database is in Japan, so a proxy or VPN is required to reach the full data.</string>
+    <string name="vpn_notice_text">Could not reach the community server: the request never came back. Either this network is not passing it through, or a proxy is needed.</string>
     <string name="vpn_notice_open">Turn on proxy</string>
+    <string name="vpn_notice_switch_network">Switch network</string>
     <string name="vpn_notice_never">Do not remind me again</string>
     <string name="onboarding_privilege_title">Last step: the privilege</string>
     <string name="onboarding_privilege_subtitle">Removing system apps needs one privileged runtime. Either one works; we recommend Stellar.</string>

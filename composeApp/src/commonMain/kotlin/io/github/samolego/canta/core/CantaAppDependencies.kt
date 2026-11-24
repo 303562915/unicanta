@@ -12,6 +12,7 @@ import io.github.samolego.canta.data.community.ChatMessageStore
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
+import io.github.samolego.canta.data.community.PostDraftStore
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.preset.CantaPresetStore
 import io.github.samolego.canta.util.PackageTelemetry
@@ -42,6 +43,8 @@ class CantaAppDependencies(
     val planCache: PlanCache,
     /** What was uninstalled and put back, and when; mirrored to a CSV in the download folder. */
     val history: OperationLogStore,
+    /** 帖子草稿：写在本机、按身份分开，发出去成功才删（见 [PostDraftStore]）。 */
+    val postDrafts: PostDraftStore,
 )
 
 /** Names of the persisted blobs; each platform maps them to a file or storage key. */
@@ -64,6 +67,9 @@ object StoredData {
 
     /** 最近几个会话的最后几条消息：点进会话时先画它（见 [ChatMessageStore]）。 */
     const val CHAT_MESSAGES = "chat_messages.json"
+
+    /** 帖子草稿：写在本机，发出去成功才删（见 [PostDraftStore]）。 */
+    const val POST_DRAFTS = "post_drafts.json"
 
     /** 各页面快照落盘的那一份（见 [ScreenCache]）：冷启动时先画上次那一屏。 */
     const val SCREEN_CACHE = "screen_cache.json"
@@ -114,5 +120,6 @@ fun cantaAppDependencies(
         notes = AppNoteStore(storage(StoredData.APP_NOTES)),
         planCache = PlanCache(storage(StoredData.PLAN_CACHE)),
         history = OperationLogStore(storage(StoredData.OPERATION_LOG), platform),
+        postDrafts = PostDraftStore(storage(StoredData.POST_DRAFTS)),
     )
 }

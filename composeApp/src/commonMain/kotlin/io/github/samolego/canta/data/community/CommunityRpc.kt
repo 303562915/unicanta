@@ -87,16 +87,20 @@ class CommunityRpc(
             answer != null -> {
                 lastFailureWasNetwork = false
                 lastError = null
+                BackendHealth.reportReachable()
                 answer
             }
             refusal != null -> {
                 lastFailureWasNetwork = false
                 lastError = refusal
+                // 后端答了话，只是不要这次请求：链路是通的，别把"被拒"说成"没连上"。
+                BackendHealth.reportReachable()
                 null
             }
             else -> {
                 lastFailureWasNetwork = true
                 lastError = null
+                BackendHealth.reportUnreachable()
                 null
             }
         }
