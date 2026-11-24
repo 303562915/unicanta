@@ -93,7 +93,7 @@
     <string name="canta_description">UniCanta 是一个开源的卸载工具，可借助 Shizuku 删除系统和用户应用程序。通过 UniCanta，您无需电脑辅助即可随心精简设备。\n\n特别感谢 %1$s。\n没有他们的协助，UniCanta 将无法做到如今的程度。</string>
     <string name="search_apps">搜索应用</string>
     <string name="auto_update_bloat_list">自动更新应用的标注列表</string>
-    <string name="auto_update_bloat_list_description">保持标注与描述为最新。</string>
+    <string name="auto_update_bloat_list_description">每天检查一次更新；平时用本地那份，列表不等网络。</string>
     <string name="settings">设置</string>
     <string name="confirm_uninstall">确认卸载</string>
     <string name="app_version">软件版本：%1$s</string>

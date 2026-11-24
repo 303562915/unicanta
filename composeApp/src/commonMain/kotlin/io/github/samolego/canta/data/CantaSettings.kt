@@ -89,6 +89,11 @@ class CantaSettings(storage: AppBlobStorage) {
     val autoUpdateBloatListFlow = field { it.autoUpdateBloatList }
     val confirmBeforeUninstallFlow = field { it.confirmBeforeUninstall }
     val latestCommitHashFlow = field { it.latestBloatCommitHash }
+    /**
+     * 上次和 GitHub 核对 bloat 列表的日期（`YYYY-MM-DD`，空串 = 没核对过）。
+     * 应用列表拿它当"今天还问不问"的判据，见 [io.github.samolego.canta.data.bloat.BloatRepository.refresh]。
+     */
+    val bloatListCheckedDayFlow = field { it.bloatListCheckedDay }
     val bloatListUrlFlow = field { it.bloatListUrl.ifEmpty { DEFAULT_BLOAT_URL } }
     val commitsUrlFlow = field { it.commitsUrl.ifEmpty { DEFAULT_BLOAT_COMMITS_URL } }
     val allowUnsafeUninstallsFlow = field { it.allowUnsafeUninstalls }
@@ -183,6 +188,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setAutoUpdateBloatList(autoUpdate: Boolean) = update { it.copy(autoUpdateBloatList = autoUpdate) }
     suspend fun setConfirmBeforeUninstall(needsConfirm: Boolean) = update { it.copy(confirmBeforeUninstall = needsConfirm) }
     suspend fun setLatestCommitHash(hash: String) = update { it.copy(latestBloatCommitHash = hash) }
+    /** Records the local date (`YYYY-MM-DD`) the bloat list was last checked; see [AppSettingsProto.bloatListCheckedDay]. */
+    suspend fun setBloatListCheckedDay(day: String) = update { it.copy(bloatListCheckedDay = day) }
     suspend fun setBloatListUrl(url: String) = update { it.copy(bloatListUrl = url) }
     suspend fun setCommitsUrl(url: String) = update { it.copy(commitsUrl = url) }
     suspend fun setAllowUnsafeUninstalls(allow: Boolean) = update { it.copy(allowUnsafeUninstalls = allow) }

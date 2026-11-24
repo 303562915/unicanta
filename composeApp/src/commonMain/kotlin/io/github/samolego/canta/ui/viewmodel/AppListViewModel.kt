@@ -209,17 +209,31 @@ class AppListViewModel(
     private val iconCache = mutableMapOf<String, ImageBitmap>()
 
     /**
-     * (Re)loads all apps, cancelling a load that is still running. The
-     * returned job completes once apps, badges and streamed icons are loaded.
+     * (Re)loads all apps, cancelling a load that is still running. The returned job completes once
+     * apps, the local badges and the streamed icons are loaded; the once-a-day bloat-list check runs
+     * behind it (see [startBadgeRefresh]) and is not something the caller has to wait for.
      */
     fun loadApps(): Job {
         loadJob?.cancel()
+        badgeRefreshJob?.cancel()
         return viewModelScope.launch { load() }.also { loadJob = it }
     }
+
+    /**
+     * The background check of the bloat list, if one is running. Kept apart from [loadJob] because
+     * it must not hold the list hostage: the page is already usable when it starts.
+     */
+    private var badgeRefreshJob: Job? = null
 
     private suspend fun load() = coroutineScope {
         isLoading = true
         isLoadingBadges = true
+        // Whether the badges on screen came from the local copy; the finally block reads it to decide
+        // if the "loading badges" bar still has anything to say.
+        var badgesFromLocal = false
+        // Whether the background check was actually started; when the load throws before reaching it
+        // there is nothing that would ever clear the flag, so the finally does it instead.
+        var refreshStarted = false
         try {
             val start = currentTimeMillis()
             val all = cantaHandler.loadApps().distinctBy { it.packageName }
@@ -243,16 +257,47 @@ class AppListViewModel(
 
             // Icons and badges load in parallel.
             if (all.any { it.icon == null && it.packageName !in iconCache }) launch { streamIcons() }
+            // 手上那份先贴上去：缓存里有就用缓存，没有就用随包发的那份，都不联网。
             val badgesStart = currentTimeMillis()
-            applyBloatData(bloatRepository.load())
-            LogUtils.i(TAG, "Loaded badges in ${currentTimeMillis() - badgesStart}ms")
+            val localBadges = bloatRepository.local()
+            applyBloatData(localBadges)
+            badgesFromLocal = localBadges.isNotEmpty()
+            LogUtils.i(TAG, "Loaded ${localBadges.size} local badges in ${currentTimeMillis() - badgesStart}ms")
+            // 有没有新东西交给后台问（一天最多一次）：有变化才替换列表上的徽标。
+            refreshStarted = true
+            startBadgeRefresh()
         } finally {
             isLoading = false
-            isLoadingBadges = false
+            // 本地那份已经在列表上了，就不必让「正在加载特殊标志」继续转；本地一个都没有时
+            // 由后台那次核对收尾（见 startBadgeRefresh）。
+            if (badgesFromLocal || !refreshStarted) isLoadingBadges = false
             appListRestricted = cantaHandler.appListRestricted && _apps.isNotEmpty()
             // Read on every load, so pulling the list down after starting the runtime clears it.
             listIncomplete = !cantaHandler.isAuthorized && _apps.isNotEmpty()
             if (appListRestricted && !noticeShown) askForAppListPermission = true
+        }
+    }
+
+    /**
+     * Asks GitHub whether the bloat list changed — in the background, and at most once a day
+     * (`BloatRepository.refresh` decides that, including "offline means try again next launch").
+     *
+     * Runs on [viewModelScope] rather than inside `load()`'s `coroutineScope`: a child of that scope
+     * would keep the load job (and the pull-to-refresh spinner) alive for as long as the check takes,
+     * which is exactly the wait this is meant to remove.
+     */
+    private fun startBadgeRefresh() {
+        badgeRefreshJob?.cancel()
+        badgeRefreshJob = viewModelScope.launch {
+            val start = currentTimeMillis()
+            val fresh = runCatching { bloatRepository.refresh() }.getOrNull()
+            if (fresh != null) {
+                applyBloatData(fresh)
+                LogUtils.i(TAG, "Refreshed ${fresh.size} badges in ${currentTimeMillis() - start}ms")
+            } else {
+                LogUtils.i(TAG, "Bloat list unchanged after ${currentTimeMillis() - start}ms")
+            }
+            isLoadingBadges = false
         }
     }
 

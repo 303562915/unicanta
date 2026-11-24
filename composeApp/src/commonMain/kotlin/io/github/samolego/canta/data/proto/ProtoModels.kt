@@ -244,6 +244,14 @@ data class AppSettingsProto(
      * 这张图是谁的——换头像时对象名不变（覆盖式上传），这里的字符串也就不必跟着变。
      */
     @ProtoNumber(44) val avatarUrl: String = "",
+    /**
+     * 上一次和 GitHub 核对 bloat 列表的本地日期，写成 `YYYY-MM-DD`；空串 = 从没核对过。
+     *
+     * 存日期而不是时间戳：要的是"每天最多问一次"，不是"隔 24 小时问一次"——上午开过、晚上再开
+     * 不该再问；第二天第一次开才问。核对成功（无论有没有新东西）才写这一格，所以离线那次不算用掉
+     * 当天的额度，下次启动还会再试。见 `BloatRepository.refresh()`。
+     */
+    @ProtoNumber(45) val bloatListCheckedDay: String = "",
 )
 
 /**

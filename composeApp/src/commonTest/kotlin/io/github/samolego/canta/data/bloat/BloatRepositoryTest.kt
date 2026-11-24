@@ -9,6 +9,9 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -124,4 +127,55 @@ class BloatRepositoryTest {
         assertEquals(setOf("com.a"), bloat.keys)
         assertEquals(listJson, cache.content?.decodeToString())
     }
+
+    // ---- 本地先答、一天核对一次 -------------------------------------------------------------
+
+    /** The list on screen comes from the cache, and asking for it costs no request at all. */
+    @Test
+    fun theLocalListIsAnsweredWithoutAnyRequest() = runTest {
+        val server = Server(list = listJson)
+
+        val bloat = BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings()).local()
+
+        assertEquals(setOf("com.cached"), bloat.keys)
+        assertTrue(server.requests.isEmpty(), "the local answer must not touch the network")
+    }
+
+    /** A day that already had its check stays offline, even when GitHub has something newer. */
+    @Test
+    fun aDayThatWasAlreadyCheckedDoesNotTouchTheNetwork() = runTest {
+        val server = Server(sha = "newer", list = listJson)
+        val settings = settings("old").apply { setBloatListCheckedDay(today()) }
+
+        val fresh = BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+
+        assertNull(fresh, "nothing new is a null answer, not an empty list")
+        assertTrue(server.requests.isEmpty())
+    }
+
+    /** Up to date: the day is spent so the next launches stay offline until tomorrow. */
+    @Test
+    fun anUpToDateCheckSpendsTheDay() = runTest {
+        val server = Server(sha = "same", list = listJson)
+        val settings = settings("same")
+
+        BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+
+        assertEquals(today(), settings.bloatListCheckedDayFlow.first())
+    }
+
+    /** Offline: no day is spent, so the next launch tries again instead of waiting until tomorrow. */
+    @Test
+    fun anOfflineCheckDoesNotSpendTheDay() = runTest {
+        val server = Server(sha = null, listOk = false, list = listJson)
+        val settings = settings("old")
+
+        BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+
+        assertEquals("", settings.bloatListCheckedDayFlow.first())
+    }
+
+    /** The day key the repository writes: the phone's own date, `YYYY-MM-DD`. */
+    private fun today(): String =
+        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
 }

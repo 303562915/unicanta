@@ -10,6 +10,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.flow.first
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -34,8 +37,13 @@ data class BloatData(
 )
 
 /**
- * Provides the UAD bloat list, cached in [cache] and refreshed from GitHub
- * when a newer commit exists (and the user allows auto-updates).
+ * Provides the UAD bloat list.
+ *
+ * Two steps, and the order is the point: [local] answers from the cache (or the shipped copy)
+ * without touching the network, so the app list has its badges the moment the list is on screen;
+ * [refresh] then checks GitHub **at most once a day** and only downloads when the commit changed.
+ * A failed check or a failed download leaves the local copy alone and does not spend the day's one
+ * attempt, so the next launch tries again.
  *
  * A usable cached list is never thrown away because of a failed download,
  * and a corrupt cache is replaced by a fresh download.
@@ -88,45 +96,82 @@ class BloatRepository(
     }
 
     suspend fun load(): Map<String, BloatData> {
+        val localList = local()
+        return refresh() ?: localList
+    }
+
+    /**
+     * 手上这份列表：缓存里那份，没有就退到随包发的那份，都没有才是空表。**不联网**。
+     *
+     * 应用列表要的是"立刻有徽标"，不是"等 GitHub 回话"：以前每进一次列表都先问一遍 commits
+     * 接口（国内经常直接超时），于是列表上的「正在加载特殊标志」要转很久。现在先答本地这份，
+     * 核对放到后台（[refresh]）。
+     */
+    suspend fun local(): Map<String, BloatData> {
         val l10n = translationTable()
-        val cached = readCache(l10n)
-        // What to answer with when the network has nothing: the shipped list, never nothing.
-        val fallback = cached ?: bundledEntries(l10n).also {
+        return readCache(l10n) ?: bundledEntries(l10n).also {
             if (it.isEmpty()) {
-                LogUtils.i(TAG, "No cached bloat list; downloading it")
+                LogUtils.i(TAG, "No cached bloat list and none shipped")
             } else {
-                LogUtils.i(TAG, "No cached bloat list; using the shipped list (${it.size} entries)")
+                LogUtils.i(TAG, "Using the shipped bloat list (${it.size} entries)")
             }
         }
-        if (cached != null && !settings.autoUpdateBloatListFlow.first()) {
-            LogUtils.i(TAG, "Bloat list auto-update is off; using the cached list")
-            return cached
+    }
+
+    /**
+     * 后台核对一次：GitHub 上真的换了 commit 才下载，返回**新的**列表；其余情况返回 null，
+     * 调用方继续用手上那份。
+     *
+     * 三条边界，缺一条就会出现"每次都连"或者"坏一次就再也不更新"：
+     *  - 自动更新关着 → 不联网；
+     *  - 今天已经核对过（[CantaSettings.bloatListCheckedDayFlow] 是今天）→ 不联网，一天最多一次；
+     *  - 核对不上（离线、限流、代理坏了）→ 返回 null 且**不**记账，下次启动再试。
+     */
+    suspend fun refresh(): Map<String, BloatData>? {
+        if (!settings.autoUpdateBloatListFlow.first()) {
+            LogUtils.i(TAG, "Bloat list auto-update is off; using the local list")
+            return null
         }
+        val today = todayKey()
+        if (settings.bloatListCheckedDayFlow.first() == today) {
+            LogUtils.i(TAG, "Bloat list already checked today ($today); using the local list")
+            return null
+        }
+
+        val l10n = translationTable()
+        // A cache that does not parse counts as "no cache": the first fetch has to happen whatever
+        // the stored commit says, or a corrupt file would keep the list empty forever.
+        val cached = readCache(l10n)
 
         // Empty when unknown (offline, rate limited, ...).
         val remoteHash = fetchLatestHash()
-        if (cached != null) {
-            if (remoteHash.isEmpty()) {
-                LogUtils.w(TAG, "Couldn't check for bloat list updates; using the cached list")
-                return cached
-            }
-            val needsUpdate = remoteHash != settings.latestCommitHashFlow.first()
-            LogUtils.i(TAG, "Bloat list needs update: $needsUpdate (commit ${remoteHash.take(7)})")
-            if (!needsUpdate) return cached
+        if (remoteHash.isEmpty()) {
+            LogUtils.w(TAG, "Couldn't check for bloat list updates; using the local list")
+            return null
+        }
+        if (cached != null && remoteHash == settings.latestCommitHashFlow.first()) {
+            LogUtils.i(TAG, "Bloat list is up to date (commit ${remoteHash.take(7)})")
+            settings.setBloatListCheckedDay(today)
+            return null
         }
 
         val start = currentTimeMillis()
-        val raw = fetchBloatList() ?: return fallback
+        val raw = fetchBloatList() ?: return null
         val parsed = runCatching { parseBloatList(raw).localisedWith(l10n) }
             .onFailure { LogUtils.e(TAG, "Downloaded bloat list is invalid", it) }
-            .getOrNull() ?: return fallback
+            .getOrNull() ?: return null
 
         runCatching { cache.write(raw.encodeToByteArray()) }
             .onFailure { LogUtils.e(TAG, "Failed to cache the bloat list", it) }
-        if (remoteHash.isNotEmpty()) settings.setLatestCommitHash(remoteHash)
+        settings.setLatestCommitHash(remoteHash)
+        settings.setBloatListCheckedDay(today)
         LogUtils.i(TAG, "Updated bloat list in ${currentTimeMillis() - start}ms (${parsed.size} entries, commit ${remoteHash.take(7)})")
         return parsed
     }
+
+    /** 本地日期键 `YYYY-MM-DD`：一天的判据按手机自己的时区，不是 UTC。 */
+    private fun todayKey(): String =
+        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
 
     /** The cached list, or null if there is none or it can't be parsed. */
     private fun readCache(l10n: BloatDescriptions): Map<String, BloatData>? =
