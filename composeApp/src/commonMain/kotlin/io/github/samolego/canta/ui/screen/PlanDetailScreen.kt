@@ -763,12 +763,12 @@ private fun PlanUseDialog(
     val mismatch = !modelSame || !romSame || !buildSame
     // Unknown counts as needing a confirmation: "nobody said" is not "it fits".
     val needsAck = mismatch || big || unknownPlan
-    val planLabel = plan.deviceLabel.ifBlank { "没有标注机型和系统版本" }
-    val thisLabel = profile?.shortLabel() ?: "读不到本机机型"
+    val planLabel = plan.deviceLabel.ifBlank { "未标注机型与系统版本" }
+    val thisLabel = profile?.shortLabel() ?: "未读取到"
 
     CantaDialog(
         onDismissRequest = onDismiss,
-        title = if (big) "大批量方案，先看一眼" else "使用前确认",
+        title = if (big) "大批量方案，请先确认" else "使用前确认",
         widthFraction = WIDE_DIALOG_WIDTH,
         scrollable = true,
         buttons = {
@@ -796,11 +796,11 @@ private fun PlanUseDialog(
         )
         // 一行判定，用颜色说话：对上不是"可以放心"，对不上也不是"一定出事"。
         val verdict = when {
-            profile == null -> "读不到本机机型，没法替你核对——请自己对照下面的说明判断。"
-            unknownPlan -> "这个方案没有标注机型（或标注不全），无法核对——按包名自己判断。"
-            !modelSame || !romSame -> "机型和/或系统版本对不上：这不是在本机上验证过的方案。"
-            !buildSame -> "机型一致，但 build 不同（方案 ${plan.romBuild}，本机 ${profile?.romBuild ?: "未知"}）：包列表可能已经变了。"
-            else -> "机型与系统版本一致；同一机型换了 build 也可能有出入，用前再核一遍。"
+            profile == null -> "未读取到本机机型，无法自动核对：请对照下列说明自行判断。"
+            unknownPlan -> "该方案未标注机型（或标注不完整），无法核对：请按应用包名自行判断。"
+            !modelSame || !romSame -> "机型或系统版本不一致：该方案未在本机验证。"
+            !buildSame -> "机型一致，系统构建不同（方案 ${plan.romBuild}，本机 ${profile?.romBuild ?: "未知"}）：应用清单可能存在差异。"
+            else -> "机型与系统版本一致；同一机型的不同构建仍可能存在差异，使用前请再核对。"
         }
         Text(
             text = verdict,
@@ -811,9 +811,9 @@ private fun PlanUseDialog(
             modifier = Modifier.padding(top = 8.dp),
         )
         Text(
-            text = "这是别人在自己手机上验过的一张包名清单，不是对你手机的安全承诺。" +
-                "卸载后能否装回，取决于系统分区和手上有没有安装包；设备起不来时，能走的路通常只剩刷机。" +
-                "用不用、用哪几个，由你自己核对，并承担全部结果。",
+            text = "本清单由其他用户在本人设备上验证，不构成对你设备的兼容性承诺。" +
+                "能否恢复取决于系统分区与是否保留了安装包；设备无法启动时，通常只能刷机。" +
+                "是否采用、采用哪些条目，由你自行判断并承担相应风险。",
             fontSize = 12.sp,
             lineHeight = 17.sp,
             color = colors.onSurfaceVariant,
@@ -821,9 +821,9 @@ private fun PlanUseDialog(
         )
         if (big) {
             Text(
-                text = "一次套用 ${plan.packages.size} 个包：出问题时往往连开机都进不去，也就没法逐个排除。" +
-                    "建议先只挑 $FIRST_TRY_PACKAGES 个以内的包试一遍，重启确认正常，再分批往下走" +
-                    "（方案页的搜索框可以按包名挑）。",
+                text = "一次性应用 ${plan.packages.size} 个条目：一旦出现问题可能无法开机，难以逐个排查。" +
+                    "建议先在 $FIRST_TRY_PACKAGES 个以内试用一轮，重启确认正常后再分批推进" +
+                    "（方案页搜索框可按包名挑选）。",
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
                 color = colors.error,
@@ -835,9 +835,9 @@ private fun PlanUseDialog(
                 checked = acknowledged,
                 onCheckedChange = { acknowledged = it },
                 label = if (big) {
-                    "我已核对机型与系统版本，并知道 ${plan.packages.size} 个包一次卸完的后果由我自己承担"
+                    "我已核对机型与系统版本，并知悉一次性卸载 ${plan.packages.size} 个条目的后果由本人承担"
                 } else {
-                    "我已核对机型与系统版本，后果由我自己承担"
+                    "我已核对机型与系统版本，后果由本人承担"
                 },
                 textStyle = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 8.dp),
@@ -1229,7 +1229,7 @@ private fun PlanHero(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = plan.deviceLabel.ifBlank { "上传者机型未知" },
+                    text = plan.deviceLabel.ifBlank { "未记录上传机型" },
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -1248,9 +1248,9 @@ private fun PlanHero(
             // emptying the page on every point update would be worse — and says which build it is.
             if (!foreign && profile != null && !plan.sameBuild(profile)) {
                 Text(
-                    text = "这套方案是在「${romLabelOf(plan.rom, plan.romVersion, plan.romBuild)}」上验证的，" +
-                        "本机是「${romLabelOf(profile.rom, profile.romVersion, profile.romBuild)}」。" +
-                        "同一机型不同系统版本的包列表可能不一样，用之前先核对一遍。",
+                    text = "该方案在「${romLabelOf(plan.rom, plan.romVersion, plan.romBuild)}」上验证，" +
+                        "本机为「${romLabelOf(profile.rom, profile.romVersion, profile.romBuild)}」。" +
+                        "同一机型的不同系统版本可能对应不同应用清单，使用前请先核对。",
                     fontSize = 10.sp,
                     lineHeight = 14.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -1278,7 +1278,7 @@ private fun PlanHero(
                         color = colors.error,
                     )
                     Text(
-                        text = "使用不会被拦截：Canta 只按你选中的包执行，不会因为机型不同而停下。",
+                        text = "不会被阻止：Canta 只执行你所选的应用包，不会因机型不一致而中止。",
                         fontSize = 10.sp,
                         lineHeight = 13.sp,
                         color = colors.onPrimaryContainer.copy(alpha = 0.8f),
