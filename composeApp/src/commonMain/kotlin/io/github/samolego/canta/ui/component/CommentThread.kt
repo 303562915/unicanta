@@ -46,7 +46,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -86,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
@@ -261,6 +261,34 @@ fun CommentOrderRow(
 }
 
 /**
+ * 一个评论列表上一次画出来的那一批线程，按被评论的对象（包名或方案号）分格存在进程里。
+ *
+ * 为什么放在这一层：这里的数据是上层参数传进来的，它自己不拉网络，所以"失败保留旧内容、只在顶部
+ * 说一行原因"归页面管（页面自己有那一份快照，也自己画那行原因）。这一层能保住的是另一件小事——
+ * 页面刚进来、还没读过的那一帧手里也是空列表，而上一批线程刚才明明画在屏幕上，先把它们摆上，
+ * 等页面把网络回来的那一批交下来再顶掉。**只在页面说"还没到"（[commentThreads] 的 `loading`）时
+ * 才垫**：空列表也可能就是"评论被删光了"，那时垫上一次的内容等于把删掉的评论又画回来。
+ *
+ * 只放画一屏要用的只读数据（[CommentThread] 里的 [PlanComment] 都是不可变 data class）；
+ * **不放** MutableState、协程、回调、输入框草稿、回复对象、以及展开/折叠这些开关——它们记在
+ * 页面里，重新进来本该是干净的，缓存它们只会把上一回没做完的动作带回来。
+ *
+ * 展开/折叠、点赞、删除都改在上层：这一层只读地画，所以它不做写回，也不可能留下一份"点赞数
+ * 还是旧的"名单——每次画的都是刚交下来的那一批（见下面 [commentThreads] 里的写入）。
+ */
+private data class CommentThreadsSnapshot(val threads: List<CommentThread>)
+
+/**
+ * 快照的键：带上被评论的对象，一个对象一格。
+ *
+ * 评论是"这个应用 / 这个方案"底下的话，两个对象共用一格会把别人家那几条画到这里来。
+ * 对象未知（空串）时返回 null：那时既不读也不写，空串那一格会被所有页面串用。
+ * 键的惯例见 [ScreenCache]：`"screen:comments:<包名或方案号>"`。
+ */
+private fun commentThreadsCacheKey(target: String): String? =
+    if (target.isEmpty()) null else "screen:comments:$target"
+
+/**
  * The rows of one comment thread, for a `LazyColumn` that already has its own sections: every
  * comment that starts a conversation, then — once the reader asks for them — the answers it
  * collected, indented under it.
@@ -302,8 +330,37 @@ fun LazyListScope.commentThreads(
      */
     highlightId: Long = 0L,
     highlight: Float = 0f,
+    /**
+     * 被评论的对象：应用的包名，或方案的编号（见 [CommentThreadsSnapshot]）。
+     *
+     * 给了它，这一层就把上一次画过的那批线程留在进程里，上层还没把网络的那一批交下来（`loading`）
+     * 时先把它们摆上；空串表示"这一层不管缓存"，那时一行也不会读、不会写。**不带这个参数的两个
+     * 调用点行为完全不变**——缓存只在有人认领这一格、并且说了"还没到"的时候才起作用。
+     */
+    cacheTarget: String = "",
+    /**
+     * 上层这一批评论还没到——**不是**"到了，但没有"。
+     *
+     * 两种情况在参数上都是空列表，而这一层分不开：把"评论被删光了"当成"还没读到"，就会把已经
+     * 删掉的那几条又画到屏幕上。所以由页面说清楚这件事：在读网络的那一段置 true，读完（哪怕读完
+     * 是空的）就放下。默认 false，也就是"手上的就是最终的"，一个调用点不改都不会变。
+     */
+    loading: Boolean = false,
 ) {
-    threads.forEachIndexed { index, thread ->
+    val cacheKey = commentThreadsCacheKey(cacheTarget)
+    // 这一批还没到（`loading`）而上一次画过同一个对象的那批还在：先把上次那批判出来占着位置，
+    // 上层把网络的那一批交下来时再顶掉。页面自己那份快照在"头一帧"同样是空的，这一层是垫背。
+    val drawn = if (loading && threads.isEmpty() && cacheKey != null) {
+        ScreenCache.get<CommentThreadsSnapshot>(cacheKey)?.threads ?: threads
+    } else {
+        threads
+    }
+    // 画过就记下，下一次进来先拿它垫着。写的是普通 Map 不是 snapshot state，不会反过来触发重组；
+    // 而且每次画的都是刚交下来的那一批，所以点赞/删除之后再画一遍，这一格跟着就新了，留不下旧数。
+    if (cacheKey != null && threads.isNotEmpty()) {
+        ScreenCache.put(cacheKey, CommentThreadsSnapshot(threads))
+    }
+    drawn.forEachIndexed { index, thread ->
         val starter = thread.comment
         val key = threadKey(starter, index)
         val starterHidden = hideKey(starter, key) in hidden
@@ -938,19 +995,14 @@ fun CommentComposer(
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
                 // 抖音那套形状：收着的时候（没焦点、没字）整条就是一个胶囊，占位文案在左，
-                // 「图片 / @ / 表情」三个键贴在它右端，没有发送键；一动笔就换成
+                // 「@ / 表情」两个键贴在它右端，没有发送键；一动笔就换成
                 // 「一个空胶囊 + 下面一行工具条」——工具条的键靠左，发送靠右。
+                //
+                // 没有图片键：评论这一层不收图片（后端只存正文），发了也没地方落。能发图的是群聊，
+                // 而且那得群主在群设置里给这个群打开才轮得到；这里摆一颗按不动的相册键就是骗人。
                 var fieldFocused by remember { mutableStateOf(false) }
                 val open = fieldFocused || draft.isNotBlank()
                 val draftKeys: @Composable () -> Unit = {
-                    Icon(
-                        imageVector = Icons.Outlined.Image,
-                        // 相册/拍摄还没接进来：这颗键只是形状，所以没有描述也没有 clickable——
-                        // 会亮起来、按下去有涟漪、然后什么都不发生的键是一种骗人。
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp).padding(8.dp),
-                        tint = colors.onSurfaceVariant,
-                    )
                     Icon(
                         imageVector = Icons.Outlined.AlternateEmail,
                         contentDescription = "插入 @",

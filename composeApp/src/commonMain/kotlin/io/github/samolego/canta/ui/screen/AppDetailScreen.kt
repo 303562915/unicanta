@@ -620,6 +620,9 @@ fun AppDetailScreen(
                 threads.isNotEmpty() -> commentThreads(
                     threads = threads,
                     me = author,
+                    // 评论线程自己那一格缓存：这一页有页面级快照，但评论是它单独一批拉回来的，
+                    // 换了机型/视野重进时先垫上一次那批，省一次空白。
+                    cacheTarget = packageName,
                     expanded = expandedThreads,
                     shownReplies = shownReplies,
                     onShowMoreReplies = { key ->

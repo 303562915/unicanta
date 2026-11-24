@@ -990,6 +990,9 @@ private fun PlanDetailContent(
             onHide = onHideComment,
             highlightId = flashId,
             highlight = flash.value,
+            // 让评论线程也认领自己这一格：首帧网络那批还没到（loading）时，先拿上一次画过的垫上。
+            cacheTarget = planId.toString(),
+            loading = loading,
         )
     }
 }
