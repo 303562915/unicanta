@@ -55,9 +55,12 @@ import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.core.InstallStage
+import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatRealtimeHub
+import io.github.samolego.canta.data.community.CommunityRpc
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.history.RestoreMode
@@ -258,6 +261,14 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     // Direct messages, groups and follows: their own calls, against the same backend.
     val socialRepository = remember {
         SocialRepository(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) })
+    }
+    // 兑换中心（码池）与社区帖子：各自一套 RPC，但身份凭据与上面两个仓储同一个 token。
+    // 与项目里其它仓储一致，每个仓储自己一份 HttpClient。
+    val cdkStore = remember {
+        CdkStore(CommunityRpc(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) }))
+    }
+    val postStore = remember {
+        PostStore(CommunityRpc(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) }))
     }
     // 实时聊天：服务端在 messages 上挂的 INSERT 触发器往 `chat:<会话号>` 广播一声，这里订阅它。
     // 网页版没有 websocket 引擎，构造得出来但连不上，聊天页会退回轮询（见 ChatScreen.liveSource）。
@@ -1025,6 +1036,8 @@ private fun CantaNavigation(
                 RecommendationsScreen(
                     platform = platform,
                     repository = communityRepository,
+                    cdk = cdkStore,
+                    posts = postStore,
                     author = recommendAuthor,
                     authorId = recommendIdentity,
                     asGrid = !listMode,

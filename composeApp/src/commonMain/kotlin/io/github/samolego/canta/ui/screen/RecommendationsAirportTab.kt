@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.data.recommend.PointOffer
@@ -131,6 +132,8 @@ private val OfferKinds = listOf(
 @Composable
 internal fun RecommendationsAirportTab(
     repository: PlanRepository?,
+    /** 兑换中心（码池）：发布一批码、花积分兑换、我的码。null 时这一块不画。 */
+    cdk: CdkStore? = null,
     platform: CantaPlatform,
     author: String,
     authorId: String,
@@ -425,6 +428,17 @@ internal fun RecommendationsAirportTab(
                         },
                     )
                 }
+            }
+
+            item(key = "cdk") {
+                // 兑换中心：卖家一次贴一批码，买家花积分取走一个。放在「我兑换的」后面，
+                // 因为它是同一件事的批量版——这里换的是码，上面换的是卖家手写的一份内容。
+                CdkCenterSection(
+                    store = cdk,
+                    platform = platform,
+                    author = author,
+                    authorId = who,
+                )
             }
 
             item(key = "foot") {
