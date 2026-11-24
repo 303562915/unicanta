@@ -111,6 +111,38 @@ jobs:
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "with_model=$WITH_MODEL" >> "$GITHUB_OUTPUT"
 
+      # 通知跑在「🌐 Deploy download page」之后，但 GitHub Pages 的 CDN 还会慢几十秒。
+      # 这里等下载页真的报出这一版再发：通知里的链接点开必须是这一版，不是上一版。
+      - name: ⏳ Make sure the download page already serves this release
+        if: inputs.release_kind == 'development' || inputs.release_kind == 'stable'
+        env:
+          KIND: ${{ inputs.release_kind }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          if [ "$KIND" = "development" ]; then
+            FILE="https://303562915.github.io/unicanta/development.json"
+            WANT="$BUILD_NUMBER"
+            PICK='.build_number // ""'
+          else
+            FILE="https://303562915.github.io/unicanta/latest.json"
+            WANT="$VERSION_NAME"
+            PICK='.version_name // ""'
+          fi
+          for i in $(seq 1 8); do
+            GOT=$(curl -sS --max-time 15 -H 'Cache-Control: no-cache' "$FILE?t=$(date +%s)-$i" 2>/dev/null \
+                  | jq -r "$PICK" 2>/dev/null || true)
+            if [ "$GOT" = "$WANT" ]; then
+              echo "下载页已经是这一版（$GOT）"
+              exit 0
+            fi
+            echo "第 $i/8 次：下载页还是 ${GOT:-空}，等 15 秒"
+            sleep 15
+          done
+          echo "::error::下载页 2 分钟内没有更新到 ${WANT}，这条通知不发 —— 先看 🌐 Deploy download page 那次 run。"
+          exit 1
+
       - name: Push to DingTalk
         env:
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
@@ -127,6 +159,15 @@ jobs:
         run: |
           set -euo pipefail
           STAMP=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
+          # 发布页链接：调用方不再传完整 URL（含仓库名，过不了 job output 的 secret 过滤），
+          # 这里按通道自己拼。
+          if [ -z "${RELEASE_URL:-}" ]; then
+            if [ "$KIND" = "development" ]; then
+              RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/dev"
+            elif [ -n "${RELEASE_TAG:-}" ]; then
+              RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+            fi
+          fi
           # 图床直链在这里拼：完整 URL 含项目名，过不了 job output（会被当成 secret 丢掉），
           # 所以发版工作流只传文件名，根地址和目录固定写在下面（与 ImageBed.kt 的 BASE_URL / ROOT 一致）。
           APK_URL=""

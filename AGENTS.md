@@ -65,8 +65,8 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | `docs.yml` | `push` 到 `master` 且改 `docs/**`、`release: published`、`workflow_dispatch` | 用最新 `v*` tag 的源码编 WASM，**只验证文档站能构建**（不部署，Pages 归 `pages.yml`） | `docs-site` |
 | `pages.yml` 🌐 Deploy download page | `push` 改 `site/**` 或本文件、`release: published`、`workflow_run`（🧪 Development APK 成功）、`workflow_dispatch` | 把 `site/` + `latest.json` + `development.json` 推到 `gh-pages` 分支 | GitHub Pages：<https://303562915.github.io/unicanta/> |
 | `apk-handoff.yml` 📤 APK Handoff | 仅 `workflow_dispatch`（`run_id`，`tag` 必须以 `ci-` 开头） | 把某个 run 的 `app-debug` 复制成预发布资产，不构建任何东西 | release 资产 |
-| `daily-device-report.yml` 📊 Daily device report | 定时 + `workflow_dispatch` | 钉钉日报（读 `canta_users`；识别率口径见第 9 节）；也被两个发版工作流 `workflow_call` 调来发「已发布」通知 | — |
-| `group-release-notice.yml` 📣 Group release notice | 仅 `workflow_call`（被 `development-release.yml` / `release.yml` 调用） | 发版成功后用 `sender='ai'`（群聊AI）在内测灰度群插一条公告：版本、提交、下载页、APK 直链、校验和；同时推 `last_message_at` | — |
+| `daily-device-report.yml` 📊 Daily device report | 定时 + `workflow_dispatch` | 钉钉日报（读 `canta_users`；识别率口径见第 9 节）；也被 `pages.yml` 在部署完成后 `workflow_call` 调来发「已发布」通知（带本次更新内容） | — |
+| `group-release-notice.yml` 📣 Group release notice | 仅 `workflow_call`（**只被 `pages.yml` 调**） | 下载页部署完成后用 `sender='ai'`（群聊AI）在内测灰度群插一条公告：版本、提交、本次更新、下载页、APK 直链、校验和；同时推 `last_message_at` | — |
 | `bug-inbox.yml` 🐞 Bug inbox | `workflow_dispatch`（`conversation_id` / `limit` / `since_id`） | 读 Bug 反馈群的消息（JSON 打日志 + run summary），供 AI 整理问题；见第 13 节 | — |
 | `bootstrap-bug-group.yml` 🐞 | `workflow_dispatch` | 一次性/幂等：建「UniCanta Bug 反馈」群并生成邀请码（已跑过，重复跑只会把群号与邀请码再打一遍） | — |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |

@@ -169,34 +169,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run pages.yml --ref master
 
-  notify:
-    name: 📣 DingTalk notice (stable release)
-    # 触发条件：正式版已经成功发布（deployAndroid 成功且不是只建 draft）。
-    needs: deployAndroid
-    if: needs.deployAndroid.result == 'success' && inputs.keep_draft != true
-    uses: ./.github/workflows/daily-device-report.yml
-    secrets:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
-    with:
-      release_kind: stable
-      version_name: ${{ needs.deployAndroid.outputs.version_name }}
-      release_tag: ${{ needs.deployAndroid.outputs.tag }}
-      commit_sha: ${{ github.sha }}
-      release_url: https://github.com/303562915/unicanta/releases/tag/${{ needs.deployAndroid.outputs.tag }}
+  # 钉钉与群公告**不在这里**：正式版 publish 会触发 pages.yml（release: published），由它在把
+  # gh-pages 推上去之后发（见那边的 notify / notify-group）。从这里发会在下载页更新前就发出去。
 
-  notify-group:
-    name: 📣 Group notice (stable release)
-    # 和上面那条钉钉同一个触发点：正式版真的发出去了（不是只建 draft），才让「群聊AI」在灰度群里发一条。
-    needs: deployAndroid
-    if: needs.deployAndroid.result == 'success' && inputs.keep_draft != true
-    uses: ./.github/workflows/group-release-notice.yml
-    secrets:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-    with:
-      release_kind: stable
-      version_name: ${{ needs.deployAndroid.outputs.version_name }}
-      release_tag: ${{ needs.deployAndroid.outputs.tag }}
-      commit_sha: ${{ github.sha }}
-      apk_url: https://github.com/303562915/unicanta/releases/download/${{ needs.deployAndroid.outputs.tag }}/androidApp-release.apk
-      sums_url: https://github.com/303562915/unicanta/releases/download/${{ needs.deployAndroid.outputs.tag }}/SHA256SUMS.txt

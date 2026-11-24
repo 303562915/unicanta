@@ -91,6 +91,37 @@ jobs:
             echo '__CHANGES__'
           } >> "$GITHUB_OUTPUT"
 
+      # 通知跑在「🌐 Deploy download page」之后，但 GitHub Pages 的 CDN 还会慢几十秒。
+      # 等下载页真的报出这一版再发公告：公告里的链接点开必须是这一版。
+      - name: ⏳ Make sure the download page already serves this release
+        env:
+          KIND: ${{ inputs.release_kind }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          if [ "$KIND" = "development" ]; then
+            FILE="https://303562915.github.io/unicanta/development.json"
+            WANT="$BUILD_NUMBER"
+            PICK='.build_number // ""'
+          else
+            FILE="https://303562915.github.io/unicanta/latest.json"
+            WANT="$VERSION_NAME"
+            PICK='.version_name // ""'
+          fi
+          for i in $(seq 1 8); do
+            GOT=$(curl -sS --max-time 15 -H 'Cache-Control: no-cache' "$FILE?t=$(date +%s)-$i" 2>/dev/null \
+                  | jq -r "$PICK" 2>/dev/null || true)
+            if [ "$GOT" = "$WANT" ]; then
+              echo "下载页已经是这一版（$GOT）"
+              exit 0
+            fi
+            echo "第 $i/8 次：下载页还是 ${GOT:-空}，等 15 秒"
+            sleep 15
+          done
+          echo "::error::下载页 2 分钟内没有更新到 ${WANT}，这条公告不发 —— 先看 🌐 Deploy download page 那次 run。"
+          exit 1
+
       - name: Build the message
         env:
           KIND: ${{ inputs.release_kind }}
@@ -109,6 +140,23 @@ jobs:
             stable)      TITLE="📢 UniCanta 正式版已发布" ;;
             *) echo "unknown release_kind: $KIND" >&2; exit 1 ;;
           esac
+          # APK 直链与校验和链接在这里拼：完整 URL 含仓库名，过不了 job output 的 secret 过滤，
+          # 所以调用方只传通道与版本，地址由本工作流按用途拼出来。
+          REPO_URL="https://github.com/${{ github.repository }}"
+          if [ -z "${APK_URL:-}" ]; then
+            if [ "$KIND" = "development" ]; then
+              APK_URL="$REPO_URL/releases/download/dev/androidApp-release-${BUILD}.apk"
+            else
+              APK_URL="$REPO_URL/releases/download/${TAG}/androidApp-release.apk"
+            fi
+          fi
+          if [ -z "${SUMS_URL:-}" ]; then
+            if [ "$KIND" = "development" ]; then
+              SUMS_URL="$REPO_URL/releases/download/dev/SHA256SUMS-${BUILD}.txt"
+            else
+              SUMS_URL="$REPO_URL/releases/download/${TAG}/SHA256SUMS.txt"
+            fi
+          fi
           {
             printf '%s\n\n' "$TITLE"
             # 版本 / 构建号 / 提交压成一行（开发版也一样）：公告要短，读的人只关心「哪一版、哪次提交」。

@@ -206,36 +206,6 @@ jobs:
           curl -sS --max-time 60 -X POST "$BASE_URL/api/delete" \
             -F "uid=${TOKEN}" -F "id=${FOLDER}/latest.apk" > /dev/null || true
 
-  notify:
-    name: 📣 DingTalk notice (development release)
-    # 触发条件：开发版已经成功发布（notify 只在 really published 时跑，跳过的发布不推消息）。
-    needs: publish
-    if: needs.publish.outputs.published == 'true'
-    uses: ./.github/workflows/daily-device-report.yml
-    secrets:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
-    with:
-      release_kind: development
-      version_name: ${{ needs.publish.outputs.version_name }}
-      build_number: ${{ github.run_number }}
-      commit_sha: ${{ github.sha }}
-      release_url: https://github.com/303562915/unicanta/releases/tag/dev
-      apk_mirror_file: ${{ needs.publish.outputs.apk_mirror_ok == 'true' && needs.publish.outputs.apk_mirror_file || '' }}
+  # 钉钉与群公告**不在这里**：它们由 pages.yml 在把 gh-pages 推上去之后发（见那边的 notify /
+  # notify-group）。本工作流跑完时下载页还是上一版，从这里发通知，用户点开装的会是旧包。
 
-  notify-group:
-    name: 📣 Group notice (development release)
-    # 和上面那条钉钉同一个触发点：开发版真的发布了，才让「群聊AI」在灰度群里发一条。
-    needs: publish
-    if: needs.publish.outputs.published == 'true'
-    uses: ./.github/workflows/group-release-notice.yml
-    secrets:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-    with:
-      release_kind: development
-      version_name: ${{ needs.publish.outputs.version_name }}
-      build_number: ${{ github.run_number }}
-      commit_sha: ${{ github.sha }}
-      apk_url: https://github.com/303562915/unicanta/releases/download/dev/androidApp-release-${{ github.run_number }}.apk
-      apk_mirror_file: ${{ needs.publish.outputs.apk_mirror_ok == 'true' && needs.publish.outputs.apk_mirror_file || '' }}
-      sums_url: https://github.com/303562915/unicanta/releases/download/dev/SHA256SUMS-${{ github.run_number }}.txt

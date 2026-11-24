@@ -27,6 +27,11 @@ on:
         description: "要展示的 tag（留空 = 最新 release）"
         required: false
         type: string
+      announce:
+        description: "部署后是否发钉钉/群公告（手工补发才打开；自动流程不传这个）"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -44,6 +49,15 @@ jobs:
     if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # 通知（钉钉 + 群公告）要用的那几样，只在真的部署了一版时才有值：见「📣 What to announce」。
+    # 完整 URL 一律不进 output —— 仓库名里有 `canta`，GitHub 会把含该子串的 output 当 secret 丢掉。
+    outputs:
+      notify_kind: ${{ steps.notice.outputs.kind }}
+      notify_version: ${{ steps.notice.outputs.version }}
+      notify_build: ${{ steps.notice.outputs.build }}
+      notify_commit: ${{ steps.notice.outputs.commit }}
+      notify_tag: ${{ steps.notice.outputs.tag }}
+      notify_apk_file: ${{ steps.notice.outputs.apk_file }}
     steps:
       - name: Check development publication
         id: development_publication
@@ -378,6 +392,55 @@ jobs:
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
             HEAD:gh-pages
 
+      - name: 📣 What to announce
+        id: notice
+        # 只在「这次真的部署了一版」时准备通知参数：release published 与开发版发布成功后的
+        # workflow_run。手工 dispatch 默认不发（要补发就自己把 announce 打开）。
+        if: |
+          steps.development_publication.outputs.proceed == 'true' &&
+          (github.event_name == 'release' ||
+           github.event_name == 'workflow_run' ||
+           (github.event_name == 'workflow_dispatch' && inputs.announce))
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_SHA: ${{ github.sha }}
+          DEV_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # 参数一律从刚生成的 json 取，不另抄一份：通知里说的版本必须就是下载页上那一版。
+          if [ "$EVENT_NAME" = "release" ]; then
+            JSON=_site/latest.json
+            KIND=stable
+            TAG=$(jq -r '.tag // ""' "$JSON")
+            BUILD=""
+            COMMIT="$RELEASE_SHA"
+          else
+            JSON=_site/development.json
+            KIND=development
+            TAG=dev
+            BUILD=$(jq -r '.build_number // ""' "$JSON")
+            COMMIT="$DEV_SHA"
+          fi
+          VERSION=$(jq -r '.version_name // ""' "$JSON")
+          if [ "$KIND" = "development" ]; then
+            APK_FILE=$(jq -r '(.file_bed // "") | split("/") | last' "$JSON")
+          else
+            APK_FILE=$(jq -r '.file_name // ""' "$JSON")
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "站点里没有版本号（骨架部署），这次不发通知"
+            exit 0
+          fi
+          {
+            echo "kind=$KIND"
+            echo "version=$VERSION"
+            echo "build=$BUILD"
+            echo "commit=$COMMIT"
+            echo "tag=$TAG"
+            echo "apk_file=$APK_FILE"
+          } >> "$GITHUB_OUTPUT"
+          echo "announce: kind=$KIND version=$VERSION build=$BUILD commit=$COMMIT apk_file=$APK_FILE"
+
       - name: 🧾 Summary
         if: steps.development_publication.outputs.proceed == 'true'
         run: |
@@ -387,3 +450,38 @@ jobs:
             echo "- 站点：https://303562915.github.io/unicanta/"
             echo "- 分支：gh-pages"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # 通知放在这份工作流里，而不是发版工作流里：钉钉与群公告必须晚于下载页。
+  # 以前它们是 development-release.yml / release.yml 的 job —— 那两条跑完时 gh-pages 还没推
+  # （本工作流正是由 development-release.yml 的 workflow_run 触发的），于是「已发布」里的链接
+  # 点开装的还是上一版。通知挂在部署之后，说的才一定是现在站点上那一份。
+  notify:
+    name: 📣 DingTalk notice
+    needs: publish
+    if: needs.publish.outputs.notify_kind != ''
+    uses: ./.github/workflows/daily-device-report.yml
+    secrets:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+    with:
+      release_kind: ${{ needs.publish.outputs.notify_kind }}
+      version_name: ${{ needs.publish.outputs.notify_version }}
+      build_number: ${{ needs.publish.outputs.notify_build }}
+      commit_sha: ${{ needs.publish.outputs.notify_commit }}
+      release_tag: ${{ needs.publish.outputs.notify_tag }}
+      apk_mirror_file: ${{ needs.publish.outputs.notify_apk_file }}
+
+  notify-group:
+    name: 📣 Group notice
+    needs: publish
+    if: needs.publish.outputs.notify_kind != ''
+    uses: ./.github/workflows/group-release-notice.yml
+    secrets:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    with:
+      release_kind: ${{ needs.publish.outputs.notify_kind }}
+      version_name: ${{ needs.publish.outputs.notify_version }}
+      build_number: ${{ needs.publish.outputs.notify_build }}
+      commit_sha: ${{ needs.publish.outputs.notify_commit }}
+      release_tag: ${{ needs.publish.outputs.notify_tag }}
+      apk_mirror_file: ${{ needs.publish.outputs.notify_apk_file }}
