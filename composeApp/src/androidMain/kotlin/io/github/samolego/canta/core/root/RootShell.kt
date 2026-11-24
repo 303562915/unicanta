@@ -4,7 +4,10 @@ import io.github.samolego.canta.core.adb.ShellCommandException
 import io.github.samolego.canta.core.adb.ShellResult
 import io.github.samolego.canta.util.LogUtils
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -243,7 +246,13 @@ class RootShellSession {
             val timedOut = AtomicBoolean(false)
             // Same watchdog as [run]: a helper that stops answering must not hold this lock, and
             // with it every other root command in the process, forever.
-            val watchdog = launch(Dispatchers.IO) {
+            //
+            // 这里必须给 stack 一个自己的 scope：flow builder 的 lambda 接收者是 FlowCollector，
+            // 不是 CoroutineScope，直接写 `launch` 会解析到已经 ERROR 级弃用的那个顶层函数——
+            // 编译时就当错误（CI 上正是这么红的）。守门狗本来也要脱离 flow 的生命周期单独跑，
+            // 有个自己的 scope 才是它该有的样子；`finally` 里连 scope 一起取消。
+            val watchdogScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+            val watchdog = watchdogScope.launch {
                 delay(DEFAULT_TIMEOUT_MILLIS)
                 timedOut.set(true)
                 closeIfSame(started)
@@ -278,6 +287,8 @@ class RootShellSession {
                 close()
                 throw e
             } finally {
+                // 取消 scope 就把守门狗那颗协程一起收了；它自己的 Job 不用再单独 cancel。
+                watchdogScope.cancel()
                 watchdog.cancel()
             }
         }
