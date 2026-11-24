@@ -204,6 +204,14 @@ private const val ChatPollFallbackMs: Long = 10_000L
 private const val ChatNewLimit = 50
 
 /**
+ * 首屏补差一页问多少条。
+ *
+ * 比 [ChatNewLimit] 大：冷启动只补一次，落后两百条的时候按 50 条一页要来回问四趟，中间那几屏
+ * 就是"先画旧的、再一截一截长出来"。一页 100 条，四趟变两趟，正常情况下第一页就是空数组。
+ */
+private const val ChatCatchupPage = 100
+
+/**
  * 隔多久顺带整页核对一次。
  *
  * 增量只问「比手上最新那条还新的」，对「对方撤回 / 编辑了一条老消息」是瞎的：那些 id 比游标旧，
@@ -563,10 +571,18 @@ fun ChatScreen(
         val localCursor = if (storedCursor > 0L) minOf(paintedTail, storedCursor) else paintedTail
         if (messages.isNotEmpty() && localCursor > 0L) {
             // 冷启动 / 从消息页切回来：本地那一屏已经在屏幕上了，只问它之后的部分，正常就是一个 `[]`。
-            val fresh = repository.messagesAfter(owner, conversationId, localCursor, ChatNewLimit)
-            if (fresh.isNotEmpty()) {
+            //
+            // 一次 50 条不够：盘上有游标、真实尾巴却差了两百条的时候（装完没打开过、或者在别的设备上
+            // 聊过），只补 50 条会让首屏停在半路，剩下的靠 2 秒轮询一截一截往下长。所以这一趟连续
+            // 拉到「回来的不满一页」为止——满一页说明后面还有，接着问；空一页或不满就是到底了。
+            var from = localCursor
+            while (true) {
+                val page = repository.messagesAfter(owner, conversationId, from, ChatCatchupPage)
+                if (page.isEmpty()) break
                 // 和轮询、推送走同一个合并（[mergeMessages]）：本机的贴纸标记不能因为这一趟补差丢掉。
-                messages = mergeMessages(fresh, messages)
+                messages = mergeMessages(page, messages)
+                if (page.size < ChatCatchupPage) break
+                from = page.last().id
             }
         } else {
             messages = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)

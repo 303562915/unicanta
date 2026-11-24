@@ -194,35 +194,53 @@ private object AppDetailCache {
 
     private val records = mutableMapOf<String, AppDetailCacheEntry>()
 
+    /**
+     * 缓存键：包名 + 机型 + 身份。
+     *
+     * 光用包名不够。这四个查询里 `packageVotes` / `plansFor` 是**按机型**算的，
+     * `myPackageVote` / `appComments` / `descriptionFixes` 是**按身份**算的；而调用方的这三样
+     * 都是首帧之后才异步到位的（`appProfile` / `appVoter` 在 `CantaApp` 里由 `LaunchedEffect` 填）。
+     * 只按包名分份的话，首帧那趟用「空机型 + 空身份」问到的结果会占住这个键，第二趟（参数到位、
+     * effect 重跑）直接命中缓存返回——于是票数按空机型算、「我的票」退回本机笔记，还冻 60 秒。
+     * 把三者并进键，参数到位就是一次自然 miss，该重取就重取。
+     */
+    fun tag(packageName: String, profile: DeviceProfile?, voter: String): String =
+        "$packageName|${profile?.model.orEmpty()}|${profile?.rom.orEmpty()}|${profile?.romVersion ?: 0}|$voter"
+
     /** 这四个查询还新鲜就返回那一条，调用方一个请求都不发；过期或者没记过返回 null。 */
-    fun freshDetail(packageName: String): AppDetailCacheEntry? =
-        records[packageName]?.takeIf { isFresh(it.at) }
+    fun freshDetail(tag: String): AppDetailCacheEntry? =
+        records[tag]?.takeIf { isFresh(it.at) }
 
     /** 抽屉里的方案；失败过的不记，所以这里拿到的一定是问成功过的那一份。 */
-    fun freshPlans(packageName: String): List<CommunityPlan>? =
-        records[packageName]?.takeIf { it.plans != null && isFresh(it.plansAt) }?.plans
+    fun freshPlans(tag: String): List<CommunityPlan>? =
+        records[tag]?.takeIf { it.plans != null && isFresh(it.plansAt) }?.plans
 
     /**
-     * 把这一次真的拿到的组写进缓存；传 null 的组保持上一条里的值（第一次就是空着），时间戳以这次为准。
+     * 把这一次真的拿到的组写进缓存；传 null 的组保持上一条里的值（第一次就是空着）。
      *
      * [mineLoaded] 单独一个参数：`mine` 的 null 本身就是「这台手机还没投过票」，和「这一次没问到」
      * 是两件事，光看值分不出来。
+     *
+     * 时间戳只在**真有一组拿到东西**时才往前推。四组全挂（断网、额度打满）时保持旧时间戳：
+     * 否则下一次打开这一页会命中一份「什么都没拿到」的缓存，60 秒内连重试都没有，
+     * 屏幕上就一直停在空白或上一条旧值上——那比多问一次贵得多。
      */
     fun putDetail(
-        packageName: String,
+        tag: String,
         votes: PackageVotes? = null,
         mine: Boolean? = null,
         mineLoaded: Boolean = false,
         comments: List<PlanComment>? = null,
         fixes: List<DescriptionFix>? = null,
     ) {
-        val previous = records[packageName]
-        records[packageName] = AppDetailCacheEntry(
+        val previous = records[tag]
+        val touched = votes != null || mineLoaded || comments != null || fixes != null
+        records[tag] = AppDetailCacheEntry(
             votes = votes ?: previous?.votes,
             mine = if (mineLoaded) mine else previous?.mine,
             comments = comments ?: previous?.comments,
             fixes = fixes ?: previous?.fixes,
-            at = currentTimeMillis(),
+            at = if (touched) currentTimeMillis() else (previous?.at ?: 0L),
             plans = previous?.plans,
             plansAt = previous?.plansAt ?: 0L,
         )
@@ -230,9 +248,9 @@ private object AppDetailCache {
     }
 
     /** 方案这一组单独写：它由另一个 effect 拉，时间戳不能和上面四个共用（见 [AppDetailCacheEntry]）。 */
-    fun putPlans(packageName: String, plans: List<CommunityPlan>) {
-        val previous = records[packageName]
-        records[packageName] = AppDetailCacheEntry(
+    fun putPlans(tag: String, plans: List<CommunityPlan>) {
+        val previous = records[tag]
+        records[tag] = AppDetailCacheEntry(
             votes = previous?.votes,
             mine = previous?.mine,
             comments = previous?.comments,
@@ -398,7 +416,7 @@ fun AppDetailScreen(
         val repo = repository ?: return@LaunchedEffect
         // 抽屉里的方案也是「每打开一次就走一次网络」，和下面那四个查询同样按 60 秒算：抽屉的角标
         // 只是「有几个方案收了这个应用」，一分钟内不会有人去核那个数字。
-        val warmPlans = AppDetailCache.freshPlans(packageName)
+        val warmPlans = AppDetailCache.freshPlans(cacheTag)
         if (warmPlans != null) {
             relatedPlans = warmPlans
             return@LaunchedEffect
@@ -412,7 +430,7 @@ fun AppDetailScreen(
         // 清空，而空抽屉写的是「本机型还没有这样的方案」——一句凭空的结论。
         if (repo.lastError == null && !repo.lastFailureWasNetwork) {
             relatedPlans = fresh
-            AppDetailCache.putPlans(packageName, fresh)
+            AppDetailCache.putPlans(cacheTag, fresh)
             saveToCache()
         }
         relatedLoading = false
@@ -424,6 +442,10 @@ fun AppDetailScreen(
 
     /** Where this page's unsent comment is kept; see [AppNoteStore.draftOf]. */
     val draftKey = "app:$packageName"
+
+    // 详情缓存的键。带机型与身份：这两样在首帧之后才异步到位，只按包名分份会让「空机型 + 空身份」
+    // 那一趟的结果占住键位（见 [AppDetailCache.tag]）。每次重组按当前值重算，参数变了自然换键。
+    val cacheTag = AppDetailCache.tag(packageName, profile, voter)
 
     // Half-typed text survives leaving the page: this is the page people leave to go and look
     // something up, which is exactly when a comment gets abandoned by accident.
@@ -448,7 +470,7 @@ fun AppDetailScreen(
             return@LaunchedEffect
         }
         // 60 秒内拉过这一页就直接用那一份画，一个请求都不发——这是省掉那几万次调用的地方。
-        val warm = AppDetailCache.freshDetail(packageName)
+        val warm = AppDetailCache.freshDetail(cacheTag)
         if (warm != null) {
             warm.votes?.let { votes = it }
             warm.comments?.let { comments = it }
@@ -481,7 +503,7 @@ fun AppDetailScreen(
         // 只写这一次真的拿到的组：失败的那一组留 null，缓存里上一次的值不动，和屏幕上留着旧的
         // 是同一件事；四组全挂时这次调用不会把时间戳往前推，下次打开照旧重试。
         AppDetailCache.putDetail(
-            packageName = packageName,
+            tag = cacheTag,
             votes = fetchedVotes.takeIf { votesOk },
             mine = mine,
             mineLoaded = voter.isEmpty() || voteOk,
@@ -513,7 +535,7 @@ fun AppDetailScreen(
                     saveToCache()
                     // 顺手打破 TTL：投票返回的就是新鲜计数，没有理由再等 60 秒才看到自己那一票。
                     AppDetailCache.putDetail(
-                        packageName = packageName,
+                        tag = cacheTag,
                         votes = fresh,
                         mine = canRemove,
                         mineLoaded = true,
@@ -569,7 +591,7 @@ fun AppDetailScreen(
                         if (repo.lastError == null && !repo.lastFailureWasNetwork) {
                             comments = latest
                             // 刚发出去那条要能马上再看见：缓存里的评论列表比这一份旧，写回去。
-                            AppDetailCache.putDetail(packageName = packageName, comments = latest)
+                            AppDetailCache.putDetail(tag = cacheTag, comments = latest)
                         }
                     }
                     saveToCache()
@@ -594,7 +616,7 @@ fun AppDetailScreen(
                     }
                     // 心形和计数都落到缓存里，切回来不会先画成没点过的样子。
                     saveToCache()
-                    AppDetailCache.putDetail(packageName = packageName, comments = comments)
+                    AppDetailCache.putDetail(tag = cacheTag, comments = comments)
                 }
             }
         }
@@ -616,7 +638,7 @@ fun AppDetailScreen(
                             if (repo.lastError == null && !repo.lastFailureWasNetwork) {
                                 comments = latest
                                 // 删掉的那一条不能靠 60 秒缓存又冒出来，这一份比缓存里的新。
-                                AppDetailCache.putDetail(packageName = packageName, comments = latest)
+                                AppDetailCache.putDetail(tag = cacheTag, comments = latest)
                                 saveToCache()
                             }
                         }

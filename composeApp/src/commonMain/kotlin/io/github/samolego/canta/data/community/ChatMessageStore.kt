@@ -189,11 +189,14 @@ class ChatMessageStore(private val storage: AppBlobStorage) {
             cursor = nextCursor,
         )
         // 两个上限一起夹：按最近写入从新到旧收，收满会话数或条数就停，文件长度不会无限长。
-        var budget = ChatMessageDiskRows
-        val kept = mutableListOf<ConversationRows>()
-        val ordered = (listOf(entry) + current.conversations.filterNot { it.conversation == conversationId })
-            .sortedByDescending { it.at }
-        for (row in ordered) {
+        //
+        // 这一次要写的 [entry] **无条件占一个名额**。只推游标的那种写入（`rows == null`）不更新 `at`，
+        // 一个很久没说话的会话按时间排会掉到 20 名之外——循环第一次就 break，结果这条 entry 整个不见了：
+        // 刚写的游标白写，它原来那 30 条正文也从盘上消失。而「打开一个很久没动的老会话」正是触发场景。
+        var budget = ChatMessageDiskRows - nextRows.size
+        val kept = mutableListOf(entry)
+        for (row in current.conversations.filterNot { it.conversation == conversationId }
+            .sortedByDescending { it.at }) {
             if (kept.size >= ChatMessageDiskConversations || row.rows.size > budget) break
             budget -= row.rows.size
             kept += row
