@@ -59,7 +59,6 @@ import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.PickConversationDialog
 import io.github.samolego.canta.ui.component.UnreadRed
-import io.github.samolego.canta.ui.component.avatarLetter
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon

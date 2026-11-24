@@ -43,7 +43,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PlanRepository
-import io.github.samolego.canta.ui.component.LetterAvatar
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.avatarColorOf
 import io.github.samolego.canta.ui.component.relativeStamp
@@ -389,8 +389,9 @@ private fun FixCard(
     val scheme = MaterialTheme.colorScheme
     Card {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            LetterAvatar(
+            PersonAvatar(
                 name = fix.author.ifEmpty { "?" },
+                owner = fix.authorId,
                 size = 20.dp,
                 background = avatarColorOf(fix.author),
                 letterColor = Color.White,

@@ -56,6 +56,15 @@ private object AvatarCache {
 /** 失败过的地址记多久：够挡住一屏的重复请求，又不至于让"刚换的头像"等太久。 */
 private const val AVATAR_MISS_TTL_MS = 10 * 60 * 1000L
 
+/**
+ * 解码好的头像最多存几张。
+ *
+ * 256×256 的 ARGB 位图一张约 256KB，200 张就是 50MB——正好是一个还算体面的上限：超了整表丢掉，
+ * 最坏是重新下一次。不做 LRU 是有意的：这个表只在滚动和切页时被读，挑选"最久没用的那张"要多维护
+ * 一棵链，收益却只是少下几张图。
+ */
+private const val AVATAR_CACHE_ENTRIES = 200
+
 /** 这个地址是不是刚刚失败过。 */
 private fun avatarMissed(url: String): Boolean {
     val at = AvatarCache.misses[url] ?: return false
@@ -98,6 +107,12 @@ internal fun cachedAvatar(url: String): ImageBitmap? = AvatarCache.map[url.trim(
 internal fun cacheAvatar(url: String, bitmap: ImageBitmap) {
     val key = url.trim()
     if (key.isEmpty()) return
+    // 换头像之后同一个地址背后的字节换了：上次那次 404 的记号必须一起清掉，否则这一趟里
+    // 别的页面还会被它挡十分钟。
+    AvatarCache.misses.remove(key)
+    // 一份 256×256 的位图约 256KB，人数一多这张表就只增不减；满了就整张丢掉重来——
+    // 头像重下一次比把内存吃掉好。
+    if (AvatarCache.map.size >= AVATAR_CACHE_ENTRIES) AvatarCache.map.clear()
     AvatarCache.map[key] = bitmap
 }
 

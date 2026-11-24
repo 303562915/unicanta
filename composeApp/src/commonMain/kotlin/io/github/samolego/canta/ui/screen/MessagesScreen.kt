@@ -1696,7 +1696,15 @@ private fun ContactCell(contact: RecentContact, onClick: () -> Unit) {
             .padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        PersonAvatar(name = contact.label, owner = contact.key, size = 44.dp)
+        PersonAvatar(
+            name = contact.label,
+            // key 在只有关注关系、没有身份号时就是显示名（见 `RecentContact`），拿它拼头像地址必然
+            // 404；这种情况给空串，落回首字圆，也不浪费一次请求。
+            owner = contact.key.takeUnless { it == contact.label }.orEmpty(),
+            size = 44.dp,
+            background = scheme.primary.copy(alpha = 0.15f),
+            letterColor = scheme.primary,
+        )
         Spacer(Modifier.height(6.dp))
         Text(
             text = contact.label,

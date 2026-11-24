@@ -38,7 +38,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
-import io.github.samolego.canta.ui.component.LetterAvatar
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlText
 
@@ -155,7 +155,12 @@ private fun UploaderHeader(name: String, owner: String, plans: List<CommunityPla
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                LetterAvatar(name = name, size = 34.dp, background = scheme.primary)
+                PersonAvatar(
+                    name = name,
+                    owner = owner,
+                    size = 34.dp,
+                    background = scheme.primary,
+                )
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

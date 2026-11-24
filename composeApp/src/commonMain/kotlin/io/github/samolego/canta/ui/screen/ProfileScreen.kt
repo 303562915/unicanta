@@ -1,6 +1,6 @@
 package io.github.samolego.canta.ui.screen
 
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -43,16 +43,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.ImageCrop
 import io.github.samolego.canta.data.community.SocialRepository
@@ -70,6 +70,7 @@ import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsItem
 import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.component.cacheAvatar
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -458,15 +459,19 @@ private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String
 private class CropTarget(val source: ByteArray, val preview: ImageBitmap)
 
 /**
- * 头像裁剪框：一个圆形的取景窗，图可以拖、可以缩，按「确定」把取景窗里的那一块交回去。
+ * 头像裁剪框：圆形的取景窗，图可以拖、可以缩，按「确定」把取景窗里的那一块交回去。
  *
  * 为什么是圆形窗：头像最终画在圆里，方形窗会让人把眼睛摆在角上，裁完才发现被切掉。圆形窗所见即所得。
+ *
+ * 画法是"显式给源矩形"，不是把整张图缩放后平移：`Canvas` 里用 `drawImageRect` 把源图上的一块原样
+ * 画进取景窗。屏幕上看到的那一块和交出去的 [ImageCrop] 由**同一组数**算出来，所以不存在"看到的和
+ * 裁下来的不是同一个地方"；夹取也变成硬边界——源矩形永远落在图内，圆窗里不会露黑边。
  *
  * 交出去的 [ImageCrop] 是**归一化**的（0..1，按预览图的宽高）：真正下刀的是原图，两张图的像素尺寸
  * 不一样，共用的只有比例（见 `core/ImageCrop`）。
  *
- * 交互只有两种，都放在同一块区域上：拖 = 挪位置（夹住，图永远盖满取景窗），滑杆 = 缩放（1×–4×）。
- * 没做双指缩放：那不是这页必须的手势，而滑杆在小屏上更容易点准。
+ * 交互只有两种：拖 = 挪位置，滑杆 = 缩放（1×–4×）。没做双指缩放：不是这页必须的手势，而滑杆在
+ * 小屏上更容易点准。
  */
 @Composable
 private fun AvatarCropDialog(
@@ -474,23 +479,27 @@ private fun AvatarCropDialog(
     onDismiss: () -> Unit,
     onConfirm: (ImageCrop) -> Unit,
 ) {
-    // 取景窗的边长：短边的 72%，留出标题、滑杆和两个按钮的地方。
+    // 取景窗的边长写死：跟着屏幕缩放会让"拖多远"的手感在不同机器上来回变。
     val viewport = 260.dp
     var zoom by remember { mutableStateOf(1f) }
-    var pan by remember { mutableStateOf(Offset.Zero) }
+    // 取景窗中心相对图中心的位移，单位是**源图像素**：这样改缩放时不用重算、也不会漂。
+    var panX by remember { mutableStateOf(0f) }
+    var panY by remember { mutableStateOf(0f) }
 
-    val density = LocalDensity.current
-    val viewportPx = with(density) { viewport.toPx() }
+    val viewportPx = with(LocalDensity.current) { viewport.toPx() }
     val imageWidth = bitmap.width.toFloat().coerceAtLeast(1f)
     val imageHeight = bitmap.height.toFloat().coerceAtLeast(1f)
-    // 让图正好铺满取景窗的那个基础缩放（等价于 ContentScale.Crop 的系数）。
-    val base = maxOf(viewportPx / imageWidth, viewportPx / imageHeight)
-    val scale = base * zoom
-    // 拖动范围：图的边缘不能被拖进取景窗内，所以每一侧最多挪出去"多出来的那一半"。
-    val maxPanX = ((imageWidth * scale - viewportPx) / 2f).coerceAtLeast(0f)
-    val maxPanY = ((imageHeight * scale - viewportPx) / 2f).coerceAtLeast(0f)
-    val panX = pan.x.coerceIn(-maxPanX, maxPanX)
-    val panY = pan.y.coerceIn(-maxPanY, maxPanY)
+    // 1× 时取景窗里那一块的源图边长：取短边，所以 1× 正好是"整图居中裁方"，和旧行为一致。
+    val baseSide = minOf(imageWidth, imageHeight)
+    // 当前缩放下取景窗对应的源图边长。
+    val sourceSide = baseSide / zoom
+    val limitX = ((imageWidth - sourceSide) / 2f).coerceAtLeast(0f)
+    val limitY = ((imageHeight - sourceSide) / 2f).coerceAtLeast(0f)
+    val centerX = imageWidth / 2f + panX.coerceIn(-limitX, limitX)
+    val centerY = imageHeight / 2f + panY.coerceIn(-limitY, limitY)
+    // 源矩形左上角。夹一次是为了让四舍五入之后仍然整块落在图内（越界会让 drawImageRect 画不出来）。
+    val sourceLeft = (centerX - sourceSide / 2f).coerceIn(0f, imageWidth - sourceSide)
+    val sourceTop = (centerY - sourceSide / 2f).coerceIn(0f, imageHeight - sourceSide)
 
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -499,16 +508,15 @@ private fun AvatarCropDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
             TextButton(
                 onClick = {
-                    // 取景窗中心对应原图上的哪一点：图中心减去"挪出去的那一截"（换算回源图像素）。
-                    val sideInSource = viewportPx / scale
-                    val centerX = imageWidth / 2f - panX / scale
-                    val centerY = imageHeight / 2f - panY / scale
+                    // 和屏幕上完全同一个算法：中心 ± 半个边长，再归一化。
+                    val cx = sourceLeft + sourceSide / 2f
+                    val cy = sourceTop + sourceSide / 2f
                     onConfirm(
                         ImageCrop(
-                            left = ((centerX - sideInSource / 2f) / imageWidth).coerceIn(0f, 1f),
-                            top = ((centerY - sideInSource / 2f) / imageHeight).coerceIn(0f, 1f),
-                            width = (sideInSource / imageWidth).coerceIn(0.02f, 1f),
-                            height = (sideInSource / imageHeight).coerceIn(0.02f, 1f),
+                            left = ((cx - sourceSide / 2f) / imageWidth).coerceIn(0f, 1f),
+                            top = ((cy - sourceSide / 2f) / imageHeight).coerceIn(0f, 1f),
+                            width = (sourceSide / imageWidth).coerceIn(0.02f, 1f),
+                            height = (sourceSide / imageHeight).coerceIn(0.02f, 1f),
                         ),
                     )
                 },
@@ -516,7 +524,7 @@ private fun AvatarCropDialog(
         },
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
+            Canvas(
                 modifier = Modifier
                     .size(viewport)
                     .clip(CircleShape)
@@ -524,26 +532,25 @@ private fun AvatarCropDialog(
                     .pointerInput(Unit) {
                         detectDragGestures { change, drag ->
                             change.consume()
-                            pan = Offset(
-                                (pan.x + drag.x).coerceIn(-maxPanX, maxPanX),
-                                (pan.y + drag.y).coerceIn(-maxPanY, maxPanY),
-                            )
+                            // 屏幕位移换算成源图像素：取景窗一整个宽 = 当前 sourceSide 个源像素。
+                            // zoom / pan 都是 Compose 状态，这里读到的是**此刻**的值，所以放大之后再拖
+                            // 依然是跟手的（不会拿着 1× 时的夹取范围去算）。
+                            val side = baseSide / zoom
+                            val maxX = ((imageWidth - side) / 2f).coerceAtLeast(0f)
+                            val maxY = ((imageHeight - side) / 2f).coerceAtLeast(0f)
+                            val perPixel = side / viewportPx
+                            panX = (panX + drag.x * perPixel).coerceIn(-maxX, maxX)
+                            panY = (panY + drag.y * perPixel).coerceIn(-maxY, maxY)
                         }
                     },
-                contentAlignment = Alignment.Center,
             ) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = zoom
-                            scaleY = zoom
-                            translationX = panX
-                            translationY = panY
-                        },
+                drawImageRect(
+                    image = bitmap,
+                    srcOffset = IntOffset(sourceLeft.roundToInt(), sourceTop.roundToInt()),
+                    srcSize = IntSize(sourceSide.roundToInt(), sourceSide.roundToInt()),
+                    dstOffset = IntOffset.Zero,
+                    dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+                    filterQuality = FilterQuality.Medium,
                 )
             }
             Spacer(Modifier.height(10.dp))
