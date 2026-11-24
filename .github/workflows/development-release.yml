@@ -140,6 +140,7 @@ jobs:
         if: steps.current.outputs.is_head == 'true'
         env:
           RUN_NUMBER: ${{ github.run_number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           # 地址、Token、根目录都不在 workflow 里另抄一份：直接读客户端里那份常量（ImageBed.kt），
@@ -157,10 +158,10 @@ jobs:
           APK="dist/androidApp-release-${RUN_NUMBER}.apk"
           # 目录固定 <项目根>/apk：安装包单独一层，和头像（unicanta/头像）、群聊图（unicanta/群聊）分开。
           FOLDER="${ROOT_DIR}/apk"
-          # 固定文件名 + overwrite=1：图床上永远只留这一份，新包直接替换旧包（旧 APK 等于自动删除）。
-          # 名字刻意不带版本号，图床重名会 409，靠 overwrite 才能顶掉上一份；也不带项目名前缀，
-          # 因为它要通过 job output 传给下游，含 `canta` 子串会被 GitHub 当成 secret 丢掉。
-          NAME="latest.apk"
+          # 名字带构建号：每次发布都是一个**新 URL**，不会像固定名那样撞上已有对象
+          # （图床对同名文件不一定肯覆盖，2026-11-24 就出现过「上传成功但读到的还是旧包」）。
+          # 也不带项目名前缀：它要通过 job output 传给下游，含 `canta` 子串会被 GitHub 当 secret 丢掉。
+          NAME="latest-${RUN_NUMBER}.apk"
           RESP=$(curl -sS --fail-with-body --max-time 600 -X POST "$BASE_URL/api/upload" \
             -F "file=@${APK};type=application/vnd.android.package-archive;filename=${NAME}" \
             -F "uid=${TOKEN}" \
@@ -175,16 +176,35 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # 当场回读一次：图床收下了但读不出来，等于没镜像。
-          if curl -sS -o /dev/null --fail --max-time 180 "$URL"; then
+          # 回读并把内容跟自己那份比对：图床"收下了"不等于"读出来就是这份"，
+          # 大小或摘要不对就当作没镜像（通知退回 GitHub 直链）。
+          EXPECT=$(sha256sum "$APK" | cut -d' ' -f1)
+          if curl -sS -o /tmp/mirror.apk --fail --max-time 300 "$URL" \
+             && [ "$(sha256sum /tmp/mirror.apk | cut -d' ' -f1)" = "$EXPECT" ]; then
             echo "mirrored: $URL"
             echo "file=$NAME" >> "$GITHUB_OUTPUT"
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::image bed URL is not readable: $URL"
+            echo "::warning::image bed copy does not match $APK (size/sha256 mismatch or unreadable)"
             echo "file=" >> "$GITHUB_OUTPUT"
             echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # 新包已经在图床上、且核对过了，才删旧的：只留最新一份，图床不会越堆越多。
+          # 旧文件名按构建号推算（latest-<旧构建号>.apk），列表取自 dev release 的资产；
+          # 删除是幂等的，名字不存在时图床回 existed=false，不算失败。
+          PREV_BUILDS=$(gh release view dev --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' 2>/dev/null \
+            | sed -n 's/^androidApp-release-\([0-9][0-9]*\)\.apk$/\1/p' | sort -rn | head -12 || true)
+          for b in $PREV_BUILDS; do
+            [ "$b" = "$RUN_NUMBER" ] && continue
+            DEL=$(curl -sS --max-time 60 -X POST "$BASE_URL/api/delete" \
+              -F "uid=${TOKEN}" -F "id=${FOLDER}/latest-${b}.apk" || true)
+            echo "cleanup latest-${b}.apk -> $DEL"
+          done
+          # 2026-11-24 之前那一轮用的固定名，一并清掉。
+          curl -sS --max-time 60 -X POST "$BASE_URL/api/delete" \
+            -F "uid=${TOKEN}" -F "id=${FOLDER}/latest.apk" > /dev/null || true
 
   notify:
     name: 📣 DingTalk notice (development release)
