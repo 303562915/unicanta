@@ -15,10 +15,12 @@ import io.github.samolego.canta.generated.resources.about_download_failed_networ
 import io.github.samolego.canta.generated.resources.about_download_failed_storage
 import io.github.samolego.canta.generated.resources.about_download_failed_timeout
 import io.github.samolego.canta.generated.resources.about_download_failed_unsupported
+import io.github.samolego.canta.generated.resources.about_download_too_slow
 import io.github.samolego.canta.generated.resources.about_install_done
 import io.github.samolego.canta.generated.resources.about_install_handoff
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_update_download_toast
+import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PROGRESS_UNKNOWN
 import io.github.samolego.canta.ui.screen.INSTALL_DONE_LINGER_MILLIS
 import io.github.samolego.canta.ui.screen.UpdateChannel
@@ -38,10 +40,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
+import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 /**
@@ -188,7 +192,7 @@ internal class UpdateCenter(
     }
 
     /** 开始下载 [release]：自动发现的版本和手点的版本走同一条路，卡片因此都有进度条。 */
-    fun startDownload(release: UpdateRelease) {
+    fun startDownload(release: UpdateRelease, auto: Boolean = false) {
         val label = updateLabel(release)
         downloadJob?.cancel()
         lastRelease = release
@@ -201,22 +205,45 @@ internal class UpdateCenter(
             // The percentage the transfer reached, so a failed download reports where it stopped
             // instead of only that it stopped.
             var reached = DOWNLOAD_PROGRESS_UNKNOWN
+            // 速度判断：上一次进度变化的时间，以及有没有已经因为太慢停过。
+            var lastPercent = DOWNLOAD_PROGRESS_UNKNOWN
+            var lastChange = TimeSource.Monotonic.markNow()
+            val tooSlow = MutableStateFlow(false)
             // Not one shot: the rounds and the platform's resume keep a flapping proxy from
             // turning into "download failed, tap it yourself again".
-            val result = downloadReleaseWithRetries(
-                platform = platform,
-                tag = release.tag,
-                buildNumber = release.buildNumber,
-                onRound = { attempt ->
-                    // Every round but the first follows a failed one: back to a spinner instead of
-                    // leaving an error sentence on screen while the next attempt is already running.
-                    if (attempt > 1) state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
-                },
-                onProgress = { percent ->
-                    reached = percent
-                    state = UpdateState.Downloading(label, percent)
-                },
-            )
+            val result = try {
+                downloadReleaseWithRetries(
+                    platform = platform,
+                    tag = release.tag,
+                    buildNumber = release.buildNumber,
+                    onRound = { attempt ->
+                        // Every round but the first follows a failed one: back to a spinner instead of
+                        // leaving an error sentence on screen while the next attempt is already running.
+                        // The stall clock restarts too: a new round has not had time to be slow yet.
+                        if (attempt > 1) {
+                            state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
+                            lastChange = TimeSource.Monotonic.markNow()
+                        }
+                    },
+                    onProgress = { percent ->
+                        reached = percent
+                        state = UpdateState.Downloading(label, percent)
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            lastChange = TimeSource.Monotonic.markNow()
+                        }
+                        // 慢到这个地步就别再耗着：停下，把手交给下载页（浏览器断点续传、下载器也都比
+                        // 应用内这条连接快）。只在能算出百分比时判断——没有 Content-Length 时根本量不出速度。
+                        if (!tooSlow.value && isDownloadTooSlow(startedAt, lastChange, percent)) {
+                            tooSlow.value = true
+                            downloadJob?.cancel()
+                        }
+                    },
+                )
+            } catch (e: CancellationException) {
+                if (tooSlow.value) onDownloadTooSlow(release, label, auto, channelName, reached, startedAt)
+                throw e
+            }
             val elapsed = startedAt.elapsedNow().inWholeMilliseconds
             when (result) {
                 is UpdateDownload.Done -> {
@@ -254,6 +281,34 @@ internal class UpdateCenter(
                 }
             }
         }
+    }
+
+    /**
+     * 下载慢到不值得再等：停下，退回「可以下载」那张卡片，并说清楚去哪里下。
+     *
+     * 自动更新（[auto] = true）不直接跳浏览器——那会在用户没点的时候抢走屏幕；手动点的那一次
+     * 才跳下载页，因为那本来就是他想要的。
+     */
+    private suspend fun onDownloadTooSlow(
+        release: UpdateRelease,
+        label: String,
+        auto: Boolean,
+        channelName: String,
+        reached: Int,
+        startedAt: TimeMark,
+    ) {
+        state = UpdateState.Available(label, release)
+        platform.showMessage(getString(Res.string.about_download_too_slow))
+        if (!auto) platform.openUrl(DOWNLOAD_PAGE_URL)
+        telemetry?.recordUpdate(
+            stage = UpdateReport.STAGE_DOWNLOAD,
+            outcome = UpdateReport.OUTCOME_CANCELLED,
+            channel = channelName,
+            version = label,
+            reason = "slow",
+            progress = reached,
+            elapsedMs = startedAt.elapsedNow().inWholeMilliseconds,
+        )
     }
 
     /** 停掉正在跑的下载；卡片退回到那个还没下的版本，而不是一张空白。 */
@@ -370,4 +425,23 @@ private fun UpdateDownloadFailure.reason(): StringResource = when (this) {
     UpdateDownloadFailure.STORAGE -> Res.string.about_download_failed_storage
     UpdateDownloadFailure.UNSUPPORTED -> Res.string.about_download_failed_unsupported
     UpdateDownloadFailure.UNKNOWN -> Res.string.about_download_failed
+}
+
+/**
+ * 慢到什么程度就别再等这条连接了：20 秒还没到 5%，或者 12 秒一个百分点都没动。
+ *
+ * 这两个数只用来判断「明显不正常」：正常情况下 26 MB 的包在 20 秒里早就过 5% 了，而在手机上
+ * 挂着代理、连接被限速或断流时，往往是十几秒纹丝不动。判断保守一点，让它只抓真正卡住的下载。
+ */
+private const val SLOW_EARLY_SECONDS = 20
+private const val SLOW_EARLY_PERCENT = 5
+private const val SLOW_STALL_SECONDS = 12
+
+/** 这条下载是不是慢到该停下、改去下载页。没有 `Content-Length`（[percent] 为负）时量不出速度，就不猜。 */
+private fun isDownloadTooSlow(startedAt: TimeMark, lastChange: TimeMark, percent: Int): Boolean {
+    if (percent < 0) return false
+    // 快下完了就别打断：剩下的那点时间比重新去网页下载更短。
+    if (percent >= 95) return false
+    if (lastChange.elapsedNow().inWholeSeconds >= SLOW_STALL_SECONDS) return true
+    return percent <= SLOW_EARLY_PERCENT && startedAt.elapsedNow().inWholeSeconds >= SLOW_EARLY_SECONDS
 }

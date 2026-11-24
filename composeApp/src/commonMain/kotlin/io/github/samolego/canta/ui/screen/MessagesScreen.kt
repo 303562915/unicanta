@@ -675,172 +675,193 @@ fun MessagesScreen(
                     }
                 }
             } else {
-                loadError?.let { reason ->
-                    Text(
-                        text = "后端没有返回消息：$reason",
-                        fontSize = 10.sp,
-                        lineHeight = 13.sp,
-                        color = scheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-                    )
-                }
-                // 搜索失败：结果区还是上一次那一份（比空白有用），原因只占这一行。只在搜索开着时
-                // 画——收起搜索之后它还挂在那儿，人就会以为列表本身出了问题。
-                searchError?.let { reason ->
-                    if (searching) {
-                        Text(
-                            text = "搜索没有更新：$reason",
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            color = scheme.error,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-                        )
-                    }
-                }
-                // 「当前无法接收朋友的消息提醒」：系统没给通知权限时才有这一条。抖音那条是提醒
-                // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
-                if (noticesBlocked) {
-                    NoticeBanner(onOpen = onEnableNotices)
-                }
-                RecentContactsRow(
-                    contacts = recentContacts,
-                    // 抖音「限时日常」的那一格，在这里是真正的动作：发起群聊。
-                    onStartGroup = onOpenCreateGroup,
-                    onTapContact = { contact ->
-                        // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
-                        // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
-                        if (contact.conversationId > 0L) {
-                            onOpenChat(contact.conversationId)
-                        } else {
-                            onOpenDm(contact.key)
+                // 整页一条列表：联系人那一排、几个入口行、会话行都在同一个 LazyColumn 里。
+                //
+                // 为什么不再把头部放在列表外面固定住：`PullToRefreshBox` 的下拉走的是嵌套滚动，
+                // 手指按在「没有滚动容器」的那半屏（联系人排、入口行）上时，事件根本传不到它手上——
+                // 于是同一个「往下拽」，应用页整页都能刷新，消息页只有下半截能，这就是两页刷新
+                // 感觉不一样的原因。并成一条列表之后整页都能拽，也跟抖音消息页一致（头部跟着滚）。
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    loadError?.let { reason ->
+                        item(key = "load-error") {
+                            Text(
+                                text = "后端没有返回消息：$reason",
+                                fontSize = 10.sp,
+                                lineHeight = 13.sp,
+                                color = scheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                            )
                         }
-                    },
-                )
-                // 搜索时把两行整块的入口收起来：它们不是搜索结果，留着只会把答案往下挤。
-                if (!searching) {
-                    MessageEntryRow(
-                        glyph = FlGlyphs.send,
-                        circle = UnreadRed,
-                        title = "互动消息",
-                        subtitle = inboxPreview.ifBlank { inboxLine(summary) },
-                        unread = inboxUnread,
-                        onClick = onOpenInteractions,
-                    )
-                    // 一个折叠的群都没有时这一行整块不画：入口里没有内容，摆一个「还没有群聊」
-                    // 在那儿等于请人点进一个空页面。折叠是人在群设置里自己开的，不是自动的。
-                    if (foldedGroups.isNotEmpty()) {
-                        MessageEntryRow(
-                            glyph = FlGlyphs.appsList,
-                            circle = GroupGreen,
-                            title = "折叠的群聊",
-                            subtitle = latestGroup?.lastBody?.ifBlank { "还没有消息" } ?: "",
-                            unread = groupUnread,
-                            onClick = {
-                                val group = latestGroup
-                                if (group != null) onOpenChat(group.id) else onMessage("还没有折叠的群聊")
-                            },
-                            // 折叠的群不止一个时，这一行右边再给一个「全部 N 个群」的小字入口：
-                            // 这里只剩最近说话的那个群可以点，剩下的得有地方去。
-                            trailing = {
-                                AllGroupsLink(count = foldedGroups.size, onClick = onOpenGroups)
-                            },
-                        )
                     }
-                    // 还没进群的人才需要这一行：进了群的，它就在下面的列表里排在最前面（那才是"置顶"）。
-                    // 也不写人数——这个群还在内测，人数是主办方的事。
-                    if (officialConversation == null) {
-                        OfficialGroupRow(
-                            joined = false,
-                            joining = joiningOfficial,
-                            onClick = {
-                                if (!joiningOfficial) {
-                                    scope.launch {
-                                        joiningOfficial = true
-                                        // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
-                                        val id = repository.joinByInvite(owner, OfficialGroup.INVITE_CODE)
-                                        joiningOfficial = false
-                                        if (id != null) {
-                                            reloads++
-                                            onOpenChat(id)
-                                        } else {
-                                            onMessage("没进成内测群，检查代理后再试")
-                                        }
-                                    }
+                    // 搜索失败：结果区还是上一次那一份（比空白有用），原因只占这一行。只在搜索开着时
+                    // 画——收起搜索之后它还挂在那儿，人就会以为列表本身出了问题。
+                    searchError?.let { reason ->
+                        if (searching) {
+                            item(key = "search-error") {
+                                Text(
+                                    text = "搜索没有更新：$reason",
+                                    fontSize = 10.sp,
+                                    lineHeight = 13.sp,
+                                    color = scheme.error,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                    // 「当前无法接收朋友的消息提醒」：系统没给通知权限时才有这一条。抖音那条是提醒
+                    // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
+                    if (noticesBlocked) {
+                        item(key = "notices") { NoticeBanner(onOpen = onEnableNotices) }
+                    }
+                    item(key = "contacts") {
+                        RecentContactsRow(
+                            contacts = recentContacts,
+                            // 抖音「限时日常」的那一格，在这里是真正的动作：发起群聊。
+                            onStartGroup = onOpenCreateGroup,
+                            onTapContact = { contact ->
+                                // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
+                                // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
+                                if (contact.conversationId > 0L) {
+                                    onOpenChat(contact.conversationId)
+                                } else {
+                                    onOpenDm(contact.key)
                                 }
                             },
                         )
                     }
-                }
-                // 列表吃掉剩下的高度：上面那几块是固定的入口，只有这里可以滚。
-                when {
-                    // 有搜索词时列表只剩命中的人、会话与消息；三段都空才说一句，不留一块空白。
-                    // 消息那一段还在路上时先不判空——否则打完字会先闪一下"没找到"。
-                    searching && hits.isEmpty() && messageHits.isEmpty() && !searchingMessages -> Text(
-                        text = "没有找到「${keyword}」",
-                        style = FlText.footnote,
-                        color = scheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
-                    )
-
-                    searching -> LazyColumn(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                    ) {
-                        items(hits, key = { it.key }) { hit ->
-                            SearchHitRow(
-                                hit = hit,
-                                onOpen = {
-                                    // 会话就进会话；只有关注关系的人先开私聊（后端 dm_open 幂等）。
-                                    val conversation = hit.conversation
-                                    if (conversation != null) {
-                                        onOpenChat(conversation.id)
-                                    } else {
-                                        onOpenDm(hit.personId)
-                                    }
-                                },
+                    // 搜索时把两行整块的入口收起来：它们不是搜索结果，留着只会把答案往下挤。
+                    if (!searching) {
+                        item(key = "entry-inbox") {
+                            MessageEntryRow(
+                                glyph = FlGlyphs.send,
+                                circle = UnreadRed,
+                                title = "互动消息",
+                                subtitle = inboxPreview.ifBlank { inboxLine(summary) },
+                                unread = inboxUnread,
+                                onClick = onOpenInteractions,
                             )
                         }
-                        // 第三段：消息正文的命中。会话与联系人是本地过滤，这一段的每一条都在
-                        // "我参与过的会话"里，点一条直接进那个会话——搜索结果只是入口，不在这里读。
-                        if (messageHits.isNotEmpty()) {
-                            item(key = "hit-messages-head") {
-                                SearchSectionLabel(
-                                    text = "消息 · ${messageHits.size} 条",
-                                    modifier = Modifier.padding(top = 10.dp),
+                        // 一个折叠的群都没有时这一行整块不画：入口里没有内容，摆一个「还没有群聊」
+                        // 在那儿等于请人点进一个空页面。折叠是人在群设置里自己开的，不是自动的。
+                        if (foldedGroups.isNotEmpty()) {
+                            item(key = "entry-folded") {
+                                MessageEntryRow(
+                                    glyph = FlGlyphs.appsList,
+                                    circle = GroupGreen,
+                                    title = "折叠的群聊",
+                                    subtitle = latestGroup?.lastBody?.ifBlank { "还没有消息" } ?: "",
+                                    unread = groupUnread,
+                                    onClick = {
+                                        val group = latestGroup
+                                        if (group != null) onOpenChat(group.id) else onMessage("还没有折叠的群聊")
+                                    },
+                                    // 折叠的群不止一个时，这一行右边再给一个「全部 N 个群」的小字入口：
+                                    // 这里只剩最近说话的那个群可以点，剩下的得有地方去。
+                                    trailing = {
+                                        AllGroupsLink(count = foldedGroups.size, onClick = onOpenGroups)
+                                    },
                                 )
                             }
-                            items(messageHits, key = { "msg-${it.id}" }) { hit ->
-                                MessageHitRow(
-                                    hit = hit,
-                                    onClick = { onOpenChat(hit.conversationId) },
-                                )
-                            }
-                        } else if (searchingMessages) {
-                            item(key = "hit-messages-loading") {
-                                Text(
-                                    text = "正在搜索消息…",
-                                    style = FlText.caption2,
-                                    color = scheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                        }
+                        // 还没进群的人才需要这一行：进了群的，它就在下面的列表里排在最前面（那才是"置顶"）。
+                        // 也不写人数——这个群还在内测，人数是主办方的事。
+                        if (officialConversation == null) {
+                            item(key = "entry-official") {
+                                OfficialGroupRow(
+                                    joined = false,
+                                    joining = joiningOfficial,
+                                    onClick = {
+                                        if (!joiningOfficial) {
+                                            scope.launch {
+                                                joiningOfficial = true
+                                                // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
+                                                val id = repository.joinByInvite(owner, OfficialGroup.INVITE_CODE)
+                                                joiningOfficial = false
+                                                if (id != null) {
+                                                    reloads++
+                                                    onOpenChat(id)
+                                                } else {
+                                                    onMessage("没进成内测群，检查代理后再试")
+                                                }
+                                            }
+                                        }
+                                    },
                                 )
                             }
                         }
                     }
+                    when {
+                        // 有搜索词时列表只剩命中的人、会话与消息；三段都空才说一句，不留一块空白。
+                        // 消息那一段还在路上时先不判空——否则打完字会先闪一下"没找到"。
+                        searching && hits.isEmpty() && messageHits.isEmpty() && !searchingMessages ->
+                            item(key = "search-empty") {
+                                Text(
+                                    text = "没有找到「${keyword}」",
+                                    style = FlText.footnote,
+                                    color = scheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+                                )
+                            }
 
-                    visibleConversations.isEmpty() -> Box(
-                        modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "还没有私聊，去方案页找人聊聊",
-                            style = FlText.footnote,
-                            color = scheme.onSurfaceVariant,
-                        )
-                    }
+                        searching -> {
+                            items(hits, key = { it.key }) { hit ->
+                                SearchHitRow(
+                                    hit = hit,
+                                    onOpen = {
+                                        // 会话就进会话；只有关注关系的人先开私聊（后端 dm_open 幂等）。
+                                        val conversation = hit.conversation
+                                        if (conversation != null) {
+                                            onOpenChat(conversation.id)
+                                        } else {
+                                            onOpenDm(hit.personId)
+                                        }
+                                    },
+                                )
+                            }
+                            // 第三段：消息正文的命中。会话与联系人是本地过滤，这一段的每一条都在
+                            // "我参与过的会话"里，点一条直接进那个会话——搜索结果只是入口，不在这里读。
+                            if (messageHits.isNotEmpty()) {
+                                item(key = "hit-messages-head") {
+                                    SearchSectionLabel(
+                                        text = "消息 · ${messageHits.size} 条",
+                                        modifier = Modifier.padding(top = 10.dp),
+                                    )
+                                }
+                                items(messageHits, key = { "msg-${it.id}" }) { hit ->
+                                    MessageHitRow(
+                                        hit = hit,
+                                        onClick = { onOpenChat(hit.conversationId) },
+                                    )
+                                }
+                            } else if (searchingMessages) {
+                                item(key = "hit-messages-loading") {
+                                    Text(
+                                        text = "正在搜索消息…",
+                                        style = FlText.caption2,
+                                        color = scheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                                    )
+                                }
+                            }
+                        }
 
-                    else -> LazyColumn(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                    ) {
-                        items(visibleConversations, key = { it.conversationKey() }) { conversation ->
+                        visibleConversations.isEmpty() ->
+                            item(key = "no-chats") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp, vertical = 60.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "还没有私聊，去方案页找人聊聊",
+                                        style = FlText.footnote,
+                                        color = scheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+
+                        else -> items(visibleConversations, key = { it.conversationKey() }) { conversation ->
                             ConversationRow(
                                 conversation = conversation,
                                 // 只有两个方向都成立的人，名字右边才挂那个灰标。
