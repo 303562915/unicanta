@@ -14,7 +14,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
+import io.github.samolego.canta.data.community.AiSender
+import io.github.samolego.canta.data.imagebed.ImageBed
+import io.github.samolego.canta.util.currentTimeMillis
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
@@ -38,6 +42,47 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
  */
 private object AvatarCache {
     val map = mutableMapOf<String, ImageBitmap>()
+
+    /**
+     * 下载失败过的地址 → 失败的时间。
+     *
+     * 没设过头像的人占多数，而头像地址是可以从身份号**推**出来的（见 [personAvatarUrl]），所以
+     * 一屏几十行就是几十个 404。不记这一笔的话，每次重组、每次翻页都会再问一遍图床。
+     * 只记 [AVATAR_MISS_TTL_MS] 这么久：人家刚换完头像，这一趟里也该能看见。
+     */
+    val misses = mutableMapOf<String, Long>()
+}
+
+/** 失败过的地址记多久：够挡住一屏的重复请求，又不至于让"刚换的头像"等太久。 */
+private const val AVATAR_MISS_TTL_MS = 10 * 60 * 1000L
+
+/** 这个地址是不是刚刚失败过。 */
+private fun avatarMissed(url: String): Boolean {
+    val at = AvatarCache.misses[url] ?: return false
+    if (currentTimeMillis() - at <= AVATAR_MISS_TTL_MS) return true
+    AvatarCache.misses.remove(url)
+    return false
+}
+
+/** 记一笔失败，下一次同一地址先别问了。 */
+private fun rememberAvatarMiss(url: String) {
+    AvatarCache.misses[url] = currentTimeMillis()
+}
+
+/**
+ * 一个人的头像直链。
+ *
+ * 后端没有"头像"这一列：图床上的对象名是固定的 `unicanta/头像/<owner>.jpg`（覆盖式上传，见
+ * [io.github.samolego.canta.data.imagebed.ImageBed.avatarId]），所以**任何一个身份号都能推出自己的
+ * 地址**。推出来的地址对没设过头像的人是 404，[UserAvatar] 那边会先画首字、失败记一笔（见
+ * [AvatarCache.misses]），不会每次都去问一遍。
+ *
+ * 空身份、以及那个不是人的 AI 发送者，都回答空串：[UserAvatar] 收到空串连请求都不发，直接画首字。
+ */
+fun personAvatarUrl(owner: String): String {
+    val who = owner.trim()
+    if (who.isEmpty() || who == AiSender) return ""
+    return ImageBed.fileUrl(ImageBed.avatarId(who))
 }
 
 /**
@@ -108,6 +153,8 @@ fun UserAvatar(
     modifier: Modifier = Modifier,
     background: Color? = null,
     letterColor: Color = Color.White,
+    /** 首字那个字的样式：大圆传大样式，见 [LetterAvatar]。 */
+    letterStyle: TextStyle? = null,
 ) {
     val key = url.trim()
     // 命中缓存时连一帧首字母都不闪：remember 的初值就是缓存里那一张。
@@ -125,10 +172,14 @@ fun UserAvatar(
         }
         // 换了 url 就先清掉上一张，不然新旧两张会同时存在一帧。
         bitmap = null
+        // 这个地址刚刚 404 过：没设过头像的人很多，这一趟不必再问一次。
+        if (avatarMissed(key)) return@LaunchedEffect
         val loaded = AvatarLoader.load(key)
         if (loaded != null) {
             cacheAvatar(key, loaded)
             bitmap = loaded
+        } else {
+            rememberAvatarMiss(key)
         }
     }
 
@@ -148,6 +199,7 @@ fun UserAvatar(
             modifier = modifier,
             size = size,
             letterColor = letterColor,
+            letterStyle = letterStyle,
         )
 
         else -> LetterAvatar(
@@ -156,6 +208,37 @@ fun UserAvatar(
             size = size,
             background = background,
             letterColor = letterColor,
+            letterStyle = letterStyle,
         )
     }
+}
+
+/**
+ * 按**身份号**画一个人的头像。
+ *
+ * 全 app 的头像都走这里：[personAvatarUrl] 从身份号推出图床地址，设过照片的人显示照片，没设过的
+ * 就是名字首字——两态由 [UserAvatar] 自己决定，调用方只管给"这是谁"。
+ *
+ * 参数和 [UserAvatar] 一样，只是把 `url` 换成 `owner`：一处地方拼地址，别的页面不必各记一遍
+ * 「头像在哪个目录、文件名怎么拼」。
+ */
+@Composable
+fun PersonAvatar(
+    name: String,
+    owner: String,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    background: Color? = null,
+    letterColor: Color = Color.White,
+    letterStyle: TextStyle? = null,
+) {
+    UserAvatar(
+        name = name,
+        url = personAvatarUrl(owner),
+        size = size,
+        modifier = modifier,
+        background = background,
+        letterColor = letterColor,
+        letterStyle = letterStyle,
+    )
 }

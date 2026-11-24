@@ -73,6 +73,7 @@ import io.github.samolego.canta.data.community.matching
 import io.github.samolego.canta.data.community.newestInboxCommentId
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.MyCommentRow
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
@@ -851,6 +852,7 @@ private fun InteractionRow(
             Box {
                 InteractionAvatar(
                     name = item.actor,
+                    owner = item.actorId,
                     size = 40.dp,
                     modifier = Modifier.clickable(
                         enabled = item.actorId.isNotEmpty(),
@@ -1053,7 +1055,7 @@ private fun FollowerRow(person: SocialPerson, busy: Boolean, onToggleFollow: () 
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-        InteractionAvatar(name = person.label, size = 40.dp)
+        InteractionAvatar(name = person.label, owner = person.id, size = 40.dp)
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -1112,29 +1114,27 @@ private fun InteractionFollowButton(followed: Boolean, enabled: Boolean, onClick
     }
 }
 
-/** 首字的圆头像：名字是别人给的，这里只取第一个字符，取不到就画一个问号。 */
+/**
+ * 一个人头像：设过照片就是照片，没设过就是名字首字（判断在 [PersonAvatar] 里）。
+ *
+ * 照片按身份号从图床取：互动这一页每一行都有 `actorId`，所以别人的头像也能显示。
+ */
 @Composable
 private fun InteractionAvatar(
     name: String,
+    owner: String,
     size: Dp,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(colors.primary.copy(alpha = 0.15f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = name.trim().take(1).ifEmpty { "?" },
-            fontSize = (size.value * 0.4f).sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.primary,
-            maxLines = 1,
-        )
-    }
+    PersonAvatar(
+        name = name,
+        owner = owner,
+        size = size,
+        modifier = modifier,
+        background = colors.primary.copy(alpha = 0.15f),
+        letterColor = colors.primary,
+    )
 }
 
 /** 一行说明「没拿到列表」的灰字，摆在列表顶上。 */

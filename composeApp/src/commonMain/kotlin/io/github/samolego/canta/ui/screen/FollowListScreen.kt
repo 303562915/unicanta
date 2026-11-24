@@ -45,6 +45,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -363,7 +364,13 @@ private fun FollowPersonRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FollowAvatar(label = person.label)
+        PersonAvatar(
+            name = person.label,
+            owner = person.id,
+            size = 44.dp,
+            background = colors.primary.copy(alpha = 0.15f),
+            letterColor = colors.primary,
+        )
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -429,26 +436,6 @@ private fun FollowChatPill(onClick: () -> Unit) {
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             color = colors.onSurfaceVariant,
-            maxLines = 1,
-        )
-    }
-}
-
-/** 首字的圆头像：名字是别人给的，这里只取第一个字符，取不到就画一个问号。 */
-@Composable
-private fun FollowAvatar(label: String) {
-    val colors = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .background(colors.primary.copy(alpha = 0.15f), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label.take(1).ifEmpty { "?" },
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.primary,
             maxLines = 1,
         )
     }

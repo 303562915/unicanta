@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -30,6 +31,11 @@ fun LetterAvatar(
     background: Color = MaterialTheme.colorScheme.primary,
     /** The letter's colour: white on the comment avatars, which are picked per person. */
     letterColor: Color = MaterialTheme.colorScheme.onPrimary,
+    /**
+     * 那个字的字号：默认跟着 `labelLarge`（小的行内头像够用）。大圆（比如个人主页那个 96）
+     * 传一个更大的样式，否则字会缩在圆的中间一小块。
+     */
+    letterStyle: TextStyle? = null,
 ) {
     Box(
         modifier = modifier
@@ -40,7 +46,7 @@ fun LetterAvatar(
     ) {
         Text(
             text = avatarLetter(name),
-            style = MaterialTheme.typography.labelLarge,
+            style = letterStyle ?: MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
             color = letterColor,
         )

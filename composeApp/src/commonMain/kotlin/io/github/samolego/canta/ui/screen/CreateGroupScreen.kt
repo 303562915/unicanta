@@ -48,6 +48,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
@@ -319,7 +320,13 @@ private fun GroupPickRow(person: SocialPerson, selected: Boolean, onToggle: () -
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GroupPickAvatar(label = person.label, size = 40.dp)
+        PersonAvatar(
+            name = person.label,
+            owner = person.id,
+            size = 40.dp,
+            background = colors.primary.copy(alpha = 0.15f),
+            letterColor = colors.primary,
+        )
         Spacer(Modifier.width(10.dp))
         Text(
             text = person.label,
@@ -355,27 +362,6 @@ private fun GroupPickCheck(checked: Boolean) {
         if (checked) {
             FlGlyphIcon(glyph = FlGlyphs.check, size = 14.dp, tint = Color.White)
         }
-    }
-}
-
-/** 首字的圆头像：名字是别人给的，这里只取第一个字符，取不到就画一个问号。 */
-@Composable
-private fun GroupPickAvatar(label: String, size: Dp) {
-    val colors = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(colors.primary.copy(alpha = 0.15f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label.trim().take(1).ifEmpty { "?" },
-            fontSize = (size.value * 0.4f).sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.primary,
-            maxLines = 1,
-        )
     }
 }
 

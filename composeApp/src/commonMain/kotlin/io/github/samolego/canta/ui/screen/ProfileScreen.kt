@@ -1,7 +1,9 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,11 +43,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.samolego.canta.core.ImageCrop
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.generated.resources.Res
@@ -68,6 +78,15 @@ import org.jetbrains.compose.resources.stringResource
 
 /** 名字最长到这儿（和原来「我的」页那个对话框同一个数）：再长列表里那一行就该换行了。 */
 private const val MAX_NAME_LENGTH = 24
+
+/**
+ * 裁剪预览图的上限：长边 ≤2048、≤400KB。
+ *
+ * 为什么先缩一份再摆裁剪框：原图可能两千万像素，直接解成 `ImageBitmap` 要几十 MB，低端机上会
+ * 直接闪退；而裁剪只需要"看得清挪到哪儿了"，2048 的缩图完全够。**真正下刀的还是原图**——
+ * 裁剪框在预览里量出来的比例，原图和预览是同一个比例。
+ */
+private const val AvatarPreviewBytes = 409_600
 
 /** 中间那个头像的直径。 */
 private val AvatarSize = 96.dp
@@ -109,7 +128,10 @@ fun ProfileScreen(
     onSaveName: (String) -> Unit,
     onAvatarSaved: (String) -> Unit,
     pickImage: suspend () -> ByteArray?,
+    /** 把一张图缩到预览尺寸（见 [AvatarPreviewBytes]）：裁剪框摆在这张缩图上，原图太大会 OOM。 */
     compressImage: (ByteArray) -> ByteArray?,
+    /** 头像专用：按裁剪框裁成正方形、缩到头像尺寸，再压到 `20–200KB` 那一档（见 `ImageBed`）。 */
+    compressAvatar: (ByteArray, ImageCrop?) -> ByteArray?,
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -124,6 +146,8 @@ fun ProfileScreen(
     // 换过头像就 +1：直链不变（覆盖式上传），但 `UserAvatar` 里记着的那张位图得重新读一次缓存，
     // 否则同一趟里换第二张时画出来的还是上一张。被 `key()` 用来重建那一个头像。
     var avatarVersion by remember { mutableStateOf(0) }
+    // 已经选好、正等着摆裁剪框的那张图：原图字节（下刀用）与缩过的位图（摆框用）。
+    var cropTarget by remember { mutableStateOf<CropTarget?>(null) }
 
     val identityTag = if (owner.isNotBlank()) "#${owner.trim()}" else ""
     val shownName = userName.trim().ifEmpty { identityTag.ifEmpty { defaultName } }
@@ -142,13 +166,16 @@ fun ProfileScreen(
     }
 
     /**
-     * 换头像：选 → （超 2.5MB 就先压）→ 传图床 → 记下直链。
+     * 换头像：选 → 裁 → （压到 20–200KB）→ 传图床 → 记下直链。
      *
-     * 三条规矩和聊天发图一致（那边是 `ChatScreen.sendImage`）：选图返回 null 是**取消**，静默退出；
-     * 超过 [ImageBed.MAX_BYTES] 先交给 [compressImage] 压一次，压不动或者压完还超就说一句实话，
-     * 不把原图硬塞上去；上传失败按 [SocialRepository.lastError] 说原因，没有原因就是"检查代理"。
+     * 和聊天发图不同的地方只有一处，就是那个裁剪框：头像最后画在一个圆里，把整张照片塞进去必然被
+     * 裁得莫名其妙；让人自己挪一下、缩一下，比事后抱怨"怎么把我的头切掉了"要好。
      *
-     * 压图是同步的重活，挪到 [Dispatchers.Default]：直接在这儿调会卡住界面几百毫秒。
+     * 规矩照旧：选图返回 null 是**取消**，静默退出；图读不出来、压不下来就说一句实话，不把原图硬塞
+     * 上去；上传失败按 [SocialRepository.lastError] 说原因，没有原因就是"检查代理"。
+     *
+     * 解码、缩放、裁剪、编码都是同步的重活，全部挪到 [Dispatchers.Default]：
+     * 在主线程调会卡住界面几百毫秒，人只会看见"点了没反应"。
      */
     val changeAvatar: () -> Unit = {
         if (!uploading) {
@@ -163,28 +190,18 @@ fun ProfileScreen(
                     try {
                         val picked = pickImage()
                         if (picked != null) {
-                            val ready = if (picked.size > ImageBed.MAX_BYTES) {
-                                withContext(Dispatchers.Default) { compressImage(picked) }
-                            } else {
-                                picked
+                            val preview = withContext(Dispatchers.Default) {
+                                compressImage(picked, AvatarPreviewBytes)
                             }
-                            if (ready == null || ready.size > ImageBed.MAX_BYTES) {
-                                hint = "这张图超过 2.5MB，压不下来，换一张"
+                            val bitmap = preview?.let { bytes ->
+                                runCatching { bytes.decodeToImageBitmap() }.getOrNull()
+                            }
+                            if (bitmap == null) {
+                                // 预览都压不出来：要么字节不是图，要么大到连 400KB 都收不住。
+                                hint = "这张图太大或者读不出来，换一张"
                             } else {
-                                val repo = repository
-                                val url = repo?.uploadAvatar(owner.trim(), ready)
-                                if (url == null) {
-                                    hint = repo?.lastError?.takeIf { it.isNotBlank() }
-                                        ?: "头像没上传成，检查代理后再试"
-                                } else {
-                                    // 头像是覆盖式上传，直链不会变：把刚上传的字节解出来盖掉缓存里
-                                    // 那一格，否则页面会立刻画出缓存中的旧头像，看起来像没换成功。
-                                    runCatching { ready.decodeToImageBitmap() }.getOrNull()
-                                        ?.let { bitmap -> cacheAvatar(url, bitmap) }
-                                    shownAvatar = url
-                                    avatarVersion += 1
-                                    onAvatarSaved(url)
-                                }
+                                // 交给裁剪框；上传在它按「确定」之后才开始。
+                                cropTarget = CropTarget(source = picked, preview = bitmap)
                             }
                         }
                     } finally {
@@ -194,6 +211,54 @@ fun ProfileScreen(
                 }
             }
         }
+    }
+
+    /**
+     * 裁完之后真正落地的那一半：压 + 传 + 记直链。
+     *
+     * 单独拎出来是因为它要等对话框的「确定」：那一步之后 [uploading] 才再次点亮，人在裁剪期间不会
+     * 看见头像转圈。
+     */
+    fun uploadCropped(source: ByteArray, crop: ImageCrop) {
+        scope.launch {
+            uploading = true
+            hint = null
+            try {
+                val ready = withContext(Dispatchers.Default) { compressAvatar(source, crop) }
+                if (ready == null || ready.size > ImageBed.AVATAR_MAX_BYTES) {
+                    hint = "这张图压不下来，换一张"
+                } else {
+                    val repo = repository
+                    val url = repo?.uploadAvatar(owner.trim(), ready)
+                    if (url == null) {
+                        hint = repo?.lastError?.takeIf { it.isNotBlank() }
+                            ?: "头像没上传成，检查代理后再试"
+                    } else {
+                        // 头像是覆盖式上传，直链不会变：把刚上传的字节解出来盖掉缓存里那一格，
+                        // 否则页面会立刻画出缓存中的旧头像，看起来像没换成功。
+                        runCatching { ready.decodeToImageBitmap() }.getOrNull()
+                            ?.let { bitmap -> cacheAvatar(url, bitmap) }
+                        shownAvatar = url
+                        avatarVersion += 1
+                        onAvatarSaved(url)
+                    }
+                }
+            } finally {
+                uploading = false
+            }
+        }
+    }
+
+    // 裁剪框：确定之后才真正压图、上传（见 [uploadCropped]）。
+    cropTarget?.let { target ->
+        AvatarCropDialog(
+            bitmap = target.preview,
+            onDismiss = { cropTarget = null },
+            onConfirm = { crop ->
+                cropTarget = null
+                uploadCropped(target.source, crop)
+            },
+        )
     }
 
     Scaffold(
@@ -396,5 +461,114 @@ private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { save() }),
         )
+    }
+}
+
+/** 选好、等着摆裁剪框的那张图：原图字节（真正下刀用的）与缩过的预览位图（摆框用的）。 */
+private class CropTarget(val source: ByteArray, val preview: ImageBitmap)
+
+/**
+ * 头像裁剪框：一个圆形的取景窗，图可以拖、可以缩，按「确定」把取景窗里的那一块交回去。
+ *
+ * 为什么是圆形窗：头像最终画在圆里，方形窗会让人把眼睛摆在角上，裁完才发现被切掉。圆形窗所见即所得。
+ *
+ * 交出去的 [ImageCrop] 是**归一化**的（0..1，按预览图的宽高）：真正下刀的是原图，两张图的像素尺寸
+ * 不一样，共用的只有比例（见 `core/ImageCrop`）。
+ *
+ * 交互只有两种，都放在同一块区域上：拖 = 挪位置（夹住，图永远盖满取景窗），滑杆 = 缩放（1×–4×）。
+ * 没做双指缩放：那不是这页必须的手势，而滑杆在小屏上更容易点准。
+ */
+@Composable
+private fun AvatarCropDialog(
+    bitmap: ImageBitmap,
+    onDismiss: () -> Unit,
+    onConfirm: (ImageCrop) -> Unit,
+) {
+    // 取景窗的边长：短边的 72%，留出标题、滑杆和两个按钮的地方。
+    val viewport = 260.dp
+    var zoom by remember { mutableStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+
+    val density = LocalDensity.current
+    val viewportPx = with(density) { viewport.toPx() }
+    val imageWidth = bitmap.width.toFloat().coerceAtLeast(1f)
+    val imageHeight = bitmap.height.toFloat().coerceAtLeast(1f)
+    // 让图正好铺满取景窗的那个基础缩放（等价于 ContentScale.Crop 的系数）。
+    val base = maxOf(viewportPx / imageWidth, viewportPx / imageHeight)
+    val scale = base * zoom
+    // 拖动范围：图的边缘不能被拖进取景窗内，所以每一侧最多挪出去"多出来的那一半"。
+    val maxPanX = ((imageWidth * scale - viewportPx) / 2f).coerceAtLeast(0f)
+    val maxPanY = ((imageHeight * scale - viewportPx) / 2f).coerceAtLeast(0f)
+    val panX = pan.x.coerceIn(-maxPanX, maxPanX)
+    val panY = pan.y.coerceIn(-maxPanY, maxPanY)
+
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = "调整头像",
+        buttons = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+            TextButton(
+                onClick = {
+                    // 取景窗中心对应原图上的哪一点：图中心减去"挪出去的那一截"（换算回源图像素）。
+                    val sideInSource = viewportPx / scale
+                    val centerX = imageWidth / 2f - panX / scale
+                    val centerY = imageHeight / 2f - panY / scale
+                    onConfirm(
+                        ImageCrop(
+                            left = ((centerX - sideInSource / 2f) / imageWidth).coerceIn(0f, 1f),
+                            top = ((centerY - sideInSource / 2f) / imageHeight).coerceIn(0f, 1f),
+                            width = (sideInSource / imageWidth).coerceIn(0.02f, 1f),
+                            height = (sideInSource / imageHeight).coerceIn(0.02f, 1f),
+                        ),
+                    )
+                },
+            ) { Text(stringResource(Res.string.ok)) }
+        },
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(viewport)
+                    .clip(CircleShape)
+                    .background(Color.Black)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, drag ->
+                            change.consume()
+                            pan = Offset(
+                                (pan.x + drag.x).coerceIn(-maxPanX, maxPanX),
+                                (pan.y + drag.y).coerceIn(-maxPanY, maxPanY),
+                            )
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = zoom
+                            scaleY = zoom
+                            translationX = panX
+                            translationY = panY
+                        },
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "拖动图片调整位置，滑杆缩放",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Slider(
+                value = zoom,
+                onValueChange = { zoom = it },
+                valueRange = 1f..4f,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }

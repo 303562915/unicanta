@@ -76,6 +76,22 @@ class AndroidCantaPlatform(
          */
         private const val COMPRESS_ROUNDS = 4
 
+        /**
+         * 头像最后的分辨率：256×256 够一个 96dp 的圆在 3 倍屏上清晰（288 像素），再大只是体积。
+         */
+        private const val AVATAR_EDGE = 256
+
+        /**
+         * 头像压不下去时退到的下限：128 已经是一个 44dp 小圆的 3 倍屏分辨率，再小就看得出来糊。
+         */
+        private const val AVATAR_EDGE_FLOOR = 128
+
+        /**
+         * 头像解码时的长边上限：一张两千万像素的原图直接解 ARGB_8888 要几十 MB，而这里最后只留一个
+         * 256 的方图。1024 留出了裁切和缩放需要的余量，也把内存压到 4MB 以内。
+         */
+        private const val AVATAR_SOURCE_EDGE = 1024
+
         /** One channel's error line in the install report: the cause, not the whole `pm` dump. */
         private const val INSTALL_ERROR_CHARS = 160
 
@@ -325,6 +341,85 @@ class AndroidCantaPlatform(
                     current.recycle()
                     current = scaled
                 }
+            }
+        } finally {
+            if (!current.isRecycled) current.recycle()
+        }
+    }
+
+    /**
+     * 头像：按 [crop] 裁成方块、缩到 [AVATAR_EDGE]，再压到 [maxBytes] 以内（20–200KB 那一档）。
+     *
+     * 和 [compressImage] 的差别是目的：聊天图要能放大看，所以留长边 2048；头像最后只画一个 96dp 的
+     * 圆，体积全给质量更划算。四步，前一步不够就进下一步：
+     *
+     *  1. 只读尺寸，按 2 的幂采样到长边 ≤ [AVATAR_SOURCE_EDGE]（1024）。这一步决定会不会 OOM。
+     *  2. 按 [crop] 的归一化矩形取下那块，取短边裁成正方形；[crop] 为 null 就是整图居中裁方。
+     *  3. 缩到 256×256，质量从 92 往下试到 70，第一档 ≤ [maxBytes] 就返回。
+     *  4. 都超就把边长缩到 ×0.75（256 → 192 → 128）再来一轮，到 [AVATAR_EDGE_FLOOR] 还超就回答 null，
+     *     让调用方说一句"换一张"。
+     *
+     * 中间产生的位图用完就 `recycle()`：连着换几张头像时不回收会攒出几十 MB 的 native 内存。
+     * **同步、会占住线程几十到几百毫秒**，调用方必须挪到 `Dispatchers.Default`。
+     */
+    override fun compressAvatar(bytes: ByteArray, crop: ImageCrop?, maxBytes: Int): ByteArray? {
+        if (bytes.isEmpty() || maxBytes <= 0) return null
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > AVATAR_SOURCE_EDGE) {
+            sample *= 2
+        }
+        var current = runCatching {
+            BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sample },
+            )
+        }.getOrNull() ?: return null
+
+        try {
+            // 归一化矩形 → 采样后位图上的像素；越界的部分夹回图内，块边取两者的短边。
+            val left = ((crop?.left ?: 0f).coerceIn(0f, 1f) * current.width).toInt()
+                .coerceIn(0, current.width - 1)
+            val top = ((crop?.top ?: 0f).coerceIn(0f, 1f) * current.height).toInt()
+                .coerceIn(0, current.height - 1)
+            val wantedWidth = ((crop?.width ?: 1f).coerceIn(0.01f, 1f) * current.width).toInt().coerceAtLeast(1)
+            val wantedHeight = ((crop?.height ?: 1f).coerceIn(0.01f, 1f) * current.height).toInt().coerceAtLeast(1)
+            val side = minOf(wantedWidth, wantedHeight, current.width - left, current.height - top)
+                .coerceAtLeast(1)
+            val squared = runCatching { Bitmap.createBitmap(current, left, top, side, side) }
+                .getOrNull() ?: return null
+            if (squared !== current) {
+                current.recycle()
+                current = squared
+            }
+
+            var edge = AVATAR_EDGE
+            while (true) {
+                val scaled = if (current.width == edge && current.height == edge) {
+                    current
+                } else {
+                    runCatching { Bitmap.createScaledBitmap(current, edge, edge, true) }.getOrNull()
+                        ?: return null
+                }
+                try {
+                    for (quality in 92 downTo 70 step 2) {
+                        val out = ByteArrayOutputStream()
+                        val encoded = runCatching {
+                            scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                        }.getOrDefault(false)
+                        if (encoded && out.size() <= maxBytes) return out.toByteArray()
+                    }
+                } finally {
+                    if (scaled !== current && !scaled.isRecycled) scaled.recycle()
+                }
+                if (edge <= AVATAR_EDGE_FLOOR) return null
+                edge = maxOf(edge * 3 / 4, AVATAR_EDGE_FLOOR)
             }
         } finally {
             if (!current.isRecycled) current.recycle()

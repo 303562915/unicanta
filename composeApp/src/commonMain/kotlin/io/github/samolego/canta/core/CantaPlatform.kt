@@ -227,6 +227,20 @@ interface CantaPlatform {
     fun compressImage(bytes: ByteArray, maxBytes: Int): ByteArray? = null
 
     /**
+     * 头像专用：按 [crop] 裁成正方形、缩到头像尺寸，再压到 [maxBytes] 以内；压不下去回答 null。
+     *
+     * 和 [compressImage] 分开是因为两边的目标不一样：聊天图要能放大看（长边留 2048、2.5MB 上限），
+     * 头像最后只画一个 96dp 的圆，体积该落在 `20–200KB` 这一档（见
+     * `data/imagebed/ImageBed.AVATAR_MAX_BYTES`）——太大是浪费，太小就糊了。
+     *
+     * [crop] 是归一化矩形（见 [ImageCrop]）；传 null 就是"整图居中裁方"，也就是以前的默认行为。
+     *
+     * **同步、会占住线程几十到几百毫秒**：调用方必须挪到 `Dispatchers.Default` 再调。
+     * 没有解码能力的平台（桌面、网页、测试）沿用默认回答 null——它们也没有相册，[pickImage] 先一步回 null。
+     */
+    fun compressAvatar(bytes: ByteArray, crop: ImageCrop?, maxBytes: Int): ByteArray? = null
+
+    /**
      * 有人给这个身份发了新消息，在系统通知栏提醒一次。
      *
      * [conversationId] 同时是"点开去哪一页"的钥匙和通知的 id：同一会话的新消息覆盖上一条，

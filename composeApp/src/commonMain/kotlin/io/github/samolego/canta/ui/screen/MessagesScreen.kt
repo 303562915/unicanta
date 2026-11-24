@@ -84,6 +84,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadBadge
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.bottomHairline
@@ -194,8 +195,8 @@ private val PullRefreshTravel = 56.dp
  */
 private object MessagesPanelState {
 
-    /** 最近联系人那一排展开着没有：顶栏左上角那个图标管的就是它。 */
-    var contactsExpanded by mutableStateOf(true)
+    /** 最近联系人那一排展开着没有：默认收起，省下的就是一屏里最上面那一条的高度。 */
+    var contactsExpanded by mutableStateOf(false)
 }
 
 /**
@@ -833,8 +834,6 @@ fun MessagesScreen(
                     item(key = "contacts") {
                         RecentContactsRow(
                             contacts = recentContacts,
-                            // 抖音「限时日常」的那一格，在这里是真正的动作：发起群聊。
-                            onStartGroup = onOpenCreateGroup,
                             onTapContact = { contact ->
                                 // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
                                 // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
@@ -1513,7 +1512,14 @@ private fun SearchHitRow(hit: SearchHit, onOpen: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(label = hit.label)
+        PersonAvatar(
+            name = hit.label,
+            // 命中一个会话就用那个人的身份；只有关注关系的那一半直接就是身份号。
+            owner = hit.conversation?.peer ?: hit.personId,
+            size = 44.dp,
+            background = scheme.primary.copy(alpha = 0.15f),
+            letterColor = scheme.primary,
+        )
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -1571,7 +1577,13 @@ private fun MessageHitRow(hit: MessageHit, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        InitialAvatar(label = hit.senderName.ifBlank { hit.sender })
+        PersonAvatar(
+            name = hit.senderName.ifBlank { hit.sender },
+            owner = hit.sender,
+            size = 44.dp,
+            background = scheme.primary.copy(alpha = 0.15f),
+            letterColor = scheme.primary,
+        )
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1647,14 +1659,15 @@ private fun NoticeBanner(onOpen: () -> Unit) {
 }
 
 /**
- * 「限时日常」那一格和最近联系人共用的一排。
+ * 最近联系人那一排。
  *
- * 一个人都没有的时候不整排空着，而是画一格「还没有好友」：一排空的横线看起来像没加载出来。
+ * 只有人，没有「发起群聊」那一格：建群入口在右上角本来就有（`addCircle`），同一页摆两个只是
+ * 让人多认一次。一个人都没有的时候也不整排空着，而是画一格「还没有好友」——一排空的横线看起来
+ * 像没加载出来。
  */
 @Composable
 private fun RecentContactsRow(
     contacts: List<RecentContact>,
-    onStartGroup: () -> Unit,
     onTapContact: (RecentContact) -> Unit,
 ) {
     LazyRow(
@@ -1662,7 +1675,6 @@ private fun RecentContactsRow(
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item(key = "daily") { NewChatCell(onClick = onStartGroup) }
         if (contacts.isEmpty()) {
             item(key = "no-friends") { NoFriendsCell() }
         } else {
@@ -1673,38 +1685,7 @@ private fun RecentContactsRow(
     }
 }
 
-/** 那排的第一格：抖音「限时日常」的位置换成我们真正的动作——发起群聊。 */
-@Composable
-private fun NewChatCell(onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier
-            .width(ContactCellWidth)
-            .clickable(onClickLabel = "发起群聊", onClick = onClick)
-            .padding(vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .border(1.dp, scheme.outlineVariant, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            FlGlyphIcon(glyph = FlGlyphs.add, size = 18.dp, tint = scheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "群聊",
-            style = FlText.caption2,
-            color = scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** 一位最近联系人：首字画圆，下面一行名字。 */
+/** 一位最近联系人：头像（有照片就是照片，没设过就是名字首字），下面一行名字。 */
 @Composable
 private fun ContactCell(contact: RecentContact, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
@@ -1715,7 +1696,7 @@ private fun ContactCell(contact: RecentContact, onClick: () -> Unit) {
             .padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        InitialAvatar(label = contact.label)
+        PersonAvatar(name = contact.label, owner = contact.key, size = 44.dp)
         Spacer(Modifier.height(6.dp))
         Text(
             text = contact.label,
@@ -1939,7 +1920,14 @@ private fun ConversationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {
-                InitialAvatar(label = conversation.label)
+                PersonAvatar(
+                    name = conversation.label,
+                    // 私聊才有人可以设头像；群聊的 peer 是空串，落回群名首字。
+                    owner = conversation.peer,
+                    size = 44.dp,
+                    background = scheme.primary.copy(alpha = 0.15f),
+                    letterColor = scheme.primary,
+                )
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {

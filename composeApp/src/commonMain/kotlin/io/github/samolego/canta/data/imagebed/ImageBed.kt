@@ -59,6 +59,23 @@ object ImageBed {
      */
     const val MAX_BYTES = 2_621_440
 
+    /**
+     * 头像的体积上限：200 KiB。
+     *
+     * 头像最后画的是一个 96dp 的圆（3 倍屏也就 288 像素），200KB 已经比"足够清楚"多出好几倍；
+     * 再往上只是白花流量和图床空间。裁剪 + 压缩由平台层做（`CantaPlatform.compressAvatar`）。
+     */
+    const val AVATAR_MAX_BYTES = 204_800
+
+    /**
+     * 头像的体积下限：20 KiB。
+     *
+     * 这不是硬性要求，是一条"别压过头"的线：256×256 的图如果只剩几 KB，圆里就会出色块。
+     * 但纯色、插画这类图本来就只有几 KB，不必为了凑体积把质量调上去——所以平台层压到
+     * [AVATAR_MAX_BYTES] 以内就收工，不会回头再加质量。
+     */
+    const val AVATAR_MIN_BYTES = 20_480
+
     /** [id] 的公开地址。读图不需要任何鉴权。 */
     fun fileUrl(id: String): String = "$BASE_URL/file/" + encodePath(id.trimStart('/'))
 

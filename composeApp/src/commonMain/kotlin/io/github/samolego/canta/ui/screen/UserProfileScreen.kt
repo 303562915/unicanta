@@ -56,6 +56,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.SocialUserProfile
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.PickConversationDialog
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.component.avatarLetter
@@ -479,7 +480,7 @@ private fun ProfileCover(
         ) {
             // 头像整个往下挪半截：上半截在封面上，下半截压进下面的白底。
             Box(modifier = Modifier.offset(y = AvatarHang)) {
-                HeroAvatar(name = name)
+                HeroAvatar(name = name, owner = owner)
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -518,9 +519,14 @@ private fun GlassBarButton(glyph: FlGlyph, contentDescription: String, onClick: 
     }
 }
 
-/** 大头像：白色描边圈里放名字首字。没有照片资源，首字就是这一页的「照片」。 */
+/**
+ * 大头像：白色描边圈里放**照片**；没设过头像（或者图还没下下来）就是名字首字。
+ *
+ * 照片按身份号从图床取（见 [PersonAvatar]）：设过头像的人显示照片，没设过的人落回首字圆，
+ * 两态由组件自己决定，这一页不必关心"他到底传没传"。
+ */
 @Composable
-private fun HeroAvatar(name: String) {
+private fun HeroAvatar(name: String, owner: String) {
     val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
@@ -530,20 +536,15 @@ private fun HeroAvatar(name: String) {
             .padding(AvatarRing),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .background(scheme.primary.copy(alpha = 0.9f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = avatarLetter(name),
-                style = FlText.title1,
-                color = Color.White,
-                maxLines = 1,
-            )
-        }
+        PersonAvatar(
+            name = name,
+            owner = owner,
+            size = AvatarSize - AvatarRing * 2,
+            // 首字圆沿用原来那个主色底：图没到的那一帧不能是一块灰。
+            background = scheme.primary.copy(alpha = 0.9f),
+            letterColor = Color.White,
+            letterStyle = FlText.title1,
+        )
     }
 }
 

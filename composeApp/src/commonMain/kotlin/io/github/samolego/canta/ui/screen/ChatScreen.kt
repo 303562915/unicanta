@@ -101,6 +101,7 @@ import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionSpan
 import io.github.samolego.canta.ui.component.EmotionText
 import io.github.samolego.canta.ui.component.UserAvatar
+import io.github.samolego.canta.ui.component.personAvatarUrl
 import io.github.samolego.canta.ui.component.dropLastSticker
 import io.github.samolego.canta.ui.component.emotionOf
 import io.github.samolego.canta.ui.component.parseEmotionBody
@@ -1307,7 +1308,7 @@ fun ChatScreen(
                                         // 自己那张头像上画名字首字：后端没有头像字段，首字就是兜底。
                                         myLabel = userName.ifBlank { "我" },
                                         // 自己那张头像：换了头像之后同一个 URL 就是新图（覆盖式上传）。
-                                        myAvatarUrl = avatarUrlOf(owner),
+                                        myAvatarUrl = personAvatarUrl(owner),
                                         // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
                                         showSender = grouped && message.sender != owner,
                                         // 点头像看那个人的主页：自己那条不画头像，这个回调也就不给。
@@ -1876,10 +1877,6 @@ private fun ChatRowAvatar(
     }
 }
 
-/** 一个人的头像直链；没设过头像（或那是个占位身份）就是空串，界面退回首字母圆。 */
-private fun avatarUrlOf(owner: String): String =
-    if (owner.isBlank() || owner == AiSender) "" else ImageBed.fileUrl(ImageBed.avatarId(owner))
-
 /** 换了一天的那条居中灰字：`2026-11-21 08:40`，不换算时区也不猜"今天/昨天"。 */
 @Composable
 private fun ChatDayDivider(stamp: String) {
@@ -2004,7 +2001,7 @@ private fun ChatBubble(
         if (!mine && showSender) {
             ChatRowAvatar(
                 label = message.label,
-                url = avatarUrlOf(message.sender),
+                url = personAvatarUrl(message.sender),
                 onClick = onAvatarClick,
                 // 长按头像 = 在这个人的话上直接 @ 他。只有群聊会传进来（私聊 @ 没有意义）。
                 onLongClick = onAvatarLongPress,
@@ -3366,3 +3363,4 @@ private fun daysBeforeMonth(year: Int, month: Int): Long {
     }
     return sum
 }
+
