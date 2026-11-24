@@ -571,6 +571,8 @@ fun InteractionsScreen(
                                 MyCommentRow(
                                     // 头像首字：这台设备的名字，没名字时用「我」，反正这一栏全是自己的。
                                     author = author.ifBlank { "我" },
+                                    // 这一栏全是自己的评论：有了身份号，头像就能显示自己那张照片。
+                                    owner = owner,
                                     body = comment.body,
                                     targetLabel = mineTargetLabel(comment),
                                     createdAt = comment.createdAt,

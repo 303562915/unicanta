@@ -106,7 +106,7 @@ import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.dismissInputOnTap
-import io.github.samolego.canta.ui.component.LetterAvatar
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.PackageSearchField
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
@@ -1169,8 +1169,10 @@ private fun PlanHero(
                         }
                     ),
             ) {
-                LetterAvatar(
+                PersonAvatar(
                     name = uploaderName,
+                    // 方案带着上传者的身份号：设过头像就显示照片，没设过是名字首字。
+                    owner = plan.owner,
                     size = 20.dp,
                     background = colors.primary,
                 )

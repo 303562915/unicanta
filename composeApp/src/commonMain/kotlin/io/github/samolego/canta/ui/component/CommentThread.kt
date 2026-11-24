@@ -652,8 +652,9 @@ fun CommentRow(
         verticalAlignment = Alignment.Top,
     ) {
         Box(modifier = Modifier.clip(CircleShape)) {
-            LetterAvatar(
+            PersonAvatar(
                 name = comment.author,
+                owner = comment.authorId,
                 size = if (indented) 26.dp else 36.dp,
                 background = avatarColorOf(comment.author),
                 letterColor = Color.White,
@@ -1378,6 +1379,11 @@ fun MyCommentRow(
     onDelete: () -> Unit,
     /** How many people hearted this comment: the tally the inbox line is about, on the row itself. */
     likes: Int = 0,
+    /**
+     * 这一行是谁的：这一栏全是自己的评论，所以调用方传自己的身份号，头像就能出照片。
+     * 空串就落回首字圆（没见过头像的时候）。
+     */
+    owner: String = "",
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
@@ -1391,8 +1397,9 @@ fun MyCommentRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            LetterAvatar(
+            PersonAvatar(
                 name = author,
+                owner = owner,
                 size = 22.dp,
                 background = avatarColorOf(author),
                 letterColor = Color.White,

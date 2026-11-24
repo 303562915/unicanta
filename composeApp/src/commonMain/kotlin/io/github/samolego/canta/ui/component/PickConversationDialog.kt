@@ -203,19 +203,14 @@ fun PickConversationDialog(
                             .padding(horizontal = 6.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(scheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = label.take(1),
-                                fontSize = 13.sp,
-                                color = scheme.primary,
-                            )
-                        }
+                        PersonAvatar(
+                            name = label,
+                            // 私聊用对面那个人的身份号取照片；群聊没有 peer，落回群名首字。
+                            owner = target.peer,
+                            size = 32.dp,
+                            background = scheme.primary.copy(alpha = 0.12f),
+                            letterColor = scheme.primary,
+                        )
                         Spacer(Modifier.width(10.dp))
                         Text(
                             text = label,

@@ -100,6 +100,7 @@ import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionSpan
 import io.github.samolego.canta.ui.component.EmotionText
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.component.personAvatarUrl
 import io.github.samolego.canta.ui.component.dropLastSticker
@@ -1715,7 +1716,12 @@ private fun ChatTopBar(
                 filled = false,
             )
             Spacer(Modifier.width(2.dp))
-            ChatHeaderAvatar(title = title, isGroup = isGroup, onClick = openHeader)
+            ChatHeaderAvatar(
+                title = title,
+                isGroup = isGroup,
+                peerOwner = peerOwner,
+                onClick = openHeader,
+            )
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f).then(headerClick)) {
                 Text(
@@ -1801,36 +1807,37 @@ private fun ChatTopBar(
 }
 
 /**
- * 顶栏左边那个 40 的圆头像：首字画圆，没标题时群给「群」、私聊给「聊」，不留空圆。
+ * 顶栏左边那个 40 的圆头像：设过头像就是照片，没设过就是首字（群给「群」、私聊给「聊」）——
+ * 两态由 [PersonAvatar] 决定，这一层不再自己画字。
+ *
+ * [peerOwner] 只在私聊里有：有了身份号才能推出图床地址（见 [personAvatarUrl]）。群聊没有"一个人"
+ * 可以对应，所以永远是群名首字。
  *
  * [onClick] 是「点头像进资料/主页」这一个动作；为 null 的时候就只是一个装饰圆，不抢触摸。
  */
 @Composable
-private fun ChatHeaderAvatar(title: String, isGroup: Boolean, onClick: (() -> Unit)? = null) {
+private fun ChatHeaderAvatar(
+    title: String,
+    isGroup: Boolean,
+    peerOwner: String = "",
+    onClick: (() -> Unit)? = null,
+) {
     val scheme = MaterialTheme.colorScheme
-    val circle = Modifier
-        .size(40.dp)
-        .clip(CircleShape)
-        .background(scheme.primary.copy(alpha = 0.15f), CircleShape)
-    Box(
+    PersonAvatar(
+        name = title.ifBlank { chatInitial(title = title, isGroup = isGroup) },
+        owner = if (isGroup) "" else peerOwner,
+        size = 40.dp,
         modifier = if (onClick == null) {
-            circle
+            Modifier
         } else {
-            circle.clickable(
+            Modifier.clickable(
                 onClickLabel = if (isGroup) "打开群资料" else "看主页",
                 onClick = onClick,
             )
         },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = chatInitial(title = title, isGroup = isGroup),
-            style = FlText.subheadline,
-            fontWeight = FlText.emphasized,
-            color = scheme.primary,
-            maxLines = 1,
-        )
-    }
+        background = scheme.primary.copy(alpha = 0.15f),
+        letterColor = scheme.primary,
+    )
 }
 
 /**
@@ -2308,20 +2315,13 @@ private fun ChatPersonCard(card: PersonCard, mine: Boolean) {
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(colors.primary.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = card.label.take(1),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.primary,
-            )
-        }
+        PersonAvatar(
+            name = card.label,
+            owner = card.owner,
+            size = 40.dp,
+            background = colors.primary.copy(alpha = 0.14f),
+            letterColor = colors.primary,
+        )
         Spacer(Modifier.width(10.dp))
         Column {
             Text(
@@ -2891,19 +2891,14 @@ private fun ForwardDialog(
                             .padding(horizontal = 6.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(scheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = label.take(1),
-                                fontSize = 13.sp,
-                                color = scheme.primary,
-                            )
-                        }
+                        PersonAvatar(
+                            name = label,
+                            // 私聊取对面那个人的照片；群聊没有 peer，落回群名首字。
+                            owner = target.peer,
+                            size = 32.dp,
+                            background = scheme.primary.copy(alpha = 0.12f),
+                            letterColor = scheme.primary,
+                        )
                         Spacer(Modifier.width(10.dp))
                         Text(
                             text = label,
@@ -3008,20 +3003,13 @@ private fun MentionPanel(
                             .padding(2.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(scheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = member.label.take(1),
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = scheme.primary,
-                            )
-                        }
+                        PersonAvatar(
+                            name = member.label,
+                            owner = member.owner,
+                            size = 44.dp,
+                            background = scheme.primary.copy(alpha = 0.12f),
+                            letterColor = scheme.primary,
+                        )
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = member.label,

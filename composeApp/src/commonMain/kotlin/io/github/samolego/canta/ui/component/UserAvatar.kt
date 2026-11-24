@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,13 +45,27 @@ private object AvatarCache {
     val map = mutableMapOf<String, ImageBitmap>()
 
     /**
-     * 下载失败过的地址 → 失败的时间。
+     * 失败过的地址 → 失败的时间。
      *
      * 没设过头像的人占多数，而头像地址是可以从身份号**推**出来的（见 [personAvatarUrl]），所以
      * 一屏几十行就是几十个 404。不记这一笔的话，每次重组、每次翻页都会再问一遍图床。
      * 只记 [AVATAR_MISS_TTL_MS] 这么久：人家刚换完头像，这一趟里也该能看见。
      */
     val misses = mutableMapOf<String, Long>()
+
+    /**
+     * 往缓存里写过几次。
+     *
+     * 换头像是**覆盖式上传**，直链不变；没有这个计数器，屏幕上已经画好的那些 [UserAvatar]
+     * （`remember(url)` 拿着的还是旧值）就一直是首字，得退出页面再进来才换。有了它，谁把新图塞进
+     * 缓存，所有看着同一个地址的头像就当场重读一次。
+     */
+    var version by mutableIntStateOf(0)
+        private set
+
+    fun bump() {
+        version++
+    }
 }
 
 /** 失败过的地址记多久：够挡住一屏的重复请求，又不至于让"刚换的头像"等太久。 */
@@ -114,6 +129,8 @@ internal fun cacheAvatar(url: String, bitmap: ImageBitmap) {
     // 头像重下一次比把内存吃掉好。
     if (AvatarCache.map.size >= AVATAR_CACHE_ENTRIES) AvatarCache.map.clear()
     AvatarCache.map[key] = bitmap
+    // 通知所有看着这个地址的头像：缓存变了，重读一次（覆盖式上传时地址不变，见 [AvatarCache.version]）。
+    AvatarCache.bump()
 }
 
 /**
@@ -172,10 +189,13 @@ fun UserAvatar(
     letterStyle: TextStyle? = null,
 ) {
     val key = url.trim()
+    // 缓存第几版：谁把新图塞进去，这一页上的所有头像都重读一次（覆盖式上传时地址不变，见
+    // [AvatarCache.version]）。读它让这一处参与重组，也正是"换完头像当场就换"的关键。
+    val cacheVersion = AvatarCache.version
     // 命中缓存时连一帧首字母都不闪：remember 的初值就是缓存里那一张。
     var bitmap by remember(key) { mutableStateOf(cachedAvatar(key)) }
 
-    LaunchedEffect(key) {
+    LaunchedEffect(key, cacheVersion) {
         if (key.isEmpty()) {
             bitmap = null
             return@LaunchedEffect

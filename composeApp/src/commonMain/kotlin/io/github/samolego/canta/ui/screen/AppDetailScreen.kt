@@ -91,7 +91,7 @@ import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.dismissInputOnTap
-import io.github.samolego.canta.ui.component.LetterAvatar
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -1539,10 +1539,13 @@ private fun ReviewRow(review: AppReview) {
             .padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Every review carries an avatar: the first character of the name, or of the
-            // install code when the reviewer has not renamed themselves.
-            LetterAvatar(
+            // Every review carries an avatar: the reviewer's picture when there is one, and the
+            // first character of the name otherwise. Reviews only carry a signature, so the
+            // picture address can be derived only when that signature is still the install code
+            // (pure digits) — a renamed reviewer gets the letter, not a dead URL.
+            PersonAvatar(
                 name = review.author,
+                owner = review.author.trim().takeIf { it.isNotEmpty() && it.all(Char::isDigit) }.orEmpty(),
                 size = 24.dp,
                 background = scheme.secondaryContainer,
             )

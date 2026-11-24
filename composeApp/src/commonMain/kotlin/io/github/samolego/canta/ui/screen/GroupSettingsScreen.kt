@@ -58,6 +58,7 @@ import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.AppLinkCard
 import io.github.samolego.canta.ui.component.AppToggleCard
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.PickConversationDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
@@ -965,20 +966,14 @@ private fun GroupMembersCard(
                         .padding(2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(scheme.primary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = member.label.take(1),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = scheme.primary,
-                        )
-                    }
+                    PersonAvatar(
+                        name = member.label,
+                        // 群成员都是具体的人：设过头像就是照片，没设过是首字。
+                        owner = member.owner,
+                        size = 44.dp,
+                        background = scheme.primary.copy(alpha = 0.12f),
+                        letterColor = scheme.primary,
+                    )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = member.label,
@@ -1061,20 +1056,13 @@ private fun AddMembersCard(
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(scheme.primary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = person.name.take(1),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = scheme.primary,
-                        )
-                    }
+                    PersonAvatar(
+                        name = person.name,
+                        owner = person.id,
+                        size = 32.dp,
+                        background = scheme.primary.copy(alpha = 0.12f),
+                        letterColor = scheme.primary,
+                    )
                     Spacer(Modifier.width(10.dp))
                     Text(
                         text = person.name,
