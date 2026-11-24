@@ -53,9 +53,16 @@ class CommunityRpc(
     /**
      * 调一次 `POST baseUrl + name`。成功返回响应正文；被拒返回 null 并把理由写进 [lastError]；
      * 根本没通返回 null 并把 [lastFailureWasNetwork] 置 true。
+     *
+     * 三种结果不靠一个 sealed 类型来表达，只靠两个局部变量：正文、以及被拒时的理由。
+     * 这样做的好处是它没有类型推断的余地——`withTimeoutOrNull` 的 lambda 里既可能答一段
+     * JSON、也可能什么都不答，用一个简单可空的 String 承接最不容易被推断成 Any。
      */
     suspend fun post(name: String, body: String): String? {
-        val answered = runCatching {
+        /** 后端明确拒绝时的那句话；null 表示没有被拒（成功或没通）。 */
+        var refusal: String? = null
+
+        val answer = runCatching {
             withTimeoutOrNull(RPC_TIMEOUT_MS) {
                 val response = client.post(baseUrl + name) {
                     header("apikey", apiKey)
@@ -63,29 +70,31 @@ class CommunityRpc(
                     setBody(body)
                 }
                 if (response.status.isSuccess()) {
-                    Ok(response.bodyAsText())
+                    response.bodyAsText()
                 } else {
-                    val text = runCatching { response.bodyAsText() }.getOrDefault("")
+                    val raw = runCatching { response.bodyAsText() }.getOrDefault("")
+                    // PostgREST 的拒绝带一个 `message`：留着那句话，页面上就能说清后端不喜欢什么。
                     val message = runCatching {
-                        json.parseToJsonElement(text).jsonObject["message"]?.jsonPrimitive?.contentOrNull
-                    }.getOrNull().orEmpty().ifBlank { text.take(200) }
-                    Refused(message.ifBlank { "HTTP ${response.status.value}" })
+                        json.parseToJsonElement(raw).jsonObject["message"]?.jsonPrimitive?.contentOrNull
+                    }.getOrNull().orEmpty()
+                    refusal = message.ifBlank { raw.take(200) }.ifBlank { "HTTP ${response.status.value}" }
+                    null
                 }
             }
-        }.getOrNull() ?: Unreachable
+        }.getOrNull()
 
-        return when (answered) {
-            is Ok -> {
+        return when {
+            answer != null -> {
                 lastFailureWasNetwork = false
                 lastError = null
-                answered.text
+                answer
             }
-            is Refused -> {
+            refusal != null -> {
                 lastFailureWasNetwork = false
-                lastError = answered.reason
+                lastError = refusal
                 null
             }
-            Unreachable -> {
+            else -> {
                 lastFailureWasNetwork = true
                 lastError = null
                 null
@@ -100,10 +109,4 @@ class CommunityRpc(
      */
     val functionMissing: Boolean
         get() = lastError?.let { it.contains("PGRST202") || it.contains("Could not find the function") } == true
-
-    private sealed interface Answer {
-        class Ok(val text: String) : Answer
-        class Refused(val reason: String) : Answer
-        object Unreachable : Answer
-    }
 }
