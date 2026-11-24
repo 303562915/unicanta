@@ -1,0 +1,47 @@
+name: 🗄️ Apply SQL file
+
+# 把仓库里的一份 SQL（`.github/sql/*.sql`）整包发给 Supabase 的 Management API。
+#
+# 为什么要它：本机到 `api.supabase.com` 的网络是断的，而改线上函数只能这么走（见 AGENTS 第 10 节）。
+# Management API 在 simple query protocol 下把整包当一个隐式事务执行——要么全成、要么全回滚，
+# 所以「drop → create」那种空窗不存在，但也意味着**一份文件只该做一件事**。
+#
+# 用法：`gh workflow run apply-sql.yml -f path=.github/sql/xxx.sql`
+
+on:
+  workflow_dispatch:
+    inputs:
+      path:
+        description: "仓库里的 SQL 路径（必须是 .github/sql/ 下的 .sql 文件）"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Send the file
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+          SQL_PATH: ${{ inputs.path }}
+        run: |
+          set -euo pipefail
+          case "$SQL_PATH" in
+            .github/sql/*.sql) ;;
+            *) echo "path must be .github/sql/*.sql (got '$SQL_PATH')" >&2; exit 1 ;;
+          esac
+          test -f "$SQL_PATH" || { echo "no such file: $SQL_PATH" >&2; exit 1; }
+          echo "--- applying $SQL_PATH ---"
+          RESP=$(jq -Rs '{query: .}' "$SQL_PATH" | curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @-)
+          echo "$RESP"

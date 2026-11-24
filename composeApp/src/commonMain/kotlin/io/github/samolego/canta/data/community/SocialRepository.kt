@@ -309,7 +309,19 @@ data class ConversationDetail(
      * 私聊没有这个开关，恒为 true 的那一侧由调用方判（见 [isGroup]）。
      */
     val allowImage: Boolean = false,
+    /**
+     * 群里**一共**多少人。
+     *
+     * [members] 只回前 200 个（头像墙够用，几千人的群不该一次把整张表搬给客户端），
+     * 所以人数要用这个数，不能用 `members.size`。旧后端没有这个字段时是 0，
+     * 由 [memberTotal] 退回 `members.size`。
+     */
+    val memberCount: Int = 0,
 ) {
+
+    /** 人数：优先用后端给的总数，拿不到就数一数手里的成员。 */
+    val memberTotal: Int
+        get() = if (memberCount > 0) memberCount else members.size
 
     /** 与 [Conversation.isGroup] 同一判据：`kind == "group"`。 */
     val isGroup: Boolean
@@ -644,6 +656,7 @@ class SocialRepository(
             myNickname = row.textOf("my_nickname"),
             myFolded = row.flagOf("my_folded") ?: false,
             allowImage = row.flagOf("allow_image") ?: false,
+            memberCount = row.intOf("member_count"),
         )
     }
 

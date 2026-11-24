@@ -438,6 +438,7 @@ fun GroupSettingsScreen(
                     item(key = "members") {
                         GroupMembersCard(
                             members = current.members,
+                            total = current.memberTotal,
                             kickable = current.isOwner(owner),
                             onKick = { member -> kickTarget = member },
                             onAdd = { adding = true },
@@ -894,10 +895,12 @@ private fun GroupAvatar(members: List<ConversationMember>, size: Dp) {
     }
 }
 
-/** 成员：标题带人数（不设上限），下面一格一格的圆头像，最后一格是「邀请」。 */
+/** 成员：标题带总人数（不设上限），下面一格一格的圆头像，最后一格是「邀请」。 */
 @Composable
 private fun GroupMembersCard(
     members: List<ConversationMember>,
+    /** 群里一共多少人：`members` 只有前 200 个（官方群几千人），人数不能用 `members.size`。 */
+    total: Int,
     kickable: Boolean,
     onKick: (ConversationMember) -> Unit,
     onAdd: () -> Unit,
@@ -924,7 +927,7 @@ private fun GroupMembersCard(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "${members.size} 人",
+                text = "$total 人",
                 fontSize = 11.sp,
                 color = scheme.onSurfaceVariant,
             )

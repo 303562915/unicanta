@@ -1115,7 +1115,8 @@ fun ChatScreen(
     val imagesAllowed = !grouped || detail?.allowImage == true || detail?.isOwner(owner) == true
     // 标题：形参空的时候用详情里的群名，都空就叫「私聊」；人数优先用调用方给的，没有数成员。
     val heading = title.ifBlank { detail?.title.orEmpty() }.ifBlank { "私聊" }
-    val members = if (memberCount > 0) memberCount else detail?.members?.size ?: 0
+    // 人数用后端给的总数：`members` 只有前 200 个（官方群几千人），数它会数少。
+    val members = if (memberCount > 0) memberCount else detail?.memberTotal ?: 0
     // 私聊里"另一个人"的身份：详情成员表里第一个不是自己的那个。取不到就是空串，
     // 顶栏据此不挂点击——宁可点不动，也不要推开一张没有内容的主页。
     val peerOwner = detail?.members?.firstOrNull { member -> member.owner != owner }?.owner.orEmpty()
