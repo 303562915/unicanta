@@ -54,7 +54,13 @@ import kotlin.time.TimeSource
  *
  * 安装只说 toast（[CantaPlatform.showMessage]）：开始一次、结束一次，别的什么也不打印。
  */
-class UpdateCenter(
+/**
+ * 更新这一整块的唯一实现：查、下、装，以及卡片要画的那一份状态。
+ *
+ * `internal` 而不是 public：它的状态与返回值是 `UpdateState` / `UpdateRelease`，那两个也是
+ * internal（同一条链上只给本模块用），public 类把它们暴露出去编译器会直接拒绝。
+ */
+internal class UpdateCenter(
     private val platform: CantaPlatform,
     private val settings: CantaSettings,
     private val telemetry: PackageTelemetry?,
@@ -258,8 +264,10 @@ class UpdateCenter(
         val release = lastRelease
         state = release?.let { UpdateState.Available(updateLabel(it), it) } ?: UpdateState.Idle
         release?.let { stopped ->
-            val channelName = channelName(channel())
+            // channel() 是挂起的（读设置），所以整段上报放进协程里；取消本身已经发生，
+            // 上报什么时候完成都不影响卡片。
             scope.launch {
+                val channelName = channelName(channel())
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_DOWNLOAD,
                     outcome = UpdateReport.OUTCOME_CANCELLED,
