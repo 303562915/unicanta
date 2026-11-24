@@ -558,6 +558,7 @@ private fun CantaNavigation(
     // The two optional pages: off by default, so the bar only leads to what everyone needs.
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
+    val showPostsTab by settingsViewModel.showPostsTab.collectAsStateWithLifecycle()
 
     // Null until the stored settings have loaded, so the wrong screen never flashes.
     val onboardingVersion by settingsViewModel.onboardingVersion.collectAsStateWithLifecycle()
@@ -1650,6 +1651,7 @@ private fun CantaNavigation(
                         route = currentRoute,
                         showTweaks = showTweaksTab,
                         showRecommend = showRecommendTab,
+                        showPosts = showPostsTab,
                         // Nothing to point at while the queue itself is open: that page is the dot.
                         showVoteDot = newVotes && currentRoute != Screen.Recommendations.route,
                         showVoteCount = newVoteCount,
@@ -1774,6 +1776,7 @@ private val BOTTOM_BAR_ROUTES = setOf(
 private object BarKey {
     const val APPS = "apps"
     const val RULES = "rules"
+    const val POSTS = "posts"
     const val TWEAKS = "tweaks"
     const val RECOMMEND = "recommend"
     const val MESSAGES = "messages"
@@ -1791,6 +1794,8 @@ private fun bottomBarItems(
     route: String?,
     showTweaks: Boolean,
     showRecommend: Boolean,
+    /** 帖子页要不要占一格：与工具页、推荐页同类，设置里点亮才出现。 */
+    showPosts: Boolean = false,
     showVoteDot: Boolean = false,
     /** How many votes are new: shown as the number in the marker, when there is one to show. */
     showVoteCount: Int = 0,
@@ -1818,6 +1823,18 @@ private fun bottomBarItems(
                 votesOpen,
                 dot = showVoteDot,
                 badge = if (votesOpen) 0 else showVoteCount,
+            ),
+        )
+    }
+    if (showPosts) {
+        // 帖子：自己的列表和自己的编辑器，和上面三页不是一类，所以默认不上底栏，
+        // 设置里点亮那一格才出现（见 AppBarSlotsCard 的第二行）。
+        add(
+            BottomBarItem(
+                BarKey.POSTS,
+                FlGlyphs.resources,
+                "帖子",
+                route == Screen.Posts.route,
             ),
         )
     }
@@ -1856,6 +1873,7 @@ private fun onBottomBarSelect(
         BarKey.RULES -> navController.navigateSingleTop(Screen.Rules.route)
         BarKey.TWEAKS -> navController.navigateSingleTop(Screen.Tweaks.route)
         BarKey.RECOMMEND -> navController.navigateSingleTop(Screen.Recommendations.route)
+        BarKey.POSTS -> navController.navigateSingleTop(Screen.Posts.route)
         BarKey.MESSAGES -> navController.navigateSingleTop(Screen.Messages.route)
         BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Mine.route)
     }
