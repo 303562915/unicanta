@@ -54,6 +54,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # 发版通知要带「这次更新了什么」，那句话只能从提交历史里来；日报没有这一步。
+      - name: ⬇️ Checkout (only for a release notice)
+        if: inputs.release_kind == 'development' || inputs.release_kind == 'stable'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📝 What changed in this release
+        id: changes
+        if: inputs.release_kind == 'development' || inputs.release_kind == 'stable'
+        run: |
+          set -euo pipefail
+          KIND="${{ inputs.release_kind }}"
+          if [ "$KIND" = "stable" ]; then
+            # 正式版：上一个 v* tag 到这次提交，就是这一版新增的全部内容。
+            PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+            RANGE="${PREV:+$PREV..HEAD}"
+          else
+            # 开发版：每次推送都发一版，最近这几条提交就是这次改的东西。
+            RANGE="HEAD"
+          fi
+          LIST=$(git log --no-merges -n 12 --pretty=format:'%s' ${RANGE:-HEAD} 2>/dev/null \
+                 | grep -vE '^(chore\(release\)|chore: 发版|Revert "|fix\(ci\)|docs\(agents\)|Merge )' \
+                 | head -n 6 || true)
+          if [ -z "$LIST" ]; then
+            LIST="（这次没有可读的提交说明，改动见发布页）"
+          fi
+          echo "--- changes ---"
+          printf '%s\n' "$LIST"
+          {
+            echo 'changes<<__CHANGES__'
+            printf '%s\n' "$LIST"
+            echo '__CHANGES__'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Query users
         id: query
         env:
@@ -88,6 +123,7 @@ jobs:
           HEAD_COMMIT: ${{ inputs.commit_sha }}
           RELEASE_URL: ${{ inputs.release_url }}
           APK_MIRROR_FILE: ${{ inputs.apk_mirror_file }}
+          CHANGES: ${{ steps.changes.outputs.changes }}
         run: |
           set -euo pipefail
           STAMP=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
@@ -112,10 +148,23 @@ jobs:
             --arg build "$BUILD_NUMBER" \
             --arg commit "$HEAD_COMMIT" \
             --arg url "$RELEASE_URL" \
-            --arg apk "$APK_URL" '
+            --arg apk "$APK_URL" \
+            --arg changes "${CHANGES:-}" '
+            def short($n): if (($n // "") | length) > 7 then ($n[0:7]) else ($n // "") end;
             def line($k; $v): if (($v // "") == "") then "" else "- " + $k + "：" + $v + "\n" end;
             # 图床直链做成可点的：钉钉的 markdown 里裸 URL 不一定认。
             def apkline($v): if (($v // "") == "") then "" else "- APK 直链（图床）：[" + $v + "](" + $v + ")\n" end;
+            # 版本、构建号、提交挤成一行：一条通知里占三行只是噪音，读的人要的是「几版的、哪次提交」。
+            # 日报没有这三样，那时整行不出现。
+            def versionline($ver; $build; $commit):
+              (if ($ver // "") == "" then "" else ("版本 " + $ver) end) as $v
+              | (if ($build // "") == "" then "" else (" · build " + $build) end) as $b
+              | (if ($commit // "") == "" then "" else (" · 提交 " + short($commit)) end) as $c
+              | if ($v + $b + $c) == "" then "" else ("- " + $v + $b + $c + "\n") end;
+            # 「这次更新了什么」——发版通知最容易缺、也最该在的那一段。
+            def changelog($c):
+              ($c | split("\n") | map(select((. | length) > 0)) | map("- " + .) | join("\n")) as $lines
+              | if $lines == "" then "" else "\n本次更新：\n" + $lines + "\n\n" end;
             {
               msgtype: "markdown",
               markdown: {
@@ -123,9 +172,8 @@ jobs:
                 text: ("### " + $title + "\n\n" +
                        "- 时间：" + $stamp + "\n" +
                        "- 通道：" + $channel + "\n" +
-                       line("版本"; $ver) +
-                       line("构建号"; $build) +
-                       line("提交"; $commit) +
+                       versionline($ver; $build; $commit) +
+                       changelog($changes) +
                        line("发布页"; $url) +
                        "- 图床下载页：https://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html\n" +
                        apkline($apk) +

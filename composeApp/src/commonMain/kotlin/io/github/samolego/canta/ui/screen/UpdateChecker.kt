@@ -14,6 +14,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -337,6 +340,87 @@ private suspend fun fetchFromPage(client: HttpClient, channel: UpdateChannel): U
         ?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it > 0 }
         ?: throw UpdateCheckException(UpdateFailure.MALFORMED)
     return UpdateRelease(DEVELOPMENT_TAG, version, buildNumber)
+}
+
+/**
+ * 一个已发布版本的更新要点，读自下载页的 `latest.json` / `development.json` 里那份 `history`。
+ *
+ * 为什么读下载页而不是 GitHub：那两个文件是 `pages.yml` 在每次发版后按同一份 release 说明生成的，
+ * 静态站没有 API 配额，关于页因此可以毫无代价地画出「最近更新了几版、每版改了什么」。
+ */
+internal data class UpdateHistoryEntry(
+    val version: String,
+    /** 开发版构建号；稳定版为 0。 */
+    val buildNumber: Int = 0,
+    /** ISO 时间，原样保留；页面上只截 `MM-dd`。 */
+    val publishedAt: String = "",
+    /** 已经挑好的要点，最多 [HISTORY_NOTES_PER_VERSION] 条。 */
+    val notes: List<String> = emptyList(),
+)
+
+/** 关于页显示几个版本。 */
+private const val HISTORY_VERSIONS = 4
+
+/** 每个版本显示几条要点：一条一条都是人话，多了只会变成一屏 commit 标题。 */
+private const val HISTORY_NOTES_PER_VERSION = 6
+
+/** 说明里不带信息量的行：发版提交、回滚、CI 修补，读了等于没读。 */
+private val NOISE_NOTES = listOf("chore(release)", "chore: 发版", "Revert ", "fix(ci)", "docs(agents)", "docs: ")
+
+/** 一条要点最多这么长，超出截断：commit 标题里的括号说明经常比正文还长。 */
+private const val NOTE_MAX_CHARS = 88
+
+/** 从发布说明里挑要点：只要 `- ` 开头的行，去掉噪音，截断过长的。 */
+internal fun pickUpdateNotes(notes: String, max: Int = HISTORY_NOTES_PER_VERSION): List<String> =
+    notes.lineSequence()
+        .map { it.trim() }
+        .filter { it.startsWith("- ") }
+        .map { it.removePrefix("- ") }
+        .filterNot { line -> NOISE_NOTES.any { line.startsWith(it) } }
+        .map { if (it.length > NOTE_MAX_CHARS) it.take(NOTE_MAX_CHARS - 1) + "…" else it }
+        .take(max)
+        .toList()
+
+/**
+ * 最近几个版本的更新要点，新的在前。
+ *
+ * 开发版那份 `history` 里只有当前构建带说明（滚动 release 的正文只留最新一份），所以开发版读到
+ * 空的时候退回稳定版那份：关于页总要有几行字，而不是一片空白。
+ */
+internal suspend fun releaseHistory(
+    client: HttpClient,
+    channel: UpdateChannel,
+    versions: Int = HISTORY_VERSIONS,
+): List<UpdateHistoryEntry> {
+    if (channel == UpdateChannel.DEVELOPMENT) {
+        val development = readHistory(client, SITE_DEVELOPMENT_JSON, versions)
+        if (development.isNotEmpty()) return development
+    }
+    return readHistory(client, SITE_LATEST_JSON, versions)
+}
+
+private suspend fun readHistory(client: HttpClient, url: String, versions: Int): List<UpdateHistoryEntry> {
+    val body = requestText(client, url, "application/json")
+    val payload = try {
+        Json.parseToJsonElement(body).jsonObject
+    } catch (e: Exception) {
+        throw UpdateCheckException(UpdateFailure.MALFORMED)
+    }
+    val history = payload["history"] as? JsonArray ?: return emptyList()
+    return history.mapNotNull { element -> element.toHistoryEntry() }
+        .filter { it.notes.isNotEmpty() }
+        .take(versions)
+}
+
+private fun JsonElement.toHistoryEntry(): UpdateHistoryEntry? {
+    val item = this as? JsonObject ?: return null
+    val version = item["version_name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+    return UpdateHistoryEntry(
+        version = version,
+        buildNumber = item["build_number"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+        publishedAt = item["published_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+        notes = pickUpdateNotes(item["notes"]?.jsonPrimitive?.contentOrNull.orEmpty()),
+    )
 }
 
 /**

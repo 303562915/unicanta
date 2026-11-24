@@ -27,12 +27,14 @@ import io.github.samolego.canta.ui.screen.INSTALL_DONE_LINGER_MILLIS
 import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.UpdateCheckException
 import io.github.samolego.canta.ui.screen.UpdateFailure
+import io.github.samolego.canta.ui.screen.UpdateHistoryEntry
 import io.github.samolego.canta.ui.screen.UpdateRelease
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestRelease
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
+import io.github.samolego.canta.ui.screen.releaseHistory
 import io.github.samolego.canta.ui.screen.updateLabel
 import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.UpdateReport
@@ -82,6 +84,17 @@ internal class UpdateCenter(
     var pendingConfirm by mutableStateOf<UpdateState.ReadyToInstall?>(null)
         private set
 
+    /**
+     * 最近几个版本的更新要点，关于页那张「最近更新」卡片画的就是它。
+     *
+     * 空的两种含义：还没读过（[loadHistory] 才会去读），或者这份渠道没有发布说明可读。页面在这种
+     * 情况下不画这张卡片，而不是先画一个「正在加载」再换成空白。
+     */
+    var history by mutableStateOf<List<UpdateHistoryEntry>>(emptyList())
+        private set
+
+    private var historyJob: Job? = null
+
     /** 同一时刻只允许一次安装：自动路径和手动路径可能同时走到这里。 */
     private var installing = false
 
@@ -97,6 +110,27 @@ internal class UpdateCenter(
         lastRelease = null
         pendingConfirm = null
         state = UpdateState.Idle
+    }
+
+    /**
+     * 读最近几个版本的更新要点（关于页打开时调一次，换渠道时重读）。
+     *
+     * 只是一个句子列表：读失败就保持空，页面不画这张卡片。这不是更新检查，没有「失败」这个状态
+     * 值得写在屏幕上。
+     */
+    fun loadHistory(force: Boolean = false) {
+        if (!force && (historyJob?.isActive == true || history.isNotEmpty())) return
+        historyJob?.cancel()
+        historyJob = scope.launch {
+            val target = channel()
+            history = try {
+                releaseHistory(client, target)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
     }
 
     /** 点了「安装」：等确认的那个版本开始装。 */

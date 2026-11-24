@@ -60,6 +60,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # 公告里要有「这次更新了什么」：提交历史是这句话唯一的来源。
+      - name: ⬇️ Checkout (for the change list)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📝 What changed in this release
+        id: changes
+        env:
+          KIND: ${{ inputs.release_kind }}
+        run: |
+          set -euo pipefail
+          if [ "$KIND" = "stable" ]; then
+            # 正式版：上一个 v* tag 到这次提交，就是这一版新增的全部内容。
+            PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+            RANGE="${PREV:+$PREV..HEAD}"
+          else
+            # 开发版：每次推送都发一版，最近这几条提交就是这次改的东西。
+            RANGE="HEAD"
+          fi
+          LIST=$(git log --no-merges -n 12 --pretty=format:'%s' ${RANGE:-HEAD} 2>/dev/null \
+                 | grep -vE '^(chore\(release\)|chore: 发版|Revert "|fix\(ci\)|docs\(agents\)|Merge )' \
+                 | head -n 6 || true)
+          echo "--- changes ---"
+          printf '%s\n' "$LIST"
+          {
+            echo 'changes<<__CHANGES__'
+            printf '%s\n' "$LIST"
+            echo '__CHANGES__'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build the message
         env:
           KIND: ${{ inputs.release_kind }}
@@ -70,6 +101,7 @@ jobs:
           APK_URL: ${{ inputs.apk_url }}
           APK_MIRROR_FILE: ${{ inputs.apk_mirror_file }}
           SUMS_URL: ${{ inputs.sums_url }}
+          CHANGES: ${{ steps.changes.outputs.changes }}
         run: |
           set -euo pipefail
           case "$KIND" in
@@ -79,13 +111,23 @@ jobs:
           esac
           {
             printf '%s\n\n' "$TITLE"
+            # 版本 / 构建号 / 提交压成一行（开发版也一样）：公告要短，读的人只关心「哪一版、哪次提交」。
+            VERLINE="版本 $VERSION"
             if [ "$KIND" = "development" ]; then
-              printf '版本 %s · build %s\n' "$VERSION" "$BUILD"
+              VERLINE="$VERLINE · build $BUILD"
             else
-              printf '版本 %s（%s）\n' "$VERSION" "$TAG"
+              VERLINE="$VERLINE（$TAG）"
             fi
             if [ -n "$HEAD_COMMIT" ]; then
-              printf '提交：%s\n' "$(printf '%s' "$HEAD_COMMIT" | cut -c1-7)"
+              VERLINE="$VERLINE · 提交 $(printf '%s' "$HEAD_COMMIT" | cut -c1-7)"
+            fi
+            printf '%s\n' "$VERLINE"
+            # 「这次更新了什么」：发版公告里最该有、以前一直没有的那一段。
+            if [ -n "${CHANGES:-}" ]; then
+              printf '\n本次更新：\n'
+              printf '%s\n' "$CHANGES" | while IFS= read -r line; do
+                [ -n "$line" ] && printf '- %s\n' "$line"
+              done
             fi
             printf '\n下载页（点开用浏览器下载）：\nhttps://303562915.github.io/unicanta/\n'
             printf '\n图床下载页（国内更快，同一份页面）：\nhttps://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html\n'

@@ -63,6 +63,7 @@ import io.github.samolego.canta.generated.resources.about_qq_group_hint
 import io.github.samolego.canta.generated.resources.about_tagline
 import io.github.samolego.canta.generated.resources.about_title
 import io.github.samolego.canta.generated.resources.about_update_available
+import io.github.samolego.canta.generated.resources.about_update_history
 import io.github.samolego.canta.generated.resources.about_update_failed
 import io.github.samolego.canta.generated.resources.about_update_failed_bad_answer
 import io.github.samolego.canta.generated.resources.about_update_failed_network
@@ -169,8 +170,12 @@ internal fun AboutScreen(
     // 所以自动下载进来时这张卡片照样有进度条在动，不再只有手点才看得见。
     val updateState = updateCenter.state
     // 换了更新通道，卡片上那个版本属于另一个通道：先清掉，别把旧通道的版本装到新通道头上。
+    // 「最近更新」也跟着换：开发版与稳定版的发布说明是两份。
     LaunchedEffect(updateChannel) {
-        if (updateChannel != null) updateCenter.onChannelChanged()
+        if (updateChannel != null) {
+            updateCenter.onChannelChanged()
+            updateCenter.loadHistory(force = true)
+        }
     }
     // Read here, not in the tap handler: `getString` suspends, and a click is not a suspend call.
     val qqGroupCopied = stringResource(Res.string.about_qq_group_copied)
@@ -244,6 +249,12 @@ internal fun AboutScreen(
                 channel = updateChannel,
                 onChannelSelected = { settingsViewModel.saveUpdateChannel(it) },
             )
+            // 「最近更新」就贴在这张渠道卡片下面：它答的正是「这一版改了什么」。没读到内容就不画，
+            // 而不是留一张空卡片让人以为更新日志是空的。
+            if (updateCenter.history.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                UpdateHistoryCard(updateCenter.history)
+            }
             Spacer(Modifier.height(10.dp))
 
             AppToggleCard(
@@ -542,4 +553,61 @@ private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> U
             }
         }
     }
+}
+
+/**
+ * 最近几个版本改了什么：一版一个小标题，下面几行要点。
+ *
+ * 数据是 CI 发版时写进下载页 `latest.json` / `development.json` 的那份 `history`，所以这一页不发
+ * GitHub API 请求，也就不吃匿名配额——格子里的字不会因为别人用完出口 IP 的额度而消失。
+ *
+ * 每个版本只放几条：这是「这次更新了什么」的答案，不是变更总账。要全的，下载页上逐版本展开。
+ */
+@Composable
+private fun UpdateHistoryCard(entries: List<UpdateHistoryEntry>) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppCardInset)
+            .clip(RoundedCornerShape(AppCardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = stringResource(Res.string.about_update_history),
+            style = FlText.subheadline.copy(fontWeight = FontWeight.Medium),
+            color = scheme.onSurface,
+        )
+        entries.forEach { entry ->
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = historyHeading(entry),
+                style = FlText.caption1,
+                color = scheme.primary,
+            )
+            entry.notes.forEach { note ->
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "· $note",
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/** 「v4.3.5 · 11-24」；开发版把构建号写出来，否则两个滚动构建看起来是同一个版本。 */
+private fun historyHeading(entry: UpdateHistoryEntry): String {
+    val version = if (entry.buildNumber > 0) {
+        "v${entry.version} (dev ${entry.buildNumber})"
+    } else {
+        "v${entry.version}"
+    }
+    // `published_at` 是 ISO 8601；只取 MM-dd，年份在「最近几次」里没有信息量。
+    val day = if (entry.publishedAt.length >= 10) entry.publishedAt.substring(5, 10) else ""
+    return if (day.isNotEmpty()) "$version · $day" else version
 }

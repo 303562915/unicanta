@@ -224,6 +224,8 @@
     <string name="update_channel">更新渠道</string>
     <string name="update_channel_stable">稳定版</string>
     <string name="update_channel_dev">开发版</string>
+    <!-- 关于页那张「最近几次更新了什么」的卡片。 -->
+    <string name="about_update_history">最近更新</string>
     <!-- 百分号在代码里拼：Compose Multiplatform 的格式化只认 %N$s / %N$d，`%%` 会原样输出两个
          百分号（原来这里写 %% 就是「正在下载… 42%%」的来源）。 -->
     <string name="about_downloading">正在下载… %1$d</string>
