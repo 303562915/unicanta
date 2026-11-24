@@ -5,8 +5,6 @@ import io.github.samolego.canta.core.adb.ShellResult
 import io.github.samolego.canta.util.LogUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -36,6 +34,13 @@ class RootTransport(
 
         /** Permission bits only: `chmod` is given `644`, not the `stat` value that includes the type. */
         const val PERMISSION_MASK = 0xFFF
+
+        /**
+         * How long the authorization probe waits. A prompt nobody taps must not leave the app
+         * claiming to be "checking root" forever; a denial is an answer too. Long enough that a
+         * person who reads the dialog still gets their answer accepted.
+         */
+        const val PROBE_TIMEOUT_MILLIS = 30_000L
     }
 
     /** Whether a `su` binary answered as root. Cached: a probe per operation would be a spawn each. */
@@ -55,16 +60,29 @@ class RootTransport(
     fun forgetProbe() {
         rootChecked = false
         rootGranted = false
+        // A new press is a new question: reusing the open shell would answer it from the grant the
+        // manager already gave, and the button would look like it did nothing.
+        RootShell.session.close()
     }
 
     /** True when `su` exists and handed this app a root shell. Probed once. */
     suspend fun isRootAvailable(): Boolean = withContext(Dispatchers.IO) {
         if (rootChecked) return@withContext rootGranted
         val binary = suBinaryPath()
+        var timedOut = false
         val granted = runCatching {
-            val result = runSu("id")
+            // Through the shared shell, not a one-off `su -c`: the probe is what opens the session,
+            // so the manager's single prompt is all the authorization this run of the app needs.
+            val result = RootShell.session.run("id", timeoutMs = PROBE_TIMEOUT_MILLIS)
+            timedOut = "超时" in result.stderr
             result.exitCode == 0 && result.stdout.contains("uid=0")
         }.onFailure { LogUtils.w(TAG, "Could not probe for root: $it") }.getOrDefault(false)
+        if (timedOut) {
+            // Not a refusal: the user may have tapped "allow" after the probe gave up, and caching
+            // that as "no root" would keep the privilege unusable for the whole process.
+            LogUtils.i(TAG, "The root prompt was not answered in time; asking again on the next use")
+            return@withContext false
+        }
         rootChecked = true
         rootGranted = granted
         if (!granted) {
@@ -82,25 +100,13 @@ class RootTransport(
         granted
     }
 
-    override suspend fun shell(command: String): ShellResult = runSu(command)
+    override suspend fun shell(command: String): ShellResult = RootShell.session.run(command)
 
-    override fun shellLines(command: String): Flow<String> = flow {
-        // `su -c` is one command, so its stdout is read as it arrives rather than buffered: the
-        // helper streams one line per package and the list should fill while it works.
-        val process = startSu(command)
-        process.inputStream.bufferedReader().use { reader ->
-            while (true) {
-                val line = reader.readLine() ?: break
-                emit(line)
-            }
-        }
-        val exit = process.waitFor()
-        if (exit != 0) {
-            val error = process.errorStream.bufferedReader().readText().trim()
-            LogUtils.w(TAG, "'$command' exited with $exit: ${error.take(500)}")
-            throw io.github.samolego.canta.core.adb.ShellCommandException(command, exit, error)
-        }
-    }.flowOn(Dispatchers.IO)
+    /**
+     * The helper streams one line per package, and the shared shell reads it as it arrives, so the
+     * list fills while the helper is still working.
+     */
+    override fun shellLines(command: String): Flow<String> = RootShell.session.lines(command)
 
     override suspend fun push(bytes: ByteArray, remotePath: String, mode: Int) {
         withContext(Dispatchers.IO) {
@@ -111,7 +117,7 @@ class RootTransport(
             val permissions = Integer.toOctalString(mode and PERMISSION_MASK)
             val quotedStaging = staging.absolutePath.shellQuoted()
             val quotedRemote = remotePath.shellQuoted()
-            val result = runSu(
+            val result = RootShell.session.run(
                 "cp $quotedStaging $quotedRemote && chmod $permissions $quotedRemote && rm -f $quotedStaging"
             )
             if (result.exitCode != 0) {
@@ -120,29 +126,9 @@ class RootTransport(
         }
     }
 
-    /** Runs [command] through `su -c` and waits for it, collecting both streams. */
-    private suspend fun runSu(command: String): ShellResult = withContext(Dispatchers.IO) {
-        try {
-            val process = startSu(command)
-            val stdout = process.inputStream.bufferedReader().readText()
-            val stderr = process.errorStream.bufferedReader().readText()
-            val exit = process.waitFor()
-            ShellResult(exitCode = exit, stdout = stdout, stderr = stderr)
-        } catch (e: Exception) {
-            LogUtils.e(TAG, "Could not run '$command' as root", e)
-            ShellResult(exitCode = -1, stdout = "", stderr = e.toString())
-        }
-    }
-
-    private fun startSu(command: String): Process =
-        // The binary the gate found, spelled out: a ROM that keeps `su` somewhere PATH does not
-        // reach (KernelSU's /debug_ramdisk, Magisk's ramdisk) would pass the check and then fail
-        // every command with "Cannot run program su", which reads as "root refused".
-        ProcessBuilder(suBinaryPath() ?: "su", "-c", command).redirectErrorStream(false).start()
-
     /**
-     * Wraps [this] in single quotes for the shell `su -c` hands the string to, so a path with a
-     * space (or an odd character) stays one word.
+     * Wraps [this] in single quotes for the shell the session keeps open, so a path with a space
+     * (or an odd character) stays one word.
      */
     private fun String.shellQuoted(): String = "'" + replace("'", "'\\''") + "'"
 }

@@ -64,8 +64,12 @@ class AndroidCantaPlatform(
         /** One channel's error line in the install report: the cause, not the whole `pm` dump. */
         private const val INSTALL_ERROR_CHARS = 160
 
-        /** A root install that never answers is a prompt nobody tapped: reported, not waited on. */
-        private const val ROOT_INSTALL_TIMEOUT_MILLIS = 20_000L
+        /**
+         * How long a root install may take. Generous on purpose: `pm install` of a 30 MB APK on a
+         * busy phone can take a while, and cutting it short would kill the shared shell — the next
+         * command would then cost another authorization prompt.
+         */
+        private const val ROOT_INSTALL_TIMEOUT_MILLIS = 120_000L
 
         /** How long a silent socket may stay open before the transfer is called stalled. */
         private const val STALL_TIMEOUT_MILLIS = 45_000L
