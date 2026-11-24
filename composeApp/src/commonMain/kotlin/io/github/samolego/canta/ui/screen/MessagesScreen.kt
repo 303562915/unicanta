@@ -56,6 +56,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -105,6 +106,15 @@ private const val MessagePollMs: Long = 30_000L
  * 到了就把骨架收起来并写一句原因，而不是让四个空卡片一直挂着。
  */
 private const val IdentityGraceMs: Long = 2_500L
+
+/**
+ * 置顶那一行铺的主色淡底有多深。
+ *
+ * 置顶只用色差说话：不写字、不点圆点，整行颜色深一档就是了。0.12 是「隔着看也分得出、
+ * 又不至于把名字和预览糊掉」的那一档；浅色主题下在这层近白底上叠出很淡的主题色，
+ * 深色主题下同样成立。
+ */
+private const val PinnedTintAlpha: Float = 0.12f
 
 /** 预取几个会话的消息：够覆盖「刚聊过的那几个」，再多就是替没打开的页面花流量。 */
 private const val WarmConversationLimit = 4
@@ -1681,9 +1691,9 @@ private fun MessageEntryRow(
  * 一条会话：头像、名字（互相关注带灰标）、最后一句、时间与未读数。
  *
  * 点一下进会话，长按弹五条动作，顺序照抖音的消息页：免打扰 / 置顶 / 不显示 / 拉黑 / 删除。
- * 「标记已读」不在这里——进会话本身就标了，再多一个按钮只是让人多按一次。置顶的那一行在头像
- * 右上角点一个主色小圆点，整行底色铺成深一档的灰（`surfaceContainerHighest`）——比在名字后面
- * 再写「置顶」两个字更省一行空间，扫一眼也够用。
+ * 「标记已读」不在这里——进会话本身就标了，再多一个按钮只是让人多按一次。置顶只靠**色差**：
+ * 整行底色换成主色的淡底（[PinnedTintAlpha]），不写字也不点头像上的圆点——色差本身就是标记，
+ * 再加一个小点只是多一处要看的东西。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1718,10 +1728,11 @@ private fun ConversationRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    // 置顶那一行铺一层看得见的灰：原来用的 Card 和普通行的 surfaceContainer 在浅色
-                    // 主题下是同一个值（#FCF8F9），置顶等于没标——现在用深一档的 Highest，一眼能分出来。
+                    // 置顶只靠色差说话：整行铺一层主色的淡底。以前用的是 surfaceContainerHigh，
+                    // 那个和普通行的 surface 在浅色主题里都在白色附近（#F0ECED vs #FCF8F9），
+                    // 屏幕上几乎看不出来，置顶等于没标。主题色叠一层深浅主题都成立，一眼分得出。
                     if (pinnedLook) {
-                        scheme.surfaceContainerHigh
+                        scheme.primary.copy(alpha = PinnedTintAlpha).compositeOver(scheme.surface)
                     } else {
                         scheme.surface
                     },
@@ -1738,16 +1749,6 @@ private fun ConversationRow(
         ) {
             Box {
                 InitialAvatar(label = conversation.label)
-                if (pinnedLook) {
-                    // 头像右上角那一点主色：置顶的行一眼认得出，不用多写两个汉字。
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(9.dp)
-                            .clip(CircleShape)
-                            .background(scheme.primary),
-                    )
-                }
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
