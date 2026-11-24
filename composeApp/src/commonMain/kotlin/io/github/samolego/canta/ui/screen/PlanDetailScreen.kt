@@ -1175,6 +1175,8 @@ private fun PlanHero(
                     owner = plan.owner,
                     size = 20.dp,
                     background = colors.primary,
+                    // 首字压在 primary 上：用 onPrimary 才和改之前那一版一样清楚（深色主题尤其）。
+                    letterColor = colors.onPrimary,
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(

@@ -1539,15 +1539,20 @@ private fun ReviewRow(review: AppReview) {
             .padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Every review carries an avatar: the reviewer's picture when there is one, and the
-            // first character of the name otherwise. Reviews only carry a signature, so the
-            // picture address can be derived only when that signature is still the install code
-            // (pure digits) — a renamed reviewer gets the letter, not a dead URL.
+            // Every review carries an avatar: the reviewer's picture when we can address it, and the
+            // first character of the signature otherwise. A signature is either a chosen name or the
+            // install code, and the unnamed form is `#10000` — strip the `#` and that number *is* the
+            // identity the picture lives under. A chosen name cannot be turned into an address, so it
+            // keeps the letter instead of asking the image bed for a page that cannot exist.
+            val reviewerOwner = review.author.trim().removePrefix("#")
+                .takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+                .orEmpty()
             PersonAvatar(
                 name = review.author,
-                owner = review.author.trim().takeIf { it.isNotEmpty() && it.all(Char::isDigit) }.orEmpty(),
+                owner = reviewerOwner,
                 size = 24.dp,
                 background = scheme.secondaryContainer,
+                letterColor = scheme.onSecondaryContainer,
             )
             Spacer(Modifier.width(8.dp))
             Text(

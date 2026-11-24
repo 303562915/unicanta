@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,17 +55,35 @@ private object AvatarCache {
     val misses = mutableMapOf<String, Long>()
 
     /**
-     * 往缓存里写过几次。
+     * 每个地址被写过几次。
      *
-     * 换头像是**覆盖式上传**，直链不变；没有这个计数器，屏幕上已经画好的那些 [UserAvatar]
-     * （`remember(url)` 拿着的还是旧值）就一直是首字，得退出页面再进来才换。有了它，谁把新图塞进
-     * 缓存，所有看着同一个地址的头像就当场重读一次。
+     * 换头像是**覆盖式上传**：直链不变、背后那张图换了。没有它，屏幕上已经画好的 [UserAvatar]
+     * （`remember(url)` 拿着的还是旧值）就一直是首字，必须退出页面再进来才换。
+     *
+     * **按地址记**而不是一个全局计数：全局计数一响，整屏头像的 `LaunchedEffect` 全部重启，正在下的
+     * 那些请求互相取消重来，一屏 N 个头像会放大成 N² 次请求。
      */
-    var version by mutableIntStateOf(0)
-        private set
+    private val revisions = mutableMapOf<String, Int>()
 
-    fun bump() {
-        version++
+    /** 此刻正看着某个地址的那些头像：写缓存时只叫醒它们。 */
+    private val watchers = mutableMapOf<String, MutableList<() -> Unit>>()
+
+    fun revisionOf(url: String): Int = revisions[url] ?: 0
+
+    fun watch(url: String, handler: () -> Unit) {
+        watchers.getOrPut(url) { mutableListOf() } += handler
+    }
+
+    fun unwatch(url: String, handler: () -> Unit) {
+        val list = watchers[url] ?: return
+        list.remove(handler)
+        if (list.isEmpty()) watchers.remove(url)
+    }
+
+    /** 这个地址刚被写过：只有看着它的头像重读一次。 */
+    fun noteWritten(url: String) {
+        revisions[url] = revisionOf(url) + 1
+        watchers[url]?.toList()?.forEach { notify -> notify() }
     }
 }
 
@@ -129,8 +148,8 @@ internal fun cacheAvatar(url: String, bitmap: ImageBitmap) {
     // 头像重下一次比把内存吃掉好。
     if (AvatarCache.map.size >= AVATAR_CACHE_ENTRIES) AvatarCache.map.clear()
     AvatarCache.map[key] = bitmap
-    // 通知所有看着这个地址的头像：缓存变了，重读一次（覆盖式上传时地址不变，见 [AvatarCache.version]）。
-    AvatarCache.bump()
+    // 通知看着这个地址的头像：缓存变了，重读一次（覆盖式上传时地址不变，见 [AvatarCache.revisionOf]）。
+    AvatarCache.noteWritten(key)
 }
 
 /**
@@ -189,13 +208,18 @@ fun UserAvatar(
     letterStyle: TextStyle? = null,
 ) {
     val key = url.trim()
-    // 缓存第几版：谁把新图塞进去，这一页上的所有头像都重读一次（覆盖式上传时地址不变，见
-    // [AvatarCache.version]）。读它让这一处参与重组，也正是"换完头像当场就换"的关键。
-    val cacheVersion = AvatarCache.version
+    // 这个地址被写过几次。有人把新图塞进缓存（换头像）时它 +1，只有**看着同一个地址**的头像会重读
+    // 一次——不是全屏重来，否则一屏 N 个头像的请求会互相取消重下。
+    var revision by remember(key) { mutableIntStateOf(AvatarCache.revisionOf(key)) }
+    DisposableEffect(key) {
+        val handler = { revision = AvatarCache.revisionOf(key) }
+        AvatarCache.watch(key, handler)
+        onDispose { AvatarCache.unwatch(key, handler) }
+    }
     // 命中缓存时连一帧首字母都不闪：remember 的初值就是缓存里那一张。
     var bitmap by remember(key) { mutableStateOf(cachedAvatar(key)) }
 
-    LaunchedEffect(key, cacheVersion) {
+    LaunchedEffect(key, revision) {
         if (key.isEmpty()) {
             bitmap = null
             return@LaunchedEffect
@@ -205,9 +229,8 @@ fun UserAvatar(
             bitmap = hit
             return@LaunchedEffect
         }
-        // 换了 url 就先清掉上一张，不然新旧两张会同时存在一帧。
-        bitmap = null
-        // 这个地址刚刚 404 过：没设过头像的人很多，这一趟不必再问一次。
+        // 同一地址被重写而新图还没到（或缓存被清过）时，先留着手上的那张：退回一个首字再换回来，
+        // 才是换头像那一刻最刺眼的闪。换 url 的情况由 `remember(key)` 负责清空。
         if (avatarMissed(key)) return@LaunchedEffect
         val loaded = AvatarLoader.load(key)
         if (loaded != null) {
