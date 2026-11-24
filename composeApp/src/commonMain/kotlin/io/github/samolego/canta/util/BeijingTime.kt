@@ -93,7 +93,6 @@ object BeijingTime {
         DayOfWeek.SATURDAY -> "周六"
         else -> "周日"
     }
-    }
 
     /**
      * 聊天里的日期分隔条：「今天」「昨天」「M月d日」「yyyy年M月d日」（都是北京时间）。
