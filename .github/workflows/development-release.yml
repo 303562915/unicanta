@@ -22,6 +22,8 @@ jobs:
     outputs:
       published: ${{ steps.publish.outputs.published }}
       version_name: ${{ steps.publish.outputs.version_name }}
+      # 图床（cloudflare-imgbed）上这份 APK 的直链；图床挂了就为空，通知里那一行自动不出现。
+      apk_mirror_url: ${{ steps.imagebed.outputs.url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -126,6 +128,54 @@ jobs:
           echo "published=true" >> "$GITHUB_OUTPUT"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Mirror APK to the image bed
+        id: imagebed
+        # 只镜像真正发布出去的那一份（条件与上面同一个），而且失败不阻断发布：
+        # 图床只是国内下载更快的镜像，GitHub releases 上的直链才是权威产物。
+        if: steps.current.outputs.is_head == 'true'
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -uo pipefail
+          # 地址、Token、根目录都不在 workflow 里另抄一份：直接读客户端里那份常量（ImageBed.kt），
+          # 以后换图床/换 Token/改目录只改一处。
+          SRC=composeApp/src/commonMain/kotlin/io/github/samolego/canta/data/imagebed/ImageBed.kt
+          BASE_URL=$(sed -n 's/.*const val BASE_URL = "\([^"]*\)".*/\1/p' "$SRC")
+          TOKEN=$(sed -n 's/.*const val TOKEN = "\([^"]*\)".*/\1/p' "$SRC")
+          ROOT_DIR=$(sed -n 's/.*const val ROOT = "\([^"]*\)".*/\1/p' "$SRC")
+          VERSION_NAME=$(sed -n 's/^version_name=//p' gradle.properties)
+          if [ -z "$BASE_URL" ] || [ -z "$TOKEN" ] || [ -z "$ROOT_DIR" ] || [ -z "$VERSION_NAME" ]; then
+            echo "::warning::image bed mirror skipped: BASE_URL / TOKEN / ROOT / version_name not found"
+            echo "url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          APK="dist/androidApp-release-${RUN_NUMBER}.apk"
+          # 目录固定 <项目根>/apk：安装包单独一层，和头像（unicanta/头像）、群聊图（unicanta/群聊）分开。
+          FOLDER="${ROOT_DIR}/apk"
+          # 名字带版本 + 构建号 + 重跑次数：图床重名会 409，重跑同一个 run number 也不会撞。
+          RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-1}"
+          NAME="unicanta-dev-${VERSION_NAME}-b${RUN_NUMBER}-r${RUN_ATTEMPT}.apk"
+          RESP=$(curl -sS --fail-with-body --max-time 600 -X POST "$BASE_URL/api/upload" \
+            -F "file=@${APK};type=application/vnd.android.package-archive;filename=${NAME}" \
+            -F "uid=${TOKEN}" \
+            -F "fileName=${NAME}" \
+            -F "folder=${FOLDER}" || true)
+          echo "$RESP"
+          URL=$(printf '%s' "$RESP" | jq -r '.url // empty' 2>/dev/null)
+          if [ -z "$URL" ]; then
+            echo "::warning::image bed mirror failed for $APK — the notice will carry the GitHub link only"
+            echo "url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 当场回读一次：图床收下了但读不出来，等于没镜像。
+          if curl -sS -o /dev/null --fail --max-time 180 "$URL"; then
+            echo "mirrored: $URL"
+            echo "url=$URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::image bed URL is not readable: $URL"
+            echo "url=" >> "$GITHUB_OUTPUT"
+          fi
+
   notify:
     name: 📣 DingTalk notice (development release)
     # 触发条件：开发版已经成功发布（notify 只在 really published 时跑，跳过的发布不推消息）。
@@ -141,6 +191,7 @@ jobs:
       build_number: ${{ github.run_number }}
       commit_sha: ${{ github.sha }}
       release_url: https://github.com/303562915/unicanta/releases/tag/dev
+      apk_url: ${{ needs.publish.outputs.apk_mirror_url }}
 
   notify-group:
     name: 📣 Group notice (development release)
@@ -156,4 +207,5 @@ jobs:
       build_number: ${{ github.run_number }}
       commit_sha: ${{ github.sha }}
       apk_url: https://github.com/303562915/unicanta/releases/download/dev/androidApp-release-${{ github.run_number }}.apk
+      apk_mirror_url: ${{ needs.publish.outputs.apk_mirror_url }}
       sums_url: https://github.com/303562915/unicanta/releases/download/dev/SHA256SUMS-${{ github.run_number }}.txt

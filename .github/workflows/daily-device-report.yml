@@ -36,6 +36,10 @@ on:
         description: "发布页链接"
         type: string
         default: ""
+      apk_url:
+        description: "APK 直链（图床镜像，空 = 不写这一行）"
+        type: string
+        default: ""
     secrets:
       SUPABASE_ACCESS_TOKEN:
         required: true
@@ -83,6 +87,7 @@ jobs:
           BUILD_NUMBER: ${{ inputs.build_number }}
           HEAD_COMMIT: ${{ inputs.commit_sha }}
           RELEASE_URL: ${{ inputs.release_url }}
+          APK_URL: ${{ inputs.apk_url }}
         run: |
           set -euo pipefail
           STAMP=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
@@ -100,8 +105,11 @@ jobs:
             --arg ver "$VERSION_NAME" \
             --arg build "$BUILD_NUMBER" \
             --arg commit "$HEAD_COMMIT" \
-            --arg url "$RELEASE_URL" '
+            --arg url "$RELEASE_URL" \
+            --arg apk "$APK_URL" '
             def line($k; $v): if (($v // "") == "") then "" else "- " + $k + "：" + $v + "\n" end;
+            # 图床直链做成可点的：钉钉的 markdown 里裸 URL 不一定认。
+            def apkline($v): if (($v // "") == "") then "" else "- APK 直链（图床）：[" + $v + "](" + $v + ")\n" end;
             {
               msgtype: "markdown",
               markdown: {
@@ -113,6 +121,7 @@ jobs:
                        line("构建号"; $build) +
                        line("提交"; $commit) +
                        line("发布页"; $url) +
+                       apkline($apk) +
                        "- 总人数：" + $total + "\n" +
                        "- 有型号：" + $model + "\n\n" +
                        "rr")
