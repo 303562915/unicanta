@@ -39,9 +39,14 @@ jobs:
           esac
           test -f "$SQL_PATH" || { echo "no such file: $SQL_PATH" >&2; exit 1; }
           echo "--- applying $SQL_PATH ---"
+          # 失败时也要把那句 JSON 打出来：Management API 的错误只会出现在响应体里，
+          # 只留一个 "curl: (22) ... 400" 等于什么都没说。
+          set +e
           RESP=$(jq -Rs '{query: .}' "$SQL_PATH" | curl -sS --fail-with-body -X POST \
             "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            --data-binary @-)
+            --data-binary @- 2>&1)
+          CODE=$?
           echo "$RESP"
+          exit $CODE
