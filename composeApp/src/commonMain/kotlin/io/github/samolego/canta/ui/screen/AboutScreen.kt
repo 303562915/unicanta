@@ -19,7 +19,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -115,6 +114,7 @@ import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
+import io.github.samolego.canta.ui.fl.FlProgressBar
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
@@ -790,21 +790,9 @@ private fun UpdateCard(
             }
             if (showsBar) {
                 Spacer(Modifier.height(8.dp))
-                val barModifier = Modifier.fillMaxWidth().height(3.dp)
-                if (barProgress != null) {
-                    LinearProgressIndicator(
-                        progress = { barProgress },
-                        modifier = barModifier,
-                        color = scheme.primary,
-                        trackColor = scheme.primary.copy(alpha = 0.18f),
-                    )
-                } else {
-                    LinearProgressIndicator(
-                        modifier = barModifier,
-                        color = scheme.primary,
-                        trackColor = scheme.primary.copy(alpha = 0.18f),
-                    )
-                }
+                // The app-list loaders draw this same bar (FlProgressBar), so waiting for a build
+                // and waiting for the list look like one thing moving rather than two.
+                FlProgressBar(progress = barProgress)
             }
             // Which route the install is on: "正在安装" alone cannot tell a slow push from a dead
             // Shizuku, and that difference is the whole question when an update will not land.

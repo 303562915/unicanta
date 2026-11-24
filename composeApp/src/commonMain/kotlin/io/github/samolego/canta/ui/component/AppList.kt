@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -23,7 +24,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,6 +53,7 @@ import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.ui.dialog.AppInfoDialog
+import io.github.samolego.canta.ui.fl.FlProgressBar
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 
@@ -267,20 +268,24 @@ fun AppList(
     }
 }
 
+/**
+ * The badge network check is a wait with no length, so it wears the same bar the update card uses
+ * while it downloads: a hairline that moves, instead of a spinner that reads as a stuck clock.
+ */
 @Composable
 fun LoadingBadgesIndicator() {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(32.dp),
+        FlProgressBar()
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(Res.string.loading_badges),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(modifier = Modifier.size(8.dp))
-        Text(stringResource(Res.string.loading_badges))
     }
 }
 
@@ -299,6 +304,10 @@ fun SelectAllOption(
     )
 }
 
+/**
+ * The same bar as [LoadingBadgesIndicator], centred: the whole page is waiting for the package
+ * list itself, and no part of the content is on screen yet.
+ */
 @Composable
 fun LoadingAppsInfo() {
     Box(
@@ -306,12 +315,11 @@ fun LoadingAppsInfo() {
             .fillMaxWidth()
             .fillMaxHeight(), contentAlignment = Alignment.Center
     ) {
-        Column {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(48.dp)
-                    .align(Alignment.CenterHorizontally),
-            )
+        Column(
+            modifier = Modifier.padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            FlProgressBar(modifier = Modifier.width(180.dp))
             Spacer(modifier = Modifier.size(16.dp))
             Text(stringResource(Res.string.loading_apps))
         }
