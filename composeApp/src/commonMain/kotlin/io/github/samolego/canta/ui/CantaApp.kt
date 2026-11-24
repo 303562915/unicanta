@@ -91,6 +91,7 @@ import io.github.samolego.canta.generated.resources.tab_rules
 import io.github.samolego.canta.generated.resources.tab_tweaks
 import io.github.samolego.canta.generated.resources.vpn_notice_never
 import io.github.samolego.canta.generated.resources.vpn_notice_open
+import io.github.samolego.canta.generated.resources.vpn_notice_switch_network
 import io.github.samolego.canta.generated.resources.vpn_notice_text
 import io.github.samolego.canta.ui.AppsTab
 import io.github.samolego.canta.ui.AppsType

@@ -166,6 +166,7 @@ import io.github.samolego.canta.generated.resources.onboarding_welcome_title
 import io.github.samolego.canta.generated.resources.privacy_policy
 import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku_active
 import io.github.samolego.canta.generated.resources.show_whats_sent
+import io.github.samolego.canta.generated.resources.vpn_notice_switch_network
 import io.github.samolego.canta.ui.dialog.NoWarrantyContent
 import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.dialog.TelemetryPreviewDialog
