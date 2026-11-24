@@ -40,6 +40,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,11 +86,18 @@ import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.currentTimeMillis
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 页面开着时多久问一次后端：没有推送，靠这一行让列表跟上别人的动作。 */
 private const val MessagePollMs: Long = 15_000L
+
+/**
+ * 身份还没读出来时先等多久：冷启动读一次本地设置是毫秒级的事，超过这个数就是真读不到了。
+ * 到了就把骨架收起来并写一句原因，而不是让四个空卡片一直挂着。
+ */
+private const val IdentityGraceMs: Long = 2_500L
 
 /** 预取几个会话的消息：够覆盖「刚聊过的那几个」，再多就是替没打开的页面花流量。 */
 private const val WarmConversationLimit = 4
@@ -215,6 +223,15 @@ fun MessagesScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每十几秒整页闪一下骨架。
     var reloads by remember { mutableIntStateOf(0) }
+    // 这一趟加载走没走完。定时器只在它没在走的时候才戳一下：一趟是三个串行请求，慢的时候比
+    // 15 秒还长，逐个戳过去等于每 15 秒把在跑的那一趟取消重来，`loading` 永远等不到落地，
+    // 界面上就是四个空卡片一直挂着。骨架收不起来比骨架本身难看得多。
+    var loadBusy by remember { mutableStateOf(false) }
+    // 每一趟的序号：只有最新那一趟（或被最新那一趟顶掉的）有权收骨架，免得被取消的旧那一趟
+    // 把新那一趟的「正在加载」抹掉。
+    var loadPass by remember { mutableIntStateOf(0) }
+    // 手指下拉的那一次还在不在转：与应用页同一个 PullToRefreshBox，指示器样式跟那一页一致。
+    var refreshing by remember { mutableStateOf(false) }
     // 顶栏那条搜索：开没开、打了什么字。会话与联系人是本地过滤（数据已经在手上），
     // 第三段「消息」要问后端，所以单独存一份结果。
     var searchActive by remember { mutableStateOf(false) }
@@ -234,7 +251,8 @@ fun MessagesScreen(
         if (owner.isEmpty()) return@LaunchedEffect
         while (true) {
             delay(MessagePollMs)
-            reloads++
+            // 上一趟还在走就别戳：戳一下等于把它取消重来，见 loadBusy 的注释。
+            if (!loadBusy) reloads++
         }
     }
 
@@ -242,43 +260,77 @@ fun MessagesScreen(
     // 旧的预览和旧的未读数，会以为没发出去。第一次进入不重复拉（那时 reloads 还是 0）。
     var resumedOnce by remember { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        if (resumedOnce) reloads++ else resumedOnce = true
+        if (resumedOnce) {
+            // 回前台要的是一次新数据，不是把还在跑的那一趟掐掉；在跑的时候等它自己落地。
+            if (!loadBusy) reloads++
+        } else {
+            resumedOnce = true
+        }
     }
 
     // 一页三次请求，一次拉完再画。
     LaunchedEffect(owner, reloads) {
-        if (owner.isEmpty()) return@LaunchedEffect
-        // 首帧读到的那份可能来自 `getRecent()`，也可能什么都没读到（第一次装、刚清过缓存）。
-        // 这里再按真正的 owner 补一次：补到了就先铺上，画面不闪；补不到才转圈。
-        if (reloads == 0 && conversations.isEmpty()) {
-            ConversationCache.get(owner)?.let { snapshot ->
-                conversations = sortedConversations(snapshot.conversations)
-                followers = snapshot.followers
-                summary = snapshot.summary
+        if (owner.isEmpty()) {
+            // 身份是上层异步读出来的：读到了本效应会被换掉重跑。一直没读到就别让人对着四个
+            // 空卡片等下去——等一小会儿，收骨架，写一句原因。
+            delay(IdentityGraceMs)
+            if (conversations.isEmpty()) {
+                loadError = "本机身份还没读到"
+                loading = false
             }
-            loading = conversations.isEmpty()
+            // 这一趟没去拉后端，下拉那一次的转圈也得收：不然手指拽出来的指示器会一直转下去。
+            refreshing = false
+            loadBusy = false
+            return@LaunchedEffect
         }
-        // `loadError` 不在这里清：清了的话，一次持续的失败会让那行原因在每次刷新开头先消失、
-        // 三次请求跑完再回来，看起来就是每 15 秒闪一下。它只在下面拿到结果时被赋成这一次的真值。
-        val chats = repository.conversationsFor(owner)
-        // 逐句判成败：three 个请求共用一个 `lastError`，最后一句的结果会盖掉前面的。
-        // 以前只看最后一句，结果「关注列表没拉到」也会让会话列表那份缓存不写——下次从聊天页
-        // 退回来，内存里还是空的，于是又转一次圈。会话列表拿到就是拿到，跟另外两句无关。
-        val chatsFailed = repository.lastError != null
-        val people = repository.followersOf(owner)
-        val peopleFailed = repository.lastError != null
-        val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
-        if (!chatsFailed) {
-            // 按会话号合并而不是整份替换：内容没变的行沿用原对象，刷新时那几行不会被当成新行
-            // 重新组合（长按菜单开着、手指正按着的时候尤其要紧）。
-            conversations = mergeConversations(conversations, sortedConversations(chats))
-            if (!peopleFailed) followers = people
-            summary = counted
-            ConversationCache.put(owner, conversations, followers, counted)
+        loadPass++
+        val mine = loadPass
+        loadBusy = true
+        try {
+            // 首帧读到的那份可能来自 `getRecent()`，也可能什么都没读到（第一次装、刚清过缓存）。
+            // 这里再按真正的 owner 补一次：补到了就先铺上，画面不闪；补不到才转圈。
+            if (reloads == 0 && conversations.isEmpty()) {
+                ConversationCache.get(owner)?.let { snapshot ->
+                    conversations = sortedConversations(snapshot.conversations)
+                    followers = snapshot.followers
+                    summary = snapshot.summary
+                }
+                loading = conversations.isEmpty()
+            }
+            // `loadError` 不在这里清：清了的话，一次持续的失败会让那行原因在每次刷新开头先消失、
+            // 三次请求跑完再回来，看起来就是每 15 秒闪一下。它只在下面拿到结果时被赋成这一次的真值。
+            val chats = repository.conversationsFor(owner)
+            // 逐句判成败：three 个请求共用一个 `lastError`，最后一句的结果会盖掉前面的。
+            // 以前只看最后一句，结果「关注列表没拉到」也会让会话列表那份缓存不写——下次从聊天页
+            // 退回来，内存里还是空的，于是又转一次圈。会话列表拿到就是拿到，跟另外两句无关。
+            val chatsFailed = repository.lastError != null
+            val people = repository.followersOf(owner)
+            val peopleFailed = repository.lastError != null
+            val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
+            if (!chatsFailed) {
+                // 按会话号合并而不是整份替换：内容没变的行沿用原对象，刷新时那几行不会被当成新行
+                // 重新组合（长按菜单开着、手指正按着的时候尤其要紧）。
+                conversations = mergeConversations(conversations, sortedConversations(chats))
+                if (!peopleFailed) followers = people
+                summary = counted
+                ConversationCache.put(owner, conversations, followers, counted)
+            }
+            // 拉不到就说一句：空列表和后端没通在界面上长得一样，这一行是唯一的区别。
+            loadError = repository.lastError
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // 意料之外的失败也得留一句话：宁可写一行原因，也别把整页顶在骨架上或者直接崩掉。
+            loadError = e.message ?: "加载失败"
+        } finally {
+            // 这一趟不管怎么结束（正常、出错、被下一趟顶掉）都得把骨架放下。只有最新那一趟有权
+            // 清：被取消的旧那一趟收尾时，新那一趟可能已经开始了，它一清就把「正在加载」抹掉。
+            if (mine == loadPass) {
+                loading = false
+                refreshing = false
+                loadBusy = false
+            }
         }
-        // 拉不到就说一句：空列表和后端没通在界面上长得一样，这一行是唯一的区别。
-        loadError = repository.lastError
-        loading = false
     }
 
     /**
@@ -536,6 +588,20 @@ fun MessagesScreen(
             )
         },
     ) { padding ->
+        // 下拉刷新与应用页（`MainScreen` 里那个 `PullToRefreshBox`）是同一个组件、同一套指示器：
+        // 两页往下拽的手感从此一致，不再是「应用页有、消息页什么都没有」。下拉之后走的是同一条
+        // 加载路径（reloads++），所以缓存、失败原因、骨架收起都只有一套逻辑。
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                if (!refreshing) {
+                    refreshing = true
+                    loadBusy = true
+                    reloads++
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) {
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (loading) {
                 // 只有「内存没有、盘上也没有」才走到这里（第一次装、或者那份解不出来）。
@@ -741,6 +807,7 @@ fun MessagesScreen(
                     }
                 }
             }
+        }
         }
     }
 }
