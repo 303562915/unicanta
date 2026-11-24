@@ -622,6 +622,23 @@ class PlanRepository(
     }
 
     /**
+     * 一次性的上传挑战：服务端签发、绑来源 IP、5 分钟过期，提交时用一次就作废。
+     *
+     * 拿到就跟着 [submit] 一起发，服务端据此把这条方案记成 `challenge`；拿不到（后端还没这个
+     * 函数、网络不通）就返回 null，上传照旧走老路径，库里记成 `self-reported`。
+     *
+     * 这里失败不该让上传失败：挑战是加强，不是前提。它挡的是「截获一份提交再原样重放」，
+     * 不是「伪造一份提交」——后者在纯客户端模型下没有可验证的证据能挡。
+     */
+    private suspend fun uploadChallenge(): String? =
+        when (val result = call("upload_challenge", buildJsonObject { put("p_kind", "plan_submit") }.toString())) {
+            is Call.Ok -> runCatching {
+                json.parseToJsonElement(result.text).jsonObject["nonce"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+            else -> null
+        }
+
+    /**
      * Uploads [packages] as a plan.
      *
      * The app only calls this with a batch the restart check proved, so [test] is false on every
@@ -662,11 +679,14 @@ class PlanRepository(
             put("test", test)
         }.toString()
         val proof = callerToken()
+        // 先取服务端的挑战：同一份提交被截获重放时，这个 nonce 在第一次提交里已经作废。
+        val challenge = uploadChallenge()
         return rpc(
             "plan_submit",
             buildJsonObject {
                 put("p_plan", Json.parseToJsonElement(body))
                 if (proof.isNotEmpty()) put("p_token", proof)
+                if (challenge != null) put("p_nonce", challenge)
             }.toString(),
         )
             ?.let { runCatching { json.parseToJsonElement(it).jsonPrimitive.longOrNull }.getOrNull() }
