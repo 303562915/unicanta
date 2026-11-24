@@ -796,6 +796,9 @@ fun MessagesScreen(
                                     mutual.contains(conversation.peerName),
                                 // 拉黑过的行本来就被过滤掉了，长按不到；这里按名单决定文案就行。
                                 blocked = conversation.blockedBy(blockedPeers),
+                                // 官方内测群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样：
+                                // 以前一个灰底一个白底，同一页里两种置顶，看着像两套规则。
+                                forcePinnedLook = conversation.title == OfficialGroup.TITLE,
                                 onOpen = { onOpenChat(conversation.id) },
                                 onTogglePin = { togglePin(conversation) },
                                 onToggleMute = { toggleMute(conversation) },
@@ -1623,6 +1626,14 @@ private fun ConversationRow(
     mutual: Boolean,
     /** 这个会话对面的人是不是已经在本机拉黑名单里；决定菜单里那条写「拉黑」还是「取消拉黑」。 */
     blocked: Boolean,
+    /**
+     * 画成置顶那一行的样子，但后端并没有把它置顶。
+     *
+     * 现在只有一个来源：官方内测群——它靠排序钉在最上面（[visibleConversations]），
+     * 不是 `pinned`。以前它和手动置顶的群并排在最上面，一个灰底一个白底，看着像两个人
+     * 用了两套规则；这里只改样子，不动菜单文案（菜单仍按真实 `pinned` 说话）。
+     */
+    forcePinnedLook: Boolean = false,
     onOpen: () -> Unit,
     onTogglePin: () -> Unit,
     onToggleMute: () -> Unit,
@@ -1633,6 +1644,7 @@ private fun ConversationRow(
     onDelete: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val pinnedLook = conversation.pinned || forcePinnedLook
     var menuOpen by remember { mutableStateOf(false) }
     // 菜单锚在这一行上：用 Box 包一层，DropdownMenu 才能贴着这一行的边上弹出来。
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -1642,7 +1654,7 @@ private fun ConversationRow(
                 .background(
                     // 置顶那一行铺一层看得见的灰：原来用的 Card 和普通行的 surfaceContainer 在浅色
                     // 主题下是同一个值（#FCF8F9），置顶等于没标——现在用深一档的 Highest，一眼能分出来。
-                    if (conversation.pinned) {
+                    if (pinnedLook) {
                         scheme.surfaceContainerHigh
                     } else {
                         scheme.surface
@@ -1660,7 +1672,7 @@ private fun ConversationRow(
         ) {
             Box {
                 InitialAvatar(label = conversation.label)
-                if (conversation.pinned) {
+                if (pinnedLook) {
                     // 头像右上角那一点主色：置顶的行一眼认得出，不用多写两个汉字。
                     Box(
                         modifier = Modifier
