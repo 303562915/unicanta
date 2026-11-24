@@ -31,7 +31,7 @@ jobs:
           echo "sql: $SQL"
           echo "--- response ---"
           code=$(curl -sS -m 60 -o /tmp/out.json -w '%{http_code}' -G \
-            "https://api.supabase.com/v1/projects/${PROJECT_REF}/analytics/endpoints/logs.all" \
+            "https://api.supabase.com/v1/projects/${PROJECT_REF}/analytics/endpoints/logs" \
             --data-urlencode "sql=${SQL}" \
             -H "Authorization: Bearer ${TOKEN}")
           echo "http: $code"
