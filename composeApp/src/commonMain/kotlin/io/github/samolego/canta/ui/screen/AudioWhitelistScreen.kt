@@ -40,18 +40,14 @@ import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.TweakFailure
 import io.github.samolego.canta.data.audio.AudioWhitelist
 import io.github.samolego.canta.ui.component.ScreenTopBar
-import io.github.samolego.canta.util.RomTweak
-import io.github.samolego.canta.util.RomTweaks
 import kotlinx.coroutines.launch
 
 /**
  * 音频白名单：一页看完「谁被压、开关是谁」，并且能当场开合。
  *
- * 做成页面而不是弹窗，是因为这份名单本来就有几十行：弹窗里塞一段文本，只能读不能挑；页面里能滚、
- * 能筛、能点按钮，还能把这一台机器上真正装了的那几个排到最前面。
- *
- * 两个动作不在这里写脚本：解除与恢复的 shell 文本属于 [RomTweaks] 里那张卡（`xiaomi-audio-whitelist`），
- * 这里按 id 取来跑。一份脚本两处入口，改一处不会让另一处变成旧行为。
+ * 音频这块只有这一个入口：工具页那一行点进来就是这里，读状态、解除、恢复、看名单、筛应用全在这一页，
+ * 没有第二张卡、第二份脚本。三份 shell 文本都在 `files/audio_whitelist_*.sh` 里，由 [AudioWhitelist] 读，
+ * 改一处不会让另一处变成旧行为。
  */
 @Composable
 fun AudioWhitelistScreen(
@@ -65,7 +61,8 @@ fun AudioWhitelistScreen(
     var busy by remember { mutableStateOf<String?>(null) }
     var log by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
-    var tweak by remember { mutableStateOf<RomTweak?>(null) }
+    var bypass by remember { mutableStateOf<String?>(null) }
+    var restore by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
 
@@ -86,7 +83,8 @@ fun AudioWhitelistScreen(
     }
 
     LaunchedEffect(Unit) {
-        tweak = RomTweaks.bundled().byId(AudioWhitelist.TWEAK_ID)
+        bypass = runCatching { AudioWhitelist.bypassScript() }.getOrNull()
+        restore = runCatching { AudioWhitelist.restoreScript() }.getOrNull()
         refresh()
     }
 
@@ -125,10 +123,10 @@ fun AudioWhitelistScreen(
                     loading = loading,
                     failure = failure,
                     busy = busy,
-                    canBypass = tweak != null && current?.bypassed != true,
-                    canRestore = tweak?.restore != null && current?.bypassed == true,
-                    onBypass = { run("解除", tweak?.command) },
-                    onRestore = { run("恢复", tweak?.restore?.command) },
+                    canBypass = bypass != null && current?.bypassed != true,
+                    canRestore = restore != null && current?.bypassed == true,
+                    onBypass = { run("解除", bypass) },
+                    onRestore = { run("恢复", restore) },
                     onRefresh = { scope.launch { refresh() } },
                 )
             }

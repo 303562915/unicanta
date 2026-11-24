@@ -17,6 +17,12 @@ object AudioWhitelist {
     /** The read-only script every refresh runs through the privileged shell. */
     const val RESOURCE_PATH = "files/audio_whitelist_state.sh"
 
+    /** The script that writes the property to `-1`: the one action this feature ships. */
+    const val BYPASS_PATH = "files/audio_whitelist_bypass.sh"
+
+    /** The script that puts the recorded original value back. */
+    const val RESTORE_PATH = "files/audio_whitelist_restore.sh"
+
     /** The one property the whole feature hangs on. */
     const val PROP = "persist.sys.scene.partition.level"
 
@@ -25,9 +31,6 @@ object AudioWhitelist {
 
     /** The value the ROM ships with: the list is applied. */
     const val DEFAULT_LEVEL = "1"
-
-    /** The card in `rom_tweaks.json` that owns the two scripts this page runs. */
-    const val TWEAK_ID = "xiaomi-audio-whitelist"
 
     internal const val TAG_LEVEL = "##LEVEL##"
     internal const val TAG_CONFIG = "##CFG##"
@@ -41,6 +44,11 @@ object AudioWhitelist {
 
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
     suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
+
+    /** The two write scripts, read the same way: one source of shell text for the whole feature. */
+    suspend fun bypassScript(): String = Res.readBytes(BYPASS_PATH).decodeToString()
+
+    suspend fun restoreScript(): String = Res.readBytes(RESTORE_PATH).decodeToString()
 
     /**
      * One app the phone's config names, with the words a user recognises it by.
