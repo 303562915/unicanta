@@ -21,6 +21,11 @@ data class RomTweak(
     val id: String,
     val rom: String,
     val title: String,
+    /**
+     * One short line under the title: what tapping run costs or needs, in a few words, for someone
+     * deciding whether to run it at all. Empty on the cards whose title already says enough.
+     */
+    val hint: String = "",
     val why: String = "",
     val command: String = "",
     val action: String? = null,
