@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
@@ -239,7 +238,8 @@ fun AppList(
                 val pageInsets = WindowInsets.safeDrawing.asPaddingValues()
                 val bottomRoom = pageInsets.calculateBottomPadding() + FLOATING_BAR_ROOM
                 // 双击底栏「应用」那一格：这张格子表自己滚回顶部。
-                val gridState = rememberLazyGridState()
+                // 位置带记忆（见 [rememberRememberedGridState]）：冷启动再进来还停在原来那几行。
+                val gridState = rememberRememberedGridState("apps:${appType.name}")
                 ScrollToTopEffect(gridState)
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = MIN_TILE_WIDTH),

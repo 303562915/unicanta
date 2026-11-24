@@ -23,9 +23,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -106,6 +104,8 @@ import io.github.samolego.canta.generated.resources.recommend_title
 import io.github.samolego.canta.generated.resources.recommend_uninstall_hint
 import io.github.samolego.canta.generated.resources.recommend_uninstall_short
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.rememberRememberedGridState
+import io.github.samolego.canta.ui.component.rememberRememberedListState
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
@@ -251,9 +251,12 @@ fun RecommendationsScreen(
     var tab by rememberSaveable { mutableIntStateOf(TAB_LIST) }
     // One scroll position per half, kept here rather than inside the tab: rebuilt on every switch,
     // a list would come back to its top and lose the row the reader was on.
-    val listGridState = rememberLazyGridState()
-    val listColumnState = rememberLazyListState()
-    val voteQueueState = rememberLazyListState()
+    //
+    // 位置还落盘（见 [rememberRememberedGridState] / [rememberRememberedListState]）：冷启动再进来
+    // 也停在原来那一行，不是从顶部重新看一遍。
+    val listGridState = rememberRememberedGridState("recommend:grid")
+    val listColumnState = rememberRememberedListState("recommend:list")
+    val voteQueueState = rememberRememberedListState("recommend:votes")
     // 双击底栏「推荐」那一格：两半各自回顶部——只有那份不在顶上的才会真滚。
     ScrollToTopEffect(listGridState)
     ScrollToTopEffect(listColumnState)

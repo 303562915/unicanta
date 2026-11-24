@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import io.github.samolego.canta.ui.component.rememberRememberedListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -118,7 +118,7 @@ internal fun RecommendationsAirportTab(
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
-    val listState = rememberLazyListState()
+    val listState = rememberRememberedListState("airport")
 
     var airports by remember(state) { mutableStateOf(state.airports) }
     var loading by remember(state) { mutableStateOf(state.loading) }

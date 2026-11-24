@@ -80,6 +80,7 @@ import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.bottomHairline
 import io.github.samolego.canta.ui.component.UnreadRed
+import io.github.samolego.canta.ui.component.rememberRememberedListState
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
@@ -695,7 +696,9 @@ fun MessagesScreen(
                 // 手指按在「没有滚动容器」的那半屏（联系人排、入口行）上时，事件根本传不到它手上——
                 // 于是同一个「往下拽」，应用页整页都能刷新，消息页只有下半截能，这就是两页刷新
                 // 感觉不一样的原因。并成一条列表之后整页都能拽，也跟抖音消息页一致（头部跟着滚）。
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那一段。
+                val messagesListState = rememberRememberedListState("messages")
+                LazyColumn(modifier = Modifier.fillMaxSize(), state = messagesListState) {
                     loadError?.let { reason ->
                         item(key = "load-error") {
                             Text(

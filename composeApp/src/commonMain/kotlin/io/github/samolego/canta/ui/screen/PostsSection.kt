@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -59,6 +59,7 @@ import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.component.relativeStamp
+import io.github.samolego.canta.ui.component.rememberRememberedListState
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.BeijingTime
@@ -141,7 +142,8 @@ internal fun PostsScreen(
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
     val canWrite = authorId.isNotBlank()
     // 双击底栏「帖子」那一格：这一页的列表回顶部。
-    val postListState = rememberLazyListState()
+    // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那条帖子。
+    val postListState = rememberRememberedListState("posts")
     ScrollToTopEffect(postListState)
 
     // 这一屏上一次画出来的帖子列表（见 [ScreenCache]）：进来先画它，网络回来再顶上去。
