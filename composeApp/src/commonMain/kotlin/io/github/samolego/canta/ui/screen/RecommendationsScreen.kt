@@ -295,10 +295,10 @@ fun RecommendationsScreen(
     // Looking at the queue is what makes it read: the fingerprint goes back to the caller, which
     // stores it and takes the dot off the tab. Opening the page is not enough — the list half says
     // nothing about votes — so this waits for the vote half and for the queue to have arrived.
-    // 打开投票那一格就算看过：写回的是「此刻上榜的 id 列表」，不是票数——票数每动一次都算
-    // 消息的话，红点永远亮着。队列空的时候也写：看过的那一刻一条都没上榜，本身是一个状态。
-    LaunchedEffect(tab, suggested) {
-        if (tab == TAB_VOTE) onVoteQueueSeen(appliedQueueFingerprint(suggested))
+    // 打开投票那一格就算看过：写回的是「此刻与我有关的、上榜的 id 列表」，不是票数。队列空的
+    // 时候也写：看过的那一刻一条有关的都没有上榜，本身是一个状态。
+    LaunchedEffect(tab, suggested, cacheOwner) {
+        if (tab == TAB_VOTE) onVoteQueueSeen(appliedQueueFingerprint(suggested, cacheOwner))
     }
     val groups = remember(loaded) { loaded?.grouped().orEmpty() }
     // The pinned group is the shipped featured entries plus every proposal that cleared the bar:
@@ -395,21 +395,14 @@ fun RecommendationsScreen(
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("list", if (loaded == null) listTabLabel else "$listTabLabel ${loaded.apps.size}"),
-                        FlSegment(
-                            "vote",
-                            buildString {
-                                append(voteTabLabel)
-                                if (suggested.isNotEmpty()) append(" ${suggested.size}")
-                                // 新上榜的点就画在这一格上：那条消息是投票区的，不是整页的。
-                                // 用实心圆点而不是数字，因为它说的是"有东西进精选了"，
-                                // 不是"有 12 票等你投"。
-                                if (newApplied > 0) append(" ●")
-                            },
-                        ),
+                        FlSegment("vote", if (suggested.isEmpty()) voteTabLabel else "$voteTabLabel ${suggested.size}"),
                         FlSegment("airport", airportTabLabel),
                     ),
                     selectedIndex = tab,
                     onSelect = { tab = it },
+                    // 新上榜的点画在「投票」这一格上：那条消息是投票区的，不是整页的。
+                    // 组件自己把它画在标签右上角，不占布局、不参与读屏文本。
+                    dots = if (newApplied > 0) setOf(TAB_VOTE) else emptySet(),
                 )
             }
         },

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -67,6 +68,13 @@ fun FlSegmentedControl(
     onImage: Boolean = false,
     /** Side inset of the groove; 0 when the caller already keeps the control off the edges. */
     insetHorizontal: Dp = 16.dp,
+    /**
+     * 哪几格要带一个未读的小点，按序号（与 [segments] 同序）。
+     *
+     * 用实心小圆点而不是在标签里拼 "●"：拼进文本会跟着字宽走，格子的文字一变整条控件就
+     * 轻微抖一下，读屏还会把圆点念成一个孤零零的符号。点画在标签右上角，不占布局。
+     */
+    dots: Set<Int> = emptySet(),
 ) {
     if (segments.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
@@ -147,13 +155,27 @@ fun FlSegmentedControl(
                         )
                         Box(Modifier.size(6.dp))
                     }
-                    Text(
-                        text = segment.label,
-                        style = FlText.footnote,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                        color = color,
-                        maxLines = 1,
-                    )
+                    // 标签外面套一层 Box，未读点贴在右上角、盖在文字边上，不参与布局：
+                    // 格子的宽度不因有没有点而变，文字也不会被挤走。
+                    Box {
+                        Text(
+                            text = segment.label,
+                            style = FlText.footnote,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = color,
+                            maxLines = 1,
+                        )
+                        if (index in dots) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 5.dp, y = (-3).dp)
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(scheme.error),
+                            )
+                        }
+                    }
                 }
             }
         }

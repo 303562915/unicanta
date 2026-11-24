@@ -854,16 +854,14 @@ private fun CantaNavigation(
         }
     }
 
-    // 红点只代表一件事：**有东西进精选了**（见 `appliedQueueFingerprint`）。
-    //
-    // 以前这里比的是整份队列的票数指纹，于是别人给任何一条投一票、撤一票都会亮一次——那些票
-    // 和这一页的读者没有关系，那条东西既不是他投的、也没上榜。现在存的只有上榜条目的 id：
-    // 多一条上榜才亮，掉榜不算，票数怎么动都不算。看过投票那一格之后写回新的指纹。
+    // 红点只代表一件事：**与我有关的东西进精选了**——我提的那条，或我投过票的那条
+    // （见 `SuggestedApp.concernsMe`）。别人提、别人投的东西上榜跟我无关，提醒我一次我就得
+    // 点进去确认一次，等于把红点变成常亮。
     //
     // 队列在这里也拉一次，是因为点必须在页面打开之前就在：要先进去看才知道有东西可看的提示，
     // 不算提示。一次 resume 一趟调用，拉失败就保持原样。
     //
-    // [newVotes] 是"有没有新上榜"，[newVoteCount] 是"新上榜几条"，后者就是标记上那个数字。
+    // [newVotes] 是"有没有"，[newVoteCount] 是"几条"，后者就是标记上那个数字。
     var newVotes by remember { mutableStateOf(false) }
     var newVoteCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(countTick) {
@@ -871,8 +869,8 @@ private fun CantaNavigation(
         val voter = identity.owner.ifEmpty { identity.token }
         val queue = communityRepository.suggestedApps(voter) ?: return@LaunchedEffect
         val seen = deps.settings.votesSeenFlow.first()
-        newVotes = hasNewApplied(seen, queue)
-        newVoteCount = newAppliedSince(seen, queue)
+        newVotes = hasNewApplied(seen, queue, voter)
+        newVoteCount = newAppliedSince(seen, queue, voter)
     }
 
     // A newer build than the one installed, for the marker that leads the way to it: the Settings

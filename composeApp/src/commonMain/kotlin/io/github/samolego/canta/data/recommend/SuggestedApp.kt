@@ -75,18 +75,29 @@ data class SuggestedAppVote(
 }
 
 /**
- * 「谁上榜了」的指纹：`applied:3,7`，上榜条目的 id，升序。
+ * 这条上榜跟我有没有关系：**我提的**，或者**我投过票的**。
  *
- * 只记上榜，不记票数。这是这一页红点的全部定义：别人的每一票都要算消息的话，红点等于常亮——
- * 那条东西既不是你投的、也没上榜，来了三票和你没有一点关系。这一页真正值得把人叫回来的事
- * 只有一件：有东西进了精选。
+ * 社区里别人提、别人投的东西上了精选，对我来说和一条陌生广告没有区别——提醒我一次，我就得
+ * 点进去确认一次"这跟我有关吗"。只有参与过的条目才值得叫一声。
  *
- * 空队列也有指纹（`applied:`），而且不能是空串：空串表示「从没打开过」，那时不该有红点。
- * 只带前缀没有 id 也照写，因为「上次看的时候一条都没上榜」本身就是一条可比较的状态。
+ * [viewer] 是这台手机的身份（认出来的号码，认不出来时是 token）。空串表示"没有身份"，
+ * 那时只有投过票（[mine] 非空）的算数——没有身份也就提不了、投不了，等于什么都不推。
  */
-fun appliedQueueFingerprint(apps: List<SuggestedApp>): String =
+fun SuggestedApp.concernsMe(viewer: String): Boolean =
+    (viewer.isNotEmpty() && authorId == viewer) || mine != null
+
+/**
+ * 「与我有关的那些上榜」的指纹：`applied:3,7`，升序。
+ *
+ * 只记 id、只记与我有关的那些，不记票数。这是红点的全部定义：别人的每一票都要算消息的话，
+ * 红点等于常亮——那条东西既不是你投的、也没上榜，来了三票和你没有一点关系。
+ *
+ * 空串表示「从没看过」；只带前缀（`applied:`）表示「看过，当时一条与我有关的都没有上榜」。
+ * 两者不同：后者之后有人上榜就该亮。
+ */
+fun appliedQueueFingerprint(apps: List<SuggestedApp>, viewer: String): String =
     APPLIED_PREFIX + apps.asSequence()
-        .filter { it.applied }
+        .filter { it.applied && it.concernsMe(viewer) }
         .map { it.id }
         .sorted()
         .joinToString(",")
@@ -95,23 +106,24 @@ fun appliedQueueFingerprint(apps: List<SuggestedApp>): String =
 private const val APPLIED_PREFIX = "applied:"
 
 /**
- * 自 [seen] 之后新上榜的条目数。
+ * 自 [seen] 之后，**与我有关的**条目里新上榜的个数。
  *
  * [seen] 为空、或者不是 [appliedQueueFingerprint] 写出来的格式（老版本留下来的指纹）时返回 0：
  * 换一个版本不该换来一次「历史全算新」的红点。
  */
-fun newAppliedSince(seen: String, apps: List<SuggestedApp>): Int {
+fun newAppliedSince(seen: String, apps: List<SuggestedApp>, viewer: String): Int {
     if (!seen.startsWith(APPLIED_PREFIX)) return 0
     val before = seen.removePrefix(APPLIED_PREFIX).idsOf()
-    return apps.count { it.applied && it.id !in before }
+    return apps.count { it.applied && it.concernsMe(viewer) && it.id !in before }
 }
 
 /** 指纹后半段那串 id；认不出来的跳过。 */
 private fun String.idsOf(): Set<Long> =
     splitToSequence(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
 
-/** 有没有新上榜的条目：底栏那格和投票标签上那个点，问的都是这一句。 */
-fun hasNewApplied(seen: String, apps: List<SuggestedApp>): Boolean = newAppliedSince(seen, apps) > 0
+/** 有没有与我有关的新上榜：底栏那格和投票标签上那个点，问的都是这一句。 */
+fun hasNewApplied(seen: String, apps: List<SuggestedApp>, viewer: String): Boolean =
+    newAppliedSince(seen, apps, viewer) > 0
 
 /**
  * `owner/repo` of a GitHub project page, or null when [text] is not one.
