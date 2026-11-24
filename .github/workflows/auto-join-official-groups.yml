@@ -59,11 +59,15 @@ jobs:
             "on conflict (conversation_id, member) do update" \
             "   set pinned_at = coalesce(conversation_members.pinned_at, now());" \
             "" \
-            "select c.id, c.title," \
-            "       (select count(*) from public.conversation_members m where m.conversation_id = c.id) as members," \
-            "       (select count(*) from public.conversation_members m where m.conversation_id = c.id and m.pinned_at is not null) as pinned" \
-            "  from public.conversations c where c.id in (12, 18) order by c.id;" \
-            "select count(*) as users from public.canta_users;")
+            "select jsonb_build_object(" \
+            "  'users', (select count(*) from public.canta_users)," \
+            "  'groups', (select jsonb_agg(jsonb_build_object(" \
+            "              'id', c.id, 'title', c.title," \
+            "              'members', (select count(*) from public.conversation_members m where m.conversation_id = c.id)," \
+            "              'pinned', (select count(*) from public.conversation_members m where m.conversation_id = c.id and m.pinned_at is not null))" \
+            "              order by c.id)" \
+            "            from public.conversations c where c.id in (12, 18))" \
+            ") as status;")
           RESP=$(curl -sS --fail-with-body -X POST \
             "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
