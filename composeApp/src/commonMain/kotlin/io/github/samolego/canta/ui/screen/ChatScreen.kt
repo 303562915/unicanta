@@ -85,6 +85,7 @@ import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.ChatMessageCache
 import io.github.samolego.canta.data.community.ChatMessageStore
 import io.github.samolego.canta.data.community.Conversation
+import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
 import io.github.samolego.canta.data.community.LivePresence
@@ -459,6 +460,18 @@ fun ChatScreen(
     }
 
     /**
+     * 已读：后端推一次已读位置，本机也当场把这一行清零。
+     *
+     * 后半句不是顺手做的：底栏「消息」那个数字由一份完整会话列表算出来，下一趟计数最晚要等十秒
+     * （见 `CantaApp` 的 `CHAT_UNREAD_TTL_MILLIS`）。人读完消息退回消息页的那一刻，数字还挂在读之前
+     * 的值上，看起来就是「点了群消息还在显示」。所以这里连本机快照一起改，不指望下一拍。
+     */
+    suspend fun markReadNow() {
+        repository.markRead(owner, conversationId)
+        ConversationCache.markRead(owner, conversationId)
+    }
+
+    /**
      * 顶栏菜单里的「置顶 / 免打扰」：先按点击后的样子画，服务端说不行再退回去。
      *
      * 这两下是「我这么想」而不是「这样一定行」——会话列表是下一次进消息页才重新拉的，
@@ -608,7 +621,7 @@ fun ChatScreen(
             ChatMessageStore.latest?.putCursor(conversationId, id)
         }
         loading = false
-        repository.markRead(owner, conversationId)
+        markReadNow()
         detail = repository.conversationDetail(owner, conversationId)
         // 顺手把「我把它置顶了没有 / 免打扰了没有」取回来：顶栏菜单的那两项要按它写文案。
         // 失败就当没有（保持不置顶、不免打扰），点一下仍然会真的改一次。
@@ -633,7 +646,7 @@ fun ChatScreen(
         val merged = mergeMessages(fresh, messages)
         if (merged != messages) {
             messages = merged
-            repository.markRead(owner, conversationId)
+            markReadNow()
         }
     }
 
@@ -654,7 +667,7 @@ fun ChatScreen(
         val merged = mergeMessages(fresh, messages)
         if (merged != messages) {
             messages = merged
-            repository.markRead(owner, conversationId)
+            markReadNow()
         }
     }
 

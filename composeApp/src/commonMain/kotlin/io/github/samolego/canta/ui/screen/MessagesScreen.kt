@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -38,9 +40,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,20 +55,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.ChatMessageCache
+import io.github.samolego.canta.data.community.ChatUnread
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.InboxSummary
@@ -91,6 +100,7 @@ import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.currentTimeMillis
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -171,6 +181,25 @@ private val ConversationMenuWidth = 210.dp
 private val GroupGreen: Color = Color(0xFF07C160)
 
 /**
+ * 下拉刷新时整页跟着让出的高度：够摆一圈图标和一行字（「下拉刷新 / 松手刷新 / 正在刷新…」），
+ * 又不至于把列表推走半屏。
+ */
+private val PullRefreshTravel = 56.dp
+
+/**
+ * 消息页里「不是数据、但离开这一页再回来应当保持」的开关。
+ *
+ * 页面每次被导航进来都是新实例，`remember` 跟着一起没了；而「我刚才把最近联系人那一排收起来了」
+ * 是人的选择，不该因为进去看了一眼聊天就自己弹回来。所以放在进程级对象里，和 [ConversationCache]
+ * 同一套前提：只在主线程读写，所以不加锁。
+ */
+private object MessagesPanelState {
+
+    /** 最近联系人那一排展开着没有：顶栏左上角那个图标管的就是它。 */
+    var contactsExpanded by mutableStateOf(true)
+}
+
+/**
  * 「消息」页：私聊与群聊的入口，摆在互动消息下面。
  *
  * 结构照抖音的消息页从上到下排：自绘顶栏（菜单 / 标题 / 搜索 + 建群）、一排最近联系人、
@@ -184,9 +213,11 @@ private val GroupGreen: Color = Color(0xFF07C160)
  * [onOpenInteractions]，群聊列表交给 [onOpenGroups]，还没做的入口一律 [onMessage]。什么都不自己
  * 写：会话、关注、未读数全部来自 [SocialRepository] 和 [PlanRepository]，一页一次拉，失败就画空态。
  *
- * 顶栏两处以前只弹「还没做」的按钮现在是真做事的：放大镜展开一条本地搜索（只过滤已经拉回来的
- * 会话与关注的人，不发请求），汉堡菜单给出「全部标为已读 / 折叠的群聊 / 发起群聊」三项。
+ * 顶栏那两处都是真做事的：放大镜展开一条本地搜索（只过滤已经拉回来的会话与关注的人，不发请求），
+ * 左上角那个图标轻点展开 / 收起最近联系人那一排、长按「全部标为已读」（原来那个三项下拉菜单已经
+ * 拿掉，见 [MessagesTopBar]），右边是搜索与发起群聊。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessagesScreen(
     repository: SocialRepository,
@@ -303,6 +334,13 @@ fun MessagesScreen(
             // 回前台要的是一次新数据，不是把还在跑的那一趟掐掉；在跑的时候等它自己落地。
             // 顺手把增量起点清掉：这一趟要的是真实的未读数（刚在聊天页读完消息），不是增量。
             pollSince.value = null
+            // 先按本机快照把「刚才读过的那一行」的红点灭掉再等网络：聊天页读完之后已经把快照里
+            // 那一行清零（见 [ConversationCache.markRead]），这里沿用那一份，人就不用盯着一个
+            // 已经读完的群还挂着未读数等这一趟请求回来。
+            ConversationCache.get(owner)?.conversations?.takeIf { it.isNotEmpty() }?.let { rows ->
+                conversations = sortedConversations(rows)
+                ChatUnread.from(conversations)
+            }
             if (!loadBusy) reloads++
         } else {
             resumedOnce = true
@@ -369,6 +407,9 @@ fun MessagesScreen(
                 )
                 if (!peopleFailed) followers = people
                 summary = counted
+                // 这一份是刚从后端拿回来的完整（或合并过的）会话列表：底栏「消息」那个数字按它重算。
+                // 下拉刷新、从聊天页回来、每 30 秒那一拍都走这里，所以底栏不必再自己去拉一份全量列表。
+                ChatUnread.from(conversations)
                 ConversationCache.put(owner, conversations, followers, counted)
             }
             // 拉不到就说一句：空列表和后端没通在界面上长得一样，这一行是唯一的区别。
@@ -438,6 +479,9 @@ fun MessagesScreen(
     val commitConversations: (List<Conversation>) -> Unit = { next ->
         conversations = sortedConversations(next)
         ConversationCache.putConversations(owner, conversations)
+        // 底栏「消息」那个数字跟着这一份列表走：标已读 / 删会话这些动作本来就直接改这里，
+        // 不顺手推一下的话，数字要等底栏自己那一拍（最长一分钟）才动，看着像没生效。
+        ChatUnread.from(conversations)
     }
 
     /**
@@ -612,70 +656,87 @@ fun MessagesScreen(
         SearchCacheKeys.remember(cacheKey, SearchCacheLimit) { stale -> ScreenCache.remove(stale) }
     }
 
-    Scaffold(
-        topBar = {
-            MessagesTopBar(
-                searchActive = searchActive,
-                searchKeyword = searchKeyword,
-                onSearchKeywordChange = { searchKeyword = it },
-                onToggleSearch = {
-                    // 放大镜是开关：开着就收起来，收起顺手把字清掉，下次打开是一条空框。
-                    if (searchActive) {
-                        searchKeyword = ""
-                        searchActive = false
-                    } else {
-                        searchActive = true
-                    }
-                },
-                onCloseSearch = {
+    // 顶栏做成一个 composable，而不是直接塞进 Scaffold 的 topBar：它要成为列表里的第一项（吸顶），
+    // 手指按在标题、放大镜或最近联系人那一排上往下拽，整页才跟着下来。以前顶栏那一块没有滚动容器，
+    // 拽它什么都不发生，只有下面半截能刷新，同一个「下拉」在屏幕上下半截是两个手感。
+    val topBar: @Composable () -> Unit = {
+        MessagesTopBar(
+            searchActive = searchActive,
+            searchKeyword = searchKeyword,
+            onSearchKeywordChange = { searchKeyword = it },
+            onToggleSearch = {
+                // 放大镜是开关：开着就收起来，收起顺手把字清掉，下次打开是一条空框。
+                if (searchActive) {
                     searchKeyword = ""
                     searchActive = false
-                },
-                onNewGroup = onOpenCreateGroup,
-                onMarkAllRead = {
-                    scope.launch {
-                        repository.markAllConversationsRead(owner)
-                        // 返回值 0 分不清「全都读过了」和「没连上」，看这两个标记才分得清：
-                        // 两个都干净才算成功，否则这一页的未读数不能假装已经清掉。
-                        if (repository.lastError == null && !repository.lastFailureWasNetwork) {
-                            commitConversations(conversations.map { it.copy(unread = 0) })
-                            onMessage("已全部标为已读")
-                        } else {
-                            onMessage("没成功，检查代理后再试")
-                        }
-                    }
-                },
-                onOpenGroups = onOpenGroups,
-            )
-        },
-    ) { padding ->
-        // 下拉刷新与应用页（`MainScreen` 里那个 `PullToRefreshBox`）是同一个组件、同一套指示器：
-        // 两页往下拽的手感从此一致，不再是「应用页有、消息页什么都没有」。下拉之后走的是同一条
-        // 加载路径（reloads++），所以缓存、失败原因、骨架收起都只有一套逻辑。
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = {
-                if (!refreshing) {
-                    refreshing = true
-                    loadBusy = true
-                    reloads++
+                } else {
+                    searchActive = true
                 }
             },
-            modifier = Modifier.fillMaxSize(),
-        ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                // 点列表空白：收起搜索框的焦点与输入法（搜索框自己那条 × 才关掉搜索）。
-                .dismissInputOnTap(),
-        ) {
-            if (loading) {
+            onCloseSearch = {
+                searchKeyword = ""
+                searchActive = false
+            },
+            onNewGroup = onOpenCreateGroup,
+            // 左上角那个图标不再是菜单了：点一下展开 / 收起最近联系人那一排，长按才是「全部标为已读」。
+            contactsExpanded = MessagesPanelState.contactsExpanded,
+            onToggleContacts = {
+                MessagesPanelState.contactsExpanded = !MessagesPanelState.contactsExpanded
+            },
+            onMarkAllRead = {
+                scope.launch {
+                    repository.markAllConversationsRead(owner)
+                    // 返回值 0 分不清「全都读过了」和「没连上」，看这两个标记才分得清：
+                    // 两个都干净才算成功，否则这一页的未读数不能假装已经清掉。
+                    if (repository.lastError == null && !repository.lastFailureWasNetwork) {
+                        commitConversations(conversations.map { it.copy(unread = 0) })
+                        onMessage("已全部标为已读")
+                    } else {
+                        onMessage("没成功，检查代理后再试")
+                    }
+                }
+            },
+        )
+    }
+
+    // 下拉刷新：跟手的是整页（连顶栏一起），不是屏幕顶上冒出来的一个图标。
+    //
+    // M3 的 PullToRefreshBox 只管手势与状态，内容默认一动不动，所以以前看起来像「只有个刷新图标」。
+    // 这里把列表按拽下来的比例整体下移 PullRefreshTravel，松手回弹：往下拽多少，内容就让多少。
+    val refreshState = rememberPullToRefreshState()
+    val pullTravelPx = with(LocalDensity.current) { PullRefreshTravel.roundToPx() }
+
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            if (!refreshing) {
+                refreshing = true
+                loadBusy = true
+                reloads++
+            }
+        },
+        state = refreshState,
+        contentAlignment = Alignment.TopCenter,
+        indicator = {
+            MessagesRefreshIndicator(
+                refreshing = refreshing,
+                state = refreshState,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        if (loading) {
+            // 骨架这一支没有列表，顶栏照样画：否则首屏只有四个灰块，连页名和菜单都不在。
+            // 用 Column 排是必要的：PullToRefreshBox 的内容是 Box，两个 fillMaxSize 的子节点会叠在
+            // 一起，骨架那四个灰块会直接盖住顶栏。
+            Column(modifier = Modifier.fillMaxSize()) {
+                topBar()
                 // 只有「内存没有、盘上也没有」才走到这里（第一次装、或者那份解不出来）。
                 // 画骨架而不是转圈：转圈看起来像卡住，骨架至少说明「马上会出现一列会话」。
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -689,47 +750,71 @@ fun MessagesScreen(
                         )
                     }
                 }
-            } else {
-                // 整页一条列表：联系人那一排、几个入口行、会话行都在同一个 LazyColumn 里。
-                //
-                // 为什么不再把头部放在列表外面固定住：`PullToRefreshBox` 的下拉走的是嵌套滚动，
-                // 手指按在「没有滚动容器」的那半屏（联系人排、入口行）上时，事件根本传不到它手上——
-                // 于是同一个「往下拽」，应用页整页都能刷新，消息页只有下半截能，这就是两页刷新
-                // 感觉不一样的原因。并成一条列表之后整页都能拽，也跟抖音消息页一致（头部跟着滚）。
-                // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那一段。
-                val messagesListState = rememberRememberedListState("messages")
-                LazyColumn(modifier = Modifier.fillMaxSize(), state = messagesListState) {
-                    loadError?.let { reason ->
-                        item(key = "load-error") {
+            }
+        } else {
+            // 整页一条列表：顶栏、联系人那一排、几个入口行、会话行都在同一个 LazyColumn 里。
+            //
+            // 顶栏做成列表的第一项（吸顶 `stickyHeader`），有两个好处：
+            // 1. 手指按在标题、放大镜、头像排上往下拽，事件走的就是这条列表的嵌套滚动，整页一起下来；
+            //    顶栏留在 Scaffold 的 topBar 里时那一块没有滚动容器，拽它什么都不发生。
+            // 2. 往上滚动时它还钉在顶上，和原来固定头部看到的是同一个东西。
+            // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那一段。
+            val messagesListState = rememberRememberedListState("messages")
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 整页跟手：拽下来多少，列表就整体往下让多少（松手回弹）。指示器只是顺带画在
+                    // 让出来的那一截里，真正说明"正在刷新"的是整页在动。
+                    .offset {
+                        val fraction = if (refreshing) {
+                            1f
+                        } else {
+                            refreshState.distanceFraction.coerceIn(0f, 1f)
+                        }
+                        IntOffset(0, (fraction * pullTravelPx).roundToInt())
+                    }
+                    // 点列表空白：收起搜索框的焦点与输入法（搜索框自己那条 × 才关掉搜索）。
+                    .dismissInputOnTap(),
+                state = messagesListState,
+                // 底下让出一条：这一页以前挂在 Scaffold 里，系统导航栏那条占位是 Scaffold 给的；
+                // 现在整页就是这条列表，得自己让出来，否则最后一行会压在悬浮底栏和导航栏上。
+                contentPadding = PaddingValues(bottom = 96.dp),
+            ) {
+                stickyHeader(key = "top-bar") { topBar() }
+                loadError?.let { reason ->
+                    item(key = "load-error") {
+                        Text(
+                            text = "后端没有返回消息：$reason",
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = scheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                // 搜索失败：结果区还是上一次那一份（比空白有用），原因只占这一行。只在搜索开着时
+                // 画——收起搜索之后它还挂在那儿，人就会以为列表本身出了问题。
+                searchError?.let { reason ->
+                    if (searching) {
+                        item(key = "search-error") {
                             Text(
-                                text = "后端没有返回消息：$reason",
+                                text = "搜索没有更新：$reason",
                                 fontSize = 10.sp,
                                 lineHeight = 13.sp,
-                                color = scheme.onSurfaceVariant,
+                                color = scheme.error,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
                             )
                         }
                     }
-                    // 搜索失败：结果区还是上一次那一份（比空白有用），原因只占这一行。只在搜索开着时
-                    // 画——收起搜索之后它还挂在那儿，人就会以为列表本身出了问题。
-                    searchError?.let { reason ->
-                        if (searching) {
-                            item(key = "search-error") {
-                                Text(
-                                    text = "搜索没有更新：$reason",
-                                    fontSize = 10.sp,
-                                    lineHeight = 13.sp,
-                                    color = scheme.error,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-                                )
-                            }
-                        }
-                    }
-                    // 「当前无法接收朋友的消息提醒」：系统没给通知权限时才有这一条。抖音那条是提醒
-                    // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
-                    if (noticesBlocked) {
-                        item(key = "notices") { NoticeBanner(onOpen = onEnableNotices) }
-                    }
+                }
+                // 「当前无法接收朋友的消息提醒」：系统没给通知权限时才有这一条。抖音那条是提醒
+                // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
+                if (noticesBlocked) {
+                    item(key = "notices") { NoticeBanner(onOpen = onEnableNotices) }
+                }
+                // 最近联系人那一排由顶栏左上角那个按钮展开 / 收起（见 [MessagesPanelState]）：
+                // 收起之后这一整格不画，列表直接从事务入口开始，省下的正是一排头像的高度。
+                if (MessagesPanelState.contactsExpanded) {
                     item(key = "contacts") {
                         RecentContactsRow(
                             contacts = recentContacts,
@@ -746,176 +831,183 @@ fun MessagesScreen(
                             },
                         )
                     }
-                    // 搜索时把两行整块的入口收起来：它们不是搜索结果，留着只会把答案往下挤。
-                    if (!searching) {
-                        item(key = "entry-inbox") {
+                }
+                // 搜索时把两行整块的入口收起来：它们不是搜索结果，留着只会把答案往下挤。
+                if (!searching) {
+                    item(key = "entry-inbox") {
+                        MessageEntryRow(
+                            glyph = FlGlyphs.send,
+                            circle = UnreadRed,
+                            title = "互动消息",
+                            subtitle = inboxPreview.ifBlank { inboxLine(summary) },
+                            unread = inboxUnread,
+                            onClick = onOpenInteractions,
+                        )
+                    }
+                    // 一个折叠的群都没有时这一行整块不画：入口里没有内容，摆一个「还没有群聊」
+                    // 在那儿等于请人点进一个空页面。折叠是人在群设置里自己开的，不是自动的。
+                    if (foldedGroups.isNotEmpty()) {
+                        item(key = "entry-folded") {
                             MessageEntryRow(
-                                glyph = FlGlyphs.send,
-                                circle = UnreadRed,
-                                title = "互动消息",
-                                subtitle = inboxPreview.ifBlank { inboxLine(summary) },
-                                unread = inboxUnread,
-                                onClick = onOpenInteractions,
+                                glyph = FlGlyphs.appsList,
+                                circle = GroupGreen,
+                                title = "折叠的群聊",
+                                subtitle = latestGroup?.lastBody?.ifBlank { "还没有消息" } ?: "",
+                                unread = groupUnread,
+                                onClick = {
+                                    val group = latestGroup
+                                    if (group != null) onOpenChat(group.id) else onMessage("还没有折叠的群聊")
+                                },
+                                // 折叠的群不止一个时，这一行右边再给一个「全部 N 个群」的小字入口：
+                                // 这里只剩最近说话的那个群可以点，剩下的得有地方去。
+                                trailing = {
+                                    AllGroupsLink(count = foldedGroups.size, onClick = onOpenGroups)
+                                },
                             )
                         }
-                        // 一个折叠的群都没有时这一行整块不画：入口里没有内容，摆一个「还没有群聊」
-                        // 在那儿等于请人点进一个空页面。折叠是人在群设置里自己开的，不是自动的。
-                        if (foldedGroups.isNotEmpty()) {
-                            item(key = "entry-folded") {
-                                MessageEntryRow(
-                                    glyph = FlGlyphs.appsList,
-                                    circle = GroupGreen,
-                                    title = "折叠的群聊",
-                                    subtitle = latestGroup?.lastBody?.ifBlank { "还没有消息" } ?: "",
-                                    unread = groupUnread,
-                                    onClick = {
-                                        val group = latestGroup
-                                        if (group != null) onOpenChat(group.id) else onMessage("还没有折叠的群聊")
-                                    },
-                                    // 折叠的群不止一个时，这一行右边再给一个「全部 N 个群」的小字入口：
-                                    // 这里只剩最近说话的那个群可以点，剩下的得有地方去。
-                                    trailing = {
-                                        AllGroupsLink(count = foldedGroups.size, onClick = onOpenGroups)
-                                    },
-                                )
-                            }
-                        }
-                        // 还没进群的人才需要这一行：进了群的，它就在下面的列表里排在最前面（那才是"置顶"）。
-                        // 也不写人数——官方群的人数不该摆在谁都能看见的地方。
-                        notJoinedOfficial.forEach { entry ->
-                            item(key = "entry-official-${entry.title}") {
-                                OfficialGroupRow(
-                                    entry = entry,
-                                    joined = false,
-                                    joining = joiningOfficial[entry.title] == true,
-                                    onClick = {
-                                        if (joiningOfficial[entry.title] != true) {
-                                            scope.launch {
-                                                joiningOfficial[entry.title] = true
-                                                // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
-                                                val id = repository.joinByInvite(owner, entry.inviteCode)
-                                                joiningOfficial[entry.title] = false
-                                                if (id != null) {
-                                                    reloads++
-                                                    onOpenChat(id)
-                                                } else {
-                                                    onMessage("没进成「${entry.title}」，检查代理后再试")
-                                                }
+                    }
+                    // 还没进群的人才需要这一行：进了群的，它就在下面的列表里排在最前面（那才是"置顶"）。
+                    // 也不写人数——官方群的人数不该摆在谁都能看见的地方。
+                    notJoinedOfficial.forEach { entry ->
+                        item(key = "entry-official-${entry.title}") {
+                            OfficialGroupRow(
+                                entry = entry,
+                                joined = false,
+                                joining = joiningOfficial[entry.title] == true,
+                                onClick = {
+                                    if (joiningOfficial[entry.title] != true) {
+                                        scope.launch {
+                                            joiningOfficial[entry.title] = true
+                                            // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
+                                            val id = repository.joinByInvite(owner, entry.inviteCode)
+                                            joiningOfficial[entry.title] = false
+                                            if (id != null) {
+                                                reloads++
+                                                onOpenChat(id)
+                                            } else {
+                                                onMessage("没进成「${entry.title}」，检查代理后再试")
                                             }
                                         }
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    when {
-                        // 有搜索词时列表只剩命中的人、会话与消息；三段都空才说一句，不留一块空白。
-                        // 消息那一段还在路上时先不判空——否则打完字会先闪一下"没找到"。
-                        searching && hits.isEmpty() && messageHits.isEmpty() && !searchingMessages ->
-                            item(key = "search-empty") {
-                                Text(
-                                    text = "没有找到「${keyword}」",
-                                    style = FlText.footnote,
-                                    color = scheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
-                                )
-                            }
-
-                        searching -> {
-                            items(hits, key = { it.key }) { hit ->
-                                SearchHitRow(
-                                    hit = hit,
-                                    onOpen = {
-                                        // 会话就进会话；只有关注关系的人先开私聊（后端 dm_open 幂等）。
-                                        val conversation = hit.conversation
-                                        if (conversation != null) {
-                                            onOpenChat(conversation.id)
-                                        } else {
-                                            onOpenDm(hit.personId)
-                                        }
-                                    },
-                                )
-                            }
-                            // 第三段：消息正文的命中。会话与联系人是本地过滤，这一段的每一条都在
-                            // "我参与过的会话"里，点一条直接进那个会话——搜索结果只是入口，不在这里读。
-                            if (messageHits.isNotEmpty()) {
-                                item(key = "hit-messages-head") {
-                                    SearchSectionLabel(
-                                        text = "消息 · ${messageHits.size} 条",
-                                        modifier = Modifier.padding(top = 10.dp),
-                                    )
-                                }
-                                items(messageHits, key = { "msg-${it.id}" }) { hit ->
-                                    MessageHitRow(
-                                        hit = hit,
-                                        onClick = { onOpenChat(hit.conversationId) },
-                                    )
-                                }
-                            } else if (searchingMessages) {
-                                item(key = "hit-messages-loading") {
-                                    Text(
-                                        text = "正在搜索消息…",
-                                        style = FlText.caption2,
-                                        color = scheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
-                                    )
-                                }
-                            }
-                        }
-
-                        visibleConversations.isEmpty() ->
-                            item(key = "no-chats") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 24.dp, vertical = 60.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = "还没有私聊，去方案页找人聊聊",
-                                        style = FlText.footnote,
-                                        color = scheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-
-                        else -> items(visibleConversations, key = { it.conversationKey() }) { conversation ->
-                            ConversationRow(
-                                conversation = conversation,
-                                // 只有两个方向都成立的人，名字右边才挂那个灰标。
-                                mutual = mutual.contains(conversation.peer) ||
-                                    mutual.contains(conversation.peerName),
-                                // 拉黑过的行本来就被过滤掉了，长按不到；这里按名单决定文案就行。
-                                blocked = conversation.blockedBy(blockedPeers),
-                                // 官方群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样：
-                                // 以前一个灰底一个白底，同一页里两种置顶，看着像两套规则。
-                                forcePinnedLook = conversation.title in OfficialGroups.titles,
-                                onOpen = { onOpenChat(conversation.id) },
-                                onTogglePin = { togglePin(conversation) },
-                                onToggleMute = { toggleMute(conversation) },
-                                onHide = { hideRow(conversation) },
-                                onToggleBlock = { toggleBlock(conversation) },
-                                onDelete = { deleteRow(conversation) },
+                                    }
+                                },
                             )
                         }
                     }
                 }
+                when {
+                    // 有搜索词时列表只剩命中的人、会话与消息；三段都空才说一句，不留一块空白。
+                    // 消息那一段还在路上时先不判空——否则打完字会先闪一下"没找到"。
+                    searching && hits.isEmpty() && messageHits.isEmpty() && !searchingMessages ->
+                        item(key = "search-empty") {
+                            Text(
+                                text = "没有找到「${keyword}」",
+                                style = FlText.footnote,
+                                color = scheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+                            )
+                        }
+
+                    searching -> {
+                        items(hits, key = { it.key }) { hit ->
+                            SearchHitRow(
+                                hit = hit,
+                                onOpen = {
+                                    // 会话就进会话；只有关注关系的人先开私聊（后端 dm_open 幂等）。
+                                    val conversation = hit.conversation
+                                    if (conversation != null) {
+                                        onOpenChat(conversation.id)
+                                    } else {
+                                        onOpenDm(hit.personId)
+                                    }
+                                },
+                            )
+                        }
+                        // 第三段：消息正文的命中。会话与联系人是本地过滤，这一段的每一条都在
+                        // "我参与过的会话"里，点一条直接进那个会话——搜索结果只是入口，不在这里读。
+                        if (messageHits.isNotEmpty()) {
+                            item(key = "hit-messages-head") {
+                                SearchSectionLabel(
+                                    text = "消息 · ${messageHits.size} 条",
+                                    modifier = Modifier.padding(top = 10.dp),
+                                )
+                            }
+                            items(messageHits, key = { "msg-${it.id}" }) { hit ->
+                                MessageHitRow(
+                                    hit = hit,
+                                    onClick = { onOpenChat(hit.conversationId) },
+                                )
+                            }
+                        } else if (searchingMessages) {
+                            item(key = "hit-messages-loading") {
+                                Text(
+                                    text = "正在搜索消息…",
+                                    style = FlText.caption2,
+                                    color = scheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    visibleConversations.isEmpty() ->
+                        item(key = "no-chats") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 60.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "还没有私聊，去方案页找人聊聊",
+                                    style = FlText.footnote,
+                                    color = scheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+
+                    else -> items(visibleConversations, key = { it.conversationKey() }) { conversation ->
+                        ConversationRow(
+                            conversation = conversation,
+                            // 只有两个方向都成立的人，名字右边才挂那个灰标。
+                            mutual = mutual.contains(conversation.peer) ||
+                                mutual.contains(conversation.peerName),
+                            // 拉黑过的行本来就被过滤掉了，长按不到；这里按名单决定文案就行。
+                            blocked = conversation.blockedBy(blockedPeers),
+                            // 官方群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样：
+                            // 以前一个灰底一个白底，同一页里两种置顶，看着像两套规则。
+                            forcePinnedLook = conversation.title in OfficialGroups.titles,
+                            onOpen = { onOpenChat(conversation.id) },
+                            onTogglePin = { togglePin(conversation) },
+                            onToggleMute = { toggleMute(conversation) },
+                            onHide = { hideRow(conversation) },
+                            onToggleBlock = { toggleBlock(conversation) },
+                            onDelete = { deleteRow(conversation) },
+                        )
+                    }
+                }
             }
-        }
         }
     }
 }
 
 /**
- * 顶栏自己画：左边一个「菜单」，中间「消息」，右边搜索与建群。
+ * 顶栏自己画：左边一个图标，中间「消息」，右边搜索与建群。
  *
  * 不用 [io.github.samolego.canta.ui.component.ScreenTopBar]：那个只留一个返回箭头和一个
- * 尾部动作位，抖音这一页是左边菜单、右边两个图标。高度、留白、标题字号照它的那一套
+ * 尾部动作位，抖音这一页是左边一个按钮、右边两个图标。高度、留白、标题字号照它的那一套
  * （[FlTopBarHeight]、20.dp 边距、[FlText.headline]）。
  *
- * 放大镜把一条搜索框放到这一行下面（[MessagesSearchField]），右边跟一个收起用的叉；菜单按钮
- * 弹一个三项的 [DropdownMenu]，位置贴着按下去的那个按钮，和 CantaTopBar 里那几个菜单一样。
+ * 左上角那个图标**不是菜单**：轻点是展开 / 收起最近联系人那一排
+ * （[MessagesPanelState.contactsExpanded]），长按是「全部标为已读」。原来那个三项下拉菜单
+ * （全部标为已读 / 折叠的群聊 / 发起群聊）整个拿掉了——发起群聊在右上角本来就有一个入口，
+ * 折叠的群聊那一行右边也有「全部 N 个群」，同一个动作摆两处只多一层要点开的东西。
+ *
+ * 放大镜把一条搜索框放到这一行下面（[MessagesSearchField]），右边跟一个收起用的叉。
+ *
+ * 底色不透明是有原因的：这一行现在是列表里的吸顶项（见 `MessagesScreen` 里的 `stickyHeader`），
+ * 往上滚时会直接压在会话行上面，透明的话下面的字会透出来。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessagesTopBar(
     searchActive: Boolean,
@@ -924,53 +1016,44 @@ private fun MessagesTopBar(
     onToggleSearch: () -> Unit,
     onCloseSearch: () -> Unit,
     onNewGroup: () -> Unit,
+    /** 最近联系人那一排展开着没有：只用于点按时报给读屏软件的那句话。 */
+    contactsExpanded: Boolean,
+    onToggleContacts: () -> Unit,
     onMarkAllRead: () -> Unit,
-    onOpenGroups: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    var menuExpanded by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
 
-    Column(modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(scheme.surface)
+            .windowInsetsPadding(WindowInsets.statusBars),
+    ) {
         Box(
             modifier = Modifier.fillMaxWidth().height(FlTopBarHeight).padding(horizontal = 20.dp),
         ) {
-            // 菜单和它自己的下拉菜单放在同一个 Box 里，菜单才会贴着手按的那个按钮弹出。
-            Box(modifier = Modifier.align(Alignment.CenterStart)) {
-                FlBarButton(
+            // 左上角：一个图标管两件事。轻点展开 / 收起最近联系人那一排，长按「全部标为已读」。
+            // 这里不再弹下拉菜单，所以也不需要包一层 Box 去贴按钮定位。
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = if (contactsExpanded) "收起最近联系人" else "展开最近联系人",
+                        onLongClickLabel = "全部标为已读",
+                        onLongClick = onMarkAllRead,
+                        onClick = onToggleContacts,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                FlGlyphIcon(
                     glyph = FlGlyphs.more,
-                    contentDescription = "菜单",
-                    onClick = { menuExpanded = true },
-                    iconSize = 20.dp,
-                    filled = false,
+                    size = 20.dp,
+                    tint = scheme.onSurface,
                 )
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                    modifier = Modifier.width(200.dp),
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("全部标为已读") },
-                        onClick = {
-                            menuExpanded = false
-                            onMarkAllRead()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("折叠的群聊") },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenGroups()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("发起群聊") },
-                        onClick = {
-                            menuExpanded = false
-                            onNewGroup()
-                        },
-                    )
-                }
             }
             Text(
                 text = "消息",
@@ -1033,6 +1116,59 @@ private fun MessagesTopBar(
     // 展开就把光标放进去：点一下放大镜之后还要再点一下输入框，等于白点一次。
     LaunchedEffect(searchActive) {
         if (searchActive) searchFocusRequester.requestFocus()
+    }
+}
+
+/**
+ * 下拉刷新的指示器：一圈图标加一句话（下拉刷新 / 松手刷新 / 正在刷新…）。
+ *
+ * 位置在页面顶上，但**不是**常驻的：没往下拽的时候整体透明（[alpha]）。它只是「整页已经被拽下来
+ * 那一截」里的说明，真正让手感成立的是列表本身的位移（见 [MessagesScreen] 里那个 `offset`）——
+ * 只有一圈图标在那儿转、内容一动不动，等于告诉人"刷新发生在别的地方"。
+ */
+@Composable
+private fun MessagesRefreshIndicator(
+    refreshing: Boolean,
+    state: PullToRefreshState,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val fraction = if (refreshing) 1f else state.distanceFraction.coerceIn(0f, 1f)
+    Row(
+        modifier = modifier
+            .padding(top = 10.dp)
+            .alpha(fraction)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(scheme.surfaceContainerHigh)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (refreshing) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = scheme.primary,
+            )
+        } else {
+            // 一圈箭头：没过线时朝下（「还能再拽」），过了线翻过来（「松手就是刷新」）。
+            FlGlyphIcon(
+                glyph = FlGlyphs.chevronDown,
+                size = 14.dp,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.rotate(if (fraction >= 1f) 180f else 0f),
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = when {
+                refreshing -> "正在刷新…"
+                fraction >= 1f -> "松手刷新"
+                else -> "下拉刷新"
+            },
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 

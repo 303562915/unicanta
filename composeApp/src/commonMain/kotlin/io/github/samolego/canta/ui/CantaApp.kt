@@ -57,6 +57,7 @@ import io.github.samolego.canta.data.community.BackendHealth
 import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatRealtimeHub
+import io.github.samolego.canta.data.community.ChatUnread
 import io.github.samolego.canta.data.community.CommunityRpc
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.PostStore
@@ -705,14 +706,21 @@ private fun CantaNavigation(
     // Unread direct messages and group messages, counted apart from the news above: the bar entry
     // wears one number for both, the way a chat app's messages tab does, and the page itself splits
     // them again.
-    var unreadChats by remember { mutableIntStateOf(0) }
+    //
+    // 这个数只存在 [ChatUnread] 一处：消息页刷新完、聊天页读完某一条、本机标已读，都会直接把新数字
+    // 推到那里；这里只在「底栏看得见数字的那几个页面」顺手问一次后端做校准。以前它是本地的一个
+    // `remember`，两边各算一份，读完消息退出聊天页时还会拿十秒前那份列表把数字画回去。
+    //
     // 上一次真的去问「有多少条未读聊天」的时间。
     //
     // 这个数字由一个**完整会话列表**算出来（`conversationsFor(owner).sumOf { it.unread }`），
     // 而下面那段 effect 跟着切页和每分钟一拍跑：在底栏那五个页面上来回点，每点一次就拉一份全量会话。
-    // 线上实测这正是 conversations_for 的主要来源之一（切页比轮询密）。10 秒内再来沿用上一次的数字：
-    // 红点晚十秒不算错，一份全量列表却是实打实的几百毫秒与几 KB。
+    // 线上实测这正是 conversations_for 的主要来源之一（切页比轮询密）。同一个页面上十秒内再来沿用
+    // 上一次的数字：红点晚十秒不算错，一份全量列表却是实打实的几百毫秒与几 KB。**换页不算重算的理由**
+    // ——从一个页面切过来时看到的是新页面，那一次要用真数据。
     var chatsCountedAt by remember { mutableStateOf(0L) }
+    // 上一次那一趟计数是在哪个页面上跑的：切页之后不能因为「十秒内」就沿用上一页那份。
+    var chatsCountedOn by remember { mutableStateOf<String?>(null) }
     var lastSeenReplyId by remember { mutableStateOf(0L) }
     var inboxSeenAt by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
@@ -770,16 +778,18 @@ private fun CantaNavigation(
         }
         // The chats are their own count on the backend, and they are read on the same three pages:
         // one more call, where the summary above is already being asked for.
-        unreadChats = if (owner.isEmpty()) {
-            0
+        if (owner.isEmpty()) {
+            ChatUnread.set(0)
         } else {
             val now = currentTimeMillis()
-            if (now - chatsCountedAt < CHAT_UNREAD_TTL_MILLIS) {
-                // 十秒内刚问过：沿用那一次的数字，不再为同一个红点拉一份全量会话列表。
-                unreadChats
+            val samePage = chatsCountedOn == currentRoute
+            if (samePage && now - chatsCountedAt < CHAT_UNREAD_TTL_MILLIS) {
+                // 同一页上十秒内刚问过：沿用那一次的数字，不再为同一个红点拉一份全量会话列表。
+                Unit
             } else {
                 chatsCountedAt = now
-                socialRepository.conversationsFor(owner).sumOf { it.unread }
+                chatsCountedOn = currentRoute
+                ChatUnread.from(socialRepository.conversationsFor(owner))
             }
         }
     }
@@ -1760,7 +1770,7 @@ private fun CantaNavigation(
                         showUpdateDot = updateAvailable,
                         // What the bell in the top bar counts, on the entry that now leads to the
                         // page the bell opens.
-                        showMessageCount = unreadReplies + unreadChats,
+                        showMessageCount = unreadReplies + ChatUnread.total,
                     ),
                     onSelect = { key -> onBottomBarSelect(key, navController) },
                     // 双击当前那一格 → 整页回顶部（页面各自用 ScrollToTopEffect 听这个信号）。

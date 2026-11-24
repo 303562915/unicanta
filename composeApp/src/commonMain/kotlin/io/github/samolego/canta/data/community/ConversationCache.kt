@@ -119,6 +119,34 @@ object ConversationCache {
         store?.write(owner, conversations)
     }
 
+    /**
+     * 某个会话读完了：把快照里那一行的未读清零，顺带把底栏「消息」那个数字往下调。
+     *
+     * 为什么本机也要动这一下：底栏的数字由一份**完整会话列表**算出来，下一趟计数最晚要等十秒
+     * （见 `CantaApp` 的 `CHAT_UNREAD_TTL_MILLIS`），而人在退出聊天页的那一秒就会看见它。晚十秒
+     * 才清掉，读起来就是「点了也没用」。
+     *
+     * 快照里没有这一行时什么都不做：没缓存就没有可减的量，等下一趟全量拉取把真数字带回来；
+     * 也不能凭空调 0，那会让别人的未读一起消失。
+     */
+    fun markRead(owner: String, conversationId: Long) {
+        val key = owner.ifEmpty { lastOwner }
+        val entry = entries[key] ?: return
+        val next = entry.conversations.map { row ->
+            if (row.id == conversationId && (row.unread != 0 || row.unreadMentions != 0)) {
+                row.copy(unread = 0, unreadMentions = 0)
+            } else {
+                row
+            }
+        }
+        if (next != entry.conversations) {
+            entries[key] = Entry(next, entry.followers, entry.summary, currentTimeMillis())
+            store?.write(key, next)
+        }
+        // 变没变都把数字对齐到这份列表：这一趟的语义是「这一行已经读过」。
+        ChatUnread.from(next)
+    }
+
     /** 扔掉这个身份的快照；下次进来重新走加载。 */
     fun invalidate(owner: String) {
         if (owner.isEmpty()) return
