@@ -130,23 +130,30 @@ internal fun EmotionInlineId(index: Int): String = "emotion-$index"
  * alternative text, and the caller that needs the tokens back (an editor) reads them from there.
  */
 @Composable
-internal fun rememberEmotionDocument(spans: List<EmotionSpan>): EmotionDocument {
-    val inline = remember(spans) {
+internal fun rememberEmotionDocument(
+    spans: List<EmotionSpan>,
+    /**
+     * 图片放大到几倍。1f 是正文里的样子（一个字符高）；聊天气泡里「只有表情」的那条传 3f，
+     * 一张 28 的画面读得出是哪个表情，和微信/抖音一致。
+     */
+    scale: Float = 1f,
+): EmotionDocument {
+    val inline = remember(spans, scale) {
         spans.mapIndexedNotNull { index, span ->
             if (span !is EmotionSpan.Sticker) return@mapIndexedNotNull null
             EmotionInlineId(index) to androidx.compose.foundation.text.InlineTextContent(
                 // A placeholder is measured in text units, not dp: it stands where a character of
                 // the paragraph would, so the line it is on keeps its height.
                 placeholder = Placeholder(
-                    width = EmotionInlineSizeSp,
-                    height = EmotionInlineSizeSp,
+                    width = EmotionInlineSizeSp * scale,
+                    height = EmotionInlineSizeSp * scale,
                     placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
                 ),
             ) {
                 Image(
                     painter = painterResource(span.emotion.resource),
                     contentDescription = span.emotion.name,
-                    modifier = Modifier.size(EmotionInlineSize),
+                    modifier = Modifier.size(EmotionInlineSize * scale),
                 )
             }
         }.toMap()
@@ -214,6 +221,11 @@ fun EmotionText(
      * 位置排版，为一个颜色去动它不划算——而且那种消息本来也不常见，@ 少一个颜色不是错。
      */
     mentionColor: Color? = null,
+    /**
+     * 表情图放大到几倍。1f = 正文大小；聊天气泡里「整条只有表情」的那种传 3f，
+     * 一张表情才会被当成图看，而不是被当成一个字符。
+     */
+    stickerScale: Float = 1f,
 ) {
     val spans = remember(body) { parseEmotionBody(body) }
     if (spans.none { it is EmotionSpan.Sticker }) {
@@ -232,7 +244,7 @@ fun EmotionText(
         )
         return
     }
-    val document = rememberEmotionDocument(spans)
+    val document = rememberEmotionDocument(spans, stickerScale)
     Text(
         text = document.annotated,
         inlineContent = document.inline,
