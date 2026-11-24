@@ -102,6 +102,7 @@ import io.github.samolego.canta.ui.lock.launchGateOf
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
+import io.github.samolego.canta.ui.screen.AudioWhitelistScreen
 import io.github.samolego.canta.ui.screen.DescriptionFixScreen
 import io.github.samolego.canta.ui.screen.LaunchLockScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
@@ -937,7 +938,17 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.Tweaks.route) {
-                TweaksScreen(handler = handler, onNavigateBack = { navController.navigateUp() })
+                TweaksScreen(
+                    handler = handler,
+                    onOpenAudio = { navController.navigate(Screen.Audio.route) },
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
+            composable(route = Screen.Audio.route) {
+                AudioWhitelistScreen(
+                    handler = handler,
+                    onNavigateBack = { navController.navigateUp() },
+                )
             }
             composable(route = Screen.Recommendations.route) {
                 // The proposed half is written under this install's identity, the same way the

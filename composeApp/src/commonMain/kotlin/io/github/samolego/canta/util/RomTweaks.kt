@@ -83,6 +83,14 @@ class RomTweaks(private val set: RomTweakSet) {
             .sortedBy { (family, _) -> if (family == mine) 0 else 1 }
     }
 
+    /**
+     * The card with [id], or null when this build does not ship it.
+     *
+     * A page that acts on the same switch as one card looks it up here instead of carrying a second
+     * copy of the script: the two entry points then always run exactly the same thing.
+     */
+    fun byId(id: String): RomTweak? = set.tweaks.firstOrNull { it.id == id }
+
     companion object {
         const val RESOURCE_PATH = "files/rom_tweaks.json"
 

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -131,6 +132,7 @@ private sealed interface RunStep {
 @Composable
 fun TweaksScreen(
     handler: CantaHandler,
+    onOpenAudio: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
@@ -237,6 +239,19 @@ fun TweaksScreen(
                             detail = tweak
                         },
                     )
+                }
+                // 音频白名单单独一页：那份名单有几十行，弹窗里只能读，页面上能筛、能开合。
+                if (family == familyKeyOf("hyperos")) {
+                    item(key = "audio-page") {
+                        ToolRow(
+                            icon = Icons.Default.ViewList,
+                            title = "音频白名单 · 看名单与开关",
+                            canRun = false,
+                            running = false,
+                            onRun = {},
+                            onClick = onOpenAudio,
+                        )
+                    }
                 }
             }
             if (groups.isEmpty()) {

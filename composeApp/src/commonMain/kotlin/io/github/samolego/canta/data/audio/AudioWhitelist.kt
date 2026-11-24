@@ -1,0 +1,161 @@
+package io.github.samolego.canta.data.audio
+
+import io.github.samolego.canta.generated.resources.Res
+
+/**
+ * HyperOS / MIUI 的音频白名单：谁被系统按场景切低频、压音量，以及那一个全局开关现在是谁。
+ *
+ * The list itself lives on the phone (`/odm/etc/audio/trackefx_config.xml`) and cannot be edited
+ * without root, so this page reads it rather than shipping a copy: a bundled list goes stale the
+ * moment Xiaomi ships a new ROM, and a reader has no way to tell.
+ *
+ * 名单是「被压制」的应用，不是「受益」的应用。开关 `persist.sys.scene.partition.level` 为 1 时按名单
+ * 处理，为 -1 时整张名单一起跳过——名单外的应用本来就不处理，所以把应用往名单里加，得到的是相反的结果。
+ */
+object AudioWhitelist {
+
+    /** The read-only script every refresh runs through the privileged shell. */
+    const val RESOURCE_PATH = "files/audio_whitelist_state.sh"
+
+    /** The one property the whole feature hangs on. */
+    const val PROP = "persist.sys.scene.partition.level"
+
+    /** `-1`: the audio engine skips the whitelist entirely. */
+    const val BYPASS = "-1"
+
+    /** The value the ROM ships with: the list is applied. */
+    const val DEFAULT_LEVEL = "1"
+
+    /** The card in `rom_tweaks.json` that owns the two scripts this page runs. */
+    const val TWEAK_ID = "xiaomi-audio-whitelist"
+
+    internal const val TAG_LEVEL = "##LEVEL##"
+    internal const val TAG_CONFIG = "##CFG##"
+    internal const val TAG_PACKAGE = "##PKG##"
+    internal const val TAG_INSTALLED = "##INST##"
+
+    /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
+    suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
+
+    /**
+     * One app the phone's config names, with the words a user recognises it by.
+     *
+     * @param label the Chinese name when this build knows the package, the package name otherwise.
+     * @param installed whether the phone has it now — the list is shipped per ROM, not per phone,
+     *   so most rows on any one device are packages that are not there.
+     */
+    data class Entry(val packageName: String, val label: String, val installed: Boolean)
+
+    /**
+     * What one refresh saw.
+     *
+     * @param level the raw property value; empty when the property does not exist on this ROM.
+     * @param configPath the config the list was read from, empty when the phone has none.
+     */
+    data class State(
+        val level: String,
+        val configPath: String,
+        val entries: List<Entry>,
+    ) {
+        /** The audio engine is skipping the whitelist right now. */
+        val bypassed: Boolean get() = level == BYPASS
+
+        /** The list is being applied: the shipped state of the ROM. */
+        val active: Boolean get() = level.isNotEmpty() && !bypassed
+
+        /** This phone has the config, so the list is real rather than an empty read. */
+        val supported: Boolean get() = configPath.isNotEmpty()
+    }
+
+    /** Turns the script's tagged lines into [State]; unknown lines are ignored, not fatal. */
+    fun parse(output: String): State {
+        var level = ""
+        var config = ""
+        val packages = LinkedHashSet<String>()
+        val installed = HashSet<String>()
+
+        output.lineSequence().forEach { raw ->
+            val line = raw.trim()
+            when {
+                line.startsWith(TAG_LEVEL) -> level = line.removePrefix(TAG_LEVEL).trim()
+                line.startsWith(TAG_CONFIG) -> config = line.removePrefix(TAG_CONFIG).trim()
+                line.startsWith(TAG_PACKAGE) -> line.removePrefix(TAG_PACKAGE).trim().let {
+                    if (it.isNotEmpty()) packages += it
+                }
+                line.startsWith(TAG_INSTALLED) -> line.removePrefix(TAG_INSTALLED).trim().let {
+                    if (it.isNotEmpty()) installed += it
+                }
+                else -> Unit
+            }
+        }
+
+        // Installed first, then by name: the rows a reader can actually act on are on top.
+        val entries = packages
+            .map { Entry(packageName = it, label = labelOf(it), installed = it in installed) }
+            .sortedWith(compareBy({ !it.installed }, { it.label.lowercase() }, { it.packageName }))
+
+        return State(level = level, configPath = config, entries = entries)
+    }
+
+    /** The Chinese name for a package this build knows, the package name otherwise. */
+    fun labelOf(packageName: String): String = NAMES[packageName] ?: packageName
+
+    /**
+     * Names for the packages Xiaomi's shipped config tends to list, taken from the app-name table of
+     * a tool that ships the same list. A package missing here reads as its own name, which is ugly
+     * but never wrong.
+     */
+    private val NAMES: Map<String, String> = mapOf(
+        "air.tv.douyu.android" to "斗鱼",
+        "cn.xiaochuankeji.tieba" to "最右",
+        "cn.xuexi.android" to "学习强国",
+        "com.UCMobile" to "UC浏览器",
+        "com.achievo.vipshop" to "唯品会",
+        "com.alibaba.wireless" to "1688",
+        "com.android.browser" to "系统浏览器",
+        "com.autonavi.minimap" to "高德地图",
+        "com.baidu.BaiduMap" to "百度地图",
+        "com.coolapk.market" to "酷安",
+        "com.cubic.autohome" to "汽车之家",
+        "com.google.android.apps.maps" to "Google 地图",
+        "com.google.android.apps.youtube.kids" to "YouTube Kids",
+        "com.gotokeep.keep" to "Keep",
+        "com.hupu.games" to "虎扑",
+        "com.jingdong.app.mall" to "京东",
+        "com.kuaishou.nebula" to "快手极速版",
+        "com.sankuai.meituan" to "美团",
+        "com.sankuai.meituan.takeoutnew" to "美团外卖",
+        "com.sina.weibo" to "微博",
+        "com.smile.gifmaker" to "快手",
+        "com.snapchat.android" to "Snapchat",
+        "com.ss.android.article.lite" to "今日头条极速版",
+        "com.ss.android.article.news" to "今日头条",
+        "com.ss.android.auto" to "懂车帝",
+        "com.ss.android.ugc.aweme" to "抖音",
+        "com.ss.android.ugc.aweme.lite" to "抖音极速版",
+        "com.ss.android.ugc.trill" to "TikTok",
+        "com.sup.android.superb" to "皮皮虾",
+        "com.taobao.idlefish" to "闲鱼",
+        "com.taobao.live" to "淘宝直播",
+        "com.taobao.taobao" to "淘宝",
+        "com.tencent.map" to "腾讯地图",
+        "com.tencent.mtt" to "QQ浏览器",
+        "com.tencent.news" to "腾讯新闻",
+        "com.tencent.qt.qtl" to "企鹅体育",
+        "com.tencent.tmgp.sgame" to "王者荣耀",
+        "com.tencent.tmgp.speedmobile" to "QQ飞车手游",
+        "com.tmall.wireless" to "天猫",
+        "com.twitter.android" to "X",
+        "com.vanced.android.youtube" to "YouTube Vanced",
+        "com.videogo" to "萤石云视频",
+        "com.weico.international" to "微博国际版",
+        "com.xiaomi.shop" to "小米商城",
+        "com.xingin.xhs" to "小红书",
+        "com.xs.fm" to "番茄畅听",
+        "com.xunmeng.pinduoduo" to "拼多多",
+        "com.zhihu.android" to "知乎",
+        "com.zhiliaoapp.musically.go" to "TikTok Lite",
+        "in.mohalla.video" to "Moj",
+        "tv.danmaku.bili" to "哔哩哔哩",
+    )
+}

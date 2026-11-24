@@ -32,6 +32,14 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Tweaks : Screen("tweaks")
 
     /**
+     * 音频白名单：HyperOS / MIUI 按应用切低频、压音量的那一套，一页看完名单、一键开合。
+     *
+     * 从 [Tweaks] 的小米分组进。单独一页而不是卡片弹窗，是因为名单本身就有几十行：弹窗只能读，
+     * 页面能筛、能滚、能把本机装了的排到前面。
+     */
+    data object Audio : Screen("audio")
+
+    /**
      * Everything this install wrote and everything other people wrote back: the comments it left
      * on plans and app pages, and the replies under them. Each row opens the page it lives on.
      */
