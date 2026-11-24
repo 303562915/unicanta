@@ -69,8 +69,10 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
 
-/** 群里上限。抖音是 200，这里照抄：人数上限本身不是功能，是一句"还能加多少人"的答复。 */
-private const val GROUP_MEMBER_CAP = 200
+/**
+ * 群人数不设上限：官方群（灰度测试群、Bug 反馈群）注册即全员加入，几千人是常态，
+ * 原来那个照抄抖音的「N/200」在这里只会读成"这个群人满了"，所以只显示人数本身。
+ */
 
 /**
  * 邀请链接的形状。
@@ -430,13 +432,12 @@ fun GroupSettingsScreen(
                         onInviteMembers = { adding = true },
                     )
                 }
-                // 成员卡上有「3/200」这种人数，也有一整排头像（数一下就知道了）。
+                // 成员卡上写人数（不写上限：官方群几千人，N/200 会读成"满了"），也有一整排头像。
                 // 只有建群的人看得到：内测群人少，人数是主办方的事，不该摆在别人点得到的地方。
                 if (current.isOwner(owner)) {
                     item(key = "members") {
                         GroupMembersCard(
                             members = current.members,
-                            cap = GROUP_MEMBER_CAP,
                             kickable = current.isOwner(owner),
                             onKick = { member -> kickTarget = member },
                             onAdd = { adding = true },
@@ -893,11 +894,10 @@ private fun GroupAvatar(members: List<ConversationMember>, size: Dp) {
     }
 }
 
-/** 成员：标题带人数上限，下面一格一格的圆头像，最后一格是「邀请」。 */
+/** 成员：标题带人数（不设上限），下面一格一格的圆头像，最后一格是「邀请」。 */
 @Composable
 private fun GroupMembersCard(
     members: List<ConversationMember>,
-    cap: Int,
     kickable: Boolean,
     onKick: (ConversationMember) -> Unit,
     onAdd: () -> Unit,
@@ -924,7 +924,7 @@ private fun GroupMembersCard(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "${members.size}/$cap",
+                text = "${members.size} 人",
                 fontSize = 11.sp,
                 color = scheme.onSurfaceVariant,
             )

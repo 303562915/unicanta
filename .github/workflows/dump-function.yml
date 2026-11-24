@@ -1,0 +1,38 @@
+name: 🔎 Dump function definition
+
+# 只读：把线上某个函数的定义打出来（本机到 api.supabase.com 不通，只能从 CI 看）。
+# 用法：`gh workflow run dump-function.yml -f name='public.conversation_detail(text,bigint)'`
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "函数签名，例如 public.conversation_detail(text,bigint)"
+        type: string
+        default: "public.conversation_detail(text,bigint)"
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dump
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+          FN: ${{ inputs.name }}
+        run: |
+          set -euo pipefail
+          case "$FN" in
+            *[\'\;]*|*--*) echo "suspicious function name" >&2; exit 1 ;;
+          esac
+          SQL="select pg_get_functiondef('$FN'::regprocedure) as def"
+          RESP=$(curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$SQL" '{query: $q}')")
+          echo "$RESP" | jq -r '.[0].def'
