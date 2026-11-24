@@ -914,22 +914,10 @@ private fun InteractionRow(
                 }
             }
             Spacer(Modifier.width(8.dp))
-            // 右边那一列：纸飞机（同整行的动作）+ 一张小缩略图。真截图这里没有——后端只给标题和
-            // 包名，所以缩略图画的是目标的首字，形状和参考图一样，内容只能到这一步。
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(colors.surfaceContainerHighest)
-                        .clickable(onClick = onOpen),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    FlGlyphIcon(glyph = FlGlyphs.send, size = 13.dp, tint = colors.onSurfaceVariant)
-                }
-                Spacer(Modifier.width(6.dp))
-                InteractionThumbnail(label = item.title.ifEmpty { item.target })
-            }
+            // 右边只留一张缩略图。参考图里那个灰色圆底纸飞机只长在「某人访问了你的主页」那种行上
+            // （那里没有正文可预览，纸飞机是"去 TA 主页"的入口）；回复、评论、赞这几种行右侧都是
+            // 一张图，多画一个圆钮就多一个和整行重复的点击区。
+            InteractionThumbnail(label = item.title.ifEmpty { item.target })
             }
         }
         InteractionDivider()
