@@ -101,6 +101,11 @@ class SettingsViewModel(
     val autoInstallUpdates = settingsStore.autoInstallUpdatesFlow.state(true)
     /** Whether installing a downloaded release asks first; off means it installs right away. */
     val confirmBeforeInstall = settingsStore.confirmBeforeInstallFlow.state(false)
+    /**
+     * The release whose automatic install already failed. The start-up check reads it so a build
+     * that would not install is not downloaded and retried on every launch.
+     */
+    val skippedAutoInstallVersion = settingsStore.skippedAutoInstallVersionFlow.state("")
     val updateChannel = settingsStore.updateChannelFlow.state<String?>(null)
 
     /** The accent the app draws with, as ARGB; 0 is FlClash's own `#007AFF`. */
@@ -241,6 +246,8 @@ class SettingsViewModel(
     fun saveAppTapOpensDialog(showsDialog: Boolean) = save { setAppTapOpensDialog(showsDialog) }
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }
     fun saveConfirmBeforeInstall(confirm: Boolean) = save { setConfirmBeforeInstall(confirm) }
+    /** Records that the automatic install of [version] failed; empty clears the mark. */
+    fun saveSkippedAutoInstallVersion(version: String) = save { setSkippedAutoInstallVersion(version) }
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
     fun saveThemeAccent(argb: Int) = save { setThemeAccent(argb) }
     fun saveThemeMode(mode: Int) = save { setThemeMode(mode) }

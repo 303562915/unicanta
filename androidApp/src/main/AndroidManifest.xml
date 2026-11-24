@@ -24,6 +24,11 @@
     <!-- Android 13 起通知是运行时权限。不给的话新消息只在 app 里计数，通知栏什么也不弹；
          申请入口在设置的「消息通知」开关上（见 AndroidCantaPlatform.requestNotifyPermission）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The fallback when the silent `pm install` is refused: the APK goes to the system
+         installer, and that dialog cannot finish without this permission. Without it the
+         automatic update has no way out at all — the download lands, every privileged location
+         fails, and the installer refuses the last one. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Lets analytics (if enabled) report, after a reboot, whether uninstalled packages stayed gone. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.software.leanback"

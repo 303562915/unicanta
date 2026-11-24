@@ -63,6 +63,15 @@ internal enum class UpdateChannel { STABLE, DEVELOPMENT }
 internal data class UpdateRelease(val tag: String, val version: String, val buildNumber: Int = 0)
 
 /**
+ * The label a release is shown and remembered by: `4.3.0`, or `4.3.0 (dev 239)` for the rolling
+ * development build. One function so the label written to `skippedAutoInstallVersion` and the one
+ * compared against it can never drift apart — a mismatch would silently re-enable the automatic
+ * install of a build that already failed.
+ */
+internal fun updateLabel(release: UpdateRelease): String =
+    if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
+
+/**
  * Why a check came back empty-handed. The about page turns this into one sentence that names the
  * actual problem, because "check failed" leaves a user on a VPN guessing at their node.
  */
@@ -147,6 +156,14 @@ internal sealed interface UpdateState {
 
 /** [UpdateState.Downloading.progress] when the answer carried no `Content-Length`. */
 internal const val DOWNLOAD_PROGRESS_UNKNOWN = -1
+
+/**
+ * How long "installed, restarting" stays up before the app closes.
+ *
+ * The install replaces the APK under a running process; closing at once is indistinguishable from
+ * a crash, and "不知道到底装上了没有" is what people reported about exactly that.
+ */
+internal const val INSTALL_DONE_LINGER_MILLIS = 1_800L
 
 /**
  * Reads the selected published release and its immutable build identity.

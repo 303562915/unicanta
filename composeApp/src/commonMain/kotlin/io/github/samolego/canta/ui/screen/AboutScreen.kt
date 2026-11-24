@@ -59,7 +59,8 @@ import io.github.samolego.canta.generated.resources.about_download_page
 import io.github.samolego.canta.generated.resources.about_downloading
 import io.github.samolego.canta.generated.resources.about_downloading_unknown
 import io.github.samolego.canta.generated.resources.about_ready_to_install
-import io.github.samolego.canta.generated.resources.about_installing
+import io.github.samolego.canta.generated.resources.about_installing_version
+import io.github.samolego.canta.generated.resources.about_install_done
 import io.github.samolego.canta.generated.resources.about_install_title
 import io.github.samolego.canta.generated.resources.about_install_message
 import io.github.samolego.canta.generated.resources.about_install_confirm
@@ -105,6 +106,7 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import org.jetbrains.compose.resources.StringResource
@@ -164,6 +166,8 @@ fun AboutScreen(
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
     val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
+    /** The build whose automatic install already failed; the page then leaves it to a manual tap. */
+    val skippedAutoInstall by settingsViewModel.skippedAutoInstallVersion.collectAsStateWithLifecycle()
     // 「作者的群」那一行的红点：点过一次群就永久熄灭。
     val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
 
@@ -186,7 +190,7 @@ fun AboutScreen(
     val qqGroupCopied = stringResource(Res.string.about_qq_group_copied)
 
     val download: (UpdateRelease) -> Unit = { release ->
-        val version = if (release.buildNumber > 0) "${release.version} (dev ${release.buildNumber})" else release.version
+        val version = updateLabel(release)
         updateState = UpdateState.Downloading(version, DOWNLOAD_PROGRESS_UNKNOWN)
         downloadable = version to release
         // A download runs in the background: say so in the theme's own colour before it starts.
@@ -234,18 +238,28 @@ fun AboutScreen(
         updateState = UpdateState.Installing(ready.version, ready.path)
         // Said out loud as well as in the status row: the tap that starts the install is the last
         // thing this page shows before the app is replaced.
-        scope.launch { toast.showSnackbar(getString(Res.string.about_installing)) }
+        scope.launch { toast.showSnackbar(getString(Res.string.about_installing_version, ready.version)) }
         scope.launch {
             val failure = platform.installUpdate(ready.path)
             if (failure == null) {
+                // Not awaited: `showSnackbar` suspends until the line goes away, and the exit must
+                // not wait on it — a success that closes the app before its own line is readable is
+                // the "不知道装没装上" this change is about.
+                scope.launch { toast.showSnackbar(getString(Res.string.about_install_done, ready.version)) }
+                delay(INSTALL_DONE_LINGER_MILLIS)
                 platform.exitApp()
-            } else if (platform.requestInstall(ready.path)) {
-                // The privileged runtime could not read any home for the APK, but the system
-                // installer reads through the granted content URI, so the same file still
-                // installs — with the system's own dialog.
-                updateState = UpdateState.HandedOff(ready.version)
             } else {
-                updateState = UpdateState.FailedWith(failure)
+                // Remembered, so the start-up check stops downloading and retrying this build on
+                // its own: this page is where a retry is still one tap away.
+                settingsViewModel.saveSkippedAutoInstallVersion(ready.version)
+                if (platform.requestInstall(ready.path)) {
+                    // The privileged runtime could not read any home for the APK, but the system
+                    // installer reads through the granted content URI, so the same file still
+                    // installs — with the system's own dialog.
+                    updateState = UpdateState.HandedOff(ready.version)
+                } else {
+                    updateState = UpdateState.FailedWith(failure)
+                }
             }
         }
     }
@@ -271,11 +285,13 @@ fun AboutScreen(
                     updateState = UpdateState.Failed(UpdateFailure.UNKNOWN)
                     return@launch
                 }
-                val label = if (found.buildNumber > 0) "${found.version} (dev ${found.buildNumber})" else found.version
+                val label = updateLabel(found)
                 when {
                     !found.isNewerThanInstalled() -> updateState = UpdateState.Latest
-                    // Downloading on its own is what the switch is for; it is on by default.
-                    autoInstallUpdates -> download(found)
+                    // Downloading on its own is what the switch is for; it is on by default. A
+                    // build that already failed to install on its own is left for a manual tap:
+                    // fetching it again only to fail again is the loop this mark breaks.
+                    autoInstallUpdates && label != skippedAutoInstall -> download(found)
                     else -> updateState = UpdateState.Available(label, found)
                 }
             }
@@ -411,8 +427,17 @@ fun AboutScreen(
         // The install replaces the app and closes it. By default it runs as soon as the APK is here;
         // the "安装前确认" switch above brings this dialog back for anyone who wants the last word.
         pendingInstall?.let { ready ->
+            // "Not now" is an answer: the version is remembered so the next launch does not fetch
+            // and ask about the same build again. The row above still installs it by hand.
+            val postpone = {
+                settingsViewModel.saveSkippedAutoInstallVersion(ready.version)
+                pendingInstall = null
+                // The row must not keep saying "已下载，点击安装" for a build that was just put
+                // aside: an Idle row makes the next tap of 「检查更新」 the explicit ask.
+                updateState = UpdateState.Idle
+            }
             AlertDialog(
-                onDismissRequest = { pendingInstall = null },
+                onDismissRequest = postpone,
                 title = { Text(stringResource(Res.string.about_install_title, ready.version)) },
                 text = { Text(stringResource(Res.string.about_install_message)) },
                 confirmButton = {
@@ -421,7 +446,7 @@ fun AboutScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { pendingInstall = null }) {
+                    TextButton(onClick = postpone) {
                         Text(stringResource(Res.string.about_install_cancel))
                     }
                 },
@@ -513,7 +538,7 @@ private fun UpdateCard(
         is UpdateState.ReadyToInstall ->
             stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary
         is UpdateState.Installing ->
-            stringResource(Res.string.about_installing) to scheme.primary
+            stringResource(Res.string.about_installing_version, state.version) to scheme.primary
         is UpdateState.HandedOff ->
             stringResource(Res.string.about_install_handoff, state.version) to scheme.primary
         is UpdateState.FailedWith -> state.reason to scheme.error

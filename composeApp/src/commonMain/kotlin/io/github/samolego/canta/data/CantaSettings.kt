@@ -106,6 +106,11 @@ class CantaSettings(storage: AppBlobStorage) {
     val autoInstallUpdatesFlow = field { it.autoInstallUpdates }
     /** Whether a downloaded release is installed at once instead of after a confirmation tap. */
     val confirmBeforeInstallFlow = field { it.confirmBeforeInstall }
+    /**
+     * The release whose automatic install already failed, so the start-up check does not download
+     * and try it again on every launch; see [AppSettingsProto.skippedAutoInstallVersion].
+     */
+    val skippedAutoInstallVersionFlow = field { it.skippedAutoInstallVersion }
     /** The accent the app draws with, as ARGB; 0 is FlClash's own `#007AFF`; see [AppSettingsProto.themeAccent]. */
     val themeAccentFlow: Flow<Int> = field { it.themeAccent }
     /** Dark mode: 0 follows the system, 1 forces light, 2 forces dark; see [AppSettingsProto.themeMode]. */
@@ -183,6 +188,13 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setShowDevicePhoto(show: Boolean) = update { it.copy(showDevicePhoto = show) }
     suspend fun setAutoInstallUpdates(auto: Boolean) = update { it.copy(autoInstallUpdates = auto) }
     suspend fun setConfirmBeforeInstall(confirm: Boolean) = update { it.copy(confirmBeforeInstall = confirm) }
+    /**
+     * Remembers that the automatic install of [version] did not go through, so the same build is
+     * not fetched and retried on every launch. Empty clears the mark: a manual install that
+     * succeeds, or a new version, makes the stored one meaningless.
+     */
+    suspend fun setSkippedAutoInstallVersion(version: String) =
+        update { it.copy(skippedAutoInstallVersion = version.trim()) }
     suspend fun setThemeAccent(argb: Int) = update { it.copy(themeAccent = argb) }
     suspend fun setThemeMode(mode: Int) = update { it.copy(themeMode = mode.coerceIn(0, 2)) }
     /** Remembers that the "no VPN" reminder must never come back; see [AppSettingsProto.hideVpnNotice]. */

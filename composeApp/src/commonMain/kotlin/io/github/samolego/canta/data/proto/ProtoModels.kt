@@ -223,6 +223,18 @@ data class AppSettingsProto(
      * 存身份号而不是名字：人随时能改名，号码不变。
      */
     @ProtoNumber(42) val blockedPeers: List<String> = emptyList(),
+    /**
+     * The release whose automatic install already failed (or was handed to the system installer
+     * and never confirmed), spelled the way the update check labels it (`4.3.0` or
+     * `4.3.0 (dev 239)`).
+     *
+     * Without it the start-up check finds the same "newer" build on every launch — the version on
+     * the device never changed, because the install did not go through — downloads the APK it
+     * already has and shows "正在安装" again, forever, with no success and no failure to see. With
+     * it, one automatic attempt per version: the next launches say "有更新，但自动装不上去" and
+     * leave the manual install to the About page.
+     */
+    @ProtoNumber(43) val skippedAutoInstallVersion: String = "",
 )
 
 /**

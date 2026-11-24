@@ -122,6 +122,14 @@ class AndroidCantaPlatform(
      */
     private val updateDownload = Mutex()
 
+    /**
+     * One install at a time. The start-up path and the about page can both decide to install the
+     * same APK (both fetched it, both found it newer), and two `pm install` runs of one package
+     * make one of them fail for no reason the reader can act on — the second is serialized here
+     * and then finds the package already replaced.
+     */
+    private val updateInstall = Mutex()
+
     /** 相册挑选器：在 [attachActivity] 里注册，注册之后才能 launch。 */
     private var imagePicker: ActivityResultLauncher<String>? = null
 
@@ -319,8 +327,17 @@ class AndroidCantaPlatform(
 
     override fun clearChatNotices() = chatNotifier.clearAll()
 
+    /**
+     * The toast is queued by the system, and a queued one is not replaced by the next call: "正在安装"
+     * followed by "已安装" within its 3.5 s would leave the second one waiting until the first has
+     * gone, which is after the install path has already closed the app. Cancelling first makes the
+     * newest sentence the one on screen, which is what every caller means by "show this now".
+     */
+    private var currentToast: Toast? = null
+
     override fun showMessage(message: String) {
-        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        currentToast?.cancel()
+        currentToast = Toast.makeText(context, message, Toast.LENGTH_LONG).also { it.show() }
     }
 
     override fun supportsVpnDetection(): Boolean = true
@@ -915,7 +932,33 @@ class AndroidCantaPlatform(
      *  3. the bytes pushed into `/data/local/tmp/` in base64 chunks — the one place `pm` itself
      *     recommends, readable wherever Shizuku can run.
      */
-    override suspend fun installUpdate(path: String): String? = withContext(Dispatchers.IO) {
+    override suspend fun installUpdate(path: String): String? =
+        updateInstall.withLock {
+            // The bound is this attempt, not this process: `now - elapsedRealtime` names the boot,
+            // and any update since the phone started would be read as "this one landed".
+            val startedAt = System.currentTimeMillis()
+            val failure = installUpdateLocked(path)
+            // `pm install` replaces the package under this very process, and Android kills the
+            // app as part of doing so: the shell call can come back with an error even though the
+            // APK did land. Asking the package manager whether this app was updated after
+            // [startedAt] tells "it really failed" from "it succeeded and the shell was cut
+            // short" — without it the system installer is opened over an update that is already
+            // in place, which is read as "又弹安装，还没装上".
+            if (failure != null && wasReplacedSince(startedAt)) {
+                LogUtils.i(TAG, "pm install reported a failure but this app was replaced anyway: $failure")
+                null
+            } else {
+                failure
+            }
+        }
+
+    /** Whether this package was updated at or after [since], epoch milliseconds. */
+    private fun wasReplacedSince(since: Long): Boolean = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime >= since
+    }.getOrDefault(false)
+
+    /** The body of [installUpdate]; only ever runs while [updateInstall] is held. */
+    private suspend fun installUpdateLocked(path: String): String? = withContext(Dispatchers.IO) {
         val file = File(path)
         if (!file.exists()) return@withContext "update file is missing: $path"
 
