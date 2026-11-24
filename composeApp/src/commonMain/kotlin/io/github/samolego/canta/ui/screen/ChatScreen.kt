@@ -86,6 +86,7 @@ import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
 import io.github.samolego.canta.data.community.LivePresence
+import io.github.samolego.canta.data.community.OfficialGroups
 import io.github.samolego.canta.data.community.PersonCard
 import io.github.samolego.canta.data.community.ShareCard
 import io.github.samolego.canta.data.community.SocialRepository
@@ -1130,8 +1131,12 @@ fun ChatScreen(
     } else {
         presence?.reads?.values?.count { stamp -> (epochSecondsOf(stamp) ?: 0L) >= lastMineAt } ?: 0
     }
+    // 官方群（灰度测试群、Bug 反馈）几千人：一条消息底下挂「2331 人已读」既没有意义又很吵，
+    // 这两个群不画已读回执。判据用群名——官方群的名单在 OfficialGroups 里，改名时跟着改那一处。
+    val officialGroup = title in OfficialGroups.titles || (detail?.title ?: "") in OfficialGroups.titles
     val receiptText = when {
         lastMine == null || presence == null || readBy <= 0 -> null
+        officialGroup -> null
         grouped -> "$readBy 人已读"
         else -> "已读"
     }
