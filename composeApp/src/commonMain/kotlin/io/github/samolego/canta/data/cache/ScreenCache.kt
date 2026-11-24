@@ -60,6 +60,9 @@ object ScreenCache {
     /** 接上落盘。App 启动时调一次；之后再 `get` 就多一层本地文件兜底。 */
     fun bind(storage: AppBlobStorage) {
         this.storage = storage
+        // 立刻把盘上那份读进来，而不是等某一屏第一次 `get` 时才读：
+        // 那一次读是同步的，落在首帧里就是肉眼可见的卡顿；启动这一下读，正好跟其它初始化重叠。
+        ensureLoaded()
     }
 
     /**

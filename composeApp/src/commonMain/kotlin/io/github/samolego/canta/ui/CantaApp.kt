@@ -30,6 +30,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -154,6 +157,7 @@ import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
@@ -219,6 +223,18 @@ private const val STELLAR_URL = "https://github.com/roro2239/Stellar/releases"
 
 /** The manager app that holds the Shizuku service; Stellar is the fork this build recommends. */
 private const val STELLAR_PACKAGE = "roro.stellar.manager"
+
+/** 应用页停在哪个 tab，落盘用（见 [AppsTabMemory]）。 */
+private const val APPS_TAB_MEMORY = "tab:apps"
+
+/**
+ * 应用页上一次停在哪一格（未卸载/记录/冻结/已卸载）。
+ *
+ * 单独一个模型而不是复用 `ScrollMemory`：那个记的是「滚到第几行、偏多少像素」，这里是「哪个 tab」，
+ * 混用会让两件事互相覆盖。
+ */
+@Serializable
+private data class AppsTabMemory(val index: Int = 0)
 
 /** The upstream manager, for installs that already run plain Shizuku. */
 private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
@@ -390,7 +406,19 @@ private fun CantaNavigation(
     val mainViewModel: MainViewModel = viewModel { MainViewModel(handler, platform, deps.settings, appListViewModel) }
 
     // Hoisted so preset-applying (below) knows which tab is showing.
-    val pagerState = rememberPagerState(pageCount = { AppsTab.entries.size })
+    //
+    // 停在哪个 tab 也落盘：冷启动再进来还是上次那一格（未卸载/记录/冻结/已卸载），
+    // 不是每次都先落在第一格再自己点回去。
+    val savedAppsTab = remember { ScreenCache.get<AppsTabMemory>(APPS_TAB_MEMORY)?.index ?: 0 }
+    val pagerState = rememberPagerState(
+        initialPage = savedAppsTab.coerceIn(0, AppsTab.entries.lastIndex),
+        pageCount = { AppsTab.entries.size },
+    )
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect { page -> ScreenCache.put(APPS_TAB_MEMORY, AppsTabMemory(page)) }
+    }
     // The records tab shows no app list, so a preset applied from there falls back to installed.
     val selectedAppsType = AppsTab.entries[pagerState.currentPage].appsType ?: AppsType.INSTALLED
 
