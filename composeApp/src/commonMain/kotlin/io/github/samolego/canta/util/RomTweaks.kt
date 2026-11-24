@@ -31,11 +31,25 @@ data class RomTweak(
     val command: String = "",
     val action: String? = null,
     /**
+     * What the card's own button says on it. Empty on the cards where "run" is the whole story;
+     * a card that can also be undone says "关闭" here and gets the undo from [restore].
+     */
+    val runLabel: String = "",
+    /**
+     * The way back, when the tweak can be put back the way it was: the button in the detail dialog
+     * that undoes [command], with its own label and its own script.
+     */
+    val restore: RomTweakChoice? = null,
+    /**
      * What the card asks for before it can run: a package name, in the words of the JSON. Empty on
      * the cards that need nothing, and the command then has no [PACKAGE_TOKEN] to fill in.
      */
     val prompt: String = "",
 )
+
+/** One button in the detail dialog, with the script it runs: see [RomTweak.restore]. */
+@Serializable
+data class RomTweakChoice(val label: String, val command: String)
 
 @Serializable
 data class RomTweakSet(val version: Int = 1, val updated: String = "", val tweaks: List<RomTweak> = emptyList())

@@ -95,6 +95,10 @@ private const val MAX_SHOWN_PACKAGES = 8
 /** Marker the Xiaomi splash script prints when 智能服务 is not on the phone at all. */
 private const val SERVICE_MISSING_MARKER = "SVC_MISSING"
 
+/** Which of a card's scripts was just copied: the card's own, or the one that undoes it. */
+private const val COPY_KEY_RUN = "run"
+private const val COPY_KEY_RESTORE = "restore"
+
 /**
  * What the restore row is doing right now: nothing, checking what there is to put back, asking
  * first, putting it back, or reporting how it went.
@@ -179,17 +183,20 @@ fun TweaksScreen(
         }
     }
 
+    /** Runs [script] with the privileged shell and shows what it printed, under [tweak]'s name. */
+    fun runScript(tweak: RomTweak, script: String) {
+        if (script.isBlank()) return
+        scope.launch {
+            run = RunStep.Running(tweak)
+            run = RunStep.Finished(tweak, handler.runTweakCommand(script))
+        }
+    }
+
     /** Runs whatever the card's `action` asks for: a shipped script, or a job Canta does itself. */
     fun runTweak(tweak: RomTweak) {
         when (tweak.action) {
             RomTweaks.ACTION_RESTORE_ALL -> askToRestoreAll()
-            RomTweaks.ACTION_SHELL -> {
-                if (tweak.command.isBlank()) return
-                scope.launch {
-                    run = RunStep.Running(tweak)
-                    run = RunStep.Finished(tweak, handler.runTweakCommand(tweak.command))
-                }
-            }
+            RomTweaks.ACTION_SHELL -> runScript(tweak, tweak.command)
             // The command is only known once a package is named, so the button asks first.
             RomTweaks.ACTION_SHELL_WITH_PACKAGE -> asking = tweak
             else -> Unit
@@ -219,7 +226,11 @@ fun TweaksScreen(
                         canRun = runnable(tweak),
                         running = (run as? RunStep.Running)?.tweak?.id == tweak.id,
                         onRun = { runTweak(tweak) },
-                        onClick = { detail = tweak },
+                        onClick = {
+                            // Which script was copied last belongs to the dialog, not to the page.
+                            copied = null
+                            detail = tweak
+                        },
                     )
                 }
             }
@@ -251,18 +262,26 @@ fun TweaksScreen(
     }
 
     detail?.let { tweak ->
+        // The way back, when the card has one: the same dialog, its own button and its own script.
+        val undo: (() -> Unit)? = tweak.restore?.let { choice ->
+            {
+                detail = null
+                runScript(tweak, choice.command)
+            }
+        }
         TweakDetailDialog(
             tweak = tweak,
             canRun = runnable(tweak),
-            copied = copied == tweak.id,
-            onCopy = {
-                clipboard.setText(AnnotatedString(tweak.command))
-                copied = tweak.id
+            copiedKey = copied,
+            onCopy = { key, text ->
+                clipboard.setText(AnnotatedString(text))
+                copied = key
             },
             onRun = {
                 detail = null
                 runTweak(tweak)
             },
+            onRestore = undo,
             onDismiss = { detail = null },
         )
     }
@@ -272,13 +291,7 @@ fun TweaksScreen(
             tweak = tweak,
             onRun = { packageName ->
                 asking = null
-                val script = tweak.commandFor(packageName)
-                if (script != null) {
-                    scope.launch {
-                        run = RunStep.Running(tweak)
-                        run = RunStep.Finished(tweak, handler.runTweakCommand(script))
-                    }
-                }
+                tweak.commandFor(packageName)?.let { script -> runScript(tweak, script) }
             },
             onDismiss = { asking = null },
         )
@@ -421,9 +434,10 @@ private fun ToolRow(
 private fun TweakDetailDialog(
     tweak: RomTweak,
     canRun: Boolean,
-    copied: Boolean,
-    onCopy: () -> Unit,
+    copiedKey: String?,
+    onCopy: (key: String, text: String) -> Unit,
     onRun: () -> Unit,
+    onRestore: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     CantaDialog(
@@ -432,9 +446,17 @@ private fun TweakDetailDialog(
         widthFraction = WIDE_DIALOG_WIDTH,
         scrollable = true,
         buttons = {
+            val undo = tweak.restore
             TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+            // A card that can be undone gets both buttons here instead of a second card: the two are
+            // one switch, and a switch is read as two buttons, not two entries on a list.
+            if (undo != null && onRestore != null) {
+                TextButton(onClick = onRestore) { Text(undo.label) }
+            }
             if (canRun) {
-                TextButton(onClick = onRun) { Text(stringResource(Res.string.tweaks_run)) }
+                TextButton(onClick = onRun) {
+                    Text(tweak.runLabel.ifEmpty { stringResource(Res.string.tweaks_run) })
+                }
             }
         },
     ) {
@@ -457,25 +479,60 @@ private fun TweakDetailDialog(
             )
         }
         if (tweak.command.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(8.dp))
-                    .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-            ) {
+            // Two scripts means two blocks: each one has to be copyable on its own, or the way back
+            // is only reachable through a button the phone may refuse.
+            CommandBlock(
+                label = if (tweak.restore != null) tweak.runLabel else "",
+                command = tweak.command,
+                copied = copiedKey == COPY_KEY_RUN,
+                onCopy = { onCopy(COPY_KEY_RUN, tweak.command) },
+            )
+        }
+        tweak.restore?.let { choice ->
+            CommandBlock(
+                label = choice.label,
+                command = choice.command,
+                copied = copiedKey == COPY_KEY_RESTORE,
+                onCopy = { onCopy(COPY_KEY_RESTORE, choice.command) },
+            )
+        }
+    }
+}
+
+/** One copyable script in the detail dialog, with an optional name above it. */
+@Composable
+private fun CommandBlock(
+    label: String,
+    command: String,
+    copied: Boolean,
+    onCopy: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        if (label.isNotEmpty()) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(8.dp))
+                .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        ) {
+            Text(
+                text = command,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+            )
+            TextButton(onClick = onCopy, modifier = Modifier.align(Alignment.End)) {
                 Text(
-                    text = tweak.command,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
+                    text = stringResource(if (copied) Res.string.tweaks_copied else Res.string.tweaks_copy_command),
+                    style = MaterialTheme.typography.labelSmall,
                 )
-                TextButton(onClick = onCopy, modifier = Modifier.align(Alignment.End)) {
-                    Text(
-                        text = stringResource(if (copied) Res.string.tweaks_copied else Res.string.tweaks_copy_command),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
             }
         }
     }
