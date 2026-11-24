@@ -38,11 +38,14 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.painterResource
@@ -198,6 +201,52 @@ private fun mentionStyled(body: String, color: Color): AnnotatedString = buildAn
 }
 
 /**
+ * 正文里被点到的那一截 `http(s)://...`：和 [io.github.samolego.canta.ui.component.text.UrlText]
+ * 用同一套形态，群里有人贴发布页/下载页时点一下就能跳到浏览器（`LinkAnnotation.Url` 的点击由
+ * Compose 交给环境里的 `LocalUriHandler`，和 UrlText 一致）。
+ */
+private val ChatUrlPattern = Regex("""(https?://[^\s<>"')\]]+)""")
+
+/** 普通段：先原样写进去，再把这一段里的 `@某某` 标色（偏移量按段内位置补齐）。 */
+private fun AnnotatedString.Builder.appendMentioned(text: String, color: Color?) {
+    val start = length
+    append(text)
+    if (color == null) return
+    MentionPattern.findAll(text).forEach { hit ->
+        addStyle(
+            SpanStyle(color = color, fontWeight = FontWeight.SemiBold),
+            start + hit.range.first,
+            start + hit.range.last + 1,
+        )
+    }
+}
+
+/**
+ * 正文的纯文字版：`@某某` 标色 + `http(s)` 链接带下划线且可点。
+ *
+ * 链接那一截不再参与 `@` 处理——一个地址里的 `@` 是邮箱的一部分，标成提及只会看着像错的。
+ */
+private fun chatBodyStyled(body: String, mentionColor: Color?): AnnotatedString =
+    if (!body.contains("http://") && !body.contains("https://")) {
+        if (mentionColor == null) AnnotatedString(body) else mentionStyled(body, mentionColor)
+    } else {
+        buildAnnotatedString {
+            var cursor = 0
+            ChatUrlPattern.findAll(body).forEach { hit ->
+                appendMentioned(body.substring(cursor, hit.range.first), mentionColor)
+                val url = hit.value
+                withLink(LinkAnnotation.Url(url = url)) {
+                    withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) {
+                        append(url)
+                    }
+                }
+                cursor = hit.range.last + 1
+            }
+            appendMentioned(body.substring(cursor), mentionColor)
+        }
+    }
+
+/**
  * A comment body with its stickers drawn as pictures.
  *
  * Text and stickers live in one annotated string rather than a row of views: a paragraph wraps, and
@@ -230,11 +279,7 @@ fun EmotionText(
     val spans = remember(body) { parseEmotionBody(body) }
     if (spans.none { it is EmotionSpan.Sticker }) {
         Text(
-            text = if (mentionColor == null) {
-                AnnotatedString(body)
-            } else {
-                mentionStyled(body, mentionColor)
-            },
+            text = chatBodyStyled(body, mentionColor),
             fontSize = fontSize.sp,
             lineHeight = lineHeight.sp,
             color = color,
