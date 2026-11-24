@@ -1,5 +1,16 @@
 package io.github.samolego.canta.data.community
 
+import io.github.samolego.canta.data.recommend.AirportRatingResult
+import io.github.samolego.canta.data.recommend.AirportSubscription
+import io.github.samolego.canta.data.recommend.AirportVoteResult
+import io.github.samolego.canta.data.recommend.CheckInResult
+import io.github.samolego.canta.data.recommend.CommunityAirport
+import io.github.samolego.canta.data.recommend.PointLedgerEntry
+import io.github.samolego.canta.data.recommend.PointOffer
+import io.github.samolego.canta.data.recommend.PointOrder
+import io.github.samolego.canta.data.recommend.PointRedeemResult
+import io.github.samolego.canta.data.recommend.PointShelf
+import io.github.samolego.canta.data.recommend.PointsAccount
 import io.github.samolego.canta.data.recommend.SuggestedApp
 import io.github.samolego.canta.data.recommend.SuggestedAppVote
 import io.github.samolego.canta.util.DeviceProfile
@@ -1384,6 +1395,347 @@ class PlanRepository(
             applied = o["applied"]?.jsonPrimitive?.booleanOrNull == true,
             needed = o["needed"]?.jsonPrimitive?.longOrNull?.toInt() ?: SuggestedApp.VOTES_NEEDED,
             shareNeeded = o["share"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: SuggestedApp.SHARE_NEEDED,
+        )
+    }
+
+    // ---------------------------------------------------------------- 机场（订阅分享 + 投票 + 打分）
+
+    /**
+     * 机场列表，认同最多的在前。每一条带自己的票、星和「我投过什么」，但**不带订阅链接**——
+     * 链接要单独调 [airportSubscription]，而且只有投过票或打过分才拿得到。
+     *
+     * null 表示这一次没拿到（网络没通，或后端还没这个函数）：页面据此说「还没拉到」，而不是
+     * 说「一条都没有」。
+     */
+    suspend fun airports(viewer: String = ""): List<CommunityAirport>? {
+        // token 一起发：列表里的「我投过什么」要和投票时写的身份对得上，否则自己投过的
+        // 显示成没投过，明明评过还取不出订阅。
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_voter", viewer)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("airport_entries", body) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.map(::parseAirport)
+        }.getOrNull()
+    }
+
+    /**
+     * 分享一个机场。同一个身份、同一个名字再提交一次是改，不是又挂一条（后端保证）。
+     *
+     * [subscribeUrl] 可以是 http(s) 订阅，也可以是单个节点链接；后端两样都收，别的会拒绝并
+     * 把理由放进 [lastError]，表单照着显示。
+     */
+    suspend fun addAirport(
+        name: String,
+        url: String = "",
+        subscribeUrl: String = "",
+        kind: String = "airport",
+        summary: String = "",
+        author: String = "",
+        authorId: String = "",
+    ): Long? {
+        if (name.isBlank()) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_name", name)
+            put("p_url", url)
+            put("p_subscribe_url", subscribeUrl)
+            put("p_kind", kind)
+            put("p_summary", summary)
+            put("p_author", author)
+            put("p_author_id", authorId)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("airport_add", payload) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
+        }.getOrNull()
+    }
+
+    /** 认同 / 不认同一条机场，回答投完之后的三个数。 */
+    suspend fun voteAirport(id: Long, voter: String, agree: Boolean): AirportVoteResult? {
+        if (id <= 0L) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_id", id)
+            put("p_voter", voter)
+            put("p_agree", agree)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("airport_vote", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            AirportVoteResult(
+                agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                mine = o["mine"]?.jsonPrimitive?.booleanOrNull,
+            )
+        }.getOrNull()
+    }
+
+    /** 给一条机场打 1–5 星，回答新的平均分。重复打分是改分。 */
+    suspend fun rateAirport(id: Long, voter: String, stars: Int): AirportRatingResult? {
+        if (id <= 0L) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_id", id)
+            put("p_voter", voter)
+            put("p_stars", stars)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("airport_rate", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            AirportRatingResult(
+                stars = o["stars"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: 0f,
+                ratingCount = o["rating_count"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                myStars = o["my_stars"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * 一条机场的订阅链接。没投过票也没打过分的身份拿不到：答案里 `unlocked` 是 false，链接是空串。
+     *
+     * 后端还没这个函数时同样返回 null，页面就说「暂时取不到」。
+     */
+    suspend fun airportSubscription(id: Long, voter: String): AirportSubscription? {
+        if (id <= 0L) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_id", id)
+            put("p_voter", voter)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("airport_subscription", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            AirportSubscription(
+                unlocked = o["unlocked"]?.jsonPrimitive?.booleanOrNull == true,
+                subscribeUrl = o["subscribe_url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            )
+        }.getOrNull()
+    }
+
+    // ---------------------------------------------------------------- 积分（签到 + 商城）
+
+    /** 这个身份的钱包：余额、今天签到了没有、连签几天。 */
+    suspend fun pointsAccount(owner: String = ""): PointsAccount? {
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("points_account", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            PointsAccount(
+                owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                balance = o["balance"]?.jsonPrimitive?.longOrNull ?: 0L,
+                earned = o["earned"]?.jsonPrimitive?.longOrNull ?: 0L,
+                spent = o["spent"]?.jsonPrimitive?.longOrNull ?: 0L,
+                day = o["day"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                reward = o["reward"]?.jsonPrimitive?.longOrNull?.toInt()
+                    ?: PointsAccount.DEFAULT_CHECK_IN_REWARD,
+                checkedInToday = o["checked_in_today"]?.jsonPrimitive?.booleanOrNull == true,
+                streak = o["streak"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                todayPoints = o["today_points"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * 今天的签到。一天只加一次分：同一天再调只回答 `already` = true，页面刷新不会刷分。
+     * 认不出身份时后端返回 null，这里也返回 null。
+     */
+    suspend fun checkIn(owner: String = ""): CheckInResult? {
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("points_check_in", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            CheckInResult(
+                awarded = o["awarded"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                balance = o["balance"]?.jsonPrimitive?.longOrNull ?: 0L,
+                already = o["already"]?.jsonPrimitive?.booleanOrNull == true,
+                reward = o["reward"]?.jsonPrimitive?.longOrNull?.toInt()
+                    ?: PointsAccount.DEFAULT_CHECK_IN_REWARD,
+                day = o["day"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            )
+        }.getOrNull()
+    }
+
+    /** 货架 + 我的余额。交付内容不在这份答案里，只有兑换成功那一次才给。 */
+    suspend fun pointShelf(owner: String = ""): PointShelf? {
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("point_offers", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            PointShelf(
+                balance = o["balance"]?.jsonPrimitive?.longOrNull ?: 0L,
+                offers = o["offers"]?.jsonArray?.map(::parsePointOffer).orEmpty(),
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * 挂一件商品。发布不花分，花分的是兑换它的人——这样「发东西赚分」不用先有本钱。
+     *
+     * [deliverable] 是兑换成功后交给买家的东西（邀请码、订阅链接、一段配置），列表和别人的
+     * 查询都看不到它。
+     */
+    suspend fun publishPointOffer(
+        title: String,
+        detail: String = "",
+        price: Int = 10,
+        stock: Int = 1,
+        kind: String = "airport",
+        deliverable: String = "",
+        owner: String = "",
+        ownerId: String = "",
+    ): Long? {
+        if (title.isBlank()) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_title", title)
+            put("p_detail", detail)
+            put("p_price", price)
+            put("p_stock", stock)
+            put("p_kind", kind)
+            put("p_deliverable", deliverable)
+            put("p_owner", owner)
+            put("p_owner_id", ownerId)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("point_offer_publish", payload) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
+        }.getOrNull()
+    }
+
+    /**
+     * 用积分换一件商品：买家的分当场扣、卖家的分当场到账、库存减一。
+     *
+     * 拒绝（分不够、卖完了、自己挂的、已下架）不是网络失败，后端把理由写在 `error` 里，这里
+     * 原样带回来给页面显示。
+     */
+    suspend fun redeemPointOffer(id: Long, owner: String = ""): PointRedeemResult? {
+        if (id <= 0L) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_offer_id", id)
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("point_offer_redeem", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            PointRedeemResult(
+                ok = o["ok"]?.jsonPrimitive?.booleanOrNull == true,
+                balance = o["balance"]?.jsonPrimitive?.longOrNull ?: 0L,
+                deliverable = o["deliverable"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                price = o["price"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                orderId = o["order_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                error = o["error"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            )
+        }.getOrNull()
+    }
+
+    /** 我兑换过的东西，交付内容只发给买的人。失败时是空表，不是 null：这一块没有东西也是答案。 */
+    suspend fun myPointOrders(owner: String = ""): List<PointOrder> {
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("point_orders", payload) ?: return emptyList()
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.map { element ->
+                val o = element.jsonObject
+                PointOrder(
+                    id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    offerId = o["offer_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    price = o["price"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                    sellerId = o["seller_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    deliverable = o["deliverable"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** 我的积分流水，最近的在前。 */
+    suspend fun pointsLedger(owner: String = ""): List<PointLedgerEntry> {
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("points_ledger", payload) ?: return emptyList()
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.map { element ->
+                val o = element.jsonObject
+                PointLedgerEntry(
+                    id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    delta = o["delta"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    reason = o["reason"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    ref = o["ref"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** 一行机场；字段缺了就退回默认值，老回答仍然画得出来。 */
+    private fun parseAirport(element: kotlinx.serialization.json.JsonElement): CommunityAirport {
+        val o = element.jsonObject
+        return CommunityAirport(
+            id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            name = o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            kind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "airport" },
+            url = o["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            summary = o["summary"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            author = o["author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            authorId = o["author_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            mine = o["mine"]?.jsonPrimitive?.booleanOrNull,
+            stars = o["stars"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: 0f,
+            ratingCount = o["rating_count"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            myStars = o["my_stars"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            hasSubscription = o["has_subscription"]?.jsonPrimitive?.booleanOrNull == true,
+        )
+    }
+
+    /** 货架上的一件商品。 */
+    private fun parsePointOffer(element: kotlinx.serialization.json.JsonElement): PointOffer {
+        val o = element.jsonObject
+        return PointOffer(
+            id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            title = o["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            detail = o["detail"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            price = o["price"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            stock = o["stock"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            kind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "other" },
+            sellerId = o["seller_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            seller = o["seller"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            active = o["active"]?.jsonPrimitive?.booleanOrNull != false,
+            sold = o["sold"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            mine = o["mine"]?.jsonPrimitive?.booleanOrNull == true,
+            soldOut = o["sold_out"]?.jsonPrimitive?.booleanOrNull == true,
+            createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
         )
     }
 

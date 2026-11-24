@@ -135,6 +135,9 @@ private const val TAB_LIST = 0
 /** The second half: the community's queue — the form that files one, and the votes it collects. */
 private const val TAB_VOTE = 1
 
+/** The third half: 机场投票、钱包和积分商城（见 [RecommendationsAirportTab]）。 */
+private const val TAB_AIRPORT = 2
+
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
 private val SuggestAgree = Color(0xFF2FA84F)
 
@@ -224,6 +227,9 @@ fun RecommendationsScreen(
     val cacheOwner = authorId.ifEmpty { author }
     val cacheKey = recommendationsCacheKey(cacheOwner)
     val cached = remember(cacheKey) { ScreenCache.get<RecommendationsSnapshot>(cacheKey) }
+    // 机场/积分那一块的跨 tab 状态：它只在 tab == TAB_AIRPORT 时组合，切走会整棵丢掉，
+    // 所以由这一页（常驻）持有，回来时数据还在就不重拉。键带身份：钱包是某个身份自己的。
+    val airportState = remember(cacheKey) { AirportTabState() }
     var catalog by remember(cacheKey) { mutableStateOf(cached?.catalog) }
     var detail by remember { mutableStateOf<RecommendedApp?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
@@ -348,6 +354,7 @@ fun RecommendationsScreen(
     val openSuggest: () -> Unit = { composerOpen = true }
     val listTabLabel = stringResource(Res.string.recommend_tab_list)
     val voteTabLabel = stringResource(Res.string.recommend_tab_vote)
+    val airportTabLabel = "机场"
 
     Scaffold(
         topBar = {
@@ -369,13 +376,13 @@ fun RecommendationsScreen(
                         }
                     },
                 )
-                // The two halves as one control, the way the other two-list pages of this app switch:
-                // the counts sit in the labels, so the queue says how much is waiting for a vote
-                // without being opened first.
+                // 三块当一个控制：应用目录、社区投票、机场与积分。数字进标签，没打开也知道
+                // 有多少东西等着投；机场那一块没有全局计数（在它自己的列表里），只写名字。
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("list", if (loaded == null) listTabLabel else "$listTabLabel ${loaded.apps.size}"),
                         FlSegment("vote", if (suggested.isEmpty()) voteTabLabel else "$voteTabLabel ${suggested.size}"),
+                        FlSegment("airport", airportTabLabel),
                     ),
                     selectedIndex = tab,
                     onSelect = { tab = it },
@@ -393,7 +400,17 @@ fun RecommendationsScreen(
         val openDetails: (RecommendedApp) -> Unit = { detail = it }
         val openSuggestion: (SuggestedApp) -> Unit = { suggestionDetail = it }
 
-        if (tab == TAB_VOTE) {
+        if (tab == TAB_AIRPORT) {
+            // 机场与积分：钱包、投票、商城都在这一块里，各自从后端拿自己的那份。
+            RecommendationsAirportTab(
+                repository = repository,
+                platform = platform,
+                author = author,
+                authorId = authorId,
+                state = airportState,
+                modifier = Modifier.fillMaxSize().padding(padding),
+            )
+        } else if (tab == TAB_VOTE) {
             // The queue on its own page: what others filed, one line each, and the form that adds
             // one. Nothing of the catalog here — this half is a list to work through.
             LazyColumn(
