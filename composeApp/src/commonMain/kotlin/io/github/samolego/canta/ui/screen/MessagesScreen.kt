@@ -69,6 +69,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadBadge
+import io.github.samolego.canta.ui.component.bottomHairline
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -515,8 +516,6 @@ fun MessagesScreen(
 
                     searching -> LazyColumn(
                         modifier = Modifier.fillMaxWidth().weight(1f),
-                        contentPadding = PaddingValues(vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         items(hits, key = { it.key }) { hit ->
                             SearchHitRow(
@@ -572,8 +571,6 @@ fun MessagesScreen(
 
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxWidth().weight(1f),
-                        contentPadding = PaddingValues(vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         items(visibleConversations, key = { it.conversationKey() }) { conversation ->
                             ConversationRow(
@@ -945,11 +942,10 @@ private fun SearchHitRow(hit: SearchHit, onOpen: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surfaceContainer)
+            .background(scheme.surface)
+            .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
             .clickable(onClickLabel = hit.label, onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         InitialAvatar(label = hit.label)
@@ -1004,11 +1000,10 @@ private fun MessageHitRow(hit: MessageHit, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surfaceContainer)
+            .background(scheme.surface)
+            .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
             .clickable(onClickLabel = "打开这条消息所在的会话", onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         InitialAvatar(label = hit.senderName.ifBlank { hit.sender })
@@ -1167,15 +1162,14 @@ private fun OfficialGroupRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surfaceContainer)
+            .background(scheme.surface)
+            .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
             .clickable(
                 enabled = !joining,
                 onClickLabel = if (joined) "进入内测群" else "加入内测群",
                 onClick = onClick,
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         InitialAvatar(label = "测")
@@ -1238,11 +1232,10 @@ private fun MessageEntryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surfaceContainer)
+            .background(scheme.surface)
+            .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -1304,27 +1297,27 @@ private fun ConversationRow(
     val scheme = MaterialTheme.colorScheme
     var menuOpen by remember { mutableStateOf(false) }
     // 菜单锚在这一行上：用 Box 包一层，DropdownMenu 才能贴着这一行的边上弹出来。
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+    Box(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
                 .background(
                     // 置顶那一行铺一层看得见的灰：原来用的 Card 和普通行的 surfaceContainer 在浅色
                     // 主题下是同一个值（#FCF8F9），置顶等于没标——现在用深一档的 Highest，一眼能分出来。
                     if (conversation.pinned) {
-                        scheme.surfaceContainerHighest
+                        scheme.surfaceContainerHigh
                     } else {
-                        scheme.surfaceContainer
+                        scheme.surface
                     },
                 )
+                .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
                 .combinedClickable(
                     onClickLabel = "打开会话",
                     onLongClickLabel = "会话操作",
                     onLongClick = { menuOpen = true },
                     onClick = onOpen,
                 )
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {

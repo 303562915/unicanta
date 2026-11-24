@@ -2,10 +2,8 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -42,9 +40,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadDot
+import io.github.samolego.canta.ui.component.bottomHairline
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
@@ -53,6 +53,23 @@ import kotlinx.coroutines.delay
 
 /** 页面开着时多久重拉一次群聊：没有推送通道，只能靠这一行让列表跟上别人的动作。 */
 private const val GroupsPollMs: Long = 15_000L
+
+/**
+ * 这一屏上一次画出来的群列表，整份进 [ScreenCache]。
+ *
+ * 只放画一屏要用的只读数据：折叠群的那几行。所有 `remember` 里的东西（loading、错误原因、刷新计数）
+ * 都不进来——那些是「这一次打开页面时发生的事」，下一次进来该重新开始。
+ */
+private data class GroupsSnapshot(val groups: List<Conversation>)
+
+/**
+ * 这一页缓存的槽位：按身份分。
+ *
+ * 身份为空时返回空串：调用方是从 `DeviceIdentity.current(...)` 异步取身份的，第一帧就是空串；
+ * 空键会把不同身份的群串进同一个槽位，[ScreenCache] 也会丢弃空键的写入。
+ */
+private fun groupsCacheKey(owner: String): String =
+    if (owner.isEmpty()) "" else "screen:groups:$owner"
 
 /**
  * 「折叠的群聊」页：我折叠起来的那些群，一个不折叠的列表。
@@ -76,8 +93,18 @@ fun GroupsScreen(
     onNavigateBack: () -> Unit,
     onMessage: (String) -> Unit = {},
 ) {
-    var loading by remember { mutableStateOf(true) }
-    var foldedGroups by remember { mutableStateOf<List<Conversation>>(emptyList()) }
+    // 上一屏留下的那一份先摆上：这一页每次被导航进来都是新的 Composable 实例，`remember` 跟着一起
+    // 没了，所以快照放在进程级的 [ScreenCache] 里（见 [GroupsSnapshot]）。有它就直接画，没有再走加载。
+    //
+    // 按 [cacheKey] 做 remember 的键：身份是异步到的，`owner` 从空串变成真身份时这几个状态会按缓存
+    // 重新初始化一次，那一刻缓存才接得上。
+    val cacheKey = groupsCacheKey(owner)
+    val cached = remember(cacheKey) {
+        if (cacheKey.isEmpty()) null else ScreenCache.get<GroupsSnapshot>(cacheKey)
+    }
+    // 有缓存就不停在上面的转圈上：这一页是「找那个群」，看到上一次的列表比看到空白有用。
+    var loading by remember(cacheKey) { mutableStateOf(cached == null) }
+    var foldedGroups by remember(cacheKey) { mutableStateOf(cached?.groups.orEmpty()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每十几秒整页闪一下骨架。
     var reloads by remember { mutableIntStateOf(0) }
@@ -92,15 +119,23 @@ fun GroupsScreen(
     }
 
     LaunchedEffect(owner, reloads) {
-        if (reloads == 0) loading = true
+        // 首次进来又没有缓存时才摆骨架；后面每 15 秒的刷新只把新的一版顶上去。
+        if (reloads == 0 && cached == null) loading = true
         loadError = null
         // 一个查询就够：群聊是会话的一种，后端已经把两者放在同一张表里返回，这里挑出折叠的群。
         // 只看 `folded`：没折叠的群留在消息页主列表里，这边不该再列一遍。
-        foldedGroups = repository.conversationsFor(owner)
+        val fresh = repository.conversationsFor(owner)
             .filter { it.isGroup && it.folded }
             .sortedByDescending { it.lastAt }
         // 拉不到就是空列表，和「真的一个群都没有」在界面上长得一样，所以要留一句原因。
-        loadError = repository.lastError
+        //
+        // 失败时不覆盖屏幕上那一份：照着空列表画就等于因为一次断网把群清空，下一次进来还得重拉。
+        val failure = repository.lastError
+        if (failure == null) {
+            foldedGroups = fresh
+            if (cacheKey.isNotEmpty()) ScreenCache.put(cacheKey, GroupsSnapshot(foldedGroups))
+        }
+        loadError = failure
         loading = false
     }
 
@@ -164,8 +199,6 @@ fun GroupsScreen(
                     }
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth().weight(1f),
-                        contentPadding = PaddingValues(vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         items(foldedGroups, key = { "group-${it.id}" }) { group ->
                             GroupRow(group = group, onOpen = { onOpenChat(group.id) })
@@ -248,11 +281,10 @@ private fun GroupRow(group: Conversation, onOpen: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surfaceContainer)
+            .background(scheme.surface)
+            .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
             .clickable(onClickLabel = group.label, onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         GroupAvatar(label = group.label)
