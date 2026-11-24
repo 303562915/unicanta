@@ -45,6 +45,9 @@ fun FlGlyphIcon(
 /**
  * A button in a bar: a circle filled with the surface above the page, and a press that
  * swells it, which is how FlClash's `ElasticPress` answers a finger.
+ *
+ * [backgroundOverride] paints that circle with another colour: the bar above the composer needs
+ * a visible ring under the icon, and the default page surface is the same tone as the bar there.
  */
 @Composable
 fun FlBarButton(
@@ -57,9 +60,10 @@ fun FlBarButton(
     selected: Boolean = false,
     filled: Boolean = true,
     enabled: Boolean = true,
+    backgroundOverride: Color? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val background = FlSurfaceLevel.Page.raised.colorOf(scheme)
+    val background = backgroundOverride ?: FlSurfaceLevel.Page.raised.colorOf(scheme)
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val pressScale by animateFloatAsState(

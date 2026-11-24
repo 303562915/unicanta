@@ -4,6 +4,10 @@
 
     <queries>
         <package android:name="rikka.shizuku" />
+        <!-- 聊天栏的语音转文字走系统自带的识别服务，Android 11 起要能被「看见」才绑得上。 -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.BROWSABLE" />
@@ -21,6 +25,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 聊天输入栏的「语音转文字」要录音；只在点麦克风时申请（运行权限），不后台听。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Android 13 起通知是运行时权限。不给的话新消息只在 app 里计数，通知栏什么也不弹；
          申请入口在设置的「消息通知」开关上（见 AndroidCantaPlatform.requestNotifyPermission）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

@@ -113,6 +113,7 @@ import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.ui.fl.isDark
 import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.currentTimeMillis
+import io.github.samolego.canta.util.rememberVoiceInput
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -2911,6 +2912,7 @@ private fun ForwardDialog(
  * 图标集里没有这个字形，而 `profiles` 已经被「语音」那个钮占着——两个一样的人像摆在边上会分不清，
  * 所以这里直接写字。四十年前的键盘上就有它，不用教。
  */
+@Suppress("unused") // 输入栏不再显示 @ 键；留着这一颗，用户要恢复时一行就能放回去。
 @Composable
 private fun MentionKey(active: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
@@ -3077,95 +3079,122 @@ private fun ChatComposer(
             field = TextFieldValue(draft, selection = TextRange(draft.length))
         }
     }
-    Row(
+    // 语音转文字：系统自带识别服务，认出来的字直接落进草稿（见 util/VoiceInput）。
+    val voice = rememberVoiceInput()
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(composerBarColor(colors))
-            // 上下 4dp：四宫格放大到 44 之后栏高仍是 52，不比原来更高。
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(composerBarColor(colors)),
     ) {
-        FlBarButton(
-            glyph = FlGlyphs.grid2x2,
-            contentDescription = if (showMore) "收起更多" else "展开更多",
-            onClick = onToggleMore,
-            size = 44.dp,
-            iconSize = 22.dp,
-            filled = false,
-        )
-        // 输入栏左边的 @ 不再显示（用户要求）：MentionPanel 与 onMention 都还在，
-        // 以后要恢复入口就在这里把 MentionKey 放回来。
-        Spacer(Modifier.width(4.dp))
-        BasicTextField(
-            // TextFieldValue 版：文本和光标一起交出，从外面插字之后光标才跟得上（见 field 的注释）。
-            value = field,
-            onValueChange = { next ->
-                field = next
-                onDraftChange(next.text)
-            },
+        Row(
             modifier = Modifier
-                .weight(1f)
-                // 40dp 起、120dp 封顶：先长到五行，再往上翻，消息区始终留着。
-                .heightIn(min = 40.dp, max = 120.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(composerFieldColor(colors))
-                .focusRequester(fieldFocus)
-                .onFocusChanged { onFocusedChange(it.isFocused) }
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            textStyle = TextStyle(fontSize = 14.sp, color = colors.onSurface),
-            // 光标用发送键那个粉：同一个动作的两种表示。
-            cursorBrush = SolidColor(ChatSendPink),
-            maxLines = 5,
-            decorationBox = { inner ->
-                if (field.text.isEmpty()) {
-                    Text(
-                        // 面板开着：只说「发消息」；点进去（键盘在）：加上「按住说话」。
-                        text = when {
-                            panelOpen -> "发消息"
-                            focused -> "发消息或按住说话..."
-                            else -> "发消息"
-                        },
-                        fontSize = 14.sp,
-                        color = composerPlaceholderColor(colors),
-                        // 一行放不下就截断：折成两行会把输入框从 40dp 撑高，一行栏变两行。
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                inner()
-            },
-        )
-        Spacer(Modifier.width(6.dp))
-        if (draft.isNotBlank()) {
-            ChatSendPill(text = "发送", enabled = !sending, onClick = onSend)
-        } else {
-            // 语音：波形图标。这一侧还没有真的录音，按下去仍然是往草稿里放一句「（语音）」。
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             FlBarButton(
-                glyph = FlGlyphs.voiceWave,
-                contentDescription = "语音",
-                onClick = { onInsert("（语音）") },
-                size = 40.dp,
-                iconSize = 20.dp,
+                glyph = FlGlyphs.grid2x2,
+                contentDescription = if (showMore) "收起更多" else "展开更多",
+                onClick = onToggleMore,
+                size = 48.dp,
+                iconSize = 26.dp,
                 filled = false,
             )
+            // 输入栏左边的 @ 不再显示（用户要求）：MentionPanel 与 onMention 都还在，
+            // 以后要恢复入口就在这里把 MentionKey 放回来。
+            Spacer(Modifier.width(4.dp))
+            BasicTextField(
+                // TextFieldValue 版：文本和光标一起交出，从外面插字之后光标才跟得上（见 field 的注释）。
+                value = field,
+                onValueChange = { next ->
+                    field = next
+                    onDraftChange(next.text)
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    // 40dp 起、120dp 封顶：先长到五行，再往上翻，消息区始终留着。
+                    .heightIn(min = 40.dp, max = 120.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(composerFieldColor(colors))
+                    .focusRequester(fieldFocus)
+                    .onFocusChanged { onFocusedChange(it.isFocused) }
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                textStyle = TextStyle(fontSize = 14.sp, color = colors.onSurface),
+                // 光标用发送键那个粉：同一个动作的两种表示。
+                cursorBrush = SolidColor(ChatSendPink),
+                maxLines = 5,
+                decorationBox = { inner ->
+                    if (field.text.isEmpty()) {
+                        Text(
+                            // 面板开着：只说「发消息」；点进去（键盘在）：加上「按住说话」。
+                            text = when {
+                                panelOpen -> "发消息"
+                                focused -> "发消息或按住说话..."
+                                else -> "发消息"
+                            },
+                            fontSize = 14.sp,
+                            color = composerPlaceholderColor(colors),
+                            // 一行放不下就截断：折成两行会把输入框从 40dp 撑高，一行栏变两行。
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    inner()
+                },
+            )
+            Spacer(Modifier.width(6.dp))
+            if (draft.isNotBlank() && !voice.listening) {
+                ChatSendPill(text = "发送", enabled = !sending, onClick = onSend)
+            } else {
+                // 语音：点一下交给系统的语音识别，识别中这颗变高亮，再点一下就是停。
+                FlBarButton(
+                    glyph = FlGlyphs.voiceWave,
+                    contentDescription = if (voice.listening) "停止语音输入" else "语音输入",
+                    onClick = {
+                        if (voice.listening) {
+                            voice.stop()
+                        } else {
+                            voice.start { onInsert(it) }
+                        }
+                    },
+                    size = 44.dp,
+                    iconSize = 24.dp,
+                    selected = voice.listening,
+                    backgroundOverride = colors.surfaceContainerHigh,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            FlBarButton(
+                glyph = FlGlyphs.smile,
+                contentDescription = if (showEmotions) "收起表情" else "表情",
+                onClick = onToggleEmotions,
+                size = 44.dp,
+                iconSize = 24.dp,
+                backgroundOverride = colors.surfaceContainerHigh,
+            )
+            Spacer(Modifier.width(4.dp))
+            FlBarButton(
+                glyph = FlGlyphs.addCircle,
+                contentDescription = "更多",
+                onClick = onToggleMore,
+                size = 44.dp,
+                iconSize = 24.dp,
+                backgroundOverride = colors.surfaceContainerHigh,
+            )
         }
-        Spacer(Modifier.width(4.dp))
-        FlBarButton(
-            glyph = FlGlyphs.smile,
-            contentDescription = if (showEmotions) "收起表情" else "表情",
-            onClick = onToggleEmotions,
-            size = 40.dp,
-            iconSize = 20.dp,
-            filled = false,
-        )
-        Spacer(Modifier.width(4.dp))
-        FlBarButton(
-            glyph = FlGlyphs.addCircle,
-            contentDescription = "更多",
-            onClick = onToggleMore,
-            size = 40.dp,
-            iconSize = 20.dp,
-        )
+        // 「正在听…」「没听清」「需要麦克风权限」都落在这行小字里：说话的时候屏幕上总得有点反应。
+        voice.message?.let { hint ->
+            Text(
+                text = hint,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                color = if (voice.listening) colors.primary else colors.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+            )
+        }
     }
 }
 
