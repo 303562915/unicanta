@@ -431,9 +431,10 @@ fun MessagesScreen(
     // 所以在画的时候过滤：取消拉黑那一刻这一行会当场回来，不必等一次重新拉取。
     val reachableConversations = conversations.filterNot { it.blockedBy(blockedPeers) }
     // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
-    // 官方内测群也不进主列表：它固定在最上面那一行（见 [OfficialGroupRow]），这里再列一次就是两份。
+    // 官方内测群排在列表最前：它就是「置顶」，不依赖后端那一列，也不会因为本地没点过置顶就沉下去。
     val visibleConversations = reachableConversations
-        .filterNot { it.isFoldedGroup() || it.title == OfficialGroup.TITLE }
+        .filterNot { it.isFoldedGroup() }
+        .sortedByDescending { it.title == OfficialGroup.TITLE }
     // 已经在群里的话，上面那一行点下去直接进这个会话，不必再走一次加入。
     val officialConversation = conversations.firstOrNull {
         it.kind == "group" && it.title == OfficialGroup.TITLE
@@ -537,8 +538,23 @@ fun MessagesScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (loading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                // 只有「内存没有、盘上也没有」才走到这里（第一次装、或者那份解不出来）。
+                // 画骨架而不是转圈：转圈看起来像卡住，骨架至少说明「马上会出现一列会话」。
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    repeat(4) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(scheme.surfaceContainer),
+                        )
+                    }
                 }
             } else {
                 loadError?.let { reason ->
@@ -567,33 +583,6 @@ fun MessagesScreen(
                 // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
                 if (noticesBlocked) {
                     NoticeBanner(onOpen = onEnableNotices)
-                }
-                // 官方内测群固定在最上面：**还没进群的人**也看得到这一行，点一下就加入。
-                // 不写人数——这个群还在内测，人数是主办方的事，不该摆在列表上让每个人读。
-                if (!searching) {
-                    OfficialGroupRow(
-                        joined = officialConversation != null,
-                        joining = joiningOfficial,
-                        onClick = {
-                            val existing = officialConversation
-                            if (existing != null) {
-                                onOpenChat(existing.id)
-                            } else if (!joiningOfficial) {
-                                scope.launch {
-                                    joiningOfficial = true
-                                    // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
-                                    val id = repository.joinByInvite(owner, OfficialGroup.INVITE_CODE)
-                                    joiningOfficial = false
-                                    if (id != null) {
-                                        reloads++
-                                        onOpenChat(id)
-                                    } else {
-                                        onMessage("没进成内测群，检查代理后再试")
-                                    }
-                                }
-                            }
-                        },
-                    )
                 }
                 RecentContactsRow(
                     contacts = recentContacts,
@@ -636,6 +625,30 @@ fun MessagesScreen(
                             // 这里只剩最近说话的那个群可以点，剩下的得有地方去。
                             trailing = {
                                 AllGroupsLink(count = foldedGroups.size, onClick = onOpenGroups)
+                            },
+                        )
+                    }
+                    // 还没进群的人才需要这一行：进了群的，它就在下面的列表里排在最前面（那才是"置顶"）。
+                    // 也不写人数——这个群还在内测，人数是主办方的事。
+                    if (officialConversation == null) {
+                        OfficialGroupRow(
+                            joined = false,
+                            joining = joiningOfficial,
+                            onClick = {
+                                if (!joiningOfficial) {
+                                    scope.launch {
+                                        joiningOfficial = true
+                                        // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
+                                        val id = repository.joinByInvite(owner, OfficialGroup.INVITE_CODE)
+                                        joiningOfficial = false
+                                        if (id != null) {
+                                            reloads++
+                                            onOpenChat(id)
+                                        } else {
+                                            onMessage("没进成内测群，检查代理后再试")
+                                        }
+                                    }
+                                }
                             },
                         )
                     }

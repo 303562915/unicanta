@@ -92,6 +92,7 @@ import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionSpan
 import io.github.samolego.canta.ui.component.EmotionText
+import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.component.dropLastSticker
 import io.github.samolego.canta.ui.component.emotionOf
 import io.github.samolego.canta.ui.component.parseEmotionBody
@@ -111,6 +112,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.jetbrains.compose.resources.painterResource
+
+/** 单颗表情那条消息画多大：比气泡里内联的表情大得多，又没有大到占半屏。 */
+private val ChatStickerSize = 112.dp
 
 /** 一个气泡最宽多少：一行字到这儿换行，免得一条长消息把整块屏幕占满。 */
 private val ChatBubbleMaxWidth = 260.dp
@@ -1559,6 +1563,13 @@ private fun ChatHeaderAvatar(title: String, isGroup: Boolean, onClick: (() -> Un
 @Composable
 private fun ChatRowAvatar(
     label: String,
+    /**
+     * 这个人的头像直链；空串就只有首字母圆。
+     *
+     * 头像在"个人主页"里换：图床对象名固定成 `<owner>.jpg`（覆盖式），所以换完之后同一个 URL
+     * 就是新图——这一层不再画那个"字"，否则改了头像聊天页还是老的。
+     */
+    url: String = "",
     onClick: (() -> Unit)? = null,
     /**
      * 长按头像：在输入框里 @ 这个人。
@@ -1568,33 +1579,28 @@ private fun ChatRowAvatar(
      */
     onLongClick: (() -> Unit)? = null,
 ) {
-    val scheme = MaterialTheme.colorScheme
     val circle = Modifier
         .size(32.dp)
         .clip(CircleShape)
-        .background(scheme.primary.copy(alpha = 0.15f), CircleShape)
-    Box(
-        modifier = if (onClick == null && onLongClick == null) {
-            circle
-        } else {
-            circle.combinedClickable(
-                onClickLabel = "看主页",
-                onLongClickLabel = "在输入框里 @ 他",
-                onClick = { onClick?.invoke() },
-                onLongClick = onLongClick,
-            )
-        },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label.trim().take(1).ifEmpty { "?" },
-            style = FlText.caption2,
-            fontWeight = FlText.emphasized,
-            color = scheme.primary,
-            maxLines = 1,
+    val shape = if (onClick == null && onLongClick == null) {
+        circle
+    } else {
+        circle.combinedClickable(
+            onClickLabel = "看主页",
+            onLongClickLabel = "在输入框里 @ 他",
+            onClick = { onClick?.invoke() },
+            onLongClick = onLongClick,
         )
     }
+    Box(modifier = shape, contentAlignment = Alignment.Center) {
+        // 图没到、或者根本没有头像时，这层自己画首字母圆，所以加载过程不会出现一个空洞。
+        UserAvatar(name = label, url = url, size = 32.dp)
+    }
 }
+
+/** 一个人的头像直链；没设过头像（或那是个占位身份）就是空串，界面退回首字母圆。 */
+private fun avatarUrlOf(owner: String): String =
+    if (owner.isBlank() || owner == AiSender) "" else ImageBed.fileUrl(ImageBed.avatarId(owner))
 
 /** 换了一天的那条居中灰字：`2026-11-21 08:40`，不换算时区也不猜"今天/昨天"。 */
 @Composable
@@ -1682,6 +1688,11 @@ private fun ChatBubble(
     val shareCard = message.share
     val personCard = message.card
     val isCard = shareCard != null || personCard != null
+    // 一条消息只有一颗表情（没有别的字）：这种消息不套气泡，直接画大图。
+    // 套上气泡就是"一颗表情装在一个蓝框里"，看着像张卡片，而人发它的意思是"就回你这一颗"。
+    val soloSticker = remember(message.body) {
+        parseEmotionBody(message.body).singleOrNull() as? EmotionSpan.Sticker
+    }
     // 卡片点了去哪儿，由上层决定；这一层只负责把"点了哪张卡"传出去。
     val cardClick: (() -> Unit)? = when {
         shareCard != null && onOpenShare != null -> ({ onOpenShare.invoke(shareCard) })
@@ -1709,6 +1720,7 @@ private fun ChatBubble(
         if (!mine && showSender) {
             ChatRowAvatar(
                 label = message.label,
+                url = avatarUrlOf(message.sender),
                 onClick = onAvatarClick,
                 // 长按头像 = 在这个人的话上直接 @ 他。只有群聊会传进来（私聊 @ 没有意义）。
                 onLongClick = onAvatarLongPress,
@@ -1729,7 +1741,7 @@ private fun ChatBubble(
                         color = colors.outline,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 6.dp, bottom = 2.dp),
+                        modifier = Modifier.padding(start = 6.dp, bottom = 5.dp),
                     )
                     // 别人在群里点了我：名字后面挂一个「@你」。比整条高亮更省事，也不会让人
                     // 把"被点名"和"刚好有人说了一句话"看混。
@@ -1840,6 +1852,15 @@ private fun ChatBubble(
                         )
                     }
                 }
+            } else if (soloSticker != null) {
+                // 贴纸那一路：没有底色、没有内边距，长按照样能撤回/复制/引用。
+                Image(
+                    painter = painterResource(soloSticker.emotion.resource),
+                    contentDescription = soloSticker.emotion.name,
+                    modifier = Modifier
+                        .size(ChatStickerSize)
+                        .then(holdModifier),
+                )
             } else {
                 Box(
                     modifier = Modifier
@@ -1918,7 +1939,7 @@ private fun ChatBubble(
         // 所以这一张只在「我」这边。点自己不跳主页，因此不挂点击。
         if (mine) {
             Spacer(Modifier.width(8.dp))
-            ChatRowAvatar(label = myLabel)
+            ChatRowAvatar(label = myLabel, url = avatarUrlOf(owner))
         }
     }
 }
