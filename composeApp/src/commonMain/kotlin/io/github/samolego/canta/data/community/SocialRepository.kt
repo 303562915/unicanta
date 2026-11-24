@@ -15,6 +15,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -68,6 +69,7 @@ private fun guessLanguageOf(text: String): String =
  *
  * [since] 是这条关系开始的那一刻，后端不给就是空串——空串是"不知道"，不是"刚刚"。
  */
+@Serializable
 data class SocialPerson(
     val id: String,
     val name: String,
@@ -90,6 +92,7 @@ data class SocialPerson(
  * [pinned] 是这一行被置顶了没有，与后端 `conversations_for` 的排序无关：怎么排是后端的事，
  * 这里只搬运"是不是置顶"，缺字段就是没置顶。
  */
+@Serializable
 data class Conversation(
     val id: Long,
     val kind: String,
@@ -172,6 +175,7 @@ const val AiSender: String = "ai"
  * [title] / [note] 是**发出时**的那份措辞：对方改了应用名或方案名，已经发出去的这张卡不该
  * 跟着变，就像转发出去的一条消息不会因为原消息被编辑而变化。
  */
+@Serializable
 data class ShareCard(
     /** `"app"` 或 `"plan"`；后端只放行这两种。 */
     val kind: String,
@@ -190,6 +194,7 @@ data class ShareCard(
  *
  * 名字是发出那一刻的名字（后端写进去的），和真名片一样，之后改了名这张不变。
  */
+@Serializable
 data class PersonCard(
     val owner: String,
     val name: String = "",
@@ -201,6 +206,7 @@ data class PersonCard(
 }
 
 
+@Serializable
 data class ChatMessage(
     val id: Long,
     val sender: String,
@@ -254,6 +260,7 @@ data class ChatMessage(
  *
  * 名字是群详情这一次调用时的名字，改了名要重新拉一次详情才看得到；[owner] 才是认人的那一位。
  */
+@Serializable
 data class ConversationMember(
     val owner: String,
     val name: String,
@@ -270,6 +277,7 @@ data class ConversationMember(
  * [members] 在私聊里也有，就是那两个人——后端按会话成员表直出，不区分 kind。
  * 一个成员都没有时是空列表，不是 null：空群也是群，界面自己决定怎么画。
  */
+@Serializable
 data class ConversationDetail(
     val id: Long,
     val kind: String,
@@ -344,6 +352,7 @@ data class LivePresence(
  * 比 [ChatMessage] 少一份会话内的上下文、多一份"它在哪个会话里"：[conversationId] 用来跳转，
  * [conversationTitle] 是结果行上那句"来自某某群"。正文截断由后端做（本来就是整条），这里不再切。
  */
+@Serializable
 data class MessageHit(
     val id: Long,
     val conversationId: Long,
@@ -371,6 +380,7 @@ data class MessageHit(
  * 给的就是 false。数字字段缺失或类型不对一律退 0，[since] 缺失是空串；[bio] 是他自己写的一句话，
  * 没写过就是空串。
  */
+@Serializable
 data class SocialUserProfile(
     val owner: String,
     val name: String,

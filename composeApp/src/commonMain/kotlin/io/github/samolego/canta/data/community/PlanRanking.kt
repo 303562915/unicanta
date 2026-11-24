@@ -1,5 +1,7 @@
 package io.github.samolego.canta.data.community
 
+import kotlinx.serialization.Serializable
+
 /**
  * One package as the community voted on it *for this model and ROM*.
  *
@@ -7,6 +9,7 @@ package io.github.samolego.canta.data.community
  * @param votes the likes of every plan that contains the package.
  * @param plans how many plans contain it.
  */
+@Serializable
 data class PackageRank(
     val pkg: String,
     val rank: Int,

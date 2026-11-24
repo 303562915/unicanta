@@ -140,6 +140,7 @@ const val TEST_PLAN_ID: Long = -1L
  * [id] for an answer to it. A backend that predates the thread table sends neither id nor parent,
  * which is why both default to 0 and the row still reads as a plain comment.
  */
+@Serializable
 data class PlanComment(
     val author: String,
     val body: String,
@@ -188,6 +189,7 @@ data class CommentLikes(val likes: Int = 0, val liked: Boolean = false)
  * Two scopes at once, because both are worth seeing: [canRemove]/[cannotRemove] only count the
  * votes cast on this model and ROM version, the `all` ones count every device.
  */
+@Serializable
 data class PackageVotes(
     val canRemove: Int = 0,
     val cannotRemove: Int = 0,

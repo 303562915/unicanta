@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadDot
@@ -60,6 +61,7 @@ private const val GroupsPollMs: Long = 15_000L
  * 只放画一屏要用的只读数据：折叠群的那几行。所有 `remember` 里的东西（loading、错误原因、刷新计数）
  * 都不进来——那些是「这一次打开页面时发生的事」，下一次进来该重新开始。
  */
+@Serializable
 private data class GroupsSnapshot(val groups: List<Conversation>)
 
 /**

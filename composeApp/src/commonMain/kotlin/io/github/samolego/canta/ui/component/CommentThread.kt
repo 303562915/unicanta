@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
@@ -276,6 +277,7 @@ fun CommentOrderRow(
  * 展开/折叠、点赞、删除都改在上层：这一层只读地画，所以它不做写回，也不可能留下一份"点赞数
  * 还是旧的"名单——每次画的都是刚交下来的那一批（见下面 [commentThreads] 里的写入）。
  */
+@Serializable
 private data class CommentThreadsSnapshot(val threads: List<CommentThread>)
 
 /**

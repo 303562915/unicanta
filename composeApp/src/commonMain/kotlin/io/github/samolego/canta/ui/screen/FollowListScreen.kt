@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadRed
@@ -66,6 +67,7 @@ private const val FOLLOWS_TAB_FOLLOWERS = 1
  *
  * 只放画一屏需要的只读数据（[SocialPerson] 是不可变 data class）；不存 MutableState、协程、回调。
  */
+@Serializable
 private data class FollowListSnapshot(
     val following: List<SocialPerson>,
     val followers: List<SocialPerson>,

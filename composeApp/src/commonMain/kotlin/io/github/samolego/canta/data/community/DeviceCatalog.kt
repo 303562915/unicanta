@@ -1,6 +1,7 @@
 package io.github.samolego.canta.data.community
 
 import io.github.samolego.canta.util.romLabelOf
+import kotlinx.serialization.Serializable
 
 /**
  * One build the community has plans for: a model plus the ROM version those plans were made on.
@@ -263,6 +264,7 @@ fun peopleSuffix(people: Int, threshold: Int = PEOPLE_COUNT_THRESHOLD): String =
  *
  * @param verified how many uploads of this same package set, on this same build, passed the check.
  */
+@Serializable
 data class DeviceCoverage(
     val brand: String,
     val model: String,

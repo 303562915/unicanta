@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.COMMENT_KIND_APP
 import io.github.samolego.canta.data.community.InboxFilter
 import io.github.samolego.canta.data.community.InboxItem
@@ -121,6 +122,7 @@ private enum class InteractionMessages(
  * [mine] 为 null 表示「我的评论」这一栏还没拉过，**和「拉过、但一条都没有」不是一回事**（后者是空列表）：
  * 菜单里那个「我的评论 · N」只有在真读过之后才写得出来，没读过就该按没读过画。
  */
+@Serializable
 private data class InteractionsSnapshot(
     val inbox: List<InboxItem>,
     val inboxHasMore: Boolean,

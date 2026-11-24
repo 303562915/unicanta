@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.LetterAvatar
@@ -50,6 +51,7 @@ import io.github.samolego.canta.ui.fl.FlText
  * 只放画一屏需要的只读数据（[CommunityPlan] 是不可变 data class）；不存 MutableState、协程、回调。
  * 名字不单独存：它就是从这份名单里取出来的（[UploaderProfileScreen] 里那行 `firstNotNullOfOrNull`）。
  */
+@Serializable
 private data class UploaderProfileSnapshot(val plans: List<CommunityPlan>)
 
 /** 键带上身份：不同上传者不能共用一格，否则点开 B 会先闪一下 A 的名单。身份为空时不读不写。 */

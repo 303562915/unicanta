@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
@@ -166,6 +167,7 @@ private val FallbackAccents = listOf(
  *
  * 两份捆成一份：它们一起决定这一页长什么样，分开存会出现「队列到了、目录还是空的」中间态。
  */
+@Serializable
 private data class RecommendationsSnapshot(
     val catalog: Recommendations,
     val suggested: List<SuggestedApp>,

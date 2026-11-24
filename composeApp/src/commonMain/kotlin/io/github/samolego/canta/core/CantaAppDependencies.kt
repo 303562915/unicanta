@@ -5,6 +5,7 @@ import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.bloat.BloatDescriptions
 import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.bloat.BundledBloatList
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.ChatMessageCache
 import io.github.samolego.canta.data.community.ChatMessageStore
@@ -63,6 +64,9 @@ object StoredData {
 
     /** 最近几个会话的最后几条消息：点进会话时先画它（见 [ChatMessageStore]）。 */
     const val CHAT_MESSAGES = "chat_messages.json"
+
+    /** 各页面快照落盘的那一份（见 [ScreenCache]）：冷启动时先画上次那一屏。 */
+    const val SCREEN_CACHE = "screen_cache.json"
 }
 
 /**
@@ -85,6 +89,8 @@ fun cantaAppDependencies(
     ConversationCache.bind(ConversationStore(storage(StoredData.CONVERSATIONS)))
     // 聊天页同理：最近几个会话的最后几条也落盘，点进去先有东西看。
     ChatMessageCache.bind(ChatMessageStore(storage(StoredData.CHAT_MESSAGES)))
+    // 各页面快照也落一份：不接这一步，冷启动时它们还是空的，进来又要等网络。
+    ScreenCache.bind(storage(StoredData.SCREEN_CACHE))
     val telemetry = Telemetry(
         client = client,
         platform = platformName,

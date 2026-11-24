@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.AppNoteStore
@@ -143,6 +144,7 @@ private const val PACKAGE_FILTER_INDEX = 2
  * 四个字段捆成一份而不是四个槽位：它们来自同一次进入时的加载，分开存会出现「方案是新的、
  * 评论还是旧一版」这种半新半旧的一屏，而界面上这几段是上下挨着一起看的。
  */
+@Serializable
 private data class PlanDetailSnapshot(
     val plan: CommunityPlan,
     val ranking: Map<String, PackageRank>,

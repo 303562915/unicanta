@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.AppReview
 import io.github.samolego.canta.data.community.CommunityPlan
@@ -130,6 +131,7 @@ private const val COMMENT_SECTION_INDEX = 1
  * 而 `remember` 出来的状态属于某一个实例，把它存进进程级缓存等于把上一页的执行挂到下一页上。
  * 本机自己写的那些评论（[AppNoteStore]）也不在里面——它在本地，读一次比查缓存还快，也不算旧。
  */
+@Serializable
 private data class AppDetailSnapshot(
     val votes: PackageVotes,
     val mine: Boolean?,

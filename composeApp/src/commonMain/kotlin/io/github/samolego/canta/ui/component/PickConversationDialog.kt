@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.SocialRepository
 import kotlinx.coroutines.launch
@@ -47,6 +48,7 @@ import kotlinx.coroutines.launch
  * 协程、回调、`busy` / `hint` / 正在发的是哪一条——那些是这一回的事，重新打开本就该是干净的，
  * 缓存它们只会把上一回失败的提示带回来。
  */
+@Serializable
 private data class ForwardTargetsSnapshot(val targets: List<Conversation>)
 
 /**

@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadRed
@@ -72,6 +73,7 @@ private val GroupPickCheckSize = 22.dp
  * 只放画一屏要用的只读数据：能勾的那几张脸。**群名和已勾的人不进缓存**——那是人在这一页正在做的
  * 事，下次进来该是一张干净的勾选表；把上次没建成的选择恢复出来，人只会以为自己已经选过了。
  */
+@Serializable
 private data class CreateGroupSnapshot(val candidates: List<SocialPerson>)
 
 /**

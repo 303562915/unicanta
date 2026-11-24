@@ -1,5 +1,7 @@
 package io.github.samolego.canta.data.community
 
+import kotlinx.serialization.Serializable
+
 /**
  * One proposed rewrite of an app's description, and how the community voted on it.
  *
@@ -8,6 +10,7 @@ package io.github.samolego.canta.data.community
  * [needed] votes agree with it *and* those agreeing votes are [shareNeeded] of all votes — the number
  * on the page says which of the two is still missing.
  */
+@Serializable
 data class DescriptionFix(
     /** The rewrite's own id; 0 when the server did not send one. */
     val id: Long = 0L,

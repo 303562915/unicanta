@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
@@ -92,6 +93,7 @@ private const val EDIT_MAX_LINES = 4
  * 三个开关放在同一份里，是因为它们和详情在同一次刷新里一起读到：分开存会出现「群名是新的、
  * 折叠还是旧的」这种半新半旧的状态。
  */
+@Serializable
 private data class GroupSettingsSnapshot(
     val kind: String,
     val title: String,

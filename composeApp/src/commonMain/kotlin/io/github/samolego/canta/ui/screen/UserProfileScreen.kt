@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
@@ -108,6 +109,7 @@ private enum class ProfileTab { Plans, Favorites }
  * [following] 单独存一份：它虽然等于 `profile.iFollow`，但点过关注之后本地那个值会先变，
  * 下次进来不带它的话先画出来的会是「还没关注」，看着像点丢了。
  */
+@Serializable
 private data class UserProfileSnapshot(
     val profile: SocialUserProfile?,
     val plans: List<CommunityPlan>,

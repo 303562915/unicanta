@@ -1,5 +1,7 @@
 package io.github.samolego.canta.data.community
 
+import kotlinx.serialization.Serializable
+
 /** A comment under a community plan: `target` is the plan id as text. */
 const val COMMENT_KIND_PLAN: String = "plan"
 
@@ -36,6 +38,7 @@ const val NEXT_REPLY_BATCH: Int = 10
  * plan I uploaded, somebody hearted my comment, somebody endorsed my plan — and the row has to say
  * which, because "赞了你的评论" and "赞了你的方案" are different sentences.
  */
+@Serializable
 enum class InboxKind {
     /** Somebody answered a comment of mine. */
     REPLY,
@@ -72,6 +75,7 @@ enum class InboxKind {
  * is worth opening. "New" is therefore still "id newer than the one I last opened" for the comment
  * shaped rows; hearts carry [createdAt] and are reported as new by the count the summary returns.
  */
+@Serializable
 data class InboxItem(
     val kind: InboxKind,
     /** The comment id (replies, comment hearts) or the plan id (plan comments, plan hearts). */
@@ -121,6 +125,7 @@ data class InboxItem(
  * The four numbers are kept apart because the tab labels say how many of each — "回复 2 · 赞 5" —
  * which a single total cannot.
  */
+@Serializable
 data class InboxSummary(
     val replies: Int = 0,
     val planComments: Int = 0,
@@ -176,6 +181,7 @@ fun pageHasMore(items: List<InboxItem>, perSource: Int): Boolean =
  * The same shape answers both questions the page asks: [parentBody] is empty for "my comments" and
  * holds the comment being answered for "replies to me".
  */
+@Serializable
 data class MyComment(
     val id: Long,
     /** [COMMENT_KIND_PLAN] or [COMMENT_KIND_APP]. */
@@ -250,6 +256,7 @@ fun List<PlanComment>.updatedComment(id: Long, transform: (PlanComment) -> PlanC
     if (id <= 0L) this else map { if (it.id == id) transform(it) else it }
 
 /** One comment and the answers it collected, in the order the backend served them. */
+@Serializable
 data class CommentThread(val comment: PlanComment, val replies: List<PlanComment>) {
 
     /**

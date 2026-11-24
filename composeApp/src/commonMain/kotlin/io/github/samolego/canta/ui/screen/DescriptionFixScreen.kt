@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.LetterAvatar
@@ -67,6 +68,7 @@ private val FIX_DISAGREE = Color(0xFFC0564C)
  * 算出来的（`applied` / `mine` / `share` 都在 [DescriptionFix] 自己身上），一份列表就够画一屏。
  * 不放 `MutableState`、输入框里写到一半的字——那是这一页的执行状态，不是后端数据。
  */
+@Serializable
 private data class DescriptionFixSnapshot(val fixes: List<DescriptionFix>)
 
 /** 这一屏在进程缓存里的槽位；按包名分份，不同应用的修正历史绝不能互相串。 */
