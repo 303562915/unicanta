@@ -22,6 +22,8 @@ class MainActivity : FragmentActivity() {
         app.platform.attachActivity(this)
         // 冷启动：这一份 intent 可能就是点通知带进来的，先把它交出去，界面起来之后自己导航。
         app.platform.takeChatIntent(intent)
+        // 也可能是点了群邀请链接（`unicanta://group/<code>`）进来的，同一个入口一起交。
+        app.platform.takeInviteIntent(intent)
 
         setContent {
             CantaApp(
@@ -42,6 +44,8 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         app.platform.takeChatIntent(intent)
+        // 已经在跑的时候点邀请链接走这里；data 在平台那一侧会被摘掉，重复进不来。
+        app.platform.takeInviteIntent(intent)
     }
 
     override fun onDestroy() {

@@ -64,6 +64,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- 群邀请链接：群设置页复制出去的是 `unicanta://group/<邀请码>`，浏览器/短信/别的
+                 app 点它要能回到这个 app。host 固定 group，多一种链接就在这儿多一段 data。
+                 不加 autoVerify：那边只对 http(s) 的 App Links 有意义。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="unicanta" android:host="group" />
+            </intent-filter>
         </activity>
         <receiver
             android:name=".BootReceiver"

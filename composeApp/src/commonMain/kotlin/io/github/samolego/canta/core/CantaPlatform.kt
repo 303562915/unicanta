@@ -208,4 +208,13 @@ interface CantaPlatform {
      */
     val chatIntents: Flow<Long>
         get() = emptyFlow()
+
+    /**
+     * 有人点了群邀请链接（`unicanta://group/<code>`）而进到这个 app 时，链接里的邀请码。
+     *
+     * 和 [chatIntents] 同一套：一次性事件、冷启动那一条由入口先存着，平台没有 scheme 入口的一侧
+     * 是空流。入群动作不在这里做——平台不知道身份，也不该知道后端。
+     */
+    val groupInviteCodes: Flow<String>
+        get() = emptyFlow()
 }

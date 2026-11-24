@@ -158,6 +158,17 @@ class AndroidCantaPlatform(
     @Volatile
     private var pendingChatIntent: Long = 0L
 
+    /**
+     * 点群邀请链接进来的邀请码。
+     *
+     * 和会话号那一格同样的理由：冷启动时 intent 比第一个收集者先到，`SharedFlow` 没有 replay
+     * 就会把它丢掉，所以没人听的时候先存在这里，第一个收集者上来时补发一次。
+     */
+    @Volatile
+    private var pendingInviteCode: String = ""
+
+    private val inviteCodeFlow = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
     /** Attach the activity (from `onCreate`); used for biometric prompts and the photo picker. */
     fun attachActivity(activity: FragmentActivity) {
         biometricActivity = activity
@@ -242,6 +253,38 @@ class AndroidCantaPlatform(
             emit(waiting)
         }
         emitAll(chatIntentFlow)
+    }
+
+    /**
+     * 入口（`MainActivity`）把拿到的 intent 交进来，解析出「点的是哪一条群邀请链接」。
+     *
+     * 只认 `unicanta://group/<code>`：scheme 和 host 都对上才取最后一段当邀请码，别的 URL、
+     * 普通点图标启动都当没发生。解析完把 data 换成空的，同一个 intent 被再交一次（配置变化
+     * 重建 Activity、或者 `singleTop` 复用）不会重复进群。
+     */
+    fun takeInviteIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        val scheme = data.scheme ?: return
+        if (!scheme.equals("unicanta", ignoreCase = true)) return
+        val host = data.host ?: return
+        if (!host.equals("group", ignoreCase = true)) return
+        val code = data.lastPathSegment?.trim().orEmpty()
+        if (code.isEmpty()) return
+        intent.data = Uri.EMPTY
+        if (inviteCodeFlow.subscriptionCount.value == 0) {
+            pendingInviteCode = code
+        } else {
+            inviteCodeFlow.tryEmit(code)
+        }
+    }
+
+    override val groupInviteCodes: Flow<String> = flow {
+        val waiting = pendingInviteCode
+        if (waiting.isNotEmpty()) {
+            pendingInviteCode = ""
+            emit(waiting)
+        }
+        emitAll(inviteCodeFlow)
     }
 
     override fun canNotify(): Boolean = chatNotifier.canPost()

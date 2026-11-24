@@ -395,6 +395,37 @@ private fun CantaNavigation(
         }
     }
 
+    // 点群邀请链接（`unicanta://group/<code>`）进来的：入群，然后直接进那个群。
+    //
+    // 入群要身份（后端既认 token、也认自报的号码），而冷启动时本地设置还没读出来，第一帧的 owner
+    // 是空串。这条链接只来一次事件，不能靠「等 owner 变了再重试」——那次事件已经消费掉了。
+    // 所以在这里原地等一小会儿（最多三秒）：等到了再发，等不到就直说，别拿空身份去问后端。
+    LaunchedEffect(navController) {
+        platform.groupInviteCodes.collect { code ->
+            var owner = ""
+            var waited = 0
+            while (owner.isEmpty() && waited < 20) {
+                val identity = DeviceIdentity.current(deps.settings)
+                owner = identity.owner.ifEmpty { identity.token }
+                if (owner.isEmpty()) {
+                    delay(150)
+                    waited += 1
+                }
+            }
+            if (owner.isEmpty()) {
+                platform.showMessage("还没认出身份，邀请链接没进去：等 App 加载完再点一次")
+                return@collect
+            }
+            // 后端幂等：本来就在群里也返回同一个会话号，所以点两次不会变成"进不去"。
+            val joined = runCatching { socialRepository.joinByInvite(owner, code) }.getOrNull()
+            if (joined != null) {
+                navController.navigate(Screen.Chat.routeFor(joined)) { launchSingleTop = true }
+            } else {
+                platform.showMessage("邀请链接没进成：链接可能已经失效，或者没连上后端")
+            }
+        }
+    }
+
     // 回到前台就把通知栏上的聊天提醒收掉：人已经在看着 app 了，那几条没有意义。
     LaunchedEffect(appVisible) {
         if (appVisible) platform.clearChatNotices()
