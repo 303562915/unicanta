@@ -249,6 +249,22 @@ fun romBuildOf(props: Map<String, String>): String {
 }
 
 /**
+ * [romBuildOf] with a fallback: the same keys, asked for one at a time when the bulk `getprop`
+ * read came back without any of them.
+ *
+ * The bulk read is a single process and usually enough, but a locked-down ROM, a helper that
+ * truncates long output, or a read that failed and left an empty map behind leaves it empty — and
+ * a plan uploaded from that read stores no build at all, which is exactly how a row ends up
+ * showing "HyperOS 3" instead of "HyperOS 3.0.0355".
+ */
+suspend fun romBuildFallback(read: suspend (String) -> String?): String =
+    ROM_BUILD_PROP_KEYS.firstNotNullOfOrNull { key ->
+        runCatching { read(key)?.trim() }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+    }.orEmpty()
+
+/**
  * The properties [romBuildOf] reads, in the same precedence as [deviceContextOf] so the build and
  * the family never come from two different ROMs (a HyperOS phone whose old MIUI keys linger).
  */

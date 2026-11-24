@@ -19,6 +19,7 @@ import io.github.samolego.canta.util.marketNameFallback
 import io.github.samolego.canta.util.marketNameOf
 import io.github.samolego.canta.util.parseGetprop
 import io.github.samolego.canta.util.payloadHash
+import io.github.samolego.canta.util.romBuildFallback
 import io.github.samolego.canta.util.romBuildOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -210,8 +211,10 @@ abstract class AdbCantaHandler(private val transport: AdbTransport) : CantaHandl
             release = prop("ro.build.version.release").ifEmpty { "unknown" },
             rom = ctx.rom,
             romVersion = ctx.romVersion,
-            // Same as the Android handler: the build string is what tells 16.0.3 from 16.0.501.
-            romBuild = romBuildOf(props),
+            // Same as the Android handler: the build string is what tells 16.0.3 from 16.0.501,
+            // and the bulk read can come back without it on a locked-down ROM.
+            romBuild = romBuildOf(props)
+                .ifBlank { romBuildFallback { key -> shellLine("getprop $key", "build of $key") } },
             fingerprint = prop("ro.build.fingerprint"),
             // Same fallback as the Android handler: the bulk `getprop` can come back without the
             // market name, and a plan stored under the retail number shows that number to everyone.

@@ -34,6 +34,7 @@ import io.github.samolego.canta.util.deviceContextOf
 import io.github.samolego.canta.util.marketNameFallback
 import io.github.samolego.canta.util.marketNameOf
 import io.github.samolego.canta.util.parseGetprop
+import io.github.samolego.canta.util.romBuildFallback
 import io.github.samolego.canta.util.romBuildOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -287,8 +288,10 @@ class AndroidCantaHandler(
             rom = ctx?.rom ?: "unknown",
             romVersion = ctx?.romVersion ?: 0,
             // The build itself, kept for plans only: two builds of one model are two different
-            // package sets, and a row that names only the major version cannot say which.
-            romBuild = romBuildOf(props),
+            // package sets, and a row that names only the major version cannot say which. When the
+            // bulk read came back without the key, ask for it directly — an upload with an empty
+            // build is exactly what makes a plan show "HyperOS 3" instead of "HyperOS 3.0.0355".
+            romBuild = romBuildOf(props).ifBlank { romBuildFallback { key -> getpropOne(key) } },
             fingerprint = Build.FINGERPRINT.orEmpty(),
             // The market name is the only field Build does not expose: MIUI/HyperOS keeps the
             // retail number in MODEL and the name people know in ro.product.marketname. When the
