@@ -78,6 +78,24 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 
 产物落点：`androidApp/build/outputs/apk/{debug,release}/`（含 `SHA256SUMS.txt`）。
 
+### 2.1 更新通道与发版节奏（默认策略，不用再问）
+
+**默认：更新最快的是开发版。** 用户说"推个更新""让用户装上最新的"这类默认诉求，一律走开发版
+（`development-release.yml` → prerelease `dev`）：push 到 `master` 就自动出，不升版本号、不打 tag、不发稳定版。
+
+**稳定版：每个自然日（Asia/Shanghai）最多一个。** 要做发版动作前，先查当天有没有已发布的稳定版：
+
+```bash
+gh api repos/303562915/unicanta/releases \
+  --jq '.[] | select(.prerelease==false and .draft==false) | [.tag_name, .published_at] | @tsv'
+```
+
+- 当天**已经发过**稳定版 → 这一轮**不再发**，只保留开发版通道。
+- 当天**还没发过**稳定版 → 发一个：`gh workflow run release.yml`（`keep_draft` 默认 false，即直接发布；只预演才传 `keep_draft=true`）。发完在同一轮把日期记下来，别在同一天发第二次。
+
+判据是"发布日期 + `prerelease=false`"，不是版本号有没有涨：同一天即使 `version_name` 又变了，也不追加第二个稳定版。
+稳定版发布后 `pages.yml` / `docs.yml` 会随 `release: published` 触发，这是预期行为，不用手动补。
+
 ---
 
 ## 3. 标准工作流：改完就推 → 派子智能体盯 debug → 无报错才收工
@@ -133,7 +151,7 @@ gh run download <run-id> -n app-debug -D artifacts
 ```
 
 - 下载后看 `artifacts/app-debug/SHA256SUMS.txt` 与 `*.apk`。
-- 需要发版：`gh workflow run release.yml`，它会建 **draft** release，人工去网页确认后再 publish。
+- 需要发版：先按**第 2.1 节**确认当天还没发过稳定版；没发过才 `gh workflow run release.yml`（`keep_draft` 默认 false → 直接发布；只预演才传 `keep_draft=true`）。
 - 需要只跑构建不跑其它：`gh workflow run build.yml`（`workflow_dispatch` 手动触发）。
 
 ---
@@ -197,6 +215,7 @@ gh run download <run-id> -n app-debug -D artifacts
 | 词 | 含义 | 首次确认时间 | 备注 |
 |---|---|---|---|
 | `ga` | GitHub Actions —— 工作流相关的所有事（改 `.github/workflows/*.yml`、查 run、看日志、下载 artifact、发版触发） | 2026-11-20 | 不是 Google Analytics，不是 general availability。见到 `ga` 先想到工作流 |
+| `ga 开发版` / `最快推送` | 默认更新通道走开发版：由 GitHub Actions 的 `development-release.yml` 在 push `master` 时自动出 prerelease `dev`，不等稳定版 | 2026-11-24 | 用户原话：「默认都是最快推送是更新的，ga 开发版」。配套节奏见第 2.1 节：稳定版每天最多一个 |
 | `action` / `actions` | 同上，GitHub Actions 工作流 | 2026-11-20 | 与 `ga` 同义 |
 | `型号` / `机型显示不对` / `他那个vivo和三星` / `他展示的是这个型号` | 「选择机型」列表里的机型芯片显示的是**零售编号**（`SM-F9710`、`PHK110`、`V2337A`）而不是营销名（`Galaxy Z Fold8`、`一加 Ace 2`、`vivo X Fold3 Pro`） | 2026-11-21 | 用户原话：「它展示的是这个型号，对吗？」「我感觉不太对，只有小米才是正确的。和荣耀是正确的」→ 按第 9 节查 |
 | `调用他们的日志` / `他们上传的日志` / `数据库里面他们上传的这个` | 后台数据库里 App 上传的机型/设备数据（`plans.market_name`、`plans.codename`、`canta_users.model`、`community_comments.device_model`），不是客户端日志文件 | 2026-11-21 | 用户原话：「你可以调用他们的日志让他们上传上来呀」「如果你这次解决不了，那你下次就去找这个文件，就找数据库里面他们上传的这个日志去分析他们手机是什么」 |
