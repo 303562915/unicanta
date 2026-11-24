@@ -89,7 +89,9 @@ class SettingsViewModel(
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
     /** 底栏要不要给帖子页留一格。 */
-    val showPostsTab = settingsStore.showPostsTabFlow.state(false)
+    val showPostsTab = settingsStore.showPostsTabFlow.state(true)
+    /** 底栏要不要给商城页留一格：出厂开着，与帖子同类。 */
+    val showStoreTab = settingsStore.showStoreTabFlow.state(true)
 
     /** Which arrangement the recommendations page was left in: false grid, true list. */
     val recommendationsListMode = settingsStore.recommendationsListModeFlow.state(false)
@@ -250,6 +252,7 @@ class SettingsViewModel(
     fun saveShowTweaksTab(show: Boolean) = save { setShowTweaksTab(show) }
     fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
     fun saveShowPostsTab(show: Boolean) = save { setShowPostsTab(show) }
+    fun saveShowStoreTab(show: Boolean) = save { setShowStoreTab(show) }
     fun saveRecommendationsListMode(list: Boolean) = save { setRecommendationsListMode(list) }
     fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
     fun saveClearRecordsAfterBoot(clear: Boolean) = save { setClearRecordsAfterBoot(clear) }

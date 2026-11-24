@@ -157,6 +157,7 @@ fun SettingsScreen(
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
     val showPostsTab by settingsViewModel.showPostsTab.collectAsStateWithLifecycle()
+    val showStoreTab by settingsViewModel.showStoreTab.collectAsStateWithLifecycle()
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
     val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
@@ -306,9 +307,11 @@ fun SettingsScreen(
                 showTweaks = showTweaksTab,
                 showRecommend = showRecommendTab,
                 showPosts = showPostsTab,
+                showStore = showStoreTab,
                 onToggleTweaks = settingsViewModel::saveShowTweaksTab,
                 onToggleRecommend = settingsViewModel::saveShowRecommendTab,
                 onTogglePosts = settingsViewModel::saveShowPostsTab,
+                onToggleStore = settingsViewModel::saveShowStoreTab,
             )
             Spacer(Modifier.height(CardGap))
 

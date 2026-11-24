@@ -76,7 +76,6 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
-import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
@@ -223,7 +222,6 @@ fun RecommendationsScreen(
     platform: CantaPlatform,
     repository: PlanRepository? = null,
     /** 兑换中心（码池）：机场那一块里的「发布一批码 / 兑换 / 我的码」。 */
-    cdk: CdkStore? = null,
     author: String = "",
     authorId: String = "",
     asGrid: Boolean = true,
@@ -424,7 +422,6 @@ fun RecommendationsScreen(
             // 机场与积分：钱包、投票、商城、兑换中心都在这一块里，各自从后端拿自己的那份。
             RecommendationsAirportTab(
                 repository = repository,
-                cdk = cdk,
                 platform = platform,
                 author = author,
                 authorId = authorId,

@@ -49,6 +49,13 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Posts : Screen("posts")
 
     /**
+     * 商城：积分怎么来、怎么花。每天领分、积分商城（谁都能挂）、兑换中心（CDK 码池）。
+     *
+     * 它与机场分开：机场那一页只管投票榜单，钱和兑换都在这。
+     */
+    data object Store : Screen("store")
+
+    /**
      * The messages page: what other people did around this install, the chats it is in, and the
      * way into both.
      *

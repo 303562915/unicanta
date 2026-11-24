@@ -105,6 +105,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val showRecommendTabFlow = field { it.showRecommendTab }
     /** 底栏要不要给帖子页留一格；与另外两个可选页同一个开关形状。 */
     val showPostsTabFlow = field { it.showPostsTab }
+    /** 底栏要不要给商城页留一格。 */
+    val showStoreTabFlow = field { it.showStoreTab }
     /** Which arrangement the recommendations page was left in: false grid, true list. */
     val recommendationsListModeFlow = field { it.recommendationsListMode }
     /** Whether the safety page shows the picture of this phone; see [AppSettingsProto.showDevicePhoto]. */
@@ -202,6 +204,7 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setShowTweaksTab(show: Boolean) = update { it.copy(showTweaksTab = show) }
     suspend fun setShowRecommendTab(show: Boolean) = update { it.copy(showRecommendTab = show) }
     suspend fun setShowPostsTab(show: Boolean) = update { it.copy(showPostsTab = show) }
+    suspend fun setShowStoreTab(show: Boolean) = update { it.copy(showStoreTab = show) }
     suspend fun setRecommendationsListMode(list: Boolean) = update { it.copy(recommendationsListMode = list) }
     suspend fun setShowDevicePhoto(show: Boolean) = update { it.copy(showDevicePhoto = show) }
     suspend fun setAutoInstallUpdates(auto: Boolean) = update { it.copy(autoInstallUpdates = auto) }

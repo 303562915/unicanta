@@ -82,6 +82,12 @@ data class AppSettingsProto(
      */
     @ProtoNumber(46) val showPostsTab: Boolean = true,
     /**
+     * 底栏给商城页留一格（积分、积分商城、兑换中心）。
+     *
+     * 与帖子同样出厂开着：它是"钱怎么来怎么花"的独立系统，不该藏在机场榜单里。
+     */
+    @ProtoNumber(47) val showStoreTab: Boolean = true,
+    /**
      * When on, a new release is downloaded as soon as the update check finds one, and the app
      * installs it through Shizuku right after the download. The extra confirmation is the
      * [confirmBeforeInstall] switch, off by default.

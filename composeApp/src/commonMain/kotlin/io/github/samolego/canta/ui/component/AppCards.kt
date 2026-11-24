@@ -167,9 +167,11 @@ fun AppBarSlotsCard(
     showTweaks: Boolean,
     showRecommend: Boolean,
     showPosts: Boolean,
+    showStore: Boolean,
     onToggleTweaks: (Boolean) -> Unit,
     onToggleRecommend: (Boolean) -> Unit,
     onTogglePosts: (Boolean) -> Unit,
+    onToggleStore: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val fixed = listOf(
@@ -196,6 +198,13 @@ fun AppBarSlotsCard(
             "帖子",
             lit = showPosts,
             onToggle = { onTogglePosts(!showPosts) },
+        ),
+        BarSlot(
+            // 一叠卡片＝货架：积分商城与兑换中心都在那一页。
+            FlGlyphs.profiles,
+            "商城",
+            lit = showStore,
+            onToggle = { onToggleStore(!showStore) },
         ),
     )
     Column(
