@@ -42,7 +42,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
+import io.github.samolego.canta.core.root.RootShell
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -51,7 +51,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipFile
 import kotlin.system.exitProcess
 
@@ -305,6 +304,9 @@ class AndroidCantaPlatform(
     }
 
     override fun canNotify(): Boolean = chatNotifier.canPost()
+
+    /** Android 有「申请通知权限」这一步（13 起是运行时权限），所以页顶那条提示摆得出来。 */
+    override val canRequestNotify: Boolean = true
 
     /**
      * 申请通知权限，回答最后给没给。
@@ -1046,7 +1048,7 @@ class AndroidCantaPlatform(
         if (rootShell == null) {
             attempts["root"] = "这台手机没有 su"
         } else if (attempts.values.any { looksLikeAccessProblem(it) }) {
-            if (tryChannel("root") { installAsRoot(rootShell, file.absolutePath) }) {
+            if (tryChannel("root") { installAsRoot(file.absolutePath) }) {
                 file.delete()
                 return@withContext null
             }
@@ -1081,45 +1083,21 @@ class AndroidCantaPlatform(
     }
 
     /**
-     * `pm install` through the root manager's own shell. Root reads the app's private directory and
+     * `pm install` through the shared root shell. Root reads the app's private directory and
      * `/data/local/tmp` alike, so nothing has to be staged; the authorization prompt is the cost,
-     * which is why this runs only after Shizuku has already refused.
+     * and it is paid once per process because the shell is kept open.
      *
-     * The wait is bounded: a prompt nobody answers would otherwise hold the install open forever,
-     * and "安装中" that never ends is exactly the report this whole path exists to stop.
+     * The wait is bounded by [ROOT_INSTALL_TIMEOUT_MILLIS]: a prompt nobody answers would
+     * otherwise hold the install open forever, and "安装中" that never ends is exactly the report
+     * this whole path exists to stop.
      */
-    private suspend fun installAsRoot(su: String, path: String): String? = withContext(Dispatchers.IO) {
-        val process = runCatching {
-            ProcessBuilder(su, "-c", "pm install -r -d ${shellQuote(path)}")
-                .redirectErrorStream(true)
-                .start()
-        }.getOrElse { return@withContext "无法执行 $su：${summarized(it.toString())}" }
-        // The read below blocks: a timeout wrapper around it would never fire, because there is no
-        // suspension point to cancel. A watchdog closes the pipe instead, which ends the read and
-        // lets the unanswered authorization prompt be reported.
-        val timedOut = AtomicBoolean(false)
-        val watchdog = launch(Dispatchers.IO) {
-            delay(ROOT_INSTALL_TIMEOUT_MILLIS)
-            timedOut.set(true)
-            process.destroy()
-        }
-        val output = try {
-            process.inputStream.bufferedReader().readText()
-        } catch (e: CancellationException) {
-            watchdog.cancel()
-            throw e
-        } catch (e: Exception) {
-            ""
-        } finally {
-            watchdog.cancel()
-        }
-        val exit = runCatching { process.waitFor() }.getOrDefault(-1)
-        when {
-            timedOut.get() -> "root 授权超时或被拒绝：没有应答"
-            exit == 0 && !output.contains("Failure", ignoreCase = true) -> null
-            output.isBlank() -> "pm install 退出码 $exit"
-            else -> output.trim()
-        }
+    private suspend fun installAsRoot(path: String): String? = withContext(Dispatchers.IO) {
+        val result = RootShell.session.run(
+            "pm install -r -d ${shellQuote(path)}",
+            timeoutMs = ROOT_INSTALL_TIMEOUT_MILLIS,
+        )
+        if (result.exitCode == 0 && !result.stdout.contains("Failure", ignoreCase = true)) return@withContext null
+        (result.stdout + result.stderr).trim().ifBlank { "pm install 退出码 ${result.exitCode}" }
     }
 
     /** One `pm install -r -d` of [where]; null on success, otherwise the output that explains it. */

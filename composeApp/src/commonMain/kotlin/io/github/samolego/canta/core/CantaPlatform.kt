@@ -201,6 +201,14 @@ interface CantaPlatform {
     suspend fun requestNotifyPermission(): Boolean = false
 
     /**
+     * 这个平台有没有「申请通知权限」这一步，也就是页顶那条「当前无法接收朋友的消息提醒」该不该摆。
+     *
+     * 桌面/网页没有系统通知这一层，[canNotify] 永远是 false；这时候再摆一条"打开提醒"就是
+     * 一条点不开的提示。Android 13 起这是运行时权限，回答 true。
+     */
+    val canRequestNotify: Boolean get() = false
+
+    /**
      * 用户从通知栏点开的那条消息属于哪个会话；平台没有通知栏的一侧是空流。
      *
      * 这是一次性事件而不是状态：冷启动时由入口把 intent 里的会话号塞进来，界面收一次就导航过去。

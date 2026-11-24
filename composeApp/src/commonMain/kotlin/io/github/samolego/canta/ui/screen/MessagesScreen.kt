@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.InboxSummary
@@ -69,6 +70,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadBadge
+import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.bottomHairline
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
@@ -79,6 +81,7 @@ import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -91,6 +94,23 @@ private const val RecentContactCap: Int = 8
 /** 横排里从会话、从关注列表各取多少位，取完去重再截到 [RecentContactCap]。 */
 private const val ContactsFromChats: Int = 6
 private const val ContactsFromFollows: Int = 6
+
+/**
+ * 一次消息搜索的回答在 [ScreenCache] 里留多久。
+ *
+ * 30 秒刚好覆盖「打错一个字删了重打」和「收起来再打开搜索」这两种重复：这两种情况下同一个词
+ * 再问一遍后端拿不到任何新东西，只会让结果区白闪一次。再长就不合适了——消息搜索回答的是
+ * 「刚才有没有人说过这句」，隔太久以前的答案已经不算答案。
+ */
+private const val SearchCacheTtlMs: Long = 30_000L
+
+/**
+ * 搜索缓存最多记多少个关键词。
+ *
+ * 每个关键词都是一个新键（`"screen:search:<owner>:<query>"`），不封顶就是无界增长：一页搜十次
+ * 十条，来回切几次越攒越多，而且再也不会被命中。20 个够覆盖一两次会话里的反复搜索。
+ */
+private const val SearchCacheLimit: Int = 20
 
 /** 「限时日常」与每位联系人那一格的宽度：圆头像 44，下面一行字居中。 */
 private val ContactCellWidth = 64.dp
@@ -152,6 +172,15 @@ fun MessagesScreen(
     blockedPeers: Set<String> = emptySet(),
     /** 拉黑 / 取消拉黑某个人；落盘是上层的事，这里只把动作交出去。 */
     onBlockPeer: (peer: String, blocked: Boolean) -> Unit = { _, _ -> },
+    /**
+     * 系统没给通知权限：页顶摆一条「当前无法接收朋友的消息提醒」。
+     *
+     * 判定在上层（`CantaPlatform.canNotify()`），这一页只按结果画——通知这条链路只在 Android
+     * 上存在，桌面端永远不会摆这一条。
+     */
+    noticesBlocked: Boolean = false,
+    /** 点「打开提醒」：申请一次通知权限。 */
+    onEnableNotices: () -> Unit = {},
     onMessage: (String) -> Unit = {},
 ) {
     // 上一屏留下的快照：有它就先画它，画面不闪；没有才走一次完整的加载。
@@ -180,6 +209,8 @@ fun MessagesScreen(
     var searchKeyword by remember { mutableStateOf("") }
     var messageHits by remember { mutableStateOf<List<MessageHit>>(emptyList()) }
     var searchingMessages by remember { mutableStateOf(false) }
+    // 搜索这一次为什么没拿到新结果：结果区留上一次那一份，原因单独在顶部写一行。
+    var searchError by remember { mutableStateOf<String?>(null) }
     // 「全部标为已读」是一次网络调用：点完就把协程交出去，界面不等它。
     val scope = rememberCoroutineScope()
     /** 正在加入官方内测群：挡住连点，也把那一行的小字换成「加入中…」。 */
@@ -215,7 +246,8 @@ fun MessagesScreen(
             }
             loading = conversations.isEmpty()
         }
-        loadError = null
+        // `loadError` 不在这里清：清了的话，一次持续的失败会让那行原因在每次刷新开头先消失、
+        // 三次请求跑完再回来，看起来就是每 15 秒闪一下。它只在下面拿到结果时被赋成这一次的真值。
         val chats = repository.conversationsFor(owner)
         val people = repository.followersOf(owner)
         val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
@@ -223,7 +255,9 @@ fun MessagesScreen(
         // 照着它画就等于因为一次断网把好端端的列表清空，然后人还得再等 15 秒才回来。
         // 空列表和后端没通本来长得一样，区别只有下面那行 `loadError`。
         if (repository.lastError == null) {
-            conversations = sortedConversations(chats)
+            // 按会话号合并而不是整份替换：内容没变的行沿用原对象，刷新时那几行不会被当成新行
+            // 重新组合（长按菜单开着、手指正按着的时候尤其要紧）。
+            conversations = mergeConversations(conversations, sortedConversations(chats))
             followers = people
             summary = counted
             ConversationCache.put(owner, conversations, people, counted)
@@ -367,16 +401,49 @@ fun MessagesScreen(
 
     // 消息搜索要问后端，所以按输入停顿去抖：每敲一个字就发一次请求，既费额度又会让结果乱跳。
     // 300ms 是"还在打字"和"打完了"之间的常用分界。
+    //
+    // 同一个 (owner, 关键词) 在 [SearchCacheTtlMs] 内不再问后端：删了又打回来的词就是同一个词，
+    // 重打一次请求换不回任何新东西。命中缓存时直接铺上次那份，**连「正在搜索消息…」都不显示**
+    // ——那行字是给"真的在等网络"用的，命中缓存时它只会让人以为慢。
     LaunchedEffect(keyword) {
         if (keyword.isEmpty()) {
             messageHits = emptyList()
             searchingMessages = false
+            searchError = null
             return@LaunchedEffect
         }
+        // 身份还没读到时不问：空身份在后端一律回空数组，还会把这份空当成一次成功的搜索写进缓存。
+        if (owner.isEmpty()) return@LaunchedEffect
         delay(300)
+        val cacheKey = searchCacheKey(owner, keyword)
+        val cached = ScreenCache.get<SearchCacheEntry>(cacheKey)
+        val now = currentTimeMillis()
+        if (cached != null && now - cached.at <= SearchCacheTtlMs) {
+            messageHits = cached.hits
+            searchingMessages = false
+            searchError = null
+            return@LaunchedEffect
+        }
         searchingMessages = true
-        messageHits = repository.searchMessages(owner, keyword)
-        searchingMessages = false
+        // 人又在打字时这个 effect 会被取消；`finally` 顺手把标记复位，否则「正在搜索消息…」
+        // 会卡在屏幕上，直到下一次搜索自己把它翻回去。
+        val fresh = try {
+            repository.searchMessages(owner, keyword)
+        } finally {
+            searchingMessages = false
+        }
+        // `searchMessages` 失败时返回的也是空列表，只有这两个标记分得出「没搜到」和「没连上」。
+        // 分不出来就会因为断一次网把结果区清空，人得再把关键词打一遍。
+        val failed = repository.lastError != null || repository.lastFailureWasNetwork
+        if (failed) {
+            searchError = searchFailureLine(repository.lastError, repository.lastFailureWasNetwork)
+            return@LaunchedEffect
+        }
+        messageHits = fresh
+        searchError = null
+        ScreenCache.put(cacheKey, SearchCacheEntry(fresh, currentTimeMillis()))
+        // 写完顺手把最旧的关键词连同它的值一起丢掉，缓存才不会无界增长。
+        SearchCacheKeys.remember(cacheKey, SearchCacheLimit) { stale -> ScreenCache.remove(stale) }
     }
 
     Scaffold(
@@ -430,6 +497,24 @@ fun MessagesScreen(
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
                     )
+                }
+                // 搜索失败：结果区还是上一次那一份（比空白有用），原因只占这一行。只在搜索开着时
+                // 画——收起搜索之后它还挂在那儿，人就会以为列表本身出了问题。
+                searchError?.let { reason ->
+                    if (searching) {
+                        Text(
+                            text = "搜索没有更新：$reason",
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = scheme.error,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                // 「当前无法接收朋友的消息提醒」：系统没给通知权限时才有这一条。抖音那条是提醒
+                // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
+                if (noticesBlocked) {
+                    NoticeBanner(onOpen = onEnableNotices)
                 }
                 // 官方内测群固定在最上面：**还没进群的人**也看得到这一行，点一下就加入。
                 // 不写人数——这个群还在内测，人数是主办方的事，不该摆在列表上让每个人读。
@@ -824,6 +909,30 @@ private fun sortedConversations(list: List<Conversation>): List<Conversation> =
     )
 
 /**
+ * 刷新时按会话号合并：内容没变的行沿用**原来那个对象**，只让真变了的那几行换成新的。
+ *
+ * 为什么值得多这一步：后端每次刷新都返回一整份新列表，直接铺上去的话列表里每个元素都是新实例；
+ * 而 [ConversationRow] 的参数里还有每一次重组新建的 lambda（`onOpen`、`onTogglePin` 那一串），
+ * 参数相等这一关本来就过不去，能救的只有「这一行的数据还是不是原来那个」。保留原对象之后，
+ * 没变的行拿到同一个引用，行内部那点 remember（长按菜单开没开）和点击态才不会被刷新顺手抹掉。
+ *
+ * 顺序不在这里定：[sortedConversations] 已经排好了，这里只回答「能不能沿用」，不动次序。
+ */
+private fun mergeConversations(
+    previous: List<Conversation>,
+    fresh: List<Conversation>,
+): List<Conversation> {
+    if (previous.isEmpty()) return fresh
+    // 顺序和内容都没变时整份沿用：省掉一次遍历，状态赋值也会因为结构相等而不触发重组。
+    if (previous == fresh) return previous
+    val byId = previous.associateBy { it.id }
+    return fresh.map { row ->
+        val old = byId[row.id]
+        if (old != null && old == row) old else row
+    }
+}
+
+/**
  * 互相关注的人，按编号和名字各记一份。
  *
  * 后端的会话只带 `peer`（身份）和 `peer_name`（今天用的名字），关注列表给的是 `id` / `name`，
@@ -864,6 +973,56 @@ private fun recentContactsOf(
         }
     }
     return out.take(RecentContactCap)
+}
+
+/**
+ * 一次「消息」搜索的结果，外加拿到它的时刻。
+ *
+ * 放 [ScreenCache]，键是 `"screen:search:<owner>:<关键词>"`。为什么要带上时间：单存一份
+ * `List<MessageHit>` 的话，缓存分不出新旧，等于把这个关键词永久钉在第一次的答案上；有了时刻
+ * 才能只认 [SearchCacheTtlMs] 以内的那一份。
+ */
+private data class SearchCacheEntry(
+    val hits: List<MessageHit>,
+    /** 拿到 [hits] 的时刻（[currentTimeMillis]），算新鲜度用。 */
+    val at: Long,
+)
+
+/** 搜索缓存的键。owner 也在键里：换身份要换整份结果，不能把上一个身份的命中画给这个人。 */
+private fun searchCacheKey(owner: String, query: String): String = "screen:search:$owner:$query"
+
+/**
+ * 缓存里现有哪些关键词，按写进去的先后排队（队头最旧）。
+ *
+ * [ScreenCache] 只提供按键读写，没有「一共存了几项」这种视图，也就没法自己淘汰；而关键词是
+ * 无限增长的（每敲一次字就是一个新键）。所以这份顺序单独记在这里：写完新条目顺手把最旧的那几个
+ * 连同 `ScreenCache` 里的值一起删掉。留着几十个命不中的旧词只是占内存。
+ *
+ * 和 `ScreenCache` 一样只活在内存、只在主线程访问，所以不加锁。
+ */
+private object SearchCacheKeys {
+    private val order = mutableListOf<String>()
+
+    /** 记下 [key] 刚被写入；超过 [limit] 项时用 [evict] 把最旧的那些丢掉。 */
+    fun remember(key: String, limit: Int, evict: (String) -> Unit) {
+        order.remove(key)
+        order += key
+        while (order.size > limit) {
+            evict(order.removeAt(0))
+        }
+    }
+}
+
+/**
+ * 搜索失败时要说的那一句。
+ *
+ * 与这一页其它失败提示同一套判断：`lastError` 是后端拒绝的理由，`lastFailureWasNetwork` 是请求
+ * 根本没出去。两个都空说明失败得没头没脑，也得给一句实话，不能把上一次的结果冒充成这一次的。
+ */
+private fun searchFailureLine(error: String?, network: Boolean): String = when {
+    network -> "连不上后端，这是上一次的结果"
+    error != null -> "后端拒绝：$error"
+    else -> "这次没拿到新结果"
 }
 
 /**
@@ -1036,6 +1195,48 @@ private fun MessageHitRow(hit: MessageHit, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/**
+ * 页顶那条灰底提示：「当前无法接收朋友的消息提醒　打开提醒 ›」。
+ *
+ * 照抖音消息页的位置和形状：一条浅灰圆角带，左边一个感叹号，右边蓝色的一句话。它只在系统
+ * 真的没给通知权限时出现（判定在调用方），所以这句话永远是真的。
+ */
+@Composable
+private fun NoticeBanner(onOpen: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(scheme.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIcon(glyph = FlGlyphs.warning, size = 14.dp, tint = scheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "当前无法接收朋友的消息提醒",
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "打开提醒 ›",
+            style = FlText.caption2,
+            color = scheme.primary,
+            maxLines = 1,
+            modifier = Modifier
+                .clip(RoundedCornerShape(percent = 50))
+                .clickable(onClick = onOpen)
+                .padding(horizontal = 6.dp, vertical = 3.dp),
+        )
     }
 }
 
@@ -1369,17 +1570,22 @@ private fun ConversationRow(
                     Text(text = time, style = FlText.caption2, color = scheme.outline)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 免打扰的小标：挂在未读数左边而不是替换它。静音是"别响"，
-                    // 不是"这条不重要"，红点该在还得在。
+                    // 静音的行照抖音那样：只画一个划掉的铃 + 一个红点，不写数字——"别响"的群
+                    // 不需要你数还有几条；不静音的才写数字。
                     if (conversation.muted) {
-                        FlGlyphIcon(
-                            glyph = FlGlyphs.block,
-                            size = 11.dp,
+                        Icon(
+                            imageVector = Icons.Default.NotificationsOff,
+                            contentDescription = "已设为免打扰",
+                            modifier = Modifier.size(12.dp),
                             tint = scheme.outline,
                         )
-                        Spacer(Modifier.width(4.dp))
+                        if (conversation.unread > 0) {
+                            Spacer(Modifier.width(4.dp))
+                            UnreadDot(size = 8.dp)
+                        }
+                    } else {
+                        UnreadBadge(count = conversation.unread)
                     }
-                    UnreadBadge(count = conversation.unread)
                 }
             }
         }

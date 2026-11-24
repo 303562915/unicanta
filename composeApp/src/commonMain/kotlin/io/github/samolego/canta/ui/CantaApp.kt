@@ -1416,6 +1416,17 @@ private fun CantaNavigation(
                     onBlockPeer = { peer, blocked ->
                         settingsViewModel.saveBlockedPeer(peer, blocked)
                     },
+                    // 系统没给通知权限时，页顶摆一条「当前无法接收朋友的消息提醒」，点它申请权限。
+                    // 只在真能申请通知的平台上摆（Android）；桌面端 `canRequestNotify` 为 false，
+                    // 摆一条点不开的提示等于骗人。
+                    noticesBlocked = platform.canRequestNotify && !platform.canNotify(),
+                    onEnableNotices = {
+                        coroutineScope.launch {
+                            if (!platform.requestNotifyPermission()) {
+                                platform.showMessage("没有通知权限，系统不会显示消息提醒")
+                            }
+                        }
+                    },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
                 )
             }
