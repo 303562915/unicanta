@@ -1,0 +1,65 @@
+name: 🐞 Bootstrap bug group (one-shot)
+
+# 一次性：建「UniCanta Bug 反馈」群（幂等：已存在就只把邀请码读回来），
+# create_by 与群主沿用灰度群那一位；建完输出 group id / invite_code，供客户端硬编码与 AI 读取使用。
+# 本机到 supabase 的网络是断的，所以走 CI 的 Management API。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Create the group (idempotent)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+        run: |
+          set -euo pipefail
+          SQL=$(printf '%s\n' \
+            "do \$\$" \
+            "declare" \
+            "  cid bigint;" \
+            "  code text;" \
+            "  owner text;" \
+            "begin" \
+            "  select id into cid from public.conversations where kind = 'group' and title = 'UniCanta Bug 反馈' order by id limit 1;" \
+            "  select created_by into owner from public.conversations where id = 12;" \
+            "  if owner is null then" \
+            "    select created_by into owner from public.conversations where kind = 'group' order by id limit 1;" \
+            "  end if;" \
+            "  if cid is null then" \
+            "    insert into public.conversations (kind, title, created_by)" \
+            "    values ('group', 'UniCanta Bug 反馈', coalesce(owner, ''))" \
+            "    returning id into cid;" \
+            "    insert into public.conversation_members (conversation_id, member, member_name)" \
+            "    select cid, owner, private.social_name(owner) where coalesce(owner, '') <> ''" \
+            "    on conflict (conversation_id, member) do nothing;" \
+            "  end if;" \
+            "  select invite_code into code from public.conversations where id = cid;" \
+            "  if coalesce(code, '') = '' then" \
+            "    update public.conversations" \
+            "       set invite_code = substr(replace(gen_random_uuid()::text, '-', ''), 1, 12)" \
+            "     where id = cid" \
+            "     returning invite_code into code;" \
+            "  end if;" \
+            "  raise notice 'bug group id=%, invite_code=%', cid, code;" \
+            "end \$\$;" \
+            "select c.id, c.title, c.invite_code, c.created_by," \
+            "       (select count(*) from public.conversation_members m where m.conversation_id = c.id) as members" \
+            "  from public.conversations c where c.kind = 'group' order by c.id")
+          RESP=$(curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$SQL" '{query: $q}')")
+          echo "$RESP" | jq .
+          echo "$RESP" | jq -e 'any(.[]; .title == "UniCanta Bug 反馈")' > /dev/null || {
+            echo "bug group was not created" >&2
+            exit 1
+          }
