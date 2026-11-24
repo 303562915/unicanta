@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.samolego.canta.data.cache.ScreenCache
+import io.github.samolego.canta.data.community.ChatMessageCache
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.InboxSummary
@@ -81,12 +83,22 @@ import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 页面开着时多久问一次后端：没有推送，靠这一行让列表跟上别人的动作。 */
 private const val MessagePollMs: Long = 15_000L
+
+/** 预取几个会话的消息：够覆盖「刚聊过的那几个」，再多就是替没打开的页面花流量。 */
+private const val WarmConversationLimit = 4
+
+/** 每个会话预取多少条：和聊天页首屏那一页一致。 */
+private const val WarmMessageLimit = 30
+
+/** 两次预取之间停一下：并发打出去只会抢同一条连接。 */
+private const val WarmPauseMillis = 150L
 
 /** 头像那一排最多画多少位最近联系人：再多就不是「最近」了。 */
 private const val RecentContactCap: Int = 8
@@ -249,22 +261,62 @@ fun MessagesScreen(
         // `loadError` 不在这里清：清了的话，一次持续的失败会让那行原因在每次刷新开头先消失、
         // 三次请求跑完再回来，看起来就是每 15 秒闪一下。它只在下面拿到结果时被赋成这一次的真值。
         val chats = repository.conversationsFor(owner)
+        // 逐句判成败：three 个请求共用一个 `lastError`，最后一句的结果会盖掉前面的。
+        // 以前只看最后一句，结果「关注列表没拉到」也会让会话列表那份缓存不写——下次从聊天页
+        // 退回来，内存里还是空的，于是又转一次圈。会话列表拿到就是拿到，跟另外两句无关。
+        val chatsFailed = repository.lastError != null
         val people = repository.followersOf(owner)
+        val peopleFailed = repository.lastError != null
         val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
-        // 失败时**不覆盖**已经画在屏幕上的那一份：`conversationsFor` 拉挂了给的也是空列表，
-        // 照着它画就等于因为一次断网把好端端的列表清空，然后人还得再等 15 秒才回来。
-        // 空列表和后端没通本来长得一样，区别只有下面那行 `loadError`。
-        if (repository.lastError == null) {
+        if (!chatsFailed) {
             // 按会话号合并而不是整份替换：内容没变的行沿用原对象，刷新时那几行不会被当成新行
             // 重新组合（长按菜单开着、手指正按着的时候尤其要紧）。
             conversations = mergeConversations(conversations, sortedConversations(chats))
-            followers = people
+            if (!peopleFailed) followers = people
             summary = counted
-            ConversationCache.put(owner, conversations, people, counted)
+            ConversationCache.put(owner, conversations, followers, counted)
         }
         // 拉不到就说一句：空列表和后端没通在界面上长得一样，这一行是唯一的区别。
         loadError = repository.lastError
         loading = false
+    }
+
+    /**
+     * 预热：打开消息页时，顺手把最近几个会话（群优先、有未读的优先）的首屏消息取回来写进
+     * [ChatMessageCache]。
+     *
+     * 为什么在这里做：聊天页的首屏只有两件事——缓存里有没有、以及要不要等网络。既然消息页
+     * 已经把会话列表拿到了，「点进去立刻能看见最后几条」就只差这一步预取。
+     *
+     * 每个会话只预取一次（`warmedConversations` 记着），否则每 15 秒的刷新都会再拉一遍，等于
+     * 拿流量换一个已经有的东西。预取失败不记账，下次刷新会再试。
+     */
+    val warmedConversations = remember { mutableSetOf<Long>() }
+    LaunchedEffect(owner, conversations.map { it.id }, reloads) {
+        if (owner.isEmpty()) return@LaunchedEffect
+        val targets = conversations
+            .filter { it.isGroup || it.unread > 0 }
+            .sortedByDescending { it.lastAt }
+            .take(WarmConversationLimit)
+        for (conversation in targets) {
+            if (conversation.id <= 0L || conversation.id in warmedConversations) continue
+            if (ChatMessageCache.get(conversation.id) != null) {
+                warmedConversations += conversation.id
+                continue
+            }
+            val fresh = repository.messagesFor(
+                owner = owner,
+                conversation = conversation.id,
+                offset = 0,
+                limit = WarmMessageLimit,
+            )
+            if (fresh.isNotEmpty()) {
+                ChatMessageCache.put(conversation.id, fresh)
+                warmedConversations += conversation.id
+            }
+            // 一条一条来：四个请求同时打出去只会抢同一条连接，反而更慢。
+            delay(WarmPauseMillis)
+        }
     }
 
     /**
@@ -797,6 +849,11 @@ private fun MessagesTopBar(
             }
         }
         Spacer(Modifier.height(4.dp))
+        // 顶栏下面那条发丝线：列表从线下开始，和参考图一致。
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = scheme.outlineVariant.copy(alpha = 0.6f),
+        )
     }
 
     // 展开就把光标放进去：点一下放大镜之后还要再点一下输入框，等于白点一次。
@@ -1746,16 +1803,12 @@ private fun InitialAvatar(label: String) {
 }
 
 /**
- * 时间戳里的 HH:mm：列表右侧只画钟点，日期留给会话页。
+ * 列表右侧那一格时间，**按北京时间**：刚刚 / N分钟前 / 今天 HH:mm / 昨天 HH:mm / MM-dd / yyyy-MM-dd。
  *
- * 后端盖的是 `2026-11-20T10:00:00.000000Z`，取 T 后面那五个字符就是。不是这个形状（没有 T、
- * 或者被截短了）就返回空串——宁可这一格空着，也不画一个猜出来的时间。
+ * 换算在 [BeijingTime] 里做（后端给的是 UTC）。以前这里是切字符串，等于把 UTC 的钟点直接当本地
+ * 时间画，下午发的消息会显示成上午。
  */
-private fun clockOf(stamp: String): String {
-    val at = stamp.indexOf('T')
-    if (at < 0 || stamp.length < at + 6) return ""
-    return stamp.substring(at + 1, at + 6)
-}
+private fun clockOf(stamp: String): String = BeijingTime.listStamp(stamp)
 
 /**
  * 互动消息那一行的副标题：调用方没有现成的一句时，用后端已经数好的四个数字拼一句。
