@@ -50,6 +50,7 @@ import io.github.samolego.canta.generated.resources.about_download_page
 import io.github.samolego.canta.generated.resources.about_downloading
 import io.github.samolego.canta.generated.resources.about_downloading_unknown
 import io.github.samolego.canta.generated.resources.about_ready_to_install
+import io.github.samolego.canta.generated.resources.about_installing_progress
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_checking
 import io.github.samolego.canta.generated.resources.about_contributors
