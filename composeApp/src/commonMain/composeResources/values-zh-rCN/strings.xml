@@ -224,11 +224,19 @@
     <string name="update_channel">更新渠道</string>
     <string name="update_channel_stable">稳定版</string>
     <string name="update_channel_dev">开发版</string>
-    <string name="about_downloading">正在下载… %1$d%%</string>
+    <!-- 百分号在代码里拼：Compose Multiplatform 的格式化只认 %N$s / %N$d，`%%` 会原样输出两个
+         百分号（原来这里写 %% 就是「正在下载… 42%%」的来源）。 -->
+    <string name="about_downloading">正在下载… %1$d</string>
     <string name="about_downloading_unknown">正在下载…</string>
     <string name="about_ready_to_install">%1$s 已下载，点击安装</string>
     <string name="about_installing">正在安装…完成后应用会退出</string>
     <string name="about_installing_version">正在安装 %1$s…完成后应用会退出</string>
+    <!-- 安装进行到哪一步：pm install 不报进度，只能把通道说清楚。 -->
+    <string name="about_install_stage_preparing">正在准备安装</string>
+    <string name="about_install_stage_staging">正在把安装包放到 shell 读得到的位置</string>
+    <string name="about_install_stage_pushing">正在推送安装包到 /data/local/tmp</string>
+    <string name="about_install_stage_installing">正在执行 pm install</string>
+    <string name="about_install_stage_root">改用 root 重试</string>
     <string name="about_install_done">已安装 %1$s，正在重启应用</string>
     <string name="about_install_failed">安装没有成功：%1$s</string>
     <string name="about_install_failed_title">安装没成功</string>

@@ -757,7 +757,7 @@ class AndroidCantaPlatform(
                 deleteStaleUpdateApks(directory, existing)
                 val length = existing.length()
                 onProgress(length, length)
-                return@withContext UpdateDownload.Done(existing.absolutePath)
+                return@withContext UpdateDownload.Done(existing.absolutePath, length)
             }
             // A half-written, corrupted or swapped leftover would win the name in `uniqueUpdateFile`
             // and be installed by mistake; the partial below is the one that gets resumed.
@@ -776,7 +776,7 @@ class AndroidCantaPlatform(
             val length = landed.length()
             onProgress(length, length)
             LogUtils.i(TAG, "Resumed a finished download at ${landed.absolutePath}")
-            return@withContext UpdateDownload.Done(landed.absolutePath)
+            return@withContext UpdateDownload.Done(landed.absolutePath, length)
         }
         val client = newDownloadClient()
         var failure = UpdateDownloadFailure.UNKNOWN
@@ -812,7 +812,7 @@ class AndroidCantaPlatform(
                         recordHash(landed)
                         onProgress(written, written)
                         LogUtils.i(TAG, "Downloaded $written bytes to ${landed.absolutePath}")
-                        return@withContext UpdateDownload.Done(landed.absolutePath)
+                        return@withContext UpdateDownload.Done(landed.absolutePath, written)
                     } else {
                         LogUtils.e(TAG, "Downloaded an empty file from $url")
                         partial.delete()
@@ -1087,12 +1087,16 @@ class AndroidCantaPlatform(
      *  3. the bytes pushed into `/data/local/tmp/` in base64 chunks — the one place `pm` itself
      *     recommends, readable wherever Shizuku can run.
      */
-    override suspend fun installUpdate(path: String): String? =
+    override suspend fun installUpdate(
+        path: String,
+        onStage: (InstallStage, Int) -> Unit,
+    ): String? =
         updateInstall.withLock {
             // The bound is this attempt, not this process: `now - elapsedRealtime` names the boot,
             // and any update since the phone started would be read as "this one landed".
             val startedAt = System.currentTimeMillis()
-            val failure = installUpdateLocked(path)
+            onStage(InstallStage.PREPARING, INSTALL_PROGRESS_UNKNOWN)
+            val failure = installUpdateLocked(path, onStage)
             // `pm install` replaces the package under this very process, and Android kills the
             // app as part of doing so: the shell call can come back with an error even though the
             // APK did land. Asking the package manager whether this app was updated after
@@ -1119,7 +1123,10 @@ class AndroidCantaPlatform(
     }.getOrDefault(false)
 
     /** The body of [installUpdate]; only ever runs while [updateInstall] is held. */
-    private suspend fun installUpdateLocked(path: String): String? = withContext(Dispatchers.IO) {
+    private suspend fun installUpdateLocked(
+        path: String,
+        onStage: (InstallStage, Int) -> Unit,
+    ): String? = withContext(Dispatchers.IO) {
         val file = File(path)
         if (!file.exists()) return@withContext "安装包不见了：$path"
 
@@ -1156,16 +1163,23 @@ class AndroidCantaPlatform(
             return false
         }
 
-        if (tryChannel("Shizuku·应用目录") { runInstall(file.absolutePath) }) {
+        if (tryChannel("Shizuku·应用目录") {
+                onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                runInstall(file.absolutePath)
+            }) {
             file.delete()
             return@withContext null
         }
 
         // The public Downloads folder is one MediaStore write away and readable by the shell.
+        onStage(InstallStage.STAGING, INSTALL_PROGRESS_UNKNOWN)
         val staged = stageInDownloads(file)
         if (staged != null) {
             val (stagedPath, stagedUri) = staged
-            val installed = tryChannel("Shizuku·下载目录") { runInstall(stagedPath) }
+            val installed = tryChannel("Shizuku·下载目录") {
+                onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                runInstall(stagedPath)
+            }
             runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
             if (installed) {
                 file.delete()
@@ -1174,7 +1188,7 @@ class AndroidCantaPlatform(
         }
 
         // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
-        if (tryChannel("Shizuku·临时目录") { installViaTmp(file) }) {
+        if (tryChannel("Shizuku·临时目录") { installViaTmp(file, onStage) }) {
             file.delete()
             return@withContext null
         }
@@ -1186,7 +1200,10 @@ class AndroidCantaPlatform(
         if (rootShell == null) {
             attempts["root"] = "这台手机没有 su"
         } else if (attempts.values.any { looksLikeAccessProblem(it) }) {
-            if (tryChannel("root") { installAsRoot(file.absolutePath) }) {
+            if (tryChannel("root") {
+                    onStage(InstallStage.ROOT, INSTALL_PROGRESS_UNKNOWN)
+                    installAsRoot(file.absolutePath)
+                }) {
                 file.delete()
                 return@withContext null
             }
@@ -1303,12 +1320,15 @@ class AndroidCantaPlatform(
      * legal `sh -c` script; the pushed byte count is verified before `pm install` runs, and both
      * temporaries are removed afterwards whatever the outcome.
      */
-    private suspend fun installViaTmp(file: File): String? {
+    private suspend fun installViaTmp(file: File, onStage: (InstallStage, Int) -> Unit): String? {
         val base = "/data/local/tmp/.canta-update"
         shell.run("rm -f '$base.b64' '$base.apk'")
         val encoded = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
         val chunkSize = 90_000
         var offset = 0
+        // The push is the slow part of an install that has to go through /data/local/tmp (a 60 MB
+        // APK is ~850 chunks), so it is the one stage with a real percentage behind it.
+        onStage(InstallStage.PUSHING, 0)
         while (offset < encoded.length) {
             val end = minOf(offset + chunkSize, encoded.length)
             val chunk = encoded.substring(offset, end)
@@ -1318,6 +1338,7 @@ class AndroidCantaPlatform(
                 return "推送到 /data/local/tmp 失败（偏移 $offset）：${run.output.trim().take(200)}"
             }
             offset = end
+            onStage(InstallStage.PUSHING, ((offset.toLong() * 100) / encoded.length).toInt().coerceIn(0, 100))
         }
         val verify = shell.run(
             "base64 -d '$base.b64' > '$base.apk' && rm -f '$base.b64' && " +

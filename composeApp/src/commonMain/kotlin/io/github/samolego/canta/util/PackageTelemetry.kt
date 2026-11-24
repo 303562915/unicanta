@@ -202,6 +202,45 @@ class PackageTelemetry(
         }
     }
 
+    /**
+     * Records what the app's own updater did on this phone: the check, the download, the install.
+     *
+     * Unlike [recordFailures] this is not gated by the package-data opt-in: it carries no package
+     * list and no identity, only the stage that ended and on which device (see
+     * `Telemetry.sendUpdateReport`). Fire-and-forget — the caller never waits for it.
+     */
+    suspend fun recordUpdate(
+        stage: String,
+        outcome: String,
+        channel: String = "",
+        version: String = "",
+        code: String = "",
+        reason: String = "",
+        detail: String = "",
+        progress: Int = -1,
+        bytes: Long = 0L,
+        elapsedMs: Long = 0L,
+    ) {
+        telemetry.sendUpdateReport(
+            UpdateReport(
+                v = 1,
+                platform = telemetry.platformName,
+                stage = stage,
+                outcome = outcome,
+                channel = channel,
+                version = version.take(MAX_UPDATE_VERSION_TEXT),
+                code = code,
+                reason = reason.take(MAX_FAILURE_TEXT),
+                detail = detail.take(MAX_UPDATE_DETAIL_TEXT),
+                progress = progress,
+                bytes = bytes,
+                elapsedMs = elapsedMs,
+                cantaVersion = BuildInfo.VERSION_NAME,
+                device = failureDevice(),
+            )
+        )
+    }
+
     /** The phone as the reports describe it: the coarse context plus the model, which is the key the analysis groups by. */
     private suspend fun failureDevice(): FailureReportDevice {
         val context = runCatching { handler.deviceContext() }.getOrNull() ?: DeviceContext.UNKNOWN
@@ -216,9 +255,13 @@ class PackageTelemetry(
         )
     }
 
-    /** Longest piece of text kept per field of a [FailureReport]. */
+    /** Longest piece of text kept per field of a [FailureReport] or an [UpdateReport]. */
     private companion object {
         const val MAX_FAILURE_TEXT = 400
+
+        /** The install path's per-route report is several lines long by design. */
+        const val MAX_UPDATE_DETAIL_TEXT = 2_000
+        const val MAX_UPDATE_VERSION_TEXT = 80
     }
 
     /**

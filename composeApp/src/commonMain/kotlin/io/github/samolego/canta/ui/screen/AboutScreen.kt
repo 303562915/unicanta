@@ -19,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -41,8 +42,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.core.INSTALL_PROGRESS_UNKNOWN
+import io.github.samolego.canta.core.InstallStage
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.core.UpdateDownloadFailure
+import io.github.samolego.canta.util.PackageTelemetry
+import io.github.samolego.canta.util.UpdateReport
 import io.ktor.client.HttpClient
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.about_check_update
@@ -92,6 +97,11 @@ import io.github.samolego.canta.generated.resources.about_update_failed_timeout
 import io.github.samolego.canta.generated.resources.about_up_to_date
 import io.github.samolego.canta.generated.resources.about_update_store_managed
 import io.github.samolego.canta.generated.resources.about_install_handoff
+import io.github.samolego.canta.generated.resources.about_install_stage_installing
+import io.github.samolego.canta.generated.resources.about_install_stage_preparing
+import io.github.samolego.canta.generated.resources.about_install_stage_pushing
+import io.github.samolego.canta.generated.resources.about_install_stage_root
+import io.github.samolego.canta.generated.resources.about_install_stage_staging
 import io.github.samolego.canta.generated.resources.update_channel
 import io.github.samolego.canta.generated.resources.update_channel_dev
 import io.github.samolego.canta.generated.resources.update_channel_stable
@@ -116,6 +126,7 @@ import kotlinx.coroutines.CancellationException
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import kotlin.time.TimeSource
 
 /** Where the app is published: the only repository the page points at. */
 private const val REPO_URL = "https://github.com/303562915/unicanta"
@@ -166,6 +177,13 @@ fun AboutScreen(
      * 版本号本来就在这一页。
      */
     onVersionTap: () -> Unit = {},
+    /**
+     * 更新链路的留痕：检查 / 下载 / 安装每一步结束都写一行到后端（`update_reports`）。
+     *
+     * 这一页是唯一能看到更新失败原因的地方，但它只在当事人手机上；记录上传之后，同一个机型上
+     * 反复出现的「下载失败 / 装不上」不必再让人描述屏幕。
+     */
+    updateTelemetry: PackageTelemetry? = null,
 ) {
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
@@ -200,11 +218,16 @@ fun AboutScreen(
 
     val download: (UpdateRelease) -> Unit = { release ->
         val version = updateLabel(release)
+        val channelName = if (updateChannel == "dev") "dev" else "stable"
         updateState = UpdateState.Downloading(version, DOWNLOAD_PROGRESS_UNKNOWN)
         downloadable = version to release
         // A download runs in the background: say so in the theme's own colour before it starts.
         scope.launch { toast.showSnackbar(getString(Res.string.about_update_download_toast, version)) }
         updateJob = scope.launch {
+            val startedAt = TimeSource.Monotonic.markNow()
+            // The percentage the transfer reached, so a failed download reports where it stopped
+            // instead of only that it stopped.
+            var reached = DOWNLOAD_PROGRESS_UNKNOWN
             // Not one shot: the rounds and the platform's resume keep a flapping proxy from
             // turning into "download failed, tap it yourself again".
             val result = downloadReleaseWithRetries(
@@ -216,15 +239,46 @@ fun AboutScreen(
                     // leaving an error sentence on screen while the next attempt is already running.
                     if (attempt > 1) updateState = UpdateState.Downloading(version, DOWNLOAD_PROGRESS_UNKNOWN)
                 },
-                onProgress = { percent -> updateState = UpdateState.Downloading(version, percent) },
+                onProgress = { percent ->
+                    reached = percent
+                    updateState = UpdateState.Downloading(version, percent)
+                },
             )
             downloadable = null
+            val elapsed = startedAt.elapsedNow().inWholeMilliseconds
             // A failure carries its reason, so the page can name it and leave the browser as the
             // way out instead of only offering the same download again.
             updateState = when (result) {
-                is UpdateDownload.Done -> UpdateState.ReadyToInstall(version, result.path)
-                is UpdateDownload.Failed ->
-                    UpdateState.FailedWith(getString(result.failure.reason()), result.failure)
+                is UpdateDownload.Done -> {
+                    scope.launch {
+                        updateTelemetry?.recordUpdate(
+                            stage = UpdateReport.STAGE_DOWNLOAD,
+                            outcome = UpdateReport.OUTCOME_OK,
+                            channel = channelName,
+                            version = version,
+                            progress = 100,
+                            bytes = result.bytes,
+                            elapsedMs = elapsed,
+                        )
+                    }
+                    UpdateState.ReadyToInstall(version, result.path)
+                }
+                is UpdateDownload.Failed -> {
+                    val reason = getString(result.failure.reason())
+                    scope.launch {
+                        updateTelemetry?.recordUpdate(
+                            stage = UpdateReport.STAGE_DOWNLOAD,
+                            outcome = UpdateReport.OUTCOME_FAILED,
+                            channel = channelName,
+                            version = version,
+                            code = result.failure.name,
+                            reason = reason,
+                            progress = reached,
+                            elapsedMs = elapsed,
+                        )
+                    }
+                    UpdateState.FailedWith(reason, result.failure)
+                }
             }
         }
     }
@@ -232,12 +286,26 @@ fun AboutScreen(
     // A download that is not moving is something the reader has to be able to stop, and a stopped
     // download goes back to the release it was fetching rather than to an empty page.
     val cancelDownload: () -> Unit = {
+        val stopping = downloadable?.first
         updateJob?.cancel()
         updateJob = null
         updateState = downloadable
             ?.let { (version, release) -> UpdateState.Available(version, release) }
             ?: UpdateState.Idle
         downloadable = null
+        // A cancelled download is worth a line too: a build that nobody finishes downloading looks
+        // exactly like a download that never started once the page is closed.
+        if (stopping != null) {
+            val channelName = if (updateChannel == "dev") "dev" else "stable"
+            scope.launch {
+                updateTelemetry?.recordUpdate(
+                    stage = UpdateReport.STAGE_DOWNLOAD,
+                    outcome = UpdateReport.OUTCOME_CANCELLED,
+                    channel = channelName,
+                    version = stopping,
+                )
+            }
+        }
     }
 
     // One install path for both the switch-off case and the dialog: the APK replaces this app, so
@@ -249,8 +317,26 @@ fun AboutScreen(
         // thing this page shows before the app is replaced.
         scope.launch { toast.showSnackbar(getString(Res.string.about_installing_version, ready.version)) }
         scope.launch {
-            val failure = platform.installUpdate(ready.path)
+            val channelName = if (updateChannel == "dev") "dev" else "stable"
+            val startedAt = TimeSource.Monotonic.markNow()
+            // Every route `pm install` is offered to is reported back here, so the row names the
+            // step instead of sitting on one frozen "正在安装" line.
+            val failure = platform.installUpdate(ready.path) { stage, percent ->
+                updateState = UpdateState.Installing(ready.version, ready.path, stage, percent)
+            }
+            val elapsed = startedAt.elapsedNow().inWholeMilliseconds
             if (failure == null) {
+                // Reported first, in its own coroutine: a success closes this process 1.8s later,
+                // and the row has to leave before that.
+                scope.launch {
+                    updateTelemetry?.recordUpdate(
+                        stage = UpdateReport.STAGE_INSTALL,
+                        outcome = UpdateReport.OUTCOME_OK,
+                        channel = channelName,
+                        version = ready.version,
+                        elapsedMs = elapsed,
+                    )
+                }
                 // Not awaited: `showSnackbar` suspends until the line goes away, and the exit must
                 // not wait on it — a success that closes the app before its own line is readable is
                 // the "不知道装没装上" this change is about.
@@ -265,8 +351,32 @@ fun AboutScreen(
                     // The privileged runtime could not read any home for the APK, but the system
                     // installer reads through the granted content URI, so the same file still
                     // installs — with the system's own dialog.
+                    scope.launch {
+                        updateTelemetry?.recordUpdate(
+                            stage = UpdateReport.STAGE_HANDOFF,
+                            outcome = UpdateReport.OUTCOME_OK,
+                            channel = channelName,
+                            version = ready.version,
+                            // The privileged routes' own refusals: they explain why the dialog had
+                            // to be the answer.
+                            detail = failure,
+                            elapsedMs = elapsed,
+                        )
+                    }
                     updateState = UpdateState.HandedOff(ready.version)
                 } else {
+                    scope.launch {
+                        updateTelemetry?.recordUpdate(
+                            stage = UpdateReport.STAGE_INSTALL,
+                            outcome = UpdateReport.OUTCOME_FAILED,
+                            channel = channelName,
+                            version = ready.version,
+                            code = "REFUSED_ALL_ROUTES",
+                            reason = failure,
+                            detail = failure,
+                            elapsedMs = elapsed,
+                        )
+                    }
                     installReport = failure
                     updateState = UpdateState.FailedWith(failure)
                 }
@@ -284,17 +394,43 @@ fun AboutScreen(
             updateState = UpdateState.Checking
             updateJob = scope.launch {
                 val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
+                val channelName = if (channel == UpdateChannel.DEVELOPMENT) "dev" else "stable"
+                val startedAt = TimeSource.Monotonic.markNow()
                 val found = try {
                     latestRelease(client, channel)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: UpdateCheckException) {
                     updateState = UpdateState.Failed(e.failure)
+                    // A check that failed on someone's proxy is invisible from here; the row makes
+                    // "检查更新总是失败" countable per device instead of an anecdote.
+                    updateTelemetry?.recordUpdate(
+                        stage = UpdateReport.STAGE_CHECK,
+                        outcome = UpdateReport.OUTCOME_FAILED,
+                        channel = channelName,
+                        code = e.failure.name,
+                        elapsedMs = startedAt.elapsedNow().inWholeMilliseconds,
+                    )
                     return@launch
                 } catch (e: Exception) {
                     updateState = UpdateState.Failed(UpdateFailure.UNKNOWN)
+                    updateTelemetry?.recordUpdate(
+                        stage = UpdateReport.STAGE_CHECK,
+                        outcome = UpdateReport.OUTCOME_FAILED,
+                        channel = channelName,
+                        code = UpdateFailure.UNKNOWN.name,
+                        detail = e.toString().take(400),
+                        elapsedMs = startedAt.elapsedNow().inWholeMilliseconds,
+                    )
                     return@launch
                 }
+                updateTelemetry?.recordUpdate(
+                    stage = UpdateReport.STAGE_CHECK,
+                    outcome = UpdateReport.OUTCOME_OK,
+                    channel = channelName,
+                    version = updateLabel(found),
+                    elapsedMs = startedAt.elapsedNow().inWholeMilliseconds,
+                )
                 val label = updateLabel(found)
                 when {
                     !found.isNewerThanInstalled() -> updateState = UpdateState.Latest
@@ -580,11 +716,13 @@ private fun UpdateCard(
         UpdateState.StoreManaged -> stringResource(Res.string.about_update_store_managed) to scheme.onSurfaceVariant
         is UpdateState.Downloading ->
             // No announced size: show that bytes are moving instead of a number that would sit at
-            // 0% for the whole transfer.
+            // 0% for the whole transfer. The percent sign is appended here rather than written in
+            // the resource: Compose's formatter knows only `%N$s` / `%N$d` and prints `%%` as two
+            // literal signs, which is exactly the "42%%" this row used to show.
             (if (state.progress == DOWNLOAD_PROGRESS_UNKNOWN) {
                 stringResource(Res.string.about_downloading_unknown)
             } else {
-                stringResource(Res.string.about_downloading, state.progress)
+                "${stringResource(Res.string.about_downloading, state.progress)}%"
             }) to scheme.primary
         is UpdateState.ReadyToInstall ->
             stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary
@@ -596,6 +734,17 @@ private fun UpdateCard(
     }
     val openRelease = state is UpdateState.Available
     val busy = state == UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing
+
+    // 进度条要覆盖两段：下载（有总长的百分比）和安装。安装本身 `pm install` 不报进度，所以只有
+    // 把安装包推进 /data/local/tmp 那一段有数字，别的阶段用不确定进度条 + 阶段的文字。
+    val barProgress: Float? = when (state) {
+        is UpdateState.Downloading ->
+            if (state.progress == DOWNLOAD_PROGRESS_UNKNOWN) null else state.progress / 100f
+        is UpdateState.Installing ->
+            state.percent.takeIf { it != INSTALL_PROGRESS_UNKNOWN }?.div(100f)
+        else -> null
+    }
+    val showsBar = state is UpdateState.Downloading || state is UpdateState.Installing
 
     Row(
         modifier = Modifier
@@ -624,7 +773,9 @@ private fun UpdateCard(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (busy) {
+                // The spinner belongs to the one state with nothing to measure. A download and an
+                // install draw the bar below instead of a second, smaller "something is happening".
+                if (state == UpdateState.Checking) {
                     CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp)
                     Spacer(Modifier.width(6.dp))
                 }
@@ -635,6 +786,34 @@ private fun UpdateCard(
                     // A reason names a proxy or a quota, so it is allowed to wrap rather than clip.
                     maxLines = if (failed) 3 else Int.MAX_VALUE,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (showsBar) {
+                Spacer(Modifier.height(8.dp))
+                val barModifier = Modifier.fillMaxWidth().height(3.dp)
+                if (barProgress != null) {
+                    LinearProgressIndicator(
+                        progress = { barProgress },
+                        modifier = barModifier,
+                        color = scheme.primary,
+                        trackColor = scheme.primary.copy(alpha = 0.18f),
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = barModifier,
+                        color = scheme.primary,
+                        trackColor = scheme.primary.copy(alpha = 0.18f),
+                    )
+                }
+            }
+            // Which route the install is on: "正在安装" alone cannot tell a slow push from a dead
+            // Shizuku, and that difference is the whole question when an update will not land.
+            if (state is UpdateState.Installing) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = installStageLabel(state.stage, state.percent),
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
                 )
             }
         }
@@ -648,6 +827,26 @@ private fun UpdateCard(
             )
         }
     }
+}
+
+/**
+ * The step the privileged installer is on, with the push's own percentage when that step has one.
+ *
+ * The sign is appended here, not stored in the resource: see [UpdateState.Downloading]'s note about
+ * `%%` — the same formatter handles both lines.
+ */
+@Composable
+private fun installStageLabel(stage: InstallStage, percent: Int): String {
+    val label = stringResource(
+        when (stage) {
+            InstallStage.PREPARING -> Res.string.about_install_stage_preparing
+            InstallStage.STAGING -> Res.string.about_install_stage_staging
+            InstallStage.PUSHING -> Res.string.about_install_stage_pushing
+            InstallStage.INSTALLING -> Res.string.about_install_stage_installing
+            InstallStage.ROOT -> Res.string.about_install_stage_root
+        },
+    )
+    return if (percent == INSTALL_PROGRESS_UNKNOWN) label else "$label $percent%"
 }
 
 /** One sentence per reason, naming the thing the user can act on. */

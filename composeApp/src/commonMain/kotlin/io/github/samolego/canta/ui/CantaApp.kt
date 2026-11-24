@@ -54,6 +54,7 @@ import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.core.UpdateDownload
+import io.github.samolego.canta.core.InstallStage
 import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatRealtimeHub
 import io.github.samolego.canta.data.community.PlanRepository
@@ -128,6 +129,7 @@ import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.updateLabel
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
+import io.github.samolego.canta.ui.screen.DOWNLOAD_PROGRESS_UNKNOWN
 import io.github.samolego.canta.ui.screen.INSTALL_DONE_LINGER_MILLIS
 import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
 import io.github.samolego.canta.ui.screen.UpdateChannel
@@ -155,6 +157,7 @@ import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.util.TelemetryConfig
+import io.github.samolego.canta.util.UpdateReport
 import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
@@ -162,6 +165,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.time.TimeSource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
@@ -394,8 +398,21 @@ private fun CantaNavigation(
             installingUpdate = true
             coroutineScope.launch {
                 platform.showMessage(getString(Res.string.about_installing_version, ready.version))
-                val failure = platform.installUpdate(ready.path)
+                val channelName = if (updateChannel == "dev") "dev" else "stable"
+                val startedAt = TimeSource.Monotonic.markNow()
+                // No progress is drawn from here (this path has no page); the stages are still
+                // wired so the record says which route the install was on when it failed.
+                var lastStage = InstallStage.PREPARING
+                val failure = platform.installUpdate(ready.path) { stage, _ -> lastStage = stage }
+                val elapsed = startedAt.elapsedNow().inWholeMilliseconds
                 if (failure == null) {
+                    deps.packageTelemetry.recordUpdate(
+                        stage = UpdateReport.STAGE_INSTALL,
+                        outcome = UpdateReport.OUTCOME_OK,
+                        channel = channelName,
+                        version = ready.version,
+                        elapsedMs = elapsed,
+                    )
                     platform.showMessage(getString(Res.string.about_install_done, ready.version))
                     // Let the line be read before the APK's process goes away; closing at once is
                     // indistinguishable from a crash, which is what people kept reporting.
@@ -408,6 +425,18 @@ private fun CantaNavigation(
                     // endless "正在安装" — the About page keeps the manual retry.
                     settingsViewModel.saveSkippedAutoInstallVersion(ready.version)
                     val handedOff = platform.requestInstall(ready.path)
+                    deps.packageTelemetry.recordUpdate(
+                        stage = if (handedOff) UpdateReport.STAGE_HANDOFF else UpdateReport.STAGE_INSTALL,
+                        outcome = if (handedOff) UpdateReport.OUTCOME_OK else UpdateReport.OUTCOME_FAILED,
+                        channel = channelName,
+                        version = ready.version,
+                        code = if (handedOff) "" else "REFUSED_ALL_ROUTES",
+                        reason = failure,
+                        // The last route tried, then every route's own refusal: together they say
+                        // whether it was permissions or the APK the package manager refused.
+                        detail = "stage=$lastStage\n$failure",
+                        elapsedMs = elapsed,
+                    )
                     if (handedOff) {
                         platform.showMessage(getString(Res.string.about_install_handoff, ready.version))
                     } else {
@@ -578,14 +607,27 @@ private fun CantaNavigation(
                     // No progress is shown from here: a toast cannot carry a percentage, and the
                     // About page is where the download renders its own bar. What matters at this
                     // level is that every ending is spoken out loud.
+                    val channelName = if (channel == UpdateChannel.DEVELOPMENT) "dev" else "stable"
+                    val downloadStartedAt = TimeSource.Monotonic.markNow()
+                    var reached = DOWNLOAD_PROGRESS_UNKNOWN
                     val result = downloadReleaseWithRetries(
                         platform = platform,
                         tag = release.tag,
                         buildNumber = release.buildNumber,
-                        onProgress = { _ -> },
+                        onProgress = { percent -> reached = percent },
                     )
+                    val elapsed = downloadStartedAt.elapsedNow().inWholeMilliseconds
                     when (result) {
                         is UpdateDownload.Done -> {
+                            deps.packageTelemetry.recordUpdate(
+                                stage = UpdateReport.STAGE_DOWNLOAD,
+                                outcome = UpdateReport.OUTCOME_OK,
+                                channel = channelName,
+                                version = label,
+                                progress = 100,
+                                bytes = result.bytes,
+                                elapsedMs = elapsed,
+                            )
                             val ready = UpdateState.ReadyToInstall(label, result.path)
                             // Asking first is a switch, off by default: the download only ran
                             // because automatic updates are on, so the install is the thing that
@@ -601,13 +643,26 @@ private fun CantaNavigation(
                         // download page is the action, because a download problem cannot be fixed
                         // by the installer. The failure is not remembered, so the next start tries
                         // again.
-                        is UpdateDownload.Failed -> coroutineScope.launch {
-                            val answer = snackbarHostState.showSnackbar(
-                                message = getString(Res.string.about_auto_download_failed),
-                                actionLabel = getString(Res.string.about_download_page),
+                        is UpdateDownload.Failed -> {
+                            // The start-up download has nobody watching it: without this row a
+                            // phone whose download always dies looks exactly like "更新没推送".
+                            deps.packageTelemetry.recordUpdate(
+                                stage = UpdateReport.STAGE_DOWNLOAD,
+                                outcome = UpdateReport.OUTCOME_FAILED,
+                                channel = channelName,
+                                version = label,
+                                code = result.failure.name,
+                                progress = reached,
+                                elapsedMs = elapsed,
                             )
-                            if (answer == SnackbarResult.ActionPerformed) {
-                                platform.openUrl(DOWNLOAD_PAGE_URL)
+                            coroutineScope.launch {
+                                val answer = snackbarHostState.showSnackbar(
+                                    message = getString(Res.string.about_auto_download_failed),
+                                    actionLabel = getString(Res.string.about_download_page),
+                                )
+                                if (answer == SnackbarResult.ActionPerformed) {
+                                    platform.openUrl(DOWNLOAD_PAGE_URL)
+                                }
                             }
                         }
                     }
@@ -1025,6 +1080,9 @@ private fun CantaNavigation(
                             }
                         }
                     },
+                    // 检查 / 下载 / 安装每一步都留一行到 `update_reports`：这一页是唯一看得到原因的
+                    // 地方，而它只在当事人手机上。
+                    updateTelemetry = deps.packageTelemetry,
                 )
             }
             composable(route = Screen.Theme.route) {

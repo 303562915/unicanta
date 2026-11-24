@@ -26,7 +26,8 @@ enum class UpdateDownloadFailure {
 
 /** What [CantaPlatform.downloadUpdate] ended with: the file on disk, or the reason it is not there. */
 sealed interface UpdateDownload {
-    data class Done(val path: String) : UpdateDownload
+    /** [bytes] is the size that landed, 0 when the platform could not say; the report carries it. */
+    data class Done(val path: String, val bytes: Long = 0L) : UpdateDownload
 
     data class Failed(val failure: UpdateDownloadFailure) : UpdateDownload
 }

@@ -196,11 +196,16 @@ gh run download <run-id> -n app-debug -D artifacts
 
 ## 8. 用户快捷词：猜错就学，学完就记（强制）
 
-用户会用他自己的**快捷词**说话。这些词在他这里有固定含义，但对你是陌生的。规则只有三条：
+用户会用他自己的**快捷词**说话。这些词在他这里有固定含义，但对你是陌生的。规则只有四条：
 
 1. **优先按词表理解**。用户说出的词先查本节的表。表里有的，直接按表里的含义理解并动手，不要再问、不要再猜、不要往常见技术含义上套。
 2. **猜错立刻纠正，不许含糊过去**。如果你猜了、猜错了、用户纠正了你，这一轮必须做到：承认理解偏了 → 按用户的解释重做 → **把词和含义写进下面的表**。不登记就当作这次纠正没发生。
 3. **拿不准先猜，猜完必须落表**。不要因为不认识词就停下问"这是什么意思"；先按上下文猜一版执行，用户一纠正就回填词表。除非猜错会造成不可逆的破坏性操作（删数据、强推、发版），那种情况才先问一句。
+4. **默认输入是语音转写来的，先按读音还原意图**。用户的消息常常是**语音识别转文字**后发出来的，中文尤其容易出同音错字、漏字、断句错，技术词也会被写歪（例：`ga` 被识别成「尬」、`刷票` 识别成「刷嫖」、`方案` 识别成「放案」、`部署` 识别成「布署」）。所以：
+   - 先把句子在心里「念一遍」，想这句话说出来像什么，再对照词表和当前任务判断，**不要按字面死磕**。
+   - **不因为错字就说看不懂、也不要让用户重发**。自己还原一版接着做；只有真歧义会让动作做错时才问一句「你是不是指 X」。
+   - **错写不单独登记成新词**。词表记的是用户原意，语音转写造成的不同写法当作同一行的别名处理（写进备注）；反过来，用户投来的怪词先假设是转写误差，不要急着当新快捷词。
+   - 涉及路径、包名、SQL、命令这类**必须逐字准确**的东西，别照抄用户口述的版本，用仓库里的真实文件/表名核对一遍再动手。
 
 登记要求：
 
@@ -408,3 +413,91 @@ simple query protocol 下把它们当**一个隐式事务**执行——中途任
    ② 跑 `wasm-lock-upgrade.yml` 拿到工具链重算的锁，下载后提交。
    注意 `settings.gradle.kts` 里 `rootProject` 是 `Settings` 不是 `Project`，那段写不进去。
 3. 摘掉锁里某条再重算，只能用来**证明**范围不接受新版本，不是修法。
+
+---
+
+## 12. 应用更新：检查 → 下载 → 安装（百分比、进度条、诊断上报）
+
+用户说的「观影页面 / 关于页面那个检查更新」指的就是这一套：入口是**「关于」页**（`AboutScreen`）的
+「检查更新」卡片，加上 `CantaApp.kt` 里的启动自动更新。代码与数据链路如下，改之前先读这一节。
+
+### 12.1 文件与职责
+
+| 位置 | 干什么 |
+|---|---|
+| `ui/screen/AboutScreen.kt` | 关于页的更新卡片、下载/安装的调用方、进度条与阶段文字 |
+| `ui/screen/UpdateChecker.kt` | 查发布（API 失败退到 release 页面）、`UpdateState` 状态机、`downloadRelease*` |
+| `core/CantaPlatform.kt` | `downloadUpdate` / `installUpdate(path, onStage)` / `requestInstall`，`InstallStage` 枚举 |
+| `androidMain/.../AndroidCantaPlatform.kt` | 真正的下载（断点续传、三次重试）与 `pm install` 四条通道 |
+| `util/UpdateReport.kt` + `util/PackageTelemetry.recordUpdate` | 上报载荷与发送入口 |
+| `server/supabase/migrations/20261124140000_update_reports.sql` | 表 `update_reports` + RPC `update_report` + 视图 `update_failure_summary`（本地文件，手工推） |
+
+### 12.2 百分号只有一个：`%%` 在 Compose 里不会转义（2026-11-24 修）
+
+Compose Multiplatform 的字符串格式化**只认 `%N$s` / `%N$d`**，用的是 `replaceWithArgs` 的正则
+`%(\d+)\$[ds]`，**不认识 `%%` 转义**——资源里写 `%1$d%%`，屏幕上就是 `42%%`。
+
+所以：
+
+- `about_downloading` 只写到 `%1$d`，**百分号在代码里拼**（`AboutScreen` 的 `"...${stringResource(...)}%"`）。
+- 任何新增的带百分比文案都照这个来；不要在 `composeResources/values*/strings.xml` 里写 `%%`，
+  也不要依赖 Android 的 `String.format` 转义规则。
+- 同理别写 `%1$02d` 这种带宽度/补零的格式，格式化器不认，会原样显示。
+
+### 12.3 进度条：下载有百分比，安装只有阶段
+
+- **下载**：`UpdateState.Downloading(progress)`，`progress` 是 0–100，`DOWNLOAD_PROGRESS_UNKNOWN(-1)`
+  表示服务器没给 `Content-Length`（这时画不确定进度条，不画数字）。
+- **安装**：`UpdateState.Installing(version, path, stage, percent)`。`pm install` 本身不报进度，
+  所以只有 `InstallStage.PUSHING`（base64 分块推到 `/data/local/tmp`，大包最慢的一段）有真实百分比，
+  其余阶段 `INSTALL_PROGRESS_UNKNOWN`，用不确定进度条 + 阶段文字（`about_install_stage_*`）。
+- 要加阶段：`InstallStage` 加枚举值 → `AndroidCantaPlatform.installUpdateLocked` 里 `onStage(...)` →
+  `AboutScreen.installStageLabel` 加一行字符串映射（`values/` 与 `values-zh-rCN/` 都要加）。
+
+### 12.4 诊断上报：每一步结束都写一行到 `update_reports`
+
+**为什么有它**：「更新装不上」以前只能靠问当事人屏幕上写了什么。现在每次检查/下载/安装结束都上报一行，
+按机型 + 阶段 + code 就能直接看出是哪一步、为什么、在哪些机器上。
+
+- 客户端：`PackageTelemetry.recordUpdate(stage, outcome, channel, version, code, reason, detail,
+  progress, bytes, elapsedMs)` → `Telemetry.sendUpdateReport` → `POST /rest/v1/rpc/update_report {payload}`。
+- 上报点：`AboutScreen`（检查失败/成功、下载成功/失败/取消、安装成功/失败、交给系统安装器）、
+  `CantaApp`（启动自动下载成功/失败、自动安装成功/失败）。
+- **不受「分享匿名卸载数据」开关控制**：那个开关是分享"卸了哪些系统包"，这条只含应用自己的版本、
+  失败 code、阶段、机型与 ROM，没有 token、没有账号、没有包列表。所以它照发；别再给它加 `analyticsEnabled` 判断。
+- 载荷版本 `v=1`，后端 `update_report` 会校验 stage/outcome 并把每条文本截断（reason 400 / detail 2000）。
+- 表只经 RPC 写入（RLS 开、无 policy、`revoke all from anon/authenticated`），读取只有运维。
+
+查问题（连库方式见 10.1，`Q '...'`）：
+
+```sql
+-- 最近失败的都长什么样
+select received_at, stage, outcome, code, model, rom, rom_version, sdk, canta_version, reason
+  from update_reports where outcome = 'failed' order by received_at desc limit 50;
+
+-- 哪台机器、哪一步最容易挂（现成视图）
+select * from update_failure_summary where outcome = 'failed' order by reports desc limit 50;
+
+-- 某个版本的安装失败率（按机型）
+select model, count(*) filter (where outcome = 'ok') as ok,
+       count(*) filter (where outcome = 'failed') as failed
+  from update_reports where stage = 'install' group by model order by failed desc;
+
+-- 下载卡在多少百分比（proxy / 节点问题的典型形状）
+select code, round(avg(progress)) as avg_progress, count(*) from update_reports
+ where stage = 'download' and outcome = 'failed' group by code order by count(*) desc;
+```
+
+code 取值：检查 `UpdateFailure`（`RATE_LIMITED`/`TIMEOUT`/`NETWORK`/`SERVER`/`NO_RELEASE`/`MALFORMED`）、
+下载 `UpdateDownloadFailure`（`NETWORK`/`TIMEOUT`/`STORAGE`/`UNSUPPORTED`/`UNKNOWN`）、
+安装 `REFUSED_ALL_ROUTES`（四条通道全拒，`detail` 是每通道自己的一句），`handoff` 表示交给了系统安装器。
+
+### 12.5 排查顺序（别一上来就翻客户端日志）
+
+1. 先查 `update_reports` 最近同机型的行，看 `stage` + `code` + `detail`。
+2. `stage=check` 且 `RATE_LIMITED`/`NETWORK`/`TIMEOUT` → 代理/出口 IP 问题，不是应用 bug。
+3. `stage=download` 且 `NETWORK`/`TIMEOUT` + 平均进度很低 → 节点断流；`STORAGE` → 磁盘满。
+4. `stage=install` 且 `REFUSED_ALL_ROUTES` → 读 `detail` 里每个通道的原文；`INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+   多半是签名不同（F-Droid 装的那个），`Shizuku 没在运行` 是运行时掉了。
+5. 版本号没变但用户说「没更新」→ 看 `stage=check/outcome=ok` 的 `version`，再看 `skippedAutoInstallVersion`
+   （自动安装失败过的版本会被记下来，停在关于页手动安装）。

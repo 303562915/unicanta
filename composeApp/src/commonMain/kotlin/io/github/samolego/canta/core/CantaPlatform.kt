@@ -4,6 +4,32 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
 /**
+ * What the privileged installer is doing, so a screen can say more than "正在安装".
+ *
+ * `pm install` itself announces nothing while it runs, so the only honest progress is naming the
+ * stage: a reader stuck on "正在安装" for a minute cannot tell a slow push from a dead Shizuku.
+ */
+enum class InstallStage {
+    /** Reading the APK, checking it is this app's own package. */
+    PREPARING,
+
+    /** Copying the APK into the public downloads folder so the shell can read it. */
+    STAGING,
+
+    /** Pushing the APK into `/data/local/tmp` in base64 chunks — the one stage with a real percentage. */
+    PUSHING,
+
+    /** `pm install` is running over Shizuku. */
+    INSTALLING,
+
+    /** Every shell route was refused for an access reason, so the same APK is tried as root. */
+    ROOT,
+}
+
+/** The [InstallStage] percentage that means "this stage has no measurable length". */
+const val INSTALL_PROGRESS_UNKNOWN = -1
+
+/**
  * Abstraction over small, UI-facing platform capabilities so the shared UI
  * can remain target-agnostic. Each platform provides its own implementation.
  */
@@ -144,10 +170,17 @@ interface CantaPlatform {
      * Installs the APK at [path] over this app through the privileged runtime, i.e. `pm install`
      * as Shizuku's identity. Returns null on success, or the reason it failed.
      *
+     * [onStage] is called before every route the APK is offered to, with a 0–100 percentage while
+     * the APK is being pushed (`/data/local/tmp`) and [INSTALL_PROGRESS_UNKNOWN] everywhere else:
+     * `pm install` reports nothing while it runs, and a made-up number is worse than the stage name.
+     *
      * Platforms without a privileged helper answer with an explanation instead of throwing: the
      * caller shows it and leaves the manual download link in place.
      */
-    suspend fun installUpdate(path: String): String? = "this build cannot install updates"
+    suspend fun installUpdate(
+        path: String,
+        onStage: (InstallStage, Int) -> Unit = { _, _ -> },
+    ): String? = "this build cannot install updates"
 
     /**
      * Hands the APK at [path] to the system package installer through a content:// URI the

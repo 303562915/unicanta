@@ -365,6 +365,44 @@ class Telemetry(
         }
     }
 
+    /**
+     * Posts one [UpdateReport] to the backend's `update_report` RPC and returns whether it landed.
+     *
+     * Deliberately **not** behind [isEnabled]: the package-data opt-in is about sharing which system
+     * packages a person removed, and this report carries none of that — it is this app's own updater
+     * failing on a device, with no token and no package list. Without it, "下载装不上" can only be
+     * diagnosed by asking the person what their screen said, which is the request behind this path.
+     *
+     * Not queued and not retried, like [sendFailureReport]: a refusal that happened while the phone
+     * was offline is not worth carrying into the next start, and nobody waits for the answer.
+     */
+    suspend fun sendUpdateReport(report: UpdateReport): Boolean {
+        val body = JsonObject(
+            mapOf("payload" to JsonPrimitive(compactJson.encodeToString(report)))
+        ).toString()
+        return try {
+            val response = client.post(TelemetryConfig.BASE_URL + "update_report") {
+                rpcHeaders()
+                setBody(body)
+            }
+            if (response.status.isSuccess()) {
+                LogUtils.i(TAG, "Sent update report ${report.stage}/${report.outcome} ${report.code}")
+                true
+            } else {
+                LogUtils.w(
+                    TAG,
+                    "Update report rejected: ${response.status} ${response.bodyAsText().take(200)}",
+                )
+                false
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogUtils.w(TAG, "Update report dropped: $e")
+            false
+        }
+    }
+
     private suspend fun sendPending() {
         val events = buildList {
             while (true) add(pending.tryReceive().getOrNull() ?: break)

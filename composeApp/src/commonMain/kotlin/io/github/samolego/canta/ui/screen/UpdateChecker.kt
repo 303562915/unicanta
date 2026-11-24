@@ -1,6 +1,8 @@
 package io.github.samolego.canta.ui.screen
 
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.core.INSTALL_PROGRESS_UNKNOWN
+import io.github.samolego.canta.core.InstallStage
 import io.github.samolego.canta.core.UpdateDownload
 import io.github.samolego.canta.core.UpdateDownloadFailure
 import io.ktor.client.HttpClient
@@ -136,8 +138,18 @@ internal sealed interface UpdateState {
     /** Downloaded and waiting for the user to allow the install. */
     data class ReadyToInstall(val version: String, val path: String) : UpdateState
 
-    /** `pm install` is running for the package at [path]. */
-    data class Installing(val version: String, val path: String) : UpdateState
+    /**
+     * `pm install` is running for the package at [path].
+     *
+     * [stage] names the step the privileged runtime is on and [percent] is 0–100 only while the APK
+     * is being pushed, [INSTALL_PROGRESS_UNKNOWN] everywhere else: `pm install` announces nothing.
+     */
+    data class Installing(
+        val version: String,
+        val path: String,
+        val stage: InstallStage = InstallStage.PREPARING,
+        val percent: Int = INSTALL_PROGRESS_UNKNOWN,
+    ) : UpdateState
 
     /** The privileged install failed, so the APK was handed to the system installer instead. */
     data class HandedOff(val version: String) : UpdateState

@@ -416,11 +416,20 @@
     <string name="update_channel">Update channel</string>
     <string name="update_channel_stable">Stable</string>
     <string name="update_channel_dev">Development</string>
-    <string name="about_downloading">Downloading… %1$d%%</string>
+    <!-- The percent sign is appended in code, not written here: Compose Multiplatform's string
+         formatter only knows %N$s / %N$d and passes %% through as two literal signs, which is how
+         "Downloading… 42%" turned into "42%%" on screen. -->
+    <string name="about_downloading">Downloading… %1$d</string>
     <string name="about_downloading_unknown">Downloading…</string>
     <string name="about_ready_to_install">%1$s is downloaded, tap to install</string>
     <string name="about_installing">Installing… the app will close when it is done</string>
     <string name="about_installing_version">Installing %1$s… the app will close when it is done</string>
+    <!-- What the privileged installer is doing right now, one line per stage. -->
+    <string name="about_install_stage_preparing">Preparing the install</string>
+    <string name="about_install_stage_staging">Copying the APK where the shell can read it</string>
+    <string name="about_install_stage_pushing">Pushing the APK to /data/local/tmp</string>
+    <string name="about_install_stage_installing">Running pm install</string>
+    <string name="about_install_stage_root">Trying again as root</string>
     <string name="about_install_done">Installed %1$s — restarting</string>
     <string name="about_install_failed">The install did not go through: %1$s</string>
     <string name="about_install_failed_title">Install failed</string>
