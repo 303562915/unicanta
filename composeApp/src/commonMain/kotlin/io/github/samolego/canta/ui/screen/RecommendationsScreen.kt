@@ -107,6 +107,7 @@ import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.rememberRememberedGridState
 import io.github.samolego.canta.ui.component.rememberRememberedListState
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
+import io.github.samolego.canta.data.cache.stableMerge
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.fl.FlSegment
@@ -283,7 +284,9 @@ fun RecommendationsScreen(
         val repo = repository ?: return@LaunchedEffect
         val fresh = repo.suggestedApps(cacheOwner)
         if (fresh != null) {
-            suggested = fresh
+            // 就地合并（见 [stableMerge]）：票数没变的那几条沿用旧实例，整屏不重画。
+            val merged = stableMerge(suggested, fresh) { it.id }
+            if (merged !== suggested) suggested = merged
             suggestError = null
         } else {
             // A backend without the function is not a failure of the page: it simply has no

@@ -42,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.cache.ScreenCache
+import io.github.samolego.canta.data.cache.stableMerge
 import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.PointOffer
@@ -56,6 +58,7 @@ import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
+import kotlinx.serialization.Serializable
 import kotlinx.coroutines.launch
 
 /** 商品类型：值 → 页面上的名字。 */
@@ -65,6 +68,21 @@ private val OfferKinds = listOf(
     "account" to "账号",
     "other" to "其它",
 )
+
+/**
+ * 商城一屏的快照：余额、货架、我兑换过的。
+ *
+ * 按身份分槽（见 [storeCacheKey]）：余额和订单都是某一个人的，串了槽就是拿别人的钱画给这个人。
+ */
+@Serializable
+private data class StoreSnapshot(
+    val balance: Long = 0L,
+    val offers: List<PointOffer> = emptyList(),
+    val orders: List<PointOrder> = emptyList(),
+)
+
+/** 商城这一屏在 [ScreenCache] 里的键：每人一格。 */
+private fun storeCacheKey(who: String): String = "screen:store:$who"
 
 /**
  * 商城：积分怎么来、怎么花。
@@ -104,6 +122,16 @@ internal fun StoreScreen(
     var offers by remember { mutableStateOf<List<PointOffer>>(emptyList()) }
     var orders by remember { mutableStateOf<List<PointOrder>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    // 这一屏上一次画出来的那一份（见 [ScreenCache]）：身份一到位就先摆上去，不等网络那一次往返。
+    // 写在这里而不是 state 初始值里，是因为第一帧 `who` 还是空串，那时按身份查缓存必然查不到。
+    LaunchedEffect(who) {
+        if (who.isEmpty() || offers.isNotEmpty()) return@LaunchedEffect
+        val cached = ScreenCache.get<StoreSnapshot>(storeCacheKey(who)) ?: return@LaunchedEffect
+        balance = cached.balance
+        offers = cached.offers
+        orders = cached.orders
+        loading = false
+    }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
     /** 正在进行的那一件事：`checkin` / `offer:3`。 */
@@ -138,11 +166,17 @@ internal fun StoreScreen(
         account = repo.pointsAccount(who) ?: account
         repo.pointShelf(who)?.let { shelf ->
             balance = shelf.balance
-            offers = shelf.offers
+            // 就地合并：价格、库存没变的商品沿用旧实例，货架不整块重画。
+            val merged = stableMerge(offers, shelf.offers) { it.id }
+            if (merged !== offers) offers = merged
             error = null
         }
         orders = repo.myPointOrders(who)
         loading = false
+        // 存回本地：下次进来先画这一份，再等网络顶上去。
+        if (who.isNotEmpty()) {
+            ScreenCache.put(storeCacheKey(who), StoreSnapshot(balance, offers, orders))
+        }
     }
 
     val checkIn: () -> Unit = {

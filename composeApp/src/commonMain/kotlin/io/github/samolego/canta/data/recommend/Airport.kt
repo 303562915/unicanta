@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.recommend
 
+import kotlinx.serialization.Serializable
 import kotlin.math.round
 
 /**
@@ -127,6 +128,7 @@ data class CheckInResult(
 )
 
 /** 货架上的一件商品。交付内容不在这一层，兑换成功才拿得到。 */
+@Serializable
 data class PointOffer(
     val id: Long = 0L,
     val title: String = "",
@@ -175,6 +177,7 @@ data class PointRedeemResult(
 )
 
 /** 我兑换过的一件东西，交付内容是订单当时的快照。 */
+@Serializable
 data class PointOrder(
     val id: Long = 0L,
     val offerId: Long = 0L,
