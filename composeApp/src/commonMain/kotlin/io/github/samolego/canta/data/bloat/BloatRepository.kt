@@ -10,6 +10,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.flow.first
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -78,9 +79,28 @@ class BloatRepository(
      * what a build without the resource behaves like.
      */
     private val overrides: suspend () -> BloatOverrides = { BloatOverrides.empty() },
+    /**
+     * The backend's correction table (`package_level_fix_list()`), as raw JSON; null when this build
+     * has no backend wired, in which case the bundled table is all there is.
+     *
+     * Kept as a lambda rather than a repository: this class already owns the "check once a week,
+     * cache the answer, fail quietly" mechanics, and the call itself is one line of HTTP.
+     */
+    private val remoteCorrections: (suspend () -> String?)? = null,
+    /** Where the last fetched correction table lives between launches. */
+    private val correctionsCache: AppBlobStorage? = null,
 ) {
     private companion object {
         const val TAG = "BloatRepository"
+
+        /**
+         * 核对间隔，按日历天数。
+         *
+         * 上游这个列表一周也动不了几次，而一次核对在国内要连 `api.github.com`：天天问一遍只是在
+         * 白花流量与超时重试，换来的"早知道一天"没有意义。七天问一次，剩下的次数留给用户自己按
+         * 「检查更新」或在设置里改地址。
+         */
+        const val CHECK_INTERVAL_DAYS = 7L
     }
 
     /** Resolved once: the table is a bundled file, it does not change while the app runs. */
@@ -90,10 +110,59 @@ class BloatRepository(
         resolvedDescriptions ?: descriptions().also { resolvedDescriptions = it }
 
     /** Resolved once, same as the translation table. */
-    private var resolvedOverrides: BloatOverrides? = null
+    private var resolvedBundledOverrides: BloatOverrides? = null
 
-    private suspend fun correctionTable(): BloatOverrides =
-        resolvedOverrides ?: overrides().also { resolvedOverrides = it }
+    private suspend fun bundledCorrections(): BloatOverrides =
+        resolvedBundledOverrides ?: overrides().also { resolvedBundledOverrides = it }
+
+    /**
+     * The corrections actually in force: the bundled table, with the last list the backend gave us
+     * laid over it.
+     *
+     * Read from disk, never off the network: [local] has to answer without waiting for anything, and
+     * a correction read from a previous launch is exactly as good an answer as a fresh one. The
+     * fetch happens in [refresh], in the same [CHECK_INTERVAL_DAYS]-day window as the list itself.
+     */
+    private var resolvedCorrections: BloatOverrides? = null
+
+    private suspend fun corrections(): BloatOverrides {
+        resolvedCorrections?.let { return it }
+        val local = bundledCorrections()
+        return local.overriddenBy(readStoredCorrections(local.language)).also { resolvedCorrections = it }
+    }
+
+    private suspend fun readStoredCorrections(language: String): BloatOverrides {
+        val storage = correctionsCache ?: return BloatOverrides.empty()
+        return runCatching {
+            storage.read()?.decodeToString()?.let { BloatOverrides.fromRemote(it, language) }
+        }.onFailure {
+            LogUtils.w(TAG, "Ignoring unreadable level corrections: $it")
+        }.getOrNull() ?: BloatOverrides.empty()
+    }
+
+    /**
+     * Fetches the backend's correction table once and stores it, answering true when it changed.
+     *
+     * Every failure is a no-op: no fetch configured, no storage to keep it in, a deployment without
+     * the function, a request that timed out. None of them is a reason to lose the corrections
+     * already on disk, and none of them spends the day's single check — that is [refresh]'s call.
+     */
+    private suspend fun syncRemoteCorrections(): Boolean {
+        val fetch = remoteCorrections ?: return false
+        val storage = correctionsCache ?: return false
+        val language = bundledCorrections().language
+        val text = runCatching { fetch() }.getOrNull()?.takeIf { it.isNotBlank() } ?: return false
+        val remote = BloatOverrides.fromRemote(text, language)
+        val stored = runCatching { storage.read()?.decodeToString() }.getOrNull()
+        if (stored == text) return false
+        runCatching { storage.write(text.encodeToByteArray()) }
+            .onFailure { LogUtils.w(TAG, "Failed to cache level corrections: $it") }
+        // An empty answer is a real one (the operator retracted the corrections): laid over the
+        // bundled table it changes nothing, which is exactly what retracting means.
+        resolvedCorrections = bundledCorrections().overriddenBy(remote)
+        LogUtils.i(TAG, "Level corrections updated (${remote.size} entries)")
+        return true
+    }
 
     /** The shipped list, parsed once; empty when this build has none. */
     private var resolvedBundled: Map<String, BloatData>? = null
@@ -109,8 +178,13 @@ class BloatRepository(
     }
 
     suspend fun load(): Map<String, BloatData> {
-        val localList = local()
-        return refresh() ?: localList
+        // The raw copy, not [local]: the corrections are applied exactly once, below. Layering them
+        // over an already-patched map would append the note a second time.
+        val localList = localEntries()
+        val refreshed = refresh()
+        // The list may not have changed while the corrections did: put the current table over the
+        // copy already in hand, so the first screen after a correction is not a launch behind.
+        return refreshed ?: localList.withOverrides(corrections())
     }
 
     /**
@@ -120,27 +194,29 @@ class BloatRepository(
      * 接口（国内经常直接超时），于是列表上的「正在加载特殊标志」要转很久。现在先答本地这份，
      * 核对放到后台（[refresh]）。
      */
-    suspend fun local(): Map<String, BloatData> {
+    suspend fun local(): Map<String, BloatData> = localEntries().withOverrides(corrections())
+
+    /** [local] without the corrections: the copy as the list and the cache publish it. */
+    private suspend fun localEntries(): Map<String, BloatData> {
         val l10n = translationTable()
-        val entries = readCache(l10n) ?: bundledEntries(l10n).also {
+        return readCache(l10n) ?: bundledEntries(l10n).also {
             if (it.isEmpty()) {
                 LogUtils.i(TAG, "No cached bloat list and none shipped")
             } else {
                 LogUtils.i(TAG, "Using the shipped bloat list (${it.size} entries)")
             }
         }
-        // The corrections are ours, so they apply to every source of the list, not to one of them.
-        return entries.withOverrides(correctionTable())
     }
 
     /**
      * 后台核对一次：GitHub 上真的换了 commit 才下载，返回**新的**列表；其余情况返回 null，
      * 调用方继续用手上那份。
      *
-     * 三条边界，缺一条就会出现"每次都连"或者"坏一次就再也不更新"：
+     * 四条边界，缺一条就会出现"每次都连"或者"坏一次就再也不更新"：
      *  - 自动更新关着 → 不联网；
-     *  - 今天已经核对过（[CantaSettings.bloatListCheckedDayFlow] 是今天）→ 不联网，一天最多一次；
-     *  - 核对不上（离线、限流、代理坏了）→ 返回 null 且**不**记账，下次启动再试。
+     *  - [CHECK_INTERVAL_DAYS] 天内已经核对过 → 不联网（列表一周动不了几次，天天问只是白花流量）；
+     *  - 核对不上（离线、限流、代理坏了）→ 返回 null 且**不**记账，下次启动再试；
+     *  - 库里那张家里的修正表搭同一次核对跑，失败不影响列表本身的更新。
      */
     suspend fun refresh(): Map<String, BloatData>? {
         if (!settings.autoUpdateBloatListFlow.first()) {
@@ -148,8 +224,9 @@ class BloatRepository(
             return null
         }
         val today = todayKey()
-        if (settings.bloatListCheckedDayFlow.first() == today) {
-            LogUtils.i(TAG, "Bloat list already checked today ($today); using the local list")
+        val lastChecked = settings.bloatListCheckedDayFlow.first()
+        if (checkedRecently(lastChecked, today)) {
+            LogUtils.i(TAG, "Bloat list checked $lastChecked; using the local list")
             return null
         }
 
@@ -157,6 +234,10 @@ class BloatRepository(
         // A cache that does not parse counts as "no cache": the first fetch has to happen whatever
         // the stored commit says, or a corrupt file would keep the list empty forever.
         val cached = readCache(l10n)
+
+        // Our own corrections ride along with the list check: same window, same "don't spend it on a
+        // failure" rule, and a failure here never stops the list from updating below.
+        syncRemoteCorrections()
 
         // Empty when unknown (offline, rate limited, ...).
         val remoteHash = fetchLatestHash()
@@ -172,9 +253,9 @@ class BloatRepository(
 
         val start = currentTimeMillis()
         val raw = fetchBloatList() ?: return null
-        val corrections = correctionTable()
+        val table = corrections()
         val parsed = runCatching {
-            parseBloatList(raw).localisedWith(l10n).withOverrides(corrections)
+            parseBloatList(raw).localisedWith(l10n).withOverrides(table)
         }
             .onFailure { LogUtils.e(TAG, "Downloaded bloat list is invalid", it) }
             .getOrNull() ?: return null
@@ -185,6 +266,19 @@ class BloatRepository(
         settings.setBloatListCheckedDay(today)
         LogUtils.i(TAG, "Updated bloat list in ${currentTimeMillis() - start}ms (${parsed.size} entries, commit ${remoteHash.take(7)})")
         return parsed
+    }
+
+    /**
+     * 今天要不要跳过这次核对：上次核对在 [CHECK_INTERVAL_DAYS] 天之内就算"刚看过"。
+     *
+     * 记的是日期不是时间戳（见 [CantaSettings.bloatListCheckedDayFlow]），所以这里比的是日历天数；
+     * 日期读不懂（旧版本写的怪值）当作没核对过，宁可多问一次也不要永远不再问。
+     */
+    private fun checkedRecently(lastCheckedKey: String, todayKey: String): Boolean {
+        if (lastCheckedKey.isBlank()) return false
+        val last = runCatching { LocalDate.parse(lastCheckedKey) }.getOrNull() ?: return false
+        val today = runCatching { LocalDate.parse(todayKey) }.getOrNull() ?: return false
+        return today.toEpochDays().toLong() - last.toEpochDays().toLong() < CHECK_INTERVAL_DAYS
     }
 
     /** 本地日期键 `YYYY-MM-DD`：一天的判据按手机自己的时区，不是 UTC。 */

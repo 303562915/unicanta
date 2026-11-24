@@ -10,6 +10,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.ChatMessageCache
 import io.github.samolego.canta.data.community.ChatMessageStore
+import io.github.samolego.canta.data.community.CommunityRpc
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
@@ -54,6 +55,14 @@ object StoredData {
     const val PRESETS = "presets.pb"
     const val BLOAT_LIST = "bloat_list.json"
 
+    /**
+     * 库里那张家里的分级修正（`package_level_fix_list()` 的原文）。
+     *
+     * 单独一个文件而不是塞进 [BLOAT_LIST]：列表是上游的、会被整份覆盖，修正是我们自己的、要能
+     * 在列表没换的情况下单独生效（见 [BloatRepository]）。
+     */
+    const val BLOAT_LEVEL_FIXES = "bloat_level_fixes.json"
+
     /** Reviews and likes this install wrote: see [io.github.samolego.canta.data.community.AppNoteStore]. */
     const val APP_NOTES = "app_notes.json"
 
@@ -91,6 +100,8 @@ fun cantaAppDependencies(
     val settings = CantaSettings(storage(StoredData.SETTINGS))
     val client = HttpClient()
     val cantaHandler = handler(settings)
+    // 只用来问一件事：库里的分级修正表。跟列表核对同一个七天窗口，不是每次进列表都发请求。
+    val communityRpc = CommunityRpc(client)
     // 消息页的会话列表落盘：冷启动那一屏要能先画出来，而不是转几秒等网络。
     // 这里绑一次就够，之后写入由 ConversationCache 自己派到后台。
     ConversationCache.bind(ConversationStore(storage(StoredData.CONVERSATIONS)))
@@ -116,6 +127,8 @@ fun cantaAppDependencies(
             descriptions = { BloatDescriptions.bundled() },
             bundled = { BundledBloatList.raw() },
             overrides = { BloatOverrides.bundled() },
+            remoteCorrections = { communityRpc.post("package_level_fix_list", "{}") },
+            correctionsCache = storage(StoredData.BLOAT_LEVEL_FIXES),
         ),
         telemetry = telemetry,
         packageTelemetry = PackageTelemetry(cantaHandler, telemetry, settings),

@@ -1,6 +1,7 @@
 package io.github.samolego.canta.data.bloat
 
 import io.github.samolego.canta.data.CantaSettings
+import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.testing.MemoryStorage
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -9,7 +10,9 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -176,8 +179,104 @@ class BloatRepositoryTest {
         assertEquals("", settings.bloatListCheckedDayFlow.first())
     }
 
+    // ---- 一周问一次：列表动得慢，天天问只是白花流量 ------------------------------------------
+
+    /** 六天前核对过也算"刚看过"：这一周里一次网络都不碰。 */
+    @Test
+    fun aCheckWithinTheWeekStaysOffline() = runTest {
+        val server = Server(sha = "newer", list = listJson)
+        val settings = settings("old").apply { setBloatListCheckedDay(dayOffset(6)) }
+
+        val fresh = BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+
+        assertNull(fresh, "nothing new is a null answer, not an empty list")
+        assertTrue(server.requests.isEmpty(), "a check six days old is still fresh")
+    }
+
+    /** 过了七天就重新问一遍；离线时照旧不记账。 */
+    @Test
+    fun aCheckOlderThanTheWeekGoesOutAgain() = runTest {
+        val server = Server(sha = "newer", list = listJson)
+        val settings = settings("old").apply { setBloatListCheckedDay(dayOffset(8)) }
+
+        BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+
+        assertTrue(server.requests.isNotEmpty(), "a check eight days old has to be redone")
+    }
+
+    // ---- 库里的分级修正：同一个窗口下来一次，落在本地，下次不联网也在 ------------------------
+
+    private val remoteFixes =
+        """[{"pkg": "com.cached", "removal": "Expert", "notes": {"en": "Emergency-call locator."}}]"""
+
+    private fun correctionsBundled() = BloatOverrides(
+        BloatOverrideTable(packages = mapOf("com.cached" to BloatOverrideEntry(removal = "Recommended"))),
+    )
+
+    /** 库里把随包的 Recommended 改成了 Expert：列表上看到的是 Expert，答复本身也落了盘。 */
+    @Test
+    fun theBackendsCorrectionsAreFetchedCachedAndApplied() = runTest {
+        val server = Server(sha = "same", list = listJson)
+        val fixes = MemoryStorage()
+
+        val list = BloatRepository(
+            server.client,
+            MemoryStorage(cachedJson.encodeToByteArray()),
+            settings("same"),
+            overrides = { correctionsBundled() },
+            remoteCorrections = { remoteFixes },
+            correctionsCache = fixes,
+        ).load()
+
+        assertEquals(AppBadgeInfo.EXPERT, list.getValue("com.cached").badgeInfo)
+        assertEquals(remoteFixes, fixes.content?.decodeToString())
+    }
+
+    /** 下次启动、而且这一周不再核对：修正只从盘上读，一个请求都不发。 */
+    @Test
+    fun theStoredCorrectionsApplyWithoutTouchingTheNetwork() = runTest {
+        val server = Server(list = listJson)
+        val settings = settings("same").apply { setBloatListCheckedDay(dayOffset(1)) }
+
+        val list = BloatRepository(
+            server.client,
+            MemoryStorage(cachedJson.encodeToByteArray()),
+            settings,
+            overrides = { correctionsBundled() },
+            remoteCorrections = { error("the stored table has to be enough") },
+            correctionsCache = MemoryStorage(remoteFixes.encodeToByteArray()),
+        ).local()
+
+        assertEquals(AppBadgeInfo.EXPERT, list.getValue("com.cached").badgeInfo)
+        assertTrue(server.requests.isEmpty())
+    }
+
+    /** 拉取失败：手上那张随包的表照旧生效，不因为这次没连上就退回上游的分级。 */
+    @Test
+    fun aFailedFetchKeepsWhatIsAlreadyKnown() = runTest {
+        val server = Server(sha = "same", list = listJson)
+
+        val list = BloatRepository(
+            server.client,
+            MemoryStorage(cachedJson.encodeToByteArray()),
+            settings("same"),
+            overrides = { correctionsBundled() },
+            remoteCorrections = { null },
+            correctionsCache = MemoryStorage(),
+        ).load()
+
+        assertEquals(AppBadgeInfo.RECOMMENDED, list.getValue("com.cached").badgeInfo)
+    }
+
     /** The day key the repository writes: the phone's own date, `YYYY-MM-DD`. */
     @OptIn(ExperimentalTime::class)
     private fun today(): String =
         Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
+
+    /** [today] shifted by [days], in the same `YYYY-MM-DD` form the repository stores. */
+    @OptIn(ExperimentalTime::class)
+    private fun dayOffset(days: Int): String =
+        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+            .minus(DatePeriod(days = days))
+            .toString()
 }

@@ -108,4 +108,59 @@ class BloatOverridesTest {
         assertEquals("Only a note", patched.description)
         assertNull(patched.badgeInfo)
     }
+
+    // ---- 库里那份（package_level_fix_list 的答复）----------------------------------------
+
+    private val remoteJson = """
+        [
+          {"pkg": "com.qualcomm.location", "removal": "Expert",
+           "notes": {"en": "Emergency-call locator on some ROMs.", "zh": "部分 ROM 上是紧急呼叫定位。"},
+           "author": "开发者", "updated_at": "2026-11-24T09:55:32Z"}
+        ]
+    """.trimIndent()
+
+    @Test
+    fun theBackendAnswerReadsAsACorrection() {
+        val table = BloatOverrides.fromRemote(remoteJson, "zh")
+
+        val patched = table.apply("com.qualcomm.location", published.getValue("com.qualcomm.location"))
+
+        assertEquals(AppBadgeInfo.EXPERT, patched.badgeInfo)
+        assertTrue(patched.description!!.endsWith("部分 ROM 上是紧急呼叫定位。"), patched.description)
+    }
+
+    /** 老部署答的是错误正文而不是数组：那就是"没有修正"，不是崩溃。 */
+    @Test
+    fun anUnreadableAnswerIsNoCorrection() {
+        assertEquals(0, BloatOverrides.fromRemote("{\"message\":\"Could not find the function\"}").size)
+        assertEquals(0, BloatOverrides.fromRemote("").size)
+        assertEquals(0, BloatOverrides.fromRemote("[]").size)
+    }
+
+    @Test
+    fun rowsWithoutAPackageAreDropped() {
+        val table = BloatOverrides.fromRemote("""[{"pkg": "", "removal": "Expert"}, {"removal": "Expert"}]""")
+        assertEquals(0, table.size)
+    }
+
+    /** 库里那份比随包那份新：同一个包两边都有时，库里的说了算。 */
+    @Test
+    fun theBackendWinsOverTheBundledTable() {
+        val bundled = overrides("com.qualcomm.location" to BloatOverrideEntry(removal = "Advanced"))
+        val remote = BloatOverrides.fromRemote(remoteJson, "zh")
+
+        val merged = bundled.overriddenBy(remote)
+        val patched = merged.apply("com.qualcomm.location", published.getValue("com.qualcomm.location"))
+
+        assertEquals(AppBadgeInfo.EXPERT, patched.badgeInfo)
+    }
+
+    /** 两边都管不着的包原样留着：合并不是"用库里那份替掉全部"。 */
+    @Test
+    fun mergingKeepsTheBundledEntriesTheBackendDoesNotKnow() {
+        val bundled = overrides("com.android.chrome" to BloatOverrideEntry(removal = "Unsafe"))
+        val merged = bundled.overriddenBy(BloatOverrides.fromRemote(remoteJson, "zh"))
+
+        assertEquals(2, merged.size)
+    }
 }
