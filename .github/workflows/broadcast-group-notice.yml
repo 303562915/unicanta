@@ -33,23 +33,23 @@ jobs:
           PROJECT_REF: axuhfogeovtsbxokqccf
         run: |
           set -euo pipefail
-          BODY=$(cat <<'EOF'
-📢 UniCanta 新版本已发布
-
-正式版 4.3.5（version_code 244）已上线，开发版 dev 也已同步到同一个提交。
-
-下载页（点开用浏览器下载）：
-https://303562915.github.io/unicanta/
-
-正式版 APK 直链：
-https://github.com/303562915/unicanta/releases/download/v4.3.5/androidApp-release.apk
-
-SHA-256 校验和：
-https://github.com/303562915/unicanta/releases/download/v4.3.5/SHA256SUMS.txt
-
-覆盖安装即可，签名与旧版一致；如果是从 F-Droid 装的那份，先卸载再装。
-EOF
-)
+          printf '%s\n' \
+            "📢 UniCanta 新版本已发布" \
+            "" \
+            "正式版 4.3.5（version_code 244）已上线，开发版 dev 也已同步到同一个提交。" \
+            "" \
+            "下载页（点开用浏览器下载）：" \
+            "https://303562915.github.io/unicanta/" \
+            "" \
+            "正式版 APK 直链：" \
+            "https://github.com/303562915/unicanta/releases/download/v4.3.5/androidApp-release.apk" \
+            "" \
+            "SHA-256 校验和：" \
+            "https://github.com/303562915/unicanta/releases/download/v4.3.5/SHA256SUMS.txt" \
+            "" \
+            "覆盖安装即可，签名与旧版一致；如果是从 F-Droid 装的那份，先卸载再装。" \
+            > body.txt
+          BODY=$(cat body.txt)
           SQL="with g as (
                  select c.id from public.conversations c
                   where c.kind = 'group'
