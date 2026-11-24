@@ -1,0 +1,39 @@
+name: 🔎 Supabase log probe
+
+# 一次性的诊断入口：给「App 里什么都没有」这类问题取后端日志用。
+# 只读，不改任何数据；跑完可以删掉这个文件。
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Supabase project ref
+        required: false
+        default: axuhfogeovtsbxokqccf
+      sql:
+        description: Logflare SQL（logs.all 那个接口）
+        required: false
+        default: select timestamp, event_message from postgrest_logs order by timestamp desc limit 40
+
+jobs:
+  probe:
+    name: 🧾 logs.all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query logs
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ inputs.ref }}
+          SQL: ${{ inputs.sql }}
+        run: |
+          set -euo pipefail
+          echo "project: $PROJECT_REF"
+          echo "sql: $SQL"
+          echo "--- response ---"
+          code=$(curl -sS -m 60 -o /tmp/out.json -w '%{http_code}' -G \
+            "https://api.supabase.com/v1/projects/${PROJECT_REF}/analytics/endpoints/logs.all" \
+            --data-urlencode "sql=${SQL}" \
+            -H "Authorization: Bearer ${TOKEN}")
+          echo "http: $code"
+          head -c 60000 /tmp/out.json || true
+          echo
