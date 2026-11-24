@@ -49,6 +49,9 @@ import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
@@ -106,6 +109,7 @@ private val AirportKinds = listOf(
  */
 @Composable
 internal fun RecommendationsAirportTab(
+    repository: PlanRepository?,
     platform: CantaPlatform,
     author: String,
     authorId: String,

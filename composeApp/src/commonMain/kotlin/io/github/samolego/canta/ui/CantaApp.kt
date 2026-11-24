@@ -87,6 +87,7 @@ import io.github.samolego.canta.ui.dialog.PrivilegeChooserDialog
 import io.github.samolego.canta.ui.component.BottomBarItem
 import io.github.samolego.canta.ui.component.CollapsingBottomBar
 import io.github.samolego.canta.ui.component.FloatingPillBar
+import io.github.samolego.canta.ui.component.ScrollToTop
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.dockScroll
 import io.github.samolego.canta.ui.component.rememberDockVisibility
@@ -104,6 +105,7 @@ import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainDialogs
 import io.github.samolego.canta.ui.screen.MainScreen
 import io.github.samolego.canta.ui.screen.PostsScreen
+import io.github.samolego.canta.ui.screen.StoreScreen
 import io.github.samolego.canta.ui.screen.ChatScreen
 import io.github.samolego.canta.ui.screen.CreateGroupScreen
 import io.github.samolego.canta.ui.screen.GroupSettingsScreen
@@ -1671,6 +1673,8 @@ private fun CantaNavigation(
                         showMessageCount = unreadReplies + unreadChats,
                     ),
                     onSelect = { key -> onBottomBarSelect(key, navController) },
+                    // 双击当前那一格 → 整页回顶部（页面各自用 ScrollToTopEffect 听这个信号）。
+                    onReselect = { ScrollToTop.ping() },
                 )
             }
         }
@@ -1858,7 +1862,7 @@ private fun bottomBarItems(
         add(
             BottomBarItem(
                 BarKey.STORE,
-                FlGlyphs.tweaks,
+                FlGlyphs.tools,
                 "商城",
                 route == Screen.Store.route,
             ),
