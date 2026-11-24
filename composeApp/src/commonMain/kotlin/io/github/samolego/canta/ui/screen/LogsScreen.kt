@@ -24,7 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaPlatform
@@ -40,7 +41,9 @@ fun LogsScreen(
     platform: CantaPlatform,
     onNavigateBack: () -> Unit,
 ) {
-    val logs = LogUtils.getLogs()
+    // 订阅而不是一次性读：日志是任意线程写进来的（见 LogUtils），这里跟着重画；同时也是
+    // 修「后台线程写日志、主线程正在重组」那条 snapshot 崩溃的地方——StateFlow 不参与快照系统。
+    val logs by LogUtils.logs.collectAsStateWithLifecycle()
     val logsCopiedText = stringResource(Res.string.log_copied)
 
     Scaffold(
@@ -62,8 +65,10 @@ fun LogsScreen(
         }
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-            // 时刻 + 来源标签当 key：日志行本身没有 id，这两样合起来足够区分相邻两行。
-        items(logs, key = { "${it.timestamp}:${it.tag}" }) { logEntry -> LogEntryChip(logEntry, platform) }
+            // 序号进 key：同一毫秒同一 tag 的两行在旧写法里会撞 key，LazyColumn 会直接抛。
+        itemsIndexed(logs, key = { index, entry -> "$index:${entry.timestamp}:${entry.tag}" }) { _, logEntry ->
+            LogEntryChip(logEntry, platform)
+        }
         }
     }
 }
