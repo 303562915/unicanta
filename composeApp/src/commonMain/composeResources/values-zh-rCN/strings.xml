@@ -231,6 +231,10 @@
     <string name="about_ready_to_install">%1$s 已下载，点击安装</string>
     <string name="about_installing">正在安装…完成后应用会退出</string>
     <string name="about_installing_version">正在安装 %1$s…完成后应用会退出</string>
+    <!-- 卡片上那一行带数字的安装文案：%2$d 是按阶段折算的百分比，百分号在代码里拼。 -->
+    <string name="about_installing_progress">正在安装 %1$s… %2$d</string>
+    <!-- 四条通道全拒时只说一句：逐条的 pm 输出留在 update_reports 里，不糊在屏幕上。 -->
+    <string name="about_install_refused">装不上：Shizuku、root 和系统安装器都没接受这个包，用下面的下载页手动装。</string>
     <!-- 安装进行到哪一步：pm install 不报进度，只能把通道说清楚。 -->
     <string name="about_install_stage_preparing">正在准备安装</string>
     <string name="about_install_stage_staging">正在把安装包放到 shell 读得到的位置</string>

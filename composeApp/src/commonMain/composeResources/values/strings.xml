@@ -425,6 +425,10 @@
     <string name="about_ready_to_install">%1$s is downloaded, tap to install</string>
     <string name="about_installing">Installing… the app will close when it is done</string>
     <string name="about_installing_version">Installing %1$s… the app will close when it is done</string>
+    <!-- The row's install line with a number: %2$d is the stage-folded percentage, the sign is appended in code. -->
+    <string name="about_installing_progress">Installing %1$s… %2$d</string>
+    <!-- One sentence when every route refused; the per-route pm output stays in update_reports. -->
+    <string name="about_install_refused">Could not install: Shizuku, root and the system installer all refused this package. Use the download page below.</string>
     <!-- What the privileged installer is doing right now, one line per stage. -->
     <string name="about_install_stage_preparing">Preparing the install</string>
     <string name="about_install_stage_staging">Copying the APK where the shell can read it</string>

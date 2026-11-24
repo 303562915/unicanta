@@ -4,8 +4,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,9 +68,6 @@ import io.github.samolego.canta.generated.resources.privilege_root_refused
 import io.github.samolego.canta.generated.resources.privilege_root_opened
 import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.about_auto_install_paused
-import io.github.samolego.canta.generated.resources.about_download_page
-import io.github.samolego.canta.generated.resources.got_it
-import io.github.samolego.canta.generated.resources.about_install_failed_title
 import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.select_all_enabled
 import io.github.samolego.canta.generated.resources.select_all_tip
@@ -126,7 +121,6 @@ import io.github.samolego.canta.ui.screen.UploaderProfileScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.updateLabel
 import io.github.samolego.canta.ui.update.UpdateCenter
-import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
 import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
@@ -547,10 +541,9 @@ private fun CantaNavigation(
                     // another "正在安装" would be the loop this mark exists to break: say it once,
                     // point at the page that can still do it by hand, and stop asking.
                     if (label == skippedAutoInstall) {
+                        // 这一版自动装过、没装上：只说一句 toast，别在底部再压一条横幅。
                         coroutineScope.launch {
-                            snackbarHostState.showSnackbar(
-                                getString(Res.string.about_auto_install_paused, label),
-                            )
+                            platform.showMessage(getString(Res.string.about_auto_install_paused, label))
                         }
                         return@LaunchedEffect
                     }
@@ -592,29 +585,6 @@ private fun CantaNavigation(
             dismissButton = {
                 TextButton(onClick = { updateCenter.postponePending() }) {
                     Text(stringResource(Res.string.about_install_cancel))
-                }
-            },
-        )
-    }
-
-    updateCenter.installReport?.let { report ->
-        AlertDialog(
-            onDismissRequest = { updateCenter.dismissInstallReport() },
-            title = { Text(stringResource(Res.string.about_install_failed_title)) },
-            text = {
-                // Scrollable: one line per route, and a narrow screen must still be able to read
-                // every one of them before deciding what to do next.
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) { Text(report) }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    platform.openUrl(DOWNLOAD_PAGE_URL)
-                    updateCenter.dismissInstallReport()
-                }) { Text(stringResource(Res.string.about_download_page)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { updateCenter.dismissInstallReport() }) {
-                    Text(stringResource(Res.string.got_it))
                 }
             },
         )

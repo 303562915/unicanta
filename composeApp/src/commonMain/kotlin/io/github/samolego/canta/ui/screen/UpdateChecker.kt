@@ -187,6 +187,28 @@ internal sealed interface UpdateState {
 internal const val DOWNLOAD_PROGRESS_UNKNOWN = -1
 
 /**
+ * The single percentage the update row prints while an install runs.
+ *
+ * `pm install` announces nothing, so a number has to be built from the step the privileged runtime
+ * is on, plus the push's own percentage where that step reports one ([InstallStage.PUSHING] moves
+ * the most bytes, so it owns the widest band). Without this the row could only say "正在安装" and
+ * the bar would sit still for the whole install — the complaint that started it.
+ *
+ * `null` only when the push is moving but nobody knows how far (no `Content-Length`), which is the
+ * one case where a number would be a lie.
+ */
+internal fun UpdateState.Installing.shownPercent(): Int? = when (stage) {
+    InstallStage.PREPARING -> 5
+    // The root route installs in one step, so it starts further along than a staged push.
+    InstallStage.ROOT -> 20
+    InstallStage.STAGING -> 15
+    InstallStage.PUSHING ->
+        if (percent == INSTALL_PROGRESS_UNKNOWN) null else 15 + (percent.coerceIn(0, 100) * 70) / 100
+    // `pm install` itself: the package manager is reading what was just written.
+    InstallStage.INSTALLING -> 90
+}
+
+/**
  * How long "installed, restarting" stays up before the app closes.
  *
  * The install replaces the APK under a running process; closing at once is indistinguishable from

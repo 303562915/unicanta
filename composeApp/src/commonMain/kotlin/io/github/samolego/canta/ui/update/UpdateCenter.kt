@@ -18,6 +18,7 @@ import io.github.samolego.canta.generated.resources.about_download_failed_unsupp
 import io.github.samolego.canta.generated.resources.about_download_too_slow
 import io.github.samolego.canta.generated.resources.about_install_done
 import io.github.samolego.canta.generated.resources.about_install_handoff
+import io.github.samolego.canta.generated.resources.about_install_refused
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
@@ -77,10 +78,6 @@ internal class UpdateCenter(
     var state by mutableStateOf<UpdateState>(UpdateState.Idle)
         private set
 
-    /** 安装四条通道全拒时的逐条说明；非空就由调用方弹窗，而不是挤在卡片那一行里。 */
-    var installReport by mutableStateOf<String?>(null)
-        private set
-
     /** 下载完了等一句话（「安装前确认」开关开着时才这样）。 */
     var pendingConfirm by mutableStateOf<UpdateState.ReadyToInstall?>(null)
         private set
@@ -99,12 +96,7 @@ internal class UpdateCenter(
         downloadJob = null
         lastRelease = null
         pendingConfirm = null
-        installReport = null
         state = UpdateState.Idle
-    }
-
-    fun dismissInstallReport() {
-        installReport = null
     }
 
     /** 点了「安装」：等确认的那个版本开始装。 */
@@ -406,8 +398,10 @@ internal class UpdateCenter(
                         detail = "stage=$lastStage\n$failure",
                         elapsedMs = elapsed,
                     )
-                    state = UpdateState.FailedWith(failure)
-                    installReport = failure
+                    // 逐条的 pm 原文只进 update_reports（上面的 detail）；屏幕上只留一句人话。
+                    val refused = getString(Res.string.about_install_refused)
+                    state = UpdateState.FailedWith(refused)
+                    platform.showMessage(refused)
                 }
                 installing = false
             }

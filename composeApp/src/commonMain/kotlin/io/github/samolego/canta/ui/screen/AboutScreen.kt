@@ -37,7 +37,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
-import io.github.samolego.canta.core.INSTALL_PROGRESS_UNKNOWN
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.about_check_update
 import io.github.samolego.canta.generated.resources.about_check_update_action
@@ -393,8 +392,16 @@ private fun UpdateCard(
             }) to scheme.primary
         is UpdateState.ReadyToInstall ->
             stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary
-        is UpdateState.Installing ->
-            stringResource(Res.string.about_installing_version, state.version) to scheme.primary
+        is UpdateState.Installing -> {
+            // 安装也带数字：`pm install` 不报进度，所以数字是按阶段折算的（见 shownPercent），
+            // 但读的人要的是"到哪了"，不是"在装"。百分号在代码里拼，理由同上面那条注释。
+            val percent = state.shownPercent()
+            if (percent == null) {
+                stringResource(Res.string.about_installing_version, state.version) to scheme.primary
+            } else {
+                "${stringResource(Res.string.about_installing_progress, state.version, percent)}%" to scheme.primary
+            }
+        }
         is UpdateState.HandedOff ->
             stringResource(Res.string.about_install_handoff, state.version) to scheme.primary
         is UpdateState.FailedWith -> state.reason to scheme.error
@@ -402,13 +409,13 @@ private fun UpdateCard(
     val openRelease = state is UpdateState.Available
     val busy = state == UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing
 
-    // 进度条要覆盖两段：下载（有总长的百分比）和安装。安装本身 `pm install` 不报进度，所以只有
-    // 把安装包推进 /data/local/tmp 那一段有数字，别的阶段用不确定进度条 + 阶段的文字。
+    // 进度条要覆盖两段：下载（有总长的百分比）和安装。安装本身 `pm install` 不报进度，所以数字
+    // 按阶段折算（[shownPercent]）：条和数字一起往前走，而不是整段安装停在那儿。
     val barProgress: Float? = when (state) {
         is UpdateState.Downloading ->
             if (state.progress == DOWNLOAD_PROGRESS_UNKNOWN) null else state.progress / 100f
         is UpdateState.Installing ->
-            state.percent.takeIf { it != INSTALL_PROGRESS_UNKNOWN }?.div(100f)
+            state.shownPercent()?.div(100f)
         else -> null
     }
     val showsBar = state is UpdateState.Downloading || state is UpdateState.Installing
