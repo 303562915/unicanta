@@ -13,8 +13,13 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: push-build-${{ github.ref }}
-  cancel-in-progress: true
+  # push 之间照旧互相取消（新推送取代旧构建，省得排队）。
+  #
+  # 手动 dispatch 单独一组，否则它会被后续 push 顶掉：master 上有人每 1–2 分钟推一次时，
+  # 「补一次完整构建拿 app-debug」永远补不上——2026-11-24 连试两次都是 28 秒被取消。
+  # 分组带上 github.event_name 就够了：push 与 workflow_dispatch 从此不在同一组。
+  group: push-build-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   JAVA_VERSION: "21"
