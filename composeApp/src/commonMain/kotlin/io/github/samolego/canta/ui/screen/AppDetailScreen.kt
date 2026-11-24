@@ -105,6 +105,7 @@ import io.github.samolego.canta.generated.resources.description_translated_sourc
 import org.jetbrains.compose.resources.stringResource
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.launch
 
 /** Green for "the phone was fine without it", the colour of a pass. */
@@ -147,6 +148,113 @@ private data class AppDetailSnapshot(
  * 进程也重启了，缓存跟着没。把 voter 拼进键反而会在身份还没读出来的第一帧查不中，又退回「先空白」。
  */
 private fun appDetailCacheKey(packageName: String) = "screen:appdetail:$packageName"
+
+/**
+ * 详情抽屉那几个读接口的「新鲜期」。
+ *
+ * 打开详情是这一屏最频繁的动作——点开一个应用、返回、再点下一个，刚才看过的那一页很快又被点回来，
+ * 每回都串行发四个请求（票数、我的票、评论、描述修正），线上量就是这么堆出来的。
+ *
+ * 60 秒的理由：这些数字一分钟里不会有人去质疑；而「来回翻列表」这一串重复打开全在几十秒内，60 秒
+ * 足以把它们全兜住。再长就有实际代价了——投完票、别人留言之后看不出变化；所以真正要求立刻变的那几处
+ * 自己会打破 TTL（投票见 `castVote`，发评论 / 点赞 / 删评论见各自的写路径），不靠这个时长兜着。
+ */
+private const val DETAIL_TTL_MILLIS = 60_000L
+
+/**
+ * 一条 TTL 记录：四组结果 + 它们的时间；抽屉里那批方案另记一个时间。
+ *
+ * 每组都是可空的，因为「这一次没拿到」和「拿到了一个空」不一样：失败的那一组不写进来（留 null），
+ * 命中时那一块就不动，等于屏幕上「失败的那一块保留旧值」。方案的时间单独记，是它由另一个 effect 拉，
+ * 共用一个时间戳会让先成功的那一组被后失败的那一组顶成过期。
+ */
+private data class AppDetailCacheEntry(
+    val votes: PackageVotes? = null,
+    val mine: Boolean? = null,
+    val comments: List<PlanComment>? = null,
+    val fixes: List<DescriptionFix>? = null,
+    val at: Long = 0L,
+    val plans: List<CommunityPlan>? = null,
+    val plansAt: Long = 0L,
+)
+
+/**
+ * 详情抽屉那几个读接口的进程内 TTL 缓存，特意和 [ScreenCache] 分开。
+ *
+ * [ScreenCache] 回答的是「这一屏上一次画成什么样」，它没有新鲜度——有它照样得把四个请求再发一遍，
+ * 那正是要省掉的东西。这里回答的是另一个问题：「这些数字还新不新」。所以它只在内存里：时间戳跨
+ * 进程重启没有意义，冷启动该问的还得问。
+ *
+ * 只按包名分份：本机身份（`voter`）换掉就等于清数据重装，进程也重启了，理由同 [appDetailCacheKey]。
+ */
+private object AppDetailCache {
+
+    /** 最多记这么多个包名；再写就按时间挤掉最久没更新过的那一条，别让浏览记录无限涨。 */
+    private const val MAX_ENTRIES = 50
+
+    private val records = mutableMapOf<String, AppDetailCacheEntry>()
+
+    /** 这四个查询还新鲜就返回那一条，调用方一个请求都不发；过期或者没记过返回 null。 */
+    fun freshDetail(packageName: String): AppDetailCacheEntry? =
+        records[packageName]?.takeIf { isFresh(it.at) }
+
+    /** 抽屉里的方案；失败过的不记，所以这里拿到的一定是问成功过的那一份。 */
+    fun freshPlans(packageName: String): List<CommunityPlan>? =
+        records[packageName]?.takeIf { it.plans != null && isFresh(it.plansAt) }?.plans
+
+    /**
+     * 把这一次真的拿到的组写进缓存；传 null 的组保持上一条里的值（第一次就是空着），时间戳以这次为准。
+     *
+     * [mineLoaded] 单独一个参数：`mine` 的 null 本身就是「这台手机还没投过票」，和「这一次没问到」
+     * 是两件事，光看值分不出来。
+     */
+    fun putDetail(
+        packageName: String,
+        votes: PackageVotes? = null,
+        mine: Boolean? = null,
+        mineLoaded: Boolean = false,
+        comments: List<PlanComment>? = null,
+        fixes: List<DescriptionFix>? = null,
+    ) {
+        val previous = records[packageName]
+        records[packageName] = AppDetailCacheEntry(
+            votes = votes ?: previous?.votes,
+            mine = if (mineLoaded) mine else previous?.mine,
+            comments = comments ?: previous?.comments,
+            fixes = fixes ?: previous?.fixes,
+            at = currentTimeMillis(),
+            plans = previous?.plans,
+            plansAt = previous?.plansAt ?: 0L,
+        )
+        trim()
+    }
+
+    /** 方案这一组单独写：它由另一个 effect 拉，时间戳不能和上面四个共用（见 [AppDetailCacheEntry]）。 */
+    fun putPlans(packageName: String, plans: List<CommunityPlan>) {
+        val previous = records[packageName]
+        records[packageName] = AppDetailCacheEntry(
+            votes = previous?.votes,
+            mine = previous?.mine,
+            comments = previous?.comments,
+            fixes = previous?.fixes,
+            at = previous?.at ?: 0L,
+            plans = plans,
+            plansAt = currentTimeMillis(),
+        )
+        trim()
+    }
+
+    /** 没有记录时 `at` 是 0：那是「只记过方案」，四个查询仍然算没拉过。 */
+    private fun isFresh(at: Long): Boolean = at > 0L && currentTimeMillis() - at < DETAIL_TTL_MILLIS
+
+    /** 条数上限：挤掉「最后一次更新」最早的那一条，浏览过的一堆长尾包名不会一直占着内存。 */
+    private fun trim() {
+        while (records.size > MAX_ENTRIES) {
+            val oldest = records.entries.minByOrNull { maxOf(it.value.at, it.value.plansAt) } ?: return
+            records.remove(oldest.key)
+        }
+    }
+}
 
 /**
  * One app's own page: what it is, whether this phone can live without it, and what other
@@ -288,6 +396,13 @@ fun AppDetailScreen(
 
     LaunchedEffect(packageName, profile, repository) {
         val repo = repository ?: return@LaunchedEffect
+        // 抽屉里的方案也是「每打开一次就走一次网络」，和下面那四个查询同样按 60 秒算：抽屉的角标
+        // 只是「有几个方案收了这个应用」，一分钟内不会有人去核那个数字。
+        val warmPlans = AppDetailCache.freshPlans(packageName)
+        if (warmPlans != null) {
+            relatedPlans = warmPlans
+            return@LaunchedEffect
+        }
         // 有缓存就别点亮「正在读」：抽屉一打开先看到上一次的数字，刷新在背后发生。
         if (relatedPlans.isEmpty()) relatedLoading = true
         // The plans come back for this model and build only, which is the scope the drawer claims:
@@ -297,6 +412,7 @@ fun AppDetailScreen(
         // 清空，而空抽屉写的是「本机型还没有这样的方案」——一句凭空的结论。
         if (repo.lastError == null && !repo.lastFailureWasNetwork) {
             relatedPlans = fresh
+            AppDetailCache.putPlans(packageName, fresh)
             saveToCache()
         }
         relatedLoading = false
@@ -331,6 +447,17 @@ fun AppDetailScreen(
             descriptionFixes = emptyList()
             return@LaunchedEffect
         }
+        // 60 秒内拉过这一页就直接用那一份画，一个请求都不发——这是省掉那几万次调用的地方。
+        val warm = AppDetailCache.freshDetail(packageName)
+        if (warm != null) {
+            warm.votes?.let { votes = it }
+            warm.comments?.let { comments = it }
+            warm.fixes?.let { descriptionFixes = it }
+            // 缓存里 `mine` 是 null 表示「还没投过」或者「上一次没问着后端」，两种都退回本机笔记，
+            // 和下面拉取路径的兜底是同一句。
+            mine = warm.mine ?: notes.packageVerdict(packageName)
+            return@LaunchedEffect
+        }
         // 四个查询各自记成败：`lastError` / `lastFailureWasNetwork` 每调一次就被重写，所以每次
         // 调完立刻读一遍。失败的那一块保留屏幕上原来那份（第一次进来时就是缓存），别的照常更新
         // ——一个查询挂了不该把整页换回空白。
@@ -351,6 +478,16 @@ fun AppDetailScreen(
         if (voter.isEmpty() || voteOk) {
             mine = backendVote ?: notes.packageVerdict(packageName)
         }
+        // 只写这一次真的拿到的组：失败的那一组留 null，缓存里上一次的值不动，和屏幕上留着旧的
+        // 是同一件事；四组全挂时这次调用不会把时间戳往前推，下次打开照旧重试。
+        AppDetailCache.putDetail(
+            packageName = packageName,
+            votes = fetchedVotes.takeIf { votesOk },
+            mine = mine,
+            mineLoaded = voter.isEmpty() || voteOk,
+            comments = fetchedComments.takeIf { commentsOk },
+            fixes = fetchedFixes.takeIf { fixesOk },
+        )
         saveToCache()
     }
 
@@ -374,6 +511,13 @@ fun AppDetailScreen(
                     notes.setPackageVerdict(packageName, canRemove)
                     // 票数变了，缓存也跟着变：否则下次进来先画出来的是投之前那个数。
                     saveToCache()
+                    // 顺手打破 TTL：投票返回的就是新鲜计数，没有理由再等 60 秒才看到自己那一票。
+                    AppDetailCache.putDetail(
+                        packageName = packageName,
+                        votes = fresh,
+                        mine = canRemove,
+                        mineLoaded = true,
+                    )
                 }
                 voting = false
             }
@@ -422,7 +566,11 @@ fun AppDetailScreen(
                     // 重新拉一遍线程；拉不到就留着刚才那份，别把已经读到的评论清空。
                     repository?.let { repo ->
                         val latest = repo.appComments(packageName, voter)
-                        if (repo.lastError == null && !repo.lastFailureWasNetwork) comments = latest
+                        if (repo.lastError == null && !repo.lastFailureWasNetwork) {
+                            comments = latest
+                            // 刚发出去那条要能马上再看见：缓存里的评论列表比这一份旧，写回去。
+                            AppDetailCache.putDetail(packageName = packageName, comments = latest)
+                        }
                     }
                     saveToCache()
                 }
@@ -446,6 +594,7 @@ fun AppDetailScreen(
                     }
                     // 心形和计数都落到缓存里，切回来不会先画成没点过的样子。
                     saveToCache()
+                    AppDetailCache.putDetail(packageName = packageName, comments = comments)
                 }
             }
         }
@@ -466,6 +615,8 @@ fun AppDetailScreen(
                             val latest = repo.appComments(packageName, voter)
                             if (repo.lastError == null && !repo.lastFailureWasNetwork) {
                                 comments = latest
+                                // 删掉的那一条不能靠 60 秒缓存又冒出来，这一份比缓存里的新。
+                                AppDetailCache.putDetail(packageName = packageName, comments = latest)
                                 saveToCache()
                             }
                         }
