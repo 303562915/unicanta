@@ -1,0 +1,80 @@
+name: 👥 Auto-join official groups
+
+# 让「所有注册的人」都进两个官方群（灰度测试群 12、Bug 反馈群 18），并且默认置顶。
+#
+# 两件事：
+#   1. 存量补全：把 `canta_users` 里每个身份事件补进两个群（`conversation_members.pinned_at = now()`，
+#      已经置顶过的不动），幂等，重复跑没事。
+#   2. 以后新人：给 `canta_users` 挂一个 AFTER INSERT 触发器，注册那一刻就入群 + 置顶。
+#      用触发器而不是改 `identity_bind` —— 不动既有函数，风险最小；触发器里整块吞异常，
+#      入群失败绝不能让一次登录失败。
+#
+# 为什么走 CI：本机到 `api.supabase.com` 不可达。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install trigger + backfill memberships
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+        run: |
+          set -euo pipefail
+          SQL=$(printf '%s\n' \
+            "create or replace function private.auto_join_official_groups()" \
+            "returns trigger" \
+            "language plpgsql security definer set search_path = public, private" \
+            "as \$fn\$" \
+            "begin" \
+            "    insert into public.conversation_members (conversation_id, member, member_name, pinned_at)" \
+            "    select g.cid, new.id::text, private.social_name(new.id::text), now()" \
+            "      from (values (12::bigint), (18::bigint)) as g (cid)" \
+            "     where exists (select 1 from public.conversations c where c.id = g.cid and c.kind = 'group')" \
+            "    on conflict (conversation_id, member) do update" \
+            "       set pinned_at = coalesce(conversation_members.pinned_at, now());" \
+            "    return new;" \
+            "exception when others then" \
+            "    -- 入群是顺手的福利：它出任何问题都不该让一次注册失败。" \
+            "    return new;" \
+            "end \$fn\$;" \
+            "" \
+            "drop trigger if exists canta_users_auto_join on public.canta_users;" \
+            "create trigger canta_users_auto_join" \
+            "  after insert on public.canta_users" \
+            "  for each row execute function private.auto_join_official_groups();" \
+            "" \
+            "insert into public.conversation_members (conversation_id, member, member_name, pinned_at)" \
+            "select g.cid, u.id::text, private.social_name(u.id::text), now()" \
+            "  from public.canta_users u" \
+            "  cross join (values (12::bigint), (18::bigint)) as g (cid)" \
+            " where exists (select 1 from public.conversations c where c.id = g.cid and c.kind = 'group')" \
+            "on conflict (conversation_id, member) do update" \
+            "   set pinned_at = coalesce(conversation_members.pinned_at, now());" \
+            "" \
+            "select c.id, c.title," \
+            "       (select count(*) from public.conversation_members m where m.conversation_id = c.id) as members," \
+            "       (select count(*) from public.conversation_members m where m.conversation_id = c.id and m.pinned_at is not null) as pinned" \
+            "  from public.conversations c where c.id in (12, 18) order by c.id;" \
+            "select count(*) as users from public.canta_users;")
+          RESP=$(curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$SQL" '{query: $q}')")
+          echo "--- result ---"
+          echo "$RESP" | jq .
+          echo "--- trigger ---"
+          TRIG=$(printf '%s\n' "select tgname from pg_trigger where tgrelid = 'public.canta_users'::regclass and not tgisinternal;")
+          curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$TRIG" '{query: $q}')" | jq .
