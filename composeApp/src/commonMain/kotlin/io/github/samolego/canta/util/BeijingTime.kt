@@ -1,5 +1,6 @@
 package io.github.samolego.canta.util
 
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -76,8 +77,22 @@ object BeijingTime {
         if (local.date == current.date) return clock
         val days = current.date.toEpochDays() - local.date.toEpochDays()
         if (days == 1L) return "昨天 $clock"
+        // 两到六天前用「周日」这种写法：一周之内"上周日"比"11-22"更好认，也更像聊天软件。
+        if (days in 2L..6L) return weekdayOf(local.date.dayOfWeek)
         val date = local.date.toString()
         return if (local.date.year == current.date.year) date.substring(5) else date
+    }
+
+    /** `周一`…`周日`：`DayOfWeek` 的序号从周一开始（1..7）。 */
+    private fun weekdayOf(day: DayOfWeek): String = when (day) {
+        DayOfWeek.MONDAY -> "周一"
+        DayOfWeek.TUESDAY -> "周二"
+        DayOfWeek.WEDNESDAY -> "周三"
+        DayOfWeek.THURSDAY -> "周四"
+        DayOfWeek.FRIDAY -> "周五"
+        DayOfWeek.SATURDAY -> "周六"
+        else -> "周日"
+    }
     }
 
     /**

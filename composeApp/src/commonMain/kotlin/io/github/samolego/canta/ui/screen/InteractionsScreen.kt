@@ -893,8 +893,10 @@ private fun InteractionRow(
                 }
                 Spacer(Modifier.height(3.dp))
                 // 正文只留两行：这是列表，读得下去的那两行就够决定点不点开了。
+                // 回复那种行按参考图的写法加「回复: 」前缀——一眼看出这是"他回了我哪句"，
+                // 而不是一条没头没尾的话。（方案评论、点赞那些不加：名字那一行已经说了是什么事。）
                 Text(
-                    text = item.body,
+                    text = if (item.kind == InboxKind.REPLY) "回复: " + item.body else item.body,
                     fontSize = 13.sp,
                     lineHeight = 17.sp,
                     color = colors.onSurface,
