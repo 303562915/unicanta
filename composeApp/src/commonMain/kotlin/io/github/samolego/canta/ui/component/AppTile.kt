@@ -3,6 +3,7 @@ package io.github.samolego.canta.ui.component
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -122,11 +123,15 @@ fun AppTile(
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    // 包名连同它后面那个复制图标是一个点击区：点这一行仍然是开详情页，只有点在这串
-                    // 文字上才是复制，所以两者不会打架。
+                    // 包名连同它后面那个复制图标是一个点击区：轻点跟这一行的别处一样开详情页，
+                    // 长按才复制包名。以前轻点在这里就是复制，结果想进详情的人点包名反而被弹一句
+                    // 「已复制」，而包名恰好是列表里最像"标题"的那一块。
                     Row(
                         modifier = if (onCopyPackage != null) {
-                            Modifier.clickable(onClick = onCopyPackage)
+                            Modifier.combinedClickable(
+                                onClick = onOpen,
+                                onLongClick = onCopyPackage,
+                            )
                         } else {
                             Modifier
                         },
@@ -142,11 +147,16 @@ fun AppTile(
                             overflow = TextOverflow.Ellipsis,
                         )
                         if (onCopyPackage != null) {
+                            // 图标自己仍然是"复制"这个动作，读屏也照着念：轻点文字开详情、
+                            // 长按文字复制，点这一小枚图标复制 —— 三条路各走各的。
                             Icon(
                                 Icons.Default.ContentCopy,
                                 contentDescription = stringResource(Res.string.copy_package_name_to_clipboard),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 3.dp).size(10.dp),
+                                modifier = Modifier
+                                    .padding(start = 3.dp)
+                                    .size(10.dp)
+                                    .clickable(onClick = onCopyPackage),
                             )
                         }
                     }
