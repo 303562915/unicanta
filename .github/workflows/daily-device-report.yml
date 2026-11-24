@@ -127,6 +127,7 @@ jobs:
                        line("构建号"; $build) +
                        line("提交"; $commit) +
                        line("发布页"; $url) +
+                       "- 图床下载页：https://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html\n" +
                        apkline($apk) +
                        "- 总人数：" + $total + "\n" +
                        "- 有型号：" + $model + "\n\n" +

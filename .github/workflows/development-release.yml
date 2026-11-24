@@ -148,25 +148,25 @@ jobs:
           BASE_URL=$(sed -n 's/.*const val BASE_URL = "\([^"]*\)".*/\1/p' "$SRC")
           TOKEN=$(sed -n 's/.*const val TOKEN = "\([^"]*\)".*/\1/p' "$SRC")
           ROOT_DIR=$(sed -n 's/.*const val ROOT = "\([^"]*\)".*/\1/p' "$SRC")
-          VERSION_NAME=$(sed -n 's/^version_name=//p' gradle.properties)
-          if [ -z "$BASE_URL" ] || [ -z "$TOKEN" ] || [ -z "$ROOT_DIR" ] || [ -z "$VERSION_NAME" ]; then
-            echo "::warning::image bed mirror skipped: BASE_URL / TOKEN / ROOT / version_name not found"
-            echo "url=" >> "$GITHUB_OUTPUT"
+          if [ -z "$BASE_URL" ] || [ -z "$TOKEN" ] || [ -z "$ROOT_DIR" ]; then
+            echo "::warning::image bed mirror skipped: BASE_URL / TOKEN / ROOT not found"
+            echo "file=" >> "$GITHUB_OUTPUT"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           APK="dist/androidApp-release-${RUN_NUMBER}.apk"
           # 目录固定 <项目根>/apk：安装包单独一层，和头像（unicanta/头像）、群聊图（unicanta/群聊）分开。
           FOLDER="${ROOT_DIR}/apk"
-          # 名字带版本 + 构建号 + 重跑次数（图床重名会 409，重跑同一个 run number 也不会撞）。
-          # 刻意不带项目名前缀：这个文件名要通过 job output 传给下游，含 `canta` 子串会被 GitHub
-          # 当成 secret 丢掉（见 job outputs 上那段注释）；项目名已经在目录里了。
-          RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-1}"
-          NAME="dev-${VERSION_NAME}-b${RUN_NUMBER}-r${RUN_ATTEMPT}.apk"
+          # 固定文件名 + overwrite=1：图床上永远只留这一份，新包直接替换旧包（旧 APK 等于自动删除）。
+          # 名字刻意不带版本号，图床重名会 409，靠 overwrite 才能顶掉上一份；也不带项目名前缀，
+          # 因为它要通过 job output 传给下游，含 `canta` 子串会被 GitHub 当成 secret 丢掉。
+          NAME="latest.apk"
           RESP=$(curl -sS --fail-with-body --max-time 600 -X POST "$BASE_URL/api/upload" \
             -F "file=@${APK};type=application/vnd.android.package-archive;filename=${NAME}" \
             -F "uid=${TOKEN}" \
             -F "fileName=${NAME}" \
-            -F "folder=${FOLDER}" || true)
+            -F "folder=${FOLDER}" \
+            -F "overwrite=1" || true)
           echo "$RESP"
           URL=$(printf '%s' "$RESP" | jq -r '.url // empty' 2>/dev/null)
           if [ -z "$URL" ]; then

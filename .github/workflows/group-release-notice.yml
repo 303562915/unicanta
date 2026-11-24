@@ -88,6 +88,7 @@ jobs:
               printf '提交：%s\n' "$(printf '%s' "$HEAD_COMMIT" | cut -c1-7)"
             fi
             printf '\n下载页（点开用浏览器下载）：\nhttps://303562915.github.io/unicanta/\n'
+            printf '\n图床下载页（国内更快，同一份页面）：\nhttps://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html\n'
             # 图床直链在这里拼：完整 URL 含项目名，过不了 job output（会被当成 secret 丢掉），
             # 所以发版工作流只传文件名，根地址和目录固定写在下面（与 ImageBed.kt 的 BASE_URL / ROOT 一致）。
             if [ -n "${APK_MIRROR_FILE:-}" ]; then

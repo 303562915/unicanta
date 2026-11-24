@@ -324,6 +324,7 @@
     <div class="alt">
       <button id="historyBtn" type="button">历史版本与日志</button>
       <button id="shaBtn" type="button">复制 SHA-256</button>
+      <a id="bedLink" href="#" hidden>图床直链</a>
       <a id="checksumLink" href="#" hidden>校验文件</a>
     </div>
 
@@ -533,6 +534,8 @@
     dl.removeAttribute("download");
     $("checksumLink").hidden = true;
     $("checksumLink").removeAttribute("href");
+    $("bedLink").hidden = true;
+    $("bedLink").removeAttribute("href");
     $("history").innerHTML = "";
     $("history").classList.remove("on");
     $("notesBody").textContent = "";
@@ -563,9 +566,22 @@
     var sub = [data.file_name, fmtSize(data.size)].filter(Boolean).join(" · ");
     $("dlSub").textContent = sub;
 
-    dl.href = data.file;
-    dl.setAttribute("download", data.file_name || "");
+    // 这一页会被整份镜像到图床（那边路径是 /file/<项目>/download/index.html）。在图床上打开时，
+    // 主按钮改走图床上的 APK（`latest.apk`，每次开发版发布覆盖上传，永远是最新那份），
+    // 国内访问比回源 GitHub releases 快；GitHub Pages 那一份仍然用 release 直链。
+    var onImageBed = /(^|\.)pages\.dev$/.test(location.hostname);
+    dl.href = onImageBed && data.file_bed ? data.file_bed : data.file;
+    // 图床上那份文件叫 latest.apk；同域下 download 属性生效，顺手把下载文件名带出版本号。
+    var bedName = "unicanta-" + (data.version_name || "latest") +
+      (data.build_number ? "-dev" + data.build_number : "") + ".apk";
+    dl.setAttribute("download", onImageBed && data.file_bed ? bedName : (data.file_name || ""));
     dl.removeAttribute("aria-disabled");
+
+    if (data.file_bed) {
+      var bed = $("bedLink");
+      bed.href = data.file_bed;
+      bed.hidden = false;
+    }
 
     if (data.checksum_file) {
       var c = $("checksumLink");

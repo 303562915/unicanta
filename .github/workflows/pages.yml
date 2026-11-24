@@ -187,6 +187,8 @@ jobs:
               "size": apk.get("size", 0),
               "sha256": digest,
               "checksum_file": f"{base}/{sums['name']}" if sums else None,
+              # 稳定版不上图床（只镜像开发版），页面里这一项固定为空。
+              "file_bed": None,
               "notes": clean_notes(rel.get("body")),
           }
 
@@ -235,6 +237,7 @@ jobs:
             "size": 0,
             "sha256": "",
             "checksum_file": null,
+            "file_bed": null,
             "notes": "",
             "history": []
           }
@@ -245,10 +248,13 @@ jobs:
           import json, os, pathlib, re, subprocess
 
           rel = json.loads(pathlib.Path('development-release.json').read_text(encoding='utf-8'))
+          # 图床上那份固定名字的 APK（development-release 每次覆盖上传，永远是最新开发版）。
+          # 页面被镜像到图床后，下载按钮改走这一条，国内访问比 GitHub releases 快。
+          BED_APK = 'https://cloudflare-imgbed-erh.pages.dev/file/unicanta/apk/latest.apk'
           if rel is None or (rel.get('body') or '').strip() == 'Preparing the first development build.':
               data = {'version_name': None, 'version_code': 0, 'build_number': None, 'tag': None,
                       'published_at': None, 'file': None, 'file_name': None, 'size': 0,
-                      'sha256': '', 'checksum_file': None, 'notes': '', 'history': []}
+                      'sha256': '', 'checksum_file': None, 'file_bed': None, 'notes': '', 'history': []}
           else:
               body = rel.get('body') or ''
               def field(name, pattern):
@@ -290,6 +296,7 @@ jobs:
                        'published_at': apk.get('created_at') or apk.get('updated_at') or rel.get('published_at'),
                        'file': apk['browser_download_url'], 'file_name': name, 'size': apk.get('size', 0),
                        'sha256': digests[0], 'checksum_file': checksum['browser_download_url'],
+                       'file_bed': BED_APK,
                        'notes': dev_notes}
               # 滚动 release 里每个 build 都是一个资产，历史列表取最近 8 个。
               hist = []
