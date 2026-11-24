@@ -79,6 +79,9 @@ class AndroidCantaPlatform(
         /** One channel's error line in the install report: the cause, not the whole `pm` dump. */
         private const val INSTALL_ERROR_CHARS = 160
 
+        /** Suffix of the file that records the SHA-256 of a downloaded APK, next to the APK. */
+        private const val HASH_SUFFIX = ".sha256"
+
         /**
          * How long a root install may take. Generous on purpose: `pm install` of a 30 MB APK on a
          * busy phone can take a while, and cutting it short would kill the shared shell — the next
@@ -750,15 +753,16 @@ class AndroidCantaPlatform(
         // the lock: the bytes are on disk, so there is nothing to download.
         val existing = File(directory, fileName)
         if (existing.isFile) {
-            if (isCompleteApk(existing)) {
+            if (isCompleteApk(existing) && verifyOrRecordHash(existing)) {
                 deleteStaleUpdateApks(directory, existing)
                 val length = existing.length()
                 onProgress(length, length)
                 return@withContext UpdateDownload.Done(existing.absolutePath)
             }
-            // A half-written or corrupted leftover would win the name in `uniqueUpdateFile` and be
-            // installed by mistake; the partial below is the one that gets resumed.
+            // A half-written, corrupted or swapped leftover would win the name in `uniqueUpdateFile`
+            // and be installed by mistake; the partial below is the one that gets resumed.
             existing.delete()
+            sidecarOf(existing).delete()
         }
         // One release, one partial file: a download that gave up is picked up by the next attempt —
         // in this process or after a restart — instead of starting the APK over from byte zero.
@@ -768,6 +772,7 @@ class AndroidCantaPlatform(
         if (partial.isFile && isCompleteApk(partial)) {
             val landed = settle(partial, uniqueUpdateFile(directory, fileName))
             deleteStaleUpdateApks(directory, landed)
+            recordHash(landed)
             val length = landed.length()
             onProgress(length, length)
             LogUtils.i(TAG, "Resumed a finished download at ${landed.absolutePath}")
@@ -804,6 +809,7 @@ class AndroidCantaPlatform(
                         // installed: without this, every release the reader skipped leaves a
                         // ~30 MB corpse behind and the folder grows one file per version.
                         deleteStaleUpdateApks(directory, landed)
+                        recordHash(landed)
                         onProgress(written, written)
                         LogUtils.i(TAG, "Downloaded $written bytes to ${landed.absolutePath}")
                         return@withContext UpdateDownload.Done(landed.absolutePath)
@@ -985,12 +991,57 @@ class AndroidCantaPlatform(
      * forever, one file per version.
      */
     private fun deleteStaleUpdateApks(directory: File, keep: File) {
-        directory.listFiles { file -> file.isFile && file != keep && file.name.endsWith(".apk") }
-            ?.forEach { file ->
-                if (file.delete()) {
-                    LogUtils.i(TAG, "Removed the stale update APK ${file.name}")
-                }
+        val keepHash = sidecarOf(keep).name
+        directory.listFiles { file ->
+            file.isFile && file != keep && file.name != keepHash &&
+                (file.name.endsWith(".apk") || file.name.endsWith(HASH_SUFFIX))
+        }?.forEach { file ->
+            if (file.delete()) {
+                LogUtils.i(TAG, "Removed the stale update file ${file.name}")
             }
+        }
+    }
+
+    /** Where the SHA-256 of [file] is recorded next to it. */
+    private fun sidecarOf(file: File): File = File(file.parentFile, file.name + HASH_SUFFIX)
+
+    /** SHA-256 of [file], hex, or null when it cannot be read. */
+    private fun hashOf(file: File): String? = runCatching {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xFF) }
+    }.getOrNull()
+
+    /** Records [file]'s hash, so the next reuse can prove the bytes are the ones that arrived. */
+    private fun recordHash(file: File) {
+        val hash = hashOf(file) ?: return
+        runCatching { sidecarOf(file).writeText(hash) }
+            .onFailure { LogUtils.w(TAG, "Could not record the checksum of ${file.name}: $it") }
+    }
+
+    /**
+     * Whether [file] still has the bytes that were recorded for it; a file without a record is
+     * accepted and gets one, which is how downloads from before this check keep working.
+     */
+    private fun verifyOrRecordHash(file: File): Boolean {
+        val record = sidecarOf(file)
+        val actual = hashOf(file) ?: return false
+        val recorded = runCatching { record.readText().trim() }.getOrNull()
+        if (recorded.isNullOrBlank()) {
+            runCatching { record.writeText(actual) }
+            return true
+        }
+        if (recorded == actual) return true
+        LogUtils.w(TAG, "Checksum mismatch for ${file.name}: recorded $recorded, actual $actual")
+        runCatching { record.delete() }
+        return false
     }
 
     /** A download that ended for a reason already known, carrying it out unchanged. */

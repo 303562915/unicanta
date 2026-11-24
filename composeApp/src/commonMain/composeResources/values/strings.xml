@@ -425,6 +425,8 @@
     <string name="about_install_failed">The install did not go through: %1$s</string>
     <string name="about_install_failed_title">Install failed</string>
     <string name="about_auto_install_paused">Update %1$s is available, but installing it automatically failed last time — install it from the About page.</string>
+    <string name="about_auto_install_retry">Retry automatic update</string>
+    <string name="about_auto_install_retry_hint">Automatic install of %1$s failed last time — tap to try again</string>
     <string name="about_auto_download_failed">The update download failed; it will be retried later. You can also download it from the About page.</string>
     <string name="about_download_failed">Download failed</string>
     <string name="about_download_failed_network">Download failed: the connection dropped or the server refused it</string>

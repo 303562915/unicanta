@@ -49,6 +49,8 @@ import io.github.samolego.canta.generated.resources.about_check_update
 import io.github.samolego.canta.generated.resources.about_check_update_action
 import io.github.samolego.canta.generated.resources.about_check_update_hint
 import io.github.samolego.canta.generated.resources.about_auto_install
+import io.github.samolego.canta.generated.resources.about_auto_install_retry
+import io.github.samolego.canta.generated.resources.about_auto_install_retry_hint
 import io.github.samolego.canta.generated.resources.about_confirm_install
 import io.github.samolego.canta.generated.resources.about_download_cancel
 import io.github.samolego.canta.generated.resources.about_download_failed_network
@@ -367,6 +369,20 @@ fun AboutScreen(
                         onClick = { platform.openUrl(DOWNLOAD_PAGE_URL) },
                     )
                 }
+            }
+            // A build that failed to install on its own is remembered, so the start-up check stops
+            // retrying it. This is the way back: one tap clears the mark and asks again.
+            if (skippedAutoInstall.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                AppLinkCard(
+                    glyph = FlGlyphs.cloudDownload,
+                    title = stringResource(Res.string.about_auto_install_retry),
+                    subtitle = stringResource(Res.string.about_auto_install_retry_hint, skippedAutoInstall),
+                    onClick = {
+                        settingsViewModel.saveSkippedAutoInstallVersion("")
+                        checkUpdate()
+                    },
+                )
             }
             Spacer(Modifier.height(10.dp))
             UpdateChannelCard(

@@ -233,6 +233,8 @@
     <string name="about_install_failed">安装没有成功：%1$s</string>
     <string name="about_install_failed_title">安装没成功</string>
     <string name="about_auto_install_paused">有更新 %1$s，但上次自动安装没成功，已暂停自动安装；请到「关于」页手动安装。</string>
+    <string name="about_auto_install_retry">重新尝试自动更新</string>
+    <string name="about_auto_install_retry_hint">%1$s 上次自动安装没成功，点这里再试一次</string>
     <string name="about_auto_download_failed">更新下载失败，稍后会自动重试；也可以到「关于」页用浏览器下载。</string>
     <string name="about_download_failed">下载失败</string>
     <string name="about_download_failed_network">下载失败：连接中断或服务器拒绝连接</string>
