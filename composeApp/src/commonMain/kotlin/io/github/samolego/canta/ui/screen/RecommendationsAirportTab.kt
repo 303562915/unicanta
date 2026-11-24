@@ -57,13 +57,10 @@ import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
-import io.github.samolego.canta.ui.fl.FlSegment
-import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
 
-/** 五颗星里的一颗与票的颜色，写在文件头上，两处图表共用同一套。 */
 /**
  * 跨「切走再切回来」要留住的那一份。
  *
