@@ -34,6 +34,11 @@ object AudioWhitelist {
     internal const val TAG_PACKAGE = "##PKG##"
     internal const val TAG_INSTALLED = "##INST##"
 
+    /** The lines a bug report needs: what the ROM actually has, next to what this build expects. */
+    internal const val TAG_PROPERTY = "##PROP##"
+    internal const val TAG_SETTING = "##SETTING##"
+    internal const val TAG_XML = "##XMLHEAD##"
+
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
     suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
 
@@ -51,11 +56,16 @@ object AudioWhitelist {
      *
      * @param level the raw property value; empty when the property does not exist on this ROM.
      * @param configPath the config the list was read from, empty when the phone has none.
+     * @param diagnostics the lines a bug report needs — the audio/scene properties this ROM has, the
+     *   two global settings the bypass writes, and the head of the config. This feature was lifted
+     *   from another tool's bytecode and has no public documentation, so a phone that says "no
+     *   effect" can only be diagnosed from these lines.
      */
     data class State(
         val level: String,
         val configPath: String,
         val entries: List<Entry>,
+        val diagnostics: List<String> = emptyList(),
     ) {
         /** The audio engine is skipping the whitelist right now. */
         val bypassed: Boolean get() = level == BYPASS
@@ -73,6 +83,7 @@ object AudioWhitelist {
         var config = ""
         val packages = LinkedHashSet<String>()
         val installed = HashSet<String>()
+        val diagnostics = ArrayList<String>()
 
         output.lineSequence().forEach { raw ->
             val line = raw.trim()
@@ -85,6 +96,10 @@ object AudioWhitelist {
                 line.startsWith(TAG_INSTALLED) -> line.removePrefix(TAG_INSTALLED).trim().let {
                     if (it.isNotEmpty()) installed += it
                 }
+                line.startsWith(TAG_PROPERTY) ->
+                    diagnostics += line.removePrefix(TAG_PROPERTY).trim().replace(Regex("\\s+"), " ")
+                line.startsWith(TAG_SETTING) -> diagnostics += "setting " + line.removePrefix(TAG_SETTING).trim()
+                line.startsWith(TAG_XML) -> diagnostics += "xml: " + line.removePrefix(TAG_XML).trim()
                 else -> Unit
             }
         }
@@ -94,7 +109,7 @@ object AudioWhitelist {
             .map { Entry(packageName = it, label = labelOf(it), installed = it in installed) }
             .sortedWith(compareBy({ !it.installed }, { it.label.lowercase() }, { it.packageName }))
 
-        return State(level = level, configPath = config, entries = entries)
+        return State(level = level, configPath = config, entries = entries, diagnostics = diagnostics)
     }
 
     /** The Chinese name for a package this build knows, the package name otherwise. */

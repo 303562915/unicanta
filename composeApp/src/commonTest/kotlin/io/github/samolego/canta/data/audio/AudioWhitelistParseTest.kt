@@ -80,4 +80,20 @@ class AudioWhitelistParseTest {
         assertEquals("1", state.level)
         assertEquals(1, state.entries.size)
     }
+
+    @Test
+    fun theDiagnosticLinesAreKeptVerbatim() {
+        // These are what a bug report carries: the properties the ROM has and what the two global
+        // settings hold. Dropping them silently would leave "no effect" undiagnosable.
+        val state = AudioWhitelist.parse(
+            sample +
+                "##PROP##[persist.sys.scene.partition.level]:   [1]\n" +
+                "##SETTING##debug_audio_cloud=null\n" +
+                "##XMLHEAD##<TrackCustomEfxConfig name=\"trackefx_config\">\n",
+        )
+        assertEquals(3, state.diagnostics.size)
+        assertEquals("[persist.sys.scene.partition.level]: [1]", state.diagnostics[0])
+        assertEquals("setting debug_audio_cloud=null", state.diagnostics[1])
+        assertTrue(state.diagnostics[2].startsWith("xml: <TrackCustomEfxConfig"))
+    }
 }

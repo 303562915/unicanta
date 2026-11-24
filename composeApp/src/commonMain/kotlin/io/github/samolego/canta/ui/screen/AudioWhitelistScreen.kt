@@ -113,6 +113,7 @@ fun AudioWhitelistScreen(
         }
     }
     val installedCount = entries.count { it.installed }
+    val diagnostics = current?.diagnostics.orEmpty()
 
     Scaffold(
         topBar = { ScreenTopBar(onNavigateBack = onNavigateBack, title = "音频白名单") },
@@ -176,6 +177,17 @@ fun AudioWhitelistScreen(
             if (log.isNotEmpty()) {
                 item(key = "log") {
                     LogCard(log = log, onCopy = { clipboard.setText(AnnotatedString(log)) })
+                }
+            }
+
+            // 这个功能是从别的工具的字节码里反推出来的，没有任何公开文档：说不生效的时候，
+            // 只有这一屏原生数据能说明是哪种机器、哪种 ROM、哪一步对不上。所以它常驻在页面上。
+            if (diagnostics.isNotEmpty()) {
+                item(key = "diagnostics") {
+                    DiagnosticsCard(
+                        lines = diagnostics,
+                        onCopy = { clipboard.setText(AnnotatedString(diagnostics.joinToString("\n"))) },
+                    )
                 }
             }
 
@@ -362,8 +374,44 @@ private fun LogCard(log: String, onCopy: () -> Unit) {
     }
 }
 
-/** Why the shell never answered, in a sentence a reader can act on. */
-private fun failureText(failure: TweakFailure): String = when (failure) {
+/**
+ * 这台机器自己的音频事实，原样列出来：有哪些 scene / trackefx 属性、两个 global 设置里现在是什么、
+ * 配置文件开头长什么样。说不生效时，只有这一段能区分「开关换了名字」和「这台 ROM 根本没有这套东西」。
+ */
+@Composable
+private fun DiagnosticsCard(lines: List<String>, onCopy: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "诊断信息",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onCopy) { Text("复制", fontSize = 11.sp) }
+            }
+            Text(
+                text = "不生效就把这一段发给开发者：它能直接看出这台机器和预期的差在哪。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+            Text(
+                text = lines.joinToString("\n"),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+            )
+        }
+    }
+}
+
+/** Why the shell never answered, in a sentence a reader can act on. */private fun failureText(failure: TweakFailure): String = when (failure) {
     TweakFailure.Unsupported -> "这个平台没有 sudo 的 shell：只有 Android 上的 Shizuku 或 root 能读这些系统文件"
     TweakFailure.NoPrivilege -> "Shizuku 没在运行，或者 Canta 还没被授权"
     TweakFailure.Timeout -> "Shizuku 没有响应"

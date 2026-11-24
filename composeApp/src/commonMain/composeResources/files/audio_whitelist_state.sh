@@ -5,6 +5,11 @@ for f in /odm/etc/audio/trackefx_config.xml /odm/etc/audio/track_efx_config.xml 
 echo "##CFG##$CFG"
 if [ -n "$CFG" ]; then
 { grep -oE '"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+"' "$CFG"; grep -oE '>[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+<' "$CFG"; } 2>/dev/null | tr -d '"><' | grep -v '\.xml$' | sort -u | sed 's|^|##PKG##|'
+echo "##XMLHEAD##$(head -c 400 "$CFG" | tr '\n' ' ')"
 fi
 pm list packages 2>/dev/null | sed 's|^package:|##INST##|'
+getprop | grep -iE 'scene|trackefx|track_efx|whitelist|audio.*(white|bypass|scene)' | head -n 40 | sed 's|^|##PROP##|'
+echo "##SETTING##debug_audio_cloud=$(settings get global debug_audio_cloud 2>/dev/null)"
+echo "##SETTING##test_audio_cloud=$(settings get global test_audio_cloud 2>/dev/null)"
+echo "##SETTING##debug_audio=$(settings get global debug_audio 2>/dev/null)"
 echo "##END##"
