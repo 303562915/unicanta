@@ -39,7 +39,9 @@ import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -174,7 +176,7 @@ internal class UpdateCenter(
                 // that already failed to install on its own is left for a manual tap: fetching it
                 // again only to fail again is the loop this mark breaks.
                 settings.autoInstallUpdatesFlow.first() &&
-                    label != settings.skippedAutoInstallVersionFlow.first() -> startDownload(found)
+                    label != settings.skippedAutoInstallVersionFlow.first() -> startDownload(found, auto = true)
                 else -> state = UpdateState.Available(label, found)
             }
         }
@@ -241,7 +243,9 @@ internal class UpdateCenter(
                     },
                 )
             } catch (e: CancellationException) {
-                if (tooSlow.value) onDownloadTooSlow(release, label, auto, channelName, reached, startedAt)
+                // 这次取消是我们自己发的（太慢），收尾得在 NonCancellable 里做：协程已经处于取消态，
+                // 任何 suspend 调用（读资源字符串、发 toast）都会立刻再抛一次。
+                if (tooSlow.value) withContext(NonCancellable) { onDownloadTooSlow(release, label, auto, channelName, reached, startedAt) }
                 throw e
             }
             val elapsed = startedAt.elapsedNow().inWholeMilliseconds

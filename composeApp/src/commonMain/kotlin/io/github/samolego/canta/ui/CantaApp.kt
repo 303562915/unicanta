@@ -547,7 +547,7 @@ private fun CantaNavigation(
                     }
                     // 下载、进度、安装、留痕全在 UpdateCenter 里：它只 toast 一句「正在下载」，
                     // 并且把状态写给关于页，所以那里也看得到进度条。
-                    updateCenter.startDownload(release)
+                    updateCenter.startDownload(release, auto = true)
                     return@LaunchedEffect
                 }
             }

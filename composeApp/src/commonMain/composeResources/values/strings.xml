@@ -443,6 +443,7 @@
     <string name="about_download_failed_timeout">Download failed: it stalled with no data for too long</string>
     <string name="about_download_failed_storage">Download failed: the file could not be written, check the free space</string>
     <string name="about_download_failed_unsupported">This build cannot download updates itself</string>
+    <string name="about_download_too_slow">Download too slow: stopped. Open the download page and get it there instead.</string>
     <string name="about_download_cancel">Cancel download</string>
     <string name="about_download_page">Download in browser</string>
     <string name="about_install_title">Install %1$s?</string>

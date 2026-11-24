@@ -249,6 +249,7 @@
     <string name="about_download_failed_timeout">下载失败：长时间没有数据，连接已停滞</string>
     <string name="about_download_failed_storage">下载失败：文件写不进去，检查一下剩余空间</string>
     <string name="about_download_failed_unsupported">这个版本不能自己下载更新</string>
+    <string name="about_download_too_slow">下载太慢，已经停下。去下载页手动下载会更快。</string>
     <string name="about_download_cancel">取消下载</string>
     <string name="about_download_page">用浏览器下载</string>
     <string name="about_install_title">安装 %1$s？</string>
