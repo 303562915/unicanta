@@ -321,14 +321,12 @@ class PlanRepository(
      * through a VPN or a proxy. Any answer proves reachability — the REST root answering "not
      * found" is still a host that answered — so the check is about the route, not about the call.
      */
-    suspend fun isReachable(): Boolean {
-        val reachable = answers { client.head(baseUrl) { header("apikey", apiKey) } } ||
+    suspend fun isReachable(): Boolean =
+        answers { client.head(baseUrl) { header("apikey", apiKey) } } ||
             answers { client.get(baseUrl) { header("apikey", apiKey) } }
-        // 预加载的一次探测：成了就证明这台手机现在到得了后端，没成就把链路问题记到 BackendHealth，
-        // 由主界面决定要不要提示——而不是靠"有没有 VPN 网卡"去猜。
-        if (reachable) BackendHealth.reportReachable() else BackendHealth.reportUnreachable()
-        return reachable
-    }
+    // 这里不写 BackendHealth：调用它的人自己知道该怎么处理这个答案。
+    // 主界面的确认探测要连着两次失败才置位，页面上的上传预检只把结果画在自己的提示条里——
+    // 谁都不是"这一次失败就等于断网"。
 
     /** True when [request] came back inside [PROBE_TIMEOUT_MS]; a connection that never opens is not an answer. */
     private suspend fun answers(request: suspend () -> Any?): Boolean =

@@ -178,11 +178,21 @@ private const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
 /**
  * 连不上后端时的提示，多久重新确认一次「现在是真断了吗」。
  *
- * 提示本身由事实驱动（[BackendHealth.networkTrouble]，任何一次请求没答上来才置 true），不是
+ * 提示本身由事实驱动（[BackendHealth.networkTrouble]，确认探测连着两次没答上来才置 true），不是
  * 靠 `isVpnActive()` 硬判。开着提示的这段时间里隔一分钟探一次：人可能已经出去把 VPN 打开了，
  * 回来一看提示还挂着，那就是在说假话。
  */
 private const val BACKEND_PROBE_INTERVAL_MILLIS = 60_000L
+
+/**
+ * 提示出现之前，确认探测要连着几次都没答上来，以及两次之间留多久。
+ *
+ * 单次请求失败不算断网：冷启动那几百毫秒里网络栈、DNS、代理都还没就绪，切页面时的一次超时、
+ * 后台被系统压住的那一拍，都会让一个请求失败。留一秒再探一次，两次都没回音才认账——
+ * 这条提示只在检测过之后才出现，不是"有请求失败就弹"。
+ */
+private const val BACKEND_CONFIRM_ATTEMPTS = 2
+private const val BACKEND_CONFIRM_GAP_MILLIS = 1_000L
 
 /**
  * App 退到后台之后多久问一次「有没有新消息」，用来决定要不要弹通知栏。
@@ -601,18 +611,36 @@ private fun CantaNavigation(
 
     // 不在启动时问"有没有 VPN"。那是在猜原因：分流规则、公司网络、桌面版都没有 VPN 网卡照样通，
     // 节点挂了的 VPN 有网卡也照样不通，猜错就是每次启动都打扰一遍用得好好的人。
-    // 顺序反过来：先把社区数据正常拉一遍（预加载），拉得动就什么都不说；任何一次请求真的没答上来，
-    // BackendHealth 才置位，提示才出现。
+    // 顺序反过来：先把社区数据正常拉一遍（预加载），拉得动就什么都不说；某次请求真的没答上来，
+    // 只登记成"可疑"（BackendHealth.suspicion），由下面这段确认探测连着两次都没回音才让提示出现。
     var backendProbeTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { backendProbeTick++ }
     val backendTrouble by BackendHealth.networkTrouble.collectAsStateWithLifecycle()
-    // 提示挂着的时候才轮询：一分钟一次 HEAD，成本可以忽略，但只在"正在怀疑链路"时才花这份钱。
-    LaunchedEffect(backendTrouble, backendProbeTick, appVisible) {
+    val backendSuspicion by BackendHealth.suspicion.collectAsStateWithLifecycle()
+    // 只有"可疑"或"提示已挂着"时才花这份钱：确认断了之后一分钟一次 HEAD 问"好了没有"，
+    // 别的时候一次都不探（启动那一次除外，它建立的是"这台手机现在通"这个事实）。
+    LaunchedEffect(backendTrouble, backendSuspicion, backendProbeTick, appVisible) {
         if (!appVisible) return@LaunchedEffect
+        // 还没确认断：要连着两次都没答上来才算；已经确认断了：这一次只是在问"好了没有"。
+        val attempts = if (backendTrouble) 1 else BACKEND_CONFIRM_ATTEMPTS
+        var reachable = false
+        for (attempt in 0 until attempts) {
+            if (attempt > 0) delay(BACKEND_CONFIRM_GAP_MILLIS)
+            reachable = communityRepository.isReachable()
+            if (reachable) break
+        }
+        if (reachable) {
+            BackendHealth.reportReachable()
+            return@LaunchedEffect
+        }
+        // 连 attempts 次都没答上来：到这一步才认账，提示这时才出现。
+        BackendHealth.confirmUnreachable()
         while (true) {
-            communityRepository.isReachable()
-            if (!backendTrouble) break
             delay(BACKEND_PROBE_INTERVAL_MILLIS)
+            if (communityRepository.isReachable()) {
+                BackendHealth.reportReachable()
+                break
+            }
         }
     }
 
