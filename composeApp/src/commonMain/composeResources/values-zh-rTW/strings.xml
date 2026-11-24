@@ -143,4 +143,5 @@
     <string name="theme_mode_dark">深色</string>
     <string name="theme_mode">深色模式</string>
     <string name="theme_preview">預覽</string>
+    <string name="package_name_copied">包名已複製</string>
 </resources>

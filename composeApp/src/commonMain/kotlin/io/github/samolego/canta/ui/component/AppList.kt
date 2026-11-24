@@ -47,6 +47,7 @@ import io.github.samolego.canta.generated.resources.loading_apps
 import io.github.samolego.canta.generated.resources.loading_badges
 import io.github.samolego.canta.generated.resources.no_apps_found
 import io.github.samolego.canta.generated.resources.num_selected_apps
+import io.github.samolego.canta.generated.resources.package_name_copied
 import io.github.samolego.canta.generated.resources.select_all
 import io.github.samolego.canta.generated.resources.selected_apps
 import io.github.samolego.canta.ui.AppsType
@@ -96,6 +97,13 @@ fun AppList(
     /** 点一行：默认开详情页，开关关掉就退回弹窗。 */
     fun openApp(app: AppInfo) {
         if (appTapOpensDialog) showAppDialog = app else onOpenAppPage(app.packageName)
+    }
+
+    // 复制包名：列表里最常见的动作是把它拿去问 AI，所以点包名就落到剪贴板，再 toast 一句。
+    val copiedMessage = stringResource(Res.string.package_name_copied)
+    fun copyPackage(packageName: String) {
+        platform.copyToClipboard(packageName)
+        platform.showMessage(copiedMessage)
     }
 
     val appList by remember { derivedStateOf { appListModel.appList.filter(appType::matches) } }
@@ -204,6 +212,7 @@ fun AppList(
                                         appInfo = appInfo,
                                         score = scores[appInfo.packageName],
                                         neverInstalled = neverInstalled(appInfo),
+                                        onCopyPackage = { copyPackage(appInfo.packageName) },
                                         onCheckChanged = {
                                             appListModel.selectedApps.remove(appInfo.packageName)
                                         },
@@ -242,6 +251,7 @@ fun AppList(
                                 appListModel.selectedApps.contains(appInfo.packageName),
                             neverInstalled = neverInstalled(appInfo),
                             enabled = appInfo.badgeInfo != AppBadgeInfo.UNSAFE || allowUnsafeUninstalls,
+                            onCopyPackage = { copyPackage(appInfo.packageName) },
                             onCheckChanged = { checked ->
                                 if (checked) {
                                     appListModel.selectedApps.add(appInfo.packageName)

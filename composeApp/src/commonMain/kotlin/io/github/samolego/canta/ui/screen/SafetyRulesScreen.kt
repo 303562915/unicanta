@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
@@ -537,6 +538,21 @@ fun SafetyRulesScreen(
                 pulseTitleHint = !scopeHintSeen,
                 // No plan count on the band: the switch under it already says which tab is
                 // which, and a counter there only squeezed the model's system line.
+                // 「上传本机方案」的图标按钮贴着计数器：群里有人找半天没找到分享入口，因为它原来只在
+                // 「本机」范围下才出现在右下角。现在它常驻顶端，任何范围下都在。
+                countersLeading = {
+                    IconButton(
+                        onClick = openUpload,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.FileUpload,
+                            contentDescription = stringResource(Res.string.plans_upload_cta),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                },
                 counters = buildList {
                     // The reboot proof is this install's own: it means nothing under another model,
                     // and under "全部机型" it would be read as if the whole community were counted.
@@ -585,9 +601,9 @@ fun SafetyRulesScreen(
             )
         },
         floatingActionButton = {
-            // Only the plans page publishes, and only for this phone: another model's list is
-            // something to read, not somewhere to upload this phone's packages.
-            if (tab == 1 && planScope == PlanScope.ThisPhone) {
+            // 方案页就能发布，跟范围无关：以前只有切到「本机」才出现这个按钮，结果是大部分人
+            // 根本找不到分享入口。范围只决定列表里是谁的机型，上传的永远是本机这一份。
+            if (tab == 1) {
                 Column(horizontalAlignment = Alignment.End) {
                     ExtendedFloatingActionButton(
                         onClick = openUpload,
@@ -769,9 +785,18 @@ fun SafetyRulesScreen(
                             )
                         }
                         // Re-read either way: a failed upload simply leaves the list as it was.
-                        val refreshed = repo.plansFor(target).withoutDuplicates()
-                        plans = refreshed
-                        if (refreshed.isNotEmpty()) persistPlans(refreshed)
+                        // 发布的是本机这一份：范围还停在「他机 / 全部机型」时，先把范围切回本机，
+                        // 否则下面那句 plansFor(target) 会把屏幕上的名单换成自己的，标题却还写着
+                        // 别人的机型。切范围本身会触发一次本机列表的重新读取。
+                        if (planScope == PlanScope.ThisPhone) {
+                            val refreshed = repo.plansFor(target).withoutDuplicates()
+                            plans = refreshed
+                            if (refreshed.isNotEmpty()) persistPlans(refreshed)
+                        } else {
+                            plans = emptyList()
+                            loading = true
+                            planScope = PlanScope.ThisPhone
+                        }
                     }
                 }
             },

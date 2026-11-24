@@ -162,6 +162,11 @@ fun DeviceHero(
     subtitle: String,
     modifier: Modifier = Modifier,
     counters: List<Pair<String, String>> = emptyList(),
+    /**
+     * 计数器前面那一下：安全页把「上传本机方案」放在这里，紧挨着「重启验证」的数字——
+     * 上传的入口就长在这组数字旁边，而不是要先切到本机才看得见。
+     */
+    countersLeading: (@Composable () -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
     /** False hides the picture and keeps its band: the heading and the switch do not move. */
     showPhoto: Boolean = true,
@@ -305,6 +310,7 @@ fun DeviceHero(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                countersLeading?.invoke()
                 counters.forEach { (value, caption) ->
                     Column(horizontalAlignment = Alignment.End) {
                         Text(

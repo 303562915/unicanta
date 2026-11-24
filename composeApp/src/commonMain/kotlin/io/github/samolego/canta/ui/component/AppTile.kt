@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -35,7 +36,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.CANTA_PACKAGE_NAME
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.copy_package_name_to_clipboard
 import io.github.samolego.canta.util.CommunityScore
+import org.jetbrains.compose.resources.stringResource
 
 /** Vertical air around the text inside a tile; the row itself is as tall as its icon. */
 private val TILE_VERTICAL_PADDING = 5.dp
@@ -61,6 +65,11 @@ fun AppTile(
     onCheckChanged: (Boolean) -> Unit,
     /** 点这一行：弹详情小窗，还是直接开这个应用的详情页，由设置里的开关决定。 */
     onOpen: () -> Unit,
+    /**
+     * 点包名就复制它：列表里最常被拿去用的就是这串包名（贴到 AI 里问「这个能不能删」）。
+     * 给了回调才画复制小图标，没给就还是一行纯文字。
+     */
+    onCopyPackage: (() -> Unit)? = null,
     showBorder: Boolean = isSelected,
     /** On the uninstalled list: whether the ROM never installed this for the user, instead of Canta removing it. */
     neverInstalled: Boolean = false,
@@ -113,15 +122,34 @@ fun AppTile(
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = appInfo.packageName,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    // 包名连同它后面那个复制图标是一个点击区：点这一行仍然是开详情页，只有点在这串
+                    // 文字上才是复制，所以两者不会打架。
+                    Row(
+                        modifier = if (onCopyPackage != null) {
+                            Modifier.clickable(onClick = onCopyPackage)
+                        } else {
+                            Modifier
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = appInfo.packageName,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (onCopyPackage != null) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = stringResource(Res.string.copy_package_name_to_clipboard),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 3.dp).size(10.dp),
+                            )
+                        }
+                    }
                     if (appInfo.badgeInfo != null) {
                         AppBadge(type = appInfo.badgeInfo!!)
                     }
@@ -162,6 +190,8 @@ fun SelectedAppTile(
     score: CommunityScore? = null,
     onCheckChanged: (Boolean) -> Unit,
     onOpen: () -> Unit,
+    /** Same meaning as in [AppTile]: tapping the package name copies it. */
+    onCopyPackage: (() -> Unit)? = null,
     /** Same meaning as in [AppTile]: the ROM never installed it, Canta did not remove it. */
     neverInstalled: Boolean = false,
 ) {
@@ -173,6 +203,7 @@ fun SelectedAppTile(
         showBorder = false,
         onCheckChanged = onCheckChanged,
         onOpen = onOpen,
+        onCopyPackage = onCopyPackage,
         neverInstalled = neverInstalled,
         checkedColor = MaterialTheme.colorScheme.error,
         checkedBackgroundColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
