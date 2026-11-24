@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -108,6 +110,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import io.github.samolego.canta.ui.fl.isDark
 import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlin.random.Random
@@ -151,14 +154,20 @@ private fun mergeMessages(fresh: List<ChatMessage>, current: List<ChatMessage>):
 private val ChatBubbleMaxWidth = 260.dp
 
 /**
- * 输入栏那几处固定色，按截图取值，不跟主题走。
+ * 输入栏那两处底色：**亮色保持截图里的浅灰，暗色跟随主题**。
  *
- * 聊天页是有牌子的页面：主题换到别的强调色，输入栏的灰底、占位字、发送键也该还是这副样子，
- * 否则换一次主题整条栏会跟着偏色。
+ * 以前这里是一对写死的浅灰色（#F7F7F7 / #F2F2F2）。截图那种牌子感在亮色下没问题，但换到暗色
+ * 主题后整条栏会在深色页面上挖出一块白板，输入框里自己打的字反而更不清楚。
  */
-private val ComposerBarBg = Color(0xFFF7F7F7)
-private val ComposerFieldBg = Color(0xFFF2F2F2)
-private val ComposerPlaceholder = Color(0xFF999999)
+private fun composerBarColor(scheme: ColorScheme): Color =
+    if (scheme.isDark) scheme.surfaceContainerLow else Color(0xFFF7F7F7)
+
+private fun composerFieldColor(scheme: ColorScheme): Color =
+    if (scheme.isDark) scheme.surfaceContainerHigh else Color(0xFFF2F2F2)
+
+/** 占位字：亮色仍是截图里的 #999，暗色用主题的次级前景色，免得白底灰字反过来变成亮块。 */
+private fun composerPlaceholderColor(scheme: ColorScheme): Color =
+    if (scheme.isDark) scheme.onSurfaceVariant else Color(0xFF999999)
 
 /** 发送键：截图里是粉的（#FE2C55），输入栏和表情面板共用这一个。 */
 private val ChatSendPink = Color(0xFFFE2C55)
@@ -754,6 +763,26 @@ fun ChatScreen(
         }
         // 首屏（或新消息）已经落到底：从现在起，滚到顶才算"要翻历史"。
         settled = true
+    }
+
+    // 视口会变矮：键盘弹起、输入框从 40dp 长到 120dp、表情/更多面板拉开、快捷表情条出现。
+    // LazyColumn 这时只会守住原来的滚动位置，最新那一条就被输入栏压掉一半——所以视口一变矮，
+    // 只要刚才贴在底部，就把最后一条重新顶回可见区。变化前的高度/最后可见项要自己记，
+    // 因为 layoutInfo 里读到的已经是新布局。
+    LaunchedEffect(conversationId) {
+        var previousHeight = 0
+        var previousLastVisible = -1
+        snapshotFlow {
+            val info = listState.layoutInfo
+            info.viewportSize.height to (info.visibleItemsInfo.lastOrNull()?.index ?: -1)
+        }.collect { (height, lastVisible) ->
+            val total = listState.layoutInfo.totalItemsCount
+            if (height > 0 && height < previousHeight && total > 0 && previousLastVisible >= total - 1) {
+                listState.scrollToItem(total - 1)
+            }
+            previousHeight = height
+            previousLastVisible = lastVisible
+        }
     }
 
     /** 滚到最新一条：胶囊和向下箭头共用这一个动作。 */
@@ -3051,7 +3080,7 @@ private fun ChatComposer(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(ComposerBarBg)
+            .background(composerBarColor(colors))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3081,7 +3110,7 @@ private fun ChatComposer(
                 // 40dp 起、120dp 封顶：先长到五行，再往上翻，消息区始终留着。
                 .heightIn(min = 40.dp, max = 120.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(ComposerFieldBg)
+                .background(composerFieldColor(colors))
                 .focusRequester(fieldFocus)
                 .onFocusChanged { onFocusedChange(it.isFocused) }
                 .padding(horizontal = 12.dp, vertical = 9.dp),
@@ -3099,7 +3128,7 @@ private fun ChatComposer(
                             else -> "发消息"
                         },
                         fontSize = 14.sp,
-                        color = ComposerPlaceholder,
+                        color = composerPlaceholderColor(colors),
                         // 一行放不下就截断：折成两行会把输入框从 40dp 撑高，一行栏变两行。
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -3150,14 +3179,15 @@ private fun ChatComposer(
  */
 @Composable
 private fun BlockedComposerBar() {
+    val scheme = MaterialTheme.colorScheme
     Text(
         text = "已拉黑，不再接收这个人的消息",
         fontSize = 11.sp,
         lineHeight = 15.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = scheme.onSurfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
-            .background(ComposerBarBg)
+            .background(composerBarColor(scheme))
             .padding(horizontal = 16.dp, vertical = 12.dp),
     )
 }
