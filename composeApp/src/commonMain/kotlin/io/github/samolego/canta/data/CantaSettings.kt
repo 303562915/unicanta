@@ -148,6 +148,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val chatDraftsFlow: Flow<List<Pair<Long, String>>> = field { decodeChatDrafts(it.chatDrafts) }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
+    /** 关于页最下面那张「最近更新」是否展开；出厂折叠，见 [AppSettingsProto.updateHistoryExpanded]。 */
+    val updateHistoryExpandedFlow: Flow<Boolean> = field { it.updateHistoryExpanded }
     /** Whether the records tab empties itself at the next system start; off by default. */
     val clearRecordsAfterBootFlow = field { it.clearRecordsAfterBoot }
     /**
@@ -253,6 +255,10 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
+    }
+    /** 记住关于页最下面那张「最近更新」是展开还是折叠。 */
+    suspend fun setUpdateHistoryExpanded(expanded: Boolean) = update {
+        it.copy(updateHistoryExpanded = expanded)
     }
     suspend fun setClearRecordsAfterBoot(clear: Boolean) = update { it.copy(clearRecordsAfterBoot = clear) }
     /** 列表里点一个包：弹小窗（`true`）或直接进详情页（`false`，出厂）。 */

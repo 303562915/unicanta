@@ -272,6 +272,13 @@ data class AppSettingsProto(
      * 当天的额度，下次启动还会再试。见 `BloatRepository.refresh()`。
      */
     @ProtoNumber(45) val bloatListCheckedDay: String = "",
+    /**
+     * 关于页最下面那张「最近更新」是不是展开着；出厂是折叠。
+     *
+     * 记在设置里而不是页面的 `remember`：它是"这个人选择怎么看这一页"，关掉应用再进来应该还是那个样子；
+     * 折叠是默认，因为更新说明有一整屏，压在最下面的位置本来就不该一进来就占屏幕。
+     */
+    @ProtoNumber(46) val updateHistoryExpanded: Boolean = false,
 )
 
 /**

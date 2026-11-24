@@ -64,6 +64,8 @@ import io.github.samolego.canta.generated.resources.about_tagline
 import io.github.samolego.canta.generated.resources.about_title
 import io.github.samolego.canta.generated.resources.about_update_available
 import io.github.samolego.canta.generated.resources.about_update_history
+import io.github.samolego.canta.generated.resources.about_update_history_collapse
+import io.github.samolego.canta.generated.resources.about_update_history_expand
 import io.github.samolego.canta.generated.resources.about_update_failed
 import io.github.samolego.canta.generated.resources.about_update_failed_bad_answer
 import io.github.samolego.canta.generated.resources.about_update_failed_network
@@ -165,6 +167,8 @@ internal fun AboutScreen(
     val skippedAutoInstall by settingsViewModel.skippedAutoInstallVersion.collectAsStateWithLifecycle()
     // 「作者的群」那一行的红点：点过一次群就永久熄灭。
     val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
+    // 页面最下面那张「最近更新」展开没展开；记在设置里，重进这一页还是上次选的样子。
+    val historyExpanded by settingsViewModel.updateHistoryExpanded.collectAsStateWithLifecycle()
 
     // 更新只有一份实现（UpdateCenter）：启动时的自动下载和这里的手点，走的是同一条路、同一个状态，
     // 所以自动下载进来时这张卡片照样有进度条在动，不再只有手点才看得见。
@@ -249,12 +253,6 @@ internal fun AboutScreen(
                 channel = updateChannel,
                 onChannelSelected = { settingsViewModel.saveUpdateChannel(it) },
             )
-            // 「最近更新」就贴在这张渠道卡片下面：它答的正是「这一版改了什么」。没读到内容就不画，
-            // 而不是留一张空卡片让人以为更新日志是空的。
-            if (updateCenter.history.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
-                UpdateHistoryCard(updateCenter.history)
-            }
             Spacer(Modifier.height(10.dp))
 
             AppToggleCard(
@@ -315,6 +313,16 @@ internal fun AboutScreen(
                 subtitle = DOWNLOAD_PAGE_URL,
                 onClick = { platform.openUrl(DOWNLOAD_PAGE_URL) },
             )
+            // 「最近更新」放最下面，而且默认折叠：它答的是「最近几版改了什么」，是翻到底才要找的东西，
+            // 不该压在版本号和更新卡片上面。展开与否记在设置里，下次进来还是这个样子。
+            if (updateCenter.history.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                UpdateHistoryCard(
+                    entries = updateCenter.history,
+                    expanded = historyExpanded,
+                    onToggle = { settingsViewModel.saveUpdateHistoryExpanded(!historyExpanded) },
+                )
+            }
         }
 
     }
@@ -556,7 +564,7 @@ private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> U
 }
 
 /**
- * 最近几个版本改了什么：一版一个小标题，下面几行要点。
+ * 最近几个版本改了什么：一版一个小标题，下面几行要点。默认折叠，点标题那一行展开。
  *
  * 数据是 CI 发版时写进下载页 `latest.json` / `development.json` 的那份 `history`，所以这一页不发
  * GitHub API 请求，也就不吃匿名配额——格子里的字不会因为别人用完出口 IP 的额度而消失。
@@ -564,7 +572,11 @@ private fun UpdateChannelCard(channel: String?, onChannelSelected: (String) -> U
  * 每个版本只放几条：这是「这次更新了什么」的答案，不是变更总账。要全的，下载页上逐版本展开。
  */
 @Composable
-private fun UpdateHistoryCard(entries: List<UpdateHistoryEntry>) {
+private fun UpdateHistoryCard(
+    entries: List<UpdateHistoryEntry>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
@@ -574,27 +586,47 @@ private fun UpdateHistoryCard(entries: List<UpdateHistoryEntry>) {
             .background(FlSurfaceLevel.Card.colorOf(scheme))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Text(
-            text = stringResource(Res.string.about_update_history),
-            style = FlText.subheadline.copy(fontWeight = FontWeight.Medium),
-            color = scheme.onSurface,
-        )
-        entries.forEach { entry ->
-            Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                text = historyHeading(entry),
+                text = stringResource(Res.string.about_update_history),
+                style = FlText.subheadline.copy(fontWeight = FontWeight.Medium),
+                color = scheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            // 折叠时给出「有几个版本」，展开时那句换成「收起」：两种状态各自说清点一下会怎样。
+            Text(
+                text = if (expanded) {
+                    stringResource(Res.string.about_update_history_collapse)
+                } else {
+                    stringResource(Res.string.about_update_history_expand, entries.size)
+                },
                 style = FlText.caption1,
                 color = scheme.primary,
             )
-            entry.notes.forEach { note ->
-                Spacer(Modifier.height(2.dp))
+        }
+        if (expanded) {
+            entries.forEach { entry ->
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "· $note",
-                    style = FlText.caption2,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    text = historyHeading(entry),
+                    style = FlText.caption1,
+                    color = scheme.primary,
                 )
+                entry.notes.forEach { note ->
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "· $note",
+                        style = FlText.caption2,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

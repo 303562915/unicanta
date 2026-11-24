@@ -419,6 +419,8 @@
     <string name="update_channel_stable">Stable</string>
     <string name="update_channel_dev">Development</string>
     <string name="about_update_history">Recent changes</string>
+    <string name="about_update_history_expand">%1$d releases</string>
+    <string name="about_update_history_collapse">Collapse</string>
     <!-- The percent sign is appended in code, not written here: Compose Multiplatform's string
          formatter only knows %N$s / %N$d and passes %% through as two literal signs, which is how
          "Downloading… 42%" turned into "42%%" on screen. -->

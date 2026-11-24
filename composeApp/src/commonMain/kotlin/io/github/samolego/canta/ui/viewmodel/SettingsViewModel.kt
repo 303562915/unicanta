@@ -153,6 +153,9 @@ class SettingsViewModel(
      */
     val qqGroupSeen = settingsStore.qqGroupSeenFlow.state(false)
 
+    /** 关于页最下面那张「最近更新」是否展开；出厂折叠，展开与否记在设置里。 */
+    val updateHistoryExpanded = settingsStore.updateHistoryExpandedFlow.state(false)
+
     /**
      * 各会话没发出去的草稿，`会话号 -> 正文`，最近写的在最后。
      *
@@ -290,6 +293,9 @@ class SettingsViewModel(
 
     /** 「作者的群」那行点过了：红点熄灭，而且不再亮起来。 */
     fun saveQqGroupSeen(seen: Boolean) = save { setQqGroupSeen(seen) }
+
+    /** 记住「最近更新」那张卡片是展开还是折叠。 */
+    fun saveUpdateHistoryExpanded(expanded: Boolean) = save { setUpdateHistoryExpanded(expanded) }
 
     /** 记下（或清掉，传空串）一个会话的草稿；防抖在调用方那边，这里每次都落盘。 */
     fun saveChatDraft(conversationId: Long, text: String) = save { setChatDraft(conversationId, text) }
