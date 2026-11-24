@@ -677,12 +677,9 @@ private fun InteractionsTopBar(
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 左：只有返回箭头。参考图里返回旁边没有未读徽标——未读数是列表里的行自己带的信息，
-            // 顶栏再写一遍既重复又把人往"这里能点"上引。
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            // 左：返回箭头 + 紧跟着的标题（不是居中）。抖音那版就是"返回、标题（带下拉）、右边另一栏"，
+            // 两边各靠一边；标题居中会把「新关注我的」挤到屏幕中间，和参考图完全不是一回事。
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 FlBarButton(
                     glyph = FlGlyphs.chevronBack,
                     contentDescription = "返回",
@@ -691,8 +688,12 @@ private fun InteractionsTopBar(
                     filled = false,
                 )
             }
-            // 中：两栏并排，当前那一栏带下划线；消息段的标题同时是分类菜单的锚点。
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.width(2.dp))
+            // 中间：标题占掉剩下的宽度，另一栏被推到最右边。
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Box {
                     Row(
                         modifier = Modifier
@@ -771,7 +772,8 @@ private fun InteractionsTopBar(
                         }
                     }
                 }
-                Spacer(Modifier.width(8.dp))
+                // 把另一栏顶到最右：两边分居两端，和参考图一样。
+                Spacer(Modifier.weight(1f))
                 Text(
                     text = other,
                     style = FlText.subheadline,
@@ -783,8 +785,6 @@ private fun InteractionsTopBar(
                         .padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             }
-            // 右：等宽空白，什么都不放。
-            Spacer(Modifier.weight(1f))
         }
         // 顶栏下面那条发丝线：参考图里标题区和列表之间有一条线，列表从线下开始。
         HorizontalDivider(
