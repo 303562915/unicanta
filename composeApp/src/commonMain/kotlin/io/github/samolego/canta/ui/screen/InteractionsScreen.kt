@@ -72,7 +72,6 @@ import io.github.samolego.canta.data.community.matching
 import io.github.samolego.canta.data.community.newestInboxCommentId
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.MyCommentRow
-import io.github.samolego.canta.ui.component.UnreadBadge
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -473,7 +472,6 @@ fun InteractionsScreen(
                 section = section,
                 messages = messages,
                 mineCount = if (mineLoaded) mine.items.size else null,
-                unread = summary.total,
                 onSelectMessages = { messages = it },
                 onToggleSection = {
                     section = if (section == InteractionSection.MESSAGES) {
@@ -653,7 +651,6 @@ private fun InteractionsTopBar(
     section: InteractionSection,
     messages: InteractionMessages,
     mineCount: Int?,
-    unread: Int,
     onSelectMessages: (InteractionMessages) -> Unit,
     onToggleSection: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -677,7 +674,8 @@ private fun InteractionsTopBar(
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 左：返回 + 未读小徽标。留 weight(1f) 是为了让中间那一对真的落在屏幕正中。
+            // 左：只有返回箭头。参考图里返回旁边没有未读徽标——未读数是列表里的行自己带的信息，
+            // 顶栏再写一遍既重复又把人往"这里能点"上引。
             Row(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
@@ -689,10 +687,6 @@ private fun InteractionsTopBar(
                     iconSize = 20.dp,
                     filled = false,
                 )
-                if (unread > 0) {
-                    Spacer(Modifier.width(4.dp))
-                    UnreadBadge(count = unread)
-                }
             }
             // 中：两栏并排，当前那一栏带下划线；消息段的标题同时是分类菜单的锚点。
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -900,19 +894,22 @@ private fun InteractionRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(6.dp))
-                // 动作行：左边去回复，右边一个赞。赞落在这一行指向的那条评论上，
-                // 没有评论可赞的（方案被认同）就不画第二个胶囊。
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    InteractionPill(text = "回复评论", onClick = onOpen)
-                    if (item.commentIdOrZero > 0L) {
-                        Spacer(Modifier.width(8.dp))
-                        InteractionPill(
-                            text = if (liked) "已赞" else "赞",
-                            selected = liked,
-                            glyph = null,
-                            heart = true,
-                            onClick = onLike,
-                        )
+                // 动作行：只有「有人写了字」的那两种才有——回复、方案下的评论。参考图里
+                // 「赞了你的评论 / 认同了你的方案」那种行下面没有按钮：那件事已经发生完了，
+                // 摆一个「回复评论」在那儿只会让人以为要回复一句"谢谢"。
+                val written = item.kind == InboxKind.REPLY || item.kind == InboxKind.PLAN_COMMENT
+                if (written) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        InteractionPill(text = "回复评论", onClick = onOpen)
+                        if (item.commentIdOrZero > 0L) {
+                            Spacer(Modifier.width(8.dp))
+                            InteractionPill(
+                                text = if (liked) "已赞" else "赞",
+                                liked = liked,
+                                heart = true,
+                                onClick = onLike,
+                            )
+                        }
                     }
                 }
             }
@@ -1003,43 +1000,43 @@ private fun InteractionThumbnail(label: String) {
 /**
  * 动作行里的小胶囊：「回复评论」「赞」「已赞」共用这一个形状。
  *
- * [selected] 是「已经赞过了」：底色换成主色的实底、文字反白，和没赞过那颗一眼分得开。
- * [heart] 打开时在文字前面画一颗心。
+ * 照参考图：底色是**灰**的（不是主色的浅蓝），文字也灰；赞过之后不是把胶囊刷成实底，而是
+ * 把里面那颗心换成**红的实心**、字换成「已赞」——一行里颜色只在心上有，眼睛一眼扫得到。
+ *
+ * [liked] 是「已经赞过了」；[heart] 打开时在文字前面画一颗心。
  */
 @Composable
 private fun InteractionPill(
     text: String,
     onClick: () -> Unit,
-    selected: Boolean = false,
+    liked: Boolean = false,
     glyph: FlGlyph? = null,
     heart: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    val content = if (selected) colors.onPrimary else colors.primary
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
-            .background(if (selected) colors.primary else colors.primary.copy(alpha = 0.12f))
+            .background(colors.surfaceContainerHighest)
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 3.dp),
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when {
             heart -> Icon(
-                imageVector = if (selected) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                imageVector = if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 contentDescription = null,
                 modifier = Modifier.size(11.dp),
-                tint = content,
+                tint = if (liked) colors.error else colors.onSurfaceVariant,
             )
 
-            glyph != null -> FlGlyphIcon(glyph = glyph, size = 11.dp, tint = content)
+            glyph != null -> FlGlyphIcon(glyph = glyph, size = 11.dp, tint = colors.onSurfaceVariant)
         }
         if (heart || glyph != null) Spacer(Modifier.width(3.dp))
         Text(
             text = text,
             fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = content,
+            color = colors.onSurfaceVariant,
             maxLines = 1,
         )
     }
