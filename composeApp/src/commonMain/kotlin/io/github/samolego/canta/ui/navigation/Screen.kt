@@ -32,6 +32,17 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Tweaks : Screen("tweaks")
 
     /**
+     * 一个厂商的工具页：小米、OPPO、vivo、荣耀、三星各一层，从 [Tweaks] 的目录行进。
+     *
+     * 工具一多，一张卡一行挤在一页里就没有地方放了；分层之后每个厂商的页只装自己的东西，
+     * 音频白名单那种几十行的名单也能在自己的页里铺开。
+     */
+    data object TweaksFamily : Screen("tweaks/{family}") {
+        /** Concrete route for [family]; pairs with the `family` argument of [route]. */
+        fun routeFor(family: String) = "tweaks/$family"
+    }
+
+    /**
      * 音频白名单：HyperOS / MIUI 按应用切低频、压音量的那一套，一页看完名单、一键开合。
      *
      * 从 [Tweaks] 的小米分组进。单独一页而不是卡片弹窗，是因为名单本身就有几十行：弹窗只能读，

@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
@@ -122,18 +123,27 @@ private sealed interface RunStep {
 }
 
 /**
- * The tools page: a short list of things Canta can do to this ROM, each one tap away.
+ * The tools page, in two layers: a list of vendors, and one vendor's tools.
  *
- * Only vendors that actually ship a tool get a heading — an OPPO owner sees no Xiaomi card and no
+ * With [family] null this is the page the bottom bar leads to: one row per vendor that ships a
+ * tool, the phone's own vendor first. With [family] set it is that vendor's page — its tools, and
+ * for Xiaomi the row that opens the audio-whitelist page, which is a page of its own because the
+ * list behind it is dozens of rows long.
+ *
+ * The two layers are one composable rather than two: the run/restore/dialog machinery below is the
+ * same on both, and a second copy of it would drift.
+ *
+ * Only vendors that actually ship a tool get a row — an OPPO owner sees no Xiaomi entry and no
  * empty "OPPO" section either; a vendor is added by adding its tweak to `rom_tweaks.json`. The one
- * tool every ROM has, restoring the apps uninstalled for this user, sits on its own at the bottom
- * instead of being copied into each vendor group.
+ * tool every ROM has, restoring the apps uninstalled for this user, sits at the bottom.
  */
 @Composable
 fun TweaksScreen(
     handler: CantaHandler,
     onOpenAudio: () -> Unit,
+    onOpenFamily: (String) -> Unit,
     onNavigateBack: () -> Unit,
+    family: String? = null,
 ) {
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
     var tweaks by remember { mutableStateOf<RomTweaks?>(null) }
@@ -154,8 +164,10 @@ fun TweaksScreen(
         tweaks = RomTweaks.bundled()
     }
 
-    val groups = remember(tweaks, profile) { tweaks?.groupedFor(profile).orEmpty() }
+    val allGroups = remember(tweaks, profile) { tweaks?.groupedFor(profile).orEmpty() }
     val mine = profile?.let { familyKeyOf(it.rom) }
+    // 目录层只列厂商；进了某一层就只留那一组，标题也换成厂商名。
+    val groups = if (family == null) emptyList() else allGroups.filter { (key, _) -> key == family }
 
     /** Reads which apps are uninstalled for this user and asks before touching any of them. */
     fun askToRestoreAll() {
@@ -219,42 +231,61 @@ fun TweaksScreen(
 
     Scaffold(
         topBar = {
-            ScreenTopBar(title = stringResource(Res.string.tweaks_title))
+            ScreenTopBar(
+                // 目录层是底栏自己的一页，不画返回箭头；厂商层是压在它上面的一页。
+                onNavigateBack = if (family == null) null else onNavigateBack,
+                title = family?.let { familyLabel(it) } ?: stringResource(Res.string.tweaks_title),
+            )
         },
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = tweakListState) {
-            groups.forEach { (family, list) ->
-                item(key = "head-$family") { GroupHeading(family = family, mine = family == mine) }
-                items(list, key = { it.id }) { tweak ->
+            if (family == null) {
+                // 目录层：一个厂商一行，本机那个排在最前（groupedFor 已经把它排好）。
+                items(allGroups, key = { (key, _) -> "fam-$key" }) { (key, list) ->
                     ToolRow(
-                        icon = iconOf(tweak),
-                        title = tweak.title,
-                        // A card Canta cannot act on gets no button; its explanation lives in the detail.
-                        canRun = runnable(tweak),
-                        running = (run as? RunStep.Running)?.tweak?.id == tweak.id,
-                        onRun = { runTweak(tweak) },
-                        onClick = {
-                            // Which script was copied last belongs to the dialog, not to the page.
-                            copied = null
-                            detail = tweak
-                        },
+                        icon = Icons.Default.Build,
+                        title = familyLabel(key) + " · " + list.size + " 个工具" +
+                            if (key == mine) "（本机）" else "",
+                        canRun = false,
+                        running = false,
+                        onRun = {},
+                        onClick = { onOpenFamily(key) },
                     )
                 }
-                // 音频白名单单独一页：那份名单有几十行，弹窗里只能读，页面上能筛、能开合。
-                if (family == familyKeyOf("hyperos")) {
-                    item(key = "audio-page") {
+            } else {
+                groups.forEach { (key, list) ->
+                    item(key = "head-$key") { GroupHeading(family = key, mine = key == mine) }
+                    items(list, key = { it.id }) { tweak ->
                         ToolRow(
-                            icon = Icons.Default.ViewList,
-                            title = "音频白名单 · 看名单与开关",
-                            canRun = false,
-                            running = false,
-                            onRun = {},
-                            onClick = onOpenAudio,
+                            icon = iconOf(tweak),
+                            title = tweak.title,
+                            // A card Canta cannot act on gets no button; its explanation lives in the detail.
+                            canRun = runnable(tweak),
+                            running = (run as? RunStep.Running)?.tweak?.id == tweak.id,
+                            onRun = { runTweak(tweak) },
+                            onClick = {
+                                // Which script was copied last belongs to the dialog, not to the page.
+                                copied = null
+                                detail = tweak
+                            },
                         )
+                    }
+                    // 音频白名单单独一页：那份名单有几十行，弹窗里只能读，页面上能筛、能开合。
+                    if (key == familyKeyOf("hyperos")) {
+                        item(key = "audio-page") {
+                            ToolRow(
+                                icon = Icons.Default.ViewList,
+                                title = "音频白名单 · 看名单与开关",
+                                canRun = false,
+                                running = false,
+                                onRun = {},
+                                onClick = onOpenAudio,
+                            )
+                        }
                     }
                 }
             }
-            if (groups.isEmpty()) {
+            if ((family == null && allGroups.isEmpty()) || (family != null && groups.isEmpty())) {
                 item(key = "no-tools") {
                     Text(
                         text = stringResource(Res.string.tweaks_empty),

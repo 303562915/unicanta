@@ -941,7 +941,17 @@ private fun CantaNavigation(
                 TweaksScreen(
                     handler = handler,
                     onOpenAudio = { navController.navigate(Screen.Audio.route) },
+                    onOpenFamily = { family -> navController.navigate(Screen.TweaksFamily.routeFor(family)) },
                     onNavigateBack = { navController.navigateUp() },
+                )
+            }
+            composable(route = Screen.TweaksFamily.route) { entry ->
+                TweaksScreen(
+                    handler = handler,
+                    onOpenAudio = { navController.navigate(Screen.Audio.route) },
+                    onOpenFamily = { family -> navController.navigate(Screen.TweaksFamily.routeFor(family)) },
+                    onNavigateBack = { navController.navigateUp() },
+                    family = entry.arguments?.getString("family"),
                 )
             }
             composable(route = Screen.Audio.route) {
