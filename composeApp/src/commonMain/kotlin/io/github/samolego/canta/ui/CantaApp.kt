@@ -135,6 +135,7 @@ import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
 import io.github.samolego.canta.ui.screen.TweaksScreen
 import io.github.samolego.canta.ui.screen.MineScreen
+import io.github.samolego.canta.ui.screen.ProfileScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
 import io.github.samolego.canta.ui.screen.ThemeScreen
 import io.github.samolego.canta.generated.resources.about_install_cancel
@@ -367,6 +368,9 @@ private fun CantaNavigation(
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
     val skippedAutoInstall by settingsViewModel.skippedAutoInstallVersion.collectAsStateWithLifecycle()
+    // 自己设的头像直链：个人页和「我的」那张身份卡都读它，所以在这里收一次，
+    // 换完头像两处一起变（空串 = 没设过，两处都画首字母圆）。
+    val myAvatarUrl by settingsViewModel.avatarUrl.collectAsStateWithLifecycle()
     var autoInstallAsked by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     val updateClient = remember { HttpClient() }
 
@@ -1035,9 +1039,52 @@ private fun CantaNavigation(
                     onOpenSettings = { navController.navigate(Screen.Settings.route) },
                     onOpenMyComments = { navController.navigate(Screen.MyComments.route) },
                     onOpenAbout = { navController.navigate(Screen.About.route) },
+                    // 身份卡点一下进个人主页：改名与换头像都在那一页。
+                    onOpenProfile = { navController.navigate(Screen.Profile.route) },
+                    avatarUrl = myAvatarUrl,
                     unreadReplies = unreadReplies,
                     // Same dot as the bar's: the about page behind this row is where updates live.
                     updateAvailable = updateAvailable,
+                )
+            }
+            composable(route = Screen.Profile.route) {
+                // 身份号要异步读（DeviceIdentity 是 suspend 的），名字与头像直链则跟着设置走；
+                // 两个计数由这里用现成的仓储拉一次，拉不到就传 null，页面不画那一组。
+                var profileIdentity by remember { mutableStateOf(Identity("")) }
+                var profilePlanCount by remember { mutableStateOf<Int?>(null) }
+                var profileCommentCount by remember { mutableStateOf<Int?>(null) }
+                val myName by settingsViewModel.userName.collectAsStateWithLifecycle()
+                LaunchedEffect(Unit) {
+                    val identity = DeviceIdentity.current(deps.settings)
+                    profileIdentity = identity
+                    val owner = identity.owner
+                    if (owner.isNotEmpty()) {
+                        // 两次读各自成败：一次失败不该把另一个数字也变成 null。
+                        profilePlanCount = runCatching {
+                            communityRepository.plansByOwner(owner).size
+                        }.getOrNull()
+                        // 评论是分页的（第一页 + 有没有下一页）：这里只取第一页的条数，
+                        // hasMore 不影响显示，页面那一行只是"大概写了多少"。
+                        profileCommentCount = runCatching {
+                            communityRepository.myCommentsPage(owner, identity.token).items.size
+                        }.getOrNull()
+                    }
+                }
+                ProfileScreen(
+                    // 头像上传走图床，那条路在 SocialRepository 上（PlanRepository 没有上传口）。
+                    repository = socialRepository,
+                    owner = profileIdentity.owner,
+                    userName = myName,
+                    avatarUrl = myAvatarUrl,
+                    planCount = profilePlanCount,
+                    commentCount = profileCommentCount,
+                    onSaveName = { name -> settingsViewModel.saveUserName(name) },
+                    // 上传成功就在这儿落盘：头像直链存进设置，两处头像一起换成新的。
+                    onAvatarSaved = { url -> settingsViewModel.saveAvatarUrl(url) },
+                    // 相册与压缩都来自平台层，和聊天发图那两处接的是同一个实现。
+                    pickImage = { platform.pickImage() },
+                    compressImage = { bytes -> platform.compressImage(bytes, ImageBed.MAX_BYTES) },
+                    onNavigateBack = { navController.navigateUp() },
                 )
             }
             composable(route = Screen.Settings.route) {

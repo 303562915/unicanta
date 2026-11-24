@@ -19,51 +19,34 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.generated.resources.Res
-import io.github.samolego.canta.generated.resources.cancel
-import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.generated.resources.profile_default_name
 import io.github.samolego.canta.generated.resources.profile_edit_name
-import io.github.samolego.canta.generated.resources.profile_name_hint
-import io.github.samolego.canta.generated.resources.profile_name_title
 import io.github.samolego.canta.ui.component.AppLinkCard
-import io.github.samolego.canta.ui.component.CantaDialog
-import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsGroup
+import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import org.jetbrains.compose.resources.stringResource
-
-/** Longest nickname the dialog takes, so the avatar row never has to shrink it. */
-private const val MAX_NAME_LENGTH = 24
 
 /** 底栏画在这一页之上，最后一张卡片下面留出它的位置。 */
 private val FloatingBarRoom = 96.dp
@@ -83,6 +66,10 @@ fun MineScreen(
     onOpenMyComments: () -> Unit,
     /** 打开关于页：版本、更新与联系作者都在那边。 */
     onOpenAbout: () -> Unit = {},
+    /** 打开个人主页：头像、名字、身份号都在那儿改；这一页的身份卡点一下就进去。 */
+    onOpenProfile: () -> Unit = {},
+    /** 自己设的头像直链；空串就是没设过（卡片画首字母圆，见 `UserAvatar`）。 */
+    avatarUrl: String = "",
     /** 还没打开过的回复数；大于 0 时「我的方案」那行点一个红点，提醒去消息页看。 */
     unreadReplies: Int = 0,
     /** 有新版本：关于入口带同样的红点，和底栏那个一致。 */
@@ -92,18 +79,6 @@ fun MineScreen(
     val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
     // 关于页「作者的群」是否点过：没点过时，关于入口也跟着点一个。
     val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
-    var showRename by rememberSaveable { mutableStateOf(false) }
-
-    if (showRename) {
-        RenameDialog(
-            current = userName,
-            onDismiss = { showRename = false },
-            onSave = { name ->
-                settingsViewModel.saveUserName(name)
-                showRename = false
-            },
-        )
-    }
 
     Scaffold(
         topBar = { ScreenTopBar(title = "我的") },
@@ -115,12 +90,13 @@ fun MineScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(top = 8.dp, bottom = FloatingBarRoom),
         ) {
-            // 身份在最上面：头像、名字，点一下改名。
+            // 身份在最上面：头像、名字，点一下进个人主页（改名与换头像都在那一页）。
             SettingsGroup {
                 UserCard(
                     name = userName,
                     identityUserId = identityUserId,
-                    onEdit = { showRename = true },
+                    avatarUrl = avatarUrl,
+                    onOpen = onOpenProfile,
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -160,11 +136,19 @@ fun MineScreen(
 }
 
 /**
- * Who the page belongs to: a letter avatar — the first character of the name, since the app has
- * no picture to show — the name itself, and a tap that renames it.
+ * Who the page belongs to: the avatar (the picture they set, or the first character of the name),
+ * the name itself, and a tap that opens the profile page where both are edited.
+ *
+ * 改名与换头像都搬去了个人主页（`ProfileScreen`）：那一页要相册、要压缩、要跟图床说话，
+ * 一套流程三处失败，塞在「我的」这张卡片里既点不开也说不清。这张卡片现在只是入口。
  */
 @Composable
-private fun UserCard(name: String, identityUserId: Long = 0L, onEdit: () -> Unit) {
+private fun UserCard(
+    name: String,
+    identityUserId: Long = 0L,
+    avatarUrl: String = "",
+    onOpen: () -> Unit,
+) {
     val defaultName = stringResource(Res.string.profile_default_name)
     // What this install is called when nobody picked a name: the number the backend gave it —
     // "#10134" — which is also what every other reader sees beside its plans and comments. It is
@@ -195,11 +179,12 @@ private fun UserCard(name: String, identityUserId: Long = 0L, onEdit: () -> Unit
             .padding(horizontal = 6.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(if (unnamed) Color(0xFFFFE96B).copy(alpha = highlight) else Color.Transparent)
-            .clickable(onClick = onEdit)
+            .clickable(onClick = onOpen)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LetterAvatar(name = shown, size = 38.dp)
+        // 头像：设过就画图床那张，没设过就是首字母圆（判断都在 `UserAvatar` 里）。
+        UserAvatar(name = shown, url = avatarUrl, size = 38.dp)
         Spacer(modifier = Modifier.width(11.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -260,34 +245,5 @@ internal fun isDefaultIdentityName(name: String): Boolean {
     return trimmed.length > 1 && trimmed.startsWith("#") && trimmed.drop(1).all { it.isDigit() }
 }
 
-/** The first character of [name] is drawn by [LetterAvatar]; this dialog only edits the text. */
-@Composable
-private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var value by remember { mutableStateOf(current) }
-    val save = { onSave(value.trim()) }
-    CantaDialog(
-        onDismissRequest = onDismiss,
-        title = stringResource(Res.string.profile_name_title),
-        buttons = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
-            TextButton(onClick = save) { Text(stringResource(Res.string.ok)) }
-        },
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = { if (it.length <= MAX_NAME_LENGTH) value = it },
-            modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.bodyMedium,
-            shape = RoundedCornerShape(10.dp),
-            singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(Res.string.profile_name_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { save() }),
-        )
-    }
-}
+// 改名对话框原来在这一页（`RenameDialog`），现在在 `ProfileScreen.kt` 里：名字和头像同一个地方改，
+// 两处各一份会变成两套长度限制、两套提示文案。

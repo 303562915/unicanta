@@ -39,9 +39,9 @@ object ImageBed {
     /**
      * 头像的目录。
      *
-     * 目前**还没有头像上传**（头像都是首字母圆，见 `ui/component` 里那几个），这条常量是先把这个
-     * 约定钉住：真做头像时，传成 `[AVATAR_FOLDER]/<owner>.jpg`，覆盖式写（同一个人重传就是换头像，
-     * 不要每次生成新名字）。owner 是纯数字，不用编码。
+     * 传成 `[AVATAR_FOLDER]/<owner>.jpg`（见 [avatarId]），**覆盖式写**：同一个人重传就是换头像，
+     * 不生成新名字——设置里存的是这条直链，名字一变那个地址就 404 了。
+     * owner 是纯数字，不用编码。
      */
     const val AVATAR_FOLDER = "$ROOT/头像"
 
@@ -70,6 +70,15 @@ object ImageBed {
      */
     fun chatImageId(conversationId: Long, stamp: Long, salt: Int): String =
         "$CHAT_FOLDER/$conversationId/$stamp-$salt.jpg"
+
+    /**
+     * 头像的 id：`unicanta/头像/<owner>.jpg`，**[owner] 一个人一个名字**。
+     *
+     * 和 [chatImageId] 正好相反：聊天图每发一次要落到新对象上（否则上一条消息会换图），头像则是
+     * "重传就是换一张"。名字固定，所以上传时必须带 `overwrite=1`（见
+     * `SocialRepository.uploadAvatar`），否则图床会拿 409 把第二次上传挡回去。
+     */
+    fun avatarId(owner: String): String = "$AVATAR_FOLDER/${owner.trim()}.jpg"
 
     /** [id] 里目录那一段（没有目录就是空串）。上传时要单独交给 `folder` 字段。 */
     fun folderOf(id: String): String = id.substringBeforeLast('/', "")

@@ -172,6 +172,14 @@ class CantaSettings(storage: AppBlobStorage) {
     /** The number that token owns on the backend; 0 until the first login. */
     val identityUserIdFlow: Flow<Long> = field { it.identityUserId }
 
+    /**
+     * 自己设的头像：图床直链，空串就是没设过（界面画首字母圆）；见 [AppSettingsProto.avatarUrl]。
+     *
+     * 只存这一个字符串：头像图本身在图床上，覆盖式上传时对象名不变，所以换头像之后这里的值也不用
+     * 改——改的只是同一个地址背后的字节（界面那边的进程内缓存要跟着清，见 `ui/component/UserAvatar`）。
+     */
+    val avatarUrlFlow: Flow<String> = field { it.avatarUrl }
+
     suspend fun setAutoUpdateBloatList(autoUpdate: Boolean) = update { it.copy(autoUpdateBloatList = autoUpdate) }
     suspend fun setConfirmBeforeUninstall(needsConfirm: Boolean) = update { it.copy(confirmBeforeUninstall = needsConfirm) }
     suspend fun setLatestCommitHash(hash: String) = update { it.copy(latestBloatCommitHash = hash) }
@@ -281,6 +289,9 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setIdentityToken(token: String) = update { it.copy(identityToken = token) }
     suspend fun setIdentityUserId(id: Long) = update { it.copy(identityUserId = id) }
+
+    /** 记下自己的头像直链；传空串就是清掉（界面回到首字母圆）。见 [AppSettingsProto.avatarUrl]。 */
+    suspend fun setAvatarUrl(url: String) = update { it.copy(avatarUrl = url.trim()) }
 
     /**
      * 整份改写拉黑名单。

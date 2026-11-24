@@ -235,6 +235,15 @@ data class AppSettingsProto(
      * leave the manual install to the About page.
      */
     @ProtoNumber(43) val skippedAutoInstallVersion: String = "",
+    /**
+     * 自己设的头像：图床上的**直链**（`https://.../file/unicanta/头像/<owner>.jpg`），空 = 没设过
+     * （这时界面画首字母圆，见 `ui/component/UserAvatar`）。
+     *
+     * 存整条网址而不是图床的 id：读头像的那一侧（Compose 里的 Ktor GET）只需要一个能直接下载的
+     * 地址，公开免鉴权，多一层"id → 网址"的拼装对谁都没好处。地址里带着身份号，所以它自己就说明了
+     * 这张图是谁的——换头像时对象名不变（覆盖式上传），这里的字符串也就不必跟着变。
+     */
+    @ProtoNumber(44) val avatarUrl: String = "",
 )
 
 /**

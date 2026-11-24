@@ -77,6 +77,14 @@ class SettingsViewModel(
      */
     val identityUserId = settingsStore.identityUserIdFlow.state(0L)
 
+    /**
+     * 自己设的头像直链；空串 = 没设过，界面画首字母圆。
+     *
+     * 出厂就是空串，和 [userName] 一样是"读了才知道"之前也可以安全用的值：没有头像本来就是这个
+     * 默认状态，页面不会先闪一张别人的图再换回来。
+     */
+    val avatarUrl = settingsStore.avatarUrlFlow.state("")
+
     /** The optional bar entries: off by default, turned on in the settings. */
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
@@ -282,6 +290,14 @@ class SettingsViewModel(
 
     /** 拉黑或取消拉黑一个人；后端没有这个接口，落的是本机设置里的那份名单。 */
     fun saveBlockedPeer(peer: String, blocked: Boolean) = save { setBlockedPeer(peer, blocked) }
+
+    /**
+     * 记下换好的头像直链（传空串就是清掉，界面回到首字母圆）。
+     *
+     * 只落本机设置：图在上传那一步已经进了图床，这里存的是它的地址。后端没有头像字段，所以这份
+     * 地址只在这台手机上用——「我的」那张身份卡和个人页照着它去图床取图。
+     */
+    fun saveAvatarUrl(url: String) = save { setAvatarUrl(url) }
 
     /** 顶部机型胶囊点过了：呼吸提示停掉，以后只当普通按钮。 */
     fun saveScopeHintSeen(seen: Boolean) = save { setScopeHintSeen(seen) }

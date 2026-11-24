@@ -1,0 +1,400 @@
+package io.github.samolego.canta.ui.screen
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.data.imagebed.ImageBed
+import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.cancel
+import io.github.samolego.canta.generated.resources.ok
+import io.github.samolego.canta.generated.resources.profile_default_name
+import io.github.samolego.canta.generated.resources.profile_name_hint
+import io.github.samolego.canta.generated.resources.profile_name_title
+import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.SettingsChevron
+import io.github.samolego.canta.ui.component.SettingsGroup
+import io.github.samolego.canta.ui.component.SettingsItem
+import io.github.samolego.canta.ui.component.UserAvatar
+import io.github.samolego.canta.ui.component.cacheAvatar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.decodeToImageBitmap
+import org.jetbrains.compose.resources.stringResource
+
+/** 名字最长到这儿（和原来「我的」页那个对话框同一个数）：再长列表里那一行就该换行了。 */
+private const val MAX_NAME_LENGTH = 24
+
+/** 中间那个头像的直径。 */
+private val AvatarSize = 96.dp
+
+/** 头像右下角那支小笔。 */
+private val BadgeSize = 26.dp
+
+/** 上传中盖在头像上的那个转圈。 */
+private val UploadSpinnerSize = 30.dp
+
+/**
+ * 「个人主页」：这个安装自己长什么样。
+ *
+ * 一页只回答三件事——**我叫什么**（改名）、**我长什么样**（换头像）、**我是几号**（身份号，只读）。
+ * 方案数和评论数是可选的附加信息：拿不到（离线、后端没答）就不画那一组，不显示一半。
+ *
+ * 为什么单独一页而不是塞进「我的」：换头像要走相册、压缩、上传图床三步，每一步都可能失败，
+ * 每一步都得说一句人话；「我的」那一页是入口清单，塞进这一套会把别的入口挤没。所以那一页的
+ * 身份卡点一下进这里，改名与换头像都在这儿做。
+ *
+ * **这一页不认识 settings、也不认识平台层**：owner / 名字 / 头像直链 / 计数都由上层读好了传进来，
+ * 相册与压缩是 [pickImage] / [compressImage] 两个函数。这样桌面和网页版（没有相册、没有解码器）
+ * 用同一份页面，只是那两个函数回答 null，页面自己会说「换不了」。
+ *
+ * [repository] 只用来上传头像（`SocialRepository.uploadAvatar`），avatarId 与 overwrite 都在那边，
+ * 这一层只管大小与压缩。传 null（比如测试或没有网络能力的宿主）时点换头像只会得到一句提示。
+ */
+@Composable
+fun ProfileScreen(
+    repository: SocialRepository? = null,
+    /** 这个安装的身份号，纯数字；还没拿到（没登录过）就是空串。 */
+    owner: String,
+    userName: String,
+    avatarUrl: String,
+    /** 我上传过的方案数；null 表示"这一趟没拿到"，页面不画这一行。 */
+    planCount: Int? = null,
+    /** 我写过的评论数（第一页）；null 同上。 */
+    commentCount: Int? = null,
+    onSaveName: (String) -> Unit,
+    onAvatarSaved: (String) -> Unit,
+    pickImage: suspend () -> ByteArray?,
+    compressImage: (ByteArray) -> ByteArray?,
+    onNavigateBack: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val defaultName = stringResource(Res.string.profile_default_name)
+
+    var uploading by remember { mutableStateOf(false) }
+    var hint by remember { mutableStateOf<String?>(null) }
+    var showRename by rememberSaveable { mutableStateOf(false) }
+    // 换完头像要当场看见新的那张：上层把直链写进设置、再从 flow 传回来要绕一圈，
+    // 这里先拿上传的结果画，等新值到了 remember(avatarUrl) 自然对齐。
+    var shownAvatar by remember(avatarUrl) { mutableStateOf(avatarUrl) }
+    // 换过头像就 +1：直链不变（覆盖式上传），但 `UserAvatar` 里记着的那张位图得重新读一次缓存，
+    // 否则同一趟里换第二张时画出来的还是上一张。被 `key()` 用来重建那一个头像。
+    var avatarVersion by remember { mutableStateOf(0) }
+
+    val identityTag = if (owner.isNotBlank()) "#${owner.trim()}" else ""
+    val shownName = userName.trim().ifEmpty { identityTag.ifEmpty { defaultName } }
+    // 「还没起名字」和「我的」页同一个判断：名字就是身份号时，那一行说的是号码不是名字。
+    val unnamed = shownName == identityTag && identityTag.isNotEmpty()
+
+    if (showRename) {
+        RenameDialog(
+            current = userName.trim(),
+            onDismiss = { showRename = false },
+            onSave = { name ->
+                onSaveName(name)
+                showRename = false
+            },
+        )
+    }
+
+    /**
+     * 换头像：选 → （超 2.5MB 就先压）→ 传图床 → 记下直链。
+     *
+     * 三条规矩和聊天发图一致（那边是 `ChatScreen.sendImage`）：选图返回 null 是**取消**，静默退出；
+     * 超过 [ImageBed.MAX_BYTES] 先交给 [compressImage] 压一次，压不动或者压完还超就说一句实话，
+     * 不把原图硬塞上去；上传失败按 [SocialRepository.lastError] 说原因，没有原因就是"检查代理"。
+     *
+     * 压图是同步的重活，挪到 [Dispatchers.Default]：直接在这儿调会卡住界面几百毫秒。
+     */
+    val changeAvatar: () -> Unit = {
+        if (!uploading) {
+            if (owner.isBlank()) {
+                // 没有身份号就没有对象名：头像是 `unicanta/头像/<owner>.jpg`，这时候上传只会
+                // 落到一个空名字上，下次谁也找不回来。
+                hint = "身份号还没拿到，连上网络再试一次"
+            } else {
+                scope.launch {
+                    uploading = true
+                    hint = null
+                    try {
+                        val picked = pickImage()
+                        if (picked != null) {
+                            val ready = if (picked.size > ImageBed.MAX_BYTES) {
+                                withContext(Dispatchers.Default) { compressImage(picked) }
+                            } else {
+                                picked
+                            }
+                            if (ready == null || ready.size > ImageBed.MAX_BYTES) {
+                                hint = "这张图超过 2.5MB，压不下来，换一张"
+                            } else {
+                                val repo = repository
+                                val url = repo?.uploadAvatar(owner.trim(), ready)
+                                if (url == null) {
+                                    hint = repo?.lastError?.takeIf { it.isNotBlank() }
+                                        ?: "头像没上传成，检查代理后再试"
+                                } else {
+                                    // 头像是覆盖式上传，直链不会变：把刚上传的字节解出来盖掉缓存里
+                                    // 那一格，否则页面会立刻画出缓存中的旧头像，看起来像没换成功。
+                                    runCatching { ready.decodeToImageBitmap() }.getOrNull()
+                                        ?.let { bitmap -> cacheAvatar(url, bitmap) }
+                                    shownAvatar = url
+                                    avatarVersion += 1
+                                    onAvatarSaved(url)
+                                }
+                            }
+                        }
+                    } finally {
+                        // 选图被取消（页面走了、相册被杀）也要放开闸门，否则这个钮再也点不动。
+                        uploading = false
+                    }
+                }
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = { ScreenTopBar(onNavigateBack = onNavigateBack, title = "个人主页") },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 28.dp),
+        ) {
+            // 头像在最上面，点右下角那支笔换一张。
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                AvatarWithBadge(
+                    name = shownName,
+                    url = shownAvatar,
+                    version = avatarVersion,
+                    uploading = uploading,
+                    onChangeAvatar = changeAvatar,
+                )
+            }
+
+            // 一行实话：压不下来、传不上去、没身份号，都在这里说，说完不再堆第二句。
+            val line = hint
+            if (line != null) {
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 6.dp),
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            SettingsGroup {
+                SettingsItem(
+                    title = "名字",
+                    description = when {
+                        unnamed -> "点这里起个名字，别拿 $shownName 当名字"
+                        else -> "别人看到的署名，随时能改"
+                    },
+                    onClick = { showRename = true },
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = shownName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 150.dp),
+                            )
+                            Spacer(Modifier.width(2.dp))
+                            SettingsChevron()
+                        }
+                    },
+                )
+                SettingsItem(
+                    title = "身份号",
+                    description = "后端给的号码，改不了；别人用它找到我",
+                    divider = false,
+                    trailing = {
+                        Text(
+                            text = identityTag.ifEmpty { "—" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+            }
+
+            // 这两行只在拿到数字时出现：拿不到就整组不画，不摆两个"—"。
+            if (planCount != null || commentCount != null) {
+                Spacer(Modifier.height(12.dp))
+                SettingsGroup(title = "我留下的") {
+                    if (planCount != null) {
+                        SettingsItem(
+                            title = "方案",
+                            description = "我上传过的方案",
+                            divider = commentCount != null,
+                            trailing = { CountText(planCount) },
+                        )
+                    }
+                    if (commentCount != null) {
+                        SettingsItem(
+                            title = "评论",
+                            description = "我在别人的方案和应用下写过的",
+                            divider = false,
+                            trailing = { CountText(commentCount) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 一个计数：数字大一点，单位在描述里，所以这里只有数字。 */
+@Composable
+private fun CountText(value: Int) {
+    Text(
+        text = value.toString(),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+/**
+ * 大头像 + 右下角那支笔。
+ *
+ * 上传中：头像半透明、上面盖一个转圈、笔收起来（不收起来就是一个能连点的钮）。
+ * 其余时间笔一直在——它是这一页唯一的"换"入口，藏起来就等于没有。
+ *
+ * [version] 只当 `key()` 用：直链不变时（覆盖式上传）靠它把 [UserAvatar] 重建成"再读一次缓存"。
+ */
+@Composable
+private fun AvatarWithBadge(
+    name: String,
+    url: String,
+    version: Int,
+    uploading: Boolean,
+    onChangeAvatar: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(AvatarSize)
+                .alpha(if (uploading) 0.4f else 1f),
+            contentAlignment = Alignment.Center,
+        ) {
+            key(version) {
+                UserAvatar(name = name, url = url, size = AvatarSize)
+            }
+            if (uploading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(UploadSpinnerSize),
+                    strokeWidth = 2.5.dp,
+                )
+            }
+        }
+        if (!uploading) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(BadgeSize)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(onClick = onChangeAvatar),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "换头像",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 改名：和「我的」页原来那个一样——一个输入框、取消/确定，长度卡在 [MAX_NAME_LENGTH]。
+ *
+ * 保存交给上层（`SettingsViewModel.saveUserName`），这一页只负责输入。
+ */
+@Composable
+private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var value by remember { mutableStateOf(current) }
+    val save = { onSave(value.trim()) }
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.profile_name_title),
+        buttons = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+            TextButton(onClick = save) { Text(stringResource(Res.string.ok)) }
+        },
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = { if (it.length <= MAX_NAME_LENGTH) value = it },
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            shape = RoundedCornerShape(10.dp),
+            singleLine = true,
+            placeholder = {
+                Text(
+                    text = stringResource(Res.string.profile_name_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { save() }),
+        )
+    }
+}

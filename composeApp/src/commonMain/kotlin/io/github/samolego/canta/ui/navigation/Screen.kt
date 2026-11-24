@@ -17,6 +17,14 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
      */
     data object Mine : Screen("mine")
 
+    /**
+     * 个人主页：自己的名字、头像和身份号，从 [Mine] 上那张身份卡点进来。
+     *
+     * 单独一页是因为"换头像"要走相册、压缩、上传图床三步，每一步都可能失败并要求一句人话；
+     * [Mine] 是入口清单，不适合放这套流程。
+     */
+    data object Profile : Screen("profile")
+
     /** The app's own page: version, the switches that shape how it behaves, and where it lives. */
     data object About : Screen("about")
     data object Presets : Screen("presets")

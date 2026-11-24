@@ -1263,6 +1263,32 @@ class SocialRepository(
     }
 
     /**
+     * [conversation] 里比 [afterId] 更新的消息，按 id 升序。
+     *
+     * 「最小拉动」就靠这一条：轮询和推送都先问「比我手上最新那条还新的有几条」，正常情况后端
+     * 回一个 `[]`，几百字节；只有真有人说话才带回那几条。用 [messagesFor] 整页拉的话，每问一次
+     * 都是三十条正文，等于把没变的东西反复搬一遍。
+     *
+     * [afterId] 传 0 等价于「从最旧开始」，那时用 [messagesFor] 更合适——这里只做增量。
+     */
+    suspend fun messagesAfter(
+        owner: String,
+        conversation: Long,
+        afterId: Long,
+        limit: Int = 50,
+    ): List<ChatMessage> {
+        if (owner.isEmpty() || conversation <= 0L || afterId <= 0L) return emptyList()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_after_id", afterId)
+            put("p_limit", limit)
+        }.toString()
+        val text = rpc("messages_after", body) ?: return emptyList()
+        return rowsOf(text).mapNotNull { row -> messageOf(row) }
+    }
+
+    /**
      * 在"我是成员的所有会话"里搜消息正文，按新到旧。
      *
      * 后端只搜 `kind = 'text'`、未撤回、自己没隐藏的那些，所以这里不做二次过滤——
@@ -1398,6 +1424,14 @@ class SocialRepository(
         id: String,
         bytes: ByteArray,
         contentType: String = "image/jpeg",
+        /**
+         * 重名时覆盖（`overwrite=1`）还是让图床拿 409 拒绝（`overwrite=0`，默认，聊天图用这个）。
+         *
+         * 头像必须覆盖：名字固定成 `<owner>.jpg`，不覆盖的话**第一次之后再也换不了**头像，而"换头像"
+         * 正是这个功能的全部内容。聊天图反过来：id 每次都是新的，覆盖只会在撞名时把上一条消息的图
+         * 悄悄换掉，所以那边保持 `false`。
+         */
+        overwrite: Boolean = false,
     ): String? {
         if (id.isBlank() || bytes.isEmpty()) return null
         val boundary = ImageBed.newBoundary()
@@ -1408,8 +1442,8 @@ class SocialRepository(
                 "folder" to ImageBed.folderOf(id),
                 "fileName" to ImageBed.fileNameOf(id),
                 // 重名就 409、不覆盖：id 里已经有时间戳和随机数，撞上的概率可以不管；真撞上了
-                // 也该是"这一条失败"，而不是悄悄把上一条消息的图换成这张。
-                "overwrite" to "0",
+                // 也该是"这一条失败"，而不是悄悄把上一条消息的图换成这张。头像反过来，见 [overwrite]。
+                "overwrite" to if (overwrite) "1" else "0",
             ),
             fileName = ImageBed.fileNameOf(id),
             contentType = contentType,
@@ -1457,6 +1491,27 @@ class SocialRepository(
                 null
             }
         }
+    }
+
+    /**
+     * 换一个人的头像：[bytes] 传到 `unicanta/头像/<owner>.jpg`，返回图床直链；失败返回 null，
+     * 原因照旧进 [lastError]。
+     *
+     * **id 是固定的、上传是覆盖式的**（[ImageBed.avatarId]）：同一个人重传就是换头像，图床上的对象
+     * 不会越攒越多，设置里存的那个地址也不会失效——地址一变，本机存着的那条直链就 404 了。
+     *
+     * 大小与压缩不在这里做：`ImageBed.MAX_BYTES` 那条规则要动平台层的解码器（
+     * `CantaPlatform.compressImage`），仓储层拿不到它。调用方先压好再进来，压不下来就别调这里。
+     */
+    suspend fun uploadAvatar(owner: String, bytes: ByteArray): String? {
+        val who = owner.trim()
+        if (who.isEmpty() || bytes.isEmpty()) return null
+        return uploadChatImageToImageBed(
+            id = ImageBed.avatarId(who),
+            bytes = bytes,
+            contentType = "image/jpeg",
+            overwrite = true,
+        )
     }
 
     /**
