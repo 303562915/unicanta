@@ -82,6 +82,7 @@ import io.github.samolego.canta.data.community.ChatMessageCache
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
+import io.github.samolego.canta.data.community.LivePresence
 import io.github.samolego.canta.data.community.PersonCard
 import io.github.samolego.canta.data.community.ShareCard
 import io.github.samolego.canta.data.community.SocialRepository
@@ -170,6 +171,22 @@ private const val ChatPollFallbackMs: Long = 10_000L
  * 所以宁可等这一会儿。
  */
 private const val CHAT_DRAFT_PERSIST_MILLIS: Long = 600L
+
+/**
+ * 多久问一次「别人读到哪、谁在打字」。
+ *
+ * 5 秒是「正在输入」能用的下限：再慢，人打完了提示才亮；再快，群里每个人的心跳都变成一个请求。
+ * 已读回执搭同一趟车，所以这条间隔同时也是回执的延迟。
+ */
+private const val ChatPresencePollMs: Long = 5_000L
+
+/**
+ * 两次「我正在打字」之间至少隔这么久。
+ *
+ * 后端在 2 秒内收到第二次会直接当成功、不发 UPDATE，所以 4 秒是客户端自己的节流：
+ * 打字是连续的，不必每个字都告诉服务端。
+ */
+private const val ChatTypingPingMs: Long = 4_000L
 
 /** 全屏看图能放大到几倍；双击在 1f 和它之间切换。 */
 private const val ChatImageMaxZoom = 4f
@@ -748,6 +765,54 @@ fun ChatScreen(
         }
     }
 
+    // ---------------------------------------------------------------- 已读回执 / 正在输入 / 翻译
+    //
+    // 一次调用两样东西：别人的读位置和谁在打字（见 `SocialRepository.conversationLive`）。
+    // 拉到 null 就留着上一次的——"这一次没问到"不该让「正在输入」突然消失。
+    var presence by remember(conversationId) { mutableStateOf<LivePresence?>(null) }
+    LaunchedEffect(conversationId, owner) {
+        if (conversationId <= 0L || owner.isEmpty()) return@LaunchedEffect
+        while (true) {
+            presence = repository.conversationLive(owner, conversationId) ?: presence
+            delay(ChatPresencePollMs)
+        }
+    }
+
+    // 我在打字：4 秒最多告诉服务端一次。失败不提示——下一键还会再发一遍。
+    var typingPingAt by remember(conversationId) { mutableStateOf(0L) }
+    fun noteTyping() {
+        if (conversationId <= 0L || owner.isEmpty()) return
+        val now = currentTimeMillis()
+        if (now - typingPingAt < ChatTypingPingMs) return
+        typingPingAt = now
+        scope.launch { runCatching { repository.markTyping(owner, conversationId) } }
+    }
+
+    // 按条翻译：消息 id → 译文。只活在这一次打开里——「看一眼这条说的什么」不是消息的属性，
+    // 退出页面就该忘掉，否则换个人拿这台手机还能读到译文。
+    var translations by remember(conversationId) { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    var translating by remember(conversationId) { mutableStateOf<Set<Long>>(emptySet()) }
+    var translateHint by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(translateHint) {
+        if (translateHint != null) {
+            delay(2200L)
+            translateHint = null
+        }
+    }
+    suspend fun translateMessage(message: ChatMessage) {
+        // 图像、卡片、已经在翻的那一条都不再发请求：点了没反应比重复请求好。
+        if (message.kind != "text" || message.body.isBlank() || message.id in translating) return
+        translating = translating + message.id
+        val target = if (message.body.any { it in '\u4E00'..'\u9FFF' }) "en" else "zh-CN"
+        val result = runCatching { repository.translate(message.body, target) }.getOrNull()
+        translating = translating - message.id
+        if (result.isNullOrBlank()) {
+            translateHint = "没翻成：这个免费接口可能到今天的额度了，过一会儿再试"
+        } else {
+            translations = translations + (message.id to result)
+        }
+    }
+
     // 观感上的群聊：形参说不是、但详情说是，就按群聊画（同一个判据见 ConversationDetail.isGroup）。
     val grouped = isGroup || detail?.isGroup == true
     // 标题：形参空的时候用详情里的群名，都空就叫「私聊」；人数优先用调用方给的，没有数成员。
@@ -757,6 +822,22 @@ fun ChatScreen(
     // 顶栏据此不挂点击——宁可点不动，也不要推开一张没有内容的主页。
     val peerOwner = detail?.members?.firstOrNull { member -> member.owner != owner }?.owner.orEmpty()
 
+    // 已读回执挂在自己**最后一条**下面：微信、抖音都是这个位置，人也只在那儿找。
+    // 判据是"别人的读位置比这条的创建时间晚"——后端每人只存一个 last_read_at，不存每条回执。
+    val lastMine = messages.lastOrNull { it.sender == owner }
+    val lastMineAt = lastMine?.let { epochSecondsOf(it.createdAt) }
+    val readBy = if (lastMineAt == null) {
+        0
+    } else {
+        presence?.reads?.values?.count { stamp -> (epochSecondsOf(stamp) ?: 0L) >= lastMineAt } ?: 0
+    }
+    val receiptText = when {
+        lastMine == null || presence == null || readBy <= 0 -> null
+        grouped -> "$readBy 人已读"
+        else -> "已读"
+    }
+    val typingLine = presence?.typingLine.orEmpty()
+
     Scaffold(
         topBar = {
             ChatTopBar(
@@ -764,6 +845,7 @@ fun ChatScreen(
                 isGroup = grouped,
                 memberCount = members,
                 peerOwner = peerOwner,
+                typingLine = typingLine,
                 onNavigateBack = onNavigateBack,
                 onOpenGroupInfo = onOpenGroupInfo,
                 onOpenProfile = onOpenProfile,
@@ -780,6 +862,8 @@ fun ChatScreen(
                 .navigationBarsPadding(),
         ) {
             loadError?.let { reason -> ChatErrorLine(reason) }
+            // 翻译失败那句只借一次机会：它和 loadError 同一个样式，两秒后自己收走。
+            translateHint?.let { line -> ChatErrorLine(line) }
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.TopStart,
@@ -909,6 +993,15 @@ fun ChatScreen(
                                         // 卡片：跳哪儿由上层决定，这一层只把"点了哪张"递出去。
                                         onOpenShare = onOpenShare,
                                         onOpenCard = onOpenCard,
+                                        // 翻译只给文字消息：图片和卡片的 body 不是给人读的句子。
+                                        onTranslate = if (message.kind == "text") {
+                                            { scope.launch { translateMessage(message) } }
+                                        } else {
+                                            null
+                                        },
+                                        translation = translations[message.id],
+                                        // 回执只挂在自己最后一条下面：每条都挂会把整屏变成一堆小字。
+                                        receipt = if (message.id == lastMine?.id) receiptText else null,
                                     )
                                 }
                             }
@@ -982,7 +1075,11 @@ fun ChatScreen(
             }
             ChatComposer(
                 draft = draft,
-                onDraftChange = { draft = it },
+                onDraftChange = { value ->
+                    draft = value
+                    // 每敲一下就报一次「我在打字」（内部 4 秒节流）：这就是对方顶栏那行字的唯一来源。
+                    noteTyping()
+                },
                 sending = sending,
                 onSend = send,
                 onInsert = insert,
@@ -1171,6 +1268,8 @@ private fun ChatTopBar(
     isGroup: Boolean,
     memberCount: Int,
     peerOwner: String,
+    /** 「X 正在输入…」；空串表示没人打字（这时群聊退回写「群聊」）。 */
+    typingLine: String = "",
     onNavigateBack: () -> Unit,
     onOpenGroupInfo: () -> Unit,
     onOpenProfile: (String) -> Unit,
@@ -1225,13 +1324,14 @@ private fun ChatTopBar(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (isGroup) {
+                if (typingLine.isNotEmpty() || isGroup) {
                     Text(
-                        // 只写「群聊」，不写人数：内测群人少，人数是主办方的事。
-                        // （memberCount 仍然收着，进资料页时用它决定画不画成员名单。）
-                        text = "群聊",
+                        // 有人打字时这一行让给它：正在输入比"这是个群聊"有用得多，而且能立刻看见。
+                        // 没人打字就退回原来那句「群聊」，不写人数（内测群人少，人数是主办方的事；
+                        // memberCount 仍然收着，进资料页时用它决定画不画成员名单）。
+                        text = typingLine.ifEmpty { "群聊" },
                         style = FlText.caption2,
-                        color = scheme.onSurfaceVariant,
+                        color = if (typingLine.isNotEmpty()) scheme.primary else scheme.onSurfaceVariant,
                         maxLines = 1,
                     )
                 }
@@ -1380,12 +1480,18 @@ private fun ChatBubble(
     onOpenShare: ((ShareCard) -> Unit)? = null,
     /** 点名片：进那个人的主页。 */
     onOpenCard: ((PersonCard) -> Unit)? = null,
+    /** 长按菜单里的「翻译」；null 表示这一条没什么可翻的（图片、卡片、系统消息）。 */
+    onTranslate: (() -> Unit)? = null,
+    /** 这一条翻出来的译文；null 表示没翻过，气泡下面就不多一行。 */
+    translation: String? = null,
+    /** 气泡下面那行小字（自己最后一条的「已读」）；null 表示不画。 */
+    receipt: String? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // 任何一条消息长按都弹菜单：回复和转发对别人的消息同样成立，而"长按即复制"那个老手势
     // 把这两个入口逼没了。菜单里第一项仍然是复制，所以习惯长按复制的人按下去还是一样的结果。
     val menuable = onLongPress != null || onReply != null || onForward != null ||
-        onDelete != null || onHide != null
+        onDelete != null || onHide != null || onTranslate != null
     var menuOpen by remember { mutableStateOf(false) }
     val longPress = if (menuable) ({ menuOpen = true }) else null
     // 图片不是文字：气泡的底色和 12 的内边距会在图四周多出一圈主色，那一路换成一张裸图。
@@ -1573,15 +1679,36 @@ private fun ChatBubble(
                             canReply = onReply != null,
                             canForward = onForward != null,
                             canHide = onHide != null,
+                            canTranslate = onTranslate != null,
                             onDismiss = { menuOpen = false },
                             onCopy = { onLongPress?.invoke() },
                             onDelete = onDelete,
                             onReply = onReply,
                             onForward = onForward,
                             onHide = onHide,
+                            onTranslate = onTranslate,
                         )
                     }
                 }
+            }
+            // 译文和回执都挂在气泡外面、自己这一侧那一列里：气泡本身是一条消息的"皮"，
+            // 后加上去的这两行字是解释，不该跟着气泡底色一起被当成消息正文。
+            translation?.let { line ->
+                Text(
+                    text = line,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            receipt?.let { line ->
+                Text(
+                    text = line,
+                    fontSize = 10.sp,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
             }
         }
         // 自己那一侧的头像：群聊里别人的名字靠 showSender 那行小字说清，私聊本来只有两个人，
@@ -1776,12 +1903,15 @@ private fun ChatBubbleMenu(
     canReply: Boolean = false,
     canForward: Boolean = false,
     canHide: Boolean = false,
+    /** 有没有「翻译」这一项：只有文字消息给。 */
+    canTranslate: Boolean = false,
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
     onDelete: (() -> Unit)? = null,
     onReply: (() -> Unit)? = null,
     onForward: (() -> Unit)? = null,
     onHide: (() -> Unit)? = null,
+    onTranslate: (() -> Unit)? = null,
 ) {
     DropdownMenu(
         expanded = open,
@@ -1794,6 +1924,15 @@ private fun ChatBubbleMenu(
                 onClick = {
                     onDismiss()
                     onCopy()
+                },
+            )
+        }
+        if (canTranslate && onTranslate != null) {
+            DropdownMenuItem(
+                text = { Text("翻译", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onTranslate()
                 },
             )
         }

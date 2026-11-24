@@ -73,8 +73,9 @@ private const val GROUP_MEMBER_CAP = 200
 /**
  * 邀请链接的形状。
  *
- * 旧版 [GroupInfoScreen] 里有一个同名函数，但那是文件级 private，这边用不了；两个页面都要拼同一个串，
- * 所以这里再留一份。**改格式要同时改两处**——宁可留这点重复，也不想为一行字符串把可见性放宽。
+ * 旧版群资料页（`GroupInfoScreen`，2026-11-24 已从仓库移出，备份在
+ * `backups/dead-code-20261124/`）里有一个同名函数；那一页不在路由上了，这边这一份是唯一实现。
+ * 链接能被 app 接住靠的是 `AndroidManifest.xml` 里 `unicanta://group` 的 intent-filter。
  */
 private fun inviteLinkOf(code: String): String = "unicanta://group/$code"
 
@@ -88,8 +89,9 @@ private const val EDIT_MAX_LINES = 4
  * 下面是**我对这个群做什么**（提醒、置顶、清记录、退出）。人从上往下看，正好是从"别人的群"过渡到
  * "我的设置"。
  *
- * 和 [GroupInfoScreen] 的分工：那一个是旧版，仍然留在仓库里但从路由上摘掉了；这一版照抖音重排，
- * 多出来的项（简介、昵称、折叠、清空记录）见各自的注释。
+ * 这一版取代了旧版群资料页（`GroupInfoScreen`）：那一页 2026-11-24 已从仓库移出，路由上原本就
+ * 不再用它（`Screen.GroupInfo` 一直渲染的这一页）。多出来的项（简介、昵称、折叠、清空记录）
+ * 见各自的注释。
  */
 @Composable
 fun GroupSettingsScreen(

@@ -11,6 +11,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -31,6 +32,23 @@ import kotlinx.serialization.json.put
 
 /** How long one backend call may take before the app treats it as never having arrived. */
 private const val RPC_TIMEOUT_MS = 30_000L
+
+/**
+ * 翻译走 MyMemory 的公开接口：它不要 key、每天 5 000 字符（带邮箱 50 000），够「按条翻」用。
+ *
+ * 之所以不放到服务端（`pg_net` + cron 那一套）：翻译是**一个人点一下**的动作，不是群发事件。
+ * 放服务端要多一张表、一个队列、一条 cron 和一次轮询，而客户端本来就已经拿着这段文字。
+ * 代价是这段话会经过第三方——它和「发给 AI」是同一类取舍，页面上有明确的一次点击。
+ */
+private const val TRANSLATE_ENDPOINT = "https://api.mymemory.translated.net/get"
+
+/**
+ * 这段字大概是什么语言：有汉字就当中文，其余当英文。
+ *
+ * 只用来决定「往哪个方向翻」，猜错的代价是翻出来还是原文，不是数据错——所以不引语言识别库。
+ */
+private fun guessLanguageOf(text: String): String =
+    if (text.any { it in '\u4E00'..'\u9FFF' }) "zh-CN" else "en"
 
 /**
  * 一个人，以及这一台手机和他之间那两条关注边。
@@ -267,6 +285,29 @@ data class ConversationDetail(
 
     /** [viewer] 是不是这个群的建群者；私聊永远 false（私聊没有公告也没有人可踢）。 */
     fun isOwner(viewer: String): Boolean = isGroup && createdBy.isNotEmpty() && createdBy == viewer
+}
+
+/**
+ * 会话的实时状态：别人读到哪一条、谁正在打字。
+ *
+ * 两样东西都来自 `conversation_live`，一次调用一起回来——它们的刷新节奏一样（几秒一次），
+ * 分成两个函数只会让聊天页开两条同样的轮询。
+ *
+ * [reads] 是「成员号码 → 他的读位置」，不含自己；[typing] 是此刻正在打字的人的名字，
+ * 已经是给人看的字符串（后端拼好的 `private.social_name` 兜底）。
+ */
+data class LivePresence(
+    val reads: Map<String, String> = emptyMap(),
+    val typing: List<String> = emptyList(),
+) {
+
+    /** 正在打字的人那一行字：一个人说名字，几个人说人数，没人就是空串。 */
+    val typingLine: String
+        get() = when (typing.size) {
+            0 -> ""
+            1 -> "${typing.first()} 正在输入…"
+            else -> "${typing.first()} 等 ${typing.size} 人正在输入…"
+        }
 }
 
 /**
@@ -549,6 +590,87 @@ class SocialRepository(
             myNickname = row.textOf("my_nickname"),
             myFolded = row.flagOf("my_folded") ?: false,
         )
+    }
+
+    /**
+     * 这个会话现在的状态：别人读到哪、谁正在打字。
+     *
+     * 聊天页每几秒问一次（见 `ChatScreen` 的 `ChatPresencePollMs`）。失败回答 null，调用方保留
+     * 上一次的结果——"这一次没问到"不该让『正在输入』突然消失。
+     */
+    suspend fun conversationLive(owner: String, conversation: Long): LivePresence? {
+        if (owner.isEmpty() || conversation <= 0L) return null
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("conversation_live", body) ?: return null
+        val row = firstRowOf(text) ?: return null
+
+        val reads = mutableMapOf<String, String>()
+        runCatching { row["reads"]?.jsonArray }.getOrNull()?.forEach { element ->
+            val entry = runCatching { element.jsonObject }.getOrNull() ?: return@forEach
+            val member = entry.textOf("member")
+            if (member.isNotEmpty()) reads[member] = entry.textOf("last_read_at")
+        }
+
+        val typing = buildList {
+            runCatching { row["typing"]?.jsonArray }.getOrNull()?.forEach { element ->
+                val entry = runCatching { element.jsonObject }.getOrNull() ?: return@forEach
+                val display = entry.textOf("name").ifBlank { entry.textOf("member") }
+                if (display.isNotEmpty()) add(display)
+            }
+        }
+
+        return LivePresence(reads = reads, typing = typing)
+    }
+
+    /**
+     * 告诉后端「我正在打字」。客户端 4 秒最多发一次（见聊天页），后端再挡一层 2 秒。
+     *
+     * 失败什么都不做：一条心跳丢了，下一键还会再发一次。
+     */
+    suspend fun markTyping(owner: String, conversation: Long) {
+        if (owner.isEmpty() || conversation <= 0L) return
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        rpc("conversation_typing", body)
+    }
+
+    /**
+     * 把一段话翻成 [target]（`zh-CN` / `en` 这种 BCP-47 短码），失败回答 null。
+     *
+     * 走 MyMemory 的公开接口，不需要 key：`GET /get?q=…&langpair=zh-CN|en`，答案在
+     * `responseData.translatedText`。它自己的错误也塞在这个字段里（"QUERY LENGTH LIMIT"
+     * 之类），所以拿回来还要看一眼 `responseStatus`。
+     */
+    suspend fun translate(text: String, target: String): String? {
+        val source = guessLanguageOf(text)
+        val trimmed = text.trim().take(480)
+        if (trimmed.isEmpty() || source == target) return null
+        val url = buildString {
+            append(TRANSLATE_ENDPOINT)
+            append("?q=").append(trimmed.encodeURLParameter())
+            append("&langpair=").append("$source|$target".encodeURLParameter())
+        }
+        val answered = runCatching {
+            withTimeoutOrNull(RPC_TIMEOUT_MS) {
+                val response = client.get(url) { header("Accept", "application/json") }
+                if (!response.status.isSuccess()) return@withTimeoutOrNull null
+                response.bodyAsText()
+            }
+        }.getOrNull() ?: return null
+        val root = runCatching { json.parseToJsonElement(answered).jsonObject }.getOrNull() ?: return null
+        val status = root["responseStatus"]?.jsonPrimitive?.intOrNull ?: 200
+        if (status != 200) return null
+        return root["responseData"]?.jsonObject?.textOf("translatedText")
+            ?.takeIf { it.isNotBlank() && !it.startsWith("QUERY LENGTH LIMIT", ignoreCase = true) }
     }
 
     /**
