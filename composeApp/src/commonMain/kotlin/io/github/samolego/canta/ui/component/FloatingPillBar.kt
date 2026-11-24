@@ -187,6 +187,13 @@ private fun lensStretch(lens: Animatable<Float, AnimationVector1D>, pitch: Float
 fun FloatingPillBar(
     items: List<BottomBarItem>,
     onSelect: (String) -> Unit,
+    /**
+     * 落在**已经是当前这一格**上的那一下：双击同一格时由这里回顶部。
+     *
+     * 判定照系统的双击窗口（`doubleTapTimeoutMillis`）：第一次点在同一格上只记时间，第二次
+     * 落在窗口里才算双击。切到别的格会把这个时间清掉，不然「A → B → A」会被读成双击。
+     */
+    onReselect: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (items.isEmpty()) {
@@ -223,6 +230,9 @@ fun FloatingPillBar(
     val currentItems by rememberUpdatedState(items)
     val currentSelected by rememberUpdatedState(selectedIndex)
     val currentOnSelect by rememberUpdatedState(onSelect)
+    val currentOnReselect by rememberUpdatedState(onReselect)
+    // 上一次「点的是当前这一格」的释放时刻（指针事件的 uptimeMillis）。0 表示没有待配对的点击。
+    val lastReselectAt = remember { longArrayOf(0L) }
 
     // A selection made elsewhere (a deep link, a preset) still slides the lens.
     LaunchedEffect(selectedIndex) {
@@ -300,6 +310,7 @@ fun FloatingPillBar(
 
                                 var dragging = false
                                 var committed = true
+                                var releasedAt = 0L
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull { it.id == down.id }
@@ -308,6 +319,7 @@ fun FloatingPillBar(
                                         break
                                     }
                                     if (!change.pressed) {
+                                        releasedAt = change.uptimeMillis
                                         break
                                     }
                                     if (!change.positionChanged()) {
@@ -345,9 +357,24 @@ fun FloatingPillBar(
                                     lift.animateTo(0f, LiftSpring)
                                 }
                                 if (committed && released != null &&
-                                    released != currentSelected && released in currentItems.indices
+                                    released in currentItems.indices
                                 ) {
-                                    currentOnSelect(currentItems[released].key)
+                                    val key = currentItems[released].key
+                                    if (released != currentSelected) {
+                                        // 换页：上一个「待配对的点击」作废，A→B→A 不算双击。
+                                        lastReselectAt[0] = 0L
+                                        currentOnSelect(key)
+                                    } else {
+                                        val previous = lastReselectAt[0]
+                                        if (previous != 0L &&
+                                            releasedAt - previous <= viewConfiguration.doubleTapTimeoutMillis
+                                        ) {
+                                            lastReselectAt[0] = 0L
+                                            currentOnReselect(key)
+                                        } else {
+                                            lastReselectAt[0] = releasedAt
+                                        }
+                                    }
                                 }
                             }
                         },
@@ -361,7 +388,14 @@ fun FloatingPillBar(
                         lift = lift,
                         lensColor = lensColor,
                         onSelect = { index ->
-                            currentItems.getOrNull(index)?.let { currentOnSelect(it.key) }
+                            // 无障碍那一下没有「双击」可言：落在当前格上就直接回顶部。
+                            currentItems.getOrNull(index)?.let { item ->
+                                if (index == currentSelected) {
+                                    currentOnReselect(item.key)
+                                } else {
+                                    currentOnSelect(item.key)
+                                }
+                            }
                         },
                     )
                 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
@@ -78,6 +79,7 @@ import io.github.samolego.canta.generated.resources.tweaks_splash_needs_service
 import io.github.samolego.canta.generated.resources.tweaks_this_device
 import io.github.samolego.canta.generated.resources.tweaks_title
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.util.DeviceProfile
@@ -141,6 +143,9 @@ fun TweaksScreen(
     var asking by remember { mutableStateOf<RomTweak?>(null) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+    // 双击底栏「工具」那一格：这一页回顶部。
+    val tweakListState = rememberLazyListState()
+    ScrollToTopEffect(tweakListState)
 
     LaunchedEffect(Unit) {
         profile = handler.deviceProfile()
@@ -215,7 +220,7 @@ fun TweaksScreen(
             ScreenTopBar(title = stringResource(Res.string.tweaks_title))
         },
     ) { padding ->
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = tweakListState) {
             groups.forEach { (family, list) ->
                 item(key = "head-$family") { GroupHeading(family = family, mine = family == mine) }
                 items(list, key = { it.id }) { tweak ->

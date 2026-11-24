@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,6 +53,7 @@ import io.github.samolego.canta.data.community.PostDraftStore
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.PostThread
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.component.relativeStamp
@@ -129,6 +131,9 @@ internal fun PostsScreen(
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
     val canWrite = authorId.isNotBlank()
+    // 双击底栏「帖子」那一格：这一页的列表回顶部。
+    val postListState = rememberLazyListState()
+    ScrollToTopEffect(postListState)
 
     var posts by remember { mutableStateOf<List<CommunityPost>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -510,6 +515,7 @@ internal fun PostsScreen(
             val listError = error
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
+                state = postListState,
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
                 if (draftList.isNotEmpty()) {

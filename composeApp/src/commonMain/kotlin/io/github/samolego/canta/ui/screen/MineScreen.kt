@@ -41,6 +41,7 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.profile_default_name
 import io.github.samolego.canta.generated.resources.profile_edit_name
 import io.github.samolego.canta.ui.component.AppLinkCard
+import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.UserAvatar
@@ -77,6 +78,9 @@ fun MineScreen(
 ) {
     val userName by settingsViewModel.userName.collectAsStateWithLifecycle()
     val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
+    // 双击底栏「我的」那一格：这一页用的是普通竖向滚动，也跟着回顶部。
+    val mineScroll = rememberScrollState()
+    ScrollToTopEffect(mineScroll)
     // 关于页「作者的群」是否点过：没点过时，关于入口也跟着点一个。
     val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
 
@@ -87,7 +91,7 @@ fun MineScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(mineScroll)
                 .padding(top = 8.dp, bottom = FloatingBarRoom),
         ) {
             // 身份在最上面：头像、名字，点一下进个人主页（改名与换头像都在那一页）。

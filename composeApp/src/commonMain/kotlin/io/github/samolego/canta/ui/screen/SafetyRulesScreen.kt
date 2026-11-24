@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -101,6 +102,7 @@ import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.PlanScope
 import io.github.samolego.canta.ui.component.PlanScopeBar
 import io.github.samolego.canta.ui.component.PlanScopeDialog
+import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.label
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
@@ -969,6 +971,10 @@ private fun RankingTab(
         }
     }
 
+    // 双击底栏「规则」那一格：这张排行榜自己滚回顶部。
+    val listState = rememberLazyListState()
+    ScrollToTopEffect(listState)
+
     when {
         loading -> Text(
             "…",
@@ -990,6 +996,7 @@ private fun RankingTab(
         )
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            state = listState,
             contentPadding = PaddingValues(vertical = 4.dp),
         ) {
             itemsIndexed(rows, key = { _, row -> row.pkg }) { _, row ->
@@ -1153,6 +1160,9 @@ private fun PlansTab(
     } else {
         plans.filter { plan -> plan.packages.any { it.contains(needle, ignoreCase = true) } }
     }
+    // 双击底栏「规则」那一格：方案列表自己滚回顶部。
+    val plansListState = rememberLazyListState()
+    ScrollToTopEffect(plansListState)
     when {
         loading -> Text(
             "…",
@@ -1173,11 +1183,10 @@ private fun PlansTab(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
         )
         else -> Column(modifier = Modifier.fillMaxSize()) {
-            // The floating upload button is absent here on purpose; the line says why, so the page
-            // does not look broken to somebody who just tapped "全部机型".
+            // 上传入口现在跟范围无关、常驻在页面顶端，所以这一行只解释列表是谁的（以及上传的是谁的）。
             if (widerScope) {
                 Text(
-                    text = "这是全部机型共用的方案，按社区点赞排序；上传要切回「本机」。",
+                    text = "这是全部机型共用的方案，按社区点赞排序；上传的一直是本机这一份。",
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1185,6 +1194,7 @@ private fun PlansTab(
                 )
             }
             LazyColumn(
+                state = plansListState,
                 modifier = Modifier.fillMaxSize(),
                 // The floating button and the dock hang over the foot of the list: the last card
                 // has to be able to scroll clear of both.

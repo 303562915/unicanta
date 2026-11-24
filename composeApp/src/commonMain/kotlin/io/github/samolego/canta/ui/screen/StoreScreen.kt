@@ -49,6 +49,7 @@ import io.github.samolego.canta.data.recommend.PointOrder
 import io.github.samolego.canta.data.recommend.PointRedeemResult
 import io.github.samolego.canta.data.recommend.PointsAccount
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.fl.FlSegment
@@ -95,6 +96,8 @@ internal fun StoreScreen(
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
     val listState = rememberLazyListState()
+    // 双击底栏「商城」那一格：这一页回顶部。
+    ScrollToTopEffect(listState)
 
     var account by remember { mutableStateOf<PointsAccount?>(null) }
     var balance by remember { mutableStateOf(0L) }

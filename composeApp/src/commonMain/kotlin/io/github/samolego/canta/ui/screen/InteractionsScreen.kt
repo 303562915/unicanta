@@ -73,6 +73,7 @@ import io.github.samolego.canta.data.community.matching
 import io.github.samolego.canta.data.community.newestInboxCommentId
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.MyCommentRow
+import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -260,6 +261,11 @@ fun InteractionsScreen(
     val inboxListState = rememberLazyListState()
     val followersListState = rememberLazyListState()
     val mineListState = rememberLazyListState()
+
+    // 双击底栏「消息」那一格：三个分页各自的列表回顶部（不在屏幕上的那些本来就在顶上，不动）。
+    ScrollToTopEffect(inboxListState)
+    ScrollToTopEffect(followersListState)
+    ScrollToTopEffect(mineListState)
 
     // 首屏：一次计数 + 一次消息页。计数是为了拿到「最新一条」和「从哪个瞬间开始算」，
     // 没有它，红点就只能靠本页自己猜。

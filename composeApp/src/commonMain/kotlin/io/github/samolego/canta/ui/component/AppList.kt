@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
@@ -235,8 +236,12 @@ fun AppList(
                 // added at the top, since the bar above already carries the status-bar inset.
                 val pageInsets = WindowInsets.safeDrawing.asPaddingValues()
                 val bottomRoom = pageInsets.calculateBottomPadding() + FLOATING_BAR_ROOM
+                // 双击底栏「应用」那一格：这张格子表自己滚回顶部。
+                val gridState = rememberLazyGridState()
+                ScrollToTopEffect(gridState)
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = MIN_TILE_WIDTH),
+                    state = gridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = bottomRoom),
                     verticalArrangement = Arrangement.spacedBy(4.dp),

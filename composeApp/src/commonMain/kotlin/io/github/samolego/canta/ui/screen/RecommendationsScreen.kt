@@ -106,6 +106,7 @@ import io.github.samolego.canta.generated.resources.recommend_title
 import io.github.samolego.canta.generated.resources.recommend_uninstall_hint
 import io.github.samolego.canta.generated.resources.recommend_uninstall_short
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.fl.FlSegment
@@ -253,6 +254,10 @@ fun RecommendationsScreen(
     val listGridState = rememberLazyGridState()
     val listColumnState = rememberLazyListState()
     val voteQueueState = rememberLazyListState()
+    // 双击底栏「推荐」那一格：两半各自回顶部——只有那份不在顶上的才会真滚。
+    ScrollToTopEffect(listGridState)
+    ScrollToTopEffect(listColumnState)
+    ScrollToTopEffect(voteQueueState)
 
     // The open half: the queue of proposed apps, how the votes stand, and the form that files one.
     // 队列先从缓存摆上：有上一份时这一半立刻有内容，不再等那一趟网络。
