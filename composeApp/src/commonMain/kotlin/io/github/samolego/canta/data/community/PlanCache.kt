@@ -16,6 +16,14 @@ private fun DeviceProfile.cacheKey(): String =
     listOf(model, device, rom, romVersion, romBuild).joinToString("|")
 
 /**
+ * The key the same phone's list was written under before the build was part of it (four parts).
+ * Those blobs are still this phone's own list — the key exists to keep *another* phone's rows out,
+ * not to throw the user's last list away on upgrade — so [PlanCache.read] accepts it as well.
+ */
+private fun DeviceProfile.legacyCacheKey(): String =
+    listOf(model, device, rom, romVersion).joinToString("|")
+
+/**
  * 两份列表存在同一个 blob 里，各占一个字段：
  *
  * * [all]：「全部机型」那一份，也就是默认范围——不跟 `device` 走，它本来就不属于某台手机。
@@ -61,7 +69,13 @@ class PlanCache(private val storage: AppBlobStorage) {
     /** The cached plans for [profile]; empty when nothing was cached for this device. */
     suspend fun read(profile: DeviceProfile): List<CommunityPlan> {
         val blob = ensureLoaded()
-        return if (blob.device == profile.cacheKey()) blob.plans else emptyList()
+        val stored = blob.device
+        return when {
+            stored == profile.cacheKey() -> blob.plans
+            // Written before the build was part of the key: still this phone's own list.
+            stored == profile.legacyCacheKey() -> blob.plans
+            else -> emptyList()
+        }
     }
 
     /** Replaces this phone's cached plans with [plans], leaving the widest scope's copy alone. */

@@ -80,11 +80,11 @@ class DeviceContextTest {
 
     @Test
     fun romBuildIsTheWholeVersionNotJustTheMajorOne() {
-        // The same phone ships 16.0.3 and 16.0.501: both are major version 16, but they are two
-        // builds, and the label has to say which one a plan row is about.
-        assertEquals("16.0.3", romBuildOf(mapOf("ro.build.version.opporom" to "V16.0.3")))
-        assertEquals("16.0.501", romBuildOf(mapOf("ro.build.version.opporom" to "V16.0.501")))
-        assertEquals("2.0.7", romBuildOf(mapOf("ro.mi.os.version.name" to "OS2.0.7.0.VNCCNXM")))
+        // The raw string is what a plan row stores and is matched on: the same phone ships 16.0.3
+        // and 16.0.501, both major version 16, and the row has to keep the part that tells them apart.
+        assertEquals("V16.0.3", romBuildOf(mapOf("ro.build.version.opporom" to "V16.0.3")))
+        assertEquals("V16.0.501", romBuildOf(mapOf("ro.build.version.opporom" to "V16.0.501")))
+        assertEquals("OS2.0.7.0.VNCCNXM", romBuildOf(mapOf("ro.mi.os.version.name" to "OS2.0.7.0.VNCCNXM")))
         assertEquals("", romBuildOf(mapOf("ro.rom.version" to "something else")))
         // HyperOS wins over the MIUI props it still carries, exactly like the family does.
         assertEquals(
