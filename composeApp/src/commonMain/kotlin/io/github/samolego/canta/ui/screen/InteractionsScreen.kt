@@ -3,10 +3,8 @@ package io.github.samolego.canta.ui.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -31,6 +29,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -58,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.COMMENT_KIND_APP
 import io.github.samolego.canta.data.community.InboxFilter
 import io.github.samolego.canta.data.community.InboxItem
@@ -78,10 +78,8 @@ import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
-import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
-import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
 
 /** 一页互动消息从每个来源各取多少行。 */
@@ -111,6 +109,39 @@ private enum class InteractionMessages(
     HEART("赞与收藏", InboxFilter.HEART),
     MINE("我的评论", null),
 }
+
+/**
+ * 这一屏上一次画出来的样子，整份进 [ScreenCache]。
+ *
+ * 只放画一屏要用的只读数据：三段列表、两段计数、以及翻页游标。MutableState、协程、回调、
+ * 对话框开关都不在这里——那些是「这一次会话里的事」，下一次进来该从干净的状态开始。
+ *
+ * 所有字段捆在一起进出一趟，是因为它们来自同一屏：分开存会出现「消息是新的、关注是旧的」
+ * 这种半新半旧的中间态，而这三段是同一个顶栏下的三栏。
+ *
+ * [mine] 为 null 表示「我的评论」这一栏还没拉过，**和「拉过、但一条都没有」不是一回事**（后者是空列表）：
+ * 菜单里那个「我的评论 · N」只有在真读过之后才写得出来，没读过就该按没读过画。
+ */
+private data class InteractionsSnapshot(
+    val inbox: List<InboxItem>,
+    val inboxHasMore: Boolean,
+    /** 屏幕上这一页是从 offset 0 取到的，恢复后翻页要接着这个游标走，不然会重取第一屏。 */
+    val inboxOffset: Int,
+    val summary: InboxSummary,
+    val followers: List<SocialPerson>,
+    val mine: List<MyComment>?,
+    val mineHasMore: Boolean,
+)
+
+/**
+ * 这一页缓存的槽位：按身份分。
+ *
+ * 身份为空（调用方是从 `DeviceIdentity.current(...)` 异步取的，第一帧就是空串）时返回空串——
+ * 空键会把所有人的互动、关注、评论串进同一个槽位；[ScreenCache] 本身也会丢弃空键的写入，
+ * 所以那一帧宁可没有缓存，也不能画错人。
+ */
+private fun interactionsCacheKey(owner: String): String =
+    if (owner.isEmpty()) "" else "screen:interactions:$owner"
 
 /**
  * 「互动消息」页：别人对我做过什么、我自己写过什么，以及谁新近关注了我。
@@ -152,25 +183,42 @@ fun InteractionsScreen(
     // 顶栏的两段；消息段里再选分类。两个状态分开记，是因为「切到关注再切回来」要回到原来的分类。
     var section by remember { mutableStateOf(InteractionSection.MESSAGES) }
     var messages by remember { mutableStateOf(InteractionMessages.ALL_MESSAGES) }
-    var inbox by remember { mutableStateOf<Page<InboxItem>>(Page.EMPTY) }
+    // 上一屏留下的那一份先摆上：这一页每次被导航进来都是新的 Composable 实例，`remember` 跟着一起
+    // 没了，所以快照放在进程级的 [ScreenCache] 里。有它就直接画，没有再走一次完整加载。
+    //
+    // 按 [cacheKey] 做 remember 的键：身份是异步到的，`owner` 从空串变成真身份时这几个状态会按缓存
+    // 重新初始化一次，那一刻缓存才接得上（不是每次重组都重来——键没变就不重跑）。
+    val cacheKey = interactionsCacheKey(owner)
+    val cached = remember(cacheKey) {
+        if (cacheKey.isEmpty()) null else ScreenCache.get<InteractionsSnapshot>(cacheKey)
+    }
+    var inbox by remember(cacheKey) {
+        mutableStateOf(cached?.let { Page(it.inbox, it.inboxHasMore) } ?: Page.EMPTY)
+    }
     // 每个来源读到哪儿：一页从同一个 offset 各取 [INTERACTION_PER_SOURCE] 行，所以 offset 按
     // 这个窗口往前推，而不是按回来多少行数——某一路只回了三行，不该把别路的七行一起往前拖。
-    var inboxOffset by remember { mutableIntStateOf(0) }
-    var summary by remember { mutableStateOf(InboxSummary.EMPTY) }
-    var loading by remember { mutableStateOf(true) }
+    var inboxOffset by remember(cacheKey) { mutableIntStateOf(cached?.inboxOffset ?: 0) }
+    var summary by remember(cacheKey) { mutableStateOf(cached?.summary ?: InboxSummary.EMPTY) }
+    // 有缓存就不摆骨架：这一趟刷新只是把新的一版顶上去。
+    var loading by remember(cacheKey) { mutableStateOf(cached == null) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
-    var followers by remember { mutableStateOf<List<SocialPerson>>(emptyList()) }
+    var followers by remember(cacheKey) { mutableStateOf(cached?.followers.orEmpty()) }
     var followersLoading by remember { mutableStateOf(false) }
     var followersError by remember { mutableStateOf<String?>(null) }
     // 正在写关注关系的那一行：写的时候按钮先别理手指，免得一次点击写两遍。
     var followBusy by remember { mutableStateOf("") }
 
     // 「我的评论」：这台设备写过的评论，按身份取，一页一页往下读。
-    var mine by remember { mutableStateOf<Page<MyComment>>(Page.EMPTY) }
+    var mine by remember(cacheKey) {
+        mutableStateOf(
+            cached?.mine?.let { comments -> Page(comments, cached.mineHasMore) } ?: Page.EMPTY,
+        )
+    }
     // 只有读过一次之后，菜单里才写得出条数；没读过就画「我的评论」四个字，不先报一个 0。
-    var mineLoaded by remember { mutableStateOf(false) }
+    // 缓存里有这一栏就等于读过——那是上一次真读到的结果，不是空的。
+    var mineLoaded by remember(cacheKey) { mutableStateOf(cached?.mine != null) }
     var mineLoading by remember { mutableStateOf(false) }
     var mineLoadingMore by remember { mutableStateOf(false) }
     var mineError by remember { mutableStateOf<String?>(null) }
@@ -181,6 +229,32 @@ fun InteractionsScreen(
     // 这一趟里我点过赞的评论：后端只回一个总数，这一页不回读，所以先按会话记住自己那条。
     var likedRows by remember { mutableStateOf(setOf<Long>()) }
 
+    /**
+     * 把现在画在屏幕上的这一版写回缓存，下一次进来先画它。
+     *
+     * 三栏是分三次拉到的（消息首屏、关注名单、我的评论），所以每次回来都整份重写一遍：只换自己
+     * 那一段的话，三处调用各要维护一份「其余两段现在是谁」，读起来比写全份更容易错。
+     *
+     * 没拉过的「我的评论」一律记成 null 而不是空列表：记空的话，下一次进来会把「还没拉过」画成
+     * 「一条都没写过」，而这两件事在界面上是不同的空态。
+     */
+    val commitCache: () -> Unit = {
+        if (cacheKey.isNotEmpty()) {
+            ScreenCache.put(
+                cacheKey,
+                InteractionsSnapshot(
+                    inbox = inbox.items,
+                    inboxHasMore = inbox.hasMore,
+                    inboxOffset = inboxOffset,
+                    summary = summary,
+                    followers = followers,
+                    mine = if (mineLoaded) mine.items else null,
+                    mineHasMore = mineLoaded && mine.hasMore,
+                ),
+            )
+        }
+    }
+
     val inboxListState = rememberLazyListState()
     val followersListState = rememberLazyListState()
     val mineListState = rememberLazyListState()
@@ -188,14 +262,24 @@ fun InteractionsScreen(
     // 首屏：一次计数 + 一次消息页。计数是为了拿到「最新一条」和「从哪个瞬间开始算」，
     // 没有它，红点就只能靠本页自己猜。
     LaunchedEffect(owner, token) {
-        loading = true
+        // 有缓存的那一趟不点 loading：上一次画出来的内容还在屏幕上，转圈会把它盖住。
+        if (cached == null) loading = true
         loadError = null
-        inboxOffset = 0
-        summary = repository.inboxSummary(owner, token, seenAt) ?: InboxSummary.EMPTY
-        inbox = repository.inboxPage(owner, token, offset = 0, perSource = INTERACTION_PER_SOURCE)
-        inboxOffset = INTERACTION_PER_SOURCE
+        val freshSummary = repository.inboxSummary(owner, token, seenAt) ?: InboxSummary.EMPTY
+        val freshInbox = repository.inboxPage(owner, token, offset = 0, perSource = INTERACTION_PER_SOURCE)
         // 后端没这个函数、或者手机没连上，都不能读成「没人理你」：把原因摆出来。
-        loadError = repository.lastError
+        //
+        // 而且失败时**不覆盖**屏幕上那一份：`inboxPage` 拉挂了给的也是空页，照着它画就等于因为
+        // 一次断网把刚才还在的消息清空，人还得再进一次页面才可能看到它们回来。
+        val failure = repository.lastError
+        if (failure == null) {
+            summary = freshSummary
+            inbox = freshInbox
+            // 游标跟着画出来的那一页走：缓存里记的就是「屏幕上这一页取到哪儿」。
+            inboxOffset = INTERACTION_PER_SOURCE
+            commitCache()
+        }
+        loadError = failure
         loading = false
     }
 
@@ -211,13 +295,18 @@ fun InteractionsScreen(
                     offset = inboxOffset,
                     perSource = INTERACTION_PER_SOURCE,
                 )
-                inbox = Page(
-                    items = (inbox.items + next.items)
-                        .distinctBy { "${it.kind}-${it.id}-${it.createdAt}" },
-                    hasMore = next.hasMore,
-                )
-                inboxOffset += INTERACTION_PER_SOURCE
-                loadError = repository.lastError
+                val failure = repository.lastError
+                // 翻页失败不并进列表：空页会把 hasMore 改成 false，从此这一栏再不会往下问。
+                if (failure == null) {
+                    inbox = Page(
+                        items = (inbox.items + next.items)
+                            .distinctBy { "${it.kind}-${it.id}-${it.createdAt}" },
+                        hasMore = next.hasMore,
+                    )
+                    inboxOffset += INTERACTION_PER_SOURCE
+                    commitCache()
+                }
+                loadError = failure
                 loadingMore = false
             }
         }
@@ -242,8 +331,14 @@ fun InteractionsScreen(
         if (section == InteractionSection.FOLLOWERS) {
             followersLoading = true
             followersError = null
-            followers = social.followersOf(owner)
-            followersError = interactionErrorOf(social.lastError, social.lastFailureWasNetwork)
+            val fresh = social.followersOf(owner)
+            val failure = interactionErrorOf(social.lastError, social.lastFailureWasNetwork)
+            // 失败不覆盖：缓存里那份关注名单比空列表有用，为什么没刷新由上面那一行说。
+            if (failure == null) {
+                followers = fresh
+                commitCache()
+            }
+            followersError = failure
             followersLoading = false
         }
     }
@@ -260,8 +355,14 @@ fun InteractionsScreen(
         mineLoading = true
         mineError = null
         try {
-            mine = repository.myCommentsPage(owner, token, offset = 0)
-            mineError = interactionErrorOf(repository.lastError, false)
+            val fresh = repository.myCommentsPage(owner, token, offset = 0)
+            val failure = interactionErrorOf(repository.lastError, false)
+            // 失败不覆盖屏幕上那一份（可能是上一次进来留下的缓存），只把原因摆在顶上。
+            if (failure == null) {
+                mine = fresh
+                commitCache()
+            }
+            mineError = failure
             mineLoaded = true
         } finally {
             mineLoading = false
@@ -274,11 +375,15 @@ fun InteractionsScreen(
             scope.launch {
                 mineLoadingMore = true
                 val next = repository.myCommentsPage(owner, token, offset = mine.items.size)
-                mine = Page(
-                    items = (mine.items + next.items).distinctBy { it.id },
-                    hasMore = next.hasMore,
-                )
-                mineError = interactionErrorOf(repository.lastError, false)
+                val failure = interactionErrorOf(repository.lastError, false)
+                if (failure == null) {
+                    mine = Page(
+                        items = (mine.items + next.items).distinctBy { it.id },
+                        hasMore = next.hasMore,
+                    )
+                    commitCache()
+                }
+                mineError = failure
                 mineLoadingMore = false
             }
         }
@@ -296,7 +401,11 @@ fun InteractionsScreen(
                         val ok = repository.deleteComment(comment.id, owner, token)
                         notice = if (ok) "已删除这条评论" else "删不掉：这条评论不是本机写的，或者后端没通。"
                         // 删完当场从列表里拿掉：等下一次进这一栏太慢，人也看不出来删没删掉。
-                        if (ok) mine = Page(mine.items.filterNot { it.id == comment.id }, mine.hasMore)
+                        if (ok) {
+                            mine = Page(mine.items.filterNot { it.id == comment.id }, mine.hasMore)
+                            // 缓存一起改：不改的话下一次进来先画出来的那条还能点，而它其实已经没了。
+                            commitCache()
+                        }
                     }
                 }) {
                     Text("删除", color = MaterialTheme.colorScheme.error)
@@ -348,6 +457,8 @@ fun InteractionsScreen(
                     followers = followers.map { row ->
                         if (row.id == person.id) row.copy(iFollow = following) else row
                     }
+                    // 回关是这一栏里唯一会改数据的地方，缓存跟着改，否则切回来先画的还是「回关」。
+                    commitCache()
                 } else {
                     followersError = reason
                 }
@@ -412,8 +523,6 @@ fun InteractionsScreen(
                         else -> LazyColumn(
                             state = followersListState,
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             items(followers) { person ->
                                 FollowerRow(
@@ -449,8 +558,6 @@ fun InteractionsScreen(
                         else -> LazyColumn(
                             state = mineListState,
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             items(mine.items, key = { comment -> "mine-${comment.id}" }) { comment ->
                                 MyCommentRow(
@@ -490,8 +597,6 @@ fun InteractionsScreen(
                         else -> LazyColumn(
                             state = inboxListState,
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             items(
                                 items = visibleInbox,
@@ -729,16 +834,15 @@ private fun InteractionRow(
     onLike: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(FlSurfaceLevel.Card.colorOf(colors))
-            .clickable(onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.Top) {
+    // 一行一条，不是一张卡：参考图里这一页是通栏白底 + 发丝分割线，卡片会把整列切成一格一格的。
+    Column(modifier = Modifier.fillMaxWidth().background(colors.surface)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpen)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
             // 头像是一块自己的入口：点开那个人的主页。行本身的点击仍然是开那条消息指向的页。
             // 右下角那个小圆标按事件类型换图：赞是心，回复/评论是气泡——不读字也看得出发生了什么。
             Box {
@@ -829,14 +933,25 @@ private fun InteractionRow(
                 Spacer(Modifier.width(6.dp))
                 InteractionThumbnail(label = item.title.ifEmpty { item.target })
             }
+            }
         }
+        InteractionDivider()
     }
+}
+
+/** 行与行之间那条发丝线：通栏白底的一列，靠它分出"这是一条一条的"。 */
+@Composable
+private fun InteractionDivider() {
+    HorizontalDivider(
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+    )
 }
 
 /**
  * 头像右下角那颗类型小圆标：赞是心，回复与方案下的评论是气泡。
  *
- * 圆标压在头像上，边框用卡片底色描一圈，这样头像和人名之间的边界还是清楚的。
+ * 圆标压在头像上，边框用行的底色（白）描一圈，这样头像和人名之间的边界还是清楚的。
  */
 @Composable
 private fun InteractionKindBadge(kind: InboxKind, modifier: Modifier = Modifier) {
@@ -847,7 +962,7 @@ private fun InteractionKindBadge(kind: InboxKind, modifier: Modifier = Modifier)
             .size(17.dp)
             .clip(CircleShape)
             .background(if (heart) colors.error else colors.primary)
-            .border(1.5.dp, FlSurfaceLevel.Card.colorOf(colors), CircleShape),
+            .border(1.5.dp, colors.surface, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -870,14 +985,14 @@ private fun InteractionThumbnail(label: String) {
     val colors = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
-            .size(38.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(42.dp)
+            .clip(RoundedCornerShape(6.dp))
             .background(colors.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label.trim().take(1).ifEmpty { "?" },
-            fontSize = 15.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             color = colors.onPrimaryContainer,
             maxLines = 1,
@@ -934,15 +1049,14 @@ private fun InteractionPill(
 @Composable
 private fun FollowerRow(person: SocialPerson, busy: Boolean, onToggleFollow: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(FlSurfaceLevel.Card.colorOf(colors))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    // 和消息那一栏同一套：通栏一行 + 发丝线，不做卡片。
+    Column(modifier = Modifier.fillMaxWidth().background(colors.surface)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         InteractionAvatar(name = person.label, size = 40.dp)
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -973,6 +1087,8 @@ private fun FollowerRow(person: SocialPerson, busy: Boolean, onToggleFollow: () 
         InteractionFollowButton(followed = person.iFollow, enabled = !busy, onClick = onToggleFollow)
         Spacer(Modifier.width(2.dp))
         FlGlyphIcon(glyph = FlGlyphs.chevronForward, size = 13.dp, tint = colors.outline)
+        }
+        InteractionDivider()
     }
 }
 

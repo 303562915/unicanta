@@ -7,12 +7,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,6 +48,7 @@ import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -853,12 +852,12 @@ private fun CommentActions(
     }
 }
 
-/** How many of the stickers the open bar offers as a quick row: one row, not a grid. */
-private const val QUICK_EMOTION_COUNT = 10
+/** 输入栏那颗「发送」的颜色：截图里是抖音那个粉，和表情面板右下角的是同一个。 */
+private val CommentSendPink = Color(0xFFFE2C55)
 
 /**
  * The composer every comment page ends with: one quiet pill field and the send button. The field
- * asks for a comment on its own — "发条评论，说说你的感受" — and names the person it answers once
+ * asks for a comment on its own — "发条评论，和大家一起讨论" — and names the person it answers once
  * one was picked, the way a short-video composer does it. Picking a comment brings the field up
  * focused, so the answer starts where the thumb landed.
  */
@@ -893,8 +892,15 @@ fun CommentComposer(
     }
     // The panel closing from outside — a tap on the page behind it — has to put the keyboard back:
     // a bar with neither the panel nor a caret is a bar the reader cannot type into.
+    //
+    // Only after it was open, though. A page that ends with this bar opens with the panel closed,
+    // and taking that first "closed" as a closing would put the caret in the field the moment the
+    // page appears — the input box popped up by itself and the keyboard covered the page the
+    // reader had just opened.
+    var panelWasOpen by remember { mutableStateOf(false) }
     LaunchedEffect(pickerOpen) {
-        if (!pickerOpen) focusRequester.requestFocus()
+        if (panelWasOpen && !pickerOpen) focusRequester.requestFocus()
+        panelWasOpen = pickerOpen
     }
     Surface(modifier = modifier.fillMaxWidth(), tonalElevation = 3.dp) {
         // What the bar has to clear at the bottom is whichever wins: the keyboard while it is up,
@@ -931,37 +937,28 @@ fun CommentComposer(
                 if (replyToName.isNotEmpty()) {
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
-                // Two shapes, the way a short-video composer draws this bar. Closed — nothing
-                // written, no caret — the three keys sit inside the pill's right end, so the whole
-                // bar is one thing. Open — the field has the caret, or something was written — the
-                // pill is only the place being written in, and the keys drop to a row of their own
-                // under it, with send at that row's end. A pill can hold a caret or hold keys, but
-                // a caret between the keys reads as a third key.
+                // 抖音那套形状：收着的时候（没焦点、没字）整条就是一个胶囊，占位文案在左，
+                // 「图片 / @ / 表情」三个键贴在它右端，没有发送键；一动笔就换成
+                // 「一个空胶囊 + 下面一行工具条」——工具条的键靠左，发送靠右。
                 var fieldFocused by remember { mutableStateOf(false) }
                 val open = fieldFocused || draft.isNotBlank()
                 val draftKeys: @Composable () -> Unit = {
                     Icon(
                         imageVector = Icons.Outlined.Image,
-                        // Decorative: this key takes no pictures and answers no tap, so it gets no
-                        // description. A caption like "comments are text-only for now" would be read
-                        // aloud as if the key did something, which is worse than silence.
+                        // 相册/拍摄还没接进来：这颗键只是形状，所以没有描述也没有 clickable——
+                        // 会亮起来、按下去有涟漪、然后什么都不发生的键是一种骗人。
                         contentDescription = null,
-                        modifier = Modifier.size(48.dp).padding(13.dp),
-                        // Dimmed rather than hidden: an image key is what a comment box of this
-                        // shape usually carries, and this one takes no pictures — a lit key that
-                        // answers nothing would be the worse of the two lies.
-                        tint = colors.onSurfaceVariant.copy(alpha = 0.38f),
+                        modifier = Modifier.size(36.dp).padding(8.dp),
+                        tint = colors.onSurfaceVariant,
                     )
                     Icon(
                         imageVector = Icons.Outlined.AlternateEmail,
                         contentDescription = "插入 @",
-                        // 48dp is the touch minimum; the icon itself stays 22dp inside it, so the
-                        // key looks the same as its neighbours while being easy to hit.
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(36.dp)
                             .clip(RoundedCornerShape(50))
                             .clickable { onDraftChange(draft + "@") }
-                            .padding(13.dp),
+                            .padding(8.dp),
                         tint = colors.onSurfaceVariant,
                     )
                     Icon(
@@ -972,7 +969,7 @@ fun CommentComposer(
                         },
                         contentDescription = if (pickerOpen) "收起表情" else "表情",
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(36.dp)
                             .clip(RoundedCornerShape(50))
                             .clickable {
                                 if (pickerOpen) {
@@ -986,55 +983,29 @@ fun CommentComposer(
                                     onPickerOpenChange(true)
                                 }
                             }
-                            .padding(9.dp),
-                        tint = if (pickerOpen) colors.primary else colors.onSurfaceVariant,
+                            .padding(8.dp),
+                        tint = colors.onSurfaceVariant,
                     )
                 }
-                // One row of the stickers everybody uses, under the field while it is open: the
-                // same ones the panel offers, so a face is one tap away instead of two. The row
-                // scrolls sideways when the set outgrows the phone, and never wraps — "only one
-                // row" is the point of it.
-                val quickEmotions: @Composable () -> Unit = {
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        EMOTIONS.take(QUICK_EMOTION_COUNT).forEach { emotion ->
-                            Image(
-                                painter = painterResource(emotion.resource),
-                                contentDescription = emotion.name,
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .padding(3.dp)
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        rememberEmotionPick(emotion.name)
-                                        onDraftChange(draft + emotion.token)
-                                    },
-                            )
-                        }
-                    }
-                }
+                // 发送：抖音是粉底白字的小胶囊，禁用的时灰底灰字（截图里就是这样），
+                // 和表情面板右下角那颗是同一个颜色，两处不能长得不一样。
                 val sendKey: @Composable () -> Unit = {
                     val canSend = draft.isNotBlank() && !sending
                     Row(
                         modifier = Modifier
-                            // The keys beside it are forty wide; send matches them, so the bar has
-                            // one height and the button is as easy to hit as the icons.
-                            .height(40.dp)
+                            .height(32.dp)
                             .clip(RoundedCornerShape(percent = 50))
-                            // Dim is the hairline grey, not white: a white pill on a white page is
-                            // a button nobody can see.
-                            .background(if (canSend) colors.primary else inputFieldBorderColor())
+                            .background(if (canSend) CommentSendPink else inputFieldBorderColor())
                             .clickable(enabled = canSend, onClick = onSend)
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 18.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = sendLabel,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            color = if (canSend) Color.White else colors.onSurfaceVariant,
                         )
                     }
                 }
@@ -1171,7 +1142,7 @@ fun CommentComposer(
                                         text = if (replyToName.isNotEmpty()) {
                                             "回复 @$replyToName"
                                         } else {
-                                            "发条评论，说说你的感受"
+                                            "发条评论，和大家一起讨论"
                                         },
                                         fontSize = 14.sp,
                                         lineHeight = 19.sp,
@@ -1182,34 +1153,20 @@ fun CommentComposer(
                                 }
                             }
                         }
-                        // The keys sit inside the pill's right end while the bar is closed: the
-                        // draft grows to their left and never runs under them.
+                        // 收着的时候三个键就在胶囊里：草稿在它们左边长，永远不会钻到键下面。
                         if (!open) draftKeys()
                     }
-                    // Send rides beside the pill. Closed, it waits for the first character — an
-                    // empty closed bar is a field and its keys, nothing that reads as a dead
-                    // button. Open, it is always there, dim until there is something to send: the
-                    // one button people look for while typing must not come and go.
-                    if (open) {
-                        Box(modifier = Modifier.padding(start = 8.dp)) { sendKey() }
-                    } else {
-                        AnimatedVisibility(visible = draft.isNotBlank() || sending) {
-                            Box(modifier = Modifier.padding(start = 8.dp)) { sendKey() }
-                        }
-                    }
                 }
-                // Open, under the pill: one row of the stickers everybody uses, the three keys at
-                // its end. Send stays up beside the field, where the thumb and the caret are —
-                // pushing it down a row would put it under the row it belongs above.
+                // 打开了才有的工具条：键靠左、发送靠右，就是截图里那一行。收着的时候没有它，
+                // 一整条只有那个胶囊——没有字就没有可发的东西，摆一颗灰按钮只是占地方。
                 AnimatedVisibility(visible = open) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // The strip takes whatever the keys leave: one row of faces, scrolled
-                        // sideways when it runs out of phone.
-                        Box(modifier = Modifier.weight(1f)) { quickEmotions() }
                         draftKeys()
+                        Spacer(Modifier.weight(1f))
+                        sendKey()
                     }
                 }
                 if (failed) {
@@ -1237,6 +1194,10 @@ fun CommentComposer(
                             onPickerOpenChange(false)
                             focusRequester.requestFocus()
                         },
+                        // 面板右下角那颗「发送」走同一条发送路径：截图里它一直在，
+                        // 没字/正在发的时候画成灰的。
+                        onSend = onSend,
+                        canSend = draft.isNotBlank() && !sending,
                         panelHeight = panelHeight,
                     )
                 }
@@ -1348,13 +1309,12 @@ fun MyCommentRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.surfaceContainer)
+            .background(colors.surface)
             // One gesture detector for both: a separate detectTapGestures(onLongPress) swallows
             // the tap it sits next to, which is why the row never opened its page.
             .combinedClickable(onClick = onOpen, onLongClick = onDelete)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            // 通栏一行 + 发丝线，不做卡片：这一页和互动消息那张表是同一种行。
+            .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             LetterAvatar(
@@ -1407,6 +1367,11 @@ fun MyCommentRow(
                 color = colors.primary,
             )
         }
+        // 发丝线画在行内、贴满这一段内容宽度：列表里那一列靠它分出"一条一条"。
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = colors.outlineVariant.copy(alpha = 0.6f),
+        )
     }
 }
 
