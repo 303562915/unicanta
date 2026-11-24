@@ -151,6 +151,7 @@ import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
+import io.github.samolego.canta.util.currentTimeMillis
 import io.github.samolego.canta.util.TelemetryConfig
 import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
@@ -195,6 +196,14 @@ private const val BACKEND_PROBE_INTERVAL_MILLIS = 60_000L
  */
 private const val CHAT_NOTICE_POLL_MILLIS = 60_000L
 
+/**
+ * 未读聊天数的最短重问间隔。
+ *
+ * 那个数字要让后端把**全部会话**算一遍才知道（`conversationsFor(owner).sumOf { it.unread }`），
+ * 而计数用的 effect 跟着切页跑：底栏五个页面来回点，每点一次就是一份全量列表。
+ * 十秒内再来沿用上一次：红点晚十秒不算错。
+ */
+private const val CHAT_UNREAD_TTL_MILLIS = 10_000L
 /**
  * Where the manager behind Stellar/Shizuku comes from. The app points at the fork it recommends,
  * and this is also the fallback for "open the manager": shared code has no way to launch another
@@ -660,6 +669,13 @@ private fun CantaNavigation(
     // wears one number for both, the way a chat app's messages tab does, and the page itself splits
     // them again.
     var unreadChats by remember { mutableIntStateOf(0) }
+    // 上一次真的去问「有多少条未读聊天」的时间。
+    //
+    // 这个数字由一个**完整会话列表**算出来（`conversationsFor(owner).sumOf { it.unread }`），
+    // 而下面那段 effect 跟着切页和每分钟一拍跑：在底栏那五个页面上来回点，每点一次就拉一份全量会话。
+    // 线上实测这正是 conversations_for 的主要来源之一（切页比轮询密）。10 秒内再来沿用上一次的数字：
+    // 红点晚十秒不算错，一份全量列表却是实打实的几百毫秒与几 KB。
+    var chatsCountedAt by remember { mutableStateOf(0L) }
     var lastSeenReplyId by remember { mutableStateOf(0L) }
     var inboxSeenAt by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
@@ -720,7 +736,14 @@ private fun CantaNavigation(
         unreadChats = if (owner.isEmpty()) {
             0
         } else {
-            socialRepository.conversationsFor(owner).sumOf { it.unread }
+            val now = currentTimeMillis()
+            if (now - chatsCountedAt < CHAT_UNREAD_TTL_MILLIS) {
+                // 十秒内刚问过：沿用那一次的数字，不再为同一个红点拉一份全量会话列表。
+                unreadChats
+            } else {
+                chatsCountedAt = now
+                socialRepository.conversationsFor(owner).sumOf { it.unread }
+            }
         }
     }
 

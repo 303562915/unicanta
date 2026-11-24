@@ -733,7 +733,7 @@ fun ChatScreen(
     }
 
     // 兜底轮询：实时通道在跑时只当保险（10 秒一次），没有它就是唯一的来源（2 秒一次）。
-    // 每轮跑的都是增量（[refreshTailDelta]），只有计数满了的那一轮才会顺带整页核对（见 [refreshTail]）。
+    // 每轮跑的都是增量（[refreshTailDelta]），只有到点的那一轮才会顺带整页核对（见 [refreshTail]）。
     LaunchedEffect(conversationId, owner, liveUp) {
         if (conversationId <= 0L) return@LaunchedEffect
         val interval = if (liveUp) ChatPollFallbackMs else ChatPollMs
