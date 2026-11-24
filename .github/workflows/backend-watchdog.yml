@@ -119,7 +119,7 @@ jobs:
           set -uo pipefail
           stamp=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
           # 标题里必须带 UniCanta：仓库这个钉钉机器人配了自定义关键词，不含关键词的消息会被它丢掉（errcode 310000）。
-          title="UniCanta 后端存储变慢（还没挂，提前预警）"
+          title="unicanta 后端存储变慢（还没挂，提前预警）"
           payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg w "${WORST:-?}" \
             '{msgtype:"markdown",markdown:{title:$t,text:("### ⚠️ "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n- checkpoint 最慢："+$w+"s（正常 < 1s，> 5s 就开始拖慢查询）\n- 建议：现在去 Dashboard 看实例状态；继续恶化会变成连接池耗尽、全站 5xx")}}')
           resp=$(curl -sS -m 20 -X POST "$DING" -H 'Content-Type: application/json' -d "$payload" || echo '{"errcode":"curl-failed"}')
@@ -136,10 +136,10 @@ jobs:
           set -uo pipefail
           stamp=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
           if [ "${RECOVERED:-}" = "yes" ]; then
-            title="UniCanta 后端故障已自动恢复"
+            title="unicanta 后端故障已自动恢复"
             line="- 处理：已自动重启项目，用时 ${TOOK:-?}"
           else
-            title="UniCanta 后端不可用，需要人工处理"
+            title="unicanta 后端不可用，需要人工处理"
             line="- 处理：自动重启后 8 分钟内仍未恢复"
           fi
           payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg l "$line" \
