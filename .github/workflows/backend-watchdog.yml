@@ -1,0 +1,106 @@
+name: 🩺 Backend watchdog
+
+# 后端自愈巡检：每 10 分钟摸一次数据库，连不上就自动重启项目并通知钉钉。
+#
+# 为什么要有它：2026-11-24 那次事故是 Supabase 实例的存储层劣化（checkpoint 每次写盘
+# 30–53 秒），两小时后把连接池拖死，PostgREST 对所有请求返 5xx。当时只能等人工发现、
+# 人工重启。这个 job 把那段人工动作变成自动的：
+#
+#   1. 连续 3 次 `select 1` 都失败 → 认定数据库不可用（单次超时、冷启动抖动不算）
+#   2. 调管理 API 重启项目，然后每 20 秒探一次，直到 ACTIVE_HEALTHY 且查询能过
+#   3. 往钉钉发一条：自动恢复完成 / 需要人工处理
+#
+# 粒度说明：GitHub 的定时任务最小 5 分钟，实际还有排队延迟，所以「最多 10 分钟发现」，
+# 不是秒级。要秒级只能上外部监控（UptimeRobot 之类打 REST 端点）。
+
+on:
+  schedule:
+    # 每 10 分钟（UTC）：GitHub 的 cron 会被延迟，实际间隔通常 10–20 分钟
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watchdog:
+    name: 🩺 db health
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DING: ${{ secrets.DINGTALK_WEBHOOK }}
+      REF: axuhfogeovtsbxokqccf
+    steps:
+      - name: Probe database
+        id: probe
+        run: |
+          set -uo pipefail
+          for i in 1 2 3; do
+            code=$(curl -sS -m 25 -o /tmp/q.json -w '%{http_code}' -X POST \
+              "https://api.supabase.com/v1/projects/$REF/database/query" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"query":"select 1 as ok"}' || echo 000)
+            if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+              echo "第 $i 次探测：OK (HTTP $code)"
+              echo "state=ok" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "第 $i 次探测：HTTP $code — $(head -c 200 /tmp/q.json 2>/dev/null)"
+            sleep 10
+          done
+          echo "state=down" >> "$GITHUB_OUTPUT"
+          echo "### 🚨 数据库连续 3 次探测失败 ($(date -u +%FT%TZ))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restart project and wait for recovery
+        id: restart
+        if: steps.probe.outputs.state == 'down'
+        run: |
+          set -uo pipefail
+          start=$(date +%s)
+          code=$(curl -sS -m 90 -o /tmp/r.json -w '%{http_code}' -X POST \
+            "https://api.supabase.com/v1/projects/$REF/restart" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" -d '{}' || echo 000)
+          echo "restart 请求：HTTP $code"
+
+          for i in $(seq 1 24); do
+            sleep 20
+            status=$(curl -sS -m 20 -H "Authorization: Bearer $TOKEN" \
+              "https://api.supabase.com/v1/projects/$REF" | jq -r '.status // "?"')
+            qcode=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -X POST \
+              "https://api.supabase.com/v1/projects/$REF/database/query" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"query":"select 1"}' || echo 000)
+            echo "第 $i 次：status=$status query=$qcode"
+            if [ "$status" = "ACTIVE_HEALTHY" ] && { [ "$qcode" = "200" ] || [ "$qcode" = "201" ]; }; then
+              took=$(( $(date +%s) - start ))
+              echo "recovered=yes" >> "$GITHUB_OUTPUT"
+              echo "took=${took}s" >> "$GITHUB_OUTPUT"
+              echo "### ✅ 自动重启成功，用时 ${took}s" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "recovered=no" >> "$GITHUB_OUTPUT"
+          echo "### ❌ 自动重启后仍未恢复" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify DingTalk
+        if: always() && steps.probe.outputs.state == 'down'
+        env:
+          RECOVERED: ${{ steps.restart.outputs.recovered }}
+          TOOK: ${{ steps.restart.outputs.took }}
+        run: |
+          set -uo pipefail
+          stamp=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
+          if [ "${RECOVERED:-}" = "yes" ]; then
+            title="🩺 后端故障已自动恢复"
+            line="- 处理：已自动重启项目，用时 ${TOOK:-?}"
+          else
+            title="🚨 后端不可用，需要人工处理"
+            line="- 处理：自动重启后 8 分钟内仍未恢复"
+          fi
+          payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg l "$line" \
+            '{msgtype:"markdown",markdown:{title:$t,text:("### "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n"+$l+"\n- 现象：数据库连续 3 次探测失败（App 会看到所有社区页面空着）")}}')
+          curl -sS -m 20 -X POST "$DING" -H 'Content-Type: application/json' -d "$payload" >/dev/null
+          echo "已发送钉钉通知"
