@@ -8,7 +8,9 @@
 
 ## 0. 铁律：只改代码，构建全部交给 GitHub Actions
 
-本仓库**不提供也不支持本地构建**。每次完成用户要求的修改后，检查改动、提交并推送到远端，推送完成后直接结束，不等待或跟踪 GitHub Actions 的运行结果。用户明确要求查看或排查构建时再查询。
+本仓库**不提供也不支持本地构建**。每次完成用户要求的修改后，检查改动、提交并推送到远端——**推送是必做动作，不是可选项**。
+
+推送之后**不能直接结束**：必须派一个子智能体去跟踪这次推送的 CI 的 **debug 构建**（`build.yml` 的 `app-debug`）有没有报错，主智能体停在等待态，等子智能体跟踪完并回报「无报错」才算这一次任务完成。流程与判定标准见**第 3.1 节**。
 
 **绝对不做：**
 
@@ -78,7 +80,7 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 
 ---
 
-## 3. 标准工作流：改完就推，推送后直接结束
+## 3. 标准工作流：改完就推 → 派子智能体盯 debug → 无报错才收工
 
 ```bash
 cd /g/trae/respositories/unicanta   # 当前检出（Windows 上就是仓库根，别照抄旧笔记的 /sdcard 路径）
@@ -97,6 +99,27 @@ git push origin master             # 不要 --force，不要推空提交试探
 - 提交信息写"修了什么"而不是"改了哪些文件"；这个仓库的历史是「先连续几次 CI 失败、再一次性修好」的节奏，保持同样的可读性。
 - 不要为了让 CI 变绿去删测试、跳过测试、加 `|| true`、加 `continue-on-error`、把 `needs` 去掉。要修的是代码。
 - 不要 `git push --force`，不要 rebase 掉已推送的历史，不要直接改 `master` 上别人刚推的提交。
+
+### 3.1 推送后：派子智能体盯 debug，无报错才算完（强制）
+
+**改完 → 推送 → 派子智能体 → 等它回报 → 无报错才收工。** 这一步不是可选的，没有"推送成功就算完成"。
+
+**主智能体**
+
+1. 推送成功后立即用 `subagent` 派一个专门盯 CI 的子智能体，**不要自己蹲着 watch run**。
+2. 派完就停在等待态，等子智能体回报；**不许在回报到达前宣布任务完成**，也不许替子智能体猜结论。
+3. 回报是 `debug: 通过` → 本轮结束，汇报提交号 + run 链接。
+4. 回报是 `debug: 失败` → 按第 5 节读日志修，改完回到第 3 节（再次推送），再派子智能体重查。循环直到通过。
+
+**子智能体（只读，不改代码、不提交、不推送）**
+
+1. 取本次提交：`git rev-parse HEAD`，再 `gh run list --limit 10 --json databaseId,headSha,status,conclusion,workflowName,url` 找 `headSha` 与之相同的 run（主要是 `build.yml`；master 上另有 `development-release.yml`）。
+2. 等到跑完：`gh run watch <run-id> --exit-status`（已结束的直接跳过）；拿到 `conclusion`。
+3. 判定「debug 有没有报错」：与 debug 相关的 job（`build.yml` 里的测试 → `assembleDebug` 那几段）必须全部 `success`，且 `app-debug` artifact 存在。release / pages / docs 之类 job 的失败不算 debug 报错，但要单独写一行说明。
+4. 失败就取证据：`gh run view <run-id> --log-failed`，整理出「job 名 + 首个真实错误行 + 涉及的源码文件」；不要改代码，不要把 `|| true`、跳过测试之类当解决方案提出来。
+5. 固定回报三行：`debug: 通过|失败`、`run: <run-id> <url>`、`详情: <无 | 报错摘要>`。
+
+> 边界：子智能体只做只读排查（`gh run list/view/watch`、`git log/show`、读源码）。它发现的问题交回主智能体去改，改完由主智能体重新推送、重新派它复查。
 
 ---
 
@@ -149,7 +172,7 @@ gh run download <run-id> -n app-debug -D artifacts
 - [ ] 没有删/跳过测试，没有 `|| true`。
 - [ ] 如果改了 `.github/workflows/*.yml`，确认 YAML 可直接解析、`needs` 依赖的 job 名存在、artifact 名与第 2 节表格一致。
 - [ ] 如果改了 `gradle.properties` 版本号，说明这是有意的发版动作。
-- [ ] 推送成功后直接汇报提交和推送结果，GitHub Actions 构建结果尚未确认时如实说明。
+- [ ] 已推送，且已按第 3.1 节派子智能体跟踪本次 run 的 debug 构建；汇报里带「debug: 通过」或失败摘要，禁止在子智能体回报前宣布完成。
 
 ---
 
