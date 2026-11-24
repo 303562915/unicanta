@@ -221,7 +221,8 @@ fun FollowListScreen(
                     contentPadding = PaddingValues(vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    items(rows) { person ->
+                    // 用身份号做 key：刷新时同一个人沿用同一条，行不会整排重建（见 `stableMerge` 那套思路）。
+        items(rows, key = { it.id }) { person ->
                         FollowPersonRow(
                             person = person,
                             tab = tab,

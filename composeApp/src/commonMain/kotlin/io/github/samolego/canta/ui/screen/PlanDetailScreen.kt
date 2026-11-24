@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.cache.ScreenCache
+import io.github.samolego.canta.data.cache.stableMerge
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
@@ -322,7 +323,9 @@ fun PlanDetailScreen(
         val freshComments = repository.comments(planId, owner)
         val commentsOk = repository.lastError == null && !repository.lastFailureWasNetwork
         if (commentsOk) {
-            comments = freshComments
+            // 就地合并：点赞数、回复没变的那些评论沿用旧实例，评论区不整块重画。
+            val merged = stableMerge(comments, freshComments) { it.id }
+            if (merged !== comments) comments = merged
             loadError = null
         } else {
             // 失败时保留屏幕上那份（第一次进来就是缓存）：把已经看到的评论清成「还没有评论」，

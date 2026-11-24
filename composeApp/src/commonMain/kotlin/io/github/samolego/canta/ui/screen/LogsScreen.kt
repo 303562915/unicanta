@@ -62,7 +62,8 @@ fun LogsScreen(
         }
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-            items(logs) { logEntry -> LogEntryChip(logEntry, platform) }
+            // 时刻 + 包名当 key：记录本身没有 id，但这两样合起来在一条日志里就是唯一的那一行。
+        items(logs, key = { "${it.timestamp}:${it.packageName}" }) { logEntry -> LogEntryChip(logEntry, platform) }
         }
     }
 }

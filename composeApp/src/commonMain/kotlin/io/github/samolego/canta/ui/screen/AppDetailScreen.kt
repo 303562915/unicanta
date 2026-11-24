@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.cache.ScreenCache
+import io.github.samolego.canta.data.cache.stableMerge
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.AppReview
@@ -495,7 +496,11 @@ fun AppDetailScreen(
         val fixesOk = repo.lastError == null && !repo.lastFailureWasNetwork
 
         if (votesOk && fetchedVotes != null) votes = fetchedVotes
-        if (commentsOk) comments = fetchedComments
+        // 就地合并：没变的评论沿用旧实例，评论区不整块重画。
+        if (commentsOk) {
+            val mergedComments = stableMerge(comments, fetchedComments) { it.id }
+            if (mergedComments !== comments) comments = mergedComments
+        }
         if (fixesOk && fetchedFixes != null) descriptionFixes = fetchedFixes
         // The backend's copy of this install's vote wins over the local one: it is what the counts
         // next to it were computed from, and it survives a reinstall. 问不到的时候保留屏幕上那一份。
