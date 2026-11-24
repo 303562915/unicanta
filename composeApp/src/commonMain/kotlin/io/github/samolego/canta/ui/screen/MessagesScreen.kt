@@ -1282,8 +1282,8 @@ private fun MessageEntryRow(
  *
  * 点一下进会话，长按弹五条动作，顺序照抖音的消息页：免打扰 / 置顶 / 不显示 / 拉黑 / 删除。
  * 「标记已读」不在这里——进会话本身就标了，再多一个按钮只是让人多按一次。置顶的那一行在头像
- * 右上角点一个主色小圆点，底色换成 [FlSurfaceLevel.Card]——比在名字后面再写「置顶」两个字
- * 更省一行空间，扫一眼也够用。
+ * 右上角点一个主色小圆点，整行底色铺成深一档的灰（`surfaceContainerHighest`）——比在名字后面
+ * 再写「置顶」两个字更省一行空间，扫一眼也够用。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1310,8 +1310,10 @@ private fun ConversationRow(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(
+                    // 置顶那一行铺一层看得见的灰：原来用的 Card 和普通行的 surfaceContainer 在浅色
+                    // 主题下是同一个值（#FCF8F9），置顶等于没标——现在用深一档的 Highest，一眼能分出来。
                     if (conversation.pinned) {
-                        FlSurfaceLevel.Card.colorOf(scheme)
+                        scheme.surfaceContainerHighest
                     } else {
                         scheme.surfaceContainer
                     },

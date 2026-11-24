@@ -78,6 +78,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatMessage
+import io.github.samolego.canta.data.community.ChatMessageCache
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
@@ -85,9 +86,11 @@ import io.github.samolego.canta.data.community.PersonCard
 import io.github.samolego.canta.data.community.ShareCard
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionText
 import io.github.samolego.canta.ui.component.dropLastSticker
+import io.github.samolego.canta.ui.component.emotionOf
 import io.github.samolego.canta.ui.component.rememberEmotionPick
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -100,6 +103,7 @@ import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.decodeToImageBitmap
+import org.jetbrains.compose.resources.painterResource
 
 /** 一个气泡最宽多少：一行字到这儿换行，免得一条长消息把整块屏幕占满。 */
 private val ChatBubbleMaxWidth = 260.dp
@@ -183,16 +187,14 @@ private const val ChatImageDoubleTapZoom = 2.5f
  *
  * 「@ 群聊AI」带上一个尾巴空格，点完接着打字就是 @ 了一个人，不用再自己补一个空格。
  */
-private val ChatQuickPhrases = listOf(
-    ChatQuickPhrase(label = "👋 打招呼", insert = "打招呼"),
-    ChatQuickPhrase(label = "🔥 续火花", insert = "续火花"),
-    ChatQuickPhrase(label = "👍 赞", insert = "赞"),
-    ChatQuickPhrase(label = "😂 捂脸", insert = "捂脸"),
-    ChatQuickPhrase(label = "🌹 玫瑰", insert = "玫瑰"),
-)
-
-/** 一条快捷短语：显示的文字与填进输入框的文字分开，因为 emoji 不该跟着发出去。 */
-private data class ChatQuickPhrase(val label: String, val insert: String)
+/**
+ * 输入框上面那排「点一下就发」的表情。
+ *
+ * 抖音私信那一排就是这个：一排小图，点一颗**当场发出去**一条表情消息，不经过输入框，
+ * 也不用再按一次发送。所以这里是表情的 key，不是文字——文字那套（先填进草稿再发）
+ * 是输入框和表情面板的事。
+ */
+private val ChatQuickStickers = listOf("zan", "wulian", "meigui", "weixiao", "daxiao")
 
 /**
  * 私聊 / 群聊一页。
@@ -279,8 +281,14 @@ fun ChatScreen(
     blocked: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
-    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    // 上一次看过的这一屏先画出来：从消息页点进来时不该再看一次「… → 等网络」。
+    // 缓存是进程级的（见 [ChatMessageCache]），所以来回切页面不会重拉；网络回来的那一版再顶上去。
+    var messages by remember(conversationId) {
+        mutableStateOf(ChatMessageCache.get(conversationId).orEmpty())
+    }
+    var loading by remember(conversationId) {
+        mutableStateOf(ChatMessageCache.get(conversationId).isNullOrEmpty())
+    }
     var loadError by remember { mutableStateOf<String?>(null) }
     var draft by rememberSaveable(conversationId) { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
@@ -393,7 +401,8 @@ fun ChatScreen(
         showEmotions = false
         showMentions = false
         composerFocused = false
-        loading = true
+        // 有缓存就直接画缓存，不点 loading：那几行刚才还在屏幕上。
+        loading = messages.isEmpty()
         loadError = null
         detail = null
         tailId = null
@@ -420,6 +429,13 @@ fun ChatScreen(
         if (merged != messages) {
             messages = merged
             repository.markRead(owner, conversationId)
+        }
+    }
+
+    // 每变一次（新来的、发出的、撤回的、往上翻的）都把这一屏写回缓存：下一次进这个会话先画它。
+    LaunchedEffect(conversationId, messages) {
+        if (conversationId > 0L && messages.isNotEmpty()) {
+            ChatMessageCache.put(conversationId, messages)
         }
     }
 
@@ -523,6 +539,37 @@ fun ChatScreen(
                     // 名单跟着草稿一起清：下一条要 @ 谁得重新点。
                     pendingMentions = emptyList()
                     // 引用也跟着清：这条已经发出去了，下一条默认不带引用。
+                    replyTarget = null
+                } else {
+                    sendFailed = true
+                }
+                sending = false
+            }
+        }
+    }
+
+    /**
+     * 点一颗快捷表情：**当场发出去**，不经过输入框。
+     *
+     * 和输入栏的发送共用同一个 `sendMessage`，失败也共用同一条「没发出去，检查代理后再试」；
+     * 差别只在于正文是那一颗的 token（如 `[偷笑]`），发出去之后气泡里画成图。
+     */
+    val sendSticker: (Emotion) -> Unit = { emotion ->
+        if (!sending && conversationId > 0L) {
+            scope.launch {
+                sending = true
+                sendFailed = false
+                val sent = repository.sendMessage(
+                    owner = owner,
+                    conversation = conversationId,
+                    body = emotion.token,
+                    mentions = emptyList(),
+                    replyTo = replyTarget?.id,
+                )
+                if (sent != null) {
+                    messages = messages + sent
+                    // 发过的进「最近使用」，和面板里点过一颗是同一种记法。
+                    rememberEmotionPick(emotion.name)
                     replyTarget = null
                 } else {
                     sendFailed = true
@@ -887,8 +934,8 @@ fun ChatScreen(
                     }
                 }
             }
-            // 快捷短语只在「默认态」出现：面板一拉开，这一行就挤在面板和输入栏中间了。
-            if (!panelOpen && draft.isEmpty()) ChatQuickPhraseRow(onInsert = insert)
+            // 快捷表情只在「默认态」出现：面板一拉开，这一排就挤在面板和输入栏中间了。
+            if (!panelOpen && draft.isEmpty()) ChatStickerStrip(onPick = sendSticker)
             if (showMore) {
                 // 四个钮里只有「图片」真能用：其余三个点一下给一句话，不当哑巴按钮。
                 ChatMorePanel(
@@ -2008,28 +2055,32 @@ private fun ChatNewMessagesPill(count: Int, onClick: () -> Unit) {
     )
 }
 
-/** 输入框上面那排快捷短语：横向懒列表，胶囊样式和仓库里别的标签一致。 */
+/** 输入框上面那排「点一下就发」的表情：一排小图，点了立刻发一条，不进输入框。 */
 @Composable
-private fun ChatQuickPhraseRow(onInsert: (String) -> Unit) {
+private fun ChatStickerStrip(onPick: (Emotion) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(ChatQuickPhrases) { phrase ->
-            Text(
-                text = phrase.label,
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
+        items(ChatQuickStickers) { key ->
+            val emotion = emotionOf(key) ?: return@items
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(percent = 50))
+                    .size(38.dp)
+                    .clip(CircleShape)
                     .background(scheme.surfaceContainerHigh)
-                    .clickable(onClickLabel = phrase.label) { onInsert(phrase.insert) }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-            )
+                    .clickable(onClickLabel = emotion.name) { onPick(emotion) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(emotion.resource),
+                    contentDescription = emotion.name,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
         }
     }
 }
