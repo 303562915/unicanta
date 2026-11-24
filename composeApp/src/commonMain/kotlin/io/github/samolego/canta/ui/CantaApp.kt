@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,8 +52,6 @@ import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceUser
 import io.github.samolego.canta.core.PrivilegeChoice
 import io.github.samolego.canta.core.PrivilegeKind
-import io.github.samolego.canta.core.UpdateDownload
-import io.github.samolego.canta.core.InstallStage
 import io.github.samolego.canta.data.community.BackendHealth
 import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.ChatLiveSource
@@ -72,15 +69,10 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.privilege_root_refused
 import io.github.samolego.canta.generated.resources.privilege_root_opened
 import io.github.samolego.canta.generated.resources.badge_recommended_name
-import io.github.samolego.canta.generated.resources.about_update_download_toast
-import io.github.samolego.canta.generated.resources.about_auto_download_failed
 import io.github.samolego.canta.generated.resources.about_auto_install_paused
 import io.github.samolego.canta.generated.resources.about_download_page
 import io.github.samolego.canta.generated.resources.got_it
-import io.github.samolego.canta.generated.resources.about_install_done
 import io.github.samolego.canta.generated.resources.about_install_failed_title
-import io.github.samolego.canta.generated.resources.about_install_handoff
-import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.select_all_enabled
 import io.github.samolego.canta.generated.resources.select_all_tip
@@ -132,12 +124,9 @@ import io.github.samolego.canta.ui.screen.PresetsScreen
 import io.github.samolego.canta.ui.screen.RecommendationsScreen
 import io.github.samolego.canta.ui.screen.UploaderProfileScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
-import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.updateLabel
+import io.github.samolego.canta.ui.update.UpdateCenter
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
-import io.github.samolego.canta.ui.screen.DOWNLOAD_PROGRESS_UNKNOWN
-import io.github.samolego.canta.ui.screen.INSTALL_DONE_LINGER_MILLIS
-import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
 import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
@@ -163,7 +152,6 @@ import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.util.TelemetryConfig
-import io.github.samolego.canta.util.UpdateReport
 import io.github.samolego.canta.BuildInfo
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
@@ -171,7 +159,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlin.time.TimeSource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
@@ -406,80 +393,20 @@ private fun CantaNavigation(
     // 自己设的头像直链：个人页和「我的」那张身份卡都读它，所以在这里收一次，
     // 换完头像两处一起变（空串 = 没设过，两处都画首字母圆）。
     val myAvatarUrl by settingsViewModel.avatarUrl.collectAsStateWithLifecycle()
-    var autoInstallAsked by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
     val updateClient = remember { HttpClient() }
-
-    // One install at a time. The start-up path, the confirmation dialog and the about page can
-    // all reach the same APK, and two silent installs of one package make one of them fail for a
-    // reason the reader cannot see or act on — which then looks exactly like "一直在安装".
-    var installingUpdate by remember { mutableStateOf(false) }
     /**
-     * The per-route report of a refused install, shown as a dialog rather than a one-line toast:
-     * "装不上" is not actionable, "Shizuku 读不到这个目录 / root 没授权" is, and the reader needs to
-     * see every route that was tried before being sent to the download page.
+     * 更新只接线一次：启动时那条自动下载和「关于」页的手点，用的是同一份实现、同一个状态。
+     * 所以自动下载进来时，关于页那张卡片同样有进度条在动 —— 以前两条路各写一遍，自动那条
+     * 从不把状态告诉页面，看起来像"只有手点才会更新"。
      */
-    var installFailure by remember { mutableStateOf<String?>(null) }
-
-    // One install path for the automatic case and for the dialog: say that it is running, say how
-    // it ended, and only then let the process go. Every stage is spoken out loud on purpose — the
-    // report behind this change was "一直弹安装中，不知道到底装上了没有": the old path announced the
-    // start and then either vanished (success) or printed one opaque `pm` line (failure).
-    val installRelease: (UpdateState.ReadyToInstall) -> Unit = { ready ->
-        if (!installingUpdate) {
-            installingUpdate = true
-            coroutineScope.launch {
-                platform.showMessage(getString(Res.string.about_installing_version, ready.version))
-                val channelName = if (updateChannel == "dev") "dev" else "stable"
-                val startedAt = TimeSource.Monotonic.markNow()
-                // No progress is drawn from here (this path has no page); the stages are still
-                // wired so the record says which route the install was on when it failed.
-                var lastStage = InstallStage.PREPARING
-                val failure = platform.installUpdate(ready.path) { stage, _ -> lastStage = stage }
-                val elapsed = startedAt.elapsedNow().inWholeMilliseconds
-                if (failure == null) {
-                    deps.packageTelemetry.recordUpdate(
-                        stage = UpdateReport.STAGE_INSTALL,
-                        outcome = UpdateReport.OUTCOME_OK,
-                        channel = channelName,
-                        version = ready.version,
-                        elapsedMs = elapsed,
-                    )
-                    platform.showMessage(getString(Res.string.about_install_done, ready.version))
-                    // Let the line be read before the APK's process goes away; closing at once is
-                    // indistinguishable from a crash, which is what people kept reporting.
-                    delay(INSTALL_DONE_LINGER_MILLIS)
-                    platform.exitApp()
-                } else {
-                    // This build will not install itself on this phone: a foreign signature, a ROM
-                    // that refuses `pm install`, a runtime that stopped. Remembering the version is
-                    // what stops the next launch from downloading it again and showing the same
-                    // endless "正在安装" — the About page keeps the manual retry.
-                    settingsViewModel.saveSkippedAutoInstallVersion(ready.version)
-                    val handedOff = platform.requestInstall(ready.path)
-                    deps.packageTelemetry.recordUpdate(
-                        stage = if (handedOff) UpdateReport.STAGE_HANDOFF else UpdateReport.STAGE_INSTALL,
-                        outcome = if (handedOff) UpdateReport.OUTCOME_OK else UpdateReport.OUTCOME_FAILED,
-                        channel = channelName,
-                        version = ready.version,
-                        code = if (handedOff) "" else "REFUSED_ALL_ROUTES",
-                        reason = failure,
-                        // The last route tried, then every route's own refusal: together they say
-                        // whether it was permissions or the APK the package manager refused.
-                        detail = "stage=$lastStage\n$failure",
-                        elapsedMs = elapsed,
-                    )
-                    if (handedOff) {
-                        platform.showMessage(getString(Res.string.about_install_handoff, ready.version))
-                    } else {
-                        // No privileged route worked and the system installer would not open: the
-                        // dialog names each route's own refusal and offers the download page as
-                        // the last way out.
-                        installFailure = failure
-                    }
-                    installingUpdate = false
-                }
-            }
-        }
+    val updateCenter = remember {
+        UpdateCenter(
+            platform = platform,
+            settings = deps.settings,
+            telemetry = deps.packageTelemetry,
+            client = updateClient,
+            scope = coroutineScope,
+        )
     }
 
     // The poll below only asks while the app is visible: in the background nobody is reading the
@@ -590,11 +517,9 @@ private fun CantaNavigation(
     }
 
     LaunchedEffect(autoInstallUpdates, updateChannel, skippedAutoInstall) {
-        autoInstallAsked = null
         if (!autoInstallUpdates || updateChannel == null) return@LaunchedEffect
         // F-Droid signs its own builds; downloading this repo's APK over one of them cannot work.
         if (platform.isInstalledFromFdroid()) return@LaunchedEffect
-        val channel = if (updateChannel == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
 
         // One look at start-up misses every release published while the app stays open, so the
         // check repeats for the rest of the session — a person who keeps the app running in the
@@ -605,15 +530,8 @@ private fun CantaNavigation(
         // that is already here fresher.
         while (true) {
             if (appVisible) {
-                val release = try {
-                    latestReleaseFromPage(updateClient, channel)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // The about page is where a failure is named and what to do about it; a poll
-                    // that failed in the background has no one to tell and nothing to say.
-                    null
-                }
+                // 读法只有一份（UpdateCenter.poll）：读发布页、失败吞掉；关于页也用同一份状态。
+                val release = updateCenter.poll()
                 if (release != null && release.isNewerThanInstalled()) {
                     val label = updateLabel(release)
                     // This exact build already failed to install on its own. Another download and
@@ -627,76 +545,9 @@ private fun CantaNavigation(
                         }
                         return@LaunchedEffect
                     }
-                    // The download runs behind whatever page is open, so a notice in the theme
-                    // colour is the only signal that something new is on its way. It runs
-                    // alongside: the download starts at once.
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar(
-                            getString(Res.string.about_update_download_toast, label),
-                        )
-                    }
-                    // No progress is shown from here: a toast cannot carry a percentage, and the
-                    // About page is where the download renders its own bar. What matters at this
-                    // level is that every ending is spoken out loud.
-                    val channelName = if (channel == UpdateChannel.DEVELOPMENT) "dev" else "stable"
-                    val downloadStartedAt = TimeSource.Monotonic.markNow()
-                    var reached = DOWNLOAD_PROGRESS_UNKNOWN
-                    val result = downloadReleaseWithRetries(
-                        platform = platform,
-                        tag = release.tag,
-                        buildNumber = release.buildNumber,
-                        onProgress = { percent -> reached = percent },
-                    )
-                    val elapsed = downloadStartedAt.elapsedNow().inWholeMilliseconds
-                    when (result) {
-                        is UpdateDownload.Done -> {
-                            deps.packageTelemetry.recordUpdate(
-                                stage = UpdateReport.STAGE_DOWNLOAD,
-                                outcome = UpdateReport.OUTCOME_OK,
-                                channel = channelName,
-                                version = label,
-                                progress = 100,
-                                bytes = result.bytes,
-                                elapsedMs = elapsed,
-                            )
-                            val ready = UpdateState.ReadyToInstall(label, result.path)
-                            // Asking first is a switch, off by default: the download only ran
-                            // because automatic updates are on, so the install is the thing that
-                            // was asked for. Turned on, the dialog below is the second tap.
-                            if (settingsViewModel.confirmBeforeInstall.value) {
-                                autoInstallAsked = ready
-                            } else {
-                                installRelease(ready)
-                            }
-                        }
-                        // Said instead of dropped in silence: a download that ends with no word at
-                        // all is what made the previous "downloading" toast read as a lie. The
-                        // download page is the action, because a download problem cannot be fixed
-                        // by the installer. The failure is not remembered, so the next start tries
-                        // again.
-                        is UpdateDownload.Failed -> {
-                            // The start-up download has nobody watching it: without this row a
-                            // phone whose download always dies looks exactly like "更新没推送".
-                            deps.packageTelemetry.recordUpdate(
-                                stage = UpdateReport.STAGE_DOWNLOAD,
-                                outcome = UpdateReport.OUTCOME_FAILED,
-                                channel = channelName,
-                                version = label,
-                                code = result.failure.name,
-                                progress = reached,
-                                elapsedMs = elapsed,
-                            )
-                            coroutineScope.launch {
-                                val answer = snackbarHostState.showSnackbar(
-                                    message = getString(Res.string.about_auto_download_failed),
-                                    actionLabel = getString(Res.string.about_download_page),
-                                )
-                                if (answer == SnackbarResult.ActionPerformed) {
-                                    platform.openUrl(DOWNLOAD_PAGE_URL)
-                                }
-                            }
-                        }
-                    }
+                    // 下载、进度、安装、留痕全在 UpdateCenter 里：它只 toast 一句「正在下载」，
+                    // 并且把状态写给关于页，所以那里也看得到进度条。
+                    updateCenter.startDownload(release)
                     return@LaunchedEffect
                 }
             }
@@ -717,39 +568,28 @@ private fun CantaNavigation(
         if (storedOnboardingVersion >= CURRENT_ONBOARDING_VERSION) Screen.Main.route else Screen.Onboarding.route
     }
 
-    // "Not now" is an answer, not a request to ask again: the version is remembered, so the next
-    // launch neither downloads it again nor puts this dialog back on screen. Installing it by hand
-    // from the About page still works.
-    fun postponeAutoInstall(version: String) {
-        settingsViewModel.saveSkippedAutoInstallVersion(version)
-        autoInstallAsked = null
-    }
-
-    autoInstallAsked?.let { ready ->
+    // 下载完了等一句话（「安装前确认」开着才这样）：自动和手动共用这一个对话框。
+    updateCenter.pendingConfirm?.let { ready ->
         AlertDialog(
-            onDismissRequest = { postponeAutoInstall(ready.version) },
+            onDismissRequest = { updateCenter.postponePending() },
             title = { Text(stringResource(Res.string.about_install_title, ready.version)) },
             text = { Text(stringResource(Res.string.about_install_message)) },
             confirmButton = {
-                TextButton(onClick = {
-                    autoInstallAsked = null
-                    installRelease(ready)
-                }) { Text(stringResource(Res.string.about_install_confirm)) }
+                TextButton(onClick = { updateCenter.confirmPending() }) {
+                    Text(stringResource(Res.string.about_install_confirm))
+                }
             },
             dismissButton = {
-                TextButton(onClick = { postponeAutoInstall(ready.version) }) {
+                TextButton(onClick = { updateCenter.postponePending() }) {
                     Text(stringResource(Res.string.about_install_cancel))
                 }
             },
         )
     }
 
-    // Every privileged route refused and the system installer would not open. The report is one
-    // line per route (Shizuku directories, root, …), because which privilege failed decides what
-    // the reader does next; the download page is the way out that always exists.
-    installFailure?.let { report ->
+    updateCenter.installReport?.let { report ->
         AlertDialog(
-            onDismissRequest = { installFailure = null },
+            onDismissRequest = { updateCenter.dismissInstallReport() },
             title = { Text(stringResource(Res.string.about_install_failed_title)) },
             text = {
                 // Scrollable: one line per route, and a narrow screen must still be able to read
@@ -759,11 +599,11 @@ private fun CantaNavigation(
             confirmButton = {
                 TextButton(onClick = {
                     platform.openUrl(DOWNLOAD_PAGE_URL)
-                    installFailure = null
+                    updateCenter.dismissInstallReport()
                 }) { Text(stringResource(Res.string.about_download_page)) }
             },
             dismissButton = {
-                TextButton(onClick = { installFailure = null }) {
+                TextButton(onClick = { updateCenter.dismissInstallReport() }) {
                     Text(stringResource(Res.string.got_it))
                 }
             },
@@ -1129,9 +969,8 @@ private fun CantaNavigation(
                             }
                         }
                     },
-                    // 检查 / 下载 / 安装每一步都留一行到 `update_reports`：这一页是唯一看得到原因的
-                    // 地方，而它只在当事人手机上。
-                    updateTelemetry = deps.packageTelemetry,
+                    // 更新的那份实现与状态：这一页只画它，不再自己发请求，所以自动下载也有动画。
+                    updateCenter = updateCenter,
                 )
             }
             composable(route = Screen.Theme.route) {
