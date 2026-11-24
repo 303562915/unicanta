@@ -1490,5 +1490,11 @@ fun relativeStamp(
     val days = elapsed.inWholeDays
     if (days < 30L) return "${days}天前"
     if (days < 365L) return "${days / 30L}个月前"
-    return shortStamp(iso)
+    // 一年以上退回 "MM-dd HH:mm"：**按调用方给的 [zone]**（界面上是北京时间），而不是走
+    // [shortStamp] 那条固定北京时间的捷径——测试把 zone 钉成 UTC 来验这条兜底，两者不一致就会
+    // 差出八小时。这也让"传入的 zone"这个参数在最后一段分支上真的生效。
+    val local = parsed.toLocalDateTime(zone)
+    val hour = local.hour.toString().padStart(2, '0')
+    val minute = local.minute.toString().padStart(2, '0')
+    return local.date.toString().substring(5) + " " + hour + ":" + minute
 }
