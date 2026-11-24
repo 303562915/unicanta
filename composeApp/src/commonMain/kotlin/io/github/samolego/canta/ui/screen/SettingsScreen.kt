@@ -90,6 +90,7 @@ import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsTextItem
 import io.github.samolego.canta.ui.component.SwitchSettingsItem
 import io.github.samolego.canta.ui.dialog.LaunchGateDialog
+import io.github.samolego.canta.ui.dialog.RestoreExportDialog
 import io.github.samolego.canta.ui.fl.FlAccent
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
@@ -443,66 +444,6 @@ fun SettingsScreen(
                     restoreDialogShown = false
                     onExportRestoreScript(mode)
                 },
-            )
-        }
-    }
-}
-
-/**
- * 恢复脚本的两个版本，各占一行：记录里的按名字逐个装，全部的交给保底那段自己列。
- * 说清区别比让用户猜"导出全部"是什么意思重要。
- */
-@Composable
-private fun RestoreExportDialog(
-    onDismiss: () -> Unit,
-    onPick: (RestoreMode) -> Unit,
-) {
-    CantaDialog(
-        onDismissRequest = onDismiss,
-        title = "导出恢复脚本",
-        buttons = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
-        },
-    ) {
-        RestoreChoiceRow(
-            title = "最近删除的包名",
-            subtitle = "只写 Canta 记录里还没装回来的包，最后再保底全量恢复一次",
-            onClick = { onPick(RestoreMode.REMOVED) },
-        )
-        Spacer(Modifier.height(6.dp))
-        RestoreChoiceRow(
-            title = "导出全部",
-            subtitle = "不看记录：一键还原所有「已卸载但文件还在」的包",
-            onClick = { onPick(RestoreMode.ALL) },
-        )
-    }
-}
-
-/** 对话框里的一行可点选项：标题一行、说明一行，整行都是点击区。 */
-@Composable
-private fun RestoreChoiceRow(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = FlText.subheadline,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = subtitle,
-                style = FlText.caption2,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

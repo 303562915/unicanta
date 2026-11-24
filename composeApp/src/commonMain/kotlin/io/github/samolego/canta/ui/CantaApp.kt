@@ -88,6 +88,7 @@ import io.github.samolego.canta.ui.AppsTab
 import io.github.samolego.canta.ui.AppsType
 import io.github.samolego.canta.ui.dialog.CrashReportDialog
 import io.github.samolego.canta.ui.dialog.PrivilegeChooserDialog
+import io.github.samolego.canta.ui.dialog.restoreExportMessage
 import io.github.samolego.canta.ui.component.BottomBarItem
 import io.github.samolego.canta.ui.component.CollapsingBottomBar
 import io.github.samolego.canta.ui.component.FloatingPillBar
@@ -1276,21 +1277,7 @@ private fun CantaNavigation(
                     onExportRestoreScript = { mode ->
                         coroutineScope.launch {
                             val exported = deps.history.shareRestoreScript(mode)
-                            platform.showMessage(
-                                when {
-                                    exported.shared && mode == RestoreMode.ALL ->
-                                        "已生成一键恢复脚本（全部已卸载的包），选「发送到电脑」即可"
-
-                                    exported.shared && exported.packages > 0 ->
-                                        "已生成 ${exported.packages} 个包名的恢复脚本，选「发送到电脑」即可"
-
-                                    exported.shared -> "已生成恢复脚本（记录里没有待恢复的包），选「发送到电脑」即可"
-                                    exported.path != null ->
-                                        "已保存到 ${exported.path}，拷到电脑上双击运行"
-
-                                    else -> "这个版本不能导出文件"
-                                }
-                            )
+                            platform.showMessage(restoreExportMessage(exported))
                         }
                     },
                 )
@@ -2145,7 +2132,12 @@ private fun AppDetailRoute(
         onReinstall = { mainViewModel.reinstallPackage(packageName) },
     )
     // 上面那两个动作的弹窗由主屏用的那份实现来画：同一个 dialog 状态，同样的措辞。
-    MainDialogs(handler = handler, platform = platform, mainViewModel = mainViewModel)
+    MainDialogs(
+        handler = handler,
+        platform = platform,
+        mainViewModel = mainViewModel,
+        history = deps.history,
+    )
 }
 
 /**

@@ -40,6 +40,7 @@ import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
+import io.github.samolego.canta.data.history.RestoreMode
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.records_action_disable
 import io.github.samolego.canta.generated.resources.records_action_enable
@@ -65,7 +66,9 @@ import io.github.samolego.canta.ui.dialog.ShizukuRequirementDialog
 import io.github.samolego.canta.ui.dialog.UnsafeSelectionDialog
 import io.github.samolego.canta.ui.dialog.FailureDialog
 import io.github.samolego.canta.ui.dialog.ResumeBatchDialog
+import io.github.samolego.canta.ui.dialog.RestoreExportDialog
 import io.github.samolego.canta.ui.dialog.SuccessDialog
+import io.github.samolego.canta.ui.dialog.restoreExportMessage
 import io.github.samolego.canta.ui.dialog.UninstallAppsDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.ui.viewmodel.MainDialog
@@ -260,7 +263,7 @@ fun MainScreen(
         )
     }
 
-    MainDialogs(handler, platform, mainViewModel)
+    MainDialogs(handler, platform, mainViewModel, history)
 }
 
 @Composable
@@ -343,7 +346,13 @@ internal fun MainDialogs(
     handler: CantaHandler,
     platform: CantaPlatform,
     mainViewModel: MainViewModel,
+    /** Where the restore script comes from; null on builds that cannot hand a file out. */
+    history: OperationLogStore? = null,
 ) {
+    val scope = rememberCoroutineScope()
+    // 卸载成功之后的那一步：先把恢复脚本带走，再谈重启。弹窗关掉、选择框开着，是本页的两个状态。
+    var restorePicker by remember { mutableStateOf(false) }
+
     when (val dialog = mainViewModel.dialog) {
         null -> {}
         is MainDialog.ConfirmUninstall -> UninstallAppsDialog(
@@ -379,6 +388,15 @@ internal fun MainDialogs(
             count = dialog.count,
             kind = dialog.kind,
             onDismissRequest = mainViewModel::dismissDialog,
+            // 只有卸载会留下"起不来"的可能：恢复和停用都能一键回到原样，不需要这份文件。
+            onExportRestore = if (dialog.kind == OperationKind.UNINSTALL && history != null) {
+                {
+                    mainViewModel.dismissDialog()
+                    restorePicker = true
+                }
+            } else {
+                null
+            },
         )
         is MainDialog.Failure -> FailureDialog(
             attempts = dialog.attempts,
@@ -408,6 +426,22 @@ internal fun MainDialogs(
             onSystemPick = mainViewModel::pickSystemDevice,
             onSelect = mainViewModel::selectDevice,
             onDismiss = mainViewModel::dismissDialog,
+        )
+    }
+
+    // 导出哪一份：只导记录里的，还是不看记录、把全部已卸载的都装回来。
+    if (restorePicker) {
+        RestoreExportDialog(
+            onDismiss = { restorePicker = false },
+            onPick = { mode ->
+                restorePicker = false
+                history?.let { store ->
+                    scope.launch {
+                        val exported = store.shareRestoreScript(mode)
+                        platform.showMessage(restoreExportMessage(exported))
+                    }
+                }
+            },
         )
     }
 }
