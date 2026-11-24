@@ -60,8 +60,8 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.history.RestoreMode
-import io.github.samolego.canta.data.recommend.hasNewVotes
-import io.github.samolego.canta.data.recommend.newVotesSince
+import io.github.samolego.canta.data.recommend.hasNewApplied
+import io.github.samolego.canta.data.recommend.newAppliedSince
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.privilege_root_refused
 import io.github.samolego.canta.generated.resources.privilege_root_opened
@@ -790,19 +790,16 @@ private fun CantaNavigation(
         }
     }
 
-    // The vote queue's news, on the same principle as the inbox count above: a red dot on the
-    // recommendations entry while somebody has voted since this install last looked at the queue.
-    // What "last looked" means is stored as the queue's own shape (see `voteQueueFingerprint`), so
-    // the dot is a comparison rather than a countdown, and it goes out when the vote tab is opened
-    // — not when the page is left, which is what made the old counters feel like a tally.
+    // 红点只代表一件事：**有东西进精选了**（见 `appliedQueueFingerprint`）。
     //
-    // The queue is fetched here rather than only inside the page because the dot has to be there
-    // before the page is: an entry that waits to be visited before it says there is something to
-    // visit is not a notification. One call per resume, and failures leave the dot as it was.
+    // 以前这里比的是整份队列的票数指纹，于是别人给任何一条投一票、撤一票都会亮一次——那些票
+    // 和这一页的读者没有关系，那条东西既不是他投的、也没上榜。现在存的只有上榜条目的 id：
+    // 多一条上榜才亮，掉榜不算，票数怎么动都不算。看过投票那一格之后写回新的指纹。
     //
-    // Two readings of the same comparison: [newVotes] is "the queue moved", which is all a
-    // withdrawal can say, and [newVoteCount] is how many votes arrived, which the marker shows as
-    // a number the way an app's messages entry shows how many messages there are.
+    // 队列在这里也拉一次，是因为点必须在页面打开之前就在：要先进去看才知道有东西可看的提示，
+    // 不算提示。一次 resume 一趟调用，拉失败就保持原样。
+    //
+    // [newVotes] 是"有没有新上榜"，[newVoteCount] 是"新上榜几条"，后者就是标记上那个数字。
     var newVotes by remember { mutableStateOf(false) }
     var newVoteCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(countTick) {
@@ -810,8 +807,8 @@ private fun CantaNavigation(
         val voter = identity.owner.ifEmpty { identity.token }
         val queue = communityRepository.suggestedApps(voter) ?: return@LaunchedEffect
         val seen = deps.settings.votesSeenFlow.first()
-        newVotes = hasNewVotes(seen, queue)
-        newVoteCount = newVotesSince(seen, queue)
+        newVotes = hasNewApplied(seen, queue)
+        newVoteCount = newAppliedSince(seen, queue)
     }
 
     // A newer build than the one installed, for the marker that leads the way to it: the Settings
@@ -974,8 +971,11 @@ private fun CantaNavigation(
                     // take the reader to the page where they are removed.
                     installedPackages = appListViewModel.apps.map { it.packageName }.toSet(),
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
-                    // The queue has been read: remember the counts it showed and put the dot out.
-                    // Stored, not just cleared in memory, so a restart with no new votes stays quiet.
+                    // 新上榜的条数：那一个点画在投票那一格上（页内），底栏那格只在离开这一页时
+                    // 还留着，两处说的是同一件事，不是两份消息。
+                    newApplied = newVoteCount,
+                    // 投票那一格看完：把此刻上榜的 id 列表存下来，点熄灭。
+                    // 存进设置而不只是内存清零，重启之后没有新上榜也保持安静。
                     onVoteQueueSeen = { fingerprint ->
                         coroutineScope.launch {
                             deps.settings.setVotesSeen(fingerprint)
@@ -1793,10 +1793,8 @@ private fun bottomBarItems(
         add(BottomBarItem(BarKey.TWEAKS, FlGlyphs.tools, stringResource(Res.string.tab_tweaks), route == Screen.Tweaks.route))
     }
     if (showRecommend) {
-        // The marker is the vote queue's news, the way the one in the top bar is the inbox's: it
-        // goes out when the queue has been looked at, not when the page has been left. The count
-        // is only drawn off the page it points at — on the page itself every vote has been read
-        // by the time the screen is up.
+        // 标记只代表「有东西进精选了」，不是「有票在动」：别人给一条没上榜的东西投票，和这一页
+        // 的读者没有关系。看过投票那一格后点就熄灭；数字是新增上榜的条数，只在离开这一页时画。
         val votesOpen = route == Screen.Recommendations.route
         add(
             BottomBarItem(

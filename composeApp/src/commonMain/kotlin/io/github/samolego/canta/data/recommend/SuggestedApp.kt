@@ -72,70 +72,43 @@ data class SuggestedAppVote(
 }
 
 /**
- * The whole queue as one string: `id:agrees:disagrees` per entry, in id order.
+ * 「谁上榜了」的指纹：`applied:3,7`，上榜条目的 id，升序。
  *
- * It exists so "somebody voted since this install last looked" can be answered with a comparison
- * instead of a stored timestamp the phone's clock would have to agree with. Only the counts go in:
- * a vote changed, withdrawn or flipped moves one of them, and a new entry adds a triple. The
- * exact formatting does not matter — it is only ever compared against another one of these.
+ * 只记上榜，不记票数。这是这一页红点的全部定义：别人的每一票都要算消息的话，红点等于常亮——
+ * 那条东西既不是你投的、也没上榜，来了三票和你没有一点关系。这一页真正值得把人叫回来的事
+ * 只有一件：有东西进了精选。
  *
- * An empty queue still has a fingerprint, and it cannot be the empty string: that one is reserved
- * for "the page was never opened", which [hasNewVotes] reads as no news at all. Otherwise a visit
- * that found the queue empty, and a queue both empty and untried, would look the same and the
- * first vote to arrive would land on a page that thinks nobody has ever looked.
+ * 空队列也有指纹（`applied:`），而且不能是空串：空串表示「从没打开过」，那时不该有红点。
+ * 只带前缀没有 id 也照写，因为「上次看的时候一条都没上榜」本身就是一条可比较的状态。
  */
-fun voteQueueFingerprint(apps: List<SuggestedApp>): String =
-    if (apps.isEmpty()) "empty" else apps.sortedBy { it.id }.joinToString(";") { "${it.id}:${it.agrees}:${it.disagrees}" }
+fun appliedQueueFingerprint(apps: List<SuggestedApp>): String =
+    APPLIED_PREFIX + apps.asSequence()
+        .filter { it.applied }
+        .map { it.id }
+        .sorted()
+        .joinToString(",")
+
+/** 指纹前缀。升级前存的是 `id:认同:不认同` 或 `empty`，对不上一律当没看过。 */
+private const val APPLIED_PREFIX = "applied:"
 
 /**
- * Whether [apps] holds news compared to [seen] — the queue this install last looked at.
+ * 自 [seen] 之后新上榜的条目数。
  *
- * [seen] empty means the queue was never opened, and an install that has not looked yet is not
- * being paged: the first sight of the page stores the fingerprint without a dot. Otherwise any
- * difference, in either direction, is news: a vote withdrawn is as much a change as one cast.
+ * [seen] 为空、或者不是 [appliedQueueFingerprint] 写出来的格式（老版本留下来的指纹）时返回 0：
+ * 换一个版本不该换来一次「历史全算新」的红点。
  */
-fun hasNewVotes(seen: String, apps: List<SuggestedApp>): Boolean =
-    seen.isNotEmpty() && seen != voteQueueFingerprint(apps)
-
-/**
- * How many votes arrived since [seen] — the number the red marker on the recommendations entry
- * carries, where [hasNewVotes] only says "something".
- *
- * Only growth is counted: a vote cast moves the count up by one and the marker says "1"; a vote
- * withdrawn, or a flipped vote that keeps the total, is news but is not a *new vote*, so it
- * answers 0 and the caller falls back to the plain dot. A brand new entry brings its whole count
- * with it, which is the honest reading of "votes this install has not seen".
- *
- * [seen] being empty means the queue was never opened: nothing is new, exactly as in
- * [hasNewVotes].
- */
-fun newVotesSince(seen: String, apps: List<SuggestedApp>): Int {
-    if (seen.isEmpty()) {
-        return 0
-    }
-    val before = votesByEntry(seen)
-    return apps.sumOf { app ->
-        val now = app.agrees + app.disagrees
-        (now - (before[app.id] ?: 0)).coerceAtLeast(0)
-    }
+fun newAppliedSince(seen: String, apps: List<SuggestedApp>): Int {
+    if (!seen.startsWith(APPLIED_PREFIX)) return 0
+    val before = seen.removePrefix(APPLIED_PREFIX).idsOf()
+    return apps.count { it.applied && it.id !in before }
 }
 
-/** The per-entry vote totals inside a [voteQueueFingerprint], keyed by entry id. */
-private fun votesByEntry(fingerprint: String): Map<Long, Int> {
-    if (fingerprint == "empty") {
-        return emptyMap()
-    }
-    return fingerprint.splitToSequence(';').mapNotNull { triple ->
-        val parts = triple.split(':')
-        if (parts.size != 3) {
-            return@mapNotNull null
-        }
-        val id = parts[0].toLongOrNull() ?: return@mapNotNull null
-        val agrees = parts[1].toIntOrNull() ?: return@mapNotNull null
-        val disagrees = parts[2].toIntOrNull() ?: return@mapNotNull null
-        id to (agrees + disagrees)
-    }.toMap()
-}
+/** 指纹后半段那串 id；认不出来的跳过。 */
+private fun String.idsOf(): Set<Long> =
+    splitToSequence(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+
+/** 有没有新上榜的条目：底栏那格和投票标签上那个点，问的都是这一句。 */
+fun hasNewApplied(seen: String, apps: List<SuggestedApp>): Boolean = newAppliedSince(seen, apps) > 0
 
 /**
  * `owner/repo` of a GitHub project page, or null when [text] is not one.

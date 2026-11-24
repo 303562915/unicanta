@@ -81,7 +81,7 @@ import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.data.recommend.SuggestedApp
 import io.github.samolego.canta.data.recommend.githubOwnerOf
 import io.github.samolego.canta.data.recommend.githubProjectUrl
-import io.github.samolego.canta.data.recommend.voteQueueFingerprint
+import io.github.samolego.canta.data.recommend.appliedQueueFingerprint
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.recommend_by
 import io.github.samolego.canta.generated.resources.recommend_cat_files
@@ -219,6 +219,8 @@ fun RecommendationsScreen(
     onToggleLayout: () -> Unit = {},
     installedPackages: Set<String> = emptySet(),
     onOpenApp: (String) -> Unit = {},
+    /** 自上次看过投票那一格以来，新进精选的条目数：那个点就画在投票标签上。 */
+    newApplied: Int = 0,
     onVoteQueueSeen: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -283,8 +285,10 @@ fun RecommendationsScreen(
     // Looking at the queue is what makes it read: the fingerprint goes back to the caller, which
     // stores it and takes the dot off the tab. Opening the page is not enough — the list half says
     // nothing about votes — so this waits for the vote half and for the queue to have arrived.
+    // 打开投票那一格就算看过：写回的是「此刻上榜的 id 列表」，不是票数——票数每动一次都算
+    // 消息的话，红点永远亮着。队列空的时候也写：看过的那一刻一条都没上榜，本身是一个状态。
     LaunchedEffect(tab, suggested) {
-        if (tab == TAB_VOTE && suggested.isNotEmpty()) onVoteQueueSeen(voteQueueFingerprint(suggested))
+        if (tab == TAB_VOTE) onVoteQueueSeen(appliedQueueFingerprint(suggested))
     }
     val groups = remember(loaded) { loaded?.grouped().orEmpty() }
     // The pinned group is the shipped featured entries plus every proposal that cleared the bar:
@@ -381,7 +385,17 @@ fun RecommendationsScreen(
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("list", if (loaded == null) listTabLabel else "$listTabLabel ${loaded.apps.size}"),
-                        FlSegment("vote", if (suggested.isEmpty()) voteTabLabel else "$voteTabLabel ${suggested.size}"),
+                        FlSegment(
+                            "vote",
+                            buildString {
+                                append(voteTabLabel)
+                                if (suggested.isNotEmpty()) append(" ${suggested.size}")
+                                // 新上榜的点就画在这一格上：那条消息是投票区的，不是整页的。
+                                // 用实心圆点而不是数字，因为它说的是"有东西进精选了"，
+                                // 不是"有 12 票等你投"。
+                                if (newApplied > 0) append(" ●")
+                            },
+                        ),
                         FlSegment("airport", airportTabLabel),
                     ),
                     selectedIndex = tab,
