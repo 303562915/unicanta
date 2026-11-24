@@ -1,7 +1,6 @@
 package io.github.a303562915.unicanta
 
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,9 +13,13 @@ class MainActivity : FragmentActivity() {
         get() = application as CantaApplication
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            enableEdgeToEdge()
-        }
+        // 所有版本都显式开，不再按 SDK 分叉。
+        //
+        // 原来只在 Android 15 以下调用，15+ 交给系统强制；实测在**三键导航**（经典导航键）下
+        // 有的 ROM 并不铺满窗口：底部留一条纯黑，内容被顶上去——Bug 反馈群里红米 K80 Pro 那位
+        // 说的「这里不是全屏」就是这个，他切到全面屏手势就正常了。`enableEdgeToEdge()` 自己按
+        // 版本处理差异、重复调用无副作用，明确开一次比赌系统默认行为可靠。
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         app.platform.attachActivity(this)
