@@ -22,8 +22,13 @@ jobs:
     outputs:
       published: ${{ steps.publish.outputs.published }}
       version_name: ${{ steps.publish.outputs.version_name }}
-      # 图床（cloudflare-imgbed）上这份 APK 的直链；图床挂了就为空，通知里那一行自动不出现。
-      apk_mirror_url: ${{ steps.imagebed.outputs.url }}
+      # 图床上这份 APK 的文件名（含构建号）与是否传成功。**不能在这里传完整直链**：
+      # 直链里有 `unicanta`，而仓库某个 secret 的值是它的子串，GitHub 会以
+      # "may contain secret" 为由把含该子串的 job output 静默丢掉（logs 里是
+      # `Skip output '...' since it may contain secret`），下游拿到的就是空串。
+      # 所以直链由下游用这里传出的文件名自己拼（图床根地址在那边硬编码）。
+      apk_mirror_file: ${{ steps.imagebed.outputs.file }}
+      apk_mirror_ok: ${{ steps.imagebed.outputs.ok }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -152,9 +157,11 @@ jobs:
           APK="dist/androidApp-release-${RUN_NUMBER}.apk"
           # 目录固定 <项目根>/apk：安装包单独一层，和头像（unicanta/头像）、群聊图（unicanta/群聊）分开。
           FOLDER="${ROOT_DIR}/apk"
-          # 名字带版本 + 构建号 + 重跑次数：图床重名会 409，重跑同一个 run number 也不会撞。
+          # 名字带版本 + 构建号 + 重跑次数（图床重名会 409，重跑同一个 run number 也不会撞）。
+          # 刻意不带项目名前缀：这个文件名要通过 job output 传给下游，含 `canta` 子串会被 GitHub
+          # 当成 secret 丢掉（见 job outputs 上那段注释）；项目名已经在目录里了。
           RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-1}"
-          NAME="unicanta-dev-${VERSION_NAME}-b${RUN_NUMBER}-r${RUN_ATTEMPT}.apk"
+          NAME="dev-${VERSION_NAME}-b${RUN_NUMBER}-r${RUN_ATTEMPT}.apk"
           RESP=$(curl -sS --fail-with-body --max-time 600 -X POST "$BASE_URL/api/upload" \
             -F "file=@${APK};type=application/vnd.android.package-archive;filename=${NAME}" \
             -F "uid=${TOKEN}" \
@@ -164,16 +171,19 @@ jobs:
           URL=$(printf '%s' "$RESP" | jq -r '.url // empty' 2>/dev/null)
           if [ -z "$URL" ]; then
             echo "::warning::image bed mirror failed for $APK — the notice will carry the GitHub link only"
-            echo "url=" >> "$GITHUB_OUTPUT"
+            echo "file=" >> "$GITHUB_OUTPUT"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # 当场回读一次：图床收下了但读不出来，等于没镜像。
           if curl -sS -o /dev/null --fail --max-time 180 "$URL"; then
             echo "mirrored: $URL"
-            echo "url=$URL" >> "$GITHUB_OUTPUT"
+            echo "file=$NAME" >> "$GITHUB_OUTPUT"
+            echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::image bed URL is not readable: $URL"
-            echo "url=" >> "$GITHUB_OUTPUT"
+            echo "file=" >> "$GITHUB_OUTPUT"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
           fi
 
   notify:
@@ -191,7 +201,7 @@ jobs:
       build_number: ${{ github.run_number }}
       commit_sha: ${{ github.sha }}
       release_url: https://github.com/303562915/unicanta/releases/tag/dev
-      apk_url: ${{ needs.publish.outputs.apk_mirror_url }}
+      apk_mirror_file: ${{ needs.publish.outputs.apk_mirror_ok == 'true' && needs.publish.outputs.apk_mirror_file || '' }}
 
   notify-group:
     name: 📣 Group notice (development release)
@@ -207,5 +217,5 @@ jobs:
       build_number: ${{ github.run_number }}
       commit_sha: ${{ github.sha }}
       apk_url: https://github.com/303562915/unicanta/releases/download/dev/androidApp-release-${{ github.run_number }}.apk
-      apk_mirror_url: ${{ needs.publish.outputs.apk_mirror_url }}
+      apk_mirror_file: ${{ needs.publish.outputs.apk_mirror_ok == 'true' && needs.publish.outputs.apk_mirror_file || '' }}
       sums_url: https://github.com/303562915/unicanta/releases/download/dev/SHA256SUMS-${{ github.run_number }}.txt

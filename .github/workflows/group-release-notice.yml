@@ -35,8 +35,8 @@ on:
         description: "APK 直链（GitHub）"
         type: string
         default: ""
-      apk_mirror_url:
-        description: "APK 直链（图床镜像，空 = 不写这一行）"
+      apk_mirror_file:
+        description: "图床上的 APK 文件名（如 dev-4.3.5-b373-r1.apk，空 = 不写这一行）"
         type: string
         default: ""
       sums_url:
@@ -68,7 +68,7 @@ jobs:
           BUILD: ${{ inputs.build_number }}
           HEAD_COMMIT: ${{ inputs.commit_sha }}
           APK_URL: ${{ inputs.apk_url }}
-          APK_MIRROR_URL: ${{ inputs.apk_mirror_url }}
+          APK_MIRROR_FILE: ${{ inputs.apk_mirror_file }}
           SUMS_URL: ${{ inputs.sums_url }}
         run: |
           set -euo pipefail
@@ -88,8 +88,10 @@ jobs:
               printf '提交：%s\n' "$(printf '%s' "$HEAD_COMMIT" | cut -c1-7)"
             fi
             printf '\n下载页（点开用浏览器下载）：\nhttps://303562915.github.io/unicanta/\n'
-            if [ -n "$APK_MIRROR_URL" ]; then
-              printf '\nAPK 直链（图床，国内更快）：\n%s\n' "$APK_MIRROR_URL"
+            # 图床直链在这里拼：完整 URL 含项目名，过不了 job output（会被当成 secret 丢掉），
+            # 所以发版工作流只传文件名，根地址和目录固定写在下面（与 ImageBed.kt 的 BASE_URL / ROOT 一致）。
+            if [ -n "${APK_MIRROR_FILE:-}" ]; then
+              printf '\nAPK 直链（图床，国内更快）：\nhttps://cloudflare-imgbed-erh.pages.dev/file/unicanta/apk/%s\n' "$APK_MIRROR_FILE"
             fi
             if [ -n "$APK_URL" ]; then
               printf '\nAPK 直链（GitHub 备用）：\n%s\n' "$APK_URL"

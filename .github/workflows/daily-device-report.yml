@@ -36,8 +36,8 @@ on:
         description: "发布页链接"
         type: string
         default: ""
-      apk_url:
-        description: "APK 直链（图床镜像，空 = 不写这一行）"
+      apk_mirror_file:
+        description: "图床上的 APK 文件名（如 dev-4.3.5-b373-r1.apk，空 = 不写这一行）"
         type: string
         default: ""
     secrets:
@@ -87,10 +87,16 @@ jobs:
           BUILD_NUMBER: ${{ inputs.build_number }}
           HEAD_COMMIT: ${{ inputs.commit_sha }}
           RELEASE_URL: ${{ inputs.release_url }}
-          APK_URL: ${{ inputs.apk_url }}
+          APK_MIRROR_FILE: ${{ inputs.apk_mirror_file }}
         run: |
           set -euo pipefail
           STAMP=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
+          # 图床直链在这里拼：完整 URL 含项目名，过不了 job output（会被当成 secret 丢掉），
+          # 所以发版工作流只传文件名，根地址和目录固定写在下面（与 ImageBed.kt 的 BASE_URL / ROOT 一致）。
+          APK_URL=""
+          if [ -n "${APK_MIRROR_FILE:-}" ]; then
+            APK_URL="https://cloudflare-imgbed-erh.pages.dev/file/unicanta/apk/${APK_MIRROR_FILE}"
+          fi
           case "${KIND:-daily}" in
             development) TITLE="unicanta 开发版已发布"; CHANNEL="开发版（dev）" ;;
             stable)      TITLE="unicanta 正式版已发布"; CHANNEL="正式版（${RELEASE_TAG}）" ;;
