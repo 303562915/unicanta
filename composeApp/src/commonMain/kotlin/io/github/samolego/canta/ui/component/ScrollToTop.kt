@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 
 /**
  * 「双击底栏当前那一格 → 整页回顶部」的信号源。
@@ -40,8 +41,12 @@ private fun shouldScroll(index: Int, offset: Int): Boolean = index > 0 || offset
 @Composable
 fun ScrollToTopEffect(state: LazyListState) {
     val tick = ScrollToTop.tick
+    // 页面刚被组合出来时（从别的页面返回、切回这一页），历史上那次双击不该再作用一次：
+    // 记下进来时的值，只有之后的变化才算「用户刚刚双击了底栏」。不记这一步，返回后列表会被
+    // 上一轮的信号顶回顶部，刚恢复的滚动位置当场被顶掉。
+    val baseline = remember { tick }
     LaunchedEffect(tick) {
-        if (tick == 0) return@LaunchedEffect
+        if (tick == baseline) return@LaunchedEffect
         if (shouldScroll(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)) {
             state.animateScrollToItem(0)
         }
@@ -52,8 +57,9 @@ fun ScrollToTopEffect(state: LazyListState) {
 @Composable
 fun ScrollToTopEffect(state: LazyGridState) {
     val tick = ScrollToTop.tick
+    val baseline = remember { tick }
     LaunchedEffect(tick) {
-        if (tick == 0) return@LaunchedEffect
+        if (tick == baseline) return@LaunchedEffect
         if (shouldScroll(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)) {
             state.animateScrollToItem(0)
         }
@@ -64,8 +70,9 @@ fun ScrollToTopEffect(state: LazyGridState) {
 @Composable
 fun ScrollToTopEffect(state: ScrollState) {
     val tick = ScrollToTop.tick
+    val baseline = remember { tick }
     LaunchedEffect(tick) {
-        if (tick == 0) return@LaunchedEffect
+        if (tick == baseline) return@LaunchedEffect
         if (state.value > 0) state.animateScrollTo(0)
     }
 }
