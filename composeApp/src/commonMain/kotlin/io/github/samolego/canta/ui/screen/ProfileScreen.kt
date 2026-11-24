@@ -79,15 +79,6 @@ import org.jetbrains.compose.resources.stringResource
 /** 名字最长到这儿（和原来「我的」页那个对话框同一个数）：再长列表里那一行就该换行了。 */
 private const val MAX_NAME_LENGTH = 24
 
-/**
- * 裁剪预览图的上限：长边 ≤2048、≤400KB。
- *
- * 为什么先缩一份再摆裁剪框：原图可能两千万像素，直接解成 `ImageBitmap` 要几十 MB，低端机上会
- * 直接闪退；而裁剪只需要"看得清挪到哪儿了"，2048 的缩图完全够。**真正下刀的还是原图**——
- * 裁剪框在预览里量出来的比例，原图和预览是同一个比例。
- */
-private const val AvatarPreviewBytes = 409_600
-
 /** 中间那个头像的直径。 */
 private val AvatarSize = 96.dp
 
@@ -128,7 +119,7 @@ fun ProfileScreen(
     onSaveName: (String) -> Unit,
     onAvatarSaved: (String) -> Unit,
     pickImage: suspend () -> ByteArray?,
-    /** 把一张图缩到预览尺寸（见 [AvatarPreviewBytes]）：裁剪框摆在这张缩图上，原图太大会 OOM。 */
+    /** 把一张图缩到预览尺寸（见 [ImageBed.AVATAR_PREVIEW_BYTES]）：裁剪框摆在这张缩图上，原图太大会 OOM。 */
     compressImage: (ByteArray) -> ByteArray?,
     /** 头像专用：按裁剪框裁成正方形、缩到头像尺寸，再压到 `20–200KB` 那一档（见 `ImageBed`）。 */
     compressAvatar: (ByteArray, ImageCrop?) -> ByteArray?,
@@ -190,9 +181,8 @@ fun ProfileScreen(
                     try {
                         val picked = pickImage()
                         if (picked != null) {
-                            val preview = withContext(Dispatchers.Default) {
-                                compressImage(picked, AvatarPreviewBytes)
-                            }
+                            // 上层已经把这个 lambda 绑到预览上限（长边 ≤2048、≤400KB），这里只传字节。
+                            val preview = withContext(Dispatchers.Default) { compressImage(picked) }
                             val bitmap = preview?.let { bytes ->
                                 runCatching { bytes.decodeToImageBitmap() }.getOrNull()
                             }

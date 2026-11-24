@@ -1147,7 +1147,7 @@ private fun CantaNavigation(
                     // 相册与压缩都来自平台层，和聊天发图那两处接的是同一个实现。
                     pickImage = { platform.pickImage() },
                     // 预览用的是聊天那套压缩（长边 ≤2048、≤400KB）：裁剪框摆在这张缩图上，原图太大会 OOM。
-                    compressImage = { bytes -> platform.compressImage(bytes, 409_600) },
+                    compressImage = { bytes -> platform.compressImage(bytes, ImageBed.AVATAR_PREVIEW_BYTES) },
                     // 真正落地的是头像专用那一条：裁方 + 缩到 256 + 压到 200KB 以内。
                     compressAvatar = { bytes, crop ->
                         platform.compressAvatar(bytes, crop, ImageBed.AVATAR_MAX_BYTES)

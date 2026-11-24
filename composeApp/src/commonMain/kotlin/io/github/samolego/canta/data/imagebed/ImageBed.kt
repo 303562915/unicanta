@@ -76,6 +76,14 @@ object ImageBed {
      */
     const val AVATAR_MIN_BYTES = 20_480
 
+    /**
+     * 裁剪预览图的上限：长边 ≤2048、≤400 KiB（由 `CantaPlatform.compressImage` 压出来）。
+     *
+     * 换头像时先把原图缩成这一份再摆裁剪框：原图可能两千万像素，直接解成位图要几十 MB，低端机会闪退；
+     * 而裁剪只需要"看得清挪到哪儿了"。**真正下刀的是原图**，预览只用来量比例。
+     */
+    const val AVATAR_PREVIEW_BYTES = 409_600
+
     /** [id] 的公开地址。读图不需要任何鉴权。 */
     fun fileUrl(id: String): String = "$BASE_URL/file/" + encodePath(id.trimStart('/'))
 
