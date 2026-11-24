@@ -86,7 +86,8 @@ class AudioWhitelistParseTest {
         // These are what a bug report carries: the properties the ROM has and what the two global
         // settings hold. Dropping them silently would leave "no effect" undiagnosable.
         val state = AudioWhitelist.parse(
-            sample +
+            // The leading newline matters: sample ends with "##END##" and no trailing line break.
+            sample + "\n" +
                 "##PROP##[persist.sys.scene.partition.level]:   [1]\n" +
                 "##SETTING##debug_audio_cloud=null\n" +
                 "##XMLHEAD##<TrackCustomEfxConfig name=\"trackefx_config\">\n",
