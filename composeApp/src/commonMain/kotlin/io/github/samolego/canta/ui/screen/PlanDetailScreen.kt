@@ -652,6 +652,8 @@ fun PlanDetailScreen(
                         noteDraft = currentNote
                         editingNote = true
                     },
+                    planId = planId,
+                    loading = loading,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -788,6 +790,10 @@ private fun PlanDetailContent(
     anchorCommentId: Long = 0L,
     /** The uploader's tap on "补一句说明 / 改说明"; null on a plan this install did not upload. */
     onEditNote: ((String) -> Unit)? = null,
+    /** 这一页是谁的方案号：评论线程的缓存按它分格，缺了就把缓存那一格画错。 */
+    planId: Long = 0L,
+    /** 首帧网络那批还没到：评论线程这时先画缓存里那一份，而不是画一个空。 */
+    loading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
