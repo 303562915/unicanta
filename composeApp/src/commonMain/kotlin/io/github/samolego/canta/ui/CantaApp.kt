@@ -4,6 +4,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,8 +69,10 @@ import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.generated.resources.about_auto_download_failed
 import io.github.samolego.canta.generated.resources.about_auto_install_paused
+import io.github.samolego.canta.generated.resources.about_download_page
+import io.github.samolego.canta.generated.resources.got_it
 import io.github.samolego.canta.generated.resources.about_install_done
-import io.github.samolego.canta.generated.resources.about_install_failed
+import io.github.samolego.canta.generated.resources.about_install_failed_title
 import io.github.samolego.canta.generated.resources.about_install_handoff
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.preset_save_error
@@ -121,6 +126,7 @@ import io.github.samolego.canta.ui.screen.UploaderProfileScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.updateLabel
+import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
 import io.github.samolego.canta.ui.screen.INSTALL_DONE_LINGER_MILLIS
 import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
 import io.github.samolego.canta.ui.screen.UpdateChannel
@@ -172,9 +178,6 @@ private const val SECRET_TAPS_HINT_AFTER = 3
  * is on screen, because a check the person cannot see the result of is just traffic.
  */
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
-
-/** How much of `pm install`'s output a toast carries; the rest is in the log. */
-private const val INSTALL_FAILURE_CHARS = 200
 
 /**
  * How often the "no VPN" reminder is asked again while the app is on screen. The community
@@ -370,6 +373,12 @@ private fun CantaNavigation(
     // all reach the same APK, and two silent installs of one package make one of them fail for a
     // reason the reader cannot see or act on — which then looks exactly like "一直在安装".
     var installingUpdate by remember { mutableStateOf(false) }
+    /**
+     * The per-route report of a refused install, shown as a dialog rather than a one-line toast:
+     * "装不上" is not actionable, "Shizuku 读不到这个目录 / root 没授权" is, and the reader needs to
+     * see every route that was tried before being sent to the download page.
+     */
+    var installFailure by remember { mutableStateOf<String?>(null) }
 
     // One install path for the automatic case and for the dialog: say that it is running, say how
     // it ended, and only then let the process go. Every stage is spoken out loud on purpose — the
@@ -394,16 +403,14 @@ private fun CantaNavigation(
                     // endless "正在安装" — the About page keeps the manual retry.
                     settingsViewModel.saveSkippedAutoInstallVersion(ready.version)
                     val handedOff = platform.requestInstall(ready.path)
-                    platform.showMessage(
-                        if (handedOff) {
-                            getString(Res.string.about_install_handoff, ready.version)
-                        } else {
-                            getString(
-                                Res.string.about_install_failed,
-                                failure.take(INSTALL_FAILURE_CHARS),
-                            )
-                        },
-                    )
+                    if (handedOff) {
+                        platform.showMessage(getString(Res.string.about_install_handoff, ready.version))
+                    } else {
+                        // No privileged route worked and the system installer would not open: the
+                        // dialog names each route's own refusal and offers the download page as
+                        // the last way out.
+                        installFailure = failure
+                    }
                     installingUpdate = false
                 }
             }
@@ -582,9 +589,17 @@ private fun CantaNavigation(
                         }
                         // Said instead of dropped in silence: a download that ends with no word at
                         // all is what made the previous "downloading" toast read as a lie. The
-                        // failure is not remembered, so the next launch tries again.
+                        // download page is the action, because a download problem cannot be fixed
+                        // by the installer. The failure is not remembered, so the next start tries
+                        // again.
                         is UpdateDownload.Failed -> coroutineScope.launch {
-                            snackbarHostState.showSnackbar(getString(Res.string.about_auto_download_failed))
+                            val answer = snackbarHostState.showSnackbar(
+                                message = getString(Res.string.about_auto_download_failed),
+                                actionLabel = getString(Res.string.about_download_page),
+                            )
+                            if (answer == SnackbarResult.ActionPerformed) {
+                                platform.openUrl(DOWNLOAD_PAGE_URL)
+                            }
                         }
                     }
                     return@LaunchedEffect
@@ -629,6 +644,32 @@ private fun CantaNavigation(
             dismissButton = {
                 TextButton(onClick = { postponeAutoInstall(ready.version) }) {
                     Text(stringResource(Res.string.about_install_cancel))
+                }
+            },
+        )
+    }
+
+    // Every privileged route refused and the system installer would not open. The report is one
+    // line per route (Shizuku directories, root, …), because which privilege failed decides what
+    // the reader does next; the download page is the way out that always exists.
+    installFailure?.let { report ->
+        AlertDialog(
+            onDismissRequest = { installFailure = null },
+            title = { Text(stringResource(Res.string.about_install_failed_title)) },
+            text = {
+                // Scrollable: one line per route, and a narrow screen must still be able to read
+                // every one of them before deciding what to do next.
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) { Text(report) }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    platform.openUrl(DOWNLOAD_PAGE_URL)
+                    installFailure = null
+                }) { Text(stringResource(Res.string.about_download_page)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { installFailure = null }) {
+                    Text(stringResource(Res.string.got_it))
                 }
             },
         )

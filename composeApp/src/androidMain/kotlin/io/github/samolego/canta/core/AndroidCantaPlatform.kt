@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
+import io.github.samolego.canta.core.root.suBinaryPath
 import io.github.samolego.canta.core.shizuku.ShizukuShell
 import io.github.samolego.canta.util.LogUtils
 import io.ktor.client.HttpClient
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -49,6 +51,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipFile
 import kotlin.system.exitProcess
 
@@ -58,6 +61,12 @@ class AndroidCantaPlatform(
 
     companion object {
         private const val TAG = "AndroidCantaPlatform"
+
+        /** One channel's error line in the install report: the cause, not the whole `pm` dump. */
+        private const val INSTALL_ERROR_CHARS = 160
+
+        /** A root install that never answers is a prompt nobody tapped: reported, not waited on. */
+        private const val ROOT_INSTALL_TIMEOUT_MILLIS = 20_000L
 
         /** How long a silent socket may stay open before the transfer is called stalled. */
         private const val STALL_TIMEOUT_MILLIS = 45_000L
@@ -835,7 +844,13 @@ class AndroidCantaPlatform(
         }
     }
 
-    /** Whether [file] is a whole APK: a zip that still carries the manifest `pm install` reads. */
+    /**
+     * Whether [file] is a whole APK: a zip that still carries the manifest `pm install` reads.
+     *
+     * Only completeness is decided here. Whether the APK belongs to this app is checked once, at
+     * install time — doing it here as well would turn a foreign build (a debug install fetching
+     * the release APK) into six download retries instead of one sentence that says why.
+     */
     private fun isCompleteApk(file: File): Boolean = runCatching {
         ZipFile(file).use { it.getEntry("AndroidManifest.xml") != null }
     }.getOrDefault(false)
@@ -952,50 +967,173 @@ class AndroidCantaPlatform(
             }
         }
 
-    /** Whether this package was updated at or after [since], epoch milliseconds. */
+    /**
+     * Whether this package was updated at or after [since], epoch milliseconds.
+     *
+     * A two-second margin: `lastUpdateTime` comes from the package manager's own clock and can be
+     * truncated to the second, and a success read as a failure would reopen the system installer
+     * over an update that is already in place.
+     */
     private fun wasReplacedSince(since: Long): Boolean = runCatching {
-        context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime >= since
+        context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime >= since - 2_000L
     }.getOrDefault(false)
 
     /** The body of [installUpdate]; only ever runs while [updateInstall] is held. */
     private suspend fun installUpdateLocked(path: String): String? = withContext(Dispatchers.IO) {
         val file = File(path)
-        if (!file.exists()) return@withContext "update file is missing: $path"
+        if (!file.exists()) return@withContext "安装包不见了：$path"
 
-        val direct = runInstall(file.absolutePath)
-        if (direct == null) {
+        // A debug install downloads the same release APK, and `pm install` would happily put that
+        // second copy next to this one under its own package name — a second Canta, not an update.
+        // Refused with a sentence that says exactly that.
+        val archiveName = runCatching {
+            context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)?.packageName
+        }.getOrNull()
+        if (archiveName != null && archiveName != context.packageName) {
+            return@withContext "这个安装包的包名是 $archiveName，当前应用是 ${context.packageName}，它不会覆盖安装"
+        }
+
+        // Every home the APK is offered to `pm` through, cheapest first, plus the root shell as the
+        // last privileged route. Each refusal keeps its own line: "装不上" is not actionable,
+        // "Shizuku 读不到这个目录 / root 没授权" is — and the caller prints all of them.
+        val attempts = linkedMapOf<String, String>()
+
+        suspend fun tryChannel(channel: String, install: suspend () -> String?): Boolean {
+            // A channel that throws is a channel that failed: an out-of-memory base64 push or a
+            // runtime that dies mid-call must become one report line, not an aborted batch.
+            val failure = try {
+                install()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // `Throwable`, not `Exception`: the base64 push allocates the whole APK, and an
+                // OutOfMemoryError from it has to become a line in the report, not the end of the
+                // install path.
+                "通道异常：${summarized(e.toString())}"
+            } ?: return true
+            attempts[channel] = summarized(failure)
+            LogUtils.w(TAG, "$channel refused the install: $failure")
+            return false
+        }
+
+        if (tryChannel("Shizuku·应用目录") { runInstall(file.absolutePath) }) {
             file.delete()
             return@withContext null
         }
-        LogUtils.w(TAG, "pm install from the app dir failed: $direct")
 
         // The public Downloads folder is one MediaStore write away and readable by the shell.
         val staged = stageInDownloads(file)
         if (staged != null) {
             val (stagedPath, stagedUri) = staged
-            val failure = runInstall(stagedPath)
+            val installed = tryChannel("Shizuku·下载目录") { runInstall(stagedPath) }
             runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
-            if (failure == null) {
+            if (installed) {
                 file.delete()
                 return@withContext null
             }
-            LogUtils.w(TAG, "pm install from $stagedPath failed: $failure")
         }
 
-        // The chunked push to /data/local/tmp is the path that works everywhere Shizuku does; its
-        // answer is the one shown to the reader, since it is the last attempt made.
-        installViaTmp(file)?.let { return@withContext it }
-        file.delete()
-        null
+        // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
+        if (tryChannel("Shizuku·临时目录") { installViaTmp(file) }) {
+            file.delete()
+            return@withContext null
+        }
+
+        // A rooted phone can install what the shell cannot read, but not a build the package
+        // manager itself refuses (a foreign signature, a downgrade): that refusal is the same
+        // whoever asks, and a root prompt for it is a prompt for nothing.
+        val rootShell = suBinaryPath()
+        if (rootShell == null) {
+            attempts["root"] = "这台手机没有 su"
+        } else if (attempts.values.any { looksLikeAccessProblem(it) }) {
+            if (tryChannel("root") { installAsRoot(rootShell, file.absolutePath) }) {
+                file.delete()
+                return@withContext null
+            }
+        } else {
+            attempts["root"] = "没试：上面的失败不是权限或路径问题"
+        }
+
+        // The APK stays on disk on purpose: the caller's last move is the system installer, which
+        // reads this file. The report is one line per route, in the order they were tried.
+        attempts.entries.joinToString("\n") { (channel, error) -> "$channel：$error" }
+    }
+
+    /** One line that names the cause without filling the dialog: the whole text stays in the log. */
+    private fun summarized(failure: String): String {
+        val text = failure.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
+        return if (text.length <= INSTALL_ERROR_CHARS) text else text.take(INSTALL_ERROR_CHARS) + "…"
+    }
+
+    /**
+     * Whether a channel failed for a reason root could actually change: the shell could not read
+     * the APK, or was not there at all. A `INSTALL_FAILED_*` answer is about the package, not about
+     * who asked, so it is not worth a root prompt.
+     */
+    private fun looksLikeAccessProblem(error: String): Boolean {
+        val text = error.lowercase()
+        if ("install_failed" in text) return false
+        return listOf(
+            "shizuku", "permission", "denied", "eacces", "consider using a file",
+            "unable to open", "failed to open", "no such file", "not found",
+            "没有输出", "没运行", "没授权", "没有响应", "服务异常", "通道异常",
+        ).any { it in text }
+    }
+
+    /**
+     * `pm install` through the root manager's own shell. Root reads the app's private directory and
+     * `/data/local/tmp` alike, so nothing has to be staged; the authorization prompt is the cost,
+     * which is why this runs only after Shizuku has already refused.
+     *
+     * The wait is bounded: a prompt nobody answers would otherwise hold the install open forever,
+     * and "安装中" that never ends is exactly the report this whole path exists to stop.
+     */
+    private suspend fun installAsRoot(su: String, path: String): String? = withContext(Dispatchers.IO) {
+        val process = runCatching {
+            ProcessBuilder(su, "-c", "pm install -r -d ${shellQuote(path)}")
+                .redirectErrorStream(true)
+                .start()
+        }.getOrElse { return@withContext "无法执行 $su：${summarized(it.toString())}" }
+        // The read below blocks: a timeout wrapper around it would never fire, because there is no
+        // suspension point to cancel. A watchdog closes the pipe instead, which ends the read and
+        // lets the unanswered authorization prompt be reported.
+        val timedOut = AtomicBoolean(false)
+        val watchdog = launch(Dispatchers.IO) {
+            delay(ROOT_INSTALL_TIMEOUT_MILLIS)
+            timedOut.set(true)
+            process.destroy()
+        }
+        val output = try {
+            process.inputStream.bufferedReader().readText()
+        } catch (e: CancellationException) {
+            watchdog.cancel()
+            throw e
+        } catch (e: Exception) {
+            ""
+        } finally {
+            watchdog.cancel()
+        }
+        val exit = runCatching { process.waitFor() }.getOrDefault(-1)
+        when {
+            timedOut.get() -> "root 授权超时或被拒绝：没有应答"
+            exit == 0 && !output.contains("Failure", ignoreCase = true) -> null
+            output.isBlank() -> "pm install 退出码 $exit"
+            else -> output.trim()
+        }
     }
 
     /** One `pm install -r -d` of [where]; null on success, otherwise the output that explains it. */
     private suspend fun runInstall(where: String): String? {
         val result = shell.run("pm install -r -d ${shellQuote(where)}")
-        return when {
-            result.ok && !result.output.contains("Failure", ignoreCase = true) -> null
-            result.output.isBlank() -> "pm install failed without output"
-            else -> result.output.trim()
+        if (result.ok && !result.output.contains("Failure", ignoreCase = true)) return null
+        // A shell that never ran says nothing useful in its output: naming the runtime's own state
+        // is what makes the per-channel report actionable instead of three identical English lines.
+        return when (result.failure) {
+            TweakFailure.NoPrivilege -> "Shizuku 没在运行，或没授权给 Canta"
+            TweakFailure.Timeout -> "Shizuku 没有响应"
+            TweakFailure.Broken -> "Shizuku 服务异常：${summarized(result.output)}"
+            TweakFailure.Unsupported -> "这台设备没有可用的 Shizuku 通道"
+            null -> result.output.trim().ifBlank { "pm install 没有输出" }
         }
     }
 

@@ -56,11 +56,13 @@ import io.github.samolego.canta.generated.resources.about_download_failed_storag
 import io.github.samolego.canta.generated.resources.about_download_failed_timeout
 import io.github.samolego.canta.generated.resources.about_download_failed_unsupported
 import io.github.samolego.canta.generated.resources.about_download_page
+import io.github.samolego.canta.generated.resources.got_it
 import io.github.samolego.canta.generated.resources.about_downloading
 import io.github.samolego.canta.generated.resources.about_downloading_unknown
 import io.github.samolego.canta.generated.resources.about_ready_to_install
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_install_done
+import io.github.samolego.canta.generated.resources.about_install_failed_title
 import io.github.samolego.canta.generated.resources.about_install_title
 import io.github.samolego.canta.generated.resources.about_install_message
 import io.github.samolego.canta.generated.resources.about_install_confirm
@@ -177,6 +179,11 @@ fun AboutScreen(
     val toast = remember { SnackbarHostState() }
     var updateState by remember(updateChannel) { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var pendingInstall by remember { mutableStateOf<UpdateState.ReadyToInstall?>(null) }
+    /**
+     * The full per-route install report. The status row below allows three lines, which is not
+     * enough to say which privilege refused: that needs a dialog of its own.
+     */
+    var installReport by remember { mutableStateOf<String?>(null) }
     var updateJob by remember { mutableStateOf<Job?>(null) }
     // What a cancelled download can go back to: the release it was fetching, with its label.
     var downloadable by remember { mutableStateOf<Pair<String, UpdateRelease>?>(null) }
@@ -258,6 +265,7 @@ fun AboutScreen(
                     // installs — with the system's own dialog.
                     updateState = UpdateState.HandedOff(ready.version)
                 } else {
+                    installReport = failure
                     updateState = UpdateState.FailedWith(failure)
                 }
             }
@@ -348,8 +356,9 @@ fun AboutScreen(
                     )
                 }
 
-                (updateState as? UpdateState.FailedWith)?.download != null ||
-                    updateState is UpdateState.Failed -> {
+                // Every failure gets the page, not only a failed download: an install that no
+                // privileged route would take is still an APK the reader can fetch and tap by hand.
+                updateState is UpdateState.FailedWith || updateState is UpdateState.Failed -> {
                     Spacer(Modifier.height(10.dp))
                     AppLinkCard(
                         glyph = FlGlyphs.link,
@@ -448,6 +457,32 @@ fun AboutScreen(
                 dismissButton = {
                     TextButton(onClick = postpone) {
                         Text(stringResource(Res.string.about_install_cancel))
+                    }
+                },
+            )
+        }
+
+        // The full report: one line per privilege that was tried, with the download page as the
+        // way out that always exists. The status row below allows three lines, which cannot carry
+        // "Shizuku 读不到这个目录 / root 授权超时 / 系统安装器也没打开".
+        installReport?.let { report ->
+            AlertDialog(
+                onDismissRequest = { installReport = null },
+                title = { Text(stringResource(Res.string.about_install_failed_title)) },
+                text = {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Text(report)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        platform.openUrl(DOWNLOAD_PAGE_URL)
+                        installReport = null
+                    }) { Text(stringResource(Res.string.about_download_page)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { installReport = null }) {
+                        Text(stringResource(Res.string.got_it))
                     }
                 },
             )

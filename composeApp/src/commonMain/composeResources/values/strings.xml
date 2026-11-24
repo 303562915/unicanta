@@ -423,6 +423,7 @@
     <string name="about_installing_version">Installing %1$s… the app will close when it is done</string>
     <string name="about_install_done">Installed %1$s — restarting</string>
     <string name="about_install_failed">The install did not go through: %1$s</string>
+    <string name="about_install_failed_title">Install failed</string>
     <string name="about_auto_install_paused">Update %1$s is available, but installing it automatically failed last time — install it from the About page.</string>
     <string name="about_auto_download_failed">The update download failed; it will be retried later. You can also download it from the About page.</string>
     <string name="about_download_failed">Download failed</string>
