@@ -1,6 +1,8 @@
 name: 📊 Daily device report
 
 # 每天把「总人数 / 其中有型号的人数」推到钉钉。
+# 同一个工作流也能被发版工作流以 workflow_call 调用：开发版发布成功、正式版发布成功后，
+# 用同一套统计口径 + 同一个钉钉机器人再推一条「已发布」通知（含日统计数字）。
 # 仓库是 public，凭据一律走 secrets：SUPABASE_ACCESS_TOKEN、DINGTALK_WEBHOOK，不写进文件。
 
 on:
@@ -8,6 +10,37 @@ on:
     # UTC 01:00 = 北京时间 09:00
     - cron: "0 1 * * *"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_kind:
+        description: "development（开发版）| stable（正式版）| daily（日报，默认）"
+        type: string
+        default: "daily"
+      version_name:
+        description: "版本号，例如 4.3.4"
+        type: string
+        default: ""
+      release_tag:
+        description: "正式版 tag，例如 v4.3.4"
+        type: string
+        default: ""
+      build_number:
+        description: "开发版构建号（run_number）"
+        type: string
+        default: ""
+      commit_sha:
+        description: "提交号"
+        type: string
+        default: ""
+      release_url:
+        description: "发布页链接"
+        type: string
+        default: ""
+    secrets:
+      SUPABASE_ACCESS_TOKEN:
+        required: true
+      DINGTALK_WEBHOOK:
+        required: true
 
 permissions:
   contents: read
@@ -44,20 +77,47 @@ jobs:
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           TOTAL: ${{ steps.query.outputs.total }}
           WITH_MODEL: ${{ steps.query.outputs.with_model }}
+          KIND: ${{ inputs.release_kind }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          HEAD_COMMIT: ${{ inputs.commit_sha }}
+          RELEASE_URL: ${{ inputs.release_url }}
         run: |
           set -euo pipefail
           STAMP=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
-          BODY=$(jq -n --arg total "$TOTAL" --arg model "$WITH_MODEL" --arg stamp "$STAMP" '{
-            msgtype: "markdown",
-            markdown: {
-              title: "unicanta 用户日报",
-              text: ("### unicanta 用户日报\n\n" +
-                     "- 时间：" + $stamp + "\n" +
-                     "- 总人数：" + $total + "\n" +
-                     "- 有型号：" + $model + "\n\n" +
-                     "rr")
-            }
-          }')
+          case "${KIND:-daily}" in
+            development) TITLE="unicanta 开发版已发布"; CHANNEL="开发版（dev）" ;;
+            stable)      TITLE="unicanta 正式版已发布"; CHANNEL="正式版（${RELEASE_TAG}）" ;;
+            *)           TITLE="unicanta 用户日报";     CHANNEL="日报" ;;
+          esac
+          BODY=$(jq -n \
+            --arg title "$TITLE" \
+            --arg stamp "$STAMP" \
+            --arg total "$TOTAL" \
+            --arg model "$WITH_MODEL" \
+            --arg channel "$CHANNEL" \
+            --arg ver "$VERSION_NAME" \
+            --arg build "$BUILD_NUMBER" \
+            --arg commit "$HEAD_COMMIT" \
+            --arg url "$RELEASE_URL" '
+            def line($k; $v): if (($v // "") == "") then "" else "- " + $k + "：" + $v + "\n" end;
+            {
+              msgtype: "markdown",
+              markdown: {
+                title: $title,
+                text: ("### " + $title + "\n\n" +
+                       "- 时间：" + $stamp + "\n" +
+                       "- 通道：" + $channel + "\n" +
+                       line("版本"; $ver) +
+                       line("构建号"; $build) +
+                       line("提交"; $commit) +
+                       line("发布页"; $url) +
+                       "- 总人数：" + $total + "\n" +
+                       "- 有型号：" + $model + "\n\n" +
+                       "rr")
+              }
+            }')
           ANSWER=$(curl -sS --fail-with-body -X POST "$DINGTALK_WEBHOOK" \
             -H 'Content-Type: application/json' -d "$BODY")
           echo "$ANSWER"

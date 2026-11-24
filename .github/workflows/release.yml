@@ -25,6 +25,10 @@ jobs:
     name: 🤖📦🚀 Build & prepare Android release
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # notify 用这两个输出：真的建出来并发出去的 tag 与版本号。
+    outputs:
+      tag: ${{ steps.extract_version.outputs.tag }}
+      version_name: ${{ steps.extract_version.outputs.version_name }}
 
     steps:
       - name: ⬇️ Checkout repository
@@ -73,6 +77,7 @@ jobs:
             tag="v$version"
           fi
           echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "version_name=$version" >> $GITHUB_OUTPUT
 
       - name: 📝 Write release notes
         env:
@@ -163,3 +168,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run pages.yml --ref master
+
+  notify:
+    name: 📣 DingTalk notice (stable release)
+    # 触发条件：正式版已经成功发布（deployAndroid 成功且不是只建 draft）。
+    needs: deployAndroid
+    if: needs.deployAndroid.result == 'success' && inputs.keep_draft != true
+    uses: ./.github/workflows/daily-device-report.yml
+    secrets:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+    with:
+      release_kind: stable
+      version_name: ${{ needs.deployAndroid.outputs.version_name }}
+      release_tag: ${{ needs.deployAndroid.outputs.tag }}
+      commit_sha: ${{ github.sha }}
+      release_url: https://github.com/303562915/unicanta/releases/tag/${{ needs.deployAndroid.outputs.tag }}

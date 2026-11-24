@@ -17,6 +17,11 @@ jobs:
     name: Build and publish signed development APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # published 只有真的把 dev prerelease 更新掉之后才是 true（跳过发布时为空），
+    # 钉钉通知 job 靠它判断「已经成功发布到新开发版本」。
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      version_name: ${{ steps.publish.outputs.version_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,6 +93,7 @@ jobs:
           fi
 
       - name: Publish rolling prerelease
+        id: publish
         if: steps.current.outputs.is_head == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -117,3 +123,21 @@ jobs:
             --title "Canta development build $RUN_NUMBER" \
             --notes-file RELEASE_NOTES.md \
             --prerelease
+          echo "published=true" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+  notify:
+    name: 📣 DingTalk notice (development release)
+    # 触发条件：开发版已经成功发布（notify 只在 really published 时跑，跳过的发布不推消息）。
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    uses: ./.github/workflows/daily-device-report.yml
+    secrets:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+    with:
+      release_kind: development
+      version_name: ${{ needs.publish.outputs.version_name }}
+      build_number: ${{ github.run_number }}
+      commit_sha: ${{ github.sha }}
+      release_url: https://github.com/303562915/unicanta/releases/tag/dev
