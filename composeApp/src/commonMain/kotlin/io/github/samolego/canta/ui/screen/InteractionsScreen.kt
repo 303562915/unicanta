@@ -670,16 +670,16 @@ private fun InteractionsTopBar(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
-        Row(
+        // 参考图的排法是「返回（最左）· 标题（整条顶栏的正中，带下拉）· 另一栏（最右）」。
+        // 不是把标题和另一栏拼成一对再居中（那样标题偏左、另一栏跑到中间），也不是两头各贴一个边
+        // （那样标题紧挨着返回箭头，中间空一大片）——标题按整条栏居中，另一栏才真正靠右。
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(FlTopBarHeight)
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .height(FlTopBarHeight),
         ) {
-            // 左：返回箭头 + 紧跟着的标题（不是居中）。抖音那版就是"返回、标题（带下拉）、右边另一栏"，
-            // 两边各靠一边；标题居中会把「新关注我的」挤到屏幕中间，和参考图完全不是一回事。
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 左：返回
+            Box(modifier = Modifier.align(Alignment.CenterStart).padding(start = 6.dp)) {
                 FlBarButton(
                     glyph = FlGlyphs.chevronBack,
                     contentDescription = "返回",
@@ -688,13 +688,8 @@ private fun InteractionsTopBar(
                     filled = false,
                 )
             }
-            Spacer(Modifier.width(2.dp))
-            // 中间：标题占掉剩下的宽度，另一栏被推到最右边。
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box {
+            // 中：标题 + 分类菜单的锚点，落在屏幕正中
+            Box(modifier = Modifier.align(Alignment.Center)) {
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
@@ -772,8 +767,8 @@ private fun InteractionsTopBar(
                         }
                     }
                 }
-                // 把另一栏顶到最右：两边分居两端，和参考图一样。
-                Spacer(Modifier.weight(1f))
+            // 右：另一栏。靠右，但和标题一样各留一段边距，不贴屏幕边缘。
+            Box(modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)) {
                 Text(
                     text = other,
                     style = FlText.subheadline,
@@ -782,7 +777,7 @@ private fun InteractionsTopBar(
                     modifier = Modifier
                         .clip(RoundedCornerShape(percent = 50))
                         .clickable(onClick = onToggleSection)
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
                 )
             }
         }
