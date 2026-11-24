@@ -154,20 +154,31 @@ private data class BarSlot(
 )
 
 /**
- * 底栏本身，一行五格：三个常用页常亮且不可点，工具页与推荐页是两个开关，
- * 槽位点亮后底栏才多一个入口。两个可选页只在这里打开。
+ * 底栏本身，按可不可选分成两行。
+ *
+ * 第一行是四个常亮页：应用、规则、消息、我的——它们一直在，点不点都一样，所以只画不打勾。
+ * 第二行是三个可选项：工具、推荐、帖子——点亮哪一格，底栏才多那一个入口。
+ *
+ * 为什么分行而不是排成一行七格：一行七格的标签在手机上会被压成「应… 规… 工…」，而"固定的"
+ * 与"自己选的"本来就是两件事，分行之后不用读说明也看得出来。
  */
 @Composable
 fun AppBarSlotsCard(
     showTweaks: Boolean,
     showRecommend: Boolean,
+    showPosts: Boolean,
     onToggleTweaks: (Boolean) -> Unit,
     onToggleRecommend: (Boolean) -> Unit,
+    onTogglePosts: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val slots = listOf(
+    val fixed = listOf(
         BarSlot(FlGlyphs.dashboard, stringResource(Res.string.tab_apps), lit = true, onToggle = null),
         BarSlot(FlGlyphs.rules, stringResource(Res.string.tab_rules), lit = true, onToggle = null),
+        BarSlot(FlGlyphs.requests, "消息", lit = true, onToggle = null),
+        BarSlot(FlGlyphs.settings, "我的", lit = true, onToggle = null),
+    )
+    val optional = listOf(
         BarSlot(
             FlGlyphs.tools,
             stringResource(Res.string.tab_tweaks),
@@ -180,7 +191,12 @@ fun AppBarSlotsCard(
             lit = showRecommend,
             onToggle = { onToggleRecommend(!showRecommend) },
         ),
-        BarSlot(FlGlyphs.settings, "我的", lit = true, onToggle = null),
+        BarSlot(
+            FlGlyphs.resources,
+            "帖子",
+            lit = showPosts,
+            onToggle = { onTogglePosts(!showPosts) },
+        ),
     )
     Column(
         modifier = Modifier
@@ -197,8 +213,23 @@ fun AppBarSlotsCard(
             modifier = Modifier.padding(horizontal = 4.dp),
         )
         Spacer(Modifier.height(9.dp))
+        // 第一行：常亮，不可点。
         Row(modifier = Modifier.fillMaxWidth()) {
-            slots.forEach { slot -> BarSlotChip(slot, Modifier.weight(1f)) }
+            fixed.forEach { slot -> BarSlotChip(slot, Modifier.weight(1f)) }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "点亮下面这一行，底栏才多一个入口",
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Spacer(Modifier.height(4.dp))
+        // 第二行：可选，点了就亮/灭。
+        Row(modifier = Modifier.fillMaxWidth()) {
+            optional.forEach { slot -> BarSlotChip(slot, Modifier.weight(1f)) }
+            // 三格只占四分之一宽各一，剩下的补一个空位，免得它们被拉得比第一行还宽。
+            Box(modifier = Modifier.weight(1f))
         }
     }
 }

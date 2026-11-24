@@ -156,6 +156,7 @@ fun SettingsScreen(
     val commitsUrl by settingsViewModel.commitsUrl.collectAsStateWithLifecycle()
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
+    val showPostsTab by settingsViewModel.showPostsTab.collectAsStateWithLifecycle()
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
     val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
@@ -300,12 +301,14 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(CardGap))
 
-            // 底栏本身：五格一行，三个常亮，工具页与推荐页是两个开关。
+            // 底栏本身：第一行四个常亮，第二行三个可选项（工具/推荐/帖子），点了才上底栏。
             AppBarSlotsCard(
                 showTweaks = showTweaksTab,
                 showRecommend = showRecommendTab,
+                showPosts = showPostsTab,
                 onToggleTweaks = settingsViewModel::saveShowTweaksTab,
                 onToggleRecommend = settingsViewModel::saveShowRecommendTab,
+                onTogglePosts = settingsViewModel::saveShowPostsTab,
             )
             Spacer(Modifier.height(CardGap))
 

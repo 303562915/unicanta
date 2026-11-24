@@ -88,6 +88,8 @@ class SettingsViewModel(
     /** The optional bar entries: off by default, turned on in the settings. */
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)
     val showRecommendTab = settingsStore.showRecommendTabFlow.state(false)
+    /** 底栏要不要给帖子页留一格。 */
+    val showPostsTab = settingsStore.showPostsTabFlow.state(false)
 
     /** Which arrangement the recommendations page was left in: false grid, true list. */
     val recommendationsListMode = settingsStore.recommendationsListModeFlow.state(false)
@@ -247,6 +249,7 @@ class SettingsViewModel(
     fun saveAuthEnabled(enabled: Boolean) = save { setAuthEnabled(enabled) }
     fun saveShowTweaksTab(show: Boolean) = save { setShowTweaksTab(show) }
     fun saveShowRecommendTab(show: Boolean) = save { setShowRecommendTab(show) }
+    fun saveShowPostsTab(show: Boolean) = save { setShowPostsTab(show) }
     fun saveRecommendationsListMode(list: Boolean) = save { setRecommendationsListMode(list) }
     fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
     fun saveClearRecordsAfterBoot(clear: Boolean) = save { setClearRecordsAfterBoot(clear) }

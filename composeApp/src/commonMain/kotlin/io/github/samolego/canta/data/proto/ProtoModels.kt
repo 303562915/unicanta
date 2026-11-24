@@ -68,6 +68,13 @@ data class AppSettingsProto(
     /** Whether the bar keeps an entry for the recommended-apps page; see [showTweaksTab]. */
     @ProtoNumber(20) val showRecommendTab: Boolean = false,
     /**
+     * 底栏给帖子页留一格。与上面两个同类：出厂关着，设置里把那一格点亮才出现。
+     *
+     * 帖子是独立一页（`posts` 路由），不是推荐页的第四个分段——它自带编辑器与本地草稿，
+     * 和"看东西"的三页不是一回事。要不要摆在底栏由用户自己定。
+     */
+    @ProtoNumber(46) val showPostsTab: Boolean = false,
+    /**
      * When on, a new release is downloaded as soon as the update check finds one, and the app
      * installs it through Shizuku right after the download. The extra confirmation is the
      * [confirmBeforeInstall] switch, off by default.
