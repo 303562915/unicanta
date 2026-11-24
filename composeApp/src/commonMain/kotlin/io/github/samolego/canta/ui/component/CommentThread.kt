@@ -1017,7 +1017,11 @@ fun CommentComposer(
                 // 没有图片键：评论这一层不收图片（后端只存正文），发了也没地方落。能发图的是群聊，
                 // 而且那得群主在群设置里给这个群打开才轮得到；这里摆一颗按不动的相册键就是骗人。
                 var fieldFocused by remember { mutableStateOf(false) }
-                val open = fieldFocused || draft.isNotBlank()
+                // 展开的唯一判据是**焦点**（面板开着也算，那是同一次输入里换键盘）。
+                //
+                // 以前还带一个「有草稿就展开」：点页面空白之后光标没了、键盘收了，但那行工具条
+                // 仍旧挂在底下，看着像点空白没反应。抖音那边点哪儿都收，草稿留在框里，再点框就续上。
+                val open = fieldFocused || pickerOpen
                 val draftKeys: @Composable () -> Unit = {
                     Icon(
                         imageVector = Icons.Outlined.AlternateEmail,

@@ -95,6 +95,7 @@ import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.PlanScope
 import io.github.samolego.canta.ui.component.PlanScopeBar
@@ -629,7 +630,13 @@ fun SafetyRulesScreen(
             }
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // 点列表空白：收起包名筛选框的焦点与输入法。
+                .dismissInputOnTap(),
+        ) {
             notice?.let { line ->
                 Text(
                     text = line.text,

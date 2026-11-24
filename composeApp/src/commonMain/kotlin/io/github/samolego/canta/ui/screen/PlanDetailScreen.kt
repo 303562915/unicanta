@@ -5,7 +5,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,7 +61,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
@@ -106,6 +104,7 @@ import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.CommentComposer
+import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.PackageSearchField
 import io.github.samolego.canta.ui.component.ScreenTopBar
@@ -562,14 +561,8 @@ fun PlanDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = padding.calculateBottomPadding())
-                // A tap on the page behind the panel closes it, the way tapping outside a keyboard
-                // closes the keyboard: the panel is a temporary surface, and the way out of it
-                // should not be the key that opened it.
-                .pointerInput(pickerOpen) {
-                    if (pickerOpen) {
-                        detectTapGestures { pickerOpen = false }
-                    }
-                },
+                // 点页面空白：收表情面板 + 清焦点 + 收输入法，和评论页同一套。
+                .dismissInputOnTap { pickerOpen = false },
         ) {
             val loaded = plan
             when {

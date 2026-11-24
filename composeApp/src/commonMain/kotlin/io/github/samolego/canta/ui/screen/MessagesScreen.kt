@@ -74,6 +74,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadBadge
+import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.bottomHairline
 import io.github.samolego.canta.ui.component.UnreadRed
@@ -654,7 +655,13 @@ fun MessagesScreen(
             },
             modifier = Modifier.fillMaxSize(),
         ) {
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // 点列表空白：收起搜索框的焦点与输入法（搜索框自己那条 × 才关掉搜索）。
+                .dismissInputOnTap(),
+        ) {
             if (loading) {
                 // 只有「内存没有、盘上也没有」才走到这里（第一次装、或者那份解不出来）。
                 // 画骨架而不是转圈：转圈看起来像卡住，骨架至少说明「马上会出现一列会话」。

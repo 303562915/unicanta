@@ -8,7 +8,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -66,7 +65,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
@@ -91,6 +89,7 @@ import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentComposer
+import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
@@ -740,13 +739,8 @@ fun AppDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = padding.calculateBottomPadding())
-                // A tap on the page behind the sticker panel closes it, the way tapping outside a
-                // keyboard closes the keyboard.
-                .pointerInput(pickerOpen) {
-                    if (pickerOpen) {
-                        detectTapGestures { pickerOpen = false }
-                    }
-                },
+                // 点页面空白：不只收表情面板，连输入框的焦点和输入法一起收掉（见 dismissInputOnTap）。
+                .dismissInputOnTap { pickerOpen = false },
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),

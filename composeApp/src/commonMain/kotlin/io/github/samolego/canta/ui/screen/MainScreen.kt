@@ -52,6 +52,7 @@ import io.github.samolego.canta.ui.component.AppListPermissionBanner
 import io.github.samolego.canta.ui.permission.needsRequest
 import io.github.samolego.canta.ui.permission.rememberAppListAccess
 import io.github.samolego.canta.ui.component.CantaTopBar
+import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.component.fab.PresetEditFAB
@@ -140,7 +141,13 @@ fun MainScreen(
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                // 点应用列表的空白处：收起顶栏搜索框的焦点与输入法。
+                .dismissInputOnTap(),
+        ) {
             AppsTabs(pagerState)
             if (appListViewModel.appListRestricted) {
                 AppListPermissionBanner(

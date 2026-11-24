@@ -268,8 +268,8 @@ private val ChatAiTrigger = Regex("@\\s*群聊AI")
 /**
  * 这条正文是不是「只有表情」：拆开以后每一段都是表情，没有一个字。
  *
- * 只有这种消息把图放大到三倍。混着一句话的表情保持正文大小——一行里一张巨大的图会把
- * 那句话挤成三行，看起来像排版坏了。
+ * 用数量而不是"是不是纯表情"：一颗放大了好看，三颗一起放大会把气泡撑成半屏，
+ * 有人就爱连发四五个，那种必须保持正文大小。
  */
 private fun chatStickerOnly(body: String): Boolean {
     val spans = parseEmotionBody(body)
@@ -2112,6 +2112,9 @@ private fun ChatBubble(
                             lineHeight = if (chatStickerOnly(message.body)) 56 else 19,
                             color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
                             // 自己的气泡底色是主色，@ 再上主色就看不见了：用 onPrimary 反过来提亮。
+                        // 只放大**单颗**表情：17dp → 34dp，读得出是哪个，又不至于比一句话还高。
+                        // 连发好几颗时保持正文大小（三颗巨图能吃掉半屏）；混着文字的更不放大。
+                        val stickers = chatStickerCount(message.body)
                             mentionColor = if (mine) colors.onPrimary else colors.primary,
                             stickerScale = if (chatStickerOnly(message.body)) 3f else 1f,
                         )
@@ -3026,6 +3029,19 @@ private fun ChatComposer(
             .background(ComposerBarBg)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
+
+    // 输入框自己持有一份 TextFieldValue：**光标位置是这个状态的一部分**。
+    //
+    // 用 `BasicTextField(value: String)` 那版的话，从外面插一段字（长按头像 @ 人、点表情、草稿回填）
+    // 只能改文本，改不了光标——插完光标还停在原处，接着打字就插进句子中间，看起来像"光标不知道跟着走"。
+    var field by remember { mutableStateOf(TextFieldValue(draft)) }
+    // 外部改了草稿：文本真的变了才跟，并把光标放到**末尾**（插入的东西永远加在最后）。
+    // 用户自己敲键走的是 onValueChange，那时 field 与 draft 已经同步，这里不会把它拉回末尾。
+    LaunchedEffect(draft) {
+        if (field.text != draft) {
+            field = TextFieldValue(draft, selection = TextRange(draft.length))
+        }
+    }
     ) {
         FlBarButton(
             glyph = FlGlyphs.grid2x2,
@@ -3042,8 +3058,12 @@ private fun ChatComposer(
         }
         Spacer(Modifier.width(4.dp))
         BasicTextField(
-            value = draft,
-            onValueChange = onDraftChange,
+            // TextFieldValue 版：文本和光标一起交出，从外面插字之后光标才跟得上（见 field 的注释）。
+            value = field,
+            onValueChange = { next ->
+                field = next
+                onDraftChange(next.text)
+            },
             modifier = Modifier
                 .weight(1f)
                 // 40dp 起、120dp 封顶：先长到五行，再往上翻，消息区始终留着。
