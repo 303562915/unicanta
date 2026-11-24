@@ -127,8 +127,14 @@ private val IconTile = 62.dp
  *
  * 卡片几何与两张通用卡片在 AppCards.kt 里，设置页用同一份；这里只留版本、更新与"关于作者"。
  */
+/**
+ * 关于页：版本、更新卡片、作者与出处。
+ *
+ * `internal` 而不是 public：它收一个 [UpdateCenter]，而那个类是 internal（状态与返回值都是
+ * 模块内的类型），public 函数把 internal 类型写进签名，编译器会直接拒绝。
+ */
 @Composable
-fun AboutScreen(
+internal fun AboutScreen(
     platform: CantaPlatform,
     settingsViewModel: SettingsViewModel,
     onNavigateBack: () -> Unit,
