@@ -104,6 +104,8 @@ private data class GroupSettingsSnapshot(
     val muted: Boolean,
     val folded: Boolean,
     val pinned: Boolean,
+    /** 群主开的「允许群成员发图片」：不进这一页的开关组，但缓存不带它，下一次进来会先画成关着。 */
+    val allowImage: Boolean = false,
 ) {
     /** 还原成页面用的详情；会话号不在快照里，由调用方按当前的 [conversationId] 补上。 */
     fun toDetail(conversationId: Long): ConversationDetail = ConversationDetail(
@@ -119,6 +121,7 @@ private data class GroupSettingsSnapshot(
         // 折叠在快照里是单独一位（页面那个开关就靠它），还原详情时也得带上，
         // 否则详情对象会说「没折叠」而开关是开着的。
         myFolded = folded,
+        allowImage = allowImage,
     )
 }
 
@@ -140,6 +143,7 @@ private fun settingsSnapshotOf(
     muted = muted,
     folded = folded,
     pinned = pinned,
+    allowImage = detail.allowImage,
 )
 
 /**
@@ -194,6 +198,11 @@ fun GroupSettingsScreen(
     var muted by remember(cacheKey) { mutableStateOf(cached?.muted ?: false) }
     var folded by remember(cacheKey) { mutableStateOf(cached?.folded ?: false) }
     var pinned by remember(cacheKey) { mutableStateOf(cached?.pinned ?: false) }
+    // 「允许发图片」不在 conversations_for 那一行上，它在会话详情里（allow_image）：
+    // 这个开关管的是全群，不是"我怎么对这个群"。
+    var allowImage by remember(cacheKey) {
+        mutableStateOf(cached?.toDetail(conversationId)?.allowImage ?: false)
+    }
     var toggling by remember { mutableStateOf(false) }
 
     /**
@@ -248,6 +257,7 @@ fun GroupSettingsScreen(
         val failure = repository.lastError
         if (loaded != null) {
             detail = loaded
+            allowImage = loaded.allowImage
             // 三个开关从列表那一行读：conversation_detail 只回 muted，没有 pinned / folded。
             // 这一行没读到（比如 conversationsFor 挂了）就沿用缓存里那份，不清成「全关」。
             runCatching { repository.conversationsFor(owner) }
@@ -344,6 +354,27 @@ fun GroupSettingsScreen(
                 pinned = !next
                 onMessage("没改成，检查代理后再试")
             } else {
+                commitCache()
+            }
+            toggling = false
+        }
+    }
+
+    /**
+     * 打开/关掉「允许群成员发图片」。只有建群的人能改，后端也按 `created_by` 裁决——
+     * 返回 false 就说明不是群主（或者网络断了），界面把开关拨回去，不假装成功。
+     */
+    fun toggleAllowImage(next: Boolean) {
+        if (toggling) return
+        allowImage = next
+        scope.launch {
+            toggling = true
+            if (!repository.setGroupAllowImage(owner, conversationId, next)) {
+                allowImage = !next
+                onMessage("没改成：只有群主能改这个开关")
+            } else {
+                // 详情里那一份也要跟着改：缓存存的是它，不改的话下一次进来先画回旧状态。
+                detail = detail?.copy(allowImage = next)
                 commitCache()
             }
             toggling = false
@@ -533,6 +564,21 @@ fun GroupSettingsScreen(
                             onCheckedChange = { next -> togglePin(next) },
                             subtitle = if (pinned) "排在这一页最上面" else "",
                         )
+                        // 只有群主看得到这一行：这个开关决定别人能不能发图，成员看得到也只能点一下碰壁。
+                        // 关着的时候后端也会拒成员发图，所以隐藏成员那一侧入口不是"藏功能"，是照实说。
+                        if (current.isOwner(owner)) {
+                            AppToggleCard(
+                                glyph = FlGlyphs.iconTile,
+                                title = "允许群成员发图片",
+                                checked = allowImage,
+                                onCheckedChange = { next -> toggleAllowImage(next) },
+                                subtitle = if (allowImage) {
+                                    "成员可以在群里发图"
+                                } else {
+                                    "关着：只有你能发图"
+                                },
+                            )
+                        }
                         AppLinkCard(
                             glyph = FlGlyphs.delete,
                             title = "清空聊天记录",

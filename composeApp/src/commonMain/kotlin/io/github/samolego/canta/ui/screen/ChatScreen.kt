@@ -851,6 +851,10 @@ fun ChatScreen(
 
     // 观感上的群聊：形参说不是、但详情说是，就按群聊画（同一个判据见 ConversationDetail.isGroup）。
     val grouped = isGroup || detail?.isGroup == true
+    // 能不能发图：私聊一直可以；群里看群主那个「允许群成员发图片」开关（detail.allowImage）。
+    // 关着的时候后端 `message_send_image` 也会拒，所以这里是把后端那条裁决先说给人听，
+    // 不是"偷偷藏一个按钮"。群主自己不受限（后端也放他过）：他要能先把图放进群里。
+    val imagesAllowed = !grouped || detail?.allowImage == true || detail?.isOwner(owner) == true
     // 标题：形参空的时候用详情里的群名，都空就叫「私聊」；人数优先用调用方给的，没有数成员。
     val heading = title.ifBlank { detail?.title.orEmpty() }.ifBlank { "私聊" }
     val members = if (memberCount > 0) memberCount else detail?.members?.size ?: 0
@@ -1084,9 +1088,15 @@ fun ChatScreen(
             // 快捷表情只在「默认态」出现：面板一拉开，这一排就挤在面板和输入栏中间了。
             if (!panelOpen && draft.isEmpty()) ChatStickerStrip(onPick = sendSticker)
             if (showMore) {
-                // 四个钮里只有「图片」真能用：其余三个点一下给一句话，不当哑巴按钮。
+                // 四个钮里「图片」真能用，其余三个点一下给一句话，不当哑巴按钮。
+                // 群里开关关着时，「图片」也走那句话那条路——按下去不会掉进一个被后端拒掉的流程。
+                val pickImage: () -> Unit = if (imagesAllowed) {
+                    sendImage
+                } else {
+                    { imageHint = "这个群关闭了发图片，等群主打开" }
+                }
                 ChatMorePanel(
-                    onPickImage = sendImage,
+                    onPickImage = pickImage,
                     onUnavailable = { imageHint = "只支持发图片" },
                 )
             }

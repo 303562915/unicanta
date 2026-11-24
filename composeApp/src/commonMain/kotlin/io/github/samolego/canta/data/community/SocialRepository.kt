@@ -293,6 +293,14 @@ data class ConversationDetail(
     val myNickname: String = "",
     /** 我把这个群折起来了没有。 */
     val myFolded: Boolean = false,
+    /**
+     * 这个群允不允许成员发图片。
+     *
+     * 开关在群设置里，只有建群的人能改（`group_set_allow_image`）。关着的时候后端也会拒成员
+     * 发图，所以界面按它隐藏图片入口不是"藏起来不让点"，而是把后端那条裁决先说给人听。
+     * 私聊没有这个开关，恒为 true 的那一侧由调用方判（见 [isGroup]）。
+     */
+    val allowImage: Boolean = false,
 ) {
 
     /** 与 [Conversation.isGroup] 同一判据：`kind == "group"`。 */
@@ -609,6 +617,7 @@ class SocialRepository(
             intro = row.textOf("intro"),
             myNickname = row.textOf("my_nickname"),
             myFolded = row.flagOf("my_folded") ?: false,
+            allowImage = row.flagOf("allow_image") ?: false,
         )
     }
 
@@ -1129,6 +1138,24 @@ class SocialRepository(
         }.toString()
         val response = rpc("group_set_intro", body) ?: return false
         return booleanFrom(response, "group_set_intro") ?: false
+    }
+
+    /**
+     * 打开/关掉这个群的「允许发图片」。只有建群的人能改，别人调用后端返回 false。
+     *
+     * 关着的时候成员发图会被 `message_send_image` 拒掉，建群的人自己不受限——他得能先把图放进群里。
+     */
+    suspend fun setGroupAllowImage(owner: String, conversation: Long, allowed: Boolean): Boolean {
+        if (owner.isEmpty() || conversation <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_allowed", allowed)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val response = rpc("group_set_allow_image", body) ?: return false
+        return booleanFrom(response, "group_set_allow_image") ?: false
     }
 
     /**
