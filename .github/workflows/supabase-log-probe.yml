@@ -1,7 +1,6 @@
 name: 🔎 Supabase log probe
 
-# 一次性的诊断入口：给「App 里什么都没有」这类问题取后端日志用。
-# 只读，不改任何数据；跑完可以删掉这个文件。
+# 一次性诊断入口：给「App 里什么都没有」这类问题取后端日志 / 查库用。只读。
 
 on:
   workflow_dispatch:
@@ -13,33 +12,40 @@ on:
 
 jobs:
   probe:
-    name: 🧾 logs
+    name: 🧾 probe
     runs-on: ubuntu-latest
     env:
       TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       PROJECT_REF: ${{ inputs.ref }}
     steps:
-      - name: Probe endpoint variants
+      - name: Logs by source
         run: |
           set +e
           B="https://api.supabase.com/v1/projects/${PROJECT_REF}/analytics/endpoints/logs"
+          show() { echo "### $1"; echo "http: $(cat /tmp/code)"; head -c 3000 /tmp/out; echo; echo; }
+          try() {
+            shift 2>/dev/null
+            curl -sS -m 90 -o /tmp/out -w '%{http_code}' -G "$B" "$@" -H "Authorization: Bearer ${TOKEN}" > /tmp/code 2>/dev/null
+          }
+          try x --data-urlencode "source=postgres_logs" --data-urlencode "sql=select timestamp, event_message from postgres_logs order by timestamp desc limit 15"
+          show "A source=postgres_logs + sql"
+          try x --data-urlencode "source=postgres_logs"
+          show "B source=postgres_logs only"
+          try x --data-urlencode "source=postgrest_logs" --data-urlencode "sql=select timestamp, event_message from postgrest_logs order by timestamp desc limit 15"
+          show "C source=postgrest_logs + sql"
 
-          show() {
+      - name: Query database
+        run: |
+          set +e
+          Q() {
             echo "### $1"
-            echo "http: $(cat /tmp/code)"
-            head -c 4000 /tmp/out
-            echo
-            echo
+            curl -sS -m 90 -o /tmp/o -w 'http:%{http_code}\n' -X POST \
+              "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query" \
+              -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+              --data "$(printf '{\"query\":%s}' "$(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")"
+            head -c 3000 /tmp/o; echo; echo
           }
-
-          run_sql() {
-            curl -sS -m 90 -o /tmp/out -w '%{http_code}' -G "$B" \
-              --data-urlencode "sql=$1" \
-              -H "Authorization: Bearer ${TOKEN}" > /tmp/code 2>/tmp/err
-            show "$2"
-          }
-
-          run_sql "select timestamp, source, event_message from logs order by timestamp desc limit 20" "A: unified logs table"
-          run_sql "select timestamp, event_message from postgres_logs order by timestamp desc limit 20" "B: postgres_logs"
-          run_sql "select timestamp, event_message from edge_logs order by timestamp desc limit 20" "C: edge_logs"
-          run_sql "select 1 as ok" "D: trivial select"
+          Q "users" "select count(*) as users, max(created_at) as last_user from public.canta_users"
+          Q "plans" "select count(*) as plans, max(created_at) as last_plan from public.plans"
+          Q "comments" "select count(*) as comments, max(created_at) as last_comment from public.community_comments"
+          Q "messages" "select count(*) as messages, max(created_at) as last_message from public.messages"
