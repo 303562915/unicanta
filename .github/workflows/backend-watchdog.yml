@@ -85,6 +85,45 @@ jobs:
           echo "recovered=no" >> "$GITHUB_OUTPUT"
           echo "### ❌ 自动重启后仍未恢复" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check disk latency
+        id: disk
+        if: steps.probe.outputs.state == 'ok'
+        run: |
+          set -uo pipefail
+          # 这次事故的真正起点：checkpoint 每次写盘要 30–53 秒（正常是毫秒级）。
+          # 它在服务还能用的时候就出现了，所以这里当作早期预警：> 5 秒就报，不必等连接池被拖死。
+          end=$(date -u +%Y-%m-%dT%H:%M:00Z)
+          start=$(date -u -d '-15 minutes' +%Y-%m-%dT%H:%M:00Z)
+          sql="select event_message from logs where source='postgres_logs' and event_message like '%checkpoint complete%' order by timestamp desc limit 5"
+          payload=$(jq -n --arg s "$sql" --arg a "$start" --arg b "$end" \
+            '{sql:$s,iso_timestamp_start:$a,iso_timestamp_end:$b}')
+          resp=$(curl -sS -m 60 -X POST \
+            "https://api.supabase.com/v1/projects/$REF/analytics/endpoints/logs" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -d "$payload" || echo '{}')
+          worst=$(echo "$resp" | jq -r '[.result[]?.event_message | capture("write=(?<w>[0-9.]+) s").w | tonumber] | max // 0' 2>/dev/null || echo 0)
+          echo "最近 15 分钟 checkpoint 最慢一次：${worst}s"
+          echo "worst=${worst}" >> "$GITHUB_OUTPUT"
+          if awk "BEGIN{exit !(${worst:-0} > 5)}"; then
+            echo "slow=yes" >> "$GITHUB_OUTPUT"
+            echo "### ⚠️ 存储变慢：checkpoint write=${worst}s" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "slow=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Warn about slow disk
+        if: steps.disk.outputs.slow == 'yes'
+        env:
+          WORST: ${{ steps.disk.outputs.worst }}
+        run: |
+          set -uo pipefail
+          stamp=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
+          title="⚠️ 后端存储变慢（还没挂，提前预警）"
+          payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg w "${WORST:-?}" \
+            '{msgtype:"markdown",markdown:{title:$t,text:("### "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n- checkpoint 最慢："+$w+"s（正常 < 1s，> 5s 就开始拖慢查询）\n- 建议：现在去 Dashboard 看实例状态；继续恶化会变成连接池耗尽、全站 5xx")}}')
+          curl -sS -m 20 -X POST "$DING" -H 'Content-Type: application/json' -d "$payload" >/dev/null
+          echo "已发送慢盘预警"
+
       - name: Notify DingTalk
         if: always() && steps.probe.outputs.state == 'down'
         env:
