@@ -46,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.drawImageRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -545,7 +544,9 @@ private fun AvatarCropDialog(
                         }
                     },
             ) {
-                drawImageRect(
+                // DrawScope 的成员重载：给源矩形和目的大小就按那一块画（1.12 里没有 drawImageRect
+                // 这个顶层扩展，带 src* 参数的版本就是它）。
+                drawImage(
                     image = bitmap,
                     srcOffset = IntOffset(sourceLeft.roundToInt(), sourceTop.roundToInt()),
                     srcSize = IntSize(sourceSide.roundToInt(), sourceSide.roundToInt()),
