@@ -1,0 +1,37 @@
+name: 🖼️ Probe image bed
+
+# 只读探针：往图床上传一张 1×1 JPEG，确认上传接口、Token、返回的直链都还活着。
+# 群里"发不了图片"有两层原因——群开关（`conversations.allow_image`）和图床本身；
+# 这个探针只回答后者，不改任何东西（图床那边会多一张 1×1 的图，用 `unicanta/probe` 目录区分）。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Upload a 1x1 jpeg
+        run: |
+          set -euo pipefail
+          printf '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==' | base64 -d > probe.jpg
+          ls -l probe.jpg
+          STAMP=$(date +%s)
+          RESP=$(curl -sS --fail-with-body -X POST "https://cloudflare-imgbed-erh.pages.dev/api/upload" \
+            -F "file=@probe.jpg;type=image/jpeg;filename=probe-$STAMP.jpg" \
+            -F "uid=imgbed_a9ca1aaf9b3ada8ef67725bc04122824f1db3123dc4a5b46434f1fad2c24cb20" \
+            -F "fileName=probe-$STAMP.jpg" \
+            -F "folder=unicanta/probe" \
+            -F "overwrite=1")
+          echo "$RESP"
+          echo "$RESP" | jq -e '.code == 0 and (.url | length > 0)' > /dev/null || {
+            echo "image bed upload failed" >&2
+            exit 1
+          }
+          URL=$(echo "$RESP" | jq -r '.url')
+          echo "uploaded: $URL"
+          curl -sS -o /dev/null -w "read back: %{http_code}\n" --fail-with-body "$URL"
