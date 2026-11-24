@@ -361,7 +361,7 @@ jobs:
           {
             echo ""
             echo "- 图床镜像：$MIRROR_URL"
-            echo "- 图床 APK：$BED_BASE/$APK_FOLDER/latest.apk"
+            # 开发版 APK 不在这里传（见上面那段注释），直链看 _site/development.json 的 file_bed。
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🚀 Push to gh-pages
