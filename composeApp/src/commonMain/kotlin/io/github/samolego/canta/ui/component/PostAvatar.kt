@@ -83,7 +83,10 @@ private fun avatarGlyph(name: String): String {
     val trimmed = name.trim()
     if (trimmed.isEmpty()) return "?"
     val first = trimmed[0]
-    if (first.isHighSurrogate() && trimmed.length > 1) return trimmed.substring(0, 2)
+    // 代理对要整对拿：只有高代理、后面又确实是低代理，才取两个字；否则画出方框。
+    if (first.isHighSurrogate() && trimmed.length > 1 && trimmed[1].isLowSurrogate()) {
+        return trimmed.substring(0, 2)
+    }
     val code = first.code
     val cjk = code in 0x4E00..0x9FFF || code in 0x3400..0x4DBF
     if (cjk) return first.toString()

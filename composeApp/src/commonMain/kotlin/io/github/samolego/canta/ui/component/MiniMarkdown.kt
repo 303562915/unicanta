@@ -227,7 +227,8 @@ private fun parseBlocks(text: String): List<MdBlock> {
             continue
         }
         if (trimmed.isEmpty()) {
-            blocks += MdBlock.Gap
+            // 连续空行只留一个间隙：两行空行在屏幕上不该变成两个 4dp 的洞。
+            if (blocks.lastOrNull() !== MdBlock.Gap) blocks += MdBlock.Gap
             i++
             continue
         }
@@ -305,13 +306,13 @@ private fun isRule(trimmed: String): Boolean {
 /**
  * `#` 的个数；不是标题返回 0。
  *
- * 后面必须跟一个空格：`#话题` 这种是正文里的标签，不是标题。
+ * 后面必须跟一个空白：`#话题` 这种是正文里的标签，不是标题；中文输入法打出的全角空格也算。
  */
 private fun headingLevel(trimmed: String): Int {
     var level = 0
     while (level < trimmed.length && level < 4 && trimmed[level] == '#') level++
     if (level == 0) return 0
-    if (level >= trimmed.length || trimmed[level] != ' ') return 0
+    if (level >= trimmed.length || !trimmed[level].isWhitespace()) return 0
     return level
 }
 

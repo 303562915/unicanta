@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -168,6 +169,8 @@ internal fun PostsScreen(
     var loading by remember { mutableStateOf(posts.isEmpty()) }
     var refreshing by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
+    /** 还有没有下一页：翻到底之后「加载更多」就收起来，别让人一直点。 */
+    var hasMore by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     /** 发帖、回帖、点赞、删帖之后 +1：只有它变了才重新拉。 */
     var reloadKey by remember { mutableIntStateOf(0) }
@@ -223,6 +226,8 @@ internal fun PostsScreen(
         if (posts.isEmpty()) loading = true
         val fresh = current.list(0, POSTS_PAGE)
         if (fresh != null) {
+            // 首页拿回来的条数就能说明还有没有下一页：不够一页就是到底了。
+            hasMore = fresh.size >= POSTS_PAGE
             // 就地合并：内容没变的那几条沿用旧实例，整表不重画；一个字节都没变时连状态写入都省掉。
             val merged = stableMerge(posts, fresh) { it.id }
             if (merged !== posts) {
@@ -278,7 +283,7 @@ internal fun PostsScreen(
      * 才有机会在按发布之前删掉它。
      */
     val onTagInputChange: (String) -> Unit = onTag@{ raw ->
-        val text = raw.take(TAG_LIMIT * 3)
+        val text = raw.take(TAG_LIMIT * TAG_MAX + 64)
         var buffer = StringBuilder()
         text.forEach { ch ->
             if (isTagSeparator(ch)) {
@@ -437,7 +442,10 @@ internal fun PostsScreen(
             loadingMore = false
             when {
                 fresh == null -> platform.showMessage("没拉到更多：${current.reason ?: "检查一下网络"}")
-                fresh.isEmpty() -> platform.showMessage("到底了")
+                fresh.isEmpty() -> {
+                    hasMore = false
+                    platform.showMessage("到底了")
+                }
                 else -> posts = posts + fresh.filterNot { next -> posts.any { it.id == next.id } }
             }
         }
@@ -534,6 +542,8 @@ internal fun PostsScreen(
         threadError = null
         reply = ""
         openId = post.id
+        // 先进加载态：详情那一帧还没有正文，不置 true 会闪一句「这条帖子没拉到」。
+        threadLoading = true
     }
 
     /** 引用某一楼：把那句话做成 Markdown 引用塞进回复框，接着写就行。 */
@@ -656,6 +666,8 @@ internal fun PostsScreen(
                 searchOpen = searchOpen,
                 authorId = authorId,
                 canWrite = canWrite,
+                hasMore = hasMore,
+                hasBackend = store != null,
                 listState = postListState,
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
@@ -710,6 +722,8 @@ private fun PostListPane(
     searchOpen: Boolean,
     authorId: String,
     canWrite: Boolean,
+    hasMore: Boolean,
+    hasBackend: Boolean,
     listState: LazyListState,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
@@ -852,7 +866,13 @@ private fun PostListPane(
 
             if (posts.isEmpty() && !loading && error == null) {
                 item(key = "posts-empty") {
-                    PostNote(text = "还没有人发帖。第一帖可以是你在用的某个方案、某台机器，或者一句吐槽。")
+                    PostNote(
+                        text = if (hasBackend) {
+                            "还没有人发帖。第一帖可以是你在用的某个方案、某台机器，或者一句吐槽。"
+                        } else {
+                            "社区后端没连上：这一栏现在只是一张空页，连上没有帖子的时候才是真的没人发。"
+                        },
+                    )
                 }
             }
 
@@ -864,7 +884,7 @@ private fun PostListPane(
                 )
             }
 
-            if (posts.size >= POSTS_PAGE) {
+            if (hasMore && posts.size >= POSTS_PAGE) {
                 item(key = "posts-more") {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -881,7 +901,7 @@ private fun PostListPane(
                 PostNote(
                     text = if (canWrite) {
                         "帖子只经后端读写：认不出身份就发不出去，也删不了别人的帖子。" +
-                            "写下的字每 700 毫秒存一次本地草稿，发出去成功之后才删。"
+                            "手停下来 700 毫秒存一次本地草稿，发出去成功之后才删。"
                     } else {
                         "现在只能看：还没认出身份，写帖子会提示重新进一次社区页。"
                     },
@@ -1068,7 +1088,7 @@ private fun PostThreadPane(
                         footer = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Button(
-                                    enabled = busyKey == null || busyKey == "like:${shown.id}",
+                                        enabled = busyKey == null,
                                     onClick = onToggleLike,
                                 ) {
                                     Text(
@@ -1184,7 +1204,9 @@ private fun PostFloorCard(
                     color = scheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    // 名字占满剩下的宽度，楼层号、徽章、时间跟着名字走；名字太长就省略号，
+                    // 而不是像以前那样被砍掉一半宽度、右边却留一片白。
+                    modifier = Modifier.weight(1f),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
@@ -1200,7 +1222,6 @@ private fun PostFloorCard(
                         color = if (badge == "置顶") PostPinned else scheme.primary,
                     )
                 }
-                Spacer(modifier = Modifier.weight(1f))
                 if (stamp.isNotBlank()) {
                     Text(
                         text = stamp,
@@ -1237,7 +1258,8 @@ private fun ReplyBar(
     onSend: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Surface(color = FlSurfaceLevel.Block.colorOf(scheme)) {
+    // 整块吃输入法 inset：edge-to-edge 下系统不再缩窗口，不垫这一下吸底输入栏会被键盘盖住。
+    Surface(modifier = Modifier.imePadding(), color = FlSurfaceLevel.Block.colorOf(scheme)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
