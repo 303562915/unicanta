@@ -67,6 +67,8 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | `apk-handoff.yml` 📤 APK Handoff | 仅 `workflow_dispatch`（`run_id`，`tag` 必须以 `ci-` 开头） | 把某个 run 的 `app-debug` 复制成预发布资产，不构建任何东西 | release 资产 |
 | `daily-device-report.yml` 📊 Daily device report | 定时 + `workflow_dispatch` | 钉钉日报（读 `canta_users`；识别率口径见第 9 节）；也被两个发版工作流 `workflow_call` 调来发「已发布」通知 | — |
 | `group-release-notice.yml` 📣 Group release notice | 仅 `workflow_call`（被 `development-release.yml` / `release.yml` 调用） | 发版成功后用 `sender='ai'`（群聊AI）在内测灰度群插一条公告：版本、提交、下载页、APK 直链、校验和；同时推 `last_message_at` | — |
+| `bug-inbox.yml` 🐞 Bug inbox | `workflow_dispatch`（`conversation_id` / `limit` / `since_id`） | 读 Bug 反馈群的消息（JSON 打日志 + run summary），供 AI 整理问题；见第 13 节 | — |
+| `bootstrap-bug-group.yml` 🐞 | `workflow_dispatch` | 一次性/幂等：建「UniCanta Bug 反馈」群并生成邀请码（已跑过，重复跑只会把群号与邀请码再打一遍） | — |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |
 
 > 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`）
@@ -502,3 +504,31 @@ code 取值：检查 `UpdateFailure`（`RATE_LIMITED`/`TIMEOUT`/`NETWORK`/`SERVE
    多半是签名不同（F-Droid 装的那个），`Shizuku 没在运行` 是运行时掉了。
 5. 版本号没变但用户说「没更新」→ 看 `stage=check/outcome=ok` 的 `version`，再看 `skippedAutoInstallVersion`
    （自动安装失败过的版本会被记下来，停在关于页手动安装）。
+
+---
+
+## 13. Bug 反馈群：用户贴问题，AI 自己读、自己修
+
+群：`conversations.id = 18`「UniCanta Bug 反馈」，邀请码 `ceaeb0a30182`，群主 `created_by = 10003`。
+客户端里它在 `OfficialGroup.kt` 的 `OfficialGroups.entries` 第二项 —— 消息页最上面那一行，点一下
+`group_invite_join`（幂等）就进群。灰度测试群是 `id = 12`，发版公告也发在那里（见第 2 节
+`group-release-notice.yml`）。
+
+**读群消息**（本机到 `api.supabase.com` 不通，所以一律走 CI）：
+
+```bash
+gh workflow run bug-inbox.yml -f conversation_id=18 -f limit=50      # 增量：再加 -f since_id=<上次最大 id>
+sleep 20; gh run list --workflow bug-inbox.yml --limit 1 --json databaseId,status,conclusion --jq '.[0]'
+gh run view <id> --log | sed -n '/--- json ---/,$p'                  # id / sender / sender_name / kind / created_at / body
+```
+
+**处理约定**：
+
+1. 每条按「机型 + 系统版本 + 现象 + 复现步骤」归类；同一现象合并成一条，别按消息条数算 bug 数。
+2. 能复现、能定位的改代码修（照第 3 节：改完推 master，派子智能体盯 debug，绿了才收工）。
+3. 修完在群里回一句结论（`sender='ai'`、`sender_name='群聊AI'`，直接往 `public.messages` 插一行
+   并推 `conversations.last_message_at`，写法与 `group-release-notice.yml` 里那段 SQL 一致）。
+4. 修不了的（需要用户机型复现、缺日志）就在群里问，问清再动手；不要留一个"已处理"的假状态。
+
+**建群/换群**：`bootstrap-bug-group.yml` 是幂等的（群名存在就只读回群号与邀请码），改名或重建时
+改它里面那句 `title` 再跑一次，然后把新邀请码同步进 `OfficialGroups.entries`。

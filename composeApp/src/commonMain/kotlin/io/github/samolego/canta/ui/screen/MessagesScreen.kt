@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -69,7 +70,8 @@ import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.InboxSummary
 import io.github.samolego.canta.data.community.MessageHit
-import io.github.samolego.canta.data.community.OfficialGroup
+import io.github.samolego.canta.data.community.OfficialGroupEntry
+import io.github.samolego.canta.data.community.OfficialGroups
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
@@ -260,8 +262,8 @@ fun MessagesScreen(
     var searchError by remember { mutableStateOf<String?>(null) }
     // 「全部标为已读」是一次网络调用：点完就把协程交出去，界面不等它。
     val scope = rememberCoroutineScope()
-    /** 正在加入官方内测群：挡住连点，也把那一行的小字换成「加入中…」。 */
-    var joiningOfficial by remember { mutableStateOf(false) }
+    /** 正在加入哪个官方群（按群名记）：挡住连点，也把那一行的小字换成「加入中…」。 */
+    val joiningOfficial = remember { mutableStateMapOf<String, Boolean>() }
     // 这一页此刻在不在前台。切到后台时轮询必须停：这一页离开屏幕不会被销毁（导航栈里还活着），
     // 以前那个 `while (true)` 照转，夜里 4–5 千次/小时的基线就是它——没人在看的时候在问后端。
     //
@@ -536,13 +538,18 @@ fun MessagesScreen(
     // 所以在画的时候过滤：取消拉黑那一刻这一行会当场回来，不必等一次重新拉取。
     val reachableConversations = conversations.filterNot { it.blockedBy(blockedPeers) }
     // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
-    // 官方内测群排在列表最前：它就是「置顶」，不依赖后端那一列，也不会因为本地没点过置顶就沉下去。
+    // 官方群（灰度测试群、Bug 反馈群）排在列表最前：它们就是「置顶」，不依赖后端那一列，
+    // 也不会因为本地没点过置顶就沉下去。各自按 [OfficialGroups.entries] 的顺序排，其余保持原顺序。
     val visibleConversations = reachableConversations
         .filterNot { it.isFoldedGroup() }
-        .sortedByDescending { it.title == OfficialGroup.TITLE }
-    // 已经在群里的话，上面那一行点下去直接进这个会话，不必再走一次加入。
-    val officialConversation = conversations.firstOrNull {
-        it.kind == "group" && it.title == OfficialGroup.TITLE
+        .sortedBy { OfficialGroups.rankOf(it.title) }
+    // 已经在群里的官方群：上面那一行点下去直接进这个会话，不必再走一次加入。
+    val joinedOfficial = conversations.filter {
+        it.kind == "group" && it.title in OfficialGroups.titles
+    }
+    // 还没加入的官方群，各画一行入口。
+    val notJoinedOfficial = OfficialGroups.entries.filterNot { entry ->
+        joinedOfficial.any { it.title == entry.title }
     }
     // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
     val foldedGroups = conversations.filter { it.isFoldedGroup() }
@@ -771,24 +778,25 @@ fun MessagesScreen(
                             }
                         }
                         // 还没进群的人才需要这一行：进了群的，它就在下面的列表里排在最前面（那才是"置顶"）。
-                        // 也不写人数——这个群还在内测，人数是主办方的事。
-                        if (officialConversation == null) {
-                            item(key = "entry-official") {
+                        // 也不写人数——官方群的人数不该摆在谁都能看见的地方。
+                        notJoinedOfficial.forEach { entry ->
+                            item(key = "entry-official-${entry.title}") {
                                 OfficialGroupRow(
+                                    entry = entry,
                                     joined = false,
-                                    joining = joiningOfficial,
+                                    joining = joiningOfficial[entry.title] == true,
                                     onClick = {
-                                        if (!joiningOfficial) {
+                                        if (joiningOfficial[entry.title] != true) {
                                             scope.launch {
-                                                joiningOfficial = true
+                                                joiningOfficial[entry.title] = true
                                                 // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
-                                                val id = repository.joinByInvite(owner, OfficialGroup.INVITE_CODE)
-                                                joiningOfficial = false
+                                                val id = repository.joinByInvite(owner, entry.inviteCode)
+                                                joiningOfficial[entry.title] = false
                                                 if (id != null) {
                                                     reloads++
                                                     onOpenChat(id)
                                                 } else {
-                                                    onMessage("没进成内测群，检查代理后再试")
+                                                    onMessage("没进成「${entry.title}」，检查代理后再试")
                                                 }
                                             }
                                         }
@@ -876,9 +884,9 @@ fun MessagesScreen(
                                     mutual.contains(conversation.peerName),
                                 // 拉黑过的行本来就被过滤掉了，长按不到；这里按名单决定文案就行。
                                 blocked = conversation.blockedBy(blockedPeers),
-                                // 官方内测群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样：
+                                // 官方群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样：
                                 // 以前一个灰底一个白底，同一页里两种置顶，看着像两套规则。
-                                forcePinnedLook = conversation.title == OfficialGroup.TITLE,
+                                forcePinnedLook = conversation.title in OfficialGroups.titles,
                                 onOpen = { onOpenChat(conversation.id) },
                                 onTogglePin = { togglePin(conversation) },
                                 onToggleMute = { toggleMute(conversation) },
@@ -1590,15 +1598,16 @@ private fun NoFriendsCell() {
 }
 
 /**
- * 官方内测群那一行，钉在消息页最上面。
+ * 一个官方群那一行，钉在消息页最上面。
  *
- * 它和会话行长得像，但不是会话行：没进群的人列表里根本没有这个会话，所以它由 [OfficialGroup]
+ * 它和会话行长得像，但不是会话行：没进群的人列表里根本没有这个会话，所以它由 [OfficialGroups]
  * 那份常量长出来，点一下走 `group_invite_join`（幂等）加入再进去；已经在群里就直接进去。
  *
- * **不写人数**：这是内测群，人还少，人数不该摆在谁都能看见的地方。
+ * **不写人数**：官方群的人数不该摆在谁都能看见的地方。
  */
 @Composable
 private fun OfficialGroupRow(
+    entry: OfficialGroupEntry,
     joined: Boolean,
     joining: Boolean,
     onClick: () -> Unit,
@@ -1611,17 +1620,17 @@ private fun OfficialGroupRow(
             .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
             .clickable(
                 enabled = !joining,
-                onClickLabel = if (joined) "进入内测群" else "加入内测群",
+                onClickLabel = if (joined) "进入${entry.title}" else "加入${entry.title}",
                 onClick = onClick,
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(label = "测")
+        InitialAvatar(label = entry.badge)
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = OfficialGroup.TITLE,
+                text = entry.title,
                 style = FlText.subheadline,
                 fontWeight = FlText.emphasized,
                 color = scheme.onSurface,
@@ -1632,8 +1641,8 @@ private fun OfficialGroupRow(
             Text(
                 text = when {
                     joining -> "正在加入…"
-                    joined -> OfficialGroup.TAGLINE
-                    else -> "官方内测群 · 点一下加入"
+                    joined -> entry.tagline
+                    else -> "官方群 · 点一下加入"
                 },
                 style = FlText.caption2,
                 color = scheme.onSurfaceVariant,

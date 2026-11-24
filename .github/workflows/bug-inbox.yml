@@ -1,0 +1,72 @@
+name: 🐞 Bug inbox
+
+# 读 Bug 反馈群（`conversations.id = 18`「UniCanta Bug 反馈」）里用户贴的问题，
+# 把最近若干条原样打出来，方便 AI 自己整理、定位、修复。
+#
+# 为什么走 CI：本机到 `api.supabase.com` 的网络是断的，CI 里同一个 Management API 是通的。
+# 用法：`gh workflow run bug-inbox.yml -f conversation_id=18 -f limit=50`
+#      然后 `gh run list --workflow bug-inbox.yml --limit 1` 拿 run id，
+#      `gh run view <id> --log` 读 JSON（Step summary 里也有一张给人看的表）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      conversation_id:
+        description: "群号（默认 18 = UniCanta Bug 反馈）"
+        type: string
+        default: "18"
+      limit:
+        description: "读最近多少条（1–200）"
+        type: string
+        default: "50"
+      since_id:
+        description: "只看消息 id 大于它的（0 = 不限，用于增量读）"
+        type: string
+        default: "0"
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read the messages
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+          CONVERSATION_ID: ${{ inputs.conversation_id }}
+          LIMIT: ${{ inputs.limit }}
+          SINCE_ID: ${{ inputs.since_id }}
+        run: |
+          set -euo pipefail
+          for v in "$CONVERSATION_ID" "$LIMIT" "$SINCE_ID"; do
+            case "$v" in
+              ''|*[!0-9]*) echo "conversation_id / limit / since_id 必须是数字（收到 '$v'）" >&2; exit 1 ;;
+            esac
+          done
+          if [ "$LIMIT" -lt 1 ] || [ "$LIMIT" -gt 200 ]; then
+            echo "limit 必须在 1..200" >&2
+            exit 1
+          fi
+          SQL="select m.id, m.sender, m.sender_name, m.kind, m.created_at, m.body
+                 from public.messages m
+                where m.conversation_id = $CONVERSATION_ID
+                  and m.removed = false
+                  and m.id > $SINCE_ID
+                order by m.id desc
+                limit $LIMIT"
+          RESP=$(curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$SQL" '{query: $q}')")
+          echo "--- json ---"
+          echo "$RESP" | jq .
+          # 给人看的一份（run summary）：新的在上面，一条一段。
+          {
+            echo "## Bug 反馈群 · 最近 $LIMIT 条（group $CONVERSATION_ID）"
+            echo
+            echo "$RESP" | jq -r '.[] | "### #\(.id) · \(.created_at)\n**\(.sender_name)（\(.sender)）**\n\n\(.body)\n"'
+          } >> "$GITHUB_STEP_SUMMARY"
