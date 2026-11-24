@@ -29,12 +29,20 @@ data class DeviceProfile(
      * MIUI/HyperOS where [model] is something like "23113RKC6C".
      */
     val marketName: String = "",
+    /**
+     * The ROM's own build string ("16.0.3", "OS2.0.7.0.VNCCNXM"), read from the same properties
+     * [DeviceContext] reads its major version from. Empty when the ROM reports nothing usable.
+     *
+     * Plans are matched and labelled on this: one model ships several builds a year, and a
+     * package set proven on 16.0.3 is not the same claim on 16.0.501.
+     */
+    val romBuild: String = "",
 ) {
     /** What the UI shows for the phone: the marketing name when there is one, else [model]. */
     val displayModel: String get() = marketName.ifBlank { model }
 
-    /** "HyperOS 2" — the ROM as people name it. */
-    private val romPart: String get() = romLabelOf(rom, romVersion)
+    /** "HyperOS 16.0.3" — the ROM as people name it, at the build the phone actually runs. */
+    private val romPart: String get() = romLabelOf(rom, romVersion, romBuild)
 
     /**
      * "Redmi K70 · HyperOS 2 · Android 15": one line, no part number, for headers and plan rows.

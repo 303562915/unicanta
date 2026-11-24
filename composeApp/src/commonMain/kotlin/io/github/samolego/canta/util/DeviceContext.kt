@@ -28,12 +28,42 @@ data class DeviceContext(
 }
 
 /**
- * A ROM family with its major version, the way a plan row names the build it was made on:
- * "HyperOS 2", or just "Android" on a stock build — a version number means nothing there.
+ * A ROM family with its build, the way a plan row names the build it was made on:
+ * "HyperOS 16.0.3", or just "Android" on a stock build — a version number means nothing there.
+ *
+ * [build] is the ROM's own string, kept on the phone and stored on the row (see [romBuildOf]).
+ * One model ships several builds a year — "16.0.3" and "16.0.501" are different package sets on
+ * the same phone — so the major version alone is too coarse to tell two plans apart. A row from
+ * before builds were stored has none, and then the major version is all there is.
  */
-fun romLabelOf(rom: String, romVersion: Int): String {
+fun romLabelOf(rom: String, romVersion: Int, build: String = ""): String {
     val name = romName(rom)
-    return if (romVersion > 0 && name != "Android") "$name $romVersion" else name
+    if (name == "Android") return name
+    val detail = romBuildLabel(rom, build)
+    return if (detail.isNotEmpty()) "$name $detail"
+    else if (romVersion > 0) "$name $romVersion"
+    else name
+}
+
+private val BUILD_NUMBERS = Regex("""\d+(?:\.\d+)*""")
+
+/**
+ * The part of a build string worth showing: "16.0.3" out of "V16.0.3", "2.0.7" out of
+ * "OS2.0.7.0.VNCCNXM" (the tail is a region code, not a version), and "8.1" out of One UI's
+ * single number "80100".
+ *
+ * Empty when the string carries no digits at all — the caller then falls back to the major version.
+ */
+fun romBuildLabel(rom: String, build: String): String {
+    val text = build.trim()
+    if (text.isEmpty()) return ""
+    val numbers = BUILD_NUMBERS.find(text)?.value ?: return ""
+    return if (rom.equals("oneui", ignoreCase = true) && numbers.length >= 5) {
+        val n = numbers.toLongOrNull() ?: return numbers
+        "${n / 10000}.${(n / 100) % 100}"
+    } else {
+        numbers.split('.').filter { it.isNotEmpty() }.take(3).joinToString(".")
+    }
 }
 
 /**
@@ -203,6 +233,37 @@ private fun miuiMajor(name: String?, code: String?): Int? {
     if (n <= 20) return n
     return digits.take(2).toInt().takeIf { it <= 20 } ?: digits.take(1).toInt()
 }
+
+/**
+ * The ROM's own build string, exactly as the property reports it ("16.0.3", "OS2.0.7.0.VNCCNXM",
+ * "80100"), or "" on a stock build.
+ *
+ * [DeviceContext.romVersion] is the major version on purpose: telemetry must not be able to
+ * single a phone out, and a build number is close to a fingerprint. This one never leaves the
+ * phone by itself — it is stored only on a plan the user uploads, next to the model, so that two
+ * plans for the same phone but different builds ("16.0.3" and "16.0.501") can be told apart.
+ */
+fun romBuildOf(props: Map<String, String>): String {
+    val key = ROM_BUILD_PROP_KEYS.firstOrNull { !props[it].isNullOrBlank() } ?: return ""
+    return props[key]?.trim().orEmpty()
+}
+
+/**
+ * The properties [romBuildOf] reads, in the same precedence as [deviceContextOf] so the build and
+ * the family never come from two different ROMs (a HyperOS phone whose old MIUI keys linger).
+ */
+val ROM_BUILD_PROP_KEYS: List<String> = listOf(
+    "ro.mi.os.version.name",
+    "ro.miui.ui.version.name",
+    "ro.build.version.oneui",
+    "ro.build.version.realmeui",
+    "ro.build.version.opporom",
+    "ro.vivo.os.version",
+    "ro.build.version.magic",
+    "ro.build.version.emui",
+    "ro.oxygen.version",
+    "ro.build.nothing.version",
+)
 
 /** Builds the [DeviceContext] from system properties (see [DEVICE_PROP_KEYS]). */
 fun deviceContextOf(props: Map<String, String>): DeviceContext {

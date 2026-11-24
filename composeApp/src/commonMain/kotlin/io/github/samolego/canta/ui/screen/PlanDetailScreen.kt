@@ -119,6 +119,7 @@ import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
 import io.github.samolego.canta.util.SafetyVerdict
+import io.github.samolego.canta.util.romLabelOf
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -899,7 +900,7 @@ private fun PlanDetailContent(
         state = listState,
         contentPadding = PaddingValues(top = topSpace, bottom = 16.dp),
     ) {
-        item { PlanHero(plan, uploaderName, me, liked, foreign, onVote, onUsePlan, coverage = coverage, onOpenUploader = onOpenUploader, onEditNote = onEditNote) }
+        item { PlanHero(plan, uploaderName, me, liked, foreign, profile = profile, onVote = onVote, onUsePlan = onUsePlan, coverage = coverage, onOpenUploader = onOpenUploader, onEditNote = onEditNote) }
 
         item {
             SectionTitle(
@@ -1021,6 +1022,8 @@ private fun PlanHero(
     me: String,
     liked: Boolean,
     foreign: Boolean,
+    /** The reader's own phone: only used to say when the plan was proven on another build. */
+    profile: DeviceProfile? = null,
     onVote: () -> Unit,
     onUsePlan: () -> Unit,
     /** The other phones this package set was proven on, most-proven first; empty when unknown. */
@@ -1134,6 +1137,26 @@ private fun PlanHero(
             }
             // The plan names the phone it was proven on. When that is not this one, the page says
             // it twice: once as the mismatch, once as what will happen (nothing will stop it).
+            //
+            // Same phone and same major ROM, different build ("16.0.3" against "16.0.501") is the
+            // case the page used to hide: the plan was still listed as if it were this phone's, and
+            // the package list of one build is not the package list of the next. It stays listed —
+            // emptying the page on every point update would be worse — and says which build it is.
+            if (!foreign && profile != null && !plan.sameBuild(profile)) {
+                Text(
+                    text = "这套方案是在「${romLabelOf(plan.rom, plan.romVersion, plan.romBuild)}」上验证的，" +
+                        "本机是「${romLabelOf(profile.rom, profile.romVersion, profile.romBuild)}」。" +
+                        "同一机型不同系统版本的包列表可能不一样，用之前先核对一遍。",
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.error,
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                )
+            }
             if (foreign) {
                 Column(
                     modifier = Modifier

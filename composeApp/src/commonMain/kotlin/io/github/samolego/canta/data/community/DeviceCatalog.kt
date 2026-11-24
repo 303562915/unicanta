@@ -4,11 +4,15 @@ import io.github.samolego.canta.util.romLabelOf
 import kotlinx.serialization.Serializable
 
 /**
- * One build the community has plans for: a model plus the ROM version those plans were made on.
+ * One build the community has plans for: a model plus the ROM build those plans were made on.
  *
  * The counts come straight from the backend's `plan_catalog`. [plans]/[people] belong to this
  * build; [modelPlans]/[modelPeople] to the whole model, which is what its chip shows — somebody who
  * registered on the model but never published anything still joined it.
+ *
+ * [romBuild] is the ROM's own string ("16.0.3"): one model ships several builds a year, and the
+ * package set that fits one does not have to fit the next. Rows uploaded before builds were stored
+ * carry "", and are then pooled under the major version alone.
  */
 data class CatalogBuild(
     val brand: String,
@@ -16,16 +20,20 @@ data class CatalogBuild(
     val marketName: String = "",
     val rom: String = "",
     val romVersion: Int = 0,
+    val romBuild: String = "",
     val plans: Int = 0,
     val people: Int = 0,
     val modelPlans: Int = plans,
     val modelPeople: Int = people,
 ) {
-    /** The build as people name it: "HyperOS 2", or "Android" on a stock ROM. */
-    val romLabel: String get() = romLabelOf(rom, romVersion)
+    /** The build as people name it: "HyperOS 16.0.3", or "Android" on a stock ROM. */
+    val romLabel: String get() = romLabelOf(rom, romVersion, romBuild)
 
     /** "全部版本" for the model-wide pseudo build; the version otherwise. */
     val versionLabel: String get() = romLabel
+
+    /** Identity of this chip, so two builds of one model never collapse into one selection. */
+    val key: String get() = "$rom/$romVersion/$romBuild"
 }
 
 /** One model with every build the backend knows, most active first. */
@@ -75,7 +83,11 @@ fun List<CatalogBuild>.toCatalogModels(): List<CatalogModel> {
             // Any build carries the model's marketing name; the newest one wins.
             marketName = builds.firstOrNull { it.marketName.isNotBlank() }?.marketName.orEmpty(),
             builds = builds.sortedWith(
-                compareByDescending<CatalogBuild> { it.romVersion }.thenBy { it.rom }
+                // Newest build first: "16.0.501" above "16.0.3", and the rows that carry no build
+                // (uploaded before builds were stored) settle at the bottom of the model.
+                compareByDescending<CatalogBuild> { it.romVersion }
+                    .thenByDescending { it.romBuild }
+                    .thenBy { it.rom }
             ),
         )
     }
@@ -271,15 +283,17 @@ data class DeviceCoverage(
     val marketName: String = "",
     val rom: String = "",
     val romVersion: Int = 0,
+    /** The ROM's own build string ("16.0.3"); "" on uploads that predate it. */
+    val romBuild: String = "",
     val sdk: Int = 0,
     val verified: Int = 0,
 ) {
     /** "Redmi K70": the marketing name when the backend has one, else the retail model number. */
     val label: String get() = marketName.ifBlank { model }
 
-    /** "Redmi K70 · HyperOS 2": the same shape the plan's own device line uses. */
+    /** "Redmi K70 · HyperOS 16.0.3": the same shape the plan's own device line uses. */
     val buildLabel: String
-        get() = listOf(label, romLabelOf(rom, romVersion))
+        get() = listOf(label, romLabelOf(rom, romVersion, romBuild))
             .filter { it.isNotBlank() }
             .joinToString(" · ")
 }

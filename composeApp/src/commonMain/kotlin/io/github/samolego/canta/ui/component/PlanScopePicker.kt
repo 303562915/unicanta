@@ -135,11 +135,12 @@ fun PlanScopeBar(
     val colors = MaterialTheme.colorScheme
     val openedScope = scope as? PlanScope.Other
     // One entry per build: a LazyRow key has to be unique, and the client groups builds by
-    // (rom, version) rather than trusting the row count the backend sent.
-    val builds = openedScope?.model?.builds.orEmpty().distinctBy { it.rom + "/" + it.romVersion }
+    // (rom, version, build) rather than trusting the row count the backend sent. Two builds of one
+    // major version ("16.0.3", "16.0.501") are two entries here — that is the whole point.
+    val builds = openedScope?.model?.builds.orEmpty().distinctBy { it.key }
     val currentBuild = openedScope?.build
     val selectedBuildIndex = builds.indexOfFirst { build ->
-        currentBuild != null && currentBuild.rom == build.rom && currentBuild.romVersion == build.romVersion
+        currentBuild != null && currentBuild.key == build.key
     }
     // Hoisted out of the branch below: a state remembered inside it would be discarded and rebuilt
     // whenever the bar flips between "has builds" and "has none", and the scroll position with it.
@@ -183,10 +184,8 @@ fun PlanScopeBar(
                 verticalAlignment = Alignment.CenterVertically,
                 contentPadding = PaddingValues(end = 4.dp),
             ) {
-                items(builds, key = { it.rom + "/" + it.romVersion }) { build ->
-                    val selected = currentBuild != null &&
-                        currentBuild.rom == build.rom &&
-                        currentBuild.romVersion == build.romVersion
+                items(builds, key = { it.key }) { build ->
+                    val selected = currentBuild != null && currentBuild.key == build.key
                     ScopeChip(
                         text = build.versionLabel,
                         selected = selected,
@@ -533,7 +532,7 @@ private fun BuildPicker(
             model.builds.forEach { build ->
                 ScopeChip(
                     text = build.versionLabel + peopleSuffix(build.people),
-                    selected = selectedBuild?.rom == build.rom && selectedBuild.romVersion == build.romVersion,
+                    selected = selectedBuild?.key == build.key,
                     onClick = { onSelect(PlanScope.Other(model, build)) },
                 )
             }

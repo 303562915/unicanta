@@ -7,8 +7,13 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/** The device a cached list belongs to, so a list from another phone is never shown. */
-private fun DeviceProfile.cacheKey(): String = listOf(model, device, rom, romVersion).joinToString("|")
+/**
+ * The device a cached list belongs to, so a list from another phone is never shown. The build is
+ * part of the key: after "16.0.3" turns into "16.0.501" the cached rows are another build's plans,
+ * and the page has to load the new build's instead of painting the old ones as this phone's.
+ */
+private fun DeviceProfile.cacheKey(): String =
+    listOf(model, device, rom, romVersion, romBuild).joinToString("|")
 
 /**
  * 两份列表存在同一个 blob 里，各占一个字段：

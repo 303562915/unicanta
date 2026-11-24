@@ -34,6 +34,7 @@ import io.github.samolego.canta.util.deviceContextOf
 import io.github.samolego.canta.util.marketNameFallback
 import io.github.samolego.canta.util.marketNameOf
 import io.github.samolego.canta.util.parseGetprop
+import io.github.samolego.canta.util.romBuildOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -285,6 +286,9 @@ class AndroidCantaHandler(
             release = Build.VERSION.RELEASE.orEmpty(),
             rom = ctx?.rom ?: "unknown",
             romVersion = ctx?.romVersion ?: 0,
+            // The build itself, kept for plans only: two builds of one model are two different
+            // package sets, and a row that names only the major version cannot say which.
+            romBuild = romBuildOf(props),
             fingerprint = Build.FINGERPRINT.orEmpty(),
             // The market name is the only field Build does not expose: MIUI/HyperOS keeps the
             // retail number in MODEL and the name people know in ro.product.marketname. When the

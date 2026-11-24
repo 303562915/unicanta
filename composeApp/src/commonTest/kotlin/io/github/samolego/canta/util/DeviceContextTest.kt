@@ -1,5 +1,6 @@
 package io.github.samolego.canta.util
 
+import io.github.samolego.canta.data.community.CommunityPlan
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -75,5 +76,52 @@ class DeviceContextTest {
         assertEquals("HyperOS 1", DeviceContext("xiaomi", "hyperos", 1, 34).romLabel())
         assertEquals("One UI 6", DeviceContext("samsung", "oneui", 6, 34).romLabel())
         assertEquals("Android", DeviceContext("google", "stock", 0, 34).romLabel())
+    }
+
+    @Test
+    fun romBuildIsTheWholeVersionNotJustTheMajorOne() {
+        // The same phone ships 16.0.3 and 16.0.501: both are major version 16, but they are two
+        // builds, and the label has to say which one a plan row is about.
+        assertEquals("16.0.3", romBuildOf(mapOf("ro.build.version.opporom" to "V16.0.3")))
+        assertEquals("16.0.501", romBuildOf(mapOf("ro.build.version.opporom" to "V16.0.501")))
+        assertEquals("2.0.7", romBuildOf(mapOf("ro.mi.os.version.name" to "OS2.0.7.0.VNCCNXM")))
+        assertEquals("", romBuildOf(mapOf("ro.rom.version" to "something else")))
+        // HyperOS wins over the MIUI props it still carries, exactly like the family does.
+        assertEquals(
+            "OS2.0.7.0.VNCCNXM",
+            romBuildOf(mapOf("ro.mi.os.version.name" to "OS2.0.7.0.VNCCNXM", "ro.miui.ui.version.name" to "V816")),
+        )
+    }
+
+    @Test
+    fun buildLabelFallsBackToTheMajorVersion() {
+        assertEquals("ColorOS 16.0.3", romLabelOf("coloros", 16, "V16.0.3"))
+        assertEquals("ColorOS 16.0.501", romLabelOf("coloros", 16, "V16.0.501"))
+        // A row from before builds were stored: the old label, unchanged.
+        assertEquals("ColorOS 16", romLabelOf("coloros", 16, ""))
+        // One UI reports one number; the label reads it as major.minor.
+        assertEquals("One UI 8.1", romLabelOf("oneui", 8, "80100"))
+        // A stock ROM has no name to qualify.
+        assertEquals("Android", romLabelOf("stock", 0, "16.0.3"))
+    }
+
+    @Test
+    fun planMatchesStayOnTheMajorVersionWhileSameBuildIsExact() {
+        val mine = DeviceProfile(
+            brand = "OPPO", model = "PHK110", device = "salto", sdk = 36, release = "16",
+            rom = "coloros", romVersion = 16, fingerprint = "x", romBuild = "V16.0.501",
+        )
+        val older = CommunityPlan(
+            id = 1, title = "t", note = "", packages = listOf("com.a"), votes = 0, comments = 0,
+            createdAt = "", rebootedAt = "", model = "PHK110", rom = "coloros", romVersion = 16,
+            romBuild = "V16.0.3",
+        )
+        // Listed, because hiding a whole major version would empty the page after a point update…
+        assertEquals(true, older.matches(mine))
+        // …but the page can say the package list was proven on another build.
+        assertEquals(false, older.sameBuild(mine))
+        assertEquals(true, older.copy(romBuild = "V16.0.501").sameBuild(mine))
+        // Rows that carry no build predate the column: nothing to compare, so no warning.
+        assertEquals(true, older.copy(romBuild = "").sameBuild(mine))
     }
 }

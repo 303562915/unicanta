@@ -111,6 +111,7 @@ import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
 import io.github.samolego.canta.util.SafetyVerdict
+import io.github.samolego.canta.util.romLabelOf
 import io.github.samolego.canta.util.romName
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.delay
@@ -389,6 +390,7 @@ fun SafetyRulesScreen(
                         model = scope.model.model,
                         rom = scope.build?.rom.orEmpty(),
                         romVersion = scope.build?.romVersion ?: 0,
+                        romBuild = scope.build?.romBuild.orEmpty(),
                     )
                     if (result != null) {
                         fetched = result
@@ -409,6 +411,7 @@ fun SafetyRulesScreen(
                             marketName = scope.model.marketName,
                             rom = scope.build?.rom ?: plan.rom,
                             romVersion = scope.build?.romVersion ?: plan.romVersion,
+                            romBuild = scope.build?.romBuild ?: plan.romBuild,
                         )
                     }
                 }
@@ -792,6 +795,7 @@ fun SafetyRulesScreen(
                                     model = current.model.model,
                                     rom = current.build?.rom.orEmpty(),
                                     romVersion = current.build?.romVersion ?: 0,
+                                    romBuild = current.build?.romBuild.orEmpty(),
                                 )
                             }
                             // 删掉的那一行也得从缓存里消失，否则下次进来会先把它画回来再刷掉。
@@ -818,10 +822,9 @@ fun SafetyRulesScreen(
     }
 }
 
-/** "HyperOS 2 · Android 15", without the doubled space a stock ROM would leave behind. */
+/** "HyperOS 16.0.3 · Android 16", without the doubled space a stock ROM would leave behind. */
 private fun romLine(profile: DeviceProfile): String {
-    val name = romName(profile.rom)
-    val romPart = if (profile.romVersion > 0 && name != "Android") "$name ${profile.romVersion}" else name
+    val romPart = romLabelOf(profile.rom, profile.romVersion, profile.romBuild)
     return if (romPart == "Android") {
         "Android ${profile.release}"
     } else {

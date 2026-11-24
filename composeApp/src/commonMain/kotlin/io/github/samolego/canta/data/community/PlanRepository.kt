@@ -84,6 +84,15 @@ data class CommunityPlan(
     val rom: String = "",
     val romVersion: Int = 0,
     /**
+     * The ROM's own build string ("16.0.3"), as the uploader's phone reported it. Empty on rows
+     * from a deployment that predates the column.
+     *
+     * One model ships several builds a year, and the package set that is safe on one is not the
+     * same claim on the next: two plans for the same phone can differ only in this. The label
+     * shows it, [sameBuild] compares it, and the page warns when it is not the reader's build.
+     */
+    val romBuild: String = "",
+    /**
      * The Android API level the uploader ran when the reboot check passed. 0 on rows from a
      * deployment that predates the column, which is why it only ever extends [deviceLabel] and
      * never stands in for something the row does not have.
@@ -113,7 +122,7 @@ data class CommunityPlan(
         get() = buildList {
             val phone = marketName.ifBlank { model }
             if (phone.isNotBlank()) add(phone)
-            if (rom.isNotBlank()) add(romLabelOf(rom, romVersion))
+            if (rom.isNotBlank()) add(romLabelOf(rom, romVersion, romBuild))
             androidReleaseOf(sdk).takeIf { it.isNotEmpty() }?.let { add("Android $it") }
         }.joinToString(" · ")
 
@@ -127,6 +136,20 @@ data class CommunityPlan(
         if (!model.equals(profile.model, ignoreCase = true)) return false
         if (rom.isBlank()) return true
         return rom.equals(profile.rom, ignoreCase = true) && romVersion == profile.romVersion
+    }
+
+    /**
+     * Whether this plan was proven on exactly the build [profile] runs — "16.0.501" against
+     * "16.0.3" answers false.
+     *
+     * [matches] deliberately stays at the major version: hiding every plan of the same ROM because
+     * the phone took a point update would empty the page for most readers. This is the narrower
+     * question the detail page asks, to say out loud that the package list may not fit yet.
+     */
+    fun sameBuild(profile: DeviceProfile?): Boolean {
+        if (profile == null) return true
+        if (romBuild.isBlank() || profile.romBuild.isBlank()) return true
+        return romBuild.equals(profile.romBuild, ignoreCase = true)
     }
 }
 
@@ -369,14 +392,30 @@ class PlanRepository(
     /** Verified plans for [profile], most liked first; empty on any failure. */
     suspend fun plansFor(profile: DeviceProfile?): List<CommunityPlan> {
         profile ?: return emptyList()
+        val build = profile.romBuild
         val body = buildJsonObject {
             put("p_model", profile.model)
             put("p_codename", profile.device)
             put("p_rom", profile.rom)
             put("p_rom_version", profile.romVersion)
+            // The exact build, so a phone on 16.0.501 is answered with the plans of that build
+            // (and the ones that predate builds being stored) rather than with 16.0.3's.
+            if (build.isNotBlank()) put("p_rom_build", build)
         }.toString()
-        val text = rpc("plans_for", body) ?: return emptyList()
-        return parsePlans(text)
+        rpc("plans_for", body)?.let { return parsePlans(it) }
+
+        // A deployment without the `p_rom_build` parameter refuses the call above; ask again the
+        // way it does understand, and the rows simply carry no build.
+        if (functionMissing && build.isNotBlank()) {
+            val legacy = buildJsonObject {
+                put("p_model", profile.model)
+                put("p_codename", profile.device)
+                put("p_rom", profile.rom)
+                put("p_rom_version", profile.romVersion)
+            }.toString()
+            rpc("plans_for", legacy)?.let { return parsePlans(it) }
+        }
+        return emptyList()
     }
 
     /** Every plan row in [text]; an answer the parser cannot read is an empty list, not a crash. */
@@ -399,6 +438,7 @@ class PlanRepository(
         model: String,
         rom: String = "",
         romVersion: Int = 0,
+        romBuild: String = "",
     ): List<CommunityPlan>? {
         if (model.isBlank()) return null
         val body = buildJsonObject {
@@ -406,19 +446,31 @@ class PlanRepository(
             put("p_model", model)
             put("p_rom", rom)
             put("p_rom_version", romVersion)
+            // The chip the user picked is one build ("16.0.501"), not the whole major version.
+            if (rom.isNotBlank() && romBuild.isNotBlank()) put("p_rom_build", romBuild)
         }.toString()
         rpc("plans_for_model", body)?.let { return parsePlans(it) }
 
-        if (functionMissing && rom.isNotBlank() && romVersion > 0) {
+        if (functionMissing) {
             val legacy = buildJsonObject {
+                put("p_brand", brand)
                 put("p_model", model)
-                // Empty codename: `plans_for` then matches the model and build, whichever the
-                // device codename of that phone is.
-                put("p_codename", "")
                 put("p_rom", rom)
                 put("p_rom_version", romVersion)
             }.toString()
-            rpc("plans_for", legacy)?.let { return parsePlans(it) }
+            rpc("plans_for_model", legacy)?.let { return parsePlans(it) }
+
+            if (rom.isNotBlank() && romVersion > 0) {
+                val viaPlansFor = buildJsonObject {
+                    put("p_model", model)
+                    // Empty codename: `plans_for` then matches the model and build, whichever the
+                    // device codename of that phone is.
+                    put("p_codename", "")
+                    put("p_rom", rom)
+                    put("p_rom_version", romVersion)
+                }.toString()
+                rpc("plans_for", viaPlansFor)?.let { return parsePlans(it) }
+            }
         }
         return null
     }
@@ -465,6 +517,7 @@ class PlanRepository(
                     marketName = o["market_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     romVersion = o["rom_version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                    romBuild = o["rom_build"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     sdk = o["sdk"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                     verified = o["verified"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 )
@@ -492,6 +545,7 @@ class PlanRepository(
             marketName = o["market_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             romVersion = o["rom_version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            romBuild = o["rom_build"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             plans = o["plans"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             people = o["people"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             modelPlans = o["model_plans"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
@@ -553,6 +607,9 @@ class PlanRepository(
             marketName = o["market_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             romVersion = o["rom_version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            // The exact build the uploader ran ("16.0.3"); absent on a deployment that predates
+            // the column, and the row then says only its major version.
+            romBuild = o["rom_build"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             // The API level the uploader ran; absent on a deployment that predates the column.
             sdk = o["sdk"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
         )
@@ -584,6 +641,10 @@ class PlanRepository(
             put("codename", profile.device)
             put("rom", profile.rom)
             put("rom_version", profile.romVersion)
+            // The exact build ("16.0.3"): one model ships several a year, and the row has to say
+            // which one its package list was proven on. A backend that predates the column ignores
+            // the key; the plan is then matched on the major version alone, as before.
+            put("rom_build", profile.romBuild)
             put("sdk", profile.sdk)
             put("title", title)
             put("note", note)
