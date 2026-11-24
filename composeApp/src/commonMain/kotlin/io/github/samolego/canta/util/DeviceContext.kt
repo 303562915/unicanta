@@ -183,6 +183,8 @@ val DEVICE_PROP_KEYS: Set<String> = setOf(
     "ro.product.manufacturer",
     "ro.build.version.sdk",
     "ro.mi.os.version.name",
+    "ro.mi.os.version.incremental",
+    "ro.build.version.incremental",
     "ro.miui.ui.version.name",
     "ro.miui.ui.version.code",
     "ro.build.version.oneui",
@@ -244,9 +246,25 @@ private fun miuiMajor(name: String?, code: String?): Int? {
  * plans for the same phone but different builds ("16.0.3" and "16.0.501") can be told apart.
  */
 fun romBuildOf(props: Map<String, String>): String {
+    // HyperOS 3 起 `ro.mi.os.version.name` 只到主版本（"OS3.0"），完整版本在增量串里
+    // （"OS3.0.0355.0.WNCCNXM"）。只读 name 的话，方案存下来的永远是「OS3.0」，界面也只能
+    // 显示「HyperOS 3.0」——读的人看不出它是在哪个具体版本上验证的。
+    val miName = props["ro.mi.os.version.name"]?.trim()
+    if (!miName.isNullOrEmpty()) {
+        val detailed = MI_BUILD_DETAIL_KEYS.firstNotNullOfOrNull { key ->
+            props[key]?.trim()?.takeIf { it.isNotEmpty() }
+        }
+        return detailed ?: miName
+    }
     val key = ROM_BUILD_PROP_KEYS.firstOrNull { !props[it].isNullOrBlank() } ?: return ""
     return props[key]?.trim().orEmpty()
 }
+
+/** The MIUI/HyperOS properties that carry the full build, most specific first. */
+private val MI_BUILD_DETAIL_KEYS: List<String> = listOf(
+    "ro.mi.os.version.incremental",
+    "ro.build.version.incremental",
+)
 
 /**
  * [romBuildOf] with a fallback: the same keys, asked for one at a time when the bulk `getprop`
@@ -257,12 +275,17 @@ fun romBuildOf(props: Map<String, String>): String {
  * a plan uploaded from that read stores no build at all, which is exactly how a row ends up
  * showing "HyperOS 3" instead of "HyperOS 3.0.0355".
  */
-suspend fun romBuildFallback(read: suspend (String) -> String?): String =
-    ROM_BUILD_PROP_KEYS.firstNotNullOfOrNull { key ->
-        runCatching { read(key)?.trim() }
-            .getOrNull()
-            ?.takeIf { it.isNotEmpty() }
-    }.orEmpty()
+suspend fun romBuildFallback(read: suspend (String) -> String?): String {
+    suspend fun ask(key: String): String? = runCatching { read(key)?.trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+    // Same precedence as [romBuildOf]: on MIUI/HyperOS the full build is the incremental string,
+    // not the name (which stopped at "OS3.0" on HyperOS 3).
+    val miName = ask("ro.mi.os.version.name")
+    if (miName != null) {
+        for (key in MI_BUILD_DETAIL_KEYS) ask(key)?.let { return it }
+        return miName
+    }
+    return ROM_BUILD_PROP_KEYS.firstNotNullOfOrNull { key -> ask(key) }.orEmpty()
+}
 
 /**
  * The properties [romBuildOf] reads, in the same precedence as [deviceContextOf] so the build and

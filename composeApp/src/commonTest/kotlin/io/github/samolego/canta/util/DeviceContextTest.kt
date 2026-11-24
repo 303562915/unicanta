@@ -94,6 +94,23 @@ class DeviceContextTest {
     }
 
     @Test
+    fun hyperOsThreeTakesTheIncrementalBuildNotTheName() {
+        // HyperOS 3 起 `ro.mi.os.version.name` 只到 "OS3.0"，完整版本在增量串里；方案行要存后者，
+        // 否则界面永远停在「HyperOS 3.0」，看不出它是在 3.0.0355 上验证的。
+        assertEquals(
+            "OS3.0.0355.0.WNCCNXM",
+            romBuildOf(
+                mapOf(
+                    "ro.mi.os.version.name" to "OS3.0",
+                    "ro.build.version.incremental" to "OS3.0.0355.0.WNCCNXM",
+                ),
+            ),
+        )
+        // 增量串读不到时仍退回 name，不至于丢成空。
+        assertEquals("OS3.0", romBuildOf(mapOf("ro.mi.os.version.name" to "OS3.0")))
+    }
+
+    @Test
     fun buildLabelFallsBackToTheMajorVersion() {
         assertEquals("ColorOS 16.0.3", romLabelOf("coloros", 16, "V16.0.3"))
         assertEquals("ColorOS 16.0.501", romLabelOf("coloros", 16, "V16.0.501"))
