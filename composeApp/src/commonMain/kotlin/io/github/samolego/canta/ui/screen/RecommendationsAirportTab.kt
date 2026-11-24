@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,8 @@ import io.github.samolego.canta.data.recommend.PointRedeemResult
 import io.github.samolego.canta.data.recommend.PointsAccount
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.ui.fl.FlSegment
+import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
@@ -105,6 +108,9 @@ private val AirportKinds = listOf(
     "self" to "自建",
 )
 
+/** 这一块的两页：0 看别人的机场（榜单），1 管自己的积分（兑换）。 */
+private const val BOARD_TAB = 0
+
 /** 商品类型：值 → 页面上的名字。 */
 private val OfferKinds = listOf(
     "airport" to "订阅",
@@ -143,6 +149,8 @@ internal fun RecommendationsAirportTab(
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
     val listState = rememberLazyListState()
+    /** 这一块的两页：0 机场榜单 / 1 兑换中心。 */
+    var boardTab by rememberSaveable { mutableIntStateOf(BOARD_TAB) }
 
     var airports by remember(state) { mutableStateOf(state.airports) }
     var account by remember(state) { mutableStateOf(state.account) }
@@ -331,122 +339,143 @@ internal fun RecommendationsAirportTab(
             CircularProgressIndicator()
         }
 
-        else -> LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = PaddingValues(bottom = 96.dp),
-        ) {
-            item(key = "wallet") {
-                WalletCard(
-                    account = account,
-                    balance = balance,
-                    checkedIn = checkedIn || account?.checkedInToday == true,
-                    busy = busyKey == "checkin",
-                    onCheckIn = checkIn,
-                    inset = 16.dp,
-                )
-            }
+        else -> Column(modifier = modifier.fillMaxSize()) {
+            // 这一块装着两件事：别人的机场（榜单），和积分怎么花（兑换）。
+            // 按 cdk.linux.do 的样子分成两页——余额和兑换在一边、榜单在另一边；
+            // 合成一条长列表会让人以为「商城」是机场榜单的一部分。
+            FlSegmentedControl(
+                segments = listOf(
+                    FlSegment("board", "机场榜单"),
+                    FlSegment("redeem", "兑换中心"),
+                ),
+                selectedIndex = boardTab,
+                onSelect = { boardTab = it },
+            )
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 96.dp),
+            ) {
+                if (boardTab == BOARD_TAB) {
+                    item(key = "airport-new") {
+                        EntryRow(
+                            title = "分享一个机场",
+                            hint = "贴官网和订阅就行；订阅只给投过票、打过分的人。",
+                            inset = 16.dp,
+                            onClick = {
+                                airportError = null
+                                airportComposer = true
+                            },
+                        )
+                    }
 
-            item(key = "airport-new") {
-                EntryRow(
-                    title = "分享一个机场",
-                    hint = "贴官网和订阅就行；订阅只给投过票、打过分的人。",
-                    inset = 16.dp,
-                    onClick = {
-                        airportError = null
-                        airportComposer = true
-                    },
-                )
-            }
+                    item(key = "airport-head") {
+                        AirportSectionHeader(label = "机场投票", count = airports.size)
+                    }
 
-            item(key = "airport-head") {
-                AirportSectionHeader(label = "机场投票", count = airports.size)
-            }
+                    if (airports.isEmpty()) {
+                        item(key = "airport-empty") {
+                            Note(
+                                text = error ?: "还没有人分享机场。你在用的那个，贴上来让大家评一评。",
+                                inset = 16.dp,
+                            )
+                        }
+                    }
 
-            if (airports.isEmpty()) {
-                item(key = "airport-empty") {
-                    Note(
-                        text = error ?: "还没有人分享机场。你在用的那个，贴上来让大家评一评。",
-                        inset = 16.dp,
-                    )
+                    items(airports, key = { "airport-${it.id}" }) { entry ->
+                        AirportCard(
+                            entry = entry,
+                            busy = busyKey == "airport:${entry.id}",
+                            canAct = who.isNotEmpty(),
+                            subscribeUrl = subscriptions[entry.id].orEmpty(),
+                            inset = 16.dp,
+                            onVote = { agree -> vote(entry, agree) },
+                            onRate = { stars -> rate(entry, stars) },
+                            onSubscribe = { subscription(entry) },
+                            onOpenUrl = {
+                                if (entry.url.isNotBlank()) platform.openUrl(entry.url)
+                            },
+                        )
+                    }
+
+                    item(key = "board-foot") {
+                        Note(
+                            text = "认同 / 不认同决定它排多前，五星决定它多好用；投过票或打过星，才取得到订阅。",
+                            inset = 16.dp,
+                        )
+                    }
+                } else {
+                    item(key = "wallet") {
+                        WalletCard(
+                            account = account,
+                            balance = balance,
+                            checkedIn = checkedIn || account?.checkedInToday == true,
+                            busy = busyKey == "checkin",
+                            onCheckIn = checkIn,
+                            inset = 16.dp,
+                        )
+                    }
+
+                    item(key = "store-new") {
+                        EntryRow(
+                            title = "发布一件商品赚积分",
+                            hint = "订阅、邀请码、账号都行；别人用积分换，分数直接到你账上。",
+                            inset = 16.dp,
+                            onClick = {
+                                offerError = null
+                                offerComposer = true
+                            },
+                        )
+                    }
+
+                    item(key = "store-head") {
+                        AirportSectionHeader(label = "积分商城", count = offers.size)
+                    }
+
+                    items(offers, key = { "offer-${it.id}" }) { offer ->
+                        OfferCard(
+                            offer = offer,
+                            balance = balance,
+                            busy = busyKey == "offer:${offer.id}",
+                            inset = 16.dp,
+                            onRedeem = { redeem(offer) },
+                        )
+                    }
+
+                    if (orders.isNotEmpty()) {
+                        item(key = "orders-head") {
+                            AirportSectionHeader(label = "我兑换的", count = orders.size)
+                        }
+                        items(orders, key = { "order-${it.id}" }) { order ->
+                            OrderCard(
+                                order = order,
+                                inset = 16.dp,
+                                onCopy = {
+                                    platform.copyToClipboard(order.deliverable)
+                                    platform.showMessage("已复制")
+                                },
+                            )
+                        }
+                    }
+
+                    item(key = "cdk") {
+                        // 兑换中心（码池）：卖家一次贴一批码，买家花积分取走一个。
+                        CdkCenterSection(
+                            store = cdk,
+                            platform = platform,
+                            author = author,
+                            authorId = who,
+                        )
+                    }
+
+                    item(key = "foot") {
+                        Note(
+                            text = "积分只在我们之间转：每天登录 +10，兑换扣买家的分、全额进卖家的账，平台不抽成。" +
+                                "订阅链接由分享者自负，用之前确认来源。",
+                            inset = 16.dp,
+                        )
+                    }
                 }
-            }
-
-            items(airports, key = { "airport-${it.id}" }) { entry ->
-                AirportCard(
-                    entry = entry,
-                    busy = busyKey == "airport:${entry.id}",
-                    canAct = who.isNotEmpty(),
-                    subscribeUrl = subscriptions[entry.id].orEmpty(),
-                    inset = 16.dp,
-                    onVote = { agree -> vote(entry, agree) },
-                    onRate = { stars -> rate(entry, stars) },
-                    onSubscribe = { subscription(entry) },
-                    onOpenUrl = {
-                        if (entry.url.isNotBlank()) platform.openUrl(entry.url)
-                    },
-                )
-            }
-
-            item(key = "store-new") {
-                EntryRow(
-                    title = "发布一件商品赚积分",
-                    hint = "订阅、邀请码、账号都行；别人用积分换，分数直接到你账上。",
-                    inset = 16.dp,
-                    onClick = {
-                        offerError = null
-                        offerComposer = true
-                    },
-                )
-            }
-
-            item(key = "store-head") {
-                AirportSectionHeader(label = "积分商城", count = offers.size)
-            }
-
-            items(offers, key = { "offer-${it.id}" }) { offer ->
-                OfferCard(
-                    offer = offer,
-                    balance = balance,
-                    busy = busyKey == "offer:${offer.id}",
-                    inset = 16.dp,
-                    onRedeem = { redeem(offer) },
-                )
-            }
-
-            if (orders.isNotEmpty()) {
-                item(key = "orders-head") {
-                    AirportSectionHeader(label = "我兑换的", count = orders.size)
-                }
-                items(orders, key = { "order-${it.id}" }) { order ->
-                    OrderCard(
-                        order = order,
-                        inset = 16.dp,
-                        onCopy = {
-                            platform.copyToClipboard(order.deliverable)
-                            platform.showMessage("已复制")
-                        },
-                    )
-                }
-            }
-
-            item(key = "cdk") {
-                // 兑换中心：卖家一次贴一批码，买家花积分取走一个。放在「我兑换的」后面，
-                // 因为它是同一件事的批量版——这里换的是码，上面换的是卖家手写的一份内容。
-                CdkCenterSection(
-                    store = cdk,
-                    platform = platform,
-                    author = author,
-                    authorId = who,
-                )
-            }
-
-            item(key = "foot") {
-                Note(
-                    text = "积分只在我们之间转：每天登录 +10，兑换扣买家的分、全额进卖家的账，平台不抽成。" +
-                        "订阅链接由分享者自负，用之前确认来源。",
-                    inset = 16.dp,
-                )
             }
         }
     }
