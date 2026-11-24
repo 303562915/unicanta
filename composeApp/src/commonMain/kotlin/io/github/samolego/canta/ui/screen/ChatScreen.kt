@@ -166,6 +166,9 @@ private const val ChatPollMs: Long = 2_000L
  */
 private const val ChatPollFallbackMs: Long = 10_000L
 
+/** 增量拉取一次最多带回多少条新消息；一次真到 50 条以上的情况，下一条轮询会接着拉。 */
+private const val ChatNewLimit = 50
+
 /**
  * 草稿落盘的防抖时长。
  *
@@ -468,6 +471,28 @@ fun ChatScreen(
         }
     }
 
+    /**
+     * 推送来了：只问「比我手上最新那条还新的有几条」。
+     *
+     * 这是最小的拉动——没新消息时后端回一个 `[]`，几百字节；有人说话才带回那几条。
+     * 整页拉（[refreshTail]）留给兜底轮询：那一条还要负责「对方撤回了一条老消息」这种
+     * 原地变化，只问新增是发现不了的。
+     */
+    suspend fun refreshNew() {
+        val newest = messages.maxOfOrNull { it.id } ?: 0L
+        if (newest <= 0L) {
+            refreshTail()
+            return
+        }
+        val fresh = repository.messagesAfter(owner, conversationId, newest, ChatNewLimit)
+        if (fresh.isEmpty()) return
+        val merged = (messages + fresh).distinctBy { it.id }.sortedBy { it.id }
+        if (merged != messages) {
+            messages = merged
+            repository.markRead(owner, conversationId)
+        }
+    }
+
     // 实时通道能不能用：连上了才算数。连不上（网页版没有引擎、被墙、key 不对）就退回快轮询，
     // 免得页面以为有人推、实际上 10 秒才问一次。
     var liveUp by remember(conversationId) { mutableStateOf(false) }
@@ -479,7 +504,7 @@ fun ChatScreen(
         if (conversationId <= 0L) return@LaunchedEffect
         liveUp = true
         // 传上来的是 Flow，异常已经在里面吞过；这里再兜一层，推送坏了也不能让页面停摆。
-        runCatching { source.updates(conversationId).collect { refreshTail() } }
+        runCatching { source.updates(conversationId).collect { refreshNew() } }
         liveUp = false
     }
 
