@@ -6,6 +6,8 @@ import io.github.samolego.canta.data.bloat.BloatDescriptions
 import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.bloat.BundledBloatList
 import io.github.samolego.canta.data.community.AppNoteStore
+import io.github.samolego.canta.data.community.ConversationCache
+import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.preset.CantaPresetStore
@@ -53,6 +55,9 @@ object StoredData {
 
     /** The last plans lists the ranking/plans page loaded — this phone's and every model's: see [PlanCache]. */
     const val PLAN_CACHE = "plan_cache.json"
+
+    /** 消息页上一次画出来的那份会话列表：冷启动时先画它，不等网络（见 [ConversationStore]）。 */
+    const val CONVERSATIONS = "conversations.json"
 }
 
 /**
@@ -70,6 +75,9 @@ fun cantaAppDependencies(
     val settings = CantaSettings(storage(StoredData.SETTINGS))
     val client = HttpClient()
     val cantaHandler = handler(settings)
+    // 消息页的会话列表落盘：冷启动那一屏要能先画出来，而不是转几秒等网络。
+    // 这里绑一次就够，之后写入由 ConversationCache 自己派到后台。
+    ConversationCache.bind(ConversationStore(storage(StoredData.CONVERSATIONS)))
     val telemetry = Telemetry(
         client = client,
         platform = platformName,

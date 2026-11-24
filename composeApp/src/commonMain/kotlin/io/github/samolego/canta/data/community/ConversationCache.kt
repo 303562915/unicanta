@@ -38,6 +38,19 @@ object ConversationCache {
     private val entries = mutableMapOf<String, Entry>()
 
     /**
+     * 盘上那一份（见 [ConversationStore]）。
+     *
+     * 内存这份活不过进程：冷启动时它是空的，于是「加了缓存还是要转几秒」。接上磁盘之后，
+     * `get` 找不到内存就去盘上拿——那一步是同步读，首帧就有东西可画。
+     */
+    private var store: ConversationStore? = null
+
+    /** 接上磁盘缓存。App 启动时调一次；之后再进来的页面就先有上一份了。 */
+    fun bind(store: ConversationStore) {
+        this.store = store
+    }
+
+    /**
      * 上一次写缓存的是谁。
      *
      * 存在的原因很具体：调用方是从 `DeviceIdentity.current(...)` **异步**拿到身份的，所以
@@ -47,8 +60,20 @@ object ConversationCache {
     private var lastOwner: String = ""
 
     /** 这个身份上次看到的快照；没有就是 null（第一次进这一页，或者刚被清掉）。 */
-    fun get(owner: String): Entry? =
-        if (owner.isEmpty()) null else entries[owner]
+    fun get(owner: String): Entry? {
+        if (owner.isEmpty()) return null
+        entries[owner]?.let { return it }
+        // 冷启动：内存里没有，但盘上可能有。先把它画出来，网络回来再顶掉。
+        val fromDisk = store?.read(owner).orEmpty()
+        return if (fromDisk.isEmpty()) null else entryOf(fromDisk)
+    }
+
+    /**
+     * 只装会话列表的一份快照：关注的人与互动总数没有落盘（它们每次刷新都会重拉，且体积不小），
+     * 所以从磁盘还原出来的这一份里那两样是空的。界面照样先画列表，多的两段等网络。
+     */
+    private fun entryOf(conversations: List<Conversation>): Entry =
+        Entry(conversations, emptyList(), InboxSummary.EMPTY, 0L)
 
     /**
      * `owner` 还没读到时的兜底：这台设备上一次看到的那一份。
@@ -56,8 +81,14 @@ object ConversationCache {
      * 只在 [get] 返回 null 时用。换身份意味着清数据重装，那时候缓存也一起没了，
      * 所以这里不会把上一个账号的会话画给下一个人。
      */
-    fun getRecent(): Entry? =
-        if (lastOwner.isEmpty()) null else entries[lastOwner]
+    fun getRecent(): Entry? {
+        if (lastOwner.isNotEmpty()) return entries[lastOwner]
+        // 冷启动时 `lastOwner` 还是空的，但盘上记着上一次是谁写的。
+        val storedOwner = store?.storedOwner().orEmpty()
+        if (storedOwner.isEmpty()) return null
+        val fromDisk = store?.read(storedOwner).orEmpty()
+        return if (fromDisk.isEmpty()) null else entryOf(fromDisk)
+    }
 
     /** 整份换掉：一次完整刷新之后调这个。 */
     fun put(
@@ -69,6 +100,7 @@ object ConversationCache {
         if (owner.isEmpty()) return
         entries[owner] = Entry(conversations, followers, summary, currentTimeMillis())
         lastOwner = owner
+        store?.write(owner, conversations)
     }
 
     /**
@@ -84,6 +116,7 @@ object ConversationCache {
         val old = entries[owner] ?: return
         entries[owner] = Entry(conversations, old.followers, old.summary, currentTimeMillis())
         lastOwner = owner
+        store?.write(owner, conversations)
     }
 
     /** 扔掉这个身份的快照；下次进来重新走加载。 */
