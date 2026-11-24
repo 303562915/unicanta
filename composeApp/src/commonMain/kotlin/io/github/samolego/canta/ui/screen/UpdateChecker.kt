@@ -31,6 +31,14 @@ internal const val UPDATE_REPO_URL = "https://github.com/303562915/unicanta"
 /** The download page published from `site/`; it always shows the newest published release. */
 internal const val DOWNLOAD_PAGE_URL = "https://303562915.github.io/unicanta/"
 
+/**
+ * The two files the page itself reads: version, development build number and the APK link, written by
+ * `pages.yml` on every release. This is the update check's first source — a static host has no API
+ * quota, so it cannot be rate limited the way GitHub's anonymous API can.
+ */
+private const val SITE_LATEST_JSON = "${DOWNLOAD_PAGE_URL}latest.json"
+private const val SITE_DEVELOPMENT_JSON = "${DOWNLOAD_PAGE_URL}development.json"
+
 private const val LATEST_RELEASE_API = "https://api.github.com/repos/303562915/unicanta/releases/latest"
 private const val DEVELOPMENT_RELEASE_API = "https://api.github.com/repos/303562915/unicanta/releases/tags/dev"
 private const val DEVELOPMENT_TAG = "dev"
@@ -62,7 +70,16 @@ private const val CHECK_TIMEOUT_MILLIS = 12_000L
 
 internal enum class UpdateChannel { STABLE, DEVELOPMENT }
 
-internal data class UpdateRelease(val tag: String, val version: String, val buildNumber: Int = 0)
+internal data class UpdateRelease(
+    val tag: String,
+    val version: String,
+    val buildNumber: Int = 0,
+    /**
+     * 这个包的直链，来自下载页的 `latest.json` / `development.json`。空表示那份答案没给（或者这是
+     * 从 GitHub 兜底读到的），下载时按 tag 拼出来。
+     */
+    val fileUrl: String = "",
+)
 
 /**
  * The label a release is shown and remembered by: `4.3.0`, or `4.3.0 (dev 239)` for the rolling
@@ -204,12 +221,46 @@ internal suspend fun latestRelease(client: HttpClient, channel: UpdateChannel): 
 
 /** The API first; when its anonymous quota is gone, the release page answers the same question. */
 private suspend fun fetchRelease(client: HttpClient, channel: UpdateChannel): UpdateRelease {
+    // 下载页优先：它是页面本身让人去点的那个地址，没有 API 配额，也不会因为别人把出口 IP 的匿名额度
+    // 用完而 403。静态站还没部署、或者答的不是发布信息时，再退回 GitHub 那两条路。
+    try {
+        return fetchFromSite(client, channel)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        // fall through to GitHub
+    }
     try {
         return fetchFromApi(client, channel)
     } catch (e: UpdateCheckException) {
         if (e.failure != UpdateFailure.RATE_LIMITED) throw e
         return fetchFromPage(client, channel)
     }
+}
+
+/**
+ * 下载页上的 `latest.json` / `development.json`：版本名、开发版 build 号、APK 直链都在里面。
+ *
+ * 这两个文件由 `pages.yml` 在每次发版后写进站点，格式和页面用的一致；读它比问 GitHub 快、
+ * 也不吃匿名 API 配额。`tag` 为空等于「这个频道还没有已发布的版本」，按没有新版本处理。
+ */
+private suspend fun fetchFromSite(client: HttpClient, channel: UpdateChannel): UpdateRelease {
+    val url = if (channel == UpdateChannel.DEVELOPMENT) SITE_DEVELOPMENT_JSON else SITE_LATEST_JSON
+    val body = requestText(client, url, "application/json")
+    val payload = try {
+        Json.parseToJsonElement(body).jsonObject
+    } catch (e: Exception) {
+        throw UpdateCheckException(UpdateFailure.MALFORMED)
+    }
+    val tag = payload["tag"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        ?: throw UpdateCheckException(UpdateFailure.NO_RELEASE)
+    val version = payload["version_name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: tag
+    val file = payload["file"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    if (channel == UpdateChannel.STABLE) return UpdateRelease(tag, version, fileUrl = file)
+    // 开发版必须带 build 号：没有它，同一个版本名的两个滚动构建就分不出新旧。
+    val build = payload["build_number"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()?.takeIf { it > 0 }
+        ?: throw UpdateCheckException(UpdateFailure.MALFORMED)
+    return UpdateRelease(DEVELOPMENT_TAG, version, build, fileUrl = file)
 }
 
 private suspend fun fetchFromApi(client: HttpClient, channel: UpdateChannel): UpdateRelease {
@@ -276,7 +327,14 @@ private suspend fun fetchFromPage(client: HttpClient, channel: UpdateChannel): U
  * is the retry.
  */
 internal suspend fun latestReleaseFromPage(client: HttpClient, channel: UpdateChannel): UpdateRelease =
-    fetchFromPage(client, channel)
+    try {
+        fetchFromSite(client, channel)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        // 站点还没更新/502 的时候，退回 GitHub 的发布页：轮询是后台跑的，失败的下一次就是重试。
+        fetchFromPage(client, channel)
+    }
 
 /**
  * One bounded GET; the status decides which failure the caller reports. The body is read inside
@@ -377,9 +435,11 @@ internal suspend fun downloadRelease(
     platform: CantaPlatform,
     tag: String,
     buildNumber: Int = 0,
+    /** 下载页给的直链；空表示没有，按 [tag] 拼出 GitHub 的资产地址。 */
+    fileUrl: String = "",
     onProgress: (Int) -> Unit,
 ): UpdateDownload = platform.downloadUpdate(
-    apkUrl(tag, buildNumber),
+    fileUrl.ifBlank { apkUrl(tag, buildNumber) },
     "canta-$tag-$buildNumber.apk",
 ) { received, total ->
     onProgress(
@@ -401,13 +461,14 @@ internal suspend fun downloadReleaseWithRetries(
     platform: CantaPlatform,
     tag: String,
     buildNumber: Int = 0,
+    fileUrl: String = "",
     onRound: (attempt: Int) -> Unit = {},
     onProgress: (Int) -> Unit,
 ): UpdateDownload {
     var result: UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNKNOWN)
     for (attempt in 1..DOWNLOAD_ROUNDS) {
         onRound(attempt)
-        result = downloadRelease(platform, tag, buildNumber, onProgress)
+        result = downloadRelease(platform, tag, buildNumber, fileUrl, onProgress)
         if (result is UpdateDownload.Done) return result
         val failure = (result as? UpdateDownload.Failed)?.failure
         // Waiting will not free up disk space, and it will not give a build a downloader.

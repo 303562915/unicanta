@@ -218,6 +218,8 @@ internal class UpdateCenter(
                     platform = platform,
                     tag = release.tag,
                     buildNumber = release.buildNumber,
+                    // 站点给的直链优先：它是下载页上那个按钮指向的同一个文件。
+                    fileUrl = release.fileUrl,
                     onRound = { attempt ->
                         // Every round but the first follows a failed one: back to a spinner instead of
                         // leaving an error sentence on screen while the next attempt is already running.
