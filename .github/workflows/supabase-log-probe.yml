@@ -10,30 +10,36 @@ on:
         description: Supabase project ref
         required: false
         default: axuhfogeovtsbxokqccf
-      sql:
-        description: Logflare SQL（logs.all 那个接口）
-        required: false
-        default: select timestamp, event_message from postgrest_logs order by timestamp desc limit 40
 
 jobs:
   probe:
-    name: 🧾 logs.all
+    name: 🧾 logs
     runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ inputs.ref }}
     steps:
-      - name: Query logs
-        env:
-          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          PROJECT_REF: ${{ inputs.ref }}
-          SQL: ${{ inputs.sql }}
+      - name: Probe endpoint variants
         run: |
-          set -euo pipefail
-          echo "project: $PROJECT_REF"
-          echo "sql: $SQL"
-          echo "--- response ---"
-          code=$(curl -sS -m 60 -o /tmp/out.json -w '%{http_code}' -G \
-            "https://api.supabase.com/v1/projects/${PROJECT_REF}/analytics/endpoints/logs" \
-            --data-urlencode "sql=${SQL}" \
-            -H "Authorization: Bearer ${TOKEN}")
-          echo "http: $code"
-          head -c 60000 /tmp/out.json || true
-          echo
+          set +e
+          B="https://api.supabase.com/v1/projects/${PROJECT_REF}/analytics/endpoints/logs"
+
+          show() {
+            echo "### $1"
+            echo "http: $(cat /tmp/code)"
+            head -c 4000 /tmp/out
+            echo
+            echo
+          }
+
+          run_sql() {
+            curl -sS -m 90 -o /tmp/out -w '%{http_code}' -G "$B" \
+              --data-urlencode "sql=$1" \
+              -H "Authorization: Bearer ${TOKEN}" > /tmp/code 2>/tmp/err
+            show "$2"
+          }
+
+          run_sql "select timestamp, source, event_message from logs order by timestamp desc limit 20" "A: unified logs table"
+          run_sql "select timestamp, event_message from postgres_logs order by timestamp desc limit 20" "B: postgres_logs"
+          run_sql "select timestamp, event_message from edge_logs order by timestamp desc limit 20" "C: edge_logs"
+          run_sql "select 1 as ok" "D: trivial select"
