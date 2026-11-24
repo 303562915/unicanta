@@ -115,6 +115,7 @@ import io.github.samolego.canta.ui.screen.LaunchLockScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainDialogs
 import io.github.samolego.canta.ui.screen.MainScreen
+import io.github.samolego.canta.ui.screen.PostsScreen
 import io.github.samolego.canta.ui.screen.ChatScreen
 import io.github.samolego.canta.ui.screen.CreateGroupScreen
 import io.github.samolego.canta.ui.screen.GroupSettingsScreen
@@ -1075,6 +1076,25 @@ private fun CantaNavigation(
                             newVoteCount = 0
                         }
                     },
+                )
+            }
+            composable(route = Screen.Posts.route) {
+                // 帖子是独立一页：列表、编辑器、草稿都在里面。草稿走 deps.postDrafts
+                // （按身份分开存本机），身份与推荐页那一半取的是同一套。
+                var postsAuthor by remember { mutableStateOf("") }
+                var postsIdentity by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) {
+                    postsAuthor = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    postsIdentity = identity.owner.ifEmpty { identity.token }
+                }
+                PostsScreen(
+                    platform = platform,
+                    store = postStore,
+                    drafts = deps.postDrafts,
+                    author = postsAuthor,
+                    authorId = postsIdentity,
+                    onNavigateBack = { navController.navigateUp() },
                 )
             }
             composable(route = Screen.Logs.route) {
