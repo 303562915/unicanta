@@ -67,8 +67,10 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -89,6 +91,7 @@ import io.github.samolego.canta.data.community.ShareCard
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionSpan
@@ -266,14 +269,14 @@ private const val ChatAiPollTries = 15
 private val ChatAiTrigger = Regex("@\\s*群聊AI")
 
 /**
- * 这条正文是不是「只有表情」：拆开以后每一段都是表情，没有一个字。
+ * 这条正文里有几颗表情（且整条只有表情）。0 表示它不算"纯表情消息"，按普通正文画。
  *
  * 用数量而不是"是不是纯表情"：一颗放大了好看，三颗一起放大会把气泡撑成半屏，
  * 有人就爱连发四五个，那种必须保持正文大小。
  */
-private fun chatStickerOnly(body: String): Boolean {
+private fun chatStickerCount(body: String): Int {
     val spans = parseEmotionBody(body)
-    return spans.isNotEmpty() && spans.all { it is EmotionSpan.Sticker }
+    return if (spans.isNotEmpty() && spans.all { it is EmotionSpan.Sticker }) spans.size else 0
 }
 
 /** 全屏看图能放大到几倍；双击在 1f 和它之间切换。 */
@@ -941,10 +944,11 @@ fun ChatScreen(
         val handle = member.name.ifBlank { "#${member.owner}" }
         if (pendingMentions.none { it == member.owner }) {
             pendingMentions = pendingMentions + member.owner
-            insert("@$handle")
+            // 尾巴带一个空格：接着打的字不会粘在名字后面（`@张三你好` 会被整段当成一个 @）。
+            insert("@$handle ")
         } else {
             // 已经点过就只把正文补上，名单不动。
-            insert("@$handle")
+            insert("@$handle ")
         }
         showMentions = false
     }
@@ -1165,7 +1169,12 @@ fun ChatScreen(
             // 翻译失败那句只借一次机会：它和 loadError 同一个样式，两秒后自己收走。
             translateHint?.let { line -> ChatErrorLine(line) }
             Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                // 点消息区的空白处 = 收起输入：清焦点、收输入法，顺便把三个面板一起收掉
+                // （面板本来就和键盘互斥，点空白时两边都该退场）。
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .dismissInputOnTap { closePanels() },
                 contentAlignment = Alignment.TopStart,
             ) {
                 when {
@@ -2103,20 +2112,17 @@ private fun ChatBubble(
                             )
                             Spacer(Modifier.height(5.dp))
                         }
-                        EmotionText(
-                            body = message.body,
-                            fontSize = 14,
-                            // 整条只有表情时把图放大到三倍（17dp → 51dp）：一个字符那么高的表情
-                            // 在气泡里读不出是哪一个，抖音/微信都是这么大。行高跟着放到 56，
-                            // 否则图会压到上下一行。
-                            lineHeight = if (chatStickerOnly(message.body)) 56 else 19,
-                            color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
-                            // 自己的气泡底色是主色，@ 再上主色就看不见了：用 onPrimary 反过来提亮。
                         // 只放大**单颗**表情：17dp → 34dp，读得出是哪个，又不至于比一句话还高。
                         // 连发好几颗时保持正文大小（三颗巨图能吃掉半屏）；混着文字的更不放大。
                         val stickers = chatStickerCount(message.body)
+                        EmotionText(
+                            body = message.body,
+                            fontSize = 14,
+                            lineHeight = if (stickers == 1) 40 else 19,
+                            color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
+                            // 自己的气泡底色是主色，@ 再上主色就看不见了：用 onPrimary 反过来提亮。
                             mentionColor = if (mine) colors.onPrimary else colors.primary,
-                            stickerScale = if (chatStickerOnly(message.body)) 3f else 1f,
+                            stickerScale = if (stickers == 1) 2f else 1f,
                         )
                     }
                     if (menuable) {
@@ -3023,12 +3029,6 @@ private fun ChatComposer(
         return
     }
     val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(ComposerBarBg)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
 
     // 输入框自己持有一份 TextFieldValue：**光标位置是这个状态的一部分**。
     //
@@ -3042,6 +3042,12 @@ private fun ChatComposer(
             field = TextFieldValue(draft, selection = TextRange(draft.length))
         }
     }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ComposerBarBg)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         FlBarButton(
             glyph = FlGlyphs.grid2x2,
@@ -3078,7 +3084,7 @@ private fun ChatComposer(
             cursorBrush = SolidColor(ChatSendPink),
             maxLines = 5,
             decorationBox = { inner ->
-                if (draft.isEmpty()) {
+                if (field.text.isEmpty()) {
                     Text(
                         // 面板开着：只说「发消息」；点进去（键盘在）：加上「按住说话」。
                         text = when {
