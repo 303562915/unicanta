@@ -11,7 +11,7 @@ select public.post_add('自测帖', '正文一句话', '甲', '分享', array['�
 -- 乙回一句、点个赞
 select public.post_comment_add(
     (select id from public.community_posts where title = '自测帖' order by id desc limit 1),
-    '第一条回复', '乙', '', '{}', '__selftest_posts_b');
+    '第一条回复', '乙', '__selftest_posts_b');
 select public.post_like(
     (select id from public.community_posts where title = '自测帖' order by id desc limit 1),
     true, '__selftest_posts_b');
@@ -43,3 +43,4 @@ select jsonb_build_object(
 ) as selftest;
 
 rollback;
+
