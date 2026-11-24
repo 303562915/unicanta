@@ -141,7 +141,9 @@ fun AppList(
             )
         }
 
-        if (appListModel.isLoading) {
+        // 只在「这一屏真的一条都还没有」时才整页等扫描：有本地快照时列表先画出来，
+        // 刷新中的状态交给下面那条细进度条说（isLoadingBadges 与它同期为真）。
+        if (appListModel.isLoading && appList.isEmpty()) {
             LoadingAppsInfo()
         } else {
             if (appListModel.isLoadingBadges) {

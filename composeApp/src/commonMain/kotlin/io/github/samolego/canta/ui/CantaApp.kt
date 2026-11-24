@@ -377,7 +377,14 @@ private fun CantaNavigation(
     val coroutineScope = rememberCoroutineScope()
 
     val appListViewModel: AppListViewModel = viewModel {
-        AppListViewModel(handler, deps.bloatRepository, deps.packageTelemetry, deps.history, deps.settings)
+        AppListViewModel(
+            handler,
+            deps.bloatRepository,
+            deps.packageTelemetry,
+            deps.history,
+            deps.settings,
+            deps.appListSnapshot,
+        )
     }
     val presetViewModel: PresetsViewModel = viewModel { PresetsViewModel(deps.presetStore, handler, platform) }
     val mainViewModel: MainViewModel = viewModel { MainViewModel(handler, platform, deps.settings, appListViewModel) }

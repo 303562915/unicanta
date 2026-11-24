@@ -2,6 +2,7 @@ package io.github.samolego.canta.core
 
 import io.github.samolego.canta.data.AppBlobStorage
 import io.github.samolego.canta.data.CantaSettings
+import io.github.samolego.canta.data.app.AppListSnapshotStore
 import io.github.samolego.canta.data.bloat.BloatDescriptions
 import io.github.samolego.canta.data.bloat.BloatOverrides
 import io.github.samolego.canta.data.bloat.BloatRepository
@@ -47,6 +48,8 @@ class CantaAppDependencies(
     val history: OperationLogStore,
     /** 帖子草稿：写在本机、按身份分开，发出去成功才删（见 [PostDraftStore]）。 */
     val postDrafts: PostDraftStore,
+    /** 上次扫出来的包列表：进应用列表页的第一帧先把这张表画出来（见 [AppListSnapshotStore]）。 */
+    val appListSnapshot: AppListSnapshotStore,
 )
 
 /** Names of the persisted blobs; each platform maps them to a file or storage key. */
@@ -83,6 +86,9 @@ object StoredData {
 
     /** 各页面快照落盘的那一份（见 [ScreenCache]）：冷启动时先画上次那一屏。 */
     const val SCREEN_CACHE = "screen_cache.json"
+
+    /** 上次扫出来的包列表（见 [AppListSnapshotStore]）：冷启动先画它，不等整机扫描。 */
+    const val APP_LIST = "app_list.json"
 }
 
 /**
@@ -136,5 +142,6 @@ fun cantaAppDependencies(
         planCache = PlanCache(storage(StoredData.PLAN_CACHE)),
         history = OperationLogStore(storage(StoredData.OPERATION_LOG), platform),
         postDrafts = PostDraftStore(storage(StoredData.POST_DRAFTS)),
+        appListSnapshot = AppListSnapshotStore(storage(StoredData.APP_LIST)),
     )
 }

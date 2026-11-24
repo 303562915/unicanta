@@ -15,6 +15,7 @@ import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.explainFailure
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.data.app.AppListSnapshotStore
 import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.app.PackageSnapshot
 import io.github.samolego.canta.data.bloat.BloatData
@@ -57,6 +58,12 @@ class AppListViewModel(
     private val history: OperationLogStore? = null,
     /** Where an interrupted batch is remembered so it can be finished later; null in tests. */
     private val settings: CantaSettings? = null,
+    /**
+     * 上一次扫出来的包列表（见 [AppListSnapshotStore]）。
+     *
+     * 有它，进列表页的第一帧就是上次那张表；没有（测试、第一次装）只是照旧等一次扫描。
+     */
+    private val snapshot: AppListSnapshotStore? = null,
 ) : ViewModel() {
 
     companion object {
@@ -118,6 +125,12 @@ class AppListViewModel(
     private var survivorsChecked = false
 
     init {
+        // 上次扫出来的那份先摆上：进列表页不该是空白等扫描，而是「先看见上次那张表，稍后就地刷新」。
+        // 不能碰 `_apps` 之外的东西——这一段跑在构造里，那时 handler 还没扫过任何东西。
+        snapshot?.read()?.takeIf { it.isNotEmpty() }?.let { cached ->
+            _apps.addAll(cached.map { AppInfo(it) })
+            LogUtils.i(TAG, "Seeded ${cached.size} apps from the local snapshot")
+        }
         telemetry?.let { telemetry ->
             // Fetched when analytics is on at start (or gets turned on), cleared when it is turned off.
             viewModelScope.launch {
@@ -240,16 +253,38 @@ class AppListViewModel(
             LogUtils.i(TAG, "Loaded ${all.size} apps (uninstalled=${all.count { it.isUninstalled }}) in ${currentTimeMillis() - start}ms")
 
             // Show the list right away; a reload keeps the previous badges until the new ones arrive.
+            //
+            // 合并按包名做，而且**这个包没变时原样复用旧对象**：`AppInfo` 是不变类型，同一个实例
+            // 进列表，Compose 那一行才真的不会重组。一次刷新往往一个包都没变，那时整张表只是
+            // 「复查了一遍」，不该重画。
             val previous = _apps.associateBy { it.packageName }
             _apps.clear()
             _apps.addAll(
                 all.map { app ->
-                    app.copy(
-                        bloatData = app.bloatData ?: previous[app.packageName]?.bloatData,
-                        icon = app.icon ?: iconCache[app.packageName],
+                    val old = previous[app.packageName]
+                    // 新的先说：扫描回来的徽标/图标优先，缺的才拿旧那份补。
+                    val merged = app.copy(
+                        bloatData = app.bloatData ?: old?.bloatData,
+                        icon = app.icon ?: old?.icon ?: iconCache[app.packageName],
                     )
+                    // 这一行什么都没变（包、徽标、图标三样都是同一份）→ 直接把旧实例放回去：
+                    // 列表项因此完全相等，Compose 那一条不重组，滚动位置也不动。
+                    if (old != null &&
+                        old.details == merged.details &&
+                        old.bloatData === merged.bloatData &&
+                        old.icon === merged.icon
+                    ) {
+                        old
+                    } else {
+                        merged
+                    }
                 }
             )
+            // 这次扫到的包列表存回本地：下次冷启动的那一帧就靠它，不用再等整机扫描。
+            //
+            // 只在授权正常时写：没拿到运行时权限时只能看见 ROM 放出来的那几十个包，拿它覆盖旧快照
+            // 会让下一次冷启动先画一张「缺三分之二」的表，比空白更误导。
+            if (cantaHandler.isAuthorized) snapshot?.write(all.map { it.details })
             isLoading = false
             if (_fakeScores.value) applyScores()
             refreshScoresForDevice()
