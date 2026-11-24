@@ -323,7 +323,17 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
                     // Composed only once the store has answered: before that there is nothing
                     // worth drawing, and the alternative is a flash of the app list under the
                     // question.
-                    CantaNavigation(deps, closeApp, crashReports, communityRepository, socialRepository, settingsViewModel, chatLive)
+                    CantaNavigation(
+                        deps,
+                        closeApp,
+                        crashReports,
+                        communityRepository,
+                        socialRepository,
+                        settingsViewModel,
+                        chatLive,
+                        cdkStore = cdkStore,
+                        postStore = postStore,
+                    )
                     // The lock is a cover rather than a replacement. Drawn over the pages, it
                     // keeps their state and their side effects — the telemetry flush on the way
                     // out, the one look at the update feed — alive; swapping the navigation out and
@@ -347,6 +357,15 @@ private fun CantaNavigation(
     settingsViewModel: SettingsViewModel,
     /** 实时聊天的那条订阅；null 表示这一侧没有（网页版），聊天页会退回轮询。 */
     chatLive: ChatLiveSource?,
+    /**
+     * CDK 兑换中心与帖子页的两个仓储。
+     *
+     * 它们在 [CantaApp] 那一层 `remember` 出来（各自一个 `CommunityRpc` + `HttpClient`），
+     * 这里必须当参数接进来：`CantaNavigation` 是另一个函数，看不到外层的局部变量——上一版直接
+     * 在这里写 `cdkStore` 就是"跨作用域引用"，编不过。
+     */
+    cdkStore: CdkStore,
+    postStore: PostStore,
 ) {
     val handler = deps.handler
     val platform = deps.platform
