@@ -651,7 +651,9 @@
 
   function loadChannel(name, file) {
     var channel = state.channels[name];
-    fetch(file, { cache: "no-store" })
+    // 同一个页面也会被镜像到图床（`unicanta/download/`），而图床的直链带 30 天边缘缓存：
+    // 每次取数据都带一个唯一参数，才不会读到上一次的 latest.json。GitHub Pages 那边也无害。
+    fetch(file + "?v=" + Date.now(), { cache: "no-store" })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();

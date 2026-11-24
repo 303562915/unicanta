@@ -311,6 +311,47 @@ jobs:
           echo "--- _site ---"
           ls -la _site
 
+      - name: 🖼️ Mirror to image bed
+        if: steps.development_publication.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          # 图床（cloudflare-imgbed）的直链是公开免鉴权的，`/file/<id>` 会按扩展名给出
+          # `text/html` + `Content-Disposition: inline`，所以整份页面 + 两份 json 直接挂上去就是
+          # 一个能用的下载页：https://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html
+          #
+          # 用固定的文件名覆盖（overwrite=1），直链才稳定；图床那边有 30 天边缘缓存，
+          # 页面里的 fetch 已经带了 `?v=<时间戳>`，所以数据每次都是新的。
+          BED_URL="https://cloudflare-imgbed-erh.pages.dev/api/upload"
+          BED_TOKEN="imgbed_a9ca1aaf9b3ada8ef67725bc04122824f1db3123dc4a5b46434f1fad2c24cb20"
+          FOLDER="unicanta/download"
+          MIRROR_URL="https://cloudflare-imgbed-erh.pages.dev/file/$FOLDER/index.html"
+
+          upload() {
+            local path="$1" name="$2" type="$3"
+            local resp
+            resp=$(curl -sS --fail-with-body -X POST "$BED_URL" \
+              -F "file=@$path;type=$type;filename=$name" \
+              -F "uid=$BED_TOKEN" \
+              -F "fileName=$name" \
+              -F "folder=$FOLDER" \
+              -F "overwrite=1") || return 1
+            echo "$resp"
+            echo "$resp" | jq -e '.code == 0 and (.url | length > 0)' > /dev/null || return 1
+          }
+
+          # 镜像是锦上添花：失败只在日志里记一条，不让下载页本身的发布变红。
+          OK=true
+          upload _site/index.html index.html text/html || OK=false
+          upload _site/latest.json latest.json application/json || OK=false
+          upload _site/development.json development.json application/json || OK=false
+          if [ "$OK" != true ]; then
+            echo "::warning::图床镜像没传全，GitHub Pages 那一份不受影响"
+          fi
+          {
+            echo ""
+            echo "- 图床镜像：$MIRROR_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 🚀 Push to gh-pages
         if: steps.development_publication.outputs.proceed == 'true'
         run: |
