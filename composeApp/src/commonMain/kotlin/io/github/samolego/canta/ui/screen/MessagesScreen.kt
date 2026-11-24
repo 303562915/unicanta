@@ -1,6 +1,6 @@
 package io.github.samolego.canta.ui.screen
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -285,7 +287,7 @@ fun MessagesScreen(
     // 每一趟的序号：只有最新那一趟（或被最新那一趟顶掉的）有权收骨架，免得被取消的旧那一趟
     // 把新那一趟的「正在加载」抹掉。
     var loadPass by remember { mutableIntStateOf(0) }
-    // 手指下拉的那一次还在不在转：位移与指示器都由这一页自己管（见下面 `pullPx`）。
+    // 手指下拉的那一次还在不在转：位移与指示器都由这一页自己管（见下面 `dragPx`）。
     var refreshing by remember { mutableStateOf(false) }
     // 顶栏那条搜索：开没开、打了什么字。会话与联系人是本地过滤（数据已经在手上），
     // 第三段「消息」要问后端，所以单独存一份结果。
@@ -707,55 +709,49 @@ fun MessagesScreen(
 
     // 下拉刷新：跟手的是整页（连顶栏一起），不是屏幕顶上冒出来的一个图标。
     //
-    // **位移自己管**，不再用 M3 `PullToRefreshBox` 的 `distanceFraction` 去算：那个值只保证"拽的
-    // 时候有"，松手之后它把动画跑在自己的指示器上，我们照它把内容下移的那一截会一直留在那儿——
-    // 就是"不回弹"。现在位移是一个自己的 [Animatable]：松手一定动画回 0；够线就先停在刷新的那一档，
-    // 刷新结束再回 0。
-    val pullPx = remember { Animatable(0f) }
-    val pullScope = rememberCoroutineScope()
-    val pullTravelPx = with(LocalDensity.current) { PullRefreshTravel.roundToPx() }
-    // 够不够触发一次刷新：拖满一整段（56dp）就算，和指示器上那句「松手刷新」是同一条线。
-    val pullTriggerPx = pullTravelPx
+    // **位移自己管**：M3 `PullToRefreshBox` 的 `distanceFraction` 只保证"拽的时候有值"，松手之后的
+    // 动画跑在它自己的指示器上，我们照着把内容下移的那一截就会一直留在那儿——就是"不回弹"。
+    //
+    // 现在是一个普通状态 `dragPx`：拖动时直接加减（不走协程，所以不会和回弹动画互相取消），松手时
+    // 用 `animate` 把它推到 0，或者推到刷新的那一档并停住。松手一定有个结论，不会留在半空。
+    var dragPx by remember { mutableFloatStateOf(0f) }
+    val travelPx = with(LocalDensity.current) { PullRefreshTravel.toPx() }
+    // 当前该把整页推开多少：刷新期间停在刷新那一档，其余时间跟着手指。
+    val shownPx = if (refreshing) travelPx else dragPx
 
-    val pullConnection = remember(pullTravelPx) {
+    val pullConnection = remember(travelPx) {
         object : NestedScrollConnection {
-            // 手指往上滑、手里还留着下拉位移：先把它收回去，剩下的交给列表自己滚。
+            // 手上还有下拉位移、手指开始往上推：先把它收回去。只吃**用得上的那一截**，剩下的还给
+            // 列表——否则一次上滑会被整段吞掉，列表要再滑一次才动。
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < 0f && pullPx.value > 0f) {
-                    pullScope.launch {
-                        pullPx.snapTo((pullPx.value + available.y).coerceAtLeast(0f))
-                    }
-                    return Offset(0f, available.y)
-                }
-                return Offset.Zero
+                if (refreshing || available.y >= 0f || dragPx <= 0f) return Offset.Zero
+                val used = minOf(dragPx, -available.y)
+                dragPx -= used
+                return Offset(0f, -used)
             }
 
-            // 列表已经到顶、还继续往下拽：这一截我们吃掉，变成整页的位移。
+            // 列表已经到顶、还继续往下拽：吃掉这一截，变成整页的位移（最多一整段）。
             override fun onPostScroll(
                 consumed: Offset,
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
-                if (refreshing || available.y <= 0f) return Offset.Zero
-                pullScope.launch {
-                    pullPx.snapTo((pullPx.value + available.y).coerceIn(0f, pullTravelPx))
-                }
-                return Offset(0f, available.y)
+                if (refreshing || available.y <= 0f || dragPx >= travelPx) return Offset.Zero
+                val used = minOf(available.y, travelPx - dragPx)
+                dragPx += used
+                return Offset(0f, used)
             }
 
-            // 松手：够线就刷新并停在那一档，不够线就回 0。**一定**要有个结论，不能把位移留在半空。
+            // 松手：够线就刷新并停在那一档，不够线就回 0。惯性照常还给列表（返回 Zero = 父级没消费）。
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (refreshing) {
-                    pullPx.animateTo(pullTravelPx)
-                    return Velocity.Zero
-                }
-                if (pullPx.value >= pullTriggerPx) {
+                if (refreshing) return Velocity.Zero
+                if (dragPx >= travelPx) {
+                    dragPx = travelPx
                     refreshing = true
                     loadBusy = true
                     reloads++
-                    pullPx.animateTo(pullTravelPx)
-                } else {
-                    pullPx.animateTo(0f)
+                } else if (dragPx > 0f) {
+                    animate(initialValue = dragPx, targetValue = 0f) { value, _ -> dragPx = value }
                 }
                 return Velocity.Zero
             }
@@ -764,7 +760,9 @@ fun MessagesScreen(
 
     // 刷新结束（`refreshing` 在加载那一趟的 finally 里落下）就把整页还回原位。
     LaunchedEffect(refreshing) {
-        if (!refreshing && pullPx.value > 0f) pullPx.animateTo(0f)
+        if (!refreshing && dragPx > 0f) {
+            animate(initialValue = dragPx, targetValue = 0f) { value, _ -> dragPx = value }
+        }
     }
 
     Box(
@@ -775,11 +773,12 @@ fun MessagesScreen(
         // 指示器浮在页面顶上：整页被推开之后它落在空出来的那一截里。
         MessagesRefreshIndicator(
             refreshing = refreshing,
-            fraction = if (refreshing) 1f else (pullPx.value / pullTravelPx).coerceIn(0f, 1f),
+            fraction = if (refreshing) 1f else (dragPx / travelPx).coerceIn(0f, 1f),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .zIndex(1f),
         )
+
         if (loading) {
             // 骨架这一支没有列表，顶栏照样画：否则首屏只有四个灰块，连页名和菜单都不在。
             // 用 Column 排是必要的：外层的 Box 里还有那个浮着的刷新指示器，两个 fillMaxSize 的子节点
@@ -788,7 +787,7 @@ fun MessagesScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     // 和列表那一支同一个位移：加载中被人拽一下，骨架也跟着下来、松手一起回去。
-                    .offset { IntOffset(0, pullPx.value.roundToInt()) },
+                    .offset { IntOffset(0, shownPx.roundToInt()) },
             ) {
                 topBar()
                 // 只有「内存没有、盘上也没有」才走到这里（第一次装、或者那份解不出来）。
@@ -823,9 +822,9 @@ fun MessagesScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    // 整页跟手：拽下来多少，列表就整体往下让多少；松手由 [pullPx] 动画回 0（或停在
+                    // 整页跟手：拽下来多少，列表就整体往下让多少；松手由 `dragPx` 的动画回 0（或停在
                     // 刷新那一档，刷新完再回 0）。
-                    .offset { IntOffset(0, pullPx.value.roundToInt()) }
+                    .offset { IntOffset(0, shownPx.roundToInt()) }
                     // 点列表空白：收起搜索框的焦点与输入法（搜索框自己那条 × 才关掉搜索）。
                     .dismissInputOnTap(),
                 state = messagesListState,
@@ -1180,7 +1179,7 @@ private fun MessagesTopBar(
 @Composable
 private fun MessagesRefreshIndicator(
     refreshing: Boolean,
-    /** 下拉进度：0 = 没拽，1 = 够线（松手就刷新）。由页面自己算，见 `MessagesScreen` 里的 `pullPx`。 */
+    /** 下拉进度：0 = 没拽，1 = 够线（松手就刷新）。由页面自己算，见 `MessagesScreen` 里的 `dragPx`。 */
     fraction: Float,
     modifier: Modifier = Modifier,
 ) {
@@ -2209,3 +2208,4 @@ private fun inboxLine(summary: InboxSummary): String {
     }
     return parts.joinToString(" · ").ifBlank { "还没有新的互动" }
 }
+
