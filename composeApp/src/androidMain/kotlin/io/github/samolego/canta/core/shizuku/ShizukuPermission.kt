@@ -105,4 +105,17 @@ object ShizukuPermission {
                 false
             }
         }
+
+    /**
+     * Why Shizuku could not answer, as a sentence naming the one thing to fix.
+     *
+     * 「没在运行，或没授权给 Canta」把两种完全不同的处理方式（去开服务 / 去点授权）塞进同一句
+     * 话里，用户照着做也没法确定该做哪一步；这里分出四档，每一档只留一个动作。
+     */
+    fun refusalText(packageManager: PackageManager): String = when (privilegeStatus(packageManager)) {
+        PrivilegeStatus.ACTIVE -> "Shizuku 在运行，但这次调用没答上来"
+        PrivilegeStatus.NOT_AUTHORIZED -> "Canta 还没被 Shizuku 授权"
+        PrivilegeStatus.NOT_RUNNING -> "Shizuku 没在运行"
+        PrivilegeStatus.NOT_AVAILABLE -> "这台手机没装 Shizuku"
+    }
 }

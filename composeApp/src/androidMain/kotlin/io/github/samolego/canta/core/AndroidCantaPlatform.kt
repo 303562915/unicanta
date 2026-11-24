@@ -23,7 +23,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
-import io.github.samolego.canta.core.root.suBinaryPath
+import io.github.samolego.canta.core.root.rootMayBeAvailable
+import io.github.samolego.canta.core.shizuku.ShizukuPermission
 import io.github.samolego.canta.core.shizuku.ShizukuShell
 import io.github.samolego.canta.util.LogUtils
 import io.ktor.client.HttpClient
@@ -104,6 +105,16 @@ class AndroidCantaPlatform(
          * command would then cost another authorization prompt.
          */
         private const val ROOT_INSTALL_TIMEOUT_MILLIS = 120_000L
+
+        /**
+         * How long one `pm install` over Shizuku may take. Longer than a bare shell command: the
+         * package manager unpacks and verifies a 30 MB APK inside this wait, and cutting it short
+         * would report a failure for an install that is in fact completing.
+         */
+        private const val PM_INSTALL_TIMEOUT_MILLIS = 180_000L
+
+        /** Where root puts the APK before `pm` reads it: `/data/local/tmp` is the place `pm` names. */
+        private const val ROOT_TMP_APK = "/data/local/tmp/.canta-update.apk"
 
         /** How long a silent socket may stay open before the transfer is called stalled. */
         private const val STALL_TIMEOUT_MILLIS = 45_000L
@@ -1192,7 +1203,8 @@ class AndroidCantaPlatform(
     /**
      * Installs [path] over this app with `pm install -r -d` as Shizuku's identity: `-r` replaces
      * the installed copy and keeps its data, `-d` allows the older version code that a debug build
-     * carries. Returns null on success, or the output that explains the failure.
+     * carries. Answers [InstallAttempt.Success], or why it did not work plus whether that reason is
+     * about the runtime (`retryable`) rather than about this APK.
      *
      * Where the shell may read the file from is decided by scoped storage, not by us: on Q+ the
      * FUSE view hides another app's `Android/data` from the shell identity, and `pm install`
@@ -1209,24 +1221,24 @@ class AndroidCantaPlatform(
     override suspend fun installUpdate(
         path: String,
         onStage: (InstallStage, Int) -> Unit,
-    ): String? =
+    ): InstallAttempt =
         updateInstall.withLock {
             // The bound is this attempt, not this process: `now - elapsedRealtime` names the boot,
             // and any update since the phone started would be read as "this one landed".
             val startedAt = System.currentTimeMillis()
             onStage(InstallStage.PREPARING, INSTALL_PROGRESS_UNKNOWN)
-            val failure = installUpdateLocked(path, onStage)
+            val attempt = installUpdateLocked(path, onStage)
             // `pm install` replaces the package under this very process, and Android kills the
             // app as part of doing so: the shell call can come back with an error even though the
             // APK did land. Asking the package manager whether this app was updated after
             // [startedAt] tells "it really failed" from "it succeeded and the shell was cut
             // short" — without it the system installer is opened over an update that is already
             // in place, which is read as "又弹安装，还没装上".
-            if (failure != null && wasReplacedSince(startedAt)) {
-                LogUtils.i(TAG, "pm install reported a failure but this app was replaced anyway: $failure")
-                null
+            if (!attempt.succeeded && wasReplacedSince(startedAt)) {
+                LogUtils.i(TAG, "pm install reported a failure but this app was replaced anyway: ${attempt.failure}")
+                InstallAttempt.Success
             } else {
-                failure
+                attempt
             }
         }
 
@@ -1245,9 +1257,9 @@ class AndroidCantaPlatform(
     private suspend fun installUpdateLocked(
         path: String,
         onStage: (InstallStage, Int) -> Unit,
-    ): String? = withContext(Dispatchers.IO) {
+    ): InstallAttempt = withContext(Dispatchers.IO) {
         val file = File(path)
-        if (!file.exists()) return@withContext "安装包不见了：$path"
+        if (!file.exists()) return@withContext InstallAttempt.refused("安装包不见了：$path")
 
         // A debug install downloads the same release APK, and `pm install` would happily put that
         // second copy next to this one under its own package name — a second Canta, not an update.
@@ -1256,7 +1268,9 @@ class AndroidCantaPlatform(
             context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)?.packageName
         }.getOrNull()
         if (archiveName != null && archiveName != context.packageName) {
-            return@withContext "这个安装包的包名是 $archiveName，当前应用是 ${context.packageName}，它不会覆盖安装"
+            return@withContext InstallAttempt.refused(
+                "这个安装包的包名是 $archiveName，当前应用是 ${context.packageName}，它不会覆盖安装",
+            )
         }
 
         // Every home the APK is offered to `pm` through, cheapest first, plus the root shell as the
@@ -1287,7 +1301,7 @@ class AndroidCantaPlatform(
                 runInstall(file.absolutePath)
             }) {
             file.delete()
-            return@withContext null
+            return@withContext InstallAttempt.Success
         }
 
         // The public Downloads folder is one MediaStore write away and readable by the shell.
@@ -1302,21 +1316,25 @@ class AndroidCantaPlatform(
             runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
             if (installed) {
                 file.delete()
-                return@withContext null
+                return@withContext InstallAttempt.Success
             }
         }
 
         // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
         if (tryChannel("Shizuku·临时目录") { installViaTmp(file, onStage) }) {
             file.delete()
-            return@withContext null
+            return@withContext InstallAttempt.Success
         }
 
         // A rooted phone can install what the shell cannot read, but not a build the package
         // manager itself refuses (a foreign signature, a downgrade): that refusal is the same
         // whoever asks, and a root prompt for it is a prompt for nothing.
-        val rootShell = suBinaryPath()
-        if (rootShell == null) {
+        //
+        // The gate is the same one the rest of the app uses: a `su` file *or* a root manager app.
+        // Magisk, KernelSU and APatch mount `su` where a plain file check cannot see it, and the
+        // stricter check here is why a phone that uninstalls system apps through root still got
+        // "这台手机没有 su" from its own updater.
+        if (!rootMayBeAvailable(context.packageManager)) {
             attempts["root"] = "这台手机没有 su"
         } else if (attempts.values.any { looksLikeAccessProblem(it) }) {
             if (tryChannel("root") {
@@ -1324,7 +1342,7 @@ class AndroidCantaPlatform(
                     installAsRoot(file.absolutePath)
                 }) {
                 file.delete()
-                return@withContext null
+                return@withContext InstallAttempt.Success
             }
         } else {
             attempts["root"] = "没试：上面的失败不是权限或路径问题"
@@ -1332,7 +1350,14 @@ class AndroidCantaPlatform(
 
         // The APK stays on disk on purpose: the caller's last move is the system installer, which
         // reads this file. The report is one line per route, in the order they were tried.
-        attempts.entries.joinToString("\n") { (channel, error) -> "$channel：$error" }
+        val report = attempts.entries.joinToString("\n") { (channel, error) -> "$channel：$error" }
+        // "这一次运行时根本没就绪" 与 "这个包 pm 不接受" 是两件事：前者重试可能就好，后者重试只会
+        // 得到同一句话。每一条通道的失败都只是"运行时不在"，才算前者。
+        if (attempts.isNotEmpty() && attempts.values.all { looksLikeRuntimeNotReady(it) }) {
+            InstallAttempt.notReady(report)
+        } else {
+            InstallAttempt.refused(report)
+        }
     }
 
     /** One line that names the cause without filling the dialog: the whole text stays in the log. */
@@ -1357,36 +1382,95 @@ class AndroidCantaPlatform(
     }
 
     /**
-     * `pm install` through the shared root shell. Root reads the app's private directory and
-     * `/data/local/tmp` alike, so nothing has to be staged; the authorization prompt is the cost,
-     * and it is paid once per process because the shell is kept open.
+     * Whether a channel's answer is about the runtime not being there, rather than about the APK.
+     *
+     * This is the difference between "再等等，Shizuku 起来之后自己就装上了" and "这个包 pm 不接受，
+     * 交给系统安装器吧". Every string here is one this file produces when no `pm install` ever ran.
+     */
+    private fun looksLikeRuntimeNotReady(error: String): Boolean {
+        if ("install_failed" in error.lowercase()) return false
+        return listOf(
+            "没在运行", "没被 shizuku 授权", "没有响应", "没答上来", "服务异常", "通道异常",
+            "没有可用的 shizuku", "没装 shizuku", "这台手机没有 su", "root 没有授予", "root 会话",
+        ).any { it in error.lowercase() }
+    }
+
+    /**
+     * `pm install` through the shared root shell.
+     *
+     * Two places are offered, because a rooted phone is still subject to where the *package manager*
+     * may read from: the download sits on FUSE (`Android/data/…`), and `pm` runs inside the system
+     * server, which is denied there on current ROMs — the answer is that `avc: denied { read } for
+     * … fuse` line. So the APK is first tried as it is, and otherwise copied through the app's own
+     * cache into `/data/local/tmp`, which is where `pm` itself points people at.
      *
      * The wait is bounded by [ROOT_INSTALL_TIMEOUT_MILLIS]: a prompt nobody answers would
      * otherwise hold the install open forever, and "安装中" that never ends is exactly the report
      * this whole path exists to stop.
      */
     private suspend fun installAsRoot(path: String): String? = withContext(Dispatchers.IO) {
+        val direct = runRootInstall(path)
+        if (direct == null) return@withContext null
+        val staged = copyIntoCache(File(path)) ?: return@withContext direct
+        try {
+            val copied = RootShell.session.run(
+                "cp ${shellQuote(staged.absolutePath)} '$ROOT_TMP_APK'",
+                timeoutMs = ROOT_INSTALL_TIMEOUT_MILLIS,
+            )
+            if (copied.exitCode != 0) {
+                val why = (copied.stdout + copied.stderr).trim().take(200)
+                return@withContext "$direct\nroot 也读不到这个包：${why.ifBlank { "cp 退出码 ${copied.exitCode}" }}"
+            }
+            runRootInstall(ROOT_TMP_APK)
+        } finally {
+            staged.delete()
+            runCatching { RootShell.session.run("rm -f '$ROOT_TMP_APK'") }
+        }
+    }
+
+    /** One root `pm install -r -d` of [where]; null on success, otherwise what root printed. */
+    private suspend fun runRootInstall(where: String): String? {
         val result = RootShell.session.run(
-            "pm install -r -d ${shellQuote(path)}",
+            "pm install -r -d ${shellQuote(where)}",
             timeoutMs = ROOT_INSTALL_TIMEOUT_MILLIS,
         )
-        if (result.exitCode == 0 && !result.stdout.contains("Failure", ignoreCase = true)) return@withContext null
-        (result.stdout + result.stderr).trim().ifBlank { "pm install 退出码 ${result.exitCode}" }
+        if (result.exitCode == 0 && !result.stdout.contains("Failure", ignoreCase = true)) return null
+        return (result.stdout + result.stderr).trim().ifBlank { "pm install 退出码 ${result.exitCode}" }
     }
+
+    /**
+     * A copy of [file] inside the app's own cache, which root can read and FUSE cannot hide.
+     *
+     * Root reads `/data/data/<pkg>/cache` directly; nothing is asked of the shell here, so a
+     * refusal later is about `pm`, not about where the bytes are.
+     */
+    private fun copyIntoCache(file: File): File? = runCatching {
+        val copy = File(context.cacheDir, "update-root.apk")
+        file.inputStream().use { input -> copy.outputStream().use { output -> input.copyTo(output) } }
+        copy
+    }.getOrNull()
 
     /** One `pm install -r -d` of [where]; null on success, otherwise the output that explains it. */
     private suspend fun runInstall(where: String): String? {
-        val result = shell.run("pm install -r -d ${shellQuote(where)}")
+        val result = shell.run("pm install -r -d ${shellQuote(where)}", timeoutMs = PM_INSTALL_TIMEOUT_MILLIS)
         if (result.ok && !result.output.contains("Failure", ignoreCase = true)) return null
-        // A shell that never ran says nothing useful in its output: naming the runtime's own state
-        // is what makes the per-channel report actionable instead of three identical English lines.
-        return when (result.failure) {
-            TweakFailure.NoPrivilege -> "Shizuku 没在运行，或没授权给 Canta"
-            TweakFailure.Timeout -> "Shizuku 没有响应"
-            TweakFailure.Broken -> "Shizuku 服务异常：${summarized(result.output)}"
-            TweakFailure.Unsupported -> "这台设备没有可用的 Shizuku 通道"
-            null -> result.output.trim().ifBlank { "pm install 没有输出" }
-        }
+        return refusalText(result, "pm install 没有输出")
+    }
+
+    /**
+     * Why a shell call did not do its job, in a sentence.
+     *
+     * A shell that never ran prints nothing: naming the runtime's own state is what makes the
+     * per-channel report actionable instead of three identical empty lines (which is what the
+     * report used to say when Shizuku was not up: "推送到 /data/local/tmp 失败（偏移 0）：").
+     */
+    private fun refusalText(result: TweakRun, emptyOutput: String): String = when (result.failure) {
+        // 「没在运行，或没授权」合成一句的话，用户照着做也没法确定该开服务还是该点授权。
+        TweakFailure.NoPrivilege -> ShizukuPermission.refusalText(context.packageManager)
+        TweakFailure.Timeout -> "Shizuku 没有响应"
+        TweakFailure.Broken -> "Shizuku 服务异常：${summarized(result.output)}"
+        TweakFailure.Unsupported -> "这台设备没有可用的 Shizuku 通道"
+        null -> result.output.trim().ifBlank { emptyOutput }
     }
 
     /**
@@ -1441,7 +1525,10 @@ class AndroidCantaPlatform(
      */
     private suspend fun installViaTmp(file: File, onStage: (InstallStage, Int) -> Unit): String? {
         val base = "/data/local/tmp/.canta-update"
-        shell.run("rm -f '$base.b64' '$base.apk'")
+        val prepared = shell.run("rm -f '$base.b64' '$base.apk'")
+        // Nothing to push into if the shell is not there: say that, instead of allocating a
+        // base64 copy of the whole APK and reporting "偏移 0：" with an empty reason.
+        if (!prepared.ok) return refusalText(prepared, "Shizuku 没有响应")
         val encoded = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
         val chunkSize = 90_000
         var offset = 0
@@ -1454,7 +1541,7 @@ class AndroidCantaPlatform(
             val run = shell.run("printf %s '${chunk.replace("'", "'\\''")}' >> '$base.b64'")
             if (!run.ok) {
                 shell.run("rm -f '$base.b64'")
-                return "推送到 /data/local/tmp 失败（偏移 $offset）：${run.output.trim().take(200)}"
+                return "推送到 /data/local/tmp 失败（偏移 $offset）：${refusalText(run, "没有输出").take(200)}"
             }
             offset = end
             onStage(InstallStage.PUSHING, ((offset.toLong() * 100) / encoded.length).toInt().coerceIn(0, 100))
@@ -1465,7 +1552,7 @@ class AndroidCantaPlatform(
         )
         if (!verify.ok || !verify.output.contains("ok")) {
             shell.run("rm -f '$base.b64' '$base.apk'")
-            return "暂存的 APK 校验失败：${verify.output.trim().take(200)}"
+            return "暂存的 APK 校验失败：${refusalText(verify, "没有输出").take(200)}"
         }
         val failure = runInstall("$base.apk")
         shell.run("rm -f '$base.apk'")

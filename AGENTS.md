@@ -498,7 +498,27 @@ select code, round(avg(progress)) as avg_progress, count(*) from update_reports
 
 code 取值：检查 `UpdateFailure`（`RATE_LIMITED`/`TIMEOUT`/`NETWORK`/`SERVER`/`NO_RELEASE`/`MALFORMED`）、
 下载 `UpdateDownloadFailure`（`NETWORK`/`TIMEOUT`/`STORAGE`/`UNSUPPORTED`/`UNKNOWN`）、
-安装 `REFUSED_ALL_ROUTES`（四条通道全拒，`detail` 是每通道自己的一句），`handoff` 表示交给了系统安装器。
+安装 `REFUSED_ALL_ROUTES`（四条通道全拒，`detail` 是每通道自己的一句）、
+`NOT_READY`（运行时那一刻没就绪：没在运行 / 没授权 / 没响应；**不**算这一版装不上，等 20 秒自己再试，
+最多 2 次），`handoff` 表示交给了系统安装器。
+
+### 12.4.1 「下载了却不自动装」的两个真因（2026-11-25 修）
+
+`InstallAttempt.retryable` 就是为这两件事分出来的，改这块前先看：
+
+1. **把「环境没就绪」当成「这个包装不上」**。旧逻辑任何一次失败都写 `skippedAutoInstallVersion`
+   并把包甩给系统安装器 —— 启动那一刻 Shizuku 还没起来就够钉死一版，用户看到的正是
+   「下载了、不自动装，关于页写着上次没成功」。现在只有 `pm` 真拒绝（`INSTALL_FAILED_*`、包名不符）
+   才进这个兜底。
+2. **`binder.transact` 没有超时**。Shizuku 用户服务半死不活时它永不返回，界面就停在
+   「正在安装 … 90%」（90 是 `InstallStage.INSTALLING` 的固定档，见 `shownPercentage`）。
+   现在 `ShizukuShell.run` 有 `timeoutMs`（默认 30 s，`pm install` 180 s），超时就丢 binder、报
+   「没有响应」。
+
+另外 root 那条路以前用 `suBinaryPath() != null` 当门槛，而 Magisk/KernelSU 的 `su` 在文件系统上
+看不见 —— 于是一台「别的功能都走 root」的手机，自更新却报「这台手机没有 su」。门槛统一成
+`rootMayBeAvailable()`（`su` 文件或 root 管理器 App），并且 root 装不动时先 `cp` 到
+`/data/local/tmp` 再 `pm install`（`pm` 读不了 FUSE 上的 `Android/data`）。
 
 ### 12.5 排查顺序（别一上来就翻客户端日志）
 

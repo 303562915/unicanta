@@ -30,6 +30,39 @@ enum class InstallStage {
 const val INSTALL_PROGRESS_UNKNOWN = -1
 
 /**
+ * 一次自更新安装的结果。
+ *
+ * [failure] 为 null 就是装上了，否则是一句人话的原因。真正要看的是 [retryable]：它说的是
+ * 「这次失败怪环境，不怪这个包」——特权运行时没起来、shell 没答上来、Shizuku 的用户服务这次
+ * 没绑上，这些等一会儿再试就可能好了。调用方据此分开处理：
+ *
+ *  - `retryable = true`：别把这个版本钉成「装不上」，也别把包甩给系统安装器；等一会儿自己再试。
+ *  - `retryable = false`：`pm` 真的拒绝了这个包（签名不符、降级、包名不符…），重试只会得到同一句
+ *    话，这时候交给系统安装器、并且不再自动重试这一版才是对的。
+ *
+ * 分开的理由是实测的形状：绝大多数失败都是「下载完了、Shizuku 那一刻没就绪」，而旧逻辑把这种
+ * 也会当成「这个包装不上」，于是永久停掉自动安装，用户只能看到「下载了却不自动装」。
+ */
+data class InstallAttempt(
+    val failure: String? = null,
+    val retryable: Boolean = false,
+) {
+    /** 装上了。 */
+    val succeeded: Boolean get() = failure == null
+
+    companion object {
+        /** The APK replaced this app. */
+        val Success = InstallAttempt()
+
+        /** `pm` refused this package; asking again answers the same. */
+        fun refused(failure: String) = InstallAttempt(failure)
+
+        /** Nothing about the package was wrong — the runtime simply was not ready. */
+        fun notReady(failure: String) = InstallAttempt(failure, retryable = true)
+    }
+}
+
+/**
  * Abstraction over small, UI-facing platform capabilities so the shared UI
  * can remain target-agnostic. Each platform provides its own implementation.
  */
@@ -179,7 +212,8 @@ interface CantaPlatform {
 
     /**
      * Installs the APK at [path] over this app through the privileged runtime, i.e. `pm install`
-     * as Shizuku's identity. Returns null on success, or the reason it failed.
+     * as Shizuku's identity. Answers [InstallAttempt.Success] when the APK replaced this app, or
+     * the reason it did not — see [InstallAttempt] for why "没装成" is two different outcomes.
      *
      * [onStage] is called before every route the APK is offered to, with a 0–100 percentage while
      * the APK is being pushed (`/data/local/tmp`) and [INSTALL_PROGRESS_UNKNOWN] everywhere else:
@@ -191,7 +225,7 @@ interface CantaPlatform {
     suspend fun installUpdate(
         path: String,
         onStage: (InstallStage, Int) -> Unit = { _, _ -> },
-    ): String? = "this build cannot install updates"
+    ): InstallAttempt = InstallAttempt.refused("this build cannot install updates")
 
     /**
      * Hands the APK at [path] to the system package installer through a content:// URI the

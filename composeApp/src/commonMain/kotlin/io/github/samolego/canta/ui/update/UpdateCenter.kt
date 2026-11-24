@@ -19,6 +19,7 @@ import io.github.samolego.canta.generated.resources.about_download_too_slow
 import io.github.samolego.canta.generated.resources.about_install_done
 import io.github.samolego.canta.generated.resources.about_install_handoff
 import io.github.samolego.canta.generated.resources.about_install_refused
+import io.github.samolego.canta.generated.resources.about_install_retry_wait
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
@@ -97,6 +98,10 @@ internal class UpdateCenter(
 
     /** 同一时刻只允许一次安装：自动路径和手动路径可能同时走到这里。 */
     private var installing = false
+
+    /** 「运行时没就绪」重试的是哪一版、已经重试了几次；换版本就清零。 */
+    private var notReadyVersion = ""
+    private var notReadyRetries = 0
 
     private var downloadJob: Job? = null
 
@@ -370,6 +375,10 @@ internal class UpdateCenter(
      *
      * 说话只说 toast：开始时一句（这是应用被替换前最后看到的东西），结束时一句（成功 / 交给系统
      * 安装器 / 装不上）。中间那些阶段只改 [state]，不再逐条打印文字。
+     *
+     * 失败要分两种（见 [InstallAttempt]）：运行时那一刻没就绪的，这一版**不算装不上** —— 不进
+     * 「暂停自动安装」、不甩给系统安装器，等一会儿自己再试；只有 `pm` 真的拒绝了这个包，才按旧的
+     * 兜底走。混在一起就是「下载了却不自动装」：启动那一刻 Shizuku 还没起，一次就够钉死一版。
      */
     fun install(ready: UpdateState.ReadyToInstall) {
         if (installing) return
@@ -382,11 +391,12 @@ internal class UpdateCenter(
             // Every route `pm install` is offered to is reported back here, so the record names the
             // route the failure happened on; the card only draws the stage as progress.
             var lastStage = InstallStage.PREPARING
-            val failure = platform.installUpdate(ready.path) { stage, percent ->
+            val attempt = platform.installUpdate(ready.path) { stage, percent ->
                 lastStage = stage
                 state = UpdateState.Installing(ready.version, ready.path, stage, percent)
             }
             val elapsed = startedAt.elapsedNow().inWholeMilliseconds
+            val failure = attempt.failure
             if (failure == null) {
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_INSTALL,
@@ -402,6 +412,28 @@ internal class UpdateCenter(
                 platform.exitApp()
                 // 桌面 / 网页版里 exitApp 不会真的结束进程：把闸门放开，手动重试还能用。
                 installing = false
+            } else if (attempt.retryable && noteNotReady(ready.version)) {
+                // 环境没就绪：这个包本身没问题。记一条之后把卡片退回「已下载」，隔一会儿自己再来
+                // 一次 —— 绝大多数情况是 App 先起来了、Shizuku 的用户服务还在绑。
+                telemetry?.recordUpdate(
+                    stage = UpdateReport.STAGE_INSTALL,
+                    outcome = UpdateReport.OUTCOME_FAILED,
+                    channel = channelName,
+                    version = ready.version,
+                    code = "NOT_READY",
+                    reason = failure,
+                    detail = "stage=$lastStage\n$failure",
+                    elapsedMs = elapsed,
+                )
+                platform.showMessage(getString(Res.string.about_install_retry_wait))
+                state = UpdateState.ReadyToInstall(ready.version, ready.path)
+                installing = false
+                scope.launch {
+                    delay(INSTALL_NOT_READY_RETRY_DELAY_MILLIS)
+                    // 这中间用户可能自己点了「以后再说」，也可能换了渠道：只在这张卡片还停在
+                    // 「已下载」时才续上，不抢别人的状态。
+                    if (state is UpdateState.ReadyToInstall) install(ready)
+                }
             } else {
                 // This build will not install itself on this phone: a foreign signature, a ROM that
                 // refuses `pm install`, a runtime that stopped. Remembering the version is what
@@ -442,6 +474,22 @@ internal class UpdateCenter(
         }
     }
 
+    /**
+     * 记一次「环境没就绪」的重试，回答还剩几次。
+     *
+     * 上限存在的理由：Shizuku 真的没装、真的没授权时，无限重试就是无限弹「正在安装」。到上限之后
+     * 走旧的兜底（交给系统安装器 + 不再自动装这一版），和以前一样，只是多等了一两轮。
+     */
+    private fun noteNotReady(version: String): Boolean {
+        if (notReadyVersion != version) {
+            notReadyVersion = version
+            notReadyRetries = 0
+        }
+        if (notReadyRetries >= INSTALL_NOT_READY_RETRIES) return false
+        notReadyRetries += 1
+        return true
+    }
+
     private suspend fun channel(): UpdateChannel =
         if (settings.updateChannelFlow.first() == "dev") UpdateChannel.DEVELOPMENT else UpdateChannel.STABLE
 
@@ -470,6 +518,15 @@ private fun UpdateDownloadFailure.reason(): StringResource = when (this) {
 private const val SLOW_EARLY_SECONDS = 20
 private const val SLOW_EARLY_PERCENT = 5
 private const val SLOW_STALL_SECONDS = 12
+
+/**
+ * 「运行时没就绪」这一版最多自己再试几次，以及两次之间等多久。
+ *
+ * 20 秒是照着 Shizuku 用户服务起来的节奏定的：管理器刚被系统拉起来时，第一次绑定常常超时，隔十几秒
+ * 再绑就好。次数给 2：够救回启动那一次，又不会让「真的没装 Shizuku」的手机一直停在「正在安装」。
+ */
+private const val INSTALL_NOT_READY_RETRIES = 2
+private const val INSTALL_NOT_READY_RETRY_DELAY_MILLIS = 20_000L
 
 /** 这条下载是不是慢到该停下、改去下载页。没有 `Content-Length`（[percent] 为负）时量不出速度，就不猜。 */
 private fun isDownloadTooSlow(startedAt: TimeMark, lastChange: TimeMark, percent: Int): Boolean {

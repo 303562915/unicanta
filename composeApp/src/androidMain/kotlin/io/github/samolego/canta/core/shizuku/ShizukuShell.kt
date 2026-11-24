@@ -9,10 +9,13 @@ import io.github.samolego.canta.core.TweakFailure
 import io.github.samolego.canta.core.TweakRun
 import io.github.samolego.canta.util.LogUtils
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
 
@@ -34,7 +37,31 @@ class ShizukuShell(private val context: Context) {
 
         /** How long the service may take to come up before the card reports a timeout. */
         const val BIND_TIMEOUT_MS = 10_000L
+
+        /**
+         * 绑几次。实测的形状是：Shizuku 的用户服务第一次常常起不来（进程被杀、管理器刚启动），
+         * 隔一秒再绑一次就好了。只绑一次的话这一次安装就白等，然后退到系统安装器。
+         */
+        const val BIND_ROUNDS = 2
+
+        /** 两次绑定之间等多久；先 unbind 再 bind，否则 Shizuku 会当成同一次未完成的请求。 */
+        const val BIND_RETRY_DELAY_MS = 1_000L
+
+        /**
+         * 一次脚本调用最多等多久。`binder.transact` 是阻塞调用、没有自己的超时：Shizuku 那边
+         * 卡住（用户服务死了但 binder 还在）时它会一直不返回，界面就永远停在「正在安装 90%」。
+         * 所以这条等待必须由我们自己放弃。
+         */
+        const val RUN_TIMEOUT_MS = 30_000L
     }
+
+    /**
+     * 放着那些可能永远不返回的 `transact`。
+     *
+     * 单独一个 scope、而不是调用方的 scope：超时之后我们要丢掉这次调用继续往下走，而结构化并发
+     * 的 scope 会等所有子协程结束——那正好是这里唯一不能做的事。
+     */
+    private val callScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val args: Shizuku.UserServiceArgs by lazy {
         Shizuku.UserServiceArgs(ComponentName(context.packageName, ShellUserService::class.java.name))
@@ -65,8 +92,14 @@ class ShizukuShell(private val context: Context) {
         }
     }
 
-    /** Runs [script] and reports what it printed, or why it never ran. */
-    suspend fun run(script: String): TweakRun {
+    /**
+     * Runs [script] and reports what it printed, or why it never ran.
+     *
+     * [timeoutMs] is a ceiling on the *answer*, not on the command: `pm install` of a 30 MB APK on a
+     * busy phone legitimately takes a minute, while a shell whose user service died never answers at
+     * all. Callers that run something long pass their own number; everything else keeps the default.
+     */
+    suspend fun run(script: String, timeoutMs: Long = RUN_TIMEOUT_MS): TweakRun {
         val remote = binder ?: bind()
         if (remote == null) {
             return TweakRun(
@@ -74,7 +107,17 @@ class ShizukuShell(private val context: Context) {
                 failure = if (runtimeAlive()) TweakFailure.Timeout else TweakFailure.NoPrivilege,
             )
         }
-        return withContext(Dispatchers.IO) { transact(remote, script) }
+        // 在单独的 scope 上等：超时之后这次调用就此作废，不会再挂着界面。
+        val call = callScope.async { transact(remote, script) }
+        val answer = withTimeoutOrNull(timeoutMs) { call.await() }
+        if (answer == null) {
+            // 这次没答上来：丢掉这个 binder，下一次重新绑（绑不上的话就是我们自己给的那句
+            // 「没有响应」，而不是一条永远转不完的进度）。
+            binder = null
+            LogUtils.w(TAG, "The shell service did not answer within ${timeoutMs}ms")
+            return TweakRun(ok = false, failure = TweakFailure.Timeout)
+        }
+        return answer
     }
 
     /** Starts [ShellUserService] if it is not running yet; null when it cannot be started. */
@@ -82,16 +125,32 @@ class ShizukuShell(private val context: Context) {
         binder?.let { return@withLock it }
         if (!runtimeAlive()) return@withLock null
 
-        val deferred = CompletableDeferred<IBinder?>()
-        pending = deferred
-        try {
-            runCatching { Shizuku.bindUserService(args, connection) }
-                .onFailure { LogUtils.w(TAG, "Could not start the shell service: $it") }
-                .getOrNull() ?: return@withLock null
-            withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }?.also { binder = it }
-        } finally {
-            pending = null
+        for (round in 0 until BIND_ROUNDS) {
+            if (round > 0) {
+                // 上一轮没连上：先把那次绑定收回去再重来，Shizuku 不会为同一个用户服务重发连接。
+                runCatching { Shizuku.unbindUserService(args, connection) }
+                    .onFailure { LogUtils.w(TAG, "Could not drop the shell service: $it") }
+                delay(BIND_RETRY_DELAY_MS)
+                if (!runtimeAlive()) return@withLock null
+            }
+            val deferred = CompletableDeferred<IBinder?>()
+            pending = deferred
+            try {
+                val requested = runCatching { Shizuku.bindUserService(args, connection) }
+                    .onFailure { LogUtils.w(TAG, "Could not start the shell service: $it") }
+                    .isSuccess
+                if (!requested) continue
+                val bound = withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
+                if (bound != null) {
+                    binder = bound
+                    return@withLock bound
+                }
+                LogUtils.w(TAG, "The shell service did not connect (round ${round + 1}/$BIND_ROUNDS)")
+            } finally {
+                pending = null
+            }
         }
+        null
     }
 
     /** Whether Shizuku's binder is there and Canta is allowed to use it. */

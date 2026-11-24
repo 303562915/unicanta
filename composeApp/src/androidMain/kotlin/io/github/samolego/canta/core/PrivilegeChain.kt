@@ -1,6 +1,7 @@
 package io.github.samolego.canta.core
 import android.content.pm.PackageManager
 import androidx.compose.ui.graphics.ImageBitmap
+import io.github.samolego.canta.core.root.ROOT_MANAGER_PACKAGES
 import io.github.samolego.canta.core.root.RootCantaHandler
 import io.github.samolego.canta.core.root.suBinaryPath
 import io.github.samolego.canta.core.shizuku.ShizukuServices
@@ -68,7 +69,7 @@ class PrivilegeChain(
      * from this process right now.
      */
     private fun rootManagerInstalled(): Boolean =
-        ROOT_MANAGERS.any { packageManager.getLaunchIntentForPackage(it) != null }
+        ROOT_MANAGER_PACKAGES.any { packageManager.getLaunchIntentForPackage(it) != null }
 
     /**
      * The privilege to use, decided once: root if it answers, Shizuku if it does not.
@@ -414,18 +415,6 @@ private fun authorizedRuntime(
 }
 
 /**
- * Package names of the root managers this build knows. Magisk is the one most phones carry; the
- * alpha and delta builds ship under their own ids; KernelSU, its Next fork and APatch are the
- * kernel-side ones. Any of them means "ask for root", file on disk or not.
+ * Package names of the root managers this build knows — the list itself lives in the root package
+ * (`ROOT_MANAGER_PACKAGES`), because the updater asks the same question and two lists drift.
  */
-private val ROOT_MANAGERS = listOf(
-    // Magisk: stable, alpha and delta all ship as separate packages.
-    "com.topjohnwu.magisk",
-    "io.github.vvb2060.magisk",
-    "io.github.huskydg.magisk",
-    // KernelSU and its Next fork.
-    "me.weishu.kernelsu",
-    "com.rifsxd.ksunext",
-    // APatch.
-    "me.bmax.apatch",
-)

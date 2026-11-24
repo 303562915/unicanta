@@ -1,5 +1,6 @@
 package io.github.samolego.canta.core.root
 
+import android.content.pm.PackageManager
 import io.github.samolego.canta.core.adb.AdbTransport
 import io.github.samolego.canta.core.adb.ShellResult
 import io.github.samolego.canta.util.LogUtils
@@ -168,3 +169,34 @@ fun suBinaryPath(): String? =
  * belongs on the first real operation, which is where [RootCantaHandler.prepare] asks for it.
  */
 fun hasSuBinary(): Boolean = suBinaryPath() != null
+
+/**
+ * Package names of the root managers this build knows. Magisk is the one most phones carry; the
+ * alpha and delta builds ship under their own ids; KernelSU, its Next fork and APatch are the
+ * kernel-side ones. Any of them means "ask for root", file on disk or not.
+ */
+val ROOT_MANAGER_PACKAGES = listOf(
+    // Magisk: stable, alpha and delta all ship as separate packages.
+    "com.topjohnwu.magisk",
+    "io.github.vvb2060.magisk",
+    "io.github.huskydg.magisk",
+    // KernelSU and its Next fork.
+    "me.weishu.kernelsu",
+    "com.rifsxd.ksunext",
+    // APatch.
+    "me.bmax.apatch",
+)
+
+/**
+ * Whether asking for root is worth it on this phone: a `su` file somewhere, or a root manager app.
+ *
+ * Manager apps mount `su` only while their daemon runs, and inside their own mount namespace — a
+ * plain file check simply cannot see it, while `su` on `PATH` still answers. That is why every
+ * caller that is about to *use* root goes through this and not through [hasSuBinary]: the updater
+ * used to, and on a rooted phone it answered "这台手机没有 su" while every other page installed
+ * through root without a complaint.
+ */
+fun rootMayBeAvailable(packageManager: PackageManager): Boolean =
+    hasSuBinary() || ROOT_MANAGER_PACKAGES.any {
+        runCatching { packageManager.getLaunchIntentForPackage(it) != null }.getOrDefault(false)
+    }
