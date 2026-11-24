@@ -46,6 +46,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.cache.ScreenCache
+import io.github.samolego.canta.data.cache.stableMerge
 import io.github.samolego.canta.data.community.CommunityPost
 import io.github.samolego.canta.data.community.PostComment
 import io.github.samolego.canta.data.community.PostDraft
@@ -68,6 +70,13 @@ import kotlin.time.Instant
 
 /** 一页拉多少条。后端把 `p_limit` 夹在 1..50，这里取一屏够看的数。 */
 private const val POSTS_PAGE = 20
+
+/**
+ * 帖子列表在 [ScreenCache] 里的槽位。
+ *
+ * 键里不带身份：帖子是公共列表，谁看都是同一份；带了身份的键反而会让换身份后白等一次加载。
+ */
+private const val POSTS_CACHE_KEY = "screen:posts"
 
 /** 标题、正文的上限，与后端 `community_posts` 的约束同一个数。 */
 private const val POST_TITLE_LIMIT = 120
@@ -135,8 +144,12 @@ internal fun PostsScreen(
     val postListState = rememberLazyListState()
     ScrollToTopEffect(postListState)
 
-    var posts by remember { mutableStateOf<List<CommunityPost>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    // 这一屏上一次画出来的帖子列表（见 [ScreenCache]）：进来先画它，网络回来再顶上去。
+    // 有缓存时第一帧就是一张有内容的表，不是转圈。
+    var posts by remember {
+        mutableStateOf(ScreenCache.get<List<CommunityPost>>(POSTS_CACHE_KEY).orEmpty())
+    }
+    var loading by remember { mutableStateOf(posts.isEmpty()) }
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     /** 发帖、回帖、点赞、删帖之后 +1：只有它变了才重新拉。 */
@@ -186,7 +199,12 @@ internal fun PostsScreen(
         if (posts.isEmpty()) loading = true
         val fresh = current.list(0, POSTS_PAGE)
         if (fresh != null) {
-            posts = fresh
+            // 就地合并：内容没变的那几条沿用旧实例，整表不重画；一个字节都没变时连状态写入都省掉。
+            val merged = stableMerge(posts, fresh) { it.id }
+            if (merged !== posts) {
+                posts = merged
+                ScreenCache.put(POSTS_CACHE_KEY, merged)
+            }
             error = null
         } else {
             error = current.reason ?: "帖子没拉到，检查一下网络或代理。"

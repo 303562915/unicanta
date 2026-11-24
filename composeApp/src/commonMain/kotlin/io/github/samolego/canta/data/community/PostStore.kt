@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.community
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -20,6 +21,7 @@ import kotlinx.serialization.json.putJsonArray
  * 字段缺了就退回默认值（与 `PlanRepository.parseAirport` 同一个约定）：后端是老部署、或者某个
  * 字段这次没发，页面照样画得出一条，而不是整块变成空白。
  */
+@Serializable
 data class CommunityPost(
     val id: Long = 0L,
     val title: String = "",
