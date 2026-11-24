@@ -90,9 +90,11 @@ import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
+import io.github.samolego.canta.ui.component.EmotionSpan
 import io.github.samolego.canta.ui.component.EmotionText
 import io.github.samolego.canta.ui.component.dropLastSticker
 import io.github.samolego.canta.ui.component.emotionOf
+import io.github.samolego.canta.ui.component.parseEmotionBody
 import io.github.samolego.canta.ui.component.rememberEmotionPick
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -100,6 +102,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
@@ -193,6 +196,35 @@ private const val ChatPresencePollMs: Long = 5_000L
  * 打字是连续的，不必每个字都告诉服务端。
  */
 private const val ChatTypingPingMs: Long = 4_000L
+
+/**
+ * 叫了群聊 AI 之后，客户端自己催回答的间隔与次数。
+ *
+ * 服务端 cron 是每分钟一拍，单靠它最坏要等 60 秒（2026-11-24 实测 30 秒：@ 在 04:15:30，
+ * 回答落在 04:16:00）。发完 2 秒问一次、最多 15 次，正常几秒就能看见；等不到也不算错，
+ * cron 那一拍迟早会把回答写回来。
+ */
+private const val ChatAiPollMs: Long = 2_000L
+private const val ChatAiPollTries = 15
+
+/**
+ * 后端 `message_send` 里触发群 AI 的那条判定，客户端复刻一份。
+ *
+ * 两处不一致会出现最难查的状态：客户端在等"正在思考"，后端根本没排队。所以这里的正则和
+ * `private.ai_queue` 前的那个 `body ~ '@\s*群聊AI'` 必须字面对齐。
+ */
+private val ChatAiTrigger = Regex("@\\s*群聊AI")
+
+/**
+ * 这条正文是不是「只有表情」：拆开以后每一段都是表情，没有一个字。
+ *
+ * 只有这种消息把图放大到三倍。混着一句话的表情保持正文大小——一行里一张巨大的图会把
+ * 那句话挤成三行，看起来像排版坏了。
+ */
+private fun chatStickerOnly(body: String): Boolean {
+    val spans = parseEmotionBody(body)
+    return spans.isNotEmpty() && spans.all { it is EmotionSpan.Sticker }
+}
 
 /** 全屏看图能放大到几倍；双击在 1f 和它之间切换。 */
 private const val ChatImageMaxZoom = 4f
@@ -472,6 +504,30 @@ fun ChatScreen(
     }
 
     /**
+     * 等这一轮群聊 AI 的回答写回来。
+     *
+     * 只在「这条正文点到了 @群聊AI」之后跑：服务端 cron 是每分钟一拍，不等就等于让人盯着屏幕猜
+     * 它到底收到没有。轮询是幂等的（服务端先抢占再写回），问密一点只是多几次几毫秒的查询。
+     */
+    suspend fun waitForAiReply() {
+        aiThinking = true
+        try {
+            repeat(ChatAiPollTries) {
+                delay(ChatAiPollMs)
+                val arrived = runCatching {
+                    repository.pollAiReply(owner, conversationId)
+                }.getOrDefault(0)
+                if (arrived > 0) {
+                    refreshTail()
+                    return
+                }
+            }
+        } finally {
+            aiThinking = false
+        }
+    }
+
+    /**
      * 推送来了：只问「比我手上最新那条还新的有几条」。
      *
      * 这是最小的拉动——没新消息时后端回一个 `[]`，几百字节；有人说话才带回那几条。
@@ -594,6 +650,10 @@ fun ChatScreen(
                     pendingMentions = emptyList()
                     // 引用也跟着清：这条已经发出去了，下一条默认不带引用。
                     replyTarget = null
+                    // 这条点到了 @群聊AI：自己催几次，别等 cron 那一分钟。
+                    if (isGroup && ChatAiTrigger.containsMatchIn(body)) {
+                        scope.launch { waitForAiReply() }
+                    }
                 } else {
                     sendFailed = true
                 }
@@ -831,6 +891,14 @@ fun ChatScreen(
     // 一次调用两样东西：别人的读位置和谁在打字（见 `SocialRepository.conversationLive`）。
     // 拉到 null 就留着上一次的——"这一次没问到"不该让「正在输入」突然消失。
     var presence by remember(conversationId) { mutableStateOf<LivePresence?>(null) }
+
+    /**
+     * 刚点了群聊 AI、正在等它回答。
+     *
+     * 只影响顶栏那一行（「群聊AI 正在思考…」）和一次短轮询；不写库、不发消息——
+     * 真正的回答由后端写回来，这里只是让人知道"它收到了"，而不是盯着屏幕猜。
+     */
+    var aiThinking by remember(conversationId) { mutableStateOf(false) }
     LaunchedEffect(conversationId, owner) {
         if (conversationId <= 0L || owner.isEmpty()) return@LaunchedEffect
         while (true) {
@@ -840,8 +908,7 @@ fun ChatScreen(
     }
 
     // 我在打字：4 秒最多告诉服务端一次。失败不提示——下一键还会再发一遍。
-    var typingPingAt by remember(conversationId) { mutableStateOf(0L) }
-    fun noteTyping() {
+    var typingPingAt by remember(conversationId) { mutableStateOf(0L) }    fun noteTyping() {
         if (conversationId <= 0L || owner.isEmpty()) return
         val now = currentTimeMillis()
         if (now - typingPingAt < ChatTypingPingMs) return
@@ -901,7 +968,9 @@ fun ChatScreen(
         grouped -> "$readBy 人已读"
         else -> "已读"
     }
+    // 顶栏那一行：「别人正在输入」优先；没人打字但自己刚叫了 AI，就写 AI 在思考。
     val typingLine = presence?.typingLine.orEmpty()
+        .ifEmpty { if (aiThinking) "群聊AI 正在思考…" else "" }
 
     Scaffold(
         topBar = {
@@ -1789,10 +1858,14 @@ private fun ChatBubble(
                         EmotionText(
                             body = message.body,
                             fontSize = 14,
-                            lineHeight = 19,
+                            // 整条只有表情时把图放大到三倍（17dp → 51dp）：一个字符那么高的表情
+                            // 在气泡里读不出是哪一个，抖音/微信都是这么大。行高跟着放到 56，
+                            // 否则图会压到上下一行。
+                            lineHeight = if (chatStickerOnly(message.body)) 56 else 19,
                             color = if (mine) colors.onPrimary else colors.onSurfaceVariant,
                             // 自己的气泡底色是主色，@ 再上主色就看不见了：用 onPrimary 反过来提亮。
                             mentionColor = if (mine) colors.onPrimary else colors.primary,
+                            stickerScale = if (chatStickerOnly(message.body)) 3f else 1f,
                         )
                     }
                     if (menuable) {
@@ -2845,29 +2918,19 @@ private fun chatInitial(title: String, isGroup: Boolean): String {
     return if (isGroup) "群" else "聊"
 }
 
-/** 消息落在哪一天：后端串 `2026-11-21T08:40:00Z` 的前 10 个字符就是日期。 */
-private fun chatDayOf(createdAt: String): String = createdAt.take(10)
+/** 消息落在哪一天（**北京时区**的日期键，`yyyy-MM-dd`）：分隔条要不要画的判据。 */
+private fun chatDayOf(createdAt: String): String = BeijingTime.dayKey(createdAt)
 
 /**
- * 日期分隔条上那一行字：`2026-11-21 08:40`。
+ * 日期分隔条上那一行字：「今天」「昨天」「11月21日」。
  *
- * 不换算时区，也不比较"今天 / 昨天"——这条串是后端盖的 UTC 时间，本地换算要引一个时间库，
- * 而这一行灰字只需要让人看出"这是另一天"。日期都没有就返回空串，调用方不画。
+ * 换算与"今/昨"的判断都在 [BeijingTime]（后端给的是 UTC）。以前这里直接切字符串，日期按 UTC 算，
+ * 北京时间 0 点到 8 点之间发的消息会被归到前一天。
  */
-private fun chatDayStampOf(createdAt: String): String {
-    if (createdAt.isBlank()) return ""
-    val day = chatDayOf(createdAt).trim()
-    if (day.isEmpty()) return ""
-    val clock = chatClockOf(createdAt)
-    return if (clock.isEmpty()) day else "${day} ${clock}"
-}
+private fun chatDayStampOf(createdAt: String): String = BeijingTime.dayLabel(createdAt)
 
-/** 时间戳里的 HH:mm：取 `T` 后面那五个字符，不是这个形状就返回空串，不画一个猜出来的时间。 */
-private fun chatClockOf(createdAt: String): String {
-    val at = createdAt.indexOf('T')
-    if (at < 0 || createdAt.length < at + 6) return ""
-    return createdAt.substring(at + 1, at + 6)
-}
+/** 气泡上那一格时间：`HH:mm`（北京），不是这个形状就返回空串，不画一个猜出来的时间。 */
+private fun chatClockOf(createdAt: String): String = BeijingTime.clock(createdAt)
 
 /**
  * 把后端刚回来的那一条并进列表：后到的同 id 覆盖先前的，最后按 id 排回正序。

@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
+import io.github.samolego.canta.util.BeijingTime
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommentOrder
 import io.github.samolego.canta.data.community.CommentThread
@@ -1445,12 +1446,13 @@ fun MyCommentRow(
 }
 
 /**
- * "11-18 06:51" out of a Postgres timestamp. The string is sliced rather than parsed: every backend
- * this app talks to answers in ISO-8601 UTC, and a date that fails to parse must not blank a row.
+ * "11-18 06:51"（**北京时间**）out of a Postgres timestamp。
+ *
+ * 以前这里是切字符串（`substring(5,10)` + `substring(11,16)`），切出来的是 UTC 的钟点；现在统一走
+ * [BeijingTime.stamp]。解析不了就退回原来的日期切片，不把这一格留成空白。
  */
 fun shortStamp(iso: String): String {
-    if (iso.length < 16) return iso.take(10)
-    return iso.substring(5, 10) + " " + iso.substring(11, 16)
+    return BeijingTime.stamp(iso).ifEmpty { iso.take(10) }
 }
 
 /**
@@ -1467,7 +1469,7 @@ fun relativeStamp(
     iso: String,
     now: Instant = Clock.System.now(),
     /** The calendar the "昨天" is read against; tests pin it so a runner's zone cannot flip them. */
-    zone: TimeZone = TimeZone.currentSystemDefault(),
+    zone: TimeZone = BeijingTime.zone,
 ): String {
     val parsed = runCatching { Instant.parse(iso.replace(Regex("[+]00:00$"), "Z")) }.getOrNull()
         ?: return shortStamp(iso)

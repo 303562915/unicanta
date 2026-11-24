@@ -713,6 +713,24 @@ class SocialRepository(
     }
 
     /**
+     * 问一次「群聊 AI 的回答写好没有」，返回这次写回了几条（0 = 还没回来，再等等）。
+     *
+     * 服务端只处理这个会话、只处理未完成的请求，而且写回之前会先抢占那一条，所以两秒问一次
+     * 不会问出两条回答。失败也返回 0：等不到就当没有，页面不必区别「没回来」和「问失败」。
+     */
+    suspend fun pollAiReply(owner: String, conversation: Long): Int {
+        if (owner.isEmpty() || conversation <= 0L) return 0
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("ai_poll", body) ?: return 0
+        return intFrom(text, "ai_poll") ?: 0
+    }
+
+    /**
      * [conversation] 里的一页消息，按后端给的顺序（旧在前，界面自己滚到底）。
      *
      * [offset] 是已经拿到的条数，[limit] 是这一页要多少条：翻历史就是拿下一个 offset 再问一次，

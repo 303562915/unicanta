@@ -80,6 +80,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import io.github.samolego.canta.util.BeijingTime
 import kotlinx.coroutines.launch
 
 /** 一页互动消息从每个来源各取多少行。 */
@@ -785,6 +786,11 @@ private fun InteractionsTopBar(
             // 右：等宽空白，什么都不放。
             Spacer(Modifier.weight(1f))
         }
+        // 顶栏下面那条发丝线：参考图里标题区和列表之间有一条线，列表从线下开始。
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        )
     }
 }
 
@@ -1060,7 +1066,9 @@ private fun FollowerRow(person: SocialPerson, busy: Boolean, onToggleFollow: () 
                     "最近关注了你"
                 } else {
                     // 后端给的是 `2026-11-22T13:09:33.5Z`：只留日期，整串贴上去读不懂也太长。
-                    val day = person.since.substringBefore('T')
+                    // 日期按**北京时间**：`2026-11-22T13:09:33.5Z` 在 UTC 里是 22 号，在北京也是 22 号；
+                    // 但凌晨那几个小时会跨天，所以按北京日期取，而不是切 UTC 串的前 10 个字符。
+                    val day = BeijingTime.dayKey(person.since).ifEmpty { person.since.substringBefore('T') }
                     "$day 关注了你"
                 },
                 fontSize = 10.sp,
@@ -1202,11 +1210,12 @@ private fun interactionActionOf(item: InboxItem): String = when (item.kind) {
 }
 
 /**
- * 时间只用最朴素的那种写法：后端给的是 `2026-11-22T19:20:33Z`，这里截到分钟，
- * 把中间那个 `T` 换成空格。不引时间库，也不换算时区。
+ * 时间那一格：按北京时间走 [BeijingTime.listStamp]（刚刚 / N分钟前 / HH:mm / 昨天 HH:mm / MM-dd）。
+ *
+ * 原来这里是把 `2026-11-22T19:20:33Z` 截到分钟、把 `T` 换成空格——直接显示 UTC，比北京时间早八小时。
+ * 参考图那边是"昨天 20:09""周日"这种相对写法，名单越长，相对时间越好扫。
  */
-private fun interactionStampOf(createdAt: String): String =
-    createdAt.take(16).replace('T', ' ')
+private fun interactionStampOf(createdAt: String): String = BeijingTime.listStamp(createdAt)
 
 /** 列表读空的两种原因分开说：没连上是网络的事，被拒绝是后端的事。 */
 private fun interactionErrorOf(reason: String?, network: Boolean): String? = when {

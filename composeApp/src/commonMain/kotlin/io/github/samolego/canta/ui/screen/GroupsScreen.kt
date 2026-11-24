@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -50,6 +51,7 @@ import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
+import io.github.samolego.canta.util.BeijingTime
 import kotlinx.coroutines.delay
 
 /** 页面开着时多久重拉一次群聊：没有推送通道，只能靠这一行让列表跟上别人的动作。 */
@@ -264,6 +266,11 @@ private fun GroupsTopBar(onNavigateBack: () -> Unit, onCreateGroup: () -> Unit) 
             )
         }
         Spacer(Modifier.height(4.dp))
+        // 顶栏下面那条发丝线，和消息页、互动消息页同一条。
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = scheme.outlineVariant.copy(alpha = 0.6f),
+        )
     }
 }
 
@@ -370,14 +377,9 @@ private fun GroupAvatar(label: String) {
 }
 
 /**
- * 时间戳里的 HH:mm：列表右侧只画钟点，日期留给对话页。
+ * 列表右侧那一格时间，和消息页同一个写法（[BeijingTime.listStamp]）：刚刚 / N分钟前 / HH:mm /
+ * 昨天 HH:mm / MM-dd。
  *
- * 与消息页 `clockOf` 同一套做法（这边自己一份，因为那边是 private）——后端盖的是
- * `2026-11-20T10:00:00.000000Z`，取 T 后面那五个字符就是。不是这个形状（没有 T、或者被截短了）
- * 就返回空串：宁可这一格空着，也不画一个猜出来的时间。
+ * 这一页原来自己切字符串取 `HH:mm`，那是 UTC 的钟点，比北京时间早八小时；现在统一走北京时间。
  */
-private fun groupClockOf(stamp: String): String {
-    val at = stamp.indexOf('T')
-    if (at < 0 || stamp.length < at + 6) return ""
-    return stamp.substring(at + 1, at + 6)
-}
+private fun groupClockOf(stamp: String): String = BeijingTime.listStamp(stamp)
