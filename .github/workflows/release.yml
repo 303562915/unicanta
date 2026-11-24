@@ -163,11 +163,16 @@ jobs:
           gh release upload "$TAG" androidApp/build/outputs/apk/release/SHA256SUMS.txt
           gh release upload "$TAG" "${{ steps.attest.outputs.bundle-path }}"
 
-      - name: 🌐 Update download page
+      - name: 🌐 Update download page and announce
         if: inputs.keep_draft != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run pages.yml --ref master
+        # 为什么是显式 dispatch 而不是等 `release: published`：上面建 release 用的是 GITHUB_TOKEN，
+        # GitHub 的递归保护让这个 token 产生的事件**不会**触发其它 workflow —— 实测 v4.3.6 那次
+        # pages.yml 的 100 条历史 run 里一条 release 事件都没有，于是通知从来没发出去过。
+        # 所以这里自己把 pages.yml 派起来，并把 announce 打开：钉钉与群公告由它在部署完成后发，
+        # 那才是「下载页已经是这一版」的时刻。
+        run: gh workflow run pages.yml --ref master -f announce=true
 
   # 钉钉与群公告**不在这里**：正式版 publish 会触发 pages.yml（release: published），由它在把
   # gh-pages 推上去之后发（见那边的 notify / notify-group）。从这里发会在下载页更新前就发出去。
