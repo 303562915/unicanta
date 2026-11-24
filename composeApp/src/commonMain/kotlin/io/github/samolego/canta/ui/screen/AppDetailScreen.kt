@@ -412,6 +412,13 @@ fun AppDetailScreen(
         )
     }
 
+    // 详情缓存的键。带机型与身份：这两样在首帧之后才异步到位，只按包名分份会让「空机型 + 空身份」
+    // 那一趟的结果占住键位（见 [AppDetailCache.tag]）。每次重组按当前值重算，参数变了自然换键。
+    //
+    // 声明必须在下面的 LaunchedEffect 之前：Kotlin 的局部变量先声明后使用，而这个 composable
+    // 里第一个用到它的 effect 在 415 行，原来把它写在 448 行，编译直接报未解析。
+    val cacheTag = AppDetailCache.tag(packageName, profile, voter)
+
     LaunchedEffect(packageName, profile, repository) {
         val repo = repository ?: return@LaunchedEffect
         // 抽屉里的方案也是「每打开一次就走一次网络」，和下面那四个查询同样按 60 秒算：抽屉的角标
@@ -442,10 +449,6 @@ fun AppDetailScreen(
 
     /** Where this page's unsent comment is kept; see [AppNoteStore.draftOf]. */
     val draftKey = "app:$packageName"
-
-    // 详情缓存的键。带机型与身份：这两样在首帧之后才异步到位，只按包名分份会让「空机型 + 空身份」
-    // 那一趟的结果占住键位（见 [AppDetailCache.tag]）。每次重组按当前值重算，参数变了自然换键。
-    val cacheTag = AppDetailCache.tag(packageName, profile, voter)
 
     // Half-typed text survives leaving the page: this is the page people leave to go and look
     // something up, which is exactly when a comment gets abandoned by accident.
