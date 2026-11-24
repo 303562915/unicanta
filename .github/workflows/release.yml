@@ -184,3 +184,19 @@ jobs:
       release_tag: ${{ needs.deployAndroid.outputs.tag }}
       commit_sha: ${{ github.sha }}
       release_url: https://github.com/303562915/unicanta/releases/tag/${{ needs.deployAndroid.outputs.tag }}
+
+  notify-group:
+    name: 📣 Group notice (stable release)
+    # 和上面那条钉钉同一个触发点：正式版真的发出去了（不是只建 draft），才让「群聊AI」在灰度群里发一条。
+    needs: deployAndroid
+    if: needs.deployAndroid.result == 'success' && inputs.keep_draft != true
+    uses: ./.github/workflows/group-release-notice.yml
+    secrets:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    with:
+      release_kind: stable
+      version_name: ${{ needs.deployAndroid.outputs.version_name }}
+      release_tag: ${{ needs.deployAndroid.outputs.tag }}
+      commit_sha: ${{ github.sha }}
+      apk_url: https://github.com/303562915/unicanta/releases/download/${{ needs.deployAndroid.outputs.tag }}/androidApp-release.apk
+      sums_url: https://github.com/303562915/unicanta/releases/download/${{ needs.deployAndroid.outputs.tag }}/SHA256SUMS.txt

@@ -1,0 +1,139 @@
+name: 📣 Group release notice
+
+# 发版成功后，用「群聊AI」的身份在内测灰度群里发一条公告（和钉钉那条同一个触发点）。
+# 被 development-release.yml / release.yml 以 workflow_call 调用，不单独触发。
+#
+# 为什么在这里直连 Management API 写库：写一条 sender='ai' 的群消息没有对外的 RPC（
+# `message_send` 只认客户端身份，`apply_ai_reply` 只处理 ai_jobs），而 CI 里连库是稳的。
+# 只做两件事：插一行 messages、把会话的 last_message_at 推到现在（否则消息页排序不动）。
+# 仓库是 public，凭据一律走 secrets，不写进文件。
+
+on:
+  workflow_call:
+    inputs:
+      release_kind:
+        description: "development（开发版）| stable（正式版）"
+        type: string
+        required: true
+      version_name:
+        description: "版本号，例如 4.3.5"
+        type: string
+        required: true
+      release_tag:
+        description: "正式版 tag，例如 v4.3.5"
+        type: string
+        default: ""
+      build_number:
+        description: "开发版构建号（run_number）"
+        type: string
+        default: ""
+      commit_sha:
+        description: "提交号"
+        type: string
+        default: ""
+      apk_url:
+        description: "APK 直链"
+        type: string
+        default: ""
+      sums_url:
+        description: "SHA256SUMS 链接"
+        type: string
+        default: ""
+      conversation_id:
+        description: "发到哪个群（留空 = 按群名匹配 内测/灰度/内部 的那个群）"
+        type: string
+        default: ""
+    secrets:
+      SUPABASE_ACCESS_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    name: Post the notice as 群聊AI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Build the message
+        env:
+          KIND: ${{ inputs.release_kind }}
+          VERSION: ${{ inputs.version_name }}
+          TAG: ${{ inputs.release_tag }}
+          BUILD: ${{ inputs.build_number }}
+          HEAD_COMMIT: ${{ inputs.commit_sha }}
+          APK_URL: ${{ inputs.apk_url }}
+          SUMS_URL: ${{ inputs.sums_url }}
+        run: |
+          set -euo pipefail
+          case "$KIND" in
+            development) TITLE="📢 UniCanta 开发版已发布" ;;
+            stable)      TITLE="📢 UniCanta 正式版已发布" ;;
+            *) echo "unknown release_kind: $KIND" >&2; exit 1 ;;
+          esac
+          {
+            printf '%s\n\n' "$TITLE"
+            if [ "$KIND" = "development" ]; then
+              printf '版本 %s · build %s\n' "$VERSION" "$BUILD"
+            else
+              printf '版本 %s（%s）\n' "$VERSION" "$TAG"
+            fi
+            if [ -n "$HEAD_COMMIT" ]; then
+              printf '提交：%s\n' "$(printf '%s' "$HEAD_COMMIT" | cut -c1-7)"
+            fi
+            printf '\n下载页（点开用浏览器下载）：\nhttps://303562915.github.io/unicanta/\n'
+            if [ -n "$APK_URL" ]; then
+              printf '\nAPK 直链：\n%s\n' "$APK_URL"
+            fi
+            if [ -n "$SUMS_URL" ]; then
+              printf '\nSHA-256 校验和：\n%s\n' "$SUMS_URL"
+            fi
+            printf '\n覆盖安装即可，签名与旧版一致；如果是从 F-Droid 装的那份，先卸载再装。\n'
+          } > body.txt
+          echo '--- message ---'
+          cat body.txt
+
+      - name: Post to the group
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+          CONVERSATION_ID: ${{ inputs.conversation_id }}
+        run: |
+          set -euo pipefail
+          # 目标群：给了号码就用号码，没给就按群名匹配（内测 / 灰度 / 内部），取最近活跃的那个。
+          if [ -n "$CONVERSATION_ID" ]; then
+            case "$CONVERSATION_ID" in
+              *[!0-9]*) echo "conversation_id must be a number" >&2; exit 1 ;;
+            esac
+            PICK="select c.id from public.conversations c where c.id = $CONVERSATION_ID::bigint and c.kind = 'group'"
+          else
+            PICK="select c.id from public.conversations c
+                   where c.kind = 'group'
+                     and (c.title ilike '%内测%' or c.title ilike '%灰度%' or c.title ilike '%内部%')
+                   order by c.last_message_at desc
+                   limit 1"
+          fi
+          # 正文用 dollar-quoting 原样塞进 SQL：body.txt 是上面刚生成的那一份，不含 $body$。
+          SQL='with g as ('"$PICK"'), ins as (
+                 insert into public.messages (conversation_id, sender, sender_name, body, kind)
+                 select g.id, $$ai$$, $$群聊AI$$, $body$'"$(cat body.txt)"'$body$, $$text$$ from g
+                 returning id, conversation_id, created_at
+               ), upd as (
+                 update public.conversations c set last_message_at = ins.created_at
+                   from ins where c.id = ins.conversation_id
+                 returning c.id
+               )
+               select ins.id as message_id, ins.conversation_id as conversation_id, ins.created_at
+                 from ins join upd on upd.id = ins.conversation_id'
+          RESP=$(curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$SQL" '{query: $q}')")
+          echo "$RESP"
+          # 匹配不到群就红：一条没发出去比悄悄跳过更容易被发现。
+          echo "$RESP" | jq -e 'length >= 1 and .[0].message_id != null' > /dev/null || {
+            echo "no group matched (内测/灰度/内部) — nothing was posted" >&2
+            exit 1
+          }

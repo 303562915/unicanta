@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,6 +79,18 @@ private const val POST_BODY_LIMIT = 8000
  */
 private const val AUTOSAVE_DELAY_MS = 700L
 
+/**
+ * 分类的候选：发帖时点一个，再点一下取消。
+ *
+ * 固定五个、写死在客户端：后端只把分类当字符串存，所以这一串是"页面给什么"而不是"数据库允许
+ * 什么"——以后加一个候选不需要动迁移。
+ */
+private val POST_CATEGORIES = listOf("闲聊", "求助", "分享", "资源", "其它")
+
+/** 标签上限：个数与每个的长度，与后端 `post_add` 里的归整规则同一个数。 */
+private const val TAG_MAX = 5
+private const val TAG_LIMIT = 20
+
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
 private val PostPinned = Color(0xFF2FA84F)
 
@@ -137,6 +150,12 @@ internal fun PostsScreen(
     var editorId by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
+    /** 分类：空串表示没选。候选见 [POST_CATEGORIES]，后端原样存。 */
+    var category by remember { mutableStateOf("") }
+    /** 已经成形的标签（chip）。 */
+    var tags by remember { mutableStateOf<List<String>>(emptyList()) }
+    /** 标签输入框里还没被逗号/空格切开的那一截。 */
+    var tagInput by remember { mutableStateOf("") }
     /** 最后一次自动保存的时刻（epoch 毫秒）；0 表示这次还没存过。 */
     var savedAt by remember { mutableStateOf(0L) }
     var posting by remember { mutableStateOf(false) }
@@ -186,13 +205,53 @@ internal fun PostsScreen(
         threadLoading = false
     }
 
+    /** 加一个标签：去空、单个 20 字、最多 5 个、不许重复；不收的给一句提示。 */
+    val addTag: (String) -> Unit = addTag@{ raw ->
+        val tag = raw.trim()
+        if (tag.isEmpty()) return@addTag
+        if (tag.length > TAG_LIMIT) {
+            platform.showMessage("单个标签最多 $TAG_LIMIT 字")
+            return@addTag
+        }
+        if (tags.contains(tag)) return@addTag
+        if (tags.size >= TAG_MAX) {
+            platform.showMessage("标签最多 $TAG_MAX 个")
+            return@addTag
+        }
+        tags = tags + tag
+    }
+
+    /**
+     * 标签输入：遇到逗号、顿号、分号或空格就地切一个 chip 出来，最后一截没写完的留在输入框里。
+     *
+     * 就地切成 chip 而不是"发布时再解析"：写的人得能看见这一栏到底有几行标签、哪一行打错了，
+     * 才有机会在按发布之前删掉它。
+     */
+    val onTagInputChange: (String) -> Unit = onTag@{ raw ->
+        val text = raw.take(TAG_LIMIT * 3)
+        var buffer = StringBuilder()
+        text.forEach { ch ->
+            if (isTagSeparator(ch)) {
+                if (buffer.isNotEmpty()) {
+                    addTag(buffer.toString())
+                    buffer = StringBuilder()
+                }
+            } else {
+                buffer.append(ch)
+            }
+        }
+        tagInput = buffer.toString()
+    }
+
     /*
      * 自动存草稿：键变了就重新计时，所以"一直在敲"不会写盘，手停下来 700 毫秒才写一次。
      *
      * 延时之后要再确认一次还在同一条草稿上：发布成功会把 `composing` / `editorId` 清掉，但那个
      * 协程可能还没被取消，照旧写下去就等于把刚发出去的帖子又存成了草稿。
+     *
+     * 分类与标签也进键里：只改分类、只加一个标签，同样是"手停下来就该记住"的改动。
      */
-    LaunchedEffect(composing, editorId, title, body) {
+    LaunchedEffect(composing, editorId, title, body, category, tags, tagInput) {
         if (!composing) return@LaunchedEffect
         val draftStore = drafts ?: return@LaunchedEffect
         val id = editorId
@@ -201,12 +260,22 @@ internal fun PostsScreen(
         delay(AUTOSAVE_DELAY_MS)
         if (!composing || editorId != id) return@LaunchedEffect
         val stamp = currentTimeMillis()
-        draftStore.save(who, PostDraft(id = id, title = title, body = body, updatedAt = stamp))
+        draftStore.save(
+            who,
+            PostDraft(
+                id = id,
+                title = title,
+                body = body,
+                category = category,
+                tags = tagsWithPending(tags, tagInput),
+                updatedAt = stamp,
+            ),
+        )
         savedAt = stamp
         draftList = draftStore.drafts(who)
     }
 
-    /** 打开编辑器：[draft] 为 null 就是一篇新的（本地新 id，空标题空正文）。 */
+    /** 打开编辑器：[draft] 为 null 就是一篇新的（本地新 id，空标题空正文、没选分类、没标签）。 */
     val openEditor: (PostDraft?) -> Unit = edit@{ draft ->
         if (!canWrite) {
             platform.showMessage("还没认出身份，帖子记不上")
@@ -215,6 +284,9 @@ internal fun PostsScreen(
         editorId = draft?.id?.takeIf { it.isNotEmpty() } ?: currentTimeMillis().toString()
         title = draft?.title.orEmpty()
         body = draft?.body.orEmpty()
+        category = draft?.category.orEmpty()
+        tags = draft?.tags.orEmpty()
+        tagInput = ""
         savedAt = draft?.updatedAt ?: 0L
         editorError = null
         composing = true
@@ -234,7 +306,14 @@ internal fun PostsScreen(
         if (draftStore != null && who.isNotEmpty()) {
             draftStore.save(
                 who,
-                PostDraft(id = editorId, title = title, body = body, updatedAt = currentTimeMillis()),
+                PostDraft(
+                    id = editorId,
+                    title = title,
+                    body = body,
+                    category = category,
+                    tags = tagsWithPending(tags, tagInput),
+                    updatedAt = currentTimeMillis(),
+                ),
             )
             draftList = draftStore.drafts(who)
         }
@@ -256,10 +335,12 @@ internal fun PostsScreen(
             return@pub
         }
         val draftId = editorId
+        // 输入框里那半截标签也一起发上去：写完了没按逗号的那一个，人也当它是标签。
+        val finalTags = tagsWithPending(tags, tagInput)
         posting = true
         editorError = null
         scope.launch {
-            val id = current.add(cleanTitle, body, author)
+            val id = current.add(cleanTitle, body, author, category, finalTags)
             posting = false
             if (id == null) {
                 editorError = current.reason ?: "没发出去：检查一下网络再试"
@@ -269,6 +350,9 @@ internal fun PostsScreen(
             editorId = ""
             title = ""
             body = ""
+            category = ""
+            tags = emptyList()
+            tagInput = ""
             savedAt = 0L
             drafts?.delete(who, draftId)
             draftList = drafts?.drafts(who).orEmpty()
@@ -286,6 +370,9 @@ internal fun PostsScreen(
             editorId = ""
             title = ""
             body = ""
+            category = ""
+            tags = emptyList()
+            tagInput = ""
             savedAt = 0L
         }
         platform.showMessage("草稿已删除")
@@ -369,7 +456,14 @@ internal fun PostsScreen(
         if (composing && who.isNotEmpty() && (title.isNotBlank() || body.isNotBlank())) {
             drafts?.save(
                 who,
-                PostDraft(id = editorId, title = title, body = body, updatedAt = currentTimeMillis()),
+                PostDraft(
+                    id = editorId,
+                    title = title,
+                    body = body,
+                    category = category,
+                    tags = tagsWithPending(tags, tagInput),
+                    updatedAt = currentTimeMillis(),
+                ),
             )
             platform.showMessage("已存为草稿")
         }
@@ -394,12 +488,18 @@ internal fun PostsScreen(
             PostEditorPane(
                 title = title,
                 body = body,
+                category = category,
+                tags = tags,
+                tagInput = tagInput,
                 savedAt = savedAt,
                 error = editorError,
                 posting = posting,
                 canPublish = canWrite && !posting,
                 onTitleChange = { title = it.take(POST_TITLE_LIMIT) },
                 onBodyChange = { body = it.take(POST_BODY_LIMIT) },
+                onCategoryChange = { category = it },
+                onTagInputChange = onTagInputChange,
+                onRemoveTag = { tag -> tags = tags - tag },
                 onPublish = publish,
                 onCancel = cancelEditor,
                 modifier = Modifier.padding(padding),
@@ -524,7 +624,7 @@ internal fun PostsScreen(
 }
 
 /**
- * 编辑器：标题、正文、字数、自动保存的那一行，以及「取消」「发布」。
+ * 编辑器：标题、分类、标签、正文、字数、自动保存的那一行，以及「取消」「发布」。
  *
  * 整页可滚：正文一长，键盘一弹，按钮就在屏幕外了；`verticalScroll` 让它们跟着走。
  */
@@ -532,12 +632,18 @@ internal fun PostsScreen(
 private fun PostEditorPane(
     title: String,
     body: String,
+    category: String,
+    tags: List<String>,
+    tagInput: String,
     savedAt: Long,
     error: String?,
     posting: Boolean,
     canPublish: Boolean,
     onTitleChange: (String) -> Unit,
     onBodyChange: (String) -> Unit,
+    onCategoryChange: (String) -> Unit,
+    onTagInputChange: (String) -> Unit,
+    onRemoveTag: (String) -> Unit,
     onPublish: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -570,6 +676,25 @@ private fun PostEditorPane(
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
         )
+
+        FieldLabel(text = "分类（可不选，再点一下取消）")
+        CategoryChips(selected = category, onPick = onCategoryChange)
+
+        FieldLabel(text = "标签（用逗号或空格分开，最多 $TAG_MAX 个）")
+        if (tags.isNotEmpty()) {
+            TagChips(tags = tags, onRemove = onRemoveTag)
+        }
+        OutlinedTextField(
+            value = tagInput,
+            onValueChange = onTagInputChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("标签") },
+            placeholder = { Text("标签，用逗号或空格分开，最多 $TAG_MAX 个") },
+            textStyle = MaterialTheme.typography.bodySmall,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        )
+
         OutlinedTextField(
             value = body,
             onValueChange = onBodyChange,
@@ -599,11 +724,135 @@ private fun PostEditorPane(
             }
         }
         Text(
-            text = "写下的字自动存成本地草稿，取消也不会丢；发出去成功之后草稿才删掉。" +
+            text = "写下的字（含分类与标签）自动存成本地草稿，取消也不会丢；发出去成功之后草稿才删掉。" +
                 "同一身份一分钟只能发一帖。",
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
         )
+    }
+}
+
+/** 编辑器里某一栏的小标题。 */
+@Composable
+private fun FieldLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * 分类：一行可点的 chip。
+ *
+ * 用一排手画的 chip 而不是 `FlSegmentedControl`：那个是按等宽分段画的，而且只认"选中第几个"，
+ * 表达不了"一个都没选"这个状态——而分类默认就是不选。
+ */
+@Composable
+private fun CategoryChips(
+    selected: String,
+    onPick: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        POST_CATEGORIES.forEach { label ->
+            val picked = label == selected
+            PostChip(
+                text = label,
+                picked = picked,
+                onClick = { onPick(if (picked) "" else label) },
+            )
+        }
+    }
+}
+
+/** 已经成形的标签：点一下删掉它。 */
+@Composable
+private fun TagChips(tags: List<String>, onRemove: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tags.forEach { tag ->
+            PostChip(
+                text = "$tag ×",
+                picked = false,
+                onClick = { onRemove(tag) },
+            )
+        }
+    }
+}
+
+/** 一枚可点的 chip：选中时实心，没选时描边。 */
+@Composable
+private fun PostChip(
+    text: String,
+    picked: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (picked) scheme.onPrimary else scheme.onSurfaceVariant,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (picked) scheme.primary else FlSurfaceLevel.Page.raised.colorOf(scheme))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
+}
+
+/**
+ * 只读的一行 chip：分类 + 最多 [maxTags] 个标签，多出来的写 `+N`。
+ *
+ * 列表一行只有一行的宽度，所以标签截断；详情传 `maxTags = tags.size` 把全部画出来。
+ */
+@Composable
+private fun PostMetaChips(
+    category: String,
+    tags: List<String>,
+    modifier: Modifier = Modifier,
+    maxTags: Int = 3,
+) {
+    if (category.isBlank() && tags.isEmpty()) return
+    val scheme = MaterialTheme.colorScheme
+    val shown = tags.take(maxTags)
+    val hidden = tags.size - shown.size
+    Row(
+        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (category.isNotBlank()) {
+            Text(
+                text = category,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
+        shown.forEach { tag ->
+            Text(
+                text = "#$tag",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        if (hidden > 0) {
+            Text(
+                text = "+$hidden",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -770,6 +1019,8 @@ private fun PostRow(
                 modifier = Modifier.weight(1f),
             )
         }
+        // 分类 + 标签紧贴标题下面：扫列表的人是按"这帖属于哪一类"挑，而不是按摘要第一句。
+        PostMetaChips(category = post.category, tags = post.tags)
         if (post.excerpt.isNotBlank()) {
             Text(
                 text = post.excerpt,
@@ -891,6 +1142,15 @@ private fun PostThreadDialog(
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.onSurfaceVariant,
                 )
+                // 详情里把分类和标签全列出来（列表那一行只放得下三个）。
+                if (target.category.isNotBlank() || target.tags.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    PostMetaChips(
+                        category = target.category,
+                        tags = target.tags,
+                        maxTags = target.tags.size,
+                    )
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 if (target.body.isNotBlank()) {
                     Text(
@@ -1058,4 +1318,21 @@ private fun draftClock(updatedAt: Long): String {
         val minute = if (local.minute < 10) "0${local.minute}" else local.minute.toString()
         "$hour:$minute"
     }.getOrNull().orEmpty()
+}
+
+/** 标签的分隔符：中文逗号、英文逗号、顿号、分号、空格、换行都算。 */
+private fun isTagSeparator(ch: Char): Boolean =
+    ch == ',' || ch == '，' || ch == '、' || ch == ';' || ch == '；' || ch == ' ' || ch == '\n'
+
+/**
+ * 把输入框里还没被分隔符切开的那一截并进标签表，规则与输入时一致（去空、20 字、不重复、最多 5 个），
+ * 但**不提示**：发布或存草稿那一刻不该再弹一句话。
+ */
+private fun tagsWithPending(tags: List<String>, pending: String): List<String> {
+    val tag = pending.trim()
+    if (tag.isEmpty()) return tags
+    if (tag.length > TAG_LIMIT) return tags
+    if (tags.contains(tag)) return tags
+    if (tags.size >= TAG_MAX) return tags
+    return tags + tag
 }

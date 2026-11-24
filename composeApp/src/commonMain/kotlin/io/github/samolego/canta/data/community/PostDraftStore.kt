@@ -20,6 +20,10 @@ data class PostDraft(
     val id: String,
     val title: String = "",
     val body: String = "",
+    /** 分类：空串表示没选，与后端 `community_posts.category` 是同一套字符串。 */
+    val category: String = "",
+    /** 标签：与后端 `community_posts.tags` 一样最多 5 个。老草稿没有这一项时解码成空表。 */
+    val tags: List<String> = emptyList(),
     /** 最后一次写盘的时刻（epoch 毫秒）：列表按它倒序，编辑器顶部拿它显示「已自动保存 · HH:mm」。 */
     val updatedAt: Long = 0L,
 )
@@ -38,6 +42,12 @@ data class PostDraft(
  */
 class PostDraftStore(private val storage: AppBlobStorage) {
 
+    /**
+     * 盘上的形状：谁写的那一份 + 他留下的草稿。
+     *
+     * 分类与标签不是额外的键，它们就在 [PostDraft] 里一起序列化 —— 早先那一版草稿没有这两个
+     * 字段，解码出来就是空串与空表，正好是"按空处理"。
+     */
     @Serializable
     private data class Blob(
         val owner: String = "",

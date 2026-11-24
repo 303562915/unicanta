@@ -1,7 +1,9 @@
 package io.github.samolego.canta.data.community
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -10,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 /**
  * 一条帖子。列表回答里 [body] 是空的（列表只发 [excerpt]），[mine] 也只有详情回答才有。
@@ -35,6 +38,15 @@ data class CommunityPost(
     val mineLike: Boolean = false,
     /** 这条是不是我发的；只有详情回答里才为 true。 */
     val mine: Boolean = false,
+    /**
+     * 分类：页面上五个候选之一（闲聊/求助/分享/资源/其它），空串表示发帖时没选。
+     *
+     * 后端只当一段字符串存，不校验候选集：`CommunityPost.category` 是原样回来的，所以页面
+     * 画 chip 时对不上候选的照样能画出来（画原文）。
+     */
+    val category: String = "",
+    /** 标签，最多 5 个、每个最多 20 字（后端归整过）。老回答没有这一项时是空表。 */
+    val tags: List<String> = emptyList(),
 )
 
 /** 一条回帖。 */
@@ -130,9 +142,19 @@ class PostStore(private val rpc: CommunityRpc) {
     /**
      * 发一帖，回答新帖的 id。标题空（或后端拒绝）返回 null，[lastError] 里是理由。
      *
+     * [category] 与 [tags] 原样发上去，归整（trim、截 20 字、去重、最多 5 个）由 `post_add` 做：
+     * 界面只管收集，长度规则只有一处实现，不会两边算得不一样。`p_tags` 发的是 JSON 字符串数组，
+     * PostgREST 把它映射到 `text[]` 参数上。
+     *
      * 后端对同一身份有 60 秒一帖的闸：撞上它时 [lastError] 是"刚发过一帖，等一分钟再发"。
      */
-    suspend fun add(title: String, body: String, author: String): Long? {
+    suspend fun add(
+        title: String,
+        body: String,
+        author: String,
+        category: String = "",
+        tags: List<String> = emptyList(),
+    ): Long? {
         lastError = null
         if (title.isBlank()) return null
         val proof = rpc.token()
@@ -140,6 +162,8 @@ class PostStore(private val rpc: CommunityRpc) {
             put("p_title", title.trim())
             put("p_body", body)
             put("p_author", author)
+            put("p_category", category.trim())
+            putJsonArray("p_tags") { tags.forEach { tag -> add(JsonPrimitive(tag)) } }
             if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = rpc.post("post_add", payload) ?: return null
@@ -228,6 +252,13 @@ class PostStore(private val rpc: CommunityRpc) {
             likes = o["likes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             mineLike = o["mine_like"]?.jsonPrimitive?.booleanOrNull == true,
             mine = o["mine"]?.jsonPrimitive?.booleanOrNull == true,
+            category = o["category"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            // 后端发的是 `to_jsonb(tags)`，也就是 JSON 数组。老部署没有这个键、或者哪天形状变了，
+            // 都退回空表：`as? JsonArray` 不抛，整条列表也就不会因为一个字段变 null。
+            tags = (o["tags"] as? JsonArray)
+                ?.mapNotNull { element -> (element as? JsonPrimitive)?.contentOrNull }
+                ?.filter { it.isNotBlank() }
+                .orEmpty(),
         )
     }
 
