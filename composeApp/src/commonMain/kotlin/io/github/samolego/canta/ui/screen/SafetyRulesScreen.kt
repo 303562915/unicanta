@@ -301,13 +301,15 @@ fun SafetyRulesScreen(
 
     // The catalog is what the picker draws: one row per build, folded into models. It is asked for
     // with the plans, so opening the picker right after the page does not sit on an empty list.
-    LaunchedEffect(reloads) {
+    // 登录完成（identity 从未登录的那个值变成带号码的值）后重拉一次：上一次拉的时候后端还不知道
+    // 这台机器跑哪一版，而登录那一下会把本机版本一起报上去、并顺手补回自己的老方案，所以必须再看一眼。
+    LaunchedEffect(reloads, identity) {
         catalogLoading = true
         catalog = repo.catalog()?.toCatalogModels().orEmpty()
         catalogLoading = false
     }
 
-    LaunchedEffect(profile, reloads, planScope) {
+    LaunchedEffect(profile, reloads, planScope, identity) {
         when (val scope = planScope) {
             PlanScope.All -> {
                 // 上一份先画出来再问后端：「全部机型」是默认范围，这一页永远用它打开，没缓存就等于

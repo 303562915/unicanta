@@ -737,9 +737,26 @@ class PlanRepository(
             // Which route is granting the privilege right now, so "how many people run on Dhizuku"
             // is a query on `canta_users` instead of a guess. Older backends ignore the argument.
             put("p_privilege", privilege)
+            // 这台机器现在跑的具体系统版本。登录是每台装机都会做的事，所以放在这里：用户一上线，
+            // 他自己那些还没记版本的老方案就能补上具体版本号，界面上才分得出 16.0.3 和 16.0.501。
+            profile?.rom?.takeIf { it.isNotBlank() }?.let { put("p_rom", it) }
+            put("p_rom_version", profile?.romVersion ?: 0)
+            profile?.romBuild?.takeIf { it.isNotBlank() }?.let { put("p_rom_build", it) }
         }.toString()
-        val text = rpc("identity_bind", body) ?: return null
-        return parseProfile(text)
+        rpc("identity_bind", body)?.let { return parseProfile(it) }
+        // A deployment without the three build arguments refuses the call above; bind the identity
+        // the way that deployment understands, rather than failing to sign in at all.
+        if (functionMissing) {
+            val legacy = buildJsonObject {
+                put("p_token", token)
+                put("p_device_key", deviceKey)
+                put("p_model", profile?.model.orEmpty())
+                put("p_codename", profile?.device.orEmpty())
+                put("p_privilege", privilege)
+            }.toString()
+            rpc("identity_bind", legacy)?.let { return parseProfile(it) }
+        }
+        return null
     }
 
     /**
