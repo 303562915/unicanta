@@ -128,7 +128,9 @@ class ShizukuShell(private val context: Context) {
         for (round in 0 until BIND_ROUNDS) {
             if (round > 0) {
                 // 上一轮没连上：先把那次绑定收回去再重来，Shizuku 不会为同一个用户服务重发连接。
-                runCatching { Shizuku.unbindUserService(args, connection) }
+                // 第三个参数是 Shizuku 的 `remove`：为 true 时连用户服务实例一起丢掉，下一轮
+                // `bindUserService` 才会真的重建一次（否则拿回来的还是那个半死不活的 binder）。
+                runCatching { Shizuku.unbindUserService(args, connection, true) }
                     .onFailure { LogUtils.w(TAG, "Could not drop the shell service: $it") }
                 delay(BIND_RETRY_DELAY_MS)
                 if (!runtimeAlive()) return@withLock null
