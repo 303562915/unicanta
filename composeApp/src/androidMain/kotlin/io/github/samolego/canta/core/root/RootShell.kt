@@ -160,7 +160,10 @@ class RootShellSession {
     /** Runs [command] and answers its exit code plus everything it printed (stdout only). */
     suspend fun run(command: String, timeoutMs: Long = DEFAULT_TIMEOUT_MILLIS): ShellResult =
         withContext(Dispatchers.IO) {
-            lock.withLock {
+            // 类型参数必须写出来：下面那个 `try` 的正常路径全是 `return@withLock`，编译器只把它
+            // 当成 Unit，和 `catch` 里的 ShellResult 一合并就推成了 Any，返回处于是报
+            // "Return type mismatch: expected 'ShellResult', actual 'Any'"。
+            lock.withLock<ShellResult> {
                 if (!ensureOpen()) return@withLock ShellResult(-1, "", "root 没有授予 Canta")
                 val started = process
                 val out = writer
@@ -200,6 +203,11 @@ class RootShellSession {
                         }
                         collected.append(line).append('\n')
                     }
+                    // 上面那个循环只从 `return@withLock` 或异常里出来，走不到这儿。
+                    // 留着这一行是因为它的类型是 Nothing：有它，`try` 才有「正常结束」的类型，
+                    // 和 catch 里的 ShellResult 合起来才是 ShellResult 而不是 Any。
+                    @Suppress("UNREACHABLE_CODE")
+                    error("root 会话异常结束")
                 } catch (e: CancellationException) {
                     // Cancelling a caller is not a reason to lose the shell: the next command would
                     // cost another authorization prompt. The rest of this command is read off first.
