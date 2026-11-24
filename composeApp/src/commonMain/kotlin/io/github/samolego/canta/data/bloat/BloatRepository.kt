@@ -72,6 +72,12 @@ class BloatRepository(
      * behaves exactly as it did before: whatever the download gives, possibly nothing.
      */
     private val bundled: suspend () -> String? = { null },
+    /**
+     * The corrections to the list's levels and wording ([BloatOverrides]), resolved on first use
+     * for the same reason as [descriptions]. Empty means "take the list as published", which is
+     * what a build without the resource behaves like.
+     */
+    private val overrides: suspend () -> BloatOverrides = { BloatOverrides.empty() },
 ) {
     private companion object {
         const val TAG = "BloatRepository"
@@ -82,6 +88,12 @@ class BloatRepository(
 
     private suspend fun translationTable(): BloatDescriptions =
         resolvedDescriptions ?: descriptions().also { resolvedDescriptions = it }
+
+    /** Resolved once, same as the translation table. */
+    private var resolvedOverrides: BloatOverrides? = null
+
+    private suspend fun correctionTable(): BloatOverrides =
+        resolvedOverrides ?: overrides().also { resolvedOverrides = it }
 
     /** The shipped list, parsed once; empty when this build has none. */
     private var resolvedBundled: Map<String, BloatData>? = null
@@ -110,13 +122,15 @@ class BloatRepository(
      */
     suspend fun local(): Map<String, BloatData> {
         val l10n = translationTable()
-        return readCache(l10n) ?: bundledEntries(l10n).also {
+        val entries = readCache(l10n) ?: bundledEntries(l10n).also {
             if (it.isEmpty()) {
                 LogUtils.i(TAG, "No cached bloat list and none shipped")
             } else {
                 LogUtils.i(TAG, "Using the shipped bloat list (${it.size} entries)")
             }
         }
+        // The corrections are ours, so they apply to every source of the list, not to one of them.
+        return entries.withOverrides(correctionTable())
     }
 
     /**
@@ -158,7 +172,10 @@ class BloatRepository(
 
         val start = currentTimeMillis()
         val raw = fetchBloatList() ?: return null
-        val parsed = runCatching { parseBloatList(raw).localisedWith(l10n) }
+        val corrections = correctionTable()
+        val parsed = runCatching {
+            parseBloatList(raw).localisedWith(l10n).withOverrides(corrections)
+        }
             .onFailure { LogUtils.e(TAG, "Downloaded bloat list is invalid", it) }
             .getOrNull() ?: return null
 

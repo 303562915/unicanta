@@ -1,0 +1,14 @@
+{
+  "about": "Corrections to the upstream UAD removal levels, applied by BloatRepository after the list is parsed (bundled, cached or downloaded). The list is graded per package name and cannot know what a given ROM added to that package; an entry here fixes exactly that, without editing the upstream file. removal uses the list's own values: Recommended, Advanced, Expert, Unsafe, System. notes are appended to the description, keyed by interface language (en is the fallback).",
+  "version": 1,
+  "updated": "2026-11-24",
+  "packages": {
+    "com.qualcomm.location": {
+      "removal": "Expert",
+      "notes": {
+        "en": "This app lowers it from Recommended to Expert: on some ROMs (Honor, for one) this package is the emergency-call locator, so emergency calls may take longer to get a fix after removing it. Everyday location comes from the system LocationManager and is unaffected.",
+        "zh": "本应用把它从「推荐卸载」下调为「专家」：在部分 ROM（例如荣耀）上这个包就是紧急呼叫定位服务，移除后紧急呼叫的定位会更慢。日常定位由系统 LocationManager 负责，不受影响。"
+      }
+    }
+  }
+}

@@ -46,7 +46,7 @@
     <string name="no_apps_found">未找到应用</string>
     <string name="loading_apps">正在加载应用列表</string>
     <string name="badge_info">“特殊标志”信息</string>
-    <string name="badge_recommended_code">推荐</string>
+    <string name="badge_recommended_code">可删</string>
     <string name="badge_recommended_name">推荐卸载</string>
     <string name="badge_recommended_description">无用或纯粹拖累系统的软件包，或可通过 Google Play 重新装回的应用。</string>
     <string name="badge_advanced_code">进阶</string>

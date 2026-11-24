@@ -3,6 +3,7 @@ package io.github.samolego.canta.core
 import io.github.samolego.canta.data.AppBlobStorage
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.bloat.BloatDescriptions
+import io.github.samolego.canta.data.bloat.BloatOverrides
 import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.bloat.BundledBloatList
 import io.github.samolego.canta.data.cache.ScreenCache
@@ -114,6 +115,7 @@ fun cantaAppDependencies(
             settings,
             descriptions = { BloatDescriptions.bundled() },
             bundled = { BundledBloatList.raw() },
+            overrides = { BloatOverrides.bundled() },
         ),
         telemetry = telemetry,
         packageTelemetry = PackageTelemetry(cantaHandler, telemetry, settings),
