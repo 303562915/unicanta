@@ -596,10 +596,23 @@ class SocialRepository(
 
     // ------------------------------------------------------------------ 会话
 
-    /** [owner] 参与的全部会话，后端排好的顺序原样返回；一次解析失败就是空列表。 */
-    suspend fun conversationsFor(owner: String): List<Conversation> {
+    /**
+     * [owner] 参与的全部会话，后端排好的顺序原样返回；一次解析失败就是空列表。
+     *
+     * [since] 非空时只拿「自那个时刻以来有动静」的那几个会话：后端按
+     * `conversations.last_message_at >= p_since` 过滤，所以拿回来的是增量，调用方得按会话号
+     * upsert 进本地列表，整份替换等于把没动静的那几十行全删了。
+     *
+     * [since] 为空就一个 `p_since` 键都不发（同本文件里 `p_mentions` / `p_reply_to` 的写法）：
+     * 后端默认值是 null，走全量，和这一版之前的行为逐字一致。服务端还没上线新签名时，不带这个键
+     * 的请求也照样命中老函数——灰度的顺序是服务端先、客户端后（见 AGENTS 10.5）。
+     */
+    suspend fun conversationsFor(owner: String, since: String? = null): List<Conversation> {
         if (owner.isEmpty()) return emptyList()
-        val body = buildJsonObject { put("p_owner", owner) }.toString()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            if (!since.isNullOrBlank()) put("p_since", since)
+        }.toString()
         val text = rpc("conversations_for", body) ?: return emptyList()
         return rowsOf(text).mapNotNull { row -> conversationOf(row) }
     }

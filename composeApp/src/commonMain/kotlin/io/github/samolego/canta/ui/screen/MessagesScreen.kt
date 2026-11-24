@@ -90,8 +90,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** 页面开着时多久问一次后端：没有推送，靠这一行让列表跟上别人的动作。 */
-private const val MessagePollMs: Long = 15_000L
+/**
+ * 页面在前台时多久问一次后端：没有推送，靠这一行让列表跟上别人的动作。
+ *
+ * 30 秒而不是 15 秒：这一趟只花一次增量查询（自上次以来有动静的那几个会话），但一次仍然要
+ * 三次请求（会话 + 关注 + 互动总数），15 秒等于每分钟 12 次、每小时 720 次。人对"列表晚半分钟
+ * 更新"几乎没有感知，而后端额度、电量和流量都是实打实的。退到后台则一次都不问（见下面的
+ * `inForeground`）。
+ */
+private const val MessagePollMs: Long = 30_000L
 
 /**
  * 身份还没读出来时先等多久：冷启动读一次本地设置是毫秒级的事，超过这个数就是真读不到了。
@@ -221,10 +228,10 @@ fun MessagesScreen(
     // 这个数先留着，页面拿到它才算把「有多少条新互动」问过一遍。
     var summary by remember { mutableStateOf(cached?.summary ?: InboxSummary.EMPTY) }
     var loadError by remember { mutableStateOf<String?>(null) }
-    // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每十几秒整页闪一下骨架。
+    // 已经拉过几次：定时刷新不能把 loading 又点亮一遍，否则每半分钟整页闪一下骨架。
     var reloads by remember { mutableIntStateOf(0) }
     // 这一趟加载走没走完。定时器只在它没在走的时候才戳一下：一趟是三个串行请求，慢的时候比
-    // 15 秒还长，逐个戳过去等于每 15 秒把在跑的那一趟取消重来，`loading` 永远等不到落地，
+    // 30 秒还长，逐个戳过去等于每 30 秒把在跑的那一趟取消重来，`loading` 永远等不到落地，
     // 界面上就是四个空卡片一直挂着。骨架收不起来比骨架本身难看得多。
     var loadBusy by remember { mutableStateOf(false) }
     // 每一趟的序号：只有最新那一趟（或被最新那一趟顶掉的）有权收骨架，免得被取消的旧那一趟
@@ -244,32 +251,58 @@ fun MessagesScreen(
     val scope = rememberCoroutineScope()
     /** 正在加入官方内测群：挡住连点，也把那一行的小字换成「加入中…」。 */
     var joiningOfficial by remember { mutableStateOf(false) }
+    // 这一页此刻在不在前台。切到后台时轮询必须停：这一页离开屏幕不会被销毁（导航栈里还活着），
+    // 以前那个 `while (true)` 照转，夜里 4–5 千次/小时的基线就是它——没人在看的时候在问后端。
+    //
+    // 用 ON_RESUME / ON_PAUSE 维护，没用 `LocalLifecycleOwner` + `currentStateFlow`：commonMain 里
+    // 已经在用的是 `androidx.lifecycle.compose.LifecycleEventEffect`（就在下面几行），这个子集在
+    // 桌面端 / wasm 上同样存在；`currentStateFlow` 那条路要自己攒 lifecycle-runtime 的 common API，
+    // 而这一页只需要一个布尔。宁可少一个依赖，也不引只在 Android 上可用的类。
+    var inForeground by remember { mutableStateOf(true) }
+    // 这一趟加载带不带增量起点。只有定时轮询会往里放值（见下面的循环），别的触发方式一律全量：
+    // 列表里有些东西不发消息也会变，最典型的是我自己点进聊天页读完消息——动的只有 last_read_at，
+    // `last_message_at` 一动不动，增量拉不到它，红点就会一直挂着。读一次就清，上一次的值不漏到下一趟。
+    val pollSince = remember { mutableStateOf<String?>(null) }
 
-    // 没有推送通道，页面开着的时候只能自己问。15 秒一次，比"退出再进"快得多，又不至于把
+    // 没有推送通道，页面在前台的时候只能自己问。30 秒一次，比"退出再进"快得多，又不至于把
     // 每分钟 120 次的后端额度吃满（一次刷新是三四个查询）。
     LaunchedEffect(owner) {
         if (owner.isEmpty()) return@LaunchedEffect
         while (true) {
             delay(MessagePollMs)
+            // 在后台就一次都不发：回到前台时 ON_RESUME 那一支会立刻补一次全量，漏不掉东西。
+            if (!inForeground) continue
             // 上一趟还在走就别戳：戳一下等于把它取消重来，见 loadBusy 的注释。
-            if (!loadBusy) reloads++
+            if (!loadBusy) {
+                pollSince.value = sinceOf(conversations)
+                reloads++
+            }
         }
     }
 
-    // 从会话页、建群页退回来时立刻再问一次：定时器最久还要等 15 秒，人刚说完话回来却看到
+    // 从会话页、建群页退回来时立刻再问一次：定时器最久还要等 30 秒，人刚说完话回来却看到
     // 旧的预览和旧的未读数，会以为没发出去。第一次进入不重复拉（那时 reloads 还是 0）。
     var resumedOnce by remember { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        inForeground = true
         if (resumedOnce) {
             // 回前台要的是一次新数据，不是把还在跑的那一趟掐掉；在跑的时候等它自己落地。
+            // 顺手把增量起点清掉：这一趟要的是真实的未读数（刚在聊天页读完消息），不是增量。
+            pollSince.value = null
             if (!loadBusy) reloads++
         } else {
             resumedOnce = true
         }
     }
+    // 退到后台就停：下一次 ON_RESUME 会立刻补一次全量。
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { inForeground = false }
 
     // 一页三次请求，一次拉完再画。
     LaunchedEffect(owner, reloads) {
+        // 这一趟带不带增量起点：只有轮询那一支会放值，读完就清。放值和 reloads++ 之间没有别的
+        // 挂起点，所以不会有一趟"捡到别人的 since"这种情况。
+        val since = pollSince.value
+        pollSince.value = null
         if (owner.isEmpty()) {
             // 身份是上层异步读出来的：读到了本效应会被换掉重跑。一直没读到就别让人对着四个
             // 空卡片等下去——等一小会儿，收骨架，写一句原因。
@@ -298,8 +331,11 @@ fun MessagesScreen(
                 loading = conversations.isEmpty()
             }
             // `loadError` 不在这里清：清了的话，一次持续的失败会让那行原因在每次刷新开头先消失、
-            // 三次请求跑完再回来，看起来就是每 15 秒闪一下。它只在下面拿到结果时被赋成这一次的真值。
-            val chats = repository.conversationsFor(owner)
+            // 三次请求跑完再回来，看起来就是每 30 秒闪一下。它只在下面拿到结果时被赋成这一次的真值。
+            //
+            // 轮询那一趟带 since（本地列表里最新的那个最后活跃时间），后端只回有动静的会话。
+            // 列表还是空的（第一次装、刚清过缓存）时 since 是 null，那就是全量。
+            val chats = repository.conversationsFor(owner, since)
             // 逐句判成败：three 个请求共用一个 `lastError`，最后一句的结果会盖掉前面的。
             // 以前只看最后一句，结果「关注列表没拉到」也会让会话列表那份缓存不写——下次从聊天页
             // 退回来，内存里还是空的，于是又转一次圈。会话列表拿到就是拿到，跟另外两句无关。
@@ -308,9 +344,15 @@ fun MessagesScreen(
             val peopleFailed = repository.lastError != null
             val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
             if (!chatsFailed) {
-                // 按会话号合并而不是整份替换：内容没变的行沿用原对象，刷新时那几行不会被当成新行
-                // 重新组合（长按菜单开着、手指正按着的时候尤其要紧）。
-                conversations = mergeConversations(conversations, sortedConversations(chats))
+                // 按会话号 upsert 而不是整份替换：增量那一趟只回来几个会话，整份替换等于把没动静的
+                // 几十行全删掉。内容没变的行沿用原对象，刷新时那几行不会被当成新行重新组合
+                // （长按菜单开着、手指正按着的时候尤其要紧）。
+                // 全量那一趟（since == null）直接铺：它带回来的是完整名单，再走 merge 就等于
+                // 「后端已经不给我了的会话」永远删不掉——删掉的会话、退掉的群会一直挂在列表上。
+                // 只有增量那一趟需要 merge，把没动静的几十行留在原地。
+                conversations = sortedConversations(
+                    if (since == null) chats else mergeConversations(conversations, chats),
+                )
                 if (!peopleFailed) followers = people
                 summary = counted
                 ConversationCache.put(owner, conversations, followers, counted)
@@ -340,7 +382,7 @@ fun MessagesScreen(
      * 为什么在这里做：聊天页的首屏只有两件事——缓存里有没有、以及要不要等网络。既然消息页
      * 已经把会话列表拿到了，「点进去立刻能看见最后几条」就只差这一步预取。
      *
-     * 每个会话只预取一次（`warmedConversations` 记着），否则每 15 秒的刷新都会再拉一遍，等于
+     * 每个会话只预取一次（`warmedConversations` 记着），否则每 30 秒的刷新都会再拉一遍，等于
      * 拿流量换一个已经有的东西。预取失败不记账，下次刷新会再试。
      */
     val warmedConversations = remember { mutableSetOf<Long>() }
@@ -374,7 +416,7 @@ fun MessagesScreen(
     /**
      * 本地改完会话列表的地方都走这里。
      *
-     * 两件事一起做：界面立刻变（等下一次 15 秒刷新太慢，人点了看不到变化会以为没生效），
+     * 两件事一起做：界面立刻变（等下一次 30 秒刷新太慢，人点了看不到变化会以为没生效），
      * 缓存也跟着变（否则下一次从聊天页退回来，先画出来的还是改动之前那一份，看着像回退了）。
      *
      * 排序在这里统一做：置顶的那一行要当场跳到最上面，调用方只管把改好的列表递进来。
@@ -387,7 +429,7 @@ fun MessagesScreen(
     /**
      * 长按菜单里的几条动作：免打扰、置顶、不显示、拉黑、删除。
      *
-     * 都是「先发一次请求，再把结果落到本地列表上」：等下一次 15 秒刷新太慢，人点了看不到变化
+     * 都是「先发一次请求，再把结果落到本地列表上」：等下一次 30 秒刷新太慢，人点了看不到变化
      * 就会以为没生效。会话行由 [sortedConversations] 统一重排，置顶的那一行才会当场跳到最上面。
      */
     val togglePin: (Conversation) -> Unit = { conversation ->
@@ -1049,27 +1091,51 @@ private fun sortedConversations(list: List<Conversation>): List<Conversation> =
     )
 
 /**
- * 刷新时按会话号合并：内容没变的行沿用**原来那个对象**，只让真变了的那几行换成新的。
+ * 增量拉取的起点：本地列表里最新的那个最后活跃时间，没有就 null（= 全量）。
  *
- * 为什么值得多这一步：后端每次刷新都返回一整份新列表，直接铺上去的话列表里每个元素都是新实例；
- * 而 [ConversationRow] 的参数里还有每一次重组新建的 lambda（`onOpen`、`onTogglePin` 那一串），
- * 参数相等这一关本来就过不去，能救的只有「这一行的数据还是不是原来那个」。保留原对象之后，
- * 没变的行拿到同一个引用，行内部那点 remember（长按菜单开没开）和点击态才不会被刷新顺手抹掉。
+ * 用会话自己的 `last_at` 而不是 `ConversationCache` 那份快照的时刻：快照的时刻是**本机时钟**记的
+ * 「上一次刷新的时间」，而后端比的是它自己的 `conversations.last_message_at`，两台机器的钟不保证
+ * 一致，差几秒就会漏掉几条。`last_at` 是后端给的、定长 UTC 串（`2026-11-22T11:31:07.310336Z`），
+ * 字符串比较就是时间比较，直接当 `p_since` 发过去它能认。
  *
- * 顺序不在这里定：[sortedConversations] 已经排好了，这里只回答「能不能沿用」，不动次序。
+ * 空串是"这个会话还没有消息"，不参与取最大：拿它当起点等于从头拉。
+ */
+private fun sinceOf(conversations: List<Conversation>): String? =
+    conversations.map { it.lastAt }.filter { it.isNotEmpty() }.maxOrNull()
+
+/**
+ * 刷新时按会话号 upsert：回来的这几行盖掉本地同号的，**没回来的原样留着**。
+ *
+ * 为什么不能整份替换：轮询那一趟是增量的（后端只下发自 since 以来有动静的会话），整份铺上去
+ * 等于把没动静的那几十行全删了，列表会瞬间只剩一条。
+ *
+ * 为什么值得多这一步"内容没变就沿用原对象"：后端每次都返回新实例，直接铺上去的话列表里每个
+ * 元素都是新对象；而 [ConversationRow] 的参数里还有每一次重组新建的 lambda（`onOpen`、`onTogglePin`
+ * 那一串），参数相等这一关本来就过不去，能救的只有「这一行的数据还是不是原来那个」。保留原对象
+ * 之后，没变的行拿到同一个引用，行内部那点 remember（长按菜单开没开）和点击态才不会被刷新顺手抹掉。
+ *
+ * 顺序也不在这里定：调用方拿到之后再走一遍 [sortedConversations]（增量回来的几行可能排到任意位置）。
+ *
+ * **只在增量那一趟用**（`since != null`）。全量那一趟必须整份铺，否则「后端已经不返回的会话」
+ * ——被删掉的、退掉的群——永远留在列表上。代价是增量这几轮里删掉的会话要等到下一次全量
+ * （进页面、回前台、下拉）才消失，最长一个 30 秒周期。
  */
 private fun mergeConversations(
     previous: List<Conversation>,
     fresh: List<Conversation>,
 ): List<Conversation> {
+    if (fresh.isEmpty()) return previous
     if (previous.isEmpty()) return fresh
-    // 顺序和内容都没变时整份沿用：省掉一次遍历，状态赋值也会因为结构相等而不触发重组。
-    if (previous == fresh) return previous
     val byId = previous.associateBy { it.id }
-    return fresh.map { row ->
+    val freshIds = fresh.mapTo(mutableSetOf()) { it.id }
+    val merged = ArrayList<Conversation>(previous.size + fresh.size)
+    fresh.forEach { row ->
         val old = byId[row.id]
-        if (old != null && old == row) old else row
+        merged += if (old != null && old == row) old else row
     }
+    // 没被这次带回来的旧行原样接在后面：它们没变，对象也复用。次序由调用方统一重排。
+    previous.forEach { if (it.id !in freshIds) merged += it }
+    return merged
 }
 
 /**
