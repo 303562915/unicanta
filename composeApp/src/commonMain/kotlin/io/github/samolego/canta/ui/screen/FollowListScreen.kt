@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadRed
@@ -57,6 +58,29 @@ private const val FOLLOWS_TAB_FOLLOWING = 0
 private const val FOLLOWS_TAB_FOLLOWERS = 1
 
 /**
+ * 这一页的一屏快照：两个方向各一份名单。
+ *
+ * 为什么两栏存在一起：它们本来就在同一个 [LaunchedEffect] 里一起拉（顶栏那两个数字要立刻是对的），
+ * 一份快照就是一次刷新的结果。拆成两格会出现「关注是新的、粉丝还是旧的」这种中间态，而页签
+ * 上那两个数字并排显示，半新半旧一眼就看出来。
+ *
+ * 只放画一屏需要的只读数据（[SocialPerson] 是不可变 data class）；不存 MutableState、协程、回调。
+ */
+private data class FollowListSnapshot(
+    val following: List<SocialPerson>,
+    val followers: List<SocialPerson>,
+)
+
+/**
+ * 键带上身份：不同人的关注/粉丝不能共用一格。身份为空时不读不写（第一帧可能还没读到身份）。
+ *
+ * 名字是 `screen:followers:` 但装的其实是两个方向：从粉丝那一栏进来、从关注那一栏进来看到的
+ * 是同一次刷新的两份名单，共用一格才不会互相覆盖。
+ */
+private fun followListCacheKey(owner: String): String? =
+    if (owner.isEmpty()) null else "screen:followers:$owner"
+
+/**
  * 「关注 / 粉丝」两栏名单：一个人关注了谁、谁关注了他。
  *
  * 两栏画在同一页，因为它们是同一个问题的两个方向，也是同一种行：头像、名字、一句关系说明，
@@ -65,7 +89,8 @@ private const val FOLLOWS_TAB_FOLLOWERS = 1
  *
  * 两栏在同一个 [LaunchedEffect] 里一起拉：标题上那两个数字要立刻是对的，只拉当前这一栏
  * 会让另一边的数字停在 0。切页签、点刷新（reloads 加一）和换人（owner 变了）都重新问一次，
- * 因为关注关系是当下的状态，缓存一秒都可能已经不对了。
+ * 因为关注关系是当下的状态——上一屏的快照（[ScreenCache] 里那一份）只是先垫着不让人看空白，
+ * 最终以这次问回来的为准。
  *
  * 写关注关系失败时不动本行——[SocialRepository.setFollow] 的 false 同时也表示"现在没关注"，
  * 所以失败与否要看 [SocialRepository.lastError] / [SocialRepository.lastFailureWasNetwork]，
@@ -91,24 +116,40 @@ fun FollowListScreen(
     // 刷新按钮就把它加一：页签没变、人没变，但这一栏要重新问一次。
     var reloads by remember { mutableIntStateOf(0) }
 
-    var following by remember { mutableStateOf<List<SocialPerson>>(emptyList()) }
-    var followers by remember { mutableStateOf<List<SocialPerson>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    // 上一次看到的那两栏名单：有就先画出来，`loading` 从 false 开始，不闪转圈。
+    val cacheKey = followListCacheKey(owner)
+    val cached = remember(owner) { cacheKey?.let { key -> ScreenCache.get<FollowListSnapshot>(key) } }
+    var following by remember(owner) { mutableStateOf(cached?.following.orEmpty()) }
+    var followers by remember(owner) { mutableStateOf(cached?.followers.orEmpty()) }
+    var loading by remember(owner) { mutableStateOf(cached == null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     // 正在写关注关系的那几行：写的时候按钮先别理手指，免得一次点击写两遍。
     var busy by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(tab, owner, reloads) {
-        loading = true
+        // 这里不再点 loading：点刷新（reloads 加一）不该把已经画着的名单换成转圈，那是后台替换。
+        // 「第一次进来什么都没有」由 `loading` 的初值（`cached == null`）管。
         loadError = null
-        following = repository.followingOf(owner)
-        followers = repository.followersOf(owner)
+        val nextFollowing = repository.followingOf(owner)
+        val nextFollowers = repository.followersOf(owner)
         // 后端没这个函数、或者手机没连上，都不能读成"没有人"：把原因摆到列表顶上。
         val reason = repository.lastError
         loadError = when {
             reason != null -> reason
             repository.lastFailureWasNetwork -> "没连上后端，检查代理或网络后再试。"
             else -> null
+        }
+        // 失败时**不覆盖**已经画在屏幕上的那一份：这两个调用拉挂了给的也是空列表，照着画就等于
+        // 因为一次断网把名单清空。没有缓存可留时才退成空列表（和改动前一样的退路）。
+        if (loadError == null) {
+            following = nextFollowing
+            followers = nextFollowers
+            cacheKey?.let { key ->
+                ScreenCache.put(key, FollowListSnapshot(nextFollowing, nextFollowers))
+            }
+        } else if (following.isEmpty() && followers.isEmpty()) {
+            following = nextFollowing
+            followers = nextFollowers
         }
         loading = false
     }
@@ -126,8 +167,14 @@ fun FollowListScreen(
                 if (failed) {
                     onMessage("操作失败，检查代理后再试")
                 } else {
-                    following = following.withIFollow(person.id, result)
-                    followers = followers.withIFollow(person.id, result)
+                    val nextFollowing = following.withIFollow(person.id, result)
+                    val nextFollowers = followers.withIFollow(person.id, result)
+                    following = nextFollowing
+                    followers = nextFollowers
+                    // 快照一起改：否则退出再进来，先画出来的是回关之前那一版，看着像没点上。
+                    cacheKey?.let { key ->
+                        ScreenCache.put(key, FollowListSnapshot(nextFollowing, nextFollowers))
+                    }
                 }
                 busy = busy - person.id
             }

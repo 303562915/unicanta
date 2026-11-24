@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
@@ -94,6 +95,35 @@ private val GridGap = 2.dp
 private enum class ProfileTab { Plans, Favorites }
 
 /**
+ * 这一页的一屏快照。
+ *
+ * 为什么放在 [ScreenCache] 而不是这里的 `remember`：这一页每次被导航进来都是新的 Composable
+ * 实例，`remember` 跟着一起没了，于是「进主页 → 骨架 → 转圈 → 等网络」成了固定动作。存一份只读
+ * 快照在进程里，进来先把上一次画的东西摆上，网络回来了那一版再顶上去。
+ *
+ * 只放画一屏需要的只读数据（[SocialUserProfile] / [CommunityPlan] 都是不可变 data class）；
+ * 不存 MutableState、不存协程、不存回调——那些属于这一份 Composable 实例，存下来要么泄漏，
+ * 要么一读就是错的状态。
+ *
+ * [following] 单独存一份：它虽然等于 `profile.iFollow`，但点过关注之后本地那个值会先变，
+ * 下次进来不带它的话先画出来的会是「还没关注」，看着像点丢了。
+ */
+private data class UserProfileSnapshot(
+    val profile: SocialUserProfile?,
+    val plans: List<CommunityPlan>,
+    val following: Boolean,
+)
+
+/**
+ * 缓存键带上 [owner]：不同人的主页不能共用一格，否则点开 B 会先闪一下 A 的封面、数字和作品。
+ *
+ * 身份为空时返回 null（这个页面不读也不写缓存）：第一帧的身份可能是异步拿到之前的空串，
+ * 空身份那一格会被所有人串用。
+ */
+private fun profileCacheKey(owner: String): String? =
+    if (owner.isEmpty()) null else "screen:profile:$owner"
+
+/**
  * 一个人的主页，照抖音个人主页的样子排：一张封面横幅、压着封面的圆头像与昵称、一行
  * 「获赞 / 关注 / 粉丝」、简介与 IP、关注 + 私信两个按钮、两栏页签，最后是作品网格。
  *
@@ -124,10 +154,13 @@ fun UserProfileScreen(
     val scheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
 
-    var loading by remember(owner, viewer) { mutableStateOf(true) }
-    var profile by remember(owner, viewer) { mutableStateOf<SocialUserProfile?>(null) }
-    var plans by remember(owner, viewer) { mutableStateOf<List<CommunityPlan>>(emptyList()) }
-    var following by remember(owner, viewer) { mutableStateOf(false) }
+    // 上一屏留在进程里的快照：有它就直接铺上，`loading` 从 false 开始，不再闪骨架。
+    val cacheKey = profileCacheKey(owner)
+    val cached = remember(owner) { cacheKey?.let { key -> ScreenCache.get<UserProfileSnapshot>(key) } }
+    var loading by remember(owner, viewer) { mutableStateOf(cached == null) }
+    var profile by remember(owner, viewer) { mutableStateOf(cached?.profile) }
+    var plans by remember(owner, viewer) { mutableStateOf(cached?.plans.orEmpty()) }
+    var following by remember(owner, viewer) { mutableStateOf(cached?.following ?: false) }
     var busy by remember(owner, viewer) { mutableStateOf(false) }
     // 名片分享：点开时弹会话选择，选完由对话框自己调接口。
     var sharing by remember(owner, viewer) { mutableStateOf(false) }
@@ -139,14 +172,28 @@ fun UserProfileScreen(
     var problem by remember(owner, viewer) { mutableStateOf<String?>(null) }
 
     // 一次把两样都问完再画：先画骨架再补数字，这一页会闪两下，和消息页同一个理由。
+    //
+    // 已经画着东西时不点 loading：这一次刷新是后台补丁，不是重开一页。`loading` 的初值
+    // （`cached == null`）已经把「第一次进来什么都没有」那一格管住了。
     LaunchedEffect(owner, viewer) {
-        loading = true
         problem = null
         val fetched = social.userProfile(owner, viewer)
         val uploaded = repository.plansByOwner(owner)
-        profile = fetched
-        plans = uploaded
-        following = fetched?.iFollow == true
+        // 失败时**不覆盖**屏幕上这一份：`userProfile` / `plansByOwner` 拉挂了给的是 null 与空列表，
+        // 照着它画就等于因为一次断网把人看过的主页清空，人还得再等一次往返才看得回来。
+        // 看的是那两位错误标志，而不是返回值——返回空本来就是"他真的没有作品"。
+        val failed = social.lastError != null ||
+            repository.lastError != null ||
+            social.lastFailureWasNetwork
+        if (!failed) {
+            val nextFollowing = fetched?.iFollow == true
+            profile = fetched
+            plans = uploaded
+            following = nextFollowing
+            cacheKey?.let { key ->
+                ScreenCache.put(key, UserProfileSnapshot(fetched, uploaded, nextFollowing))
+            }
+        }
         problem = when {
             social.lastError != null -> "后端没有返回完整资料：${social.lastError}"
             repository.lastError != null -> "后端没有返回作品：${repository.lastError}"
@@ -232,6 +279,14 @@ fun UserProfileScreen(
                                                 onMessage("操作失败，检查代理后再试")
                                             } else {
                                                 following = next
+                                                // 快照跟上：否则下次进来先画的是点关注之前那一版，
+                                                // 按钮写着「+ 关注」而人明明刚点过。
+                                                cacheKey?.let { key ->
+                                                    ScreenCache.put(
+                                                        key,
+                                                        UserProfileSnapshot(profile, plans, next),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -310,6 +365,13 @@ fun UserProfileScreen(
                             if (ok) {
                                 profile = profile?.copy(bio = next)
                                 showBioEditor = false
+                                // 简介改了也要进快照：否则从方案页退回来，先画出来的是改之前那句。
+                                cacheKey?.let { key ->
+                                    ScreenCache.put(
+                                        key,
+                                        UserProfileSnapshot(profile, plans, following),
+                                    )
+                                }
                                 onMessage("简介已更新")
                             } else {
                                 onMessage("没保存成，检查代理后再试")

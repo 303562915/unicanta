@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.LetterAvatar
@@ -58,6 +59,18 @@ private val FIX_AGREE = Color(0xFF2FA84F)
 
 /** Grey-red for "这条修正不对"; quieter than [FIX_AGREE], because a rejected rewrite is not a fault. */
 private val FIX_DISAGREE = Color(0xFFC0564C)
+
+/**
+ * 这一页上一次画出来的那份修正历史。
+ *
+ * 只存列表：上面「现在显示」那张卡片、下面每条票数、以及「我提交的那条」，都是从这一份列表里
+ * 算出来的（`applied` / `mine` / `share` 都在 [DescriptionFix] 自己身上），一份列表就够画一屏。
+ * 不放 `MutableState`、输入框里写到一半的字——那是这一页的执行状态，不是后端数据。
+ */
+private data class DescriptionFixSnapshot(val fixes: List<DescriptionFix>)
+
+/** 这一屏在进程缓存里的槽位；按包名分份，不同应用的修正历史绝不能互相串。 */
+private fun descriptionFixCacheKey(packageName: String) = "screen:descfix:$packageName"
 
 /**
  * The corrected descriptions of one app: what people proposed, how the votes stand, and the two
@@ -84,8 +97,16 @@ fun DescriptionFixScreen(
 ) {
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
-    var fixes by remember { mutableStateOf<List<DescriptionFix>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    // 这个应用上一次画出来的那份历史（进程级，见 [ScreenCache]）：有它就先画它，`loading` 直接是
+    // false，于是进页面不再先闪一下「…」。每次被导航进来都是新的 Composable，`remember` 跟着一起
+    // 没了，所以快照得放在进程里。
+    val cacheKey = descriptionFixCacheKey(packageName)
+    // 没有后端时不用缓存：这一屏的每一条都来自后端，没有后端就没有东西可对。
+    val cached = remember(packageName, repository) {
+        if (repository == null) null else ScreenCache.get<DescriptionFixSnapshot>(cacheKey)
+    }
+    var fixes by remember(packageName) { mutableStateOf(cached?.fixes.orEmpty()) }
+    var loading by remember(packageName) { mutableStateOf(cached == null) }
     var reloads by remember { mutableIntStateOf(0) }
     var body by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
@@ -95,11 +116,23 @@ fun DescriptionFixScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(packageName, authorId, reloads) {
-        loading = true
-        fixes = repository?.descriptionFixes(packageName, authorId).orEmpty()
-        // A backend without the function is not a failure of the page: it simply has no corrections
-        // to show, and `lastError` there is the function-missing message. Keep it as the hint.
-        loadError = if (fixes.isEmpty()) repository?.lastError else null
+        // 只在没有东西可画的时候才点亮「…」：刷新和投票会重跑这个 effect，每次都转一圈的话，
+        // 屏幕上明明有内容却又被换成一个省略号。
+        if (fixes.isEmpty()) loading = true
+        val fetched = repository?.descriptionFixes(packageName, authorId)
+        if (fetched == null) {
+            // 拉不到（没有后端、被拒、断网）：屏幕上那一份**不换**，缓存也不动。把整页换成
+            // 「还没有人改过这条说明」等于把断网画成「数据被清空」。
+            // `lastError` 在断网时是 null（那是"没答"不是"被拒"），所以两种情况分开说。
+            loadError = repository?.lastError
+                ?: if (repository?.lastFailureWasNetwork == true) "网络没通，没拉到最新的一版" else null
+        } else {
+            fixes = fetched
+            // A backend without the function is not a failure of the page: it simply has no corrections
+            // to show, and `lastError` there is the function-missing message. Keep it as the hint.
+            loadError = if (fetched.isEmpty()) repository?.lastError else null
+            ScreenCache.put(cacheKey, DescriptionFixSnapshot(fetched))
+        }
         loading = false
     }
 
@@ -296,7 +329,9 @@ fun DescriptionFixScreen(
             }
 
             when {
-                loading -> item {
+                // 只有在没有东西可画时才显示这行省略号：有缓存的情况下这一页从第一帧就是列表，
+                // 刷新也只是列表上面的数字在变。
+                loading && fixes.isEmpty() -> item {
                     Text(
                         text = "…",
                         style = FlText.footnote,
@@ -314,13 +349,27 @@ fun DescriptionFixScreen(
                     )
                 }
 
-                else -> items(fixes, key = { it.id }) { fix ->
-                    FixCard(
-                        fix = fix,
-                        voting = votingId == fix.id,
-                        canVote = authorId.isNotEmpty() || author.isNotEmpty(),
-                        onVote = { agree -> vote(fix, agree) },
-                    )
+                else -> {
+                    // 这次刷新没成功：列表留着（它是上一次拉到的），只在上面加一行说明。整页换成
+                    // 一句「还没有人改过」会把「没拉到」说成「没有」，那是两件事。
+                    loadError?.let { reason ->
+                        item {
+                            Text(
+                                text = "这次没刷新成功：$reason",
+                                style = FlText.caption2,
+                                color = scheme.error,
+                                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                            )
+                        }
+                    }
+                    items(fixes, key = { it.id }) { fix ->
+                        FixCard(
+                            fix = fix,
+                            voting = votingId == fix.id,
+                            canVote = authorId.isNotEmpty() || author.isNotEmpty(),
+                            onVote = { agree -> vote(fix, agree) },
+                        )
+                    }
                 }
             }
         }

@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadRed
@@ -66,6 +67,23 @@ private const val GroupCreateTitleMaxLength = 40
 private val GroupPickCheckSize = 22.dp
 
 /**
+ * 这一屏上一次画出来的候选人名单，整份进 [ScreenCache]。
+ *
+ * 只放画一屏要用的只读数据：能勾的那几张脸。**群名和已勾的人不进缓存**——那是人在这一页正在做的
+ * 事，下次进来该是一张干净的勾选表；把上次没建成的选择恢复出来，人只会以为自己已经选过了。
+ */
+private data class CreateGroupSnapshot(val candidates: List<SocialPerson>)
+
+/**
+ * 这一页缓存的槽位：按身份分。
+ *
+ * 候选人来自「我关注的人」与「关注我的人」，两个方向都是按身份算的，不同身份共用一个槽位会
+ * 把别人的关注关系画给这个人。身份为空（异步还没读到）时返回空串，[ScreenCache] 会丢弃空键的写入。
+ */
+private fun createGroupCacheKey(owner: String): String =
+    if (owner.isEmpty()) "" else "screen:creategroup:$owner"
+
+/**
  * 「发起群聊」页：起个名，勾几个人，然后建群。
  *
  * 结构照抖音的发起群聊从上到下排：自绘顶栏（返回 / 标题 / 完成）、一行群名输入、一行「已选 N」，
@@ -85,24 +103,42 @@ fun CreateGroupScreen(
     onMessage: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    // 群名是这一页的输入，不进缓存：下次进来该是空的，不该带上一次没建成的那串字。
     var title by remember { mutableStateOf("") }
-    var candidates by remember { mutableStateOf<List<SocialPerson>>(emptyList()) }
+    // 上一次进来读到的那份候选人先摆上：从消息页点「发起群聊」进来的第一眼就该是能勾的人，
+    // 而不是一个「…」。快照在进程级的 [ScreenCache] 里，因为这个 Composable 每次都是新实例。
+    //
+    // 群名与已勾的人**不从缓存恢复**：那是这一页正在做的动作，不是上一屏的内容。
+    val cacheKey = createGroupCacheKey(owner)
+    val cached = remember(cacheKey) {
+        if (cacheKey.isEmpty()) null else ScreenCache.get<CreateGroupSnapshot>(cacheKey)
+    }
+    var candidates by remember(cacheKey) {
+        mutableStateOf(cached?.candidates.orEmpty())
+    }
     // 选中的是身份，不是行：同一个人在两个列表里出现也只算一张票。
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var loading by remember { mutableStateOf(true) }
+    // 有缓存就不摆「…」：这一趟刷新只是把名单里新关注的人补进来。
+    var loading by remember(cacheKey) { mutableStateOf(cached == null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     // 正在建群：这段时间里「完成」不再理会手指，免得一次点击建出两个群。
     var creating by remember { mutableStateOf(false) }
 
     // 两个方向各问一次，合并去重之后才画：谁先在名单里，那一行就长什么样。
     LaunchedEffect(owner) {
-        loading = true
+        // 有缓存的那一趟不点 loading：名单还在屏幕上，转圈会把它盖住。
+        if (cached == null) loading = true
         loadError = null
         val following = repository.followingOf(owner)
         val followers = repository.followersOf(owner)
-        candidates = groupPickPeople(following, followers)
         // 拉不到就是空列表，和「真的一个熟人都没有」在界面上长得一样，所以要留一句原因。
-        loadError = repository.lastError
+        // 失败时**不覆盖**屏幕上那份名单：一次断网不该把能勾的人清空。
+        val failure = repository.lastError
+        if (failure == null) {
+            candidates = groupPickPeople(following, followers)
+            if (cacheKey.isNotEmpty()) ScreenCache.put(cacheKey, CreateGroupSnapshot(candidates))
+        }
+        loadError = failure
         loading = false
     }
 

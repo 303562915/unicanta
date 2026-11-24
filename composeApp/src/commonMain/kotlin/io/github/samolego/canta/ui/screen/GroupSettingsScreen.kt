@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
@@ -83,6 +84,74 @@ private fun inviteLinkOf(code: String): String = "unicanta://group/$code"
 private const val EDIT_MAX_LINES = 4
 
 /**
+ * 这一屏上一次画出来的样子，整份进 [ScreenCache]。
+ *
+ * 只放画一屏要用的只读数据：群名、成员、简介、公告、我在本群的昵称，加上三个开关（免打扰、
+ * 折叠、置顶）。编辑框的草稿、哪个对话框开着、正在写哪一项，都不进来——那些是这一次点开的动作。
+ *
+ * 三个开关放在同一份里，是因为它们和详情在同一次刷新里一起读到：分开存会出现「群名是新的、
+ * 折叠还是旧的」这种半新半旧的状态。
+ */
+private data class GroupSettingsSnapshot(
+    val kind: String,
+    val title: String,
+    val members: List<ConversationMember>,
+    val createdAt: String,
+    val announcement: String,
+    val createdBy: String,
+    val intro: String,
+    val myNickname: String,
+    val muted: Boolean,
+    val folded: Boolean,
+    val pinned: Boolean,
+) {
+    /** 还原成页面用的详情；会话号不在快照里，由调用方按当前的 [conversationId] 补上。 */
+    fun toDetail(conversationId: Long): ConversationDetail = ConversationDetail(
+        id = conversationId,
+        kind = kind,
+        title = title,
+        members = members,
+        createdAt = createdAt,
+        announcement = announcement,
+        createdBy = createdBy,
+        intro = intro,
+        myNickname = myNickname,
+        // 折叠在快照里是单独一位（页面那个开关就靠它），还原详情时也得带上，
+        // 否则详情对象会说「没折叠」而开关是开着的。
+        myFolded = folded,
+    )
+}
+
+/** 从详情 + 三个开关切出这一页要缓存的那几位。 */
+private fun settingsSnapshotOf(
+    detail: ConversationDetail,
+    muted: Boolean,
+    folded: Boolean,
+    pinned: Boolean,
+): GroupSettingsSnapshot = GroupSettingsSnapshot(
+    kind = detail.kind,
+    title = detail.title,
+    members = detail.members,
+    createdAt = detail.createdAt,
+    announcement = detail.announcement,
+    createdBy = detail.createdBy,
+    intro = detail.intro,
+    myNickname = detail.myNickname,
+    muted = muted,
+    folded = folded,
+    pinned = pinned,
+)
+
+/**
+ * 这一页缓存的槽位：按会话号分。
+ *
+ * 和群资料页**分开一格**：两页要的字段不一样（这一页多简介、昵称与三个开关），塞进同一格会让
+ * 对方读到一份缺字段的快照。不同群当然更不能共用。
+ */
+private fun groupSettingsCacheKey(conversationId: Long): String =
+    if (conversationId <= 0L) "" else "screen:groupsettings:$conversationId"
+
+/**
  * 一个群里能改的所有东西，按抖音「聊天信息」那一页的顺序排。
  *
  * 顺序不是随便定的：上面是**这个群是什么**（谁在里面、叫什么、写了什么），中间是**我在这群里怎么被叫**，
@@ -108,17 +177,38 @@ fun GroupSettingsScreen(
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
-    var detail by remember { mutableStateOf<ConversationDetail?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    // 上一次进来读到的那份先摆上：这一页是「改完就走」的地方，从聊天页退回来时先看到群名和那几个
+    // 开关，比先看一个「…」有用；网络回来的那一版再顶上去。快照在进程级的 [ScreenCache] 里，
+    // 因为这个 Composable 每次都是新实例，`remember` 跟着一起没了。
+    val cacheKey = groupSettingsCacheKey(conversationId)
+    val cached = remember(cacheKey) { ScreenCache.get<GroupSettingsSnapshot>(cacheKey) }
+    var detail by remember(cacheKey) { mutableStateOf(cached?.toDetail(conversationId)) }
+    // 有缓存就不摆「…」：这一趟刷新只是把新的一版顶上去（和下面重拉时不摆「…」同一个理由）。
+    var loading by remember(cacheKey) { mutableStateOf(cached == null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var reloads by remember { mutableStateOf(0) }
 
     // 这三个开关的状态在 conversations_for 那一行上，不在 conversation_detail 里：
     // 详情说的是"这个群是什么"，这三个说的是"我怎么对这个群"。
-    var muted by remember { mutableStateOf(false) }
-    var folded by remember { mutableStateOf(false) }
-    var pinned by remember { mutableStateOf(false) }
+    // 初始值取缓存里那一份：不然缓存画出来的群名配着三个「关」，看着像设置被人重置过。
+    var muted by remember(cacheKey) { mutableStateOf(cached?.muted ?: false) }
+    var folded by remember(cacheKey) { mutableStateOf(cached?.folded ?: false) }
+    var pinned by remember(cacheKey) { mutableStateOf(cached?.pinned ?: false) }
     var toggling by remember { mutableStateOf(false) }
+
+    /**
+     * 把现在这一份详情与三个开关写回缓存，下一次进来先画它。
+     *
+     * 改名、改简介、改公告、改昵称、踢人、加人之后都会用上：这些动作只改屏幕上这一份（或者重拉一次），
+     * 缓存不跟着换的话，下一次进来先画出来的还是改之前那一版，看着像回退了。
+     */
+    val commitCache: () -> Unit = {
+        detail?.let { loaded ->
+            if (cacheKey.isNotEmpty()) {
+                ScreenCache.put(cacheKey, settingsSnapshotOf(loaded, muted, folded, pinned))
+            }
+        }
+    }
 
     // 编辑：一次只开一个，用同一个对话框。
     var editing by remember { mutableStateOf<EditField?>(null) }
@@ -148,23 +238,34 @@ fun GroupSettingsScreen(
     // 如果 key 里没有 owner，那次空请求就定了终身——页面永远停在「会话不存在」。
     LaunchedEffect(conversationId, reloads, owner) {
         if (owner.isEmpty()) {
-            loading = true
+            // 有缓存的那一趟连「…」都不摆——屏幕上已经画好上一次的群名与开关了。
+            loading = detail == null
             return@LaunchedEffect
         }
         loading = detail == null
         loadError = null
         val loaded = repository.conversationDetail(owner, conversationId)
-        detail = loaded
-        loadError = repository.lastError
-        // 三个开关从列表那一行读：conversation_detail 只回 muted，没有 pinned / folded。
-        runCatching { repository.conversationsFor(owner) }
-            .getOrNull()
-            ?.firstOrNull { it.id == conversationId }
-            ?.let { row: Conversation ->
-                muted = row.muted
-                folded = row.folded
-                pinned = row.pinned
-            }
+        val failure = repository.lastError
+        if (loaded != null) {
+            detail = loaded
+            // 三个开关从列表那一行读：conversation_detail 只回 muted，没有 pinned / folded。
+            // 这一行没读到（比如 conversationsFor 挂了）就沿用缓存里那份，不清成「全关」。
+            runCatching { repository.conversationsFor(owner) }
+                .getOrNull()
+                ?.firstOrNull { it.id == conversationId }
+                ?.let { row: Conversation ->
+                    muted = row.muted
+                    folded = row.folded
+                    pinned = row.pinned
+                }
+            commitCache()
+        } else if (failure == null) {
+            // 后端说没有这个会话（不是网络问题）：缓存那份留着只会一直画一个已经不在的群。
+            detail = null
+            ScreenCache.remove(cacheKey)
+        }
+        // 失败时**不覆盖**屏幕上那一份：照着 null 画就等于因为一次断网把整页清空，只留下「会话不存在」。
+        loadError = failure
         loading = false
     }
 
@@ -211,6 +312,9 @@ fun GroupSettingsScreen(
             if (!repository.setMuted(owner, conversationId, next)) {
                 muted = !next
                 onMessage("没改成，检查代理后再试")
+            } else {
+                // 开关也是这一屏的一部分：缓存不换，下一次进来先画出来的是改之前那个状态。
+                commitCache()
             }
             toggling = false
         }
@@ -224,6 +328,8 @@ fun GroupSettingsScreen(
             if (!repository.setFolded(owner, conversationId, next)) {
                 folded = !next
                 onMessage("没改成，检查代理后再试")
+            } else {
+                commitCache()
             }
             toggling = false
         }
@@ -237,6 +343,8 @@ fun GroupSettingsScreen(
             if (!repository.pinConversation(owner, conversationId, next)) {
                 pinned = !next
                 onMessage("没改成，检查代理后再试")
+            } else {
+                commitCache()
             }
             toggling = false
         }
@@ -446,6 +554,8 @@ fun GroupSettingsScreen(
                             scope.launch {
                                 leaving = true
                                 if (repository.leaveConversation(owner, conversationId)) {
+                                    // 已经不在这个群里了：缓存留着只会让下一次进来先画出一个你退掉的群。
+                                    ScreenCache.remove(cacheKey)
                                     onMessage("已退出群聊")
                                     onNavigateBack()
                                 } else {

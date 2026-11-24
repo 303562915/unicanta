@@ -34,11 +34,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.LetterAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlText
+
+/**
+ * 这一页的一屏快照：只有那份方案名单。
+ *
+ * 为什么要有它：这一页是从方案卡片点进来的，读完返回、再点同一个人，原本又要从空白转圈重拉一遍。
+ * 名单是后端已经给过的东西，进页面先把上一份摆上、网络回来再替换，看起来就是「立刻打开」。
+ *
+ * 只放画一屏需要的只读数据（[CommunityPlan] 是不可变 data class）；不存 MutableState、协程、回调。
+ * 名字不单独存：它就是从这份名单里取出来的（[UploaderProfileScreen] 里那行 `firstNotNullOfOrNull`）。
+ */
+private data class UploaderProfileSnapshot(val plans: List<CommunityPlan>)
+
+/** 键带上身份：不同上传者不能共用一格，否则点开 B 会先闪一下 A 的名单。身份为空时不读不写。 */
+private fun uploaderCacheKey(owner: String): String? =
+    if (owner.isEmpty()) null else "screen:uploader:$owner"
 
 /**
  * One uploader, and everything they put up.
@@ -58,10 +74,21 @@ fun UploaderProfileScreen(
     onOpenPlan: (Long) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
-    var plans by remember(owner) { mutableStateOf<List<CommunityPlan>?>(null) }
+    // 上一屏留下的名单：有就先画它（`plans` 不是 null，就不会走下面那个转圈），没有才等网络。
+    val cacheKey = uploaderCacheKey(owner)
+    val cached = remember(owner) { cacheKey?.let { key -> ScreenCache.get<UploaderProfileSnapshot>(key) } }
+    var plans by remember(owner) { mutableStateOf(cached?.plans) }
 
     LaunchedEffect(owner) {
-        plans = repository.plansByOwner(owner)
+        val fetched = repository.plansByOwner(owner)
+        // 后端答了才替换屏幕上的那一份：`plansByOwner` 拉挂了给的也是空列表，照着画就等于因为
+        // 一次断网把看过的名单清空。没有缓存时仍然照旧退成空列表，下面那句「或者后端连不上」就是为它写的。
+        if (repository.lastError == null && !repository.lastFailureWasNetwork) {
+            plans = fetched
+            cacheKey?.let { key -> ScreenCache.put(key, UploaderProfileSnapshot(fetched)) }
+        } else if (plans == null) {
+            plans = fetched
+        }
     }
 
     // The name the backend put on their newest plan; an identity that never picked one is shown by

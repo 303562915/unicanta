@@ -70,6 +70,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.AppReview
 import io.github.samolego.canta.data.community.CommunityPlan
@@ -121,6 +122,29 @@ private val VOTE_BAR = 10.dp
  * 读者点完还得自己滑半天才看见自己那条。
  */
 private const val COMMENT_SECTION_INDEX = 1
+
+/**
+ * 这一页上一次画出来的那些东西：两边的票数、本机投的哪一边、评论、描述修正、抽屉里的方案。
+ *
+ * 只放画一屏要用的只读数据，不放 `MutableState` / 协程 / 回调：这份快照要跨 Composable 实例活着，
+ * 而 `remember` 出来的状态属于某一个实例，把它存进进程级缓存等于把上一页的执行挂到下一页上。
+ * 本机自己写的那些评论（[AppNoteStore]）也不在里面——它在本地，读一次比查缓存还快，也不算旧。
+ */
+private data class AppDetailSnapshot(
+    val votes: PackageVotes,
+    val mine: Boolean?,
+    val comments: List<PlanComment>,
+    val fixes: List<DescriptionFix>,
+    val relatedPlans: List<CommunityPlan>,
+)
+
+/**
+ * 这一屏在进程缓存里的槽位。
+ *
+ * 只按包名分份：本机身份（这一页的 `voter`）是这台设备自己生成的，换身份意味着清数据重装，那时
+ * 进程也重启了，缓存跟着没。把 voter 拼进键反而会在身份还没读出来的第一帧查不中，又退回「先空白」。
+ */
+private fun appDetailCacheKey(packageName: String) = "screen:appdetail:$packageName"
 
 /**
  * One app's own page: what it is, whether this phone can live without it, and what other
@@ -178,8 +202,16 @@ fun AppDetailScreen(
     onReinstall: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
+    // 这个包上一次画出来的那一份（进程级，见 [ScreenCache]）：有它就先画它，网络回来的那一版再
+    // 顶上去。这一页每次被导航进来都是新的 Composable 实例，`remember` 跟着一起没了，所以快照
+    // 不能放在这里。
+    val cacheKey = appDetailCacheKey(packageName)
+    // 没有后端时不用缓存：快照里存的都是社区内容，这一屏不会画它们。
+    val cached = remember(packageName, repository) {
+        if (repository == null) null else ScreenCache.get<AppDetailSnapshot>(cacheKey)
+    }
     var reviews by remember { mutableStateOf<List<AppReview>>(emptyList()) }
-    var comments by remember { mutableStateOf<List<PlanComment>>(emptyList()) }
+    var comments by remember(packageName) { mutableStateOf(cached?.comments.orEmpty()) }
     var draft by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var submitFailed by remember { mutableStateOf(false) }
@@ -188,9 +220,10 @@ fun AppDetailScreen(
     /** The comment being answered; null while the composer writes a new one. */
     var replyTo by remember { mutableStateOf<PlanComment?>(null) }
     var pendingDelete by remember { mutableStateOf<PlanComment?>(null) }
-    // What this install said about the app, and what everybody else said.
-    var mine by remember { mutableStateOf<Boolean?>(null) }
-    var votes by remember { mutableStateOf(PackageVotes.EMPTY) }
+    // What this install said about the app, and what everybody else said. Both start from the cached
+    // screen: the counts beside the buttons are the first thing that reads as "this page is loaded".
+    var mine by remember(packageName) { mutableStateOf(cached?.mine) }
+    var votes by remember(packageName) { mutableStateOf(cached?.votes ?: PackageVotes.EMPTY) }
     var voting by remember { mutableStateOf(false) }
     /**
      * Which votes and comments the page shows: every device by default, because a thread narrowed to
@@ -207,7 +240,7 @@ fun AppDetailScreen(
      * The community's corrections of this app's description: the accepted one replaces the published
      * line, the rest are counted for the entry that opens their page.
      */
-    var descriptionFixes by remember { mutableStateOf<List<DescriptionFix>>(emptyList()) }
+    var descriptionFixes by remember(packageName) { mutableStateOf(cached?.fixes.orEmpty()) }
     // Why the last vote or comment did not go through, when the backend said something.
     var voteError by remember { mutableStateOf<String?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
@@ -227,17 +260,43 @@ fun AppDetailScreen(
      * the plans answer the other half — "who already proved a whole set that drops it", which is the
      * step a reader takes after one green vote. Loaded with the page so the drawer opens instantly.
      */
-    var relatedPlans by remember(packageName) { mutableStateOf<List<CommunityPlan>>(emptyList()) }
+    var relatedPlans by remember(packageName) { mutableStateOf(cached?.relatedPlans.orEmpty()) }
     var relatedLoading by remember(packageName) { mutableStateOf(false) }
     /** Whether the related-plans drawer is out; it closes on the scrim, on the ×, and on a tap on a plan. */
     var drawerOpen by remember(packageName) { mutableStateOf(false) }
 
+    /**
+     * 把这一屏当前画着的东西写回进程缓存。
+     *
+     * 两个加载 effect 各管一半，所以不各存各的——那样谁后回来都会把另一半覆盖成过期的值。投票、
+     * 发评论、删评论之后也走这里：否则下次进来先画出来的还是改动之前那一份，看着像回退。
+     */
+    fun saveToCache() {
+        ScreenCache.put(
+            cacheKey,
+            AppDetailSnapshot(
+                votes = votes,
+                mine = mine,
+                comments = comments,
+                fixes = descriptionFixes,
+                relatedPlans = relatedPlans,
+            ),
+        )
+    }
+
     LaunchedEffect(packageName, profile, repository) {
         val repo = repository ?: return@LaunchedEffect
-        relatedLoading = true
+        // 有缓存就别点亮「正在读」：抽屉一打开先看到上一次的数字，刷新在背后发生。
+        if (relatedPlans.isEmpty()) relatedLoading = true
         // The plans come back for this model and build only, which is the scope the drawer claims:
         // a plan for another phone would put a set on screen that was never proven here.
-        relatedPlans = repo.plansFor(profile).filter { packageName in it.packages }
+        val fresh = repo.plansFor(profile).filter { packageName in it.packages }
+        // 失败时**不覆盖**：`plansFor` 拉挂了给的也是空列表，照着它画就等于因为一次断网把抽屉
+        // 清空，而空抽屉写的是「本机型还没有这样的方案」——一句凭空的结论。
+        if (repo.lastError == null && !repo.lastFailureWasNetwork) {
+            relatedPlans = fresh
+            saveToCache()
+        }
         relatedLoading = false
     }
 
@@ -259,17 +318,38 @@ fun AppDetailScreen(
     }
 
     LaunchedEffect(packageName, voter) {
+        // 本机笔记每次都读：它在本地，很快，也跟后端无关，不算「旧数据」。
         reviews = notes.reviewsOf(packageName)
-        votes = repository?.packageVotes(packageName, profile) ?: PackageVotes.EMPTY
-        // The backend's copy of this install's vote wins over the local one: it is what the counts
-        // next to it were computed from, and it survives a reinstall.
-        mine = if (repository != null && voter.isNotEmpty()) {
-            repository.myPackageVote(packageName, voter) ?: notes.packageVerdict(packageName)
-        } else {
-            notes.packageVerdict(packageName)
+        val repo = repository
+        if (repo == null) {
+            // 没有后端：这一页只剩本机自己的记录，缓存里那些社区内容在这一屏上不再成立。
+            votes = PackageVotes.EMPTY
+            mine = notes.packageVerdict(packageName)
+            comments = emptyList()
+            descriptionFixes = emptyList()
+            return@LaunchedEffect
         }
-        comments = repository?.appComments(packageName, voter).orEmpty()
-        descriptionFixes = repository?.descriptionFixes(packageName, voter).orEmpty()
+        // 四个查询各自记成败：`lastError` / `lastFailureWasNetwork` 每调一次就被重写，所以每次
+        // 调完立刻读一遍。失败的那一块保留屏幕上原来那份（第一次进来时就是缓存），别的照常更新
+        // ——一个查询挂了不该把整页换回空白。
+        val fetchedVotes = repo.packageVotes(packageName, profile)
+        val votesOk = repo.lastError == null && !repo.lastFailureWasNetwork
+        val backendVote = if (voter.isNotEmpty()) repo.myPackageVote(packageName, voter) else null
+        val voteOk = repo.lastError == null && !repo.lastFailureWasNetwork
+        val fetchedComments = repo.appComments(packageName, voter)
+        val commentsOk = repo.lastError == null && !repo.lastFailureWasNetwork
+        val fetchedFixes = repo.descriptionFixes(packageName, voter)
+        val fixesOk = repo.lastError == null && !repo.lastFailureWasNetwork
+
+        if (votesOk && fetchedVotes != null) votes = fetchedVotes
+        if (commentsOk) comments = fetchedComments
+        if (fixesOk && fetchedFixes != null) descriptionFixes = fetchedFixes
+        // The backend's copy of this install's vote wins over the local one: it is what the counts
+        // next to it were computed from, and it survives a reinstall. 问不到的时候保留屏幕上那一份。
+        if (voter.isEmpty() || voteOk) {
+            mine = backendVote ?: notes.packageVerdict(packageName)
+        }
+        saveToCache()
     }
 
     val castVote: (Boolean) -> Unit = { canRemove ->
@@ -290,6 +370,8 @@ fun AppDetailScreen(
                     mine = canRemove
                     votes = fresh
                     notes.setPackageVerdict(packageName, canRemove)
+                    // 票数变了，缓存也跟着变：否则下次进来先画出来的是投之前那个数。
+                    saveToCache()
                 }
                 voting = false
             }
@@ -335,7 +417,12 @@ fun AppDetailScreen(
                     sendError = null
                     draft = ""
                     replyTo = null
-                    comments = repository?.appComments(packageName, voter).orEmpty()
+                    // 重新拉一遍线程；拉不到就留着刚才那份，别把已经读到的评论清空。
+                    repository?.let { repo ->
+                        val latest = repo.appComments(packageName, voter)
+                        if (repo.lastError == null && !repo.lastFailureWasNetwork) comments = latest
+                    }
+                    saveToCache()
                 }
                 sending = false
             }
@@ -355,6 +442,8 @@ fun AppDetailScreen(
                     comments = comments.updatedComment(comment.id) {
                         it.copy(liked = result.liked, likes = result.likes)
                     }
+                    // 心形和计数都落到缓存里，切回来不会先画成没点过的样子。
+                    saveToCache()
                 }
             }
         }
@@ -370,7 +459,14 @@ fun AppDetailScreen(
                     pendingDelete = null
                     scope.launch {
                         repository?.deleteComment(comment.id, voter, token)
-                        comments = repository?.appComments(packageName, voter).orEmpty()
+                        // 删完重拉；拉不到就保留原样，缓存也不动——屏幕上的东西没变，缓存不该变。
+                        repository?.let { repo ->
+                            val latest = repo.appComments(packageName, voter)
+                            if (repo.lastError == null && !repo.lastFailureWasNetwork) {
+                                comments = latest
+                                saveToCache()
+                            }
+                        }
                     }
                 }) {
                     Text("删除", color = MaterialTheme.colorScheme.error)

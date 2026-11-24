@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -44,6 +45,23 @@ import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.util.DeviceProfile
 import kotlinx.coroutines.launch
+
+/**
+ * 这一页的一屏快照：我上传过的方案。
+ *
+ * 为什么要有它：这一页从安全页的入口点进来，看完返回、再点一次，原本都要先看那一个「…」等一次
+ * 网络往返。上一份留在进程里，进来先画出来，网络回来再替换，页面就是立刻的。
+ *
+ * 只放画一屏需要的只读数据（[CommunityPlan] 是不可变 data class）；不存 MutableState、协程、回调。
+ */
+private data class MyPlansSnapshot(val plans: List<CommunityPlan>)
+
+/**
+ * 键带上身份：这台设备（这个身份）的方案不能和别人共用一格。身份为空时不读也不写——
+ * 调用方的身份是异步拿到的，第一帧那个空串槽位会被所有人串用。
+ */
+private fun myPlansCacheKey(owner: String): String? =
+    if (owner.isEmpty()) null else "screen:myplans:$owner"
 
 /**
  * 「我的方案」：这台设备上传过的方案，一行一个。
@@ -71,23 +89,34 @@ fun MyPlansScreen(
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var myPlans by remember { mutableStateOf<List<CommunityPlan>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    // 上一次画过的这份列表：有就直接铺上，`loading` 从 false 开始，不再先闪那一个「…」。
+    val cacheKey = myPlansCacheKey(owner)
+    val cached = remember(owner) { cacheKey?.let { key -> ScreenCache.get<MyPlansSnapshot>(key) } }
+    var myPlans by remember(owner) { mutableStateOf(cached?.plans.orEmpty()) }
+    var loading by remember(owner) { mutableStateOf(cached == null) }
     var reloads by remember { mutableIntStateOf(0) }
     var pendingDelete by remember { mutableStateOf<CommunityPlan?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(owner, token, reloads) {
-        loading = true
+        // 不点 loading：点刷新不该把已经画着的列表换成那个「…」，那是后台替换。
+        // 「第一次进来什么都没有」由 `loading` 的初值（`cached == null`）管。
         loadError = null
-        myPlans = repository.plansByOwner(owner).ifEmpty {
+        val fetched = repository.plansByOwner(owner).ifEmpty {
             repository.plansFor(profile).filter { it.owner == owner }
         }
         // A backend that is missing the function, or a phone that is offline, must not read as
         // "you never uploaded anything": say which one it was.
         loadError = repository.lastError
-        loading = false
+        // 后端答了才替换：拉挂了这两个调用给的也是空列表，照着画就等于因为一次断网把
+        // 「我上传过的方案」清空。没有缓存可留时才退成空列表（下面那句「你还没有上传过方案」照旧）。
+        if (repository.lastError == null && !repository.lastFailureWasNetwork) {
+            myPlans = fetched
+            cacheKey?.let { key -> ScreenCache.put(key, MyPlansSnapshot(fetched)) }
+        } else if (myPlans.isEmpty()) {
+            myPlans = fetched
+        }
     }
 
     // Deleting a plan is deleting the whole thing: its packages, its votes and every comment under
@@ -103,7 +132,12 @@ fun MyPlansScreen(
                     scope.launch {
                         val ok = repository.delete(plan.id, owner, token)
                         notice = if (ok) "已删除「${plan.title}」" else "删不掉：这个方案不是本机上传的，或者后端没通。"
-                        if (ok) myPlans = myPlans.filterNot { it.id == plan.id }
+                        if (ok) {
+                            val remaining = myPlans.filterNot { it.id == plan.id }
+                            myPlans = remaining
+                            // 快照跟着删：否则退出再进来，先画出来的会是这条已经删掉的方案。
+                            cacheKey?.let { key -> ScreenCache.put(key, MyPlansSnapshot(remaining)) }
+                        }
                     }
                 }) {
                     Text("删除", color = MaterialTheme.colorScheme.error)
@@ -144,6 +178,17 @@ fun MyPlansScreen(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
                 )
             }
+            // 失败原因挪到顶上这一行：列表有缓存时会继续画着（不再走下面的空态），只写在空态里
+            // 就等于断网时什么都不说。
+            loadError?.let { reason ->
+                Text(
+                    text = "后端没有返回列表：$reason",
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                )
+            }
             when {
                 loading -> Text("…", fontSize = 12.sp, modifier = Modifier.padding(14.dp))
 
@@ -158,15 +203,6 @@ fun MyPlansScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
                     )
-                    loadError?.let { reason ->
-                        Text(
-                            text = "后端没有返回列表：$reason",
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
                 }
 
                 else -> LazyColumn(

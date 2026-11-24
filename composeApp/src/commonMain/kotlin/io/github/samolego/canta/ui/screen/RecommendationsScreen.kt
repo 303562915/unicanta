@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
@@ -150,6 +151,30 @@ private val FallbackAccents = listOf(
 )
 
 /**
+ * 这一页的一屏快照，进程级存着（见 [ScreenCache]）：进来先把上一份画出来，网络回来再顶掉。
+ *
+ * 为什么需要它：这一页每次被导航进来都是新的 Composable 实例，`remember` 跟着一起没了，于是
+ * 「切到别的页面再切回来」固定是「转圈 → 等网络 → 才出现」。两半各有各的原因——目录那一半要
+ * 经一次 suspend 的打包资源读取才落到 state 里，第一帧仍是 `null`；真正贵的是社区队列那一半，
+ * 那是一趟网络往返，每次进来都转圈就是从这来的。
+ *
+ * 只放画一屏要用的只读数据：打包目录和社区队列。**不放** `MutableState`、协程、回调、对话框
+ * 开关——`detail` / `suggestionDetail` / `composerOpen` 这些重新进来本该是关着的。
+ *
+ * 两份捆成一份：它们一起决定这一页长什么样，分开存会出现「队列到了、目录还是空的」中间态。
+ */
+private data class RecommendationsSnapshot(
+    val catalog: Recommendations,
+    val suggested: List<SuggestedApp>,
+)
+
+/**
+ * 快照的键：带上身份。队列里每一条的「我投过没有」（[SuggestedApp.mine]）是某个身份自己的答案，
+ * 不同身份共用一格会把别人的票画成本机的。惯例见 [ScreenCache]（`"screen:<页面>:<身份>"`）。
+ */
+private fun recommendationsCacheKey(owner: String): String = "screen:recommendations:$owner"
+
+/**
  * The recommendations page, in two halves kept apart on purpose, because they answer two different
  * questions: what is worth installing, and what other people want added to that.
  *
@@ -194,7 +219,12 @@ fun RecommendationsScreen(
     onVoteQueueSeen: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    var catalog by remember { mutableStateOf<Recommendations?>(null) }
+    // 上一次进来画出来的那一份：先画它，网络回来再顶掉（见 [RecommendationsSnapshot]）。
+    // 身份是这一格的一部分：队列里的「我投过没有」按身份算。
+    val cacheOwner = authorId.ifEmpty { author }
+    val cacheKey = recommendationsCacheKey(cacheOwner)
+    val cached = remember(cacheKey) { ScreenCache.get<RecommendationsSnapshot>(cacheKey) }
+    var catalog by remember(cacheKey) { mutableStateOf(cached?.catalog) }
     var detail by remember { mutableStateOf<RecommendedApp?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
     var query by rememberSaveable { mutableStateOf("") }
@@ -207,7 +237,8 @@ fun RecommendationsScreen(
     val voteQueueState = rememberLazyListState()
 
     // The open half: the queue of proposed apps, how the votes stand, and the form that files one.
-    var suggested by remember { mutableStateOf<List<SuggestedApp>>(emptyList()) }
+    // 队列先从缓存摆上：有上一份时这一半立刻有内容，不再等那一趟网络。
+    var suggested by remember(cacheKey) { mutableStateOf(cached?.suggested.orEmpty()) }
     var suggestReloads by remember { mutableIntStateOf(0) }
     var suggestError by remember { mutableStateOf<String?>(null) }
     var votingId by remember { mutableStateOf(0L) }
@@ -216,13 +247,15 @@ fun RecommendationsScreen(
     var submitError by remember { mutableStateOf<String?>(null) }
     var suggestionDetail by remember { mutableStateOf<SuggestedApp?>(null) }
 
-    LaunchedEffect(Unit) {
-        catalog = Recommendations.bundled()
+    // 有缓存就不必再读一遍打包资源（重读也是一样的内容）；key 里带 [cacheKey]，是因为换身份时
+    // 上面的 state 会跟着键重建，那时不重跑这个 effect 就会永远停在转圈上。
+    LaunchedEffect(cacheKey) {
+        if (catalog == null) catalog = Recommendations.bundled()
     }
 
-    LaunchedEffect(repository, authorId, suggestReloads) {
+    LaunchedEffect(repository, cacheOwner, suggestReloads) {
         val repo = repository ?: return@LaunchedEffect
-        val fresh = repo.suggestedApps(authorId.ifEmpty { author })
+        val fresh = repo.suggestedApps(cacheOwner)
         if (fresh != null) {
             suggested = fresh
             suggestError = null
@@ -235,6 +268,12 @@ fun RecommendationsScreen(
     }
 
     val loaded = catalog
+    // 每拿到新的一屏就写回缓存：下次进来先画它，再在后台刷新。写的就是「屏幕上现在这一份」——
+    // 队列那趟拉失败时 `suggested` 没被清空，所以一次断网不会把已经看到的队列从缓存里抹掉。
+    LaunchedEffect(cacheKey, loaded, suggested) {
+        val current = loaded ?: return@LaunchedEffect
+        ScreenCache.put(cacheKey, RecommendationsSnapshot(current, suggested))
+    }
     // Looking at the queue is what makes it read: the fingerprint goes back to the caller, which
     // stores it and takes the dot off the tab. Opening the page is not enough — the list half says
     // nothing about votes — so this waits for the vote half and for the queue to have arrived.

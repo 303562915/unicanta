@@ -66,6 +66,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.AppNoteStore
@@ -130,6 +131,35 @@ private val PACKAGE_ICON = 34.dp
 private const val PACKAGE_FILTER_INDEX = 2
 
 /**
+ * 这一页的一屏快照，进程级存着（见 [ScreenCache]）：进来先把上一份画出来，网络回来再顶掉。
+ *
+ * 为什么需要它：`PlanDetailScreen` 每次被导航进来都是新的 Composable 实例，`remember` 跟着一起
+ * 没了，于是「返回上一层再点进来」永远要重看一次「正在读取方案…」，而那一屏刚才明明就在屏幕上。
+ *
+ * 只放画一屏要用的只读数据：方案本身、它的包在本机型排行里的位置、评论、以及这套包在别的机器
+ * 上被验证过的覆盖。**不放** `MutableState`、协程、回调、对话框开关——草稿、回复对象、删除确认、
+ * 搜索框这些是这一屏自己的事，重新进来本该是干净的，缓存它们只会把上一回没做完的动作带回来。
+ *
+ * 四个字段捆成一份而不是四个槽位：它们来自同一次进入时的加载，分开存会出现「方案是新的、
+ * 评论还是旧一版」这种半新半旧的一屏，而界面上这几段是上下挨着一起看的。
+ */
+private data class PlanDetailSnapshot(
+    val plan: CommunityPlan,
+    val ranking: Map<String, PackageRank>,
+    val comments: List<PlanComment>,
+    val coverage: List<DeviceCoverage>,
+)
+
+/**
+ * 快照的键：带上方案编号，一个方案一格，不同方案绝不互相顶。
+ *
+ * 严格说评论里的 `liked` 是「谁在看」的答案，这一格还属于某个身份；身份没进键，是因为身份由
+ * 这台设备生成，换身份等于清数据重装、进程也跟着重来，那时这份内存缓存早就没了。
+ * 键的惯例见 [ScreenCache]：`"screen:<页面>:<身份或编号>"`。
+ */
+private fun planDetailCacheKey(planId: Long): String = "screen:plandetail:$planId"
+
+/**
  * One community plan, opened from the plans list — or from a share code somebody pasted.
  *
  * The page answers the question the list only hints at: *does removing these packages work on a
@@ -178,10 +208,14 @@ fun PlanDetailScreen(
 ) {
     val scope = rememberCoroutineScope()
 
-    var plan by remember { mutableStateOf<CommunityPlan?>(null) }
-    var ranking by remember { mutableStateOf<Map<String, PackageRank>>(emptyMap()) }
-    var comments by remember { mutableStateOf<List<PlanComment>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    // 上一次进入这一页画出来的那一份：先画它，网络回来再顶掉（见 [PlanDetailSnapshot]）。
+    val cacheKey = planDetailCacheKey(planId)
+    val cached = remember(planId) { ScreenCache.get<PlanDetailSnapshot>(cacheKey) }
+    var plan by remember(planId) { mutableStateOf(cached?.plan) }
+    var ranking by remember(planId) { mutableStateOf(cached?.ranking.orEmpty()) }
+    var comments by remember(planId) { mutableStateOf(cached?.comments.orEmpty()) }
+    // 有缓存就不挂 loading 骨架：那一屏刚才还在，再转一圈只会让人以为页面没进来。
+    var loading by remember(planId) { mutableStateOf(cached == null) }
     var draft by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var submitFailed by remember { mutableStateOf(false) }
@@ -220,7 +254,7 @@ fun PlanDetailScreen(
      * The other phones this exact package set was reboot-proven on. Loaded with the plan, so the hero
      * can say "and four other builds" instead of only naming the uploader's.
      */
-    var coverage by remember { mutableStateOf<List<DeviceCoverage>>(emptyList()) }
+    var coverage by remember(planId) { mutableStateOf(cached?.coverage.orEmpty()) }
     /**
      * The package filter over the plan's own list. A plan can carry over a hundred packages, and
      * "is `com.miui.daemon` even in this one?" is the question the list is read for — the field
@@ -262,29 +296,65 @@ fun PlanDetailScreen(
     }
 
     LaunchedEffect(planId, profile) {
-        // Keep the already loaded plan on screen while a late profile reloads it.
+        // 有缓存就先把缓存画着，只有真的什么都没有时才挂上 loading。
         if (plan == null) loading = true
         val all = repository.plansFor(profile)
-        plan = all.firstOrNull { it.id == planId }
+        // `lastError` / `lastFailureWasNetwork` 每调一次就被重写，所以每调完一个立刻读一遍。
+        val plansOk = repository.lastError == null && !repository.lastFailureWasNetwork
+        // 排行只在真拿到列表时才换：`plansFor` 在 profile 还没读到（或平台没有）时直接返回空，
+        // 那不是「这台机器没有排行」，照着它换就把缓存里的名次抹成一排「—」。
+        if (plansOk && all.isNotEmpty()) ranking = rankPackages(all).keyed()
         // Opened from a comment or a share code: the plan may belong to another model, or be one
         // this phone's list does not carry. Ask for that one plan by id before calling it missing.
-        if (plan == null) plan = repository.planById(planId)
-        ranking = rankPackages(all).keyed()
+        var freshPlan = all.firstOrNull { it.id == planId }
+        var planOk = plansOk
+        if (freshPlan == null) {
+            freshPlan = repository.planById(planId)
+            planOk = repository.lastError == null && !repository.lastFailureWasNetwork
+        }
+        // 请求成功就按回答画，哪怕回答是「这个方案不在了」（那是真的被删了，缓存不该一直把它画着）；
+        // 只有失败时才保留缓存里那一份——一次断网不该让屏幕上写着「方案不存在」，而它刚才还在。
+        if (planOk) plan = freshPlan
         // The viewer is sent with the read, not only with the tap: `liked` is a per-identity answer,
         // and without it every heart on the thread comes back empty and a like looks forgotten.
-        comments = repository.comments(planId, owner)
-        loadError = if (comments.isEmpty()) repository.lastError else null
+        val freshComments = repository.comments(planId, owner)
+        val commentsOk = repository.lastError == null && !repository.lastFailureWasNetwork
+        if (commentsOk) {
+            comments = freshComments
+            loadError = null
+        } else {
+            // 失败时保留屏幕上那份（第一次进来就是缓存）：把已经看到的评论清成「还没有评论」，
+            // 是比转圈更错的信息。没缓存时评论为空，这一句正好由评论区下面那行说出来。
+            loadError = repository.lastError
+        }
         loading = false
     }
 
-    val reloadComments: suspend () -> Unit = { comments = repository.comments(planId, owner) }
+    // 这一屏每变一次（刷新回来、投了票、改了说明、点了赞）都写回缓存，下次进来先画它。
+    // 写的就是「屏幕上现在这一份」：请求失败时它和屏幕一样没动，所以失败不会把缓存抹掉。
+    LaunchedEffect(planId, plan, ranking, comments, coverage) {
+        val current = plan ?: return@LaunchedEffect
+        ScreenCache.put(cacheKey, PlanDetailSnapshot(current, ranking, comments, coverage))
+    }
+
+    val reloadComments: suspend () -> Unit = {
+        val fresh = repository.comments(planId, owner)
+        // 失败就留着页面上（和缓存里）那份：刚发出去的那条不能因为一次断网消失。
+        if (repository.lastError == null && !repository.lastFailureWasNetwork) comments = fresh
+    }
 
     // Asked once the plan is known, because the question is about its package set. A backend that
     // predates the call answers null and the list stays empty: the page then says what it always
     // said, the uploader's own device.
     LaunchedEffect(plan?.packages) {
         val packages = plan?.packages.orEmpty()
-        coverage = if (packages.isEmpty()) emptyList() else repository.deviceCoverage(packages)
+        if (packages.isEmpty()) {
+            coverage = emptyList()
+            return@LaunchedEffect
+        }
+        val fresh = repository.deviceCoverage(packages)
+        // 失败时保留缓存里那一份：把「还有另外两台验证过」抹成「没有别的机型」是凭空的结论。
+        if (repository.lastError == null && !repository.lastFailureWasNetwork) coverage = fresh
     }
 
     val sendComment: () -> Unit = {
