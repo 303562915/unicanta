@@ -322,8 +322,12 @@ class PlanRepository(
      * found" is still a host that answered — so the check is about the route, not about the call.
      */
     suspend fun isReachable(): Boolean {
-        if (answers { client.head(baseUrl) { header("apikey", apiKey) } }) return true
-        return answers { client.get(baseUrl) { header("apikey", apiKey) } }
+        val reachable = answers { client.head(baseUrl) { header("apikey", apiKey) } } ||
+            answers { client.get(baseUrl) { header("apikey", apiKey) } }
+        // 预加载的一次探测：成了就证明这台手机现在到得了后端，没成就把链路问题记到 BackendHealth，
+        // 由主界面决定要不要提示——而不是靠"有没有 VPN 网卡"去猜。
+        if (reachable) BackendHealth.reportReachable() else BackendHealth.reportUnreachable()
+        return reachable
     }
 
     /** True when [request] came back inside [PROBE_TIMEOUT_MS]; a connection that never opens is not an answer. */
@@ -367,16 +371,19 @@ class PlanRepository(
         is Call.Ok -> {
             lastFailureWasNetwork = false
             lastError = null
+            BackendHealth.reportReachable()
             result.text
         }
         is Call.Refused -> {
             lastFailureWasNetwork = false
             lastError = result.reason
+            BackendHealth.reportReachable()
             null
         }
         Call.Unreachable -> {
             lastFailureWasNetwork = true
             lastError = null
+            BackendHealth.reportUnreachable()
             null
         }
     }
