@@ -3032,7 +3032,7 @@ private fun MentionPanel(
  * 输入框本身从 40dp 起，最多长到 120dp（约五行）之后自己滚，不再把消息区挤没。
  *
  * 表情钮拉开输入栏上方的表情面板（再点一次收起），加号和左边的四宫格一样拉开更多面板。
- * 群聊时四宫格右边多一个 @，点开是成员列表（见 [MentionPanel]）。
+ * 输入栏左边不再有 @ 键（用户要求去掉）；群成员面板 [MentionPanel] 与插入逻辑原样保留。
  */
 @Composable
 private fun ChatComposer(
@@ -3081,22 +3081,20 @@ private fun ChatComposer(
         modifier = Modifier
             .fillMaxWidth()
             .background(composerBarColor(colors))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            // 上下 4dp：四宫格放大到 44 之后栏高仍是 52，不比原来更高。
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FlBarButton(
             glyph = FlGlyphs.grid2x2,
             contentDescription = if (showMore) "收起更多" else "展开更多",
             onClick = onToggleMore,
-            size = 40.dp,
-            iconSize = 20.dp,
+            size = 44.dp,
+            iconSize = 22.dp,
             filled = false,
         )
-        // 群聊才有的 @：放在输入框左边，点开就是成员列表。
-        if (onMention != null) {
-            Spacer(Modifier.width(2.dp))
-            MentionKey(active = showMentions, onClick = onMention)
-        }
+        // 输入栏左边的 @ 不再显示（用户要求）：MentionPanel 与 onMention 都还在，
+        // 以后要恢复入口就在这里把 MentionKey 放回来。
         Spacer(Modifier.width(4.dp))
         BasicTextField(
             // TextFieldValue 版：文本和光标一起交出，从外面插字之后光标才跟得上（见 field 的注释）。
@@ -3146,8 +3144,8 @@ private fun ChatComposer(
                 glyph = FlGlyphs.voiceWave,
                 contentDescription = "语音",
                 onClick = { onInsert("（语音）") },
-                size = 36.dp,
-                iconSize = 18.dp,
+                size = 40.dp,
+                iconSize = 20.dp,
                 filled = false,
             )
         }
@@ -3156,8 +3154,8 @@ private fun ChatComposer(
             glyph = FlGlyphs.smile,
             contentDescription = if (showEmotions) "收起表情" else "表情",
             onClick = onToggleEmotions,
-            size = 36.dp,
-            iconSize = 18.dp,
+            size = 40.dp,
+            iconSize = 20.dp,
             filled = false,
         )
         Spacer(Modifier.width(4.dp))
@@ -3165,8 +3163,8 @@ private fun ChatComposer(
             glyph = FlGlyphs.addCircle,
             contentDescription = "更多",
             onClick = onToggleMore,
-            size = 36.dp,
-            iconSize = 18.dp,
+            size = 40.dp,
+            iconSize = 20.dp,
         )
     }
 }
