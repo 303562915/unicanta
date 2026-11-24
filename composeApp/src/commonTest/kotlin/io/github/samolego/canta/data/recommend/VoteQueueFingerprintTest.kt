@@ -139,6 +139,7 @@ class VoteQueueFingerprintTest {
                     app(2, 50, 2, applied = true, mine = false),
                     app(3, 60, 3, applied = true, authorId = "999", mine = null),
                 ),
+                me,
             ),
             "两条与我有关，第三条是陌生人的",
         )
