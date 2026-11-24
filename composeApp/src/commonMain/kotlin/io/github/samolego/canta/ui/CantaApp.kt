@@ -503,11 +503,15 @@ private fun CantaNavigation(
                             // 同一条消息不会连弹三次的第一层；第二层在平台那一侧——通知 id 用
                             // 会话号，同一会话的提醒互相覆盖而不是堆成一列。
                             if (conversation.unread > (before[conversation.id] ?: 0)) {
+                                val who = conversation.title
+                                    .ifBlank { conversation.peerName }
+                                    .ifBlank { "新消息" }
                                 platform.notifyChat(
                                     conversationId = conversation.id,
-                                    title = conversation.title
-                                        .ifBlank { conversation.peerName }
-                                        .ifBlank { "新消息" },
+                                    // 被点名和群里闲聊不是一回事：标题直接写「某某 @了你」，
+                                    // 正文仍是那条消息的摘要。判断在后端（last_mentions_me），
+                                    // 客户端只管照说的写。
+                                    title = if (conversation.lastMentionsMe) "$who @了你" else who,
                                     body = noticeBody(conversation.lastBody),
                                     unread = conversation.unread,
                                 )

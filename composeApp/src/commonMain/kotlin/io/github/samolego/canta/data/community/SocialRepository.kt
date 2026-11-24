@@ -115,6 +115,17 @@ data class Conversation(
      * 两个都开着时以置顶为准——人把它拎到最上面，说明现在要看它。
      */
     val folded: Boolean = false,
+    /**
+     * 这个会话里「别人 @ 我、我还没读」的条数。消息页据此在摘要前挂一个「[有人@我]」。
+     *
+     * 判据和 [unread] 完全一致（都比自己的 `last_read_at`），所以不会出现"未读 0 条却挂着 @ 提示"。
+     */
+    val unreadMentions: Int = 0,
+    /**
+     * 最后一条是不是**别人** @ 我的。后台轮询据此把通知标题写成「某某 @了你」，
+     * 而不是只报"有新消息"——被点名和群里闲聊，是两种该不该马上看的判断。
+     */
+    val lastMentionsMe: Boolean = false,
 ) {
 
     /** 群聊与会话共用一张列表，界面靠这一位决定画头像还是画群标。 */
@@ -1695,6 +1706,8 @@ class SocialRepository(
             pinned = row.flagOf("pinned") ?: false,
             muted = row.flagOf("muted") ?: false,
             folded = row.flagOf("folded") ?: false,
+            unreadMentions = row.intOf("unread_mentions"),
+            lastMentionsMe = row.flagOf("last_mentions_me") ?: false,
         )
     }
 

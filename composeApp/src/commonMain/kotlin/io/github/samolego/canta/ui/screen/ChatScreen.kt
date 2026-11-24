@@ -1038,6 +1038,24 @@ fun ChatScreen(
                                         translation = translations[message.id],
                                         // 回执只挂在自己最后一条下面：每条都挂会把整屏变成一堆小字。
                                         receipt = if (message.id == lastMine?.id) receiptText else null,
+                                        // 长按对方的头像 = 直接 @ 他；私聊里没有可 @ 的人。
+                                        onAvatarLongPress = if (grouped && message.sender != owner) {
+                                            {
+                                                mention(
+                                                    ConversationMember(
+                                                        owner = message.sender,
+                                                        name = message.label,
+                                                    ),
+                                                )
+                                                composerFocus.requestFocus()
+                                                keyboardController?.show()
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                        // 有人在这条里点了我的名：名字后面挂「@你」，不用翻正文找。
+                                        mentionsMe = message.sender != owner &&
+                                            message.mentions.contains(owner),
                                     )
                                 }
                             }
@@ -1431,17 +1449,32 @@ private fun ChatHeaderAvatar(title: String, isGroup: Boolean, onClick: (() -> Un
  * 否则两个手势会互相抢。[onClick] 为 null 时就只是一个装饰圆。
  */
 @Composable
-private fun ChatRowAvatar(label: String, onClick: (() -> Unit)? = null) {
+private fun ChatRowAvatar(
+    label: String,
+    onClick: (() -> Unit)? = null,
+    /**
+     * 长按头像：在输入框里 @ 这个人。
+     *
+     * 群里 @ 人最顺的手是「在他说的话上点住他的头像」，而不是先去左边点 @、再在一列名字里找。
+     * 放长按是因为点击已经被「看主页」占了；两个手势同一块区域，长按不会误触。
+     */
+    onLongClick: (() -> Unit)? = null,
+) {
     val scheme = MaterialTheme.colorScheme
     val circle = Modifier
         .size(32.dp)
         .clip(CircleShape)
         .background(scheme.primary.copy(alpha = 0.15f), CircleShape)
     Box(
-        modifier = if (onClick == null) {
+        modifier = if (onClick == null && onLongClick == null) {
             circle
         } else {
-            circle.clickable(onClickLabel = "看主页", onClick = onClick)
+            circle.combinedClickable(
+                onClickLabel = "看主页",
+                onLongClickLabel = "在输入框里 @ 他",
+                onClick = { onClick?.invoke() },
+                onLongClick = onLongClick,
+            )
         },
         contentAlignment = Alignment.Center,
     ) {
@@ -1522,6 +1555,10 @@ private fun ChatBubble(
     translation: String? = null,
     /** 气泡下面那行小字（自己最后一条的「已读」）；null 表示不画。 */
     receipt: String? = null,
+    /** 长按对方头像：在输入框里 @ 他。null 表示这一页不给（私聊、或者自己那一侧）。 */
+    onAvatarLongPress: (() -> Unit)? = null,
+    /** 这条消息的 @ 名单里有我：名字后面挂一个「@你」。 */
+    mentionsMe: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     // 任何一条消息长按都弹菜单：回复和转发对别人的消息同样成立，而"长按即复制"那个老手势
@@ -1562,7 +1599,12 @@ private fun ChatBubble(
         // 私聊里对方不画头像（截图上就是干净的）；群里谁发言谁有自己的一张头像，
         // 身份是 message.sender，点了进那个人的主页。
         if (!mine && showSender) {
-            ChatRowAvatar(label = message.label, onClick = onAvatarClick)
+            ChatRowAvatar(
+                label = message.label,
+                onClick = onAvatarClick,
+                // 长按头像 = 在这个人的话上直接 @ 他。只有群聊会传进来（私聊 @ 没有意义）。
+                onLongClick = onAvatarLongPress,
+            )
             Spacer(Modifier.width(8.dp))
         }
         // 头像只挂在自己这一侧：截图里对方那条是干净的（没有头像也没有昵称），
@@ -1572,14 +1614,27 @@ private fun ChatBubble(
             horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         ) {
             if (showSender) {
-                Text(
-                    text = message.label,
-                    fontSize = 9.sp,
-                    color = colors.outline,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 6.dp, bottom = 2.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = message.label,
+                        fontSize = 9.sp,
+                        color = colors.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 6.dp, bottom = 2.dp),
+                    )
+                    // 别人在群里点了我：名字后面挂一个「@你」。比整条高亮更省事，也不会让人
+                    // 把"被点名"和"刚好有人说了一句话"看混。
+                    if (mentionsMe) {
+                        Text(
+                            text = " @你",
+                            fontSize = 9.sp,
+                            color = colors.primary,
+                            maxLines = 1,
+                            modifier = Modifier.padding(bottom = 2.dp),
+                        )
+                    }
+                }
             }
             if (isImage) {
                 // 图片自己带圆角，所以外面不再套那个有底色、有内边距的气泡。

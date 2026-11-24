@@ -1552,13 +1552,26 @@ private fun ConversationRow(
                     }
                 }
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = conversation.lastBody.ifBlank { "还没有消息" },
-                    style = FlText.caption2,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 有人 @ 我时，摘要前面挂一个小标：这是这一行里唯一"要立刻看"的信息，
+                    // 只靠红点说不清是闲聊还是点名。和未读数同一个已读判据，不会自相矛盾。
+                    if (conversation.unreadMentions > 0) {
+                        Text(
+                            text = "[有人@我]",
+                            style = FlText.caption2,
+                            color = scheme.primary,
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        text = conversation.lastBody.ifBlank { "还没有消息" },
+                        style = FlText.caption2,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
             Column(
