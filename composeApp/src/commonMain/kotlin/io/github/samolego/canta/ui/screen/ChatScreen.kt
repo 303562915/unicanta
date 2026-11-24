@@ -79,6 +79,7 @@ import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.ChatMessageCache
+import io.github.samolego.canta.data.community.ChatMessageStore
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
@@ -115,6 +116,32 @@ import org.jetbrains.compose.resources.painterResource
 
 /** 单颗表情那条消息画多大：比气泡里内联的表情大得多，又没有大到占半屏。 */
 private val ChatStickerSize = 112.dp
+
+/**
+ * 「快捷表情直接发出去」那一条在本机的类型。
+ *
+ * 后端只存 `body`，`kind` 一律是 `text`（`message_send` 甚至不写这一列），所以这个标记**只活在
+ * 本机**：发送时打上、写进消息缓存，刷新合并时保住。它的意义只有一个——决定这条消息画成
+ * 大贴纸还是普通气泡；从表情面板选进草稿再发的，仍旧是后者。
+ */
+private const val StickerKind = "sticker"
+
+/**
+ * 合并两批消息，并保住本机的贴纸标记。
+ *
+ * 后端不知道 `StickerKind`，`messages_for` / `messages_after` 回来的那一条 `kind` 永远是 `text`；
+ * 不在这里补回去，快捷发的表情在第一次刷新之后就会缩回气泡里。
+ */
+private fun mergeMessages(fresh: List<ChatMessage>, current: List<ChatMessage>): List<ChatMessage> {
+    val stickerIds = current.filter { it.kind == StickerKind }.map { it.id }.toSet()
+    if (stickerIds.isEmpty()) {
+        return (fresh + current).distinctBy { it.id }.sortedBy { it.id }
+    }
+    return (fresh + current)
+        .distinctBy { it.id }
+        .sortedBy { it.id }
+        .map { if (it.id in stickerIds && it.kind == "text") it.copy(kind = StickerKind) else it }
+}
 
 /** 一个气泡最宽多少：一行字到这儿换行，免得一条长消息把整块屏幕占满。 */
 private val ChatBubbleMaxWidth = 260.dp
@@ -175,6 +202,17 @@ private const val ChatPollFallbackMs: Long = 10_000L
 
 /** 增量拉取一次最多带回多少条新消息；一次真到 50 条以上的情况，下一条轮询会接着拉。 */
 private const val ChatNewLimit = 50
+
+/**
+ * 隔多久顺带整页核对一次。
+ *
+ * 增量只问「比手上最新那条还新的」，对「对方撤回 / 编辑了一条老消息」是瞎的：那些 id 比游标旧，
+ * 永远不在 `messagesAfter` 的结果里。所以每隔这么久补一次整页拉取，把原地变化对齐。
+ * 一分钟：撤回本来就少见，一分钟兜一次够用，而平均开销从「每轮 30 条正文」降到「每轮一个空数组」。
+ *
+ * 用时间而不是轮数：轮询有两档间隔（2 秒 / 10 秒），按 30 轮算就是一分钟和五分钟两个结果。
+ */
+private const val TailFullIntervalMillis: Long = 60_000L
 
 /**
  * 草稿落盘的防抖时长。
@@ -466,6 +504,16 @@ fun ChatScreen(
     var tailId by remember { mutableStateOf<Long?>(null) }
     /** 首屏已经落到底了没有：没落过底之前不往上翻页，否则一进页面就白拉一页历史。 */
     var settled by remember { mutableStateOf(false) }
+    /**
+     * 上一次整页核对是什么时候。[refreshTail] 按**时间**决定要不要顺带整页拉一次。
+     *
+     * 为什么不是按轮数：两档轮询间隔差五倍（无实时通道 2 秒、有实时通道 10 秒），按 30 轮算就是
+     * 一分钟和五分钟两个结果——撤回这种原地变化在有推送的机器上要拖五分钟才对齐，那是肉眼可见的
+     * 回退。按时间算，两种情况下都是同一分钟。
+     *
+     * 只在协程里读写、composition 不读它，所以它变了不会引起重组；按会话重置。
+     */
+    var lastFullAt by remember(conversationId) { mutableStateOf(0L) }
     val listState = rememberLazyListState()
     /** 正在全屏看哪张图（消息体里那个图片地址）；null 表示查看器没开。 */
     var viewingImage by remember { mutableStateOf<String?>(null) }
@@ -491,7 +539,8 @@ fun ChatScreen(
         persist(draft)
     }
 
-    // 一个会话一页：进页面读最近 30 条，读完把已读位置推到现在，顺便问一次会话详情。
+    // 一个会话一页：本地画着的那一屏照旧先画，之后只补「比它更新的那几条」——本地一条都没有才整页拉。
+    // 读完把已读位置推到现在，顺便问一次会话详情。
     // 详情排在消息之后，是为了不让它的失败覆盖掉下面读的 lastError 文案。
     LaunchedEffect(conversationId, owner) {
         // 换一个会话就把面板全收掉：上一个会话开着的表情面板不该跟着过来。
@@ -505,8 +554,29 @@ fun ChatScreen(
         detail = null
         tailId = null
         settled = false
-        messages = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
+        lastFullAt = 0L
+        // 补差从哪儿往后问：手上最后一条，以及盘上记的尾巴，取小的那个。
+        // 盘上那个可能比屏幕上最后一条更新（最新几条是分享卡片 / 名片，落不了盘），按它补会把中间
+        // 那几条永远跳过；反过来说，盘上没有记录时就用手上这条，不会因为缺记录退化成整页拉。
+        val paintedTail = messages.maxOfOrNull { it.id } ?: 0L
+        val storedCursor = ChatMessageStore.latest?.cursor(conversationId) ?: 0L
+        val localCursor = if (storedCursor > 0L) minOf(paintedTail, storedCursor) else paintedTail
+        if (messages.isNotEmpty() && localCursor > 0L) {
+            // 冷启动 / 从消息页切回来：本地那一屏已经在屏幕上了，只问它之后的部分，正常就是一个 `[]`。
+            val fresh = repository.messagesAfter(owner, conversationId, localCursor, ChatNewLimit)
+            if (fresh.isNotEmpty()) {
+                // 和轮询、推送走同一个合并（[mergeMessages]）：本机的贴纸标记不能因为这一趟补差丢掉。
+                messages = mergeMessages(fresh, messages)
+            }
+        } else {
+            messages = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
+        }
         loadError = chatErrorOf(repository.lastError, repository.lastFailureWasNetwork)
+        // 把尾巴记到盘上（只前进不后退）：下一次冷启动从这里往后补，不再整页拉。单独记一遍是因为
+        // 整份落盘只在真有正文可写时才发生——一个会话最新那几条全是分享卡片时，它一条都不会写。
+        messages.maxOfOrNull { it.id }?.takeIf { id -> id > 0L }?.let { id ->
+            ChatMessageStore.latest?.putCursor(conversationId, id)
+        }
         loading = false
         repository.markRead(owner, conversationId)
         detail = repository.conversationDetail(owner, conversationId)
@@ -519,20 +589,61 @@ fun ChatScreen(
     }
 
     /**
-     * 把尾巴再拉一次并并进来。
+     * 整页拉一次最新 30 条并并进来：现在它只剩一个职责——**发现对方撤回 / 编辑了老消息**。
+     *
+     * 这类变化是原地改一条旧行的，id 比手上最新那条小，增量永远问不到；只有把这一页重新读回来
+     * 对比才看得见。所以它由 [refreshTail] 低频触发（每隔 [TailFullIntervalMillis] 一次），不再每轮都跑。
      *
      * 只并尾巴，不动已经翻出来的历史。fresh 放在前面：同一 id 以后回来的为准，别的设备撤回
      * 的消息才能在本机也变灰；最后按 id 排回正序。有实质变化才走一次已读。
-     *
-     * 轮询（没有推送的那一侧）和推送（[liveSource]）都调这一个，两条路的行为必须一模一样。
      */
-    suspend fun refreshTail() {
+    suspend fun refreshTailFull() {
         val fresh = repository.messagesFor(owner, conversationId, offset = 0, limit = ChatPageSize)
         if (fresh.isEmpty()) return
-        val merged = (fresh + messages).distinctBy { it.id }.sortedBy { it.id }
+        val merged = mergeMessages(fresh, messages)
         if (merged != messages) {
             messages = merged
             repository.markRead(owner, conversationId)
+        }
+    }
+
+    /**
+     * 只拉「比手上最新那条还新的」，正常就是一个空数组。
+     *
+     * 这是轮询的常态：没新消息时后端回 `[]`，几百字节，而不是把最近 30 条正文再搬一遍。
+     * 手上一条都没有（首屏还没回来）时增量无从下手，退回一次整页拉取当起点。
+     */
+    suspend fun refreshTailDelta() {
+        val newest = messages.maxOfOrNull { it.id } ?: 0L
+        if (newest <= 0L) {
+            refreshTailFull()
+            return
+        }
+        val fresh = repository.messagesAfter(owner, conversationId, newest, ChatNewLimit)
+        if (fresh.isEmpty()) return
+        val merged = mergeMessages(fresh, messages)
+        if (merged != messages) {
+            messages = merged
+            repository.markRead(owner, conversationId)
+        }
+    }
+
+    /**
+     * 把尾巴拉一次并并进来：常态是增量，每隔 [TailFullIntervalMillis] 顺带整页核对一次。
+     *
+     * 名字保住是有原因的：[waitForAiReply]、[refreshNew] 和兜底轮询都调它，改名要连带改一串调用点。
+     * 对外语义只有一条：**调一次一定看得见新消息**；撤回这种原地变化由定时那一趟
+     * [refreshTailFull] 兜住，最坏晚 [TailFullIntervalMillis] 被发现。
+     *
+     * 计时只看时间，不看轮数：轮询有两档间隔（2 秒 / 10 秒），按轮数算会变成"一分钟"和"五分钟"
+     * 两个答案。推送不推进这个计时——它是事件驱动的，掺进来会让整页核对忽快忽慢。
+     */
+    suspend fun refreshTail() {
+        refreshTailDelta()
+        val now = currentTimeMillis()
+        if (now - lastFullAt >= TailFullIntervalMillis) {
+            lastFullAt = now
+            refreshTailFull()
         }
     }
 
@@ -580,23 +691,11 @@ fun ChatScreen(
     /**
      * 推送来了：只问「比我手上最新那条还新的有几条」。
      *
-     * 这是最小的拉动——没新消息时后端回一个 `[]`，几百字节；有人说话才带回那几条。
-     * 整页拉（[refreshTail]）留给兜底轮询：那一条还要负责「对方撤回了一条老消息」这种
-     * 原地变化，只问新增是发现不了的。
+     * 这就是 [refreshTailDelta] 那一次请求，所以直接转给它，两条路的行为不会漂。
+     * 推送不推进整页核对的计数：撤销 / 编辑老消息本来就是轮询在兜（见 [refreshTail]）。
      */
     suspend fun refreshNew() {
-        val newest = messages.maxOfOrNull { it.id } ?: 0L
-        if (newest <= 0L) {
-            refreshTail()
-            return
-        }
-        val fresh = repository.messagesAfter(owner, conversationId, newest, ChatNewLimit)
-        if (fresh.isEmpty()) return
-        val merged = (messages + fresh).distinctBy { it.id }.sortedBy { it.id }
-        if (merged != messages) {
-            messages = merged
-            repository.markRead(owner, conversationId)
-        }
+        refreshTailDelta()
     }
 
     // 实时通道能不能用：连上了才算数。连不上（网页版没有引擎、被墙、key 不对）就退回快轮询，
@@ -615,6 +714,7 @@ fun ChatScreen(
     }
 
     // 兜底轮询：实时通道在跑时只当保险（10 秒一次），没有它就是唯一的来源（2 秒一次）。
+    // 每轮跑的都是增量（[refreshTailDelta]），只有计数满了的那一轮才会顺带整页核对（见 [refreshTail]）。
     LaunchedEffect(conversationId, owner, liveUp) {
         if (conversationId <= 0L) return@LaunchedEffect
         val interval = if (liveUp) ChatPollFallbackMs else ChatPollMs
@@ -731,7 +831,9 @@ fun ChatScreen(
                     replyTo = replyTarget?.id,
                 )
                 if (sent != null) {
-                    messages = messages + sent
+                    // 打上本机标记：这一条画成大贴纸。后端不认这个 kind，刷新合并时由
+                    // [mergeMessages] 保住它。
+                    messages = messages + sent.copy(kind = StickerKind)
                     // 发过的进「最近使用」，和面板里点过一颗是同一种记法。
                     rememberEmotionPick(emotion.name)
                     replyTarget = null
@@ -1789,10 +1891,14 @@ private fun ChatBubble(
     val shareCard = message.share
     val personCard = message.card
     val isCard = shareCard != null || personCard != null
-    // 一条消息只有一颗表情（没有别的字）：这种消息不套气泡，直接画大图。
-    // 套上气泡就是"一颗表情装在一个蓝框里"，看着像张卡片，而人发它的意思是"就回你这一颗"。
-    val soloSticker = remember(message.body) {
-        parseEmotionBody(message.body).singleOrNull() as? EmotionSpan.Sticker
+    // 只有「点输入框上面那排快捷表情直接发出去」的那一条才算贴纸（本地 kind 标记，后端不认也不校验）。
+    // 从表情面板选进草稿再发的，仍旧是普通消息：一颗表情老老实实待在气泡里，和以前一样。
+    val soloSticker = if (message.kind == StickerKind) {
+        remember(message.body) {
+            parseEmotionBody(message.body).singleOrNull() as? EmotionSpan.Sticker
+        }
+    } else {
+        null
     }
     // 卡片点了去哪儿，由上层决定；这一层只负责把"点了哪张卡"传出去。
     val cardClick: (() -> Unit)? = when {
