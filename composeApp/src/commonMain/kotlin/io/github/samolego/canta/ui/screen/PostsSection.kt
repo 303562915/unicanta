@@ -114,7 +114,7 @@ private val PostPinned = Color(0xFF2FA84F)
  * @param drafts 草稿；null 时编辑器照样能写，只是关掉就没了。
  * @param author 署名：发帖、回帖时一起发上去，只当名字显示，不当身份。
  * @param authorId 身份码：草稿按它分开，删除按钮也只在作者本人的帖子上出现。
- * @param onNavigateBack 顶栏返回。
+ * @param onNavigateBack 顶栏返回；null 表示这是底栏上的一级页面，顶栏不画返回箭头。
  */
 @Composable
 internal fun PostsScreen(
@@ -123,7 +123,7 @@ internal fun PostsScreen(
     drafts: PostDraftStore?,
     author: String,
     authorId: String,
-    onNavigateBack: () -> Unit,
+    onNavigateBack: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
@@ -467,14 +467,16 @@ internal fun PostsScreen(
             )
             platform.showMessage("已存为草稿")
         }
-        onNavigateBack()
+        onNavigateBack?.invoke()
     }
 
     Scaffold(
         topBar = {
             ScreenTopBar(
                 title = "帖子",
-                onNavigateBack = leave,
+                // 底栏一级页面不给返回箭头（null 时 ScreenTopBar 自己就不画）；
+                // 有返回的时候才把「先存草稿再走」挂上去。
+                onNavigateBack = onNavigateBack?.let { leave },
                 actions = {
                     // 编辑器开着的时候不再重复一个「写帖子」：那会让人以为能同时写两篇。
                     if (!composing) {

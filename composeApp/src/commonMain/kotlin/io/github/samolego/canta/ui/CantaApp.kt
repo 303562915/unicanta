@@ -927,7 +927,7 @@ private fun CantaNavigation(
                     drafts = deps.postDrafts,
                     author = postsAuthor,
                     authorId = postsIdentity,
-                    onNavigateBack = { navController.navigateUp() },
+                    // 底栏一级页面：不给返回箭头，离开靠点底栏别的格。
                 )
             }
             composable(route = Screen.Logs.route) {
@@ -1758,6 +1758,8 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Rules.route,
     Screen.Tweaks.route,
     Screen.Recommendations.route,
+    // 帖子是底栏上的一格，跟上面几页一样：点进来底栏还在，顶栏也不画返回箭头。
+    Screen.Posts.route,
     Screen.Messages.route,
     Screen.Mine.route,
     Screen.Presets.route,
