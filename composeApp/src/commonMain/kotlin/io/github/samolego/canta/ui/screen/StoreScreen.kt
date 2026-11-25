@@ -118,20 +118,17 @@ internal fun StoreScreen(
     ScrollToTopEffect(listState)
 
     var account by remember { mutableStateOf<PointsAccount?>(null) }
-    var balance by remember { mutableStateOf(0L) }
-    var offers by remember { mutableStateOf<List<PointOffer>>(emptyList()) }
-    var orders by remember { mutableStateOf<List<PointOrder>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    // 这一屏上一次画出来的那一份（见 [ScreenCache]）：身份一到位就先摆上去，不等网络那一次往返。
-    // 写在这里而不是 state 初始值里，是因为第一帧 `who` 还是空串，那时按身份查缓存必然查不到。
-    LaunchedEffect(who) {
-        if (who.isEmpty() || offers.isNotEmpty()) return@LaunchedEffect
-        val cached = ScreenCache.get<StoreSnapshot>(storeCacheKey(who)) ?: return@LaunchedEffect
-        balance = cached.balance
-        offers = cached.offers
-        orders = cached.orders
-        loading = false
+    // 上一屏画出来的那一份（见 [ScreenCache]）：**在 state 初始化时就摆上**，和方案详情、消息页一样。
+    // 以前是"先 `loading = true`，再用 `LaunchedEffect(who)` 补缓存"，那一帧的转圈是躲不掉的：
+    // 缓存明明在内存里，第一帧还是画了 `CircularProgressIndicator`，身份晚到一点就多转几百毫秒。
+    val cached = remember(who) {
+        if (who.isEmpty()) null else ScreenCache.get<StoreSnapshot>(storeCacheKey(who))
     }
+    var balance by remember(who) { mutableStateOf(cached?.balance ?: 0L) }
+    var offers by remember(who) { mutableStateOf(cached?.offers.orEmpty()) }
+    var orders by remember(who) { mutableStateOf(cached?.orders.orEmpty()) }
+    // 有缓存就不挂 loading：那一屏刚才还在，再转一圈只会让人以为页面没进来。
+    var loading by remember(who) { mutableStateOf(cached == null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
     /** 正在进行的那一件事：`checkin` / `offer:3`。 */
@@ -162,6 +159,8 @@ internal fun StoreScreen(
             loading = false
             return@LaunchedEffect
         }
+        // 身份还没认出来就先去请求，只会拿一个空 `who` 换回一份空货架，白跑一趟。
+        if (who.isEmpty()) return@LaunchedEffect
         if (offers.isEmpty()) loading = true
         account = repo.pointsAccount(who) ?: account
         repo.pointShelf(who)?.let { shelf ->
@@ -171,7 +170,9 @@ internal fun StoreScreen(
             if (merged !== offers) offers = merged
             error = null
         }
-        orders = repo.myPointOrders(who)
+        // 订单那趟挂了给的是空列表：照着画就等于因为一次断网把「我兑换的」清空，
+        // 缓存里那份也白留了，所以只在后端真答了的时候替换。
+        if (repository.lastError == null) orders = repo.myPointOrders(who)
         loading = false
         // 存回本地：下次进来先画这一份，再等网络顶上去。
         // 空货架不写：一次失败/空响应不该把已经看到的商品从本地抹掉。
