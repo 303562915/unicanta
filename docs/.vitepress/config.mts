@@ -106,6 +106,7 @@ export default defineConfig({
           { text: "Features", link: "/features" },
           { text: "Presets", link: "/presets" },
           { text: "F-Droid", link: "/fdroid" },
+          { text: "Backend incident (2026-11)", link: "/backend-incident-2026-11" },
         ],
       },
     ],
