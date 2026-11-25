@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +30,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -87,6 +96,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
+import kotlin.math.abs
 
 /** 一页拉多少条。后端把 `p_limit` 夹在 1..50，这里取一屏够看的数。 */
 private const val POSTS_PAGE = 20
@@ -229,7 +239,6 @@ internal fun PostsScreen(
     // ---- 列表筛选 ----
     var board by remember { mutableStateOf(PostBoard.Latest) }
     var categoryPick by remember { mutableStateOf("") }
-    var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
     /** 盘上这个身份的草稿，最近改过的在前。首帧同步读一次（`read()` 是同步的）。 */
@@ -698,11 +707,11 @@ internal fun PostsScreen(
                     // 有返回的时候才把「先存草稿再走」挂上去。
                     onNavigateBack = onNavigateBack?.let { leave },
                     actions = {
-                        // 编辑器开着的时候不再重复一个「写帖子」：那会让人以为能同时写两篇。
-                        if (!searchOpen) {
-                            TextButton(onClick = { searchOpen = true }) { Text("搜索") }
+                        // 搜索框常显在列表顶上（胶囊那一条），顶栏不再放"搜索"按钮。
+                        // 编辑器开着的时候也不重复一个「写帖子」：那会让人以为能同时写两篇。
+                        if (!composing) {
+                            TextButton(onClick = { openEditor(null) }) { Text("写帖子") }
                         }
-                        TextButton(onClick = { openEditor(null) }) { Text("写帖子") }
                     },
                 )
             }
@@ -789,7 +798,6 @@ internal fun PostsScreen(
                 board = board,
                 category = categoryPick,
                 query = query,
-                searchOpen = searchOpen,
                 authorId = authorId,
                 selfName = author,
                 canWrite = canWrite,
@@ -815,10 +823,6 @@ internal fun PostsScreen(
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
                 onQueryChange = { query = it },
-                onCloseSearch = {
-                    searchOpen = false
-                    query = ""
-                },
                 onRefresh = {
                     if (!refreshing) {
                         refreshing = true
@@ -880,7 +884,6 @@ private fun PostListPane(
     board: PostBoard,
     category: String,
     query: String,
-    searchOpen: Boolean,
     authorId: String,
     /** 我自己的署名（未改名时会是一串装机码，用来判断要不要提示去改名）。 */
     selfName: String,
@@ -899,7 +902,6 @@ private fun PostListPane(
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
     onQueryChange: (String) -> Unit,
-    onCloseSearch: () -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onOpen: (CommunityPost) -> Unit,
@@ -926,22 +928,45 @@ private fun PostListPane(
             state = listState,
             contentPadding = PaddingValues(bottom = 96.dp),
         ) {
-            if (searchOpen) {
-                item(key = "search") {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 10.dp),
-                        singleLine = true,
-                        label = { Text("搜标题或摘要") },
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        trailingIcon = {
-                            TextButton(onClick = onCloseSearch) { Text("收起") }
-                        },
-                    )
+            // 胶囊搜索框：常显，不占一个"点搜索才出现"的状态（截图里它一直在最上面）。
+            // 圆角 50%、底色是比页面浅一层的 surfaceVariant、边框全透明 —— 看起来是一根软胶囊。
+            item(key = "search") {
+                val searchColors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedContainerColor = scheme.surfaceVariant.copy(alpha = 0.55f),
+                    focusedContainerColor = scheme.surfaceVariant.copy(alpha = 0.75f),
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                    singleLine = true,
+                    shape = RoundedCornerShape(50),
+                    placeholder = {
+                        Text("搜索话题…", style = MaterialTheme.typography.bodySmall)
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                            tint = scheme.outline,
+                        )
+                    },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    colors = searchColors,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                )
+            }
+
+            // 「↑ 查看 N 个新的或更新的话题」：只有真的有未读时才出现，点一下重拉一遍。
+            val freshCount = if (board == PostBoard.Latest) shown.count { unreadOf(it) } else 0
+            if (freshCount > 0) {
+                item(key = "new-topics") {
+                    FreshTopicsBanner(count = freshCount, onClick = onRefresh)
                 }
             }
 
@@ -961,7 +986,7 @@ private fun PostListPane(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1017,6 +1042,34 @@ private fun PostListPane(
                 }
             }
 
+            // 置顶话题单独成一组（截图里顶上那块「置顶话题 · 3」）：置顶的老帖混在时间序里会把
+            // 新帖挤下去，分组后既看得见又不挡路。默认展开、点一下就收起。
+            val pinnedShown = shown.filter { it.pinned }
+            val normalShown = shown.filterNot { it.pinned }
+            var pinnedOpen by remember { mutableStateOf(true) }
+
+            if (pinnedShown.isNotEmpty()) {
+                item(key = "pinned-head") {
+                    PinnedTopicsHeader(
+                        count = pinnedShown.size,
+                        open = pinnedOpen,
+                        onToggle = { pinnedOpen = !pinnedOpen },
+                    )
+                }
+                if (pinnedOpen) {
+                    items(pinnedShown, key = { "pin-${it.id}" }) { post ->
+                        PostCard(
+                            post = post,
+                            mine = authorId.isNotBlank() && post.authorId == authorId,
+                            unread = unreadOf(post),
+                            saved = savedOf(post),
+                            onClick = { onOpen(post) },
+                            onLongClick = { onLongPress(post) },
+                        )
+                    }
+                }
+            }
+
             item(key = "posts-head") {
                 PostSectionHeader(
                     label = when {
@@ -1025,7 +1078,7 @@ private fun PostListPane(
                         category.isNotBlank() -> category
                         else -> "帖子"
                     },
-                    count = shown.size,
+                    count = normalShown.size,
                 )
             }
 
@@ -1069,7 +1122,7 @@ private fun PostListPane(
                 }
             }
 
-            items(shown, key = { "post-${it.id}" }) { post ->
+            items(normalShown, key = { "post-${it.id}" }) { post ->
                 PostCard(
                     post = post,
                     mine = authorId.isNotBlank() && post.authorId == authorId,
@@ -1115,6 +1168,15 @@ private fun PostListPane(
  *
  * [unread] 是"没看过 / 有新回复"：标题左边一个实心点，扫列表时先认它。
  */
+/**
+ * 列表上的一张帖子卡片，版式照 fluxdo（Discourse 客户端）的话题卡：标题独占第一行，
+ * 作者行（小头像 + 名字 + 右侧时间）第二行，分类与标签 + 统计第三行。
+ *
+ * 标题为什么独占一行：扫列表时先读的永远是标题，头像/元信息都该排在它后面；把它们挤在同一行
+ * 会让标题只剩六七个字，中文长标题一眼看不全。
+ *
+ * [unread] 是"没看过 / 有新回复"，画在标题行最右端：位置固定，扫一列时不用左右找。
+ */
 @Composable
 private fun PostCard(
     post: CommunityPost,
@@ -1125,11 +1187,13 @@ private fun PostCard(
     onLongClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Row(
+    val stamp = relativeStamp(post.createdAt)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             // 长按 = 收藏 / 取消收藏：列表上最常用的两个动作（看、收）各占一种手势，不必先进详情。
             .combinedClickable(
@@ -1139,158 +1203,167 @@ private fun PostCard(
                 onClick = onClick,
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.Top,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        PostAvatar(
-            name = post.author.ifBlank { "匿" },
-            seed = post.authorId.ifEmpty { post.author },
-            size = 38.dp,
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (unread) {
-                    // 未读 / 有新回复：一个实心点。比写"未读"两个字省地方，也更容易一眼扫到。
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .background(scheme.primary, CircleShape),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                }
-                if (post.pinned) {
-                    FlGlyphIcon(
-                        glyph = FlGlyphs.pin,
-                        size = 13.dp,
-                        tint = PostPinned,
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                if (post.locked) {
-                    FlGlyphIcon(
-                        glyph = FlGlyphs.lock,
-                        size = 13.dp,
-                        tint = scheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                Text(
-                    text = post.title.ifBlank { "（无标题）" },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+        Row(verticalAlignment = Alignment.Top) {
+            if (post.pinned) {
+                FlGlyphIcon(glyph = FlGlyphs.pin, size = 13.dp, tint = PostPinned)
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            if (post.locked) {
+                FlGlyphIcon(glyph = FlGlyphs.lock, size = 13.dp, tint = scheme.outline)
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = post.title.ifBlank { "（无标题）" },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (unread) {
+                Spacer(modifier = Modifier.width(6.dp))
+                // 未读 / 有新回复：一个实心点。比写"未读"两个字省地方，也更容易一眼扫到。
+                Box(
+                    modifier = Modifier
+                        .padding(top = 5.dp)
+                        .size(7.dp)
+                        .background(scheme.primary, CircleShape),
                 )
             }
-            // 分类 + 标签紧贴标题下面：扫列表的人是按"这帖属于哪一类"挑，而不是按摘要第一句。
-            PostMetaChips(category = post.category, tags = post.tags, maxTags = 2)
-            if (post.excerpt.isNotBlank()) {
-                Text(
-                    text = post.excerpt,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PostAvatar(
+                name = post.author.ifBlank { "匿" },
+                seed = post.authorId.ifEmpty { post.author },
+                size = 22.dp,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            // 名字走 AuthorLabel：没改过名的人显示成占位条 + 红点，改过的显示原名。
+            AuthorLabel(
+                name = post.author.ifBlank { "匿名" },
+                style = MaterialTheme.typography.labelLarge,
+                color = scheme.onSurface,
+                maxLines = 1,
+            )
+            if (mine) {
+                Spacer(modifier = Modifier.width(5.dp))
+                PostBadge(text = "我", color = scheme.primary)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // 名字走 AuthorLabel：没改过名的人显示成马赛克 + 红点，改过的显示原名。
-                AuthorLabel(
-                    name = post.author.ifBlank { "匿名" },
+            if (saved) {
+                Spacer(modifier = Modifier.width(5.dp))
+                // 底色是 secondary，前景就用它的 on 色：深色主题下白字压在浅紫上读不清。
+                PostBadge(text = "收藏", color = scheme.secondary, foreground = scheme.onSecondary)
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            if (stamp.isNotBlank()) {
+                Text(
+                    text = stamp,
                     style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
+                    color = scheme.outline,
                     maxLines = 1,
                 )
-                val stamp = relativeStamp(post.createdAt)
-                if (stamp.isNotBlank()) {
-                    Text(
-                        text = " · $stamp",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                PostStat(count = post.comments, label = "回复", mine = false)
-                Spacer(modifier = Modifier.width(8.dp))
-                PostStat(count = post.likes, label = "赞", mine = post.mineLike)
-                if (mine) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    PostBadge(text = "我的", color = scheme.primary)
-                }
-                if (saved) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    // 底色是 secondary，前景就用它的 on 色：深色主题下白字压在浅紫上读不清。
-                    PostBadge(text = "收藏", color = scheme.secondary, foreground = scheme.onSecondary)
-                }
             }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PostMetaChips(
+                category = post.category,
+                tags = post.tags,
+                maxTags = 2,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            PostMetric(glyph = Icons.Outlined.FavoriteBorder, count = post.likes, active = post.mineLike)
+            Spacer(modifier = Modifier.width(8.dp))
+            // 回复数用主色：一列里它是最想让人点进去的那个数（截图里它是橙的）。
+            PostMetric(glyph = Icons.Outlined.ChatBubbleOutline, count = post.comments, active = true)
         }
     }
 }
 
 /**
- * 首屏占位卡片：一块头像、三条长短不一的灰条，和真卡片的骨架一样。
+ * 卡片右下角的一个统计：一个小图标 + 数字。
+ *
+ * 不用 [FlGlyphIcon]：那套是 FlClash 的线框图标，没有爱心和气泡；这里要的是 Discourse 那两个
+ * 一眼认得出的形状，所以用 Material 的 outlined 版，颜色跟着主题走。
+ */
+@Composable
+private fun PostMetric(glyph: ImageVector, count: Int, active: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = glyph,
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = if (active) scheme.primary else scheme.outline,
+        )
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (active) scheme.primary else scheme.outline,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * 首屏占位卡片：三条长短不一的灰条，形状与真卡片一样（标题两行 → 作者行 → 分类行）。
  *
  * 目的是让"正在拉"这件事有个形状：转圈看不出下面会出现什么，灰卡看得出是一列帖子。
  */
 @Composable
 private fun PostSkeletonCard() {
     val scheme = MaterialTheme.colorScheme
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.Top,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(scheme.surfaceVariant),
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            SkeletonBar(widthFraction = 0.72f)
-            SkeletonBar(widthFraction = 1f)
-            SkeletonBar(widthFraction = 0.45f)
+        SkeletonBar(widthFraction = 0.86f)
+        SkeletonBar(widthFraction = 0.52f)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(scheme.surfaceVariant),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            SkeletonBar(widthFraction = 0.28f, align = false)
         }
+        SkeletonBar(widthFraction = 0.4f)
     }
 }
 
-/** 骨架里的一条灰条。 */
+/**
+ * 骨架里的一条灰条。
+ *
+ * [align] 为 true 时吃满一行（`fillMaxWidth(fraction)`），为 false 时按内容宽自己量——
+ * 放在 Row 里那种位置不能用 fillMaxWidth，否则它会把整行撑满、把邻居挤出去。
+ */
 @Composable
-private fun SkeletonBar(widthFraction: Float) {
+private fun SkeletonBar(widthFraction: Float, align: Boolean = true) {
+    val base = Modifier
+        .height(10.dp)
+        .clip(RoundedCornerShape(50))
+        .background(MaterialTheme.colorScheme.surfaceVariant)
     Box(
-        modifier = Modifier
-            .fillMaxWidth(widthFraction)
-            .height(10.dp)
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = if (align) base.fillMaxWidth(widthFraction) else base.width(56.dp),
     )
 }
 
 /** 元信息里的一个数：大于零才算"有"，零只画一个灰色 0，不抢注意力。 */
 @Composable
-private fun PostStat(count: Int, label: String, mine: Boolean) {
-    val scheme = MaterialTheme.colorScheme
-    Text(
-        text = "$count $label",
-        style = MaterialTheme.typography.labelSmall,
-        color = if (mine && count > 0) scheme.primary else scheme.onSurfaceVariant,
-        maxLines = 1,
-    )
-}
 
 /**
  * 详情底部「相关帖子」的一行：标题 + 一行元信息，点它换到那一条。
@@ -1303,6 +1376,7 @@ private fun RelatedPostRow(post: CommunityPost, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 12.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             .clickable(role = Role.Button, onClick = onClick)
@@ -1420,9 +1494,18 @@ private fun PostThreadPane(
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 state = listState,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
+                contentPadding = PaddingValues(bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // 顶上那块「标题 + 标签 + 元信息 + 参与者」：discourse 的话题页第一屏就是它，
+                // 楼层从它下面开始数。
+                item(key = "thread-header") {
+                    ThreadHeader(
+                        post = shown,
+                        comments = comments,
+                    )
+                }
+
                 item(key = "op") {
                     PostFloorCard(
                         floorLabel = "楼主",
@@ -1536,6 +1619,191 @@ private fun PostThreadPane(
     }
 
 /**
+ * 楼层卡片外面那一圈边距：详情页的正文块统一用它，header 也用它，这样左边缘是一条直线。
+ *
+ * [PostFloorCard] 自己不再加左右边距：它被放在 LazyColumn 里，边距由内容区的 contentPadding
+ * 统一给，避免"卡片套边距"两处相加。
+ */
+@Composable
+private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
+    val scheme = MaterialTheme.colorScheme
+    // 参与者：从回帖里按作者去重，取最近出现的 5 个（discourse 那几个小圆就是干这个的）。
+    val participants = remember(comments) {
+        comments.asReversed().map { it.authorId.ifEmpty { it.author } }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(5)
+            .map { person ->
+                val source = comments.lastOrNull { it.authorId.ifEmpty { it.author } == person }
+                person to (source?.author.orEmpty())
+            }
+    }
+    // 阅读时长：按正文字数估，中文一分钟约 400 字。没有正文时按回复数估。
+    val readMinutes = remember(post.body, comments.size) {
+        val chars = post.body.length + comments.sumOf { it.body.length }
+        (chars / 400).coerceIn(1, 60)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(top = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = post.title.ifBlank { "（无标题）" },
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onSurface,
+        )
+
+        // 分类 + 标签：discourse 那种一排水洗标签。分类带自己那一小块颜色。
+        if (post.category.isNotBlank() || post.tags.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (post.category.isNotBlank()) {
+                    CategoryPill(category = post.category)
+                }
+                post.tags.forEach { tag -> TagPill(tag = tag) }
+            }
+        }
+
+        // 元信息：回复 / 赞 / 时间。三件事挤一行，用中点分开——比三行小字省地方。
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ThreadMeta(
+                glyph = Icons.Outlined.ChatBubbleOutline,
+                text = "${post.comments} 回复",
+                tint = scheme.onSurfaceVariant,
+            )
+            ThreadMetaDivider()
+            ThreadMeta(
+                glyph = Icons.Outlined.FavoriteBorder,
+                text = "${post.likes} 赞",
+                tint = if (post.mineLike) scheme.primary else scheme.onSurfaceVariant,
+            )
+            val stamp = relativeStamp(post.createdAt)
+            if (stamp.isNotBlank()) {
+                ThreadMetaDivider()
+                Text(
+                    text = stamp,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
+
+        // 参与者：几个小头像叠在一起，后面写「N 参与者」。没回帖的人不画这一行。
+        if (participants.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                participants.forEachIndexed { index, (seed, name) ->
+                    // 叠压：第二个往后错开 14dp，最后一个压在最上面，看起来是一摞。
+                    Box(modifier = Modifier.offset(x = (-(index * 8)).dp)) {
+                        PostAvatar(
+                            name = name.ifBlank { "匿" },
+                            seed = seed,
+                            size = 20.dp,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "${participants.size.coerceAtLeast(1)} 参与者",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "$readMinutes 分钟阅读",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.outline,
+                )
+            }
+        }
+
+        HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+    }
+}
+
+/** 元信息里的一个小图标 + 一句话。 */
+@Composable
+private fun ThreadMeta(glyph: ImageVector, text: String, tint: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = glyph,
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = tint,
+        )
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            maxLines = 1,
+        )
+    }
+}
+
+/** 元信息之间的那个中点分隔。 */
+@Composable
+private fun ThreadMetaDivider() {
+    Text(
+        text = "·",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.padding(horizontal = 6.dp),
+    )
+}
+
+/** 分类标签：一小块颜色 + 分类名，浅底圆角。 */
+@Composable
+private fun CategoryPill(category: String) {
+    val color = categoryColorOf(category)
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.14f))
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(7.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(color),
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = category,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            maxLines = 1,
+        )
+    }
+}
+
+/** 标签：灰底圆角，前面一个 #。 */
+@Composable
+private fun TagPill(tag: String) {
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        text = "#$tag",
+        style = MaterialTheme.typography.labelSmall,
+        color = scheme.onSurfaceVariant,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(scheme.surfaceVariant.copy(alpha = 0.6f))
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+    )
+}
+
+/**
  * 一层楼：左边头像，右边作者、楼层号、时间与正文，底下一行动作。
  *
  * [floorLabel] 是"楼主"或者 "#3" —— 楼层号让"第几层"这件事一眼对得上，也是引用回复的抓手。
@@ -1554,12 +1822,15 @@ private fun PostFloorCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // 详情页的 LazyColumn 不再给左右 contentPadding（header 要占满整行），所以卡片
+            // 自己留 12dp：和列表页的卡片、header 是同一条左边缘。
+            .padding(horizontal = 12.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        PostAvatar(name = author.ifBlank { "匿" }, seed = authorSeed, size = 34.dp)
+        PostAvatar(name = author.ifBlank { "匿" }, seed = authorSeed, size = 36.dp)
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1920,37 +2191,65 @@ private fun PostMetaChips(
     val shown = tags.take(maxTags)
     val hidden = tags.size - shown.size
     Row(
-        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        modifier = modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (category.isNotBlank()) {
-            Text(
-                text = category,
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.primary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            )
+            // 分类：一个小色块 + 名字（Discourse 的样子）。色块让"这帖属于哪一类"变成一眼可见的
+            // 颜色，而不是要读一遍中文；同一个分类永远同一个颜色（按名字哈希）。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(categoryColorOf(category)),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = category,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
         shown.forEach { tag ->
             Text(
                 text = "#$tag",
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
+                color = scheme.outline,
+                maxLines = 1,
             )
         }
         if (hidden > 0) {
             Text(
                 text = "+$hidden",
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
+                color = scheme.outline,
+                maxLines = 1,
             )
         }
     }
 }
+
+/**
+ * 分类的颜色：按名字哈希从一组固定色里挑。
+ *
+ * 固定色板而不是主题色：分类是个**标签**，颜色要能跨主题、跨页面认出同一个（换深色模式不该
+ * 从绿变紫）。这套色取自 Discourse 的分类徽章。
+ */
+private val CATEGORY_COLORS = listOf(
+    Color(0xFF25A6E8), // 公告 / 蓝
+    Color(0xFFE8543F), // 重要 / 红
+    Color(0xFF2E9E5B), // 分享 / 绿
+    Color(0xFFE8A33F), // 资源 / 橙
+    Color(0xFF8E6FE8), // 闲聊 / 紫
+    Color(0xFF3FA9A0), // 求助 / 青
+)
+
+private fun categoryColorOf(category: String): Color =
+    CATEGORY_COLORS[abs(category.hashCode()) % CATEGORY_COLORS.size]
 
 /** 「草稿 N 篇 · 继续编辑」那一行：点它接着写最新那篇。 */
 @Composable
@@ -1963,7 +2262,7 @@ private fun DraftBanner(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp)
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             .clickable(role = Role.Button, onClick = onContinue)
@@ -2005,7 +2304,7 @@ private fun DraftRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
+            .padding(start = 12.dp, end = 12.dp, top = 6.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             .clickable(role = Role.Button, onClick = onClick)
@@ -2045,21 +2344,91 @@ private fun DraftRow(
 @Composable
 private fun PostSectionHeader(label: String, count: Int? = null) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
         )
         if (count != null) {
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = count.toString(),
+                text = "· $count",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * 「置顶话题 · N」那一行（可折叠）。
+ *
+ * 一个浅底圆角块加右侧一个箭头：展开时箭头朝下，收起时朝右。置顶不多，所以不做动画，
+ * 点一下立刻变——折叠动画在这类「一行」上只会让人等。
+ */
+@Composable
+private fun PinnedTopicsHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(top = 12.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(scheme.surfaceVariant.copy(alpha = 0.45f))
+            .clickable(role = Role.Button, onClick = onToggle)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "置顶话题",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.onSurface,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "· $count",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        FlGlyphIcon(
+            glyph = if (open) FlGlyphs.chevronDown else FlGlyphs.chevronForward,
+            size = 16.dp,
+            tint = scheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * 「↑ 查看 N 个新的或更新的话题」：一块居中胶囊，点一下重新拉列表。
+ *
+ * 只在「最新」这一栏出现：热门/收藏/我的这三栏不是"新到了什么"的语境，摆这条会自相矛盾。
+ */
+@Composable
+private fun FreshTopicsBanner(count: Int, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(scheme.primary.copy(alpha = 0.12f))
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "↑ 查看 $count 个新的或更新的话题",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.primary,
             )
         }
     }
@@ -2077,7 +2446,7 @@ private fun AnonymousHintBanner() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp)
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -2103,7 +2472,7 @@ private fun PostNote(text: String, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
     )
 }
 
