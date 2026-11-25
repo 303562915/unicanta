@@ -10,13 +10,22 @@ name: 🩺 Backend watchdog
 #   2. 调管理 API 重启项目，然后每 20 秒探一次，直到 ACTIVE_HEALTHY 且查询能过
 #   3. 往钉钉发一条：自动恢复完成 / 需要人工处理
 #
-# 粒度说明：GitHub 的定时任务最小 5 分钟，实际还有排队延迟，所以「最多 10 分钟发现」，
-# 不是秒级。要秒级只能上外部监控（UptimeRobot 之类打 REST 端点）。
+# 粒度说明，以及 2026-11-25 的教训（重要）：
+#
+#   这个 job 在 11-25 凌晨那次 4 小时故障里**一次都没被调度**——23:34Z 跑完最后一次，
+#   之后近 5 小时没有任何 run（`gh run list -w backend-watchdog.yml` 可查）。
+#   GitHub 官方对 schedule 的说明里有两条正好命中：
+#     * 高峰期（尤其整点）会延迟，负载够高时**队列里的 job 会被直接丢掉**；
+#     * 去掉 5 的倍数这类高频写法容易被削峰。
+#
+#   所以：**GitHub cron 不能当唯一的可靠性保障**。这里改成每 20 分钟（避开整点）、
+#   探测超时收紧到 15 秒（对「慢」更敏感），但真相是——它只能尽力而为。
+#   故障真的不能再发生，只能靠实例本身的 IO 基线（见 README/事故记录：Micro 档 500 IOPS）。
 
 on:
   schedule:
-    # 每 10 分钟（UTC）：GitHub 的 cron 会被延迟，实际间隔通常 10–20 分钟
-    - cron: '*/10 * * * *'
+    # 每 20 分钟，避开整点（整点是 GitHub 负载最高的时候，最容易被丢）
+    - cron: '7,27,47 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -35,26 +44,35 @@ jobs:
         id: probe
         run: |
           set -uo pipefail
-          for i in 1 2 3; do
-            code=$(curl -sS -m 25 -o /tmp/q.json -w '%{http_code}' -X POST \
+          # 超时 15 秒（不是 25）：这台实例在故障期就是「能连上但每条查询等 8 秒以上超时」，
+          # 放宽超时只会让探测自己也被拖住，反而看不出问题。
+          for i in 1 2 3 4; do
+            t0=$(date +%s)
+            code=$(curl -sS -m 15 -o /tmp/q.json -w '%{http_code}' -X POST \
               "https://api.supabase.com/v1/projects/$REF/database/query" \
               -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
               -d '{"query":"select 1 as ok"}' || echo 000)
+            dur=$(( $(date +%s) - t0 ))
             if [ "$code" = "200" ] || [ "$code" = "201" ]; then
-              echo "第 $i 次探测：OK (HTTP $code)"
-              echo "state=ok" >> "$GITHUB_OUTPUT"
+              echo "第 $i 次探测：OK (HTTP $code, ${dur}s)"
+              # 单条 select 1 都要 10 秒以上，说明连接池已经在被慢查询拖住，没必要等它彻底挂。
+              if [ "$dur" -ge 10 ]; then
+                echo "state=slow" >> "$GITHUB_OUTPUT"
+              else
+                echo "state=ok" >> "$GITHUB_OUTPUT"
+              fi
               exit 0
             fi
-            echo "第 $i 次探测：HTTP $code — $(head -c 200 /tmp/q.json 2>/dev/null)"
-            sleep 10
+            echo "第 $i 次探测：HTTP $code (${dur}s) — $(head -c 200 /tmp/q.json 2>/dev/null)"
+            sleep 8
           done
           echo "state=down" >> "$GITHUB_OUTPUT"
-          echo "### 🚨 数据库连续 3 次探测失败 ($(date -u +%FT%TZ))" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 🚨 数据库连续 4 次探测失败 ($(date -u +%FT%TZ))" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Restart project and wait for recovery
         id: restart
-        if: steps.probe.outputs.state == 'down'
+        if: steps.probe.outputs.state == 'down' || steps.probe.outputs.state == 'slow'
         run: |
           set -uo pipefail
           start=$(date +%s)
@@ -118,7 +136,7 @@ jobs:
         run: |
           set -uo pipefail
           stamp=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
-          # 标题里必须带 UniCanta：仓库这个钉钉机器人配了自定义关键词，不含关键词的消息会被它丢掉（errcode 310000）。
+          # 正文末尾必须带机器人配的关键词 `rr`，否则钉钉按 errcode 310000 丢弃。
           title="unicanta 后端存储变慢（还没挂，提前预警）"
           payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg w "${WORST:-?}" \
             '{msgtype:"markdown",markdown:{title:$t,text:("### ⚠️ "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n- checkpoint 最慢："+$w+"s（正常 < 1s，> 5s 就开始拖慢查询）\n- 建议：现在去 Dashboard 看实例状态；继续恶化会变成连接池耗尽、全站 5xx\n\nrr")}}')
@@ -128,7 +146,7 @@ jobs:
           echo "已尝试发送慢盘预警"
 
       - name: Notify DingTalk
-        if: always() && steps.probe.outputs.state == 'down'
+        if: always() && (steps.probe.outputs.state == 'down' || steps.probe.outputs.state == 'slow')
         env:
           RECOVERED: ${{ steps.restart.outputs.recovered }}
           TOOK: ${{ steps.restart.outputs.took }}
@@ -143,7 +161,7 @@ jobs:
             line="- 处理：自动重启后 8 分钟内仍未恢复"
           fi
           payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg l "$line" \
-            '{msgtype:"markdown",markdown:{title:$t,text:("### "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n"+$l+"\n- 现象：数据库连续 3 次探测失败（App 会看到所有社区页面空着）\n\nrr")}}')
+            '{msgtype:"markdown",markdown:{title:$t,text:("### "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n"+$l+"\n- 现象：数据库连续 4 次探测失败，或单条 select 1 已慢到 10 秒以上（App 会看到所有社区页面空着）\n\nrr")}}')
           resp=$(curl -sS -m 20 -X POST "$DING" -H 'Content-Type: application/json' -d "$payload" || echo '{"errcode":"curl-failed"}')
           echo "钉钉返回：$resp"
           echo "$resp" | grep -q '"errcode":0' || echo "::warning::钉钉没有接受这条消息（检查机器人关键词/签名）"
