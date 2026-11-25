@@ -666,19 +666,21 @@ fun CommentRow(
             // *whose* comments they are. Only the text below them goes away, which is what makes a
             // folded row one readable line instead of a blank.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = comment.author.ifEmpty { "匿名" },
+                // 名字走 AuthorLabel：还没改名字的人是马赛克 + 红点，改过的人照常显示。
+                AuthorLabel(
+                    name = comment.author.ifEmpty { "匿名" },
                     // The name is the one step below the comment itself: grey, and quiet enough that
                     // the text under it is what the eye lands on.
-                    fontSize = NAME_SIZE,
                     // The line height is given, not inherited: the ambient body style would leave a
                     // 20sp-tall line box around 11sp type, which is what made the badges beside it
                     // look oversized.
-                    lineHeight = NAME_LINE,
-                    fontWeight = FontWeight.Medium,
+                    style = TextStyle(
+                        fontSize = NAME_SIZE,
+                        lineHeight = NAME_LINE,
+                        fontWeight = FontWeight.Medium,
+                    ),
                     color = colors.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 if (byAuthor) {
                     Spacer(Modifier.width(4.dp))

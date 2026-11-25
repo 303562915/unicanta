@@ -65,11 +65,14 @@ import io.github.samolego.canta.data.community.PostDraftStore
 import io.github.samolego.canta.data.community.PostReadStore
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.PostThread
+import io.github.samolego.canta.ui.component.AuthorLabel
+import io.github.samolego.canta.ui.component.AnonymousDot
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.MiniMarkdown
+import io.github.samolego.canta.ui.component.PostAvatar
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
-import io.github.samolego.canta.ui.component.PostAvatar
+import io.github.samolego.canta.ui.component.isDefaultAuthorName
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.rememberRememberedListState
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
@@ -775,6 +778,7 @@ internal fun PostsScreen(
                 query = query,
                 searchOpen = searchOpen,
                 authorId = authorId,
+                selfName = author,
                 canWrite = canWrite,
                 hasMore = hasMore,
                 hasBackend = store != null,
@@ -863,6 +867,8 @@ private fun PostListPane(
     query: String,
     searchOpen: Boolean,
     authorId: String,
+    /** 我自己的署名（未改名时会是一串装机码，用来判断要不要提示去改名）。 */
+    selfName: String,
     canWrite: Boolean,
     hasMore: Boolean,
     hasBackend: Boolean,
@@ -956,6 +962,11 @@ private fun PostListPane(
                         )
                     }
                 }
+            }
+
+            // 我自己还没改名字：列表顶端说一次，并指出去哪儿改（旁边那个红点一直在呼吸）。
+            if (authorId.isNotBlank() && isDefaultAuthorName(selfName)) {
+                item(key = "anonymous-banner") { AnonymousHintBanner() }
             }
 
             if (drafts.isNotEmpty()) {
@@ -1158,22 +1169,23 @@ private fun PostCard(
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = buildString {
-                        append(post.author.ifBlank { "匿名" })
-                        val stamp = relativeStamp(post.createdAt)
-                        if (stamp.isNotBlank()) {
-                            append(" · ")
-                            append(stamp)
-                        }
-                    },
+                // 名字走 AuthorLabel：没改过名的人显示成马赛克 + 红点，改过的显示原名。
+                AuthorLabel(
+                    name = post.author.ifBlank { "匿名" },
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                val stamp = relativeStamp(post.createdAt)
+                if (stamp.isNotBlank()) {
+                    Text(
+                        text = " · $stamp",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
                 PostStat(count = post.comments, label = "回复", mine = false)
                 Spacer(modifier = Modifier.width(8.dp))
                 PostStat(count = post.likes, label = "赞", mine = post.mineLike)
@@ -1521,15 +1533,12 @@ private fun PostFloorCard(
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = author.ifBlank { "匿名" },
+                AuthorLabel(
+                    name = author.ifBlank { "匿名" },
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
                     color = scheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    // 名字占满剩下的宽度，楼层号、徽章、时间跟着名字走；名字太长就省略号，
-                    // 而不是像以前那样被砍掉一半宽度、右边却留一片白。
+                    // 名字占满剩下的宽度，楼层号、徽章、时间跟着名字走；名字太长就省略号。
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
@@ -2023,6 +2032,35 @@ private fun PostSectionHeader(label: String, count: Int? = null) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * 「你还没改名字」那一条。
+ *
+ * 放在列表顶端而不是弹窗：这是**可以被忽略**的提示（有人就是不想起名），但它得一直在，
+ * 因为改名之前每条帖子上的署名都是打码的样子。红点负责把眼睛勾过来，文案负责说清去哪儿改。
+ */
+@Composable
+private fun AnonymousHintBanner() {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(FlSurfaceLevel.Block.colorOf(scheme))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AnonymousDot(size = 7.dp)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "你还没改名字：头像和名字现在都是打码的样子，别人认不出你。" +
+                "去「我的 → 昵称」写一个，帖子和评论马上换成真名。",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
     }
 }
 
