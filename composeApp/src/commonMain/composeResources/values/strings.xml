@@ -345,7 +345,7 @@
     <string name="bloat_list_url">Bloat list URL</string>
     <string
         name="bloat_list_url_description"
-    >Where to get badges and descriptions from.</string>
+    >Where to get badges and descriptions from. By default this project publishes its own copy (refreshed weekly from upstream); point it elsewhere to use a different list.</string>
     <string name="allow_unsafe_selections">Allow unsafe selections</string>
     <string
         name="allow_unsafe_uninstalls_description"

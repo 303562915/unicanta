@@ -210,6 +210,10 @@ only; they are not part of this repository.
 
 - **Canta**: the base project;
 - [Universal-Debloater-Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/): debloat list and safety recommendations;
+  > The app does **not** talk to the upstream repository directly: `bloat-list-sync.yml` mirrors upstream's
+  > `uad_lists.json` into this repository at `site/bloat/bloat_list.json` weekly (with `_sync_meta.json`
+  > recording the upstream commit), and the app reads that copy by default. Level objections go to
+  > `bloat_overrides.json` / the backend `package_level_fixes` table instead of the upstream file.
 - [@RikkaApps](https://github.com/RikkaApps): Shizuku;
 - icon from [icon kitchen](https://icon.kitchen).
 

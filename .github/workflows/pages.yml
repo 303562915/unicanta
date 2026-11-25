@@ -349,6 +349,8 @@ jobs:
           BED_BASE="https://cloudflare-imgbed-erh.pages.dev/file"
           BED_TOKEN="imgbed_a9ca1aaf9b3ada8ef67725bc04122824f1db3123dc4a5b46434f1fad2c24cb20"
           PAGE_FOLDER="unicanta/download"
+          # 自带列表（bloat_list.json + _sync_meta.json）的镜像目录，换名单源时改这里。
+          BLOAT_FOLDER="unicanta/bloat"
           MIRROR_URL="$BED_BASE/$PAGE_FOLDER/index.html"
 
           # upload <本地路径> <文件名> <MIME> <目录> → stdout 只有图床直链
@@ -369,6 +371,9 @@ jobs:
           upload _site/index.html index.html text/html "$PAGE_FOLDER" > /dev/null || OK=false
           upload _site/latest.json latest.json application/json "$PAGE_FOLDER" > /dev/null || OK=false
           upload _site/development.json development.json application/json "$PAGE_FOLDER" > /dev/null || OK=false
+          # 自带列表的托管副本（site/bloat/），客户端名单默认源；见 bloat-list-sync.yml。
+          upload _site/bloat/bloat_list.json bloat_list.json application/json "$BLOAT_FOLDER" > /dev/null || OK=false
+          upload _site/bloat/_sync_meta.json _sync_meta.json application/json "$BLOAT_FOLDER" > /dev/null || OK=false
           if [ "$OK" != true ]; then
             echo "::warning::图床镜像没传全，GitHub Pages 那一份不受影响"
           fi

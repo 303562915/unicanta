@@ -155,7 +155,7 @@
     <string name="advanced_settings">高级设置</string>
     <string name="click_to_expand">点击以展开</string>
     <string name="bloat_list_url">软件标记列表 URL</string>
-    <string name="bloat_list_url_description">特殊标志与描述的数据源。</string>
+    <string name="bloat_list_url_description">特殊标志与描述的数据源。默认用本仓库自己托管的那份（每周从上游同步一次），要换别的名单改这里。</string>
     <string name="allow_unsafe_selections">允许选择 Unsafe 选项</string>
     <string name="allow_unsafe_uninstalls_description">允许选择标记为 Unsafe 的应用。</string>
     <string name="donate">捐助</string>

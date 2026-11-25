@@ -17,7 +17,7 @@ Canta offers several configuration options to customize your experience. This pa
 
 ### Auto-update Bloat List
 
-**Description:** When enabled, Canta automatically checks for and downloads the latest app classification data from the [Universal Debloater Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-preinstalled-lists) repository.
+**Description:** When enabled, Canta automatically checks for and downloads the latest app classification data. By default that source is this project's own copy of the [Universal Debloater Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation) list (`site/bloat/bloat_list.json`, refreshed from upstream weekly); the list URL can be changed in Settings.
 
 - **Enabled (Default):** Ensures you have the most up-to-date information about apps, including newly identified bloatware and revised safety recommendations.
 - **Disabled:** Canta will use only the locally stored bloat list data without checking for updates.

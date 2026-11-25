@@ -1,0 +1,136 @@
+name: 📋 Sync bloat list
+
+# 把上游 UAD 的 `uad_lists.json` 拉到我们仓库自己的路径上，客户端默认源改成这里，
+# 从此名单由我们自己托管：上游改了什么我们都看得见，想钉死一版就把 UAD_COMMIT 填上。
+#
+# 为什么不直接让客户端继续连 raw.githubusercontent.com：
+#   * 国内直连经常超时，客户端每次核对都要重试一遍（见 BloatRepository.refresh）；
+#   * 名单是"哪些系统包能删"的安全判定，版本要可追溯 —— 同步结果带一份 `_sync_meta.json`，
+#     写着这次拉的是 UAD 哪个 commit、什么时候拉的。
+#
+# 输出的位置 `site/bloat/` 顺带被 pages.yml 一起发到 gh-pages，
+# 所以国内走 Pages 比走 raw.githubusercontent 更稳，两个 URL 都可用。
+
+on:
+  schedule:
+    # 每周一次，与客户端 CHECK_INTERVAL_DAYS=7 对齐：上游这名单一周也动不了几次。
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      uad_commit:
+        description: "要钉死的 UAD commit（留空 = 上游 main 最新）"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bloat-list
+  cancel-in-progress: false
+
+env:
+  OWNER: 303562915
+  REPO: unicanta
+  TARGET_PATH: site/bloat/bloat_list.json
+  META_PATH: site/bloat/_sync_meta.json
+  UAD_OWNER: Universal-Debloater-Alliance
+  UAD_REPO: universal-android-debloater-next-generation
+  UAD_PATH: resources/assets/uad_lists.json
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: 📥 Fetch upstream list
+        id: fetch
+        env:
+          UAD_COMMIT: ${{ inputs.uad_commit }}
+        run: |
+          set -euo pipefail
+          REF="${UAD_COMMIT:-main}"
+          URL="https://raw.githubusercontent.com/${UAD_OWNER}/${UAD_REPO}/${REF}/${UAD_PATH}"
+          echo "source=$URL" >> "$GITHUB_OUTPUT"
+          curl -fsSL --retry 3 --retry-delay 5 -o /tmp/uad_lists.json "$URL"
+
+          # 解析出真正的 commit：钉死时就是它，跟 main 时去 commits API 取一次
+          if [ -n "${UAD_COMMIT:-}" ]; then
+            SHA="$UAD_COMMIT"
+          else
+            SHA=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${UAD_OWNER}/${UAD_REPO}/commits?path=${UAD_PATH}&per_page=1" \
+              | jq -r '.[0].sha')
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: 🧪 Validate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, sys
+          raw = open('/tmp/uad_lists.json', encoding='utf-8').read()
+          data = json.loads(raw)
+          if not isinstance(data, dict) or not data:
+              sys.exit('uad_lists.json 不是非空对象')
+          allowed = {'Recommended', 'Advanced', 'Expert', 'Unsafe', 'System'}
+          bad = []
+          for pkg, entry in data.items():
+              if not isinstance(entry, dict):
+                  bad.append(f'{pkg}: 条目不是对象')
+                  continue
+              removal = entry.get('removal')
+              if removal not in allowed:
+                  bad.append(f'{pkg}: removal={removal!r} 不在 {sorted(allowed)}')
+          if bad:
+              sys.exit('格式校验失败：\n' + '\n'.join(bad[:20]))
+          print(f'ok: {len(data)} 条')
+          PY
+          # 关键包在这个名单里，否则说明结构变了，别写坏文件
+          grep -q '"com.qualcomm.location"' /tmp/uad_lists.json
+
+      - name: 📝 Write files
+        env:
+          SHA: ${{ steps.fetch.outputs.sha }}
+          SOURCE: ${{ steps.fetch.outputs.source }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/bloat
+          cp /tmp/uad_lists.json "$TARGET_PATH"
+          python3 - <<'PY'
+          import json, os, datetime
+          data = json.load(open(os.environ['TARGET_PATH'], encoding='utf-8'))
+          meta = {
+              '_about': 'Upstream UAD list, mirrored here so the app watches this repository instead of raw.githubusercontent.',
+              'upstream_repo': f"{os.environ['UAD_OWNER']}/{os.environ['UAD_REPO']}",
+              'upstream_path': os.environ['UAD_PATH'],
+              'upstream_commit': os.environ['SHA'],
+              'source_url': os.environ['SOURCE'],
+              'synced_at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
+              'entries': len(data),
+          }
+          json.dump(meta, open(os.environ['META_PATH'], 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+          open(os.environ['META_PATH'], 'a', encoding='utf-8').write('\n')
+          print(json.dumps(meta, ensure_ascii=False))
+          PY
+
+      - name: 🚀 Commit & push
+        env:
+          SHA: ${{ steps.fetch.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$TARGET_PATH" "$META_PATH"
+          if git diff --cached --quiet; then
+            echo "上游名单没变（commit ${SHA:0:7}），不提交。"
+            exit 0
+          fi
+          BEFORE=$(git show "HEAD:${TARGET_PATH}" 2>/dev/null | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' || echo 0)
+          AFTER=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1], encoding="utf-8"))))' "$TARGET_PATH")
+          git commit -m "chore(bloat): 同步上游 UAD 名单到 ${SHA:0:7}（${AFTER} 条，增删 ${BEFORE}→${AFTER}）"
+          git push origin HEAD:master

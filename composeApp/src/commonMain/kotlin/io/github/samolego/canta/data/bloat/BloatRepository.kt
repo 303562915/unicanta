@@ -21,10 +21,22 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
+/**
+ * 名单由我们自己托管：`bloat-list-sync.yml` 每周从上游 UAD 拉一份到这个路径，提交进 master。
+ *
+ * 默认源不再直接指上游的 `raw.githubusercontent.com`：那份名单"哪些系统包能删"的判定是安全相关，
+ * 版本要可追溯（同步时会一起写 `site/bloat/_sync_meta.json` 记上游 commit），而且上游地址在国内
+ * 经常整段超时——客户端把一次核对白白花在重试上。上游那两家仓库名只出现在同步 workflow 里。
+ */
 const val DEFAULT_BLOAT_URL =
-    "https://raw.githubusercontent.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/main/resources/assets/uad_lists.json"
+    "https://raw.githubusercontent.com/303562915/unicanta/master/site/bloat/bloat_list.json"
+
+/**
+ * 核对有没有更新，看的是这个路径最近的提交。我们自己的镜像由 [bloat-list-sync.yml] 提交，
+ * 上游没动我们就不会有新提交，所以这个地址就是"名单变没变"的判据。
+ */
 const val DEFAULT_BLOAT_COMMITS_URL =
-    "https://api.github.com/repos/Universal-Debloater-Alliance/universal-android-debloater-next-generation/commits?path=resources%2Fassets%2Fuad_lists.json"
+    "https://api.github.com/repos/303562915/unicanta/commits?path=site%2Fbloat%2Fbloat_list.json"
 
 /** An app's entry in the UAD bloat list. */
 data class BloatData(
