@@ -1326,6 +1326,13 @@ fun ChatScreen(
                                         } else {
                                             null
                                         },
+                                        // 点自己那张头像：进个人主页换头像（这一页唯一一处"这是我"）。
+                                        // 自己那一侧的头像在 [ChatBubble] 里画，所以这里单独给一个回调。
+                                        onMyAvatarClick = if (owner.isNotEmpty()) {
+                                            { onOpenProfile(owner) }
+                                        } else {
+                                            null
+                                        },
                                         // 长按弹菜单；菜单第一项是复制，所以老习惯按下去还是那个结果。
                                         onLongPress = { copyMessage(message) },
                                         // 撤回：自己的、而且还在两分钟内才给这一项。超了就不出现——
@@ -1956,6 +1963,13 @@ private fun ChatBubble(
     receipt: String? = null,
     /** 长按对方头像：在输入框里 @ 他。null 表示这一页不给（私聊、或者自己那一侧）。 */
     onAvatarLongPress: (() -> Unit)? = null,
+    /**
+     * 点**自己**那张头像：去个人主页（换头像、改名都在那儿）。
+     *
+     * 以前自己这一侧的头像不挂点击——"看自己的主页"确实没人需要；但它也是页面上唯一一处
+     * 「这是我」的地方，想换头像的人第一反应就是点它，所以现在点它直接进那一页。
+     */
+    onMyAvatarClick: (() -> Unit)? = null,
     /** 这条消息的 @ 名单里有我：名字后面挂一个「@你」。 */
     mentionsMe: Boolean = false,
 ) {
@@ -2225,10 +2239,14 @@ private fun ChatBubble(
             }
         }
         // 自己那一侧的头像：群聊里别人的名字靠 showSender 那行小字说清，私聊本来只有两个人，
-        // 所以这一张只在「我」这边。点自己不跳主页，因此不挂点击。
+        // 所以这一张只在「我」这边。点它进个人主页——换头像的入口就在那儿。
         if (mine) {
             Spacer(Modifier.width(8.dp))
-            ChatRowAvatar(label = myLabel, url = myAvatarUrl)
+            ChatRowAvatar(
+                label = myLabel,
+                url = myAvatarUrl,
+                onClick = onMyAvatarClick,
+            )
         }
     }
 }
