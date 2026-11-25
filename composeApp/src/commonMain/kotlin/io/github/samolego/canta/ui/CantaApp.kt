@@ -1033,6 +1033,7 @@ private fun CantaNavigation(
                     platform = platform,
                     store = postStore,
                     drafts = deps.postDrafts,
+                    reads = deps.postReads,
                     author = postsAuthor,
                     authorId = postsIdentity,
                     // 底栏一级页面：不给返回箭头，离开靠点底栏别的格。

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -59,6 +60,7 @@ import io.github.samolego.canta.data.community.CommunityPost
 import io.github.samolego.canta.data.community.PostComment
 import io.github.samolego.canta.data.community.PostDraft
 import io.github.samolego.canta.data.community.PostDraftStore
+import io.github.samolego.canta.data.community.PostReadStore
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.PostThread
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -116,10 +118,11 @@ private const val TAG_LIMIT = 20
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
 private val PostPinned = Color(0xFF2FA84F)
 
-/** 列表上方的三个口径：最新（后端原序）、热门（赞与回复算出来的热度）、我的。 */
+/** 列表上方的四个口径：最新（后端原序）、热门（赞与回复算出来的热度）、收藏、我的。 */
 private enum class PostBoard(val label: String) {
     Latest("最新"),
     Hot("热门"),
+    Saved("收藏"),
     Mine("我的"),
 }
 
@@ -152,6 +155,8 @@ internal fun PostsScreen(
     author: String,
     authorId: String,
     onNavigateBack: (() -> Unit)? = null,
+    /** 已读痕迹与收藏；null 时列表不画未读点、详情里也没有收藏按钮。 */
+    reads: PostReadStore? = null,
 ) {
     val scope = rememberCoroutineScope()
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
@@ -176,6 +181,13 @@ internal fun PostsScreen(
     var reloadKey by remember { mutableIntStateOf(0) }
     /** 正在进行的那一件事：`like:7` / `reply:7` / `delete:7`。 */
     var busyKey by remember { mutableStateOf<String?>(null) }
+    /**
+     * 已读 / 收藏变了就 +1。
+     *
+     * 这两件事存在盘上（见 [PostReadStore]），不是 Compose 状态；没有这个计数器，收藏完列表
+     * 不会重算，人点了"收藏"却看不到它跑到收藏栏里。
+     */
+    var readsVersion by remember { mutableIntStateOf(0) }
 
     // ---- 列表筛选 ----
     var board by remember { mutableStateOf(PostBoard.Latest) }
@@ -256,6 +268,11 @@ internal fun PostsScreen(
             threadError = current.reason ?: "这条帖子没拉到。"
         } else {
             thread = fresh
+            // 已经读了正文，就把这条帖子此时的回帖数记下来：列表上的未读点因此灭掉，
+            // 以后回帖变多再重新亮起来（"有新回复"）。
+            if (reads != null && reads.markRead(fresh.post.id, fresh.post.comments)) {
+                readsVersion++
+            }
         }
         threadLoading = false
     }
@@ -555,14 +572,16 @@ internal fun PostsScreen(
     }
 
     /** 当前这一屏的口径算出来的列表：分类、搜索词、排序都只在这一层做，不动网络。 */
-    val shown = remember(posts, board, categoryPick, query, authorId) {
+    val shown = remember(posts, board, categoryPick, query, authorId, reads, readsVersion) {
         val keyword = query.trim()
+        val savedIds = if (board == PostBoard.Saved) reads?.savedIds()?.toHashSet().orEmpty() else emptySet()
         val byFilter = posts.filter { post ->
             (categoryPick.isBlank() || post.category == categoryPick) &&
                 (keyword.isEmpty() ||
                     post.title.contains(keyword, ignoreCase = true) ||
                     post.excerpt.contains(keyword, ignoreCase = true)) &&
-                (board != PostBoard.Mine || (authorId.isNotBlank() && post.authorId == authorId))
+                (board != PostBoard.Mine || (authorId.isNotBlank() && post.authorId == authorId)) &&
+                (board != PostBoard.Saved || savedIds.contains(post.id))
         }
         if (board == PostBoard.Hot) {
             // 置顶永远在前，其余按"赞 3 分、回复 2 分"排：这个权重只是让热闹的浮上来，
@@ -578,6 +597,22 @@ internal fun PostsScreen(
 
     val canDeleteOpen = authorId.isNotBlank() && thread?.post?.authorId == authorId
 
+    /**
+     * 打开的那条帖子旁边能去的地方：同分类、不是它自己，按热闹程度取三条。
+     *
+     * 从已经拉到手的列表里挑，不额外发请求——帖子详情页底部"还能看点什么"是个顺手的出口，
+     * 不该为它多一次往返；列表没拉到的时候就干脆不画。
+     */
+    val related = remember(posts, thread) {
+        val open = thread?.post ?: return@remember emptyList<CommunityPost>()
+        posts.asSequence()
+            .filter { it.id != open.id }
+            .filter { open.category.isBlank() || it.category == open.category }
+            .sortedByDescending { it.likes * 2 + it.comments }
+            .take(3)
+            .toList()
+    }
+
     Scaffold(
         topBar = {
             when {
@@ -586,6 +621,17 @@ internal fun PostsScreen(
                     onNavigateBack = closeThread,
                     actions = {
                         val open = thread?.post
+                        // 收进局部 val：lambda 里要用它的方法，直接用可空参数会拿不到 smart cast。
+                        val readStore = reads
+                        // 收藏放在顶栏：这是"收起来等会儿看"，不属于帖子正文里的任何一段。
+                        if (open != null && readStore != null) {
+                            TextButton(
+                                onClick = {
+                                    readStore.toggleSaved(open.id)
+                                    readsVersion++
+                                },
+                            ) { Text(if (readStore.isSaved(open.id)) "已收藏" else "收藏") }
+                        }
                         if (canDeleteOpen && open != null) {
                             TextButton(
                                 enabled = busyKey == null,
@@ -625,10 +671,18 @@ internal fun PostsScreen(
                 busyKey = busyKey,
                 reply = reply,
                 authorId = authorId,
+                related = related,
                 onReplyChange = { reply = it.take(POST_BODY_LIMIT) },
                 onSend = sendReply,
                 onToggleLike = { thread?.post?.let(toggleLike) },
                 onQuote = quoteComment,
+                onCopy = {
+                    thread?.post?.let { post ->
+                        platform.copyToClipboard(copyablePost(post))
+                        platform.showMessage("帖子已复制")
+                    }
+                },
+                onOpenRelated = { post -> openThread(post) },
                 modifier = Modifier.padding(padding),
             )
 
@@ -668,6 +722,8 @@ internal fun PostsScreen(
                 canWrite = canWrite,
                 hasMore = hasMore,
                 hasBackend = store != null,
+                unreadOf = { post -> reads != null && reads.isUnread(post.id, post.comments) },
+                savedOf = { post -> reads?.isSaved(post.id) == true },
                 listState = postListState,
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
@@ -724,6 +780,10 @@ private fun PostListPane(
     canWrite: Boolean,
     hasMore: Boolean,
     hasBackend: Boolean,
+    /** 这条帖子现在算不算没看过 / 有新回复（见 [PostReadStore.isUnread]）。 */
+    unreadOf: (CommunityPost) -> Boolean,
+    /** 这条帖子是不是收起来了。 */
+    savedOf: (CommunityPost) -> Boolean,
     listState: LazyListState,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
@@ -857,6 +917,8 @@ private fun PostListPane(
                     PostNote(
                         text = if (board == PostBoard.Mine && authorId.isBlank()) {
                             "还没认出身份，「我的」这一栏要等身份就绪。"
+                        } else if (board == PostBoard.Saved) {
+                            "收藏是空的：在帖子详情里点「收藏」，它就会收到这一栏。"
                         } else {
                             "这个口径下没有帖子，换个分类或者点「最新」看看。"
                         },
@@ -880,6 +942,8 @@ private fun PostListPane(
                 PostCard(
                     post = post,
                     mine = authorId.isNotBlank() && post.authorId == authorId,
+                    unread = unreadOf(post),
+                    saved = savedOf(post),
                     onClick = { onOpen(post) },
                 )
             }
@@ -916,11 +980,15 @@ private fun PostListPane(
  *
  * 左边是作者字母头像（同一个人永远同一个色），右边四行：标题、分类与标签、摘要、元信息。
  * 摘要只放两行：列表是用来扫的，点进去才是读。
+ *
+ * [unread] 是"没看过 / 有新回复"：标题左边一个实心点，扫列表时先认它。
  */
 @Composable
 private fun PostCard(
     post: CommunityPost,
     mine: Boolean,
+    unread: Boolean,
+    saved: Boolean,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -945,6 +1013,15 @@ private fun PostCard(
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (unread) {
+                    // 未读 / 有新回复：一个实心点。比写"未读"两个字省地方，也更容易一眼扫到。
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(scheme.primary, CircleShape),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
                 if (post.pinned) {
                     FlGlyphIcon(
                         glyph = FlGlyphs.pin,
@@ -1006,6 +1083,10 @@ private fun PostCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     PostBadge(text = "我的", color = scheme.primary)
                 }
+                if (saved) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    PostBadge(text = "收藏", color = scheme.secondary)
+                }
             }
         }
     }
@@ -1024,6 +1105,79 @@ private fun PostStat(count: Int, label: String, mine: Boolean) {
 }
 
 /**
+ * 详情底部「相关帖子」的一行：标题 + 一行元信息，点它换到那一条。
+ *
+ * 比列表卡片轻：这里是"看完这帖还能顺手看什么"，不是再铺一张列表。
+ */
+@Composable
+private fun RelatedPostRow(post: CommunityPost, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(FlSurfaceLevel.Block.colorOf(scheme))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = post.title.ifBlank { "（无标题）" },
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = scheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = buildString {
+                if (post.category.isNotBlank()) {
+                    append(post.category)
+                    append(" · ")
+                }
+                append(post.comments)
+                append(" 回复 · ")
+                append(post.likes)
+                append(" 赞")
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * 复制到剪贴板的那一份：标题、作者与时间、正文、分类与标签。
+ *
+ * 不拼帖子 id、也不拼站内链接：这个社区没有可分享的帖子地址，拼出来别人也点不开，
+ * 反而像一条坏链接。要传给别人时，贴上去的就是能读的整段字。
+ */
+private fun copyablePost(post: CommunityPost): String = buildString {
+    appendLine(post.title.ifBlank { "（无标题）" })
+    append("—— ")
+    append(post.author.ifBlank { "匿名" })
+    val stamp = relativeStamp(post.createdAt)
+    if (stamp.isNotBlank()) {
+        append(" · ")
+        append(stamp)
+    }
+    appendLine()
+    if (post.body.isNotBlank()) {
+        appendLine()
+        appendLine(post.body.trim())
+    }
+    if (post.category.isNotBlank() || post.tags.isNotEmpty()) {
+        appendLine()
+        if (post.category.isNotBlank()) append("#${post.category} ")
+        post.tags.forEach { tag -> append("#$tag ") }
+    }
+    appendLine()
+    append("（${post.comments} 回复 · ${post.likes} 赞）")
+}
+
+/**
  * 一条帖子的详情：主楼 + 回帖按楼层排，底下吸着一个回复栏。
  *
  * 用整页而不是对话框：回帖一多，对话框里那点高度连三层都看不完，「楼层」这个概念也就没了。
@@ -1037,10 +1191,13 @@ private fun PostThreadPane(
     busyKey: String?,
     reply: String,
     authorId: String,
+    related: List<CommunityPost>,
     onReplyChange: (String) -> Unit,
     onSend: () -> Unit,
     onToggleLike: () -> Unit,
     onQuote: (PostComment) -> Unit,
+    onCopy: () -> Unit,
+    onOpenRelated: (CommunityPost) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -1103,6 +1260,9 @@ private fun PostThreadPane(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = scheme.onSurfaceVariant,
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                // 复制整帖（标题、作者、正文、标签）：「这帖转给我看看」最省事的做法。
+                                TextButton(onClick = onCopy) { Text("复制") }
                             }
                         },
                     )
@@ -1137,6 +1297,15 @@ private fun PostThreadPane(
                             }
                         },
                     )
+                }
+
+                if (related.isNotEmpty()) {
+                    item(key = "related-head") {
+                        PostSectionHeader(label = "相关帖子", count = related.size)
+                    }
+                    items(related, key = { "rel-${it.id}" }) { rel ->
+                        RelatedPostRow(post = rel, onClick = { onOpenRelated(rel) })
+                    }
                 }
 
                 item(key = "thread-foot") {

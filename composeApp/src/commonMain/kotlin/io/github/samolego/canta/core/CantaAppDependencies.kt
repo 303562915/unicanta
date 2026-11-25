@@ -16,6 +16,7 @@ import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
 import io.github.samolego.canta.data.community.PostDraftStore
+import io.github.samolego.canta.data.community.PostReadStore
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.preset.CantaPresetStore
 import io.github.samolego.canta.util.PackageTelemetry
@@ -48,6 +49,8 @@ class CantaAppDependencies(
     val history: OperationLogStore,
     /** 帖子草稿：写在本机、按身份分开，发出去成功才删（见 [PostDraftStore]）。 */
     val postDrafts: PostDraftStore,
+    /** 帖子的已读痕迹与收藏：都写在本机，不进后端（见 [PostReadStore]）。 */
+    val postReads: PostReadStore,
     /** 上次扫出来的包列表：进应用列表页的第一帧先把这张表画出来（见 [AppListSnapshotStore]）。 */
     val appListSnapshot: AppListSnapshotStore,
 )
@@ -83,6 +86,9 @@ object StoredData {
 
     /** 帖子草稿：写在本机，发出去成功才删（见 [PostDraftStore]）。 */
     const val POST_DRAFTS = "post_drafts.json"
+
+    /** 帖子的已读痕迹与收藏（见 [PostReadStore]）：本机的东西，换机不跟着走。 */
+    const val POST_READS = "post_reads.json"
 
     /** 各页面快照落盘的那一份（见 [ScreenCache]）：冷启动时先画上次那一屏。 */
     const val SCREEN_CACHE = "screen_cache.json"
@@ -142,6 +148,7 @@ fun cantaAppDependencies(
         planCache = PlanCache(storage(StoredData.PLAN_CACHE)),
         history = OperationLogStore(storage(StoredData.OPERATION_LOG), platform),
         postDrafts = PostDraftStore(storage(StoredData.POST_DRAFTS)),
+        postReads = PostReadStore(storage(StoredData.POST_READS)),
         appListSnapshot = AppListSnapshotStore(storage(StoredData.APP_LIST)),
     )
 }
