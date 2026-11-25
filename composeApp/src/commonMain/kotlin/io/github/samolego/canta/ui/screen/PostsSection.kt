@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -114,6 +115,21 @@ private val POST_CATEGORIES = listOf("闲聊", "求助", "分享", "资源", "�
 /** 标签上限：个数与每个的长度，与后端 `post_add` 里的归整规则同一个数。 */
 private const val TAG_MAX = 5
 private const val TAG_LIMIT = 20
+
+/**
+ * 编辑器里那排 Markdown 快捷插入：名字 → 追加的片段。
+ *
+ * 片段都是"能直接念出来"的样子（`**粗体**` 而不是 `****`）：插进去以后改掉中间那几个字就行，
+ * 不用先猜这串符号是干嘛的。
+ */
+private val MD_SNIPPETS = listOf(
+    "粗体" to "**粗体**",
+    "标题" to "## 小标题",
+    "列表" to "- 一项",
+    "引用" to "> 引用",
+    "代码" to "`代码`",
+    "代码块" to "```\n代码\n```",
+)
 
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
 private val PostPinned = Color(0xFF2FA84F)
@@ -731,6 +747,16 @@ internal fun PostsScreen(
                 },
                 savedOf = { post -> reads?.isSaved(post.id) == true },
                 savedTotal = reads?.savedIds()?.size ?: 0,
+                onLongPress = { post ->
+                    val store = reads
+                    if (store == null) {
+                        platform.showMessage("收藏要等本机存储就绪")
+                    } else {
+                        val nowSaved = store.toggleSaved(post.id)
+                        readsVersion++
+                        platform.showMessage(if (nowSaved) "已收藏" else "已取消收藏")
+                    }
+                },
                 listState = postListState,
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
@@ -793,6 +819,8 @@ private fun PostListPane(
     savedOf: (CommunityPost) -> Boolean,
     /** 收藏一共几条（不一定都在已加载的列表里，空态文案要区分这两件事）。 */
     savedTotal: Int,
+    /** 长按一张卡片：切收藏。 */
+    onLongPress: (CommunityPost) -> Unit,
     listState: LazyListState,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
@@ -912,12 +940,10 @@ private fun PostListPane(
             }
 
             if (loading && posts.isEmpty()) {
-                // 还不知道有没有帖子的时候只转圈，不说"还没有人发帖"：那是两件事。
-                item(key = "posts-loading") {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(top = 36.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { CircularProgressIndicator() }
+                // 首屏还不知道有没有帖子：画四张灰卡而不是转圈。灰卡说的是"一列帖子马上到"，
+                // 转圈说的是"卡住了"。也不说"还没有人发帖"：那是另一件事。
+                items(count = 4, key = { "posts-skeleton-$it" }) {
+                    PostSkeletonCard()
                 }
             }
 
@@ -956,6 +982,7 @@ private fun PostListPane(
                     unread = unreadOf(post),
                     saved = savedOf(post),
                     onClick = { onOpen(post) },
+                    onLongClick = { onLongPress(post) },
                 )
             }
 
@@ -1001,6 +1028,7 @@ private fun PostCard(
     unread: Boolean,
     saved: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -1009,7 +1037,13 @@ private fun PostCard(
             .padding(start = 16.dp, end = 16.dp, top = 6.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
-            .clickable(role = Role.Button, onClick = onClick)
+            // 长按 = 收藏 / 取消收藏：列表上最常用的两个动作（看、收）各占一种手势，不必先进详情。
+            .combinedClickable(
+                role = Role.Button,
+                onLongClickLabel = "收藏或取消收藏",
+                onLongClick = onLongClick,
+                onClick = onClick,
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -1102,6 +1136,53 @@ private fun PostCard(
             }
         }
     }
+}
+
+/**
+ * 首屏占位卡片：一块头像、三条长短不一的灰条，和真卡片的骨架一样。
+ *
+ * 目的是让"正在拉"这件事有个形状：转圈看不出下面会出现什么，灰卡看得出是一列帖子。
+ */
+@Composable
+private fun PostSkeletonCard() {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(FlSurfaceLevel.Block.colorOf(scheme))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(scheme.surfaceVariant),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            SkeletonBar(widthFraction = 0.72f)
+            SkeletonBar(widthFraction = 1f)
+            SkeletonBar(widthFraction = 0.45f)
+        }
+    }
+}
+
+/** 骨架里的一条灰条。 */
+@Composable
+private fun SkeletonBar(widthFraction: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(widthFraction)
+            .height(10.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    )
 }
 
 /** 元信息里的一个数：大于零才算"有"，零只画一个灰色 0，不抢注意力。 */
@@ -1564,6 +1645,26 @@ private fun PostEditorPane(
             Spacer(modifier = Modifier.weight(1f))
             TextButton(onClick = { previewing = !previewing }) {
                 Text(if (previewing) "改文字" else "预览")
+            }
+        }
+        if (!previewing) {
+            // 一排名目按钮：手机上打 `**` 要切键盘，点一下就能插一段模板，改字比找符号快。
+            // 只能往末尾追加——`OutlinedTextField` 用的是 String 值，拿不到游标位置。
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MD_SNIPPETS.forEach { (label, snippet) ->
+                    PostChip(
+                        text = label,
+                        picked = false,
+                        onClick = {
+                            val glue = if (body.isBlank() || body.endsWith("\n")) "" else "\n"
+                            onBodyChange((body + glue + snippet).take(POST_BODY_LIMIT))
+                        },
+                    )
+                }
             }
         }
         if (previewing) {
