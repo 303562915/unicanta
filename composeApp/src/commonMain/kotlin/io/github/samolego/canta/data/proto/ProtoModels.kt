@@ -279,6 +279,13 @@ data class AppSettingsProto(
      * 折叠是默认，因为更新说明有一整屏，压在最下面的位置本来就不该一进来就占屏幕。
      */
     @ProtoNumber(46) val updateHistoryExpanded: Boolean = false,
+    /**
+     * 上一次拉「图上那份等级修正表」的本地日期（`YYYY-MM-DD`）；空串 = 从没拉过。
+     *
+     * 单独一格、不与 [bloatListCheckedDay] 共用：等级修正两天拉一次，列表一周一次。等级标错是
+     * "一键删掉系统服务"，等不了七天。见 `BloatRepository.syncRemoteCorrections()`。
+     */
+    @ProtoNumber(48) val correctionsFetchedDay: String = "",
 )
 
 /**

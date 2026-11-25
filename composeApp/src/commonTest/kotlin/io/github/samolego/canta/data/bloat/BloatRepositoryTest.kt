@@ -219,14 +219,16 @@ class BloatRepositoryTest {
         val server = Server(sha = "same", list = listJson)
         val fixes = MemoryStorage()
 
-        val list = BloatRepository(
+        val repository = BloatRepository(
             server.client,
             MemoryStorage(cachedJson.encodeToByteArray()),
             settings("same"),
             overrides = { correctionsBundled() },
             remoteCorrections = { remoteFixes },
             correctionsCache = fixes,
-        ).load()
+        )
+        assertTrue(repository.refreshCorrections())
+        val list = repository.load()
 
         assertEquals(AppBadgeInfo.EXPERT, list.getValue("com.cached").badgeInfo)
         assertEquals(remoteFixes, fixes.content?.decodeToString())
@@ -255,17 +257,67 @@ class BloatRepositoryTest {
     @Test
     fun aFailedFetchKeepsWhatIsAlreadyKnown() = runTest {
         val server = Server(sha = "same", list = listJson)
+        val settings = settings("same")
+        val fixes = MemoryStorage()
 
-        val list = BloatRepository(
+        val repository = BloatRepository(
             server.client,
             MemoryStorage(cachedJson.encodeToByteArray()),
-            settings("same"),
+            settings,
             overrides = { correctionsBundled() },
             remoteCorrections = { null },
-            correctionsCache = MemoryStorage(),
-        ).load()
+            correctionsCache = fixes,
+        )
 
-        assertEquals(AppBadgeInfo.RECOMMENDED, list.getValue("com.cached").badgeInfo)
+        repository.load()
+
+        // 修正的核对从 load/refresh 里拆出来了（列表一周一次、修正每天一次），所以这一条也要显式跑一次：
+        // 拉不到就是拉不到，盘上不留东西，界面上仍然是我们随包的那张表。
+        assertEquals(false, repository.refreshCorrections())
+        assertNull(fixes.content)
+        // 没拉到东西不算用掉今天这一次：下次启动还会再试。
+        assertEquals("", settings.correctionsFetchedDayFlow.first())
+        assertEquals(AppBadgeInfo.RECOMMENDED, repository.local().getValue("com.cached").badgeInfo)
+    }
+
+    /** 修正每天拉一次：当天拉过就不再联网，这与列表那份周核对是两笔账。 */
+    @Test
+    fun theCorrectionsAreFetchedAtMostOnceADay() = runTest {
+        val server = Server(sha = "same", list = listJson)
+        val settings = settings("same")
+        var fetches = 0
+        val repository = BloatRepository(
+            server.client,
+            MemoryStorage(cachedJson.encodeToByteArray()),
+            settings,
+            overrides = { correctionsBundled() },
+            remoteCorrections = { fetches++; remoteFixes },
+            correctionsCache = MemoryStorage(),
+        )
+
+        assertTrue(repository.refreshCorrections())
+        assertEquals(1, fetches)
+        assertEquals(today(), settings.correctionsFetchedDayFlow.first())
+
+        // 同一天再进列表：不联网，也不重复解析。
+        assertEquals(false, repository.refreshCorrections())
+        assertEquals(1, fetches)
+        assertEquals(AppBadgeInfo.EXPERT, repository.local().getValue("com.cached").badgeInfo)
+
+        // 昨天拉过的那台手机，今天打开时会再拉一次。
+        val stale = settings("same").apply { setCorrectionsFetchedDay(dayOffset(1)) }
+        var refetches = 0
+        BloatRepository(
+            server.client,
+            MemoryStorage(cachedJson.encodeToByteArray()),
+            stale,
+            overrides = { correctionsBundled() },
+            remoteCorrections = { refetches++; remoteFixes },
+            correctionsCache = MemoryStorage(),
+        ).let {
+            assertTrue(it.refreshCorrections())
+        }
+        assertEquals(1, refetches)
     }
 
     /** The day key the repository writes: the phone's own date, `YYYY-MM-DD`. */

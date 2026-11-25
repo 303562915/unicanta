@@ -94,6 +94,13 @@ class CantaSettings(storage: AppBlobStorage) {
      * 应用列表拿它当"今天还问不问"的判据，见 [io.github.samolego.canta.data.bloat.BloatRepository.refresh]。
      */
     val bloatListCheckedDayFlow = field { it.bloatListCheckedDay }
+    /**
+     * 图上那份修正表（`package_level_fix_list()` + `level_fix_list()` 两张一起），以及它是什么时候拿的。
+     *
+     * 与 [bloatListCheckedDayFlow]（列表本身的每周核对）分开记账：等级修正必须比列表更勤。
+     * 等级标错就是"一键删掉系统服务"，不能等七天、更不能等发版。两天一次，每次一个请求。
+     */
+    val correctionsFetchedDayFlow = field { it.correctionsFetchedDay }
     val bloatListUrlFlow = field { it.bloatListUrl.ifEmpty { DEFAULT_BLOAT_URL } }
     val commitsUrlFlow = field { it.commitsUrl.ifEmpty { DEFAULT_BLOAT_COMMITS_URL } }
     val allowUnsafeUninstallsFlow = field { it.allowUnsafeUninstalls }
@@ -196,6 +203,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setLatestCommitHash(hash: String) = update { it.copy(latestBloatCommitHash = hash) }
     /** Records the local date (`YYYY-MM-DD`) the bloat list was last checked; see [AppSettingsProto.bloatListCheckedDay]. */
     suspend fun setBloatListCheckedDay(day: String) = update { it.copy(bloatListCheckedDay = day) }
+    /** Records the local date (`YYYY-MM-DD`) the level corrections were last fetched; see [AppSettingsProto.correctionsFetchedDay]. */
+    suspend fun setCorrectionsFetchedDay(day: String) = update { it.copy(correctionsFetchedDay = day) }
     suspend fun setBloatListUrl(url: String) = update { it.copy(bloatListUrl = url) }
     suspend fun setCommitsUrl(url: String) = update { it.copy(commitsUrl = url) }
     suspend fun setAllowUnsafeUninstalls(allow: Boolean) = update { it.copy(allowUnsafeUninstalls = allow) }

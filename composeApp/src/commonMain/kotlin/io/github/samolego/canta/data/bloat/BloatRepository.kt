@@ -157,7 +157,11 @@ class BloatRepository(
      *
      * Every failure is a no-op: no fetch configured, no storage to keep it in, a deployment without
      * the function, a request that timed out. None of them is a reason to lose the corrections
-     * already on disk, and none of them spends the day's single check — that is [refresh]'s call.
+     * already on disk, and none of them spends the fetch window — that is [refreshCorrections]'s call.
+     *
+     * 一天最多一次：以前它挂在列表核对（一周一次）上，等于等级标错要等七天。现在单独记账
+     * （[CantaSettings.correctionsFetchedDayFlow]），列表还是每周问一次，这张表天天问。
+     * 一次请求、一张几十行的表——不是逐包查库。
      */
     private suspend fun syncRemoteCorrections(): Boolean {
         val fetch = remoteCorrections ?: return false
@@ -166,14 +170,35 @@ class BloatRepository(
         val text = runCatching { fetch() }.getOrNull()?.takeIf { it.isNotBlank() } ?: return false
         val remote = BloatOverrides.fromRemote(text, language)
         val stored = runCatching { storage.read()?.decodeToString() }.getOrNull()
-        if (stored == text) return false
+        if (stored == text) {
+            settings.setCorrectionsFetchedDay(todayKey())
+            return false
+        }
         runCatching { storage.write(text.encodeToByteArray()) }
             .onFailure { LogUtils.w(TAG, "Failed to cache level corrections: $it") }
         // An empty answer is a real one (the operator retracted the corrections): laid over the
         // bundled table it changes nothing, which is exactly what retracting means.
         resolvedCorrections = bundledCorrections().overriddenBy(remote)
+        settings.setCorrectionsFetchedDay(todayKey())
         LogUtils.i(TAG, "Level corrections updated (${remote.size} entries)")
         return true
+    }
+
+    /**
+     * 等级修正的每日核对：今天已经拉过就直接用手上那份，不联网。返回 true 表示**这一趟带来了
+     * 新修正**，调用方据此决定要不要重画列表。
+     *
+     * 与 [refresh] 分开：列表一周一次、修正每天一次。删错一个系统服务的代价太大，不能让修正
+     * 排在那份 1.6 MB 的名单后面等一周。
+     *
+     * "今天拉过"这一格只在**真的拉到了东西**时才写：没配后端、请求失败、答复是空的，都不算用掉
+     * 今天的额度，下次启动还会再试（和 [refresh] 的"离线不算用掉"是同一条规矩）。
+     */
+    suspend fun refreshCorrections(): Boolean {
+        if (!settings.autoUpdateBloatListFlow.first()) return false
+        val today = todayKey()
+        if (settings.correctionsFetchedDayFlow.first() == today) return false
+        return syncRemoteCorrections()
     }
 
     /** The shipped list, parsed once; empty when this build has none. */
@@ -247,9 +272,8 @@ class BloatRepository(
         // the stored commit says, or a corrupt file would keep the list empty forever.
         val cached = readCache(l10n)
 
-        // Our own corrections ride along with the list check: same window, same "don't spend it on a
-        // failure" rule, and a failure here never stops the list from updating below.
-        syncRemoteCorrections()
+        // 等级修正由 [refreshCorrections] 每天单独核对，这里不再顺带拉：混在一起会把修正绑到
+        // 这份名单的一周节拍上（见 `CantaSettings.correctionsFetchedDayFlow`）。
 
         // Empty when unknown (offline, rate limited, ...).
         val remoteHash = fetchLatestHash()
