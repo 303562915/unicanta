@@ -735,6 +735,8 @@ fun SafetyRulesScreen(
             reachable = reach,
             checking = reaching,
             onRecheck = checkReach,
+            // 「最精简」那一格按本机规则挑包：规则还没读到时它是灰的，不会凭空勾一堆。
+            rules = rules,
             onDismiss = { if (!uploading) upload = null },
             onSubmit = { title, note, packages ->
                 val target = profile

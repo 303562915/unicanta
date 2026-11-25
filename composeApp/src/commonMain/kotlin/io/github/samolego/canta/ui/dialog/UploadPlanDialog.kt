@@ -6,6 +6,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -92,6 +94,8 @@ import io.github.samolego.canta.ui.fl.isDark
 import io.github.samolego.canta.ui.fl.successColor
 import io.github.samolego.canta.ui.fl.warningColor
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.SafetyRules
+import io.github.samolego.canta.util.SafetyStatus
 import org.jetbrains.compose.resources.stringResource
 
 /** Icon size of a package row inside the sheet: small, so a batch of twenty still fits. */
@@ -108,6 +112,54 @@ private const val SHEET_HEIGHT_FRACTION: Float = 0.92f
  * uploader picked, and the title is the only thing a tap writes.
  */
 private val PLAN_NAME_PRESETS = listOf("极简", "省电", "游戏", "长辈机", "干净", "日常")
+
+/**
+ * 一键勾一批的主题清单：社区里实际在用的那几个说法（最精简、广告追踪、精简游戏、精简AI）。
+ *
+ * 它只是「勾选」的快捷方式，不是内置方案：命中的包照样要过重启验证才进得了清单，勾上来之后
+ * 也照样能在下面逐个取消。所以这里命不中就是灰的、点不动，而不是悄悄勾一堆让人以为选好了。
+ */
+private class PlanPick(
+    val label: String,
+    /** 它挑的是什么，一行说完；灰掉的时候这一行就是解释。 */
+    val hint: String,
+    val match: (AppInfo) -> Boolean,
+)
+
+/**
+ * 广告、统计、追踪一类的包名分段。
+ *
+ * 短词（`ad`、`ads`、`msa`）只认整段，长词（四个字母以上）认前缀：否则 `com.android.*` 会因为
+ * 以「ad」开头被当成广告，那是把整个系统都勾进来。
+ */
+private val AD_SEGMENTS = listOf(
+    "ads", "ad", "mads", "msa", "adsdk", "advert", "adcolony", "admob", "adservice",
+    "applovin", "analytics", "tracker", "tracking", "umeng", "appmetrica", "doubleclick",
+    "comscore", "appsflyer", "adjust",
+)
+
+/** 游戏中心、游戏服务、游戏助手一类；`game` 是长词，所以 `gamecenter`、`gameturbo` 都算。 */
+private val GAME_SEGMENTS = listOf("game", "games", "playgames", "gameturbo", "gamecenter")
+
+/** 语音助手与 AI 服务；`ai` 只认整段（否则 `mail`、`detail` 都会中）。 */
+private val AI_SEGMENTS = listOf(
+    "ai", "aicr", "aivoice", "aiservice", "aiengine", "assistant", "voiceassist", "xiaoice",
+    "copilot", "gemini",
+)
+
+/** 应用名里的这些词比包名更直白，中文应用尤其如此。英文的「Ad」不进这张表：它会命中 Shadow。 */
+private val AD_NAMES = listOf("广告", "统计", "追踪")
+private val GAME_NAMES = listOf("游戏", "Game")
+private val AI_NAMES = listOf("小爱", "语音助手", "AI助手", "智能助理", "智能助手")
+
+/** 包名按 `.`、`-`、`_` 分段，任一段命中就算：`com.miui.msa` 与 `com.google.android.gms.ads` 都算广告。 */
+private fun AppInfo.hasSegment(tokens: List<String>): Boolean =
+    packageName.lowercase()
+        .split('.', '-', '_')
+        .any { segment -> tokens.any { token -> segment == token || (token.length >= 4 && segment.startsWith(token)) } }
+
+/** 应用名命中，和分段命中是「或」的关系。 */
+private fun AppInfo.namedLike(words: List<String>): Boolean = words.any { name.contains(it, ignoreCase = true) }
 
 /**
  * Whether the batch on screen may be published, as the three colours the sheet draws.
@@ -135,6 +187,7 @@ private enum class GateState { READY, PARTIAL, BLOCKED }
  *   sheet says so before a name is typed instead of failing silently afterwards.
  * @param checking true while the preflight is running.
  * @param publishing true while the caller is still sending: the sheet stays up, buttons go dead.
+ * @param rules 这台手机生效的安全规则：只有「最精简」那一格要它（挑规则判定为安全的包）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,6 +202,7 @@ fun UploadPlanDialog(
     reachable: Boolean? = null,
     checking: Boolean = false,
     onRecheck: () -> Unit = {},
+    rules: SafetyRules? = null,
 ) {
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
@@ -168,6 +222,24 @@ fun UploadPlanDialog(
     // Nothing goes up on a phone that cannot reach the backend: the button stays dead until the
     // preflight answered yes, and the card above says what to do when it answered no.
     val mayPublish = title.isNotBlank() && provenSelection.isNotEmpty() && !publishing && reachable == true
+
+    // 四个一键清单，按此刻可勾的包算：计数就是「点一下会勾上几个」，不点空的无名之选。每次重组
+    // 直接重算而不是 remember：这张表跟着上面那几个 TextButton 一起变，缓存一个旧计数只会多一处
+    // 要维护的状态，而候选清单本身也就是几十到几百行。
+    val pickHits = listOf(
+        PlanPick("最精简", "规则判「安全」的") { app ->
+            rules?.verdict(app.packageName, profile)?.status == SafetyStatus.SAFE
+        },
+        PlanPick("广告追踪", "广告 / 统计 / 追踪") { app ->
+            app.hasSegment(AD_SEGMENTS) || app.namedLike(AD_NAMES)
+        },
+        PlanPick("精简游戏", "游戏中心 / 游戏服务") { app ->
+            app.hasSegment(GAME_SEGMENTS) || app.namedLike(GAME_NAMES)
+        },
+        PlanPick("精简AI", "语音助手 / AI 服务") { app ->
+            app.hasSegment(AI_SEGMENTS) || app.namedLike(AI_NAMES)
+        },
+    ).map { pick -> pick to uploadable.filter(pick.match).map { it.packageName } }
 
     // A dialog drawn as a bottom sheet, not ModalBottomSheet: the platform sheet takes the scroll
     // of the list inside over to drag itself, which made this one bounce up and down whenever the
@@ -262,6 +334,25 @@ fun UploadPlanDialog(
                                 TextButton(onClick = { selected = emptyList() }, enabled = selected.isNotEmpty()) {
                                     Text(stringResource(Res.string.plan_upload_clear), fontSize = 11.sp)
                                 }
+                            }
+                        }
+                        // 主题清单一格：和上面的「全选 / 清空」是同一件事的四种口味，所以紧贴着那一行，
+                        // 而不是跑到标题或表单旁边去。一个都勾不上时（这批里没有那类包）整排不显示。
+                        if (pickHits.any { it.second.isNotEmpty() }) {
+                            item("picks") {
+                                PickRow(
+                                    hits = pickHits,
+                                    selected = selected,
+                                    onToggle = { packages ->
+                                        val set = packages.toSet()
+                                        // 全都勾上了点一下就整批取消：同一个胶囊第二次点是反选。
+                                        selected = if (set.all { it in selected }) {
+                                            selected.filterNot { it in set }
+                                        } else {
+                                            (selected + packages).distinct()
+                                        }
+                                    },
+                                )
                             }
                         }
                         if (candidates.isEmpty()) {
@@ -599,6 +690,63 @@ private fun DeviceCard(profile: DeviceProfile?, totalCount: Int) {
                 fontSize = 9.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * 四格主题清单。每一格都自己说明挑的是什么：胶囊上写「广告追踪 · 12」，下面一行小字写「广告 /
+ * 统计 / 追踪」，点一下把这一类整批勾上或整批取消。
+ *
+ * 这一批里没有那一类包时，胶囊变灰、点不动——灰的那一格比一个点下去什么也不发生的按钮诚实。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PickRow(
+    hits: List<Pair<PlanPick, List<String>>>,
+    selected: List<String>,
+    onToggle: (List<String>) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        hits.forEach { (pick, packages) ->
+            val picked = packages.isNotEmpty() && packages.all { it in selected }
+            val enabled = packages.isNotEmpty()
+            val container = when {
+                picked -> colors.primary
+                else -> colors.surfaceContainerHigh
+            }
+            val content = when {
+                picked -> colors.onPrimary
+                enabled -> colors.onSurface
+                else -> colors.onSurfaceVariant.copy(alpha = 0.45f)
+            }
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(container)
+                    .clickable(enabled = enabled) { onToggle(packages) }
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = pick.label + (if (enabled) " · ${packages.size}" else ""),
+                    fontSize = 11.sp,
+                    fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal,
+                    color = content,
+                    maxLines = 1,
+                )
+                Text(
+                    text = if (enabled) pick.hint else "这一批里没有",
+                    fontSize = 8.5.sp,
+                    lineHeight = 11.sp,
+                    color = if (picked) colors.onPrimary.copy(alpha = 0.8f) else content.copy(alpha = 0.75f),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
