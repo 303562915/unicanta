@@ -1,5 +1,7 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.MaterialTheme
@@ -56,12 +59,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.cache.ScreenCache
@@ -1053,6 +1058,7 @@ private fun PostListPane(
                 item(key = "pinned-head") {
                     PinnedTopicsHeader(
                         count = pinnedShown.size,
+                        unreadCount = pinnedShown.count { unreadOf(it) },
                         open = pinnedOpen,
                         onToggle = { pinnedOpen = !pinnedOpen },
                     )
@@ -1170,13 +1176,28 @@ private fun PostListPane(
  * [unread] 是"没看过 / 有新回复"：标题左边一个实心点，扫列表时先认它。
  */
 /**
- * 列表上的一张帖子卡片，版式照 fluxdo（Discourse 客户端）的话题卡：标题独占第一行，
- * 作者行（小头像 + 名字 + 右侧时间）第二行，分类与标签 + 统计第三行。
+ * 列表上的一张帖子卡片，逐项照 fluxdo 的 `TopicCard`（`lib/widgets/topic/topic_card.dart`
+ * 的 `_buildNormalBody` + `_buildMetadataBlock`，默认 `TopicCardAvatarLayout.inline`）：
  *
- * 标题为什么独占一行：扫列表时先读的永远是标题，头像/元信息都该排在它后面；把它们挤在同一行
- * 会让标题只剩六七个字，中文长标题一眼看不全。
+ * ```
+ * Column(
+ *   行1: 标题（满宽，最多两行，15sp/1.3）+ 右端未读点（间距 6、下沉 5）
+ *   间距 8
+ *   行2: 头像 32 跨两行 + 右侧 Column(
+ *         行A: 作者名（Expanded）+ 8 + 时间
+ *         间距 2
+ *         行B: 分类+标签（Expanded）+ 8 + 统计（赞 10 回复）
+ *        )
+ * )
+ * ```
  *
- * [unread] 是"没看过 / 有新回复"，画在标题行最右端：位置固定，扫一列时不用左右找。
+ * 卡片自身：圆角 10、内边距 12/10/12/10、底部间距 8 —— 这三个数直接来自
+ * `topic_card.dart:323/329/363`（`cardRadius = borderRadius(10)`、`EdgeInsets.only(bottom: 8)`、
+ * `EdgeInsets.fromLTRB(12, 10, 12, 10)`），不是估的。
+ *
+ * 标题为什么独占一行：论坛列表以标题为主信息，照片和署名排在它后面，视线沿左边缘直扫。
+ *
+ * [unread] 画在标题行右端（位置固定），[saved] / [mine] 只加在名字后面，不抢标题的注意力。
  */
 @Composable
 private fun PostCard(
@@ -1194,7 +1215,7 @@ private fun PostCard(
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .padding(bottom = 8.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
             // 长按 = 收藏 / 取消收藏：列表上最常用的两个动作（看、收）各占一种手势，不必先进详情。
             .combinedClickable(
@@ -1203,11 +1224,9 @@ private fun PostCard(
                 onLongClick = onLongClick,
                 onClick = onClick,
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
     ) {
-        // 标题行同样要 fillMaxWidth：标题吃 weight(1f) 占满剩下的宽度，未读点才好贴到右端。
-        // 这行漏掉它的时候，weight 在无界宽度下算成 0，标题整段被压没——列表里只剩头像和时间。
+        // 行1：标题满宽。这一行必须 fillMaxWidth —— 标题吃 weight(1f)，无界宽度下会被算成 0。
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Top,
@@ -1222,10 +1241,9 @@ private fun PostCard(
             }
             Text(
                 text = post.title.ifBlank { "（无标题）" },
-                // 16sp 粗体：标题是这一列里唯一要读的东西，比用户名大一档才立得住
-                // （`titleSmall` 只有 14sp，和下面的名字几乎一样大，整张卡没有主次）。
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
+                // 15sp / 行高 1.3：与 `TopicCardStyle.titleFontSize` 的默认值同一个数。
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                fontWeight = FontWeight.Medium,
                 color = scheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1233,7 +1251,7 @@ private fun PostCard(
             )
             if (unread) {
                 Spacer(modifier = Modifier.width(6.dp))
-                // 未读 / 有新回复：一个实心点。比写"未读"两个字省地方，也更容易一眼扫到。
+                // 蓝点与标题首行视觉居中：`EdgeInsets.only(top: 5)`。
                 Box(
                     modifier = Modifier
                         .padding(top = 5.dp)
@@ -1243,8 +1261,9 @@ private fun PostCard(
             }
         }
 
-        // 同理 fillMaxWidth：这一行中间那个 `weight(1f)` 的空档把时间推到最右，
-        // 没有有界宽度时它会被算成 0，时间就贴在名字后面。
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 行2：头像跨两行（radius 16 = 直径 32），右边上下两行小字。
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1252,53 +1271,62 @@ private fun PostCard(
             PostAvatar(
                 name = post.author.ifBlank { "匿" },
                 seed = post.authorId.ifEmpty { post.author },
-                size = 22.dp,
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            // 名字走 AuthorLabel：没改过名的人显示成占位条 + 红点，改过的显示原名。
-            AuthorLabel(
-                name = post.author.ifBlank { "匿名" },
-                style = MaterialTheme.typography.labelLarge,
-                color = scheme.onSurface,
-                maxLines = 1,
-            )
-            if (mine) {
-                Spacer(modifier = Modifier.width(5.dp))
-                PostBadge(text = "我", color = scheme.primary)
-            }
-            if (saved) {
-                Spacer(modifier = Modifier.width(5.dp))
-                // 底色是 secondary，前景就用它的 on 色：深色主题下白字压在浅紫上读不清。
-                PostBadge(text = "收藏", color = scheme.secondary, foreground = scheme.onSecondary)
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            if (stamp.isNotBlank()) {
-                Text(
-                    text = stamp,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.outline,
-                    maxLines = 1,
-                )
-            }
-        }
-
-        // 这一行必须是 fillMaxWidth：里面用了 weight(1f)，而 weight 只在**有界宽度**下才成立。
-        // Row 默认按内容宽（wrap）量，weight 子项于是拿 0 宽——分类和标签被压没、统计挤在左边。
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PostMetaChips(
-                category = post.category,
-                tags = post.tags,
-                maxTags = 2,
-                modifier = Modifier.weight(1f),
+                size = 32.dp,
             )
             Spacer(modifier = Modifier.width(8.dp))
-            PostMetric(glyph = Icons.Outlined.FavoriteBorder, count = post.likes, active = post.mineLike)
-            Spacer(modifier = Modifier.width(8.dp))
-            // 回复数用主色：一列里它是最想让人点进去的那个数（截图里它是橙的）。
-            PostMetric(glyph = Icons.Outlined.ChatBubbleOutline, count = post.comments, active = true)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // 行A：署名（占满）+ 时间。未读时时间也用主色，和那个点呼应。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AuthorLabel(
+                        name = post.author.ifBlank { "匿名" },
+                        style = MaterialTheme.typography.labelLarge,
+                        color = scheme.onSurface,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (mine) {
+                        Spacer(modifier = Modifier.width(5.dp))
+                        PostBadge(text = "我", color = scheme.primary)
+                    }
+                    if (saved) {
+                        Spacer(modifier = Modifier.width(5.dp))
+                        PostBadge(
+                            text = "收藏",
+                            color = scheme.secondary,
+                            foreground = scheme.onSecondary,
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (stamp.isNotBlank()) {
+                        Text(
+                            text = stamp,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (unread) scheme.primary else scheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                // 行B：分类 + 标签（占满）+ 赞 / 回复。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PostMetaChips(
+                        category = post.category,
+                        tags = post.tags,
+                        maxTags = 2,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    PostMetric(glyph = Icons.Outlined.FavoriteBorder, count = post.likes, active = post.mineLike)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    // 回复数用主色：一列里它是最想让人点进去的那个数。
+                    PostMetric(glyph = Icons.Outlined.ChatBubbleOutline, count = post.comments, active = true)
+                }
+            }
         }
     }
 }
@@ -2396,72 +2424,97 @@ private fun PostSectionHeader(label: String, count: Int? = null) {
 }
 
 /**
- * 「置顶话题 · N」那一行（可折叠）。
+ * 「置顶话题 · N」那一行。数值照 fluxdo 的 `pinned_topics_header.dart`：
+ * 圆角 12（分组首项 outer radius）、内边距 12/14、文字 `labelLarge`、未读角标、
+ * 箭头 20dp 且展开时旋转 180°（180ms）。
  *
- * 一个浅底圆角块加右侧一个箭头：展开时箭头朝下，收起时朝右。置顶不多，所以不做动画，
- * 点一下立刻变——折叠动画在这类「一行」上只会让人等。
+ * 展开状态由调用方持有（必须在 `LazyListScope` 之外，见 [PostListPane]）。
  */
 @Composable
-private fun PinnedTopicsHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+private fun PinnedTopicsHeader(
+    count: Int,
+    unreadCount: Int,
+    open: Boolean,
+    onToggle: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
+    val turns by animateFloatAsState(
+        targetValue = if (open) 180f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "pinned-arrow",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .padding(top = 12.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(scheme.surfaceVariant.copy(alpha = 0.45f))
             .clickable(role = Role.Button, onClick = onToggle)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = 12.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "置顶话题",
+            text = "置顶话题 · $count",
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
             color = scheme.onSurface,
+            modifier = Modifier.weight(1f),
         )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = "· $count",
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.weight(1f))
+        if (unreadCount > 0) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = unreadCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onPrimary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(scheme.primary)
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(4.dp))
         FlGlyphIcon(
-            glyph = if (open) FlGlyphs.chevronDown else FlGlyphs.chevronForward,
-            size = 16.dp,
+            glyph = FlGlyphs.chevronDown,
+            size = 20.dp,
             tint = scheme.onSurfaceVariant,
+            modifier = Modifier.rotate(turns),
         )
     }
 }
 
 /**
- * 「↑ 查看 N 个新的或更新的话题」：一块居中胶囊，点一下重新拉列表。
- *
- * 只在「最新」这一栏出现：热门/收藏/我的这三栏不是"新到了什么"的语境，摆这条会自相矛盾。
+ * 「↑ 查看 N 个新的或更新的话题」。数值照 fluxdo 的 `topic_list_update_banner.dart`：
+ * 圆角 8、底色 `primaryContainer` 20%、上下 8 的内边距、图标 14dp、图标与文字间距 8、
+ * 文字 13sp / w500 / 主色。整条横满（不是居中的小胶囊）。
  */
 @Composable
 private fun FreshTopicsBanner(count: Int, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-        contentAlignment = Alignment.Center,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 12.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(scheme.primaryContainer.copy(alpha = 0.2f))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(scheme.primary.copy(alpha = 0.12f))
-                .clickable(role = Role.Button, onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "↑ 查看 $count 个新的或更新的话题",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.primary,
-            )
-        }
+        Icon(
+            imageVector = Icons.Outlined.ArrowUpward,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = scheme.primary,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "查看 $count 个新的或更新的话题",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = scheme.primary,
+        )
     }
 }
 
