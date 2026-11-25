@@ -107,17 +107,15 @@ object AudioWhitelist {
         /** The list is being applied: the shipped state of the ROM. */
         val active: Boolean get() = level.isNotEmpty() && !bypassed
 
-        /** This phone has the config, so the list is real rather than an empty read. */
-        val supported: Boolean get() = configPath.isNotEmpty()
-
         /**
-         * 能不能去动那个开关：有名单文件固然可以，**没有文件但属性存在**也可以。
+         * 这台机器上有没有这份名单文件。
          *
-         * 名单在澎湃OS 3 上可能整份由云控下发（K90 / K90 Pro Max 这类机器上 /odm 里就没有
-         * trackefx_config.xml），这时按「没有文件 = 不支持」把按钮置灰，等于替用户判了一个我们
-         * 证明不了的结论：属性照样写得进去，有没有效果只能写完听一遍。两个都没有才是真的没得动。
+         * **它不再是「能不能解除」的门槛**：名单文件找不到时，属性照样写得进去（K90 Pro Max 这类
+         * 澎湃OS 3 / Android 16 机器就是这样——写成功了，但引擎不读这条属性，也没有 odm 名单文件，
+         * 所以点了不会有变化）。这个结论写进诊断行就够了，不该替用户把按钮置灰：那让「到底行不行」
+         * 变成我们猜的，而不是他自己听一遍就知道的。
          */
-        val writable: Boolean get() = supported || level.isNotEmpty()
+        val supported: Boolean get() = configPath.isNotEmpty()
     }
 
     /** Turns the script's tagged lines into [State]; unknown lines are ignored, not fatal. */

@@ -191,10 +191,10 @@ fun AudioWhitelistScreen(
                     loading = loading,
                     failure = failure,
                     busy = busy,
-                    // 名单文件找不到也允许解除：名单可能整份由云控下发，本机没有文件不等于开关无效。
-                    // 真正没法动的只有「既没有文件、属性也读不出来」那种机器（[AudioWhitelist.State.writable]）。
-                    // 恢复始终允许——这台机器上可能已经被人点过解除，得留一条路改回 1。
-                    canBypass = bypass != null && current?.writable == true && current?.bypassed != true,
+                    // 名单文件找不到也允许解除：是不是「空转」由脚本自己的输出和用户听感说明，
+                    // 不该由我们替他把按钮置灰（K90 Pro Max 就是这种机器）。恢复同样始终允许——
+                    // 这台机器上可能已经被人点过解除，得留一条路改回 1。
+                    canBypass = bypass != null && current != null && current.bypassed != true,
                     canRestore = restore != null && current?.bypassed == true,
                     onBypass = { run("解除", bypass) },
                     onRestore = { run("恢复", restore) },
@@ -235,11 +235,13 @@ fun AudioWhitelistScreen(
             } else if (current != null && !current.supported) {
                 item(key = "no-config") {
                     Text(
-                        text = "这台机器上没找到名单文件：按名字（trackefx_config.xml）、按目录（odm / vendor / system_ext / product）、" +
-                            "按内容都翻过一遍，odm 的 audio 目录里只有什么，下面那栏诊断信息里列着。" +
-                            "没找到不代表开关没用——K90 / K90 Pro Max 这一代可能整份名单都由云控下发。" +
-                            "所以「解除」还能点：写下去自己听一遍，低频回来了就是生效；没有变化就点「恢复」写回原值。" +
-                            "把这段诊断发给开发者，能继续找这台机器上真正的入口。",
+                        text = "这台机器上没找到名单文件：按名字（trackefx_config.xml）、按目录（odm / vendor / system_ext / product / my_product）、" +
+                            "按内容都翻过一遍，odm 的 audio 目录里到底有什么，下面那栏诊断信息里列着。" +
+                            "这套机制是澎湃OS 4（Android 17）才有的：那代机器上有个 persist.sys.scene.partition.level 属性，" +
+                            "写成 -1 引擎就跳过整份名单（K100 Pro Max 上验证过）。" +
+                            "澎湃OS 3（Android 16）的机器本来就没有这条属性——K90 Pro Max 就是这一类，属性写得进去，但引擎不读，也没有名单文件，" +
+                            "所以「解除」在这台机器上多半只是空转。仍可以点一次试：点完自己听一遍，低频回来了就是生效，没变化就点「恢复」写回原值。" +
+                            "把这段诊断发给开发者，能确认这台机器是「没有这套东西」还是「换了个名字」。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
@@ -286,8 +288,8 @@ private fun StatusCard(
         failure != null -> "读不到状态"
         state == null -> if (loading) "读取中…" else "读不到状态"
         // 没有名单文件时，属性值说明不了「效果如何」：名单可能由云控下发，本机没有文件不等于这道处理不存在。
-        !state.supported && state.bypassed -> "开关已经是 -1，但这台机器上没找到名单文件：效果得自己听一遍"
-        !state.supported -> "这台机器上没找到名单文件（名单可能由云控下发），仍可写一次开关试试"
+        !state.supported && state.bypassed -> "开关已经是 -1，但这台机器上没有名单文件：多半没有效果，自己听一遍"
+        !state.supported -> "这台机器上没有名单文件：解除多半是空转，可以点一次试，没变化就点「恢复」"
         state.bypassed -> "已解除：名单里的应用也按原始信号输出"
         state.active -> "按名单处理：名单里的应用被切低频、压低音量"
         else -> "开关值：${state.level.ifEmpty { "未设置" }}（不是 1 也不是 -1）"
