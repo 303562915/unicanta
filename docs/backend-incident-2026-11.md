@@ -134,7 +134,40 @@ postgrest 状态码（24 小时窗口）：503 × 684、500 × 303、504 × 183
    | Medium | 347 MB/s | 4 GB | 120 | ~$60/月 |
 
    但**先别急着升级**：换卷都治不好，升档大概率只是换一台同样慢的宿主机。
-4. **首选动作：开 support ticket**（附本文第 2 节全部数据）。这是唯一能让平台侧去查宿主机存储的通道。
+4. **⚠️ 硬限制：项目在 Free 档，上面两条商业/支持通道都关着。**
+
+   实测（2026-11-25）：
+
+   ```
+   PATCH /v1/projects/{ref}/billing/addons  {"addon_type":"compute_instance","addon_variant":"ci_small"}
+   → 400  {"message":"Project addons cannot be edited on the free tier.",
+           "error":{"code":"entitlement_required","feature":"project_addons",
+                    "upgrade_url":"https://supabase.com/dashboard/org/fdvnfbtpshnugcgxyitz/billing"}}
+
+   GET /v1/projects/{ref}/database/backups
+   → 200  {"region":"ap-northeast-1","walg_enabled":true,"pitr_enabled":false,
+           "backups":[],"physical_backup_data":{}}
+   ```
+
+   也就是说：
+
+   | 通道 | Free 档能否走 |
+   |---|---|
+   | 升 compute（Small/Medium） | ❌ `entitlement_required` |
+   | 开 support ticket（网页） | ❌ Free 档没有支持通道 |
+   | 自动备份 / PITR | ❌ `backups: []`、`pitr_enabled: false` |
+
+5. **所以真正的可行路径只有三条，都要人拍板**：
+
+   | 路径 | 代价 | 说明 |
+   |---|---|---|
+   | **A. 升组织到 Pro，再升 Small** | Pro $25/月 + Small 约 $15/月 | 唯一能同时拿到「更高 IO 基线 + 能开工单」的路。升 Pro 之后 `billing/addons` 解锁，Small 基线 174 MB/s（现在 87）、内存 2 GB |
+   | **B. 迁到新项目 / 换 region** | 免费，但要改客户端 base URL 并发版 | 33 MB 数据，`pg_dump` 几分钟。新 ref = 新 URL，App 要发版；且新项目仍是 Free 档，可能遇到同样的慢盘 |
+   | **C. 维持现状 + 加固** | 免费 | 看门狗自动重启 + 客户端显示「后端忙」而不是空白。**故障仍会每天发生**，只是没人被长时间卡住 |
+
+6. **另有一个独立风险，比磁盘更该先处理**：`backups: []` —— 这个项目**当前没有任何备份**。
+   3054 个用户、33 MB 真实数据，全靠一块每天写不动 60 秒的盘撑着。Free 档没有自动备份，
+   PITR 也没开。建议不管选哪条路，先用 `database/query` 导一份离线快照（见第 8 节）。
 
 ---
 
@@ -222,3 +255,28 @@ Management API **没有** support 接口（实测 `/v1/projects/{ref}/support/ti
 
 > 提交后 24–48 小时没回应时，可在**同一个工单**里追加一句新的 checkpoint 数据（本文第 2 节格式），
 > 不要开新单。
+---
+
+## 8. 手动快照（**已于 2026-11-25 执行**）
+
+Free 档 `backups` 是空的、PITR 没开，所以已经手工导了一份脱敏快照：
+
+```
+backups/db-local-only/2026-11-25_snapshot/      （22 个文件 / 5.5 MB，已在 .gitignore）
+canta_users 3125 · canta_device_keys 3131 · plans 112 · plan_votes 3405
+community_comments 294 · messages 338 · conversation_members 6238 · inbox_seen 10052
+package_votes 1055 · recommend_suggestion_votes 723 · point_accounts 580 …
+```
+
+**注意两点，以后照做**：
+
+1. **用 `to_jsonb(t) - 'col'` 再 `::text`，不要用 `json_agg(t)`**。
+   `json_agg` 回来的是 PowerShell 对象，`ConvertFrom-Json` 会把它拍成 `@{id=…}` 这种串，
+   落盘的不是 JSON。正确写法：
+   ```sql
+   select coalesce(jsonb_agg(to_jsonb(t) - 'token' - 'device_key'), '[]'::jsonb)::text as d
+     from public.canta_users t
+   ```
+2. **必须剥掉敏感列**：`canta_users.token`、`canta_device_keys.token` / `.device_key`。
+   第一版没剥，`canta_users.json` 里带出了 3125 个用户 token —— 已当场清空重导，
+   现在全目录 `grep '"token"'` 为空。
