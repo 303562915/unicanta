@@ -947,16 +947,24 @@ internal fun PostsScreen(
      * 全部帖子不划算，而"在这批帖子里出现几次"本身就是能用的热度。
      */
     val drawerTags = remember(posts) {
-        posts
-            .flatMap { it.tags }
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .groupingBy { it }
-            .eachCount()
-            .entries
+        // 同一个标签有人写 `Android` 有人写 `android`：合并成一行，展示先用到的那个写法。
+        // 分成两行的话，点任何一行都会把两条都筛出来（过滤是 ignoreCase 的），看着像 bug。
+        val counts = LinkedHashMap<String, Int>()
+        val shown = LinkedHashMap<String, String>()
+        posts.forEach { post ->
+            post.tags.forEach { raw ->
+                val name = raw.trim()
+                if (name.isNotEmpty()) {
+                    val key = name.lowercase()
+                    counts[key] = (counts[key] ?: 0) + 1
+                    if (key !in shown) shown[key] = name
+                }
+            }
+        }
+        counts.entries
             .sortedByDescending { it.value }
             .take(DRAWER_TAG_LIMIT)
-            .map { PostTagCount(it.key, it.value) }
+            .map { PostTagCount(shown[it.key] ?: it.key, it.value) }
     }
 
     /**
@@ -1225,8 +1233,15 @@ else -> Column {
                 tags = drawerTags,
                 tag = tagPick,
                 onDismiss = { drawerOpen = false },
-                onPickCategory = { picked -> categoryPick = picked },
-                onPickTag = { picked -> tagPick = picked },
+                onPickCategory = { picked ->
+                    // 分类与标签互斥：两者叠着筛会筛出空列表，而顶栏一行只写得下其中一个。
+                    categoryPick = picked
+                    tagPick = ""
+                },
+                onPickTag = { picked ->
+                    tagPick = picked
+                    categoryPick = ""
+                },
             )
         }
     }

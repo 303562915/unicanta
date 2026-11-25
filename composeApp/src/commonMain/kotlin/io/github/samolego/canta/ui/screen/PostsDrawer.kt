@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -77,7 +78,7 @@ private const val DrawerFlingThreshold = 365f
  * 也就是不弹、只滑，跟首页头部那套运动同族。Compose 的 spring 与 Flutter 的
  * `SpringDescription` 用同一套单位（k 是 1/s²），数值直接搬。
  */
-private fun drawerSpring() = spring<Float>(dampingRatio = 1f, stiffness = 500f)
+private val DrawerSpring = spring<Float>(dampingRatio = 1f, stiffness = 500f)
 
 /**
  * 帖子页左侧的分类侧栏，逐项照 fluxdo 的 `lib/widgets/topic/category_drawer.dart`：
@@ -122,7 +123,12 @@ internal fun PostCategoryDrawer(
 
     // 开合：点击与拖动后的收尾都只改 value，实际位置由这个动画统一负责。
     LaunchedEffect(open) {
-        progress.animateTo(if (open) 1f else 0f, drawerSpring())
+        val endpoint = if (open) 1f else 0f
+        progress.animateTo(endpoint, DrawerSpring)
+        // 弹簧"走完"不等于落到端点：Float 的默认 visibilityThreshold 是 0.01（304dp 的 3dp），
+        // 差一点就宣告结束。不钉到端点的话，遮罩那张 fillMaxSize 的点击面会一直挂着吃事件，
+        // 面板也会留一条贴边残影。
+        if (progress.value != endpoint) progress.snapTo(endpoint)
     }
 
     /** 松手收尾：照 fluxdo `settle()` —— 先看甩动速度，不够快再按位置就近。 */
@@ -135,9 +141,10 @@ internal fun PostCategoryDrawer(
         scope.launch {
             progress.animateTo(
                 targetValue = target,
-                animationSpec = drawerSpring(),
+                animationSpec = DrawerSpring,
                 initialVelocity = velocity / panelPx,
             )
+            if (progress.value != target) progress.snapTo(target)
             if (target == 0f) onDismiss()
         }
     }
@@ -148,6 +155,10 @@ internal fun PostCategoryDrawer(
         scope.launch {
             if (progress.isRunning) progress.stop()
             progress.snapTo(next)
+            // 一拖到 0 就当场把开合状态收掉：面板一进 0，下面那句早退会把整个抽屉从组合里拿走，
+            // 手势节点跟着消失，onDragStopped 再也不会来——那样 open 会永远停在 true，
+            // 抽屉再也打不开。
+            if (next <= 0f) onDismiss()
         }
     }
     val dragModifier = Modifier.draggable(
@@ -157,14 +168,22 @@ internal fun PostCategoryDrawer(
     )
 
     val visible = progress.value.coerceIn(0f, 1f)
-    if (visible <= 0f) return
+    // 只在"确实关了"的时候才退出组合（open=true 而进度还是 0 的那一帧要留着，手势还在上面）。
+    if (!open && visible <= 0f) return
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 遮罩：点击关闭、也能横向拖着关；透明度跟着进度走，手拖到一半就只压一半。
+        // 透明度在 draw 阶段读进度（`drawBehind`）：拖动时只重画，不重组整棵子树。
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = DrawerScrimAlpha * visible))
+                .drawBehind {
+                    drawRect(
+                        Color.Black.copy(
+                            alpha = DrawerScrimAlpha * progress.value.coerceIn(0f, 1f),
+                        ),
+                    )
+                }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -177,7 +196,12 @@ internal fun PostCategoryDrawer(
             modifier = Modifier
                 .width(DrawerPanelWidth)
                 .fillMaxHeight()
-                .offset { IntOffset(((visible - 1f) * panelPx).roundToInt(), 0) }
+                .offset {
+                    IntOffset(
+                        ((progress.value.coerceIn(0f, 1f) - 1f) * panelPx).roundToInt(),
+                        0,
+                    )
+                }
                 .then(dragModifier)
                 .clip(RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp))
                 .background(scheme.surface)
@@ -220,7 +244,6 @@ internal fun PostCategoryDrawer(
                             accent = scheme.primary,
                             label = "全部话题",
                             selected = category.isBlank(),
-                            indent = false,
                             onClick = {
                                 onPickCategory("")
                                 onDismiss()
@@ -228,7 +251,7 @@ internal fun PostCategoryDrawer(
                         ) {
                             FlGlyphIcon(
                                 glyph = FlGlyphs.appsList,
-                                size = 17.dp,
+                                size = 18.dp,
                                 tint = scheme.primary,
                             )
                         }
@@ -239,7 +262,6 @@ internal fun PostCategoryDrawer(
                             accent = accent,
                             label = name,
                             selected = name == category,
-                            indent = false,
                             onClick = {
                                 onPickCategory(name)
                                 onDismiss()
@@ -354,13 +376,15 @@ private fun DrawerSectionLabel(text: String) {
  * 圆角 9），块与名字之间 12，名字 14.5sp，选中时右端一枚勾。
  *
  * 名字用 `weight(1f)` 占满剩下的宽度：没有它，长分类名与右端的勾会互相挤，勾会飘到名字中间。
+ *
+ * 没有缩进层级：我们的分类是平的（后端只存一个字符串，没有父子），fluxdo 那个 `left: 20`
+ * 是给"父分类展开后的子分类"用的，这里没有那种行。
  */
 @Composable
 private fun DrawerRow(
     accent: Color,
     label: String,
     selected: Boolean,
-    indent: Boolean,
     onClick: () -> Unit,
     icon: @Composable () -> Unit,
 ) {
@@ -368,7 +392,7 @@ private fun DrawerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = if (indent) 20.dp else 0.dp, bottom = 2.dp)
+            .padding(bottom = 2.dp)
             .height(48.dp)
             .clip(RoundedCornerShape(14.dp))
             .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
@@ -403,9 +427,11 @@ private fun DrawerRow(
  * 标签行，与分类行同构，多两样小东西：
  *
  * - 名字下面那条 **3dp** 热度条：底是 `surfaceContainerHighest` 60%，前面按 heat 铺一段
- *   标签色 65%。至少留 2%，否则"冷门"那几行看起来像没加载出来。
- * - 右端是出现在这批帖子里的次数，12sp 等宽数字（`tabularFigures` 在这里由 Compose 的
- *   默认字体承担，只把字号压到 12）。
+ *   强调色 65%。至少留 2%，否则"冷门"那几行看起来像没加载出来。
+ * - 右端是出现在这批帖子里的次数（过千写成 `1.2k`，12sp）。
+ *
+ * 颜色统一走强调色：fluxdo 那套按标签名从一张图标表里取色，我们没有那种表（标签是用户在
+ * 帖子里自由写的字符串），硬按名字哈希上色会和分类色撞车，反而分不清哪个是分类。
  */
 @Composable
 private fun DrawerTagRow(
@@ -464,10 +490,14 @@ private fun DrawerTagRow(
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(
-            text = count.toString(),
+            text = drawerCountText(count),
             fontSize = 12.sp,
             color = scheme.onSurfaceVariant,
             maxLines = 1,
         )
     }
 }
+
+/** 侧栏右端那个次数：四位数起缩写，免得几位数把名字挤窄。 */
+private fun drawerCountText(count: Int): String =
+    if (count >= 1000) "${(count / 100) / 10f}k" else count.toString()
