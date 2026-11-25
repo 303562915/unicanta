@@ -1038,14 +1038,16 @@ private fun CantaNavigation(
                         }
                         if (mine.isNotEmpty()) mine else communityRepository.plansAll(limit = 50).orEmpty()
                     },
-                    // 列表顶上那张「GitHub AI 开源周榜」卡片：点开是整张海报 + 能逐条读的榜单。
+                    // 列表顶上那张「GitHub AI 开源周榜」卡片：数据现拉 GitHub，点开是榜单详情。
+                    weeklyRank = deps.weeklyRank,
                     onOpenWeeklyRank = { navController.navigate(Screen.WeeklyRank.route) },
                     // 底栏一级页面：不给返回箭头，离开靠点底栏别的格。
                 )
             }
             composable(route = Screen.WeeklyRank.route) {
-                // 周榜是「帖子」页顶上那张卡片点进来的二级页：顶栏带返回箭头，底栏让位。
+                // 周榜是「帖子」页顶上那张卡片点进来的二级页：进页面就去 GitHub 拉一次。
                 WeeklyRankScreen(
+                    repository = deps.weeklyRank,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }

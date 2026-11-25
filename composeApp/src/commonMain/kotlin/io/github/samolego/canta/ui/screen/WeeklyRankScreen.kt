@@ -1,6 +1,5 @@
 package io.github.samolego.canta.ui.screen
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,191 +15,91 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.samolego.canta.generated.resources.Res
-import io.github.samolego.canta.generated.resources.weekly_rank_47
-import io.github.samolego.canta.generated.resources.weekly_rank_47_thumb
+import io.github.samolego.canta.data.rank.RankRow
+import io.github.samolego.canta.data.rank.WeeklyRankRepository
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
-import org.jetbrains.compose.resources.painterResource
+import io.github.samolego.canta.util.currentTimeMillis
 
-/**
- * 一条榜单：名次、仓库、总 star、分类、本期净增、上周对比、一句话说明，加一个分类色。
- *
- * 这些都是定值，不做成 `StateFlow`：一期周榜是某一周的快照，不会在开着页面的时候变。
- */
-internal data class WeeklyRankRow(
-    val rank: Int,
-    val repo: String,
-    /** 总 star，照原榜写作「47.4 万」。 */
-    val total: String,
-    val category: String,
-    /** 本期净增，带正负号。 */
-    val delta: String,
-    val note: String,
-    /** 上周那一格：`上周 +2,284 · 加速 +156%` / `上周 +11,678 · 持平` / `上周 +172 · 放缓 −8%`。 */
-    val previous: String,
-    /** 分类色，与海报上那个 chip 同一支。 */
-    val accent: Color,
-)
-
-/** 一期榜单：期次、抓取区间、三句摘要、口径说明和十条行。 */
-internal data class WeeklyRankWeek(
-    val week: Int,
-    val range: String,
-    /** 这一期的一句话结论，海报上写在右上角那块。 */
-    val brief: String,
-    /** 净增比上周快的条数 / 一共测了几条。 */
-    val accelerating: Int,
-    val measured: Int,
-    /** 第一名的净增占全榜的比例，与上一期那个数。 */
-    val topShare: String,
-    val topSharePrevious: String,
-    val rules: List<String>,
-    val rows: List<WeeklyRankRow>,
-)
-
-/** 海报上那支黄：名次前三位与净增数都用它。 */
+/** 前三名与净增数那支黄：跟海报上同一个色。 */
 private val RankGold = Color(0xFFFFD60A)
 
-/** 名次 4 名往后的灰：看得见，但不抢眼。 */
+/** 第 4 名往后的灰：看得见，但不抢眼。 */
 private val RankDimmed = Color(0xFF5F6A73)
 
 /**
- * 第 47 周（2026.11.16 — 11.22）的榜单。
+ * 帖子列表顶上那一行：只有文字，不加缩略图也不列前三名。
  *
- * 写死在客户端而不是从后端拉：这一期是「同批 10 个仓库两次快照的 src 差值」算出来的死数，
- * 后端没有这张表；要做成每周自动更新，得先有一个跑 GitHub 快照的定时任务，那是另一件事。
- */
-internal val weeklyRankWeek47 = WeeklyRankWeek(
-    week = 47,
-    range = "2026.11.16 — 11.22",
-    brief = "中段在发力",
-    accelerating = 8,
-    measured = 10,
-    topShare = "45%",
-    topSharePrevious = "60%",
-    rules = listOf(
-        "口径：同批 10 个仓库在 11—16 与 11—22 两次快照的 star 差值，整 7 天（上期 5 天）。",
-        "两期榜单面板相同，可逐行对比；不混新仓库，避免用没测过的仓充数。",
-    ),
-    rows = listOf(
-        WeeklyRankRow(
-            1, "rea", "47.4 万", "逆向", "+11,684",
-            "用 Agent 逆向分析一个 App 到底怎么跑的", "上周 +11,678 · 持平", Color(0xFFFF897B),
-        ),
-        WeeklyRankRow(
-            2, "superpowers", "32.4 万", "技能框架", "+5,854",
-            "把软件工程流程封装成 AI 能用的技能包", "上周 +2,284 · 加速 +156%", Color(0xFF84C9FF),
-        ),
-        WeeklyRankRow(
-            3, "ui-ux-pro-max-skill", "15.3 万", "设计", "+2,774",
-            "给 AI 装上设计师脑子，出的页面不再土", "上周 +2,123 · 加速 +31%", Color(0xFFFFA1C8),
-        ),
-        WeeklyRankRow(
-            4, "hermes-agent", "26.5 万", "Agent", "+1,702",
-            "会越用越懂你的 AI 助手，可以自己部署", "上周 +1,152 · 加速 +48%", Color(0xFFFFD400),
-        ),
-        WeeklyRankRow(
-            5, "n8n", "21.2 万", "自动化", "+1,187",
-            "拖拽拼流程做自动化，自带 AI 节点", "上周 +571 · 加速 +108%", Color(0xFF95E6AB),
-        ),
-        WeeklyRankRow(
-            6, "spec-kit", "15.1 万", "开发流程", "+1,062",
-            "把需求写成 AI 能照着执行的规格书", "上周 +722 · 加速 +47%", Color(0xFFF8CB92),
-        ),
-        WeeklyRankRow(
-            7, "openclaw", "39.5 万", "Agent", "+502",
-            "AI 直接接管你的电脑，跨系统执行任务", "上周 +225 · 加速 +123%", Color(0xFFFFD400),
-        ),
-        WeeklyRankRow(
-            8, "open-webui", "15.9 万", "界面", "+498",
-            "给自己搭一个网页版 ChatGPT，数据留本地", "上周 +430 · 加速 +16%", Color(0xFFC6A9F9),
-        ),
-        WeeklyRankRow(
-            9, "langchain", "10 万", "框架", "+397",
-            "搭 Agent 的基础框架，开发者天天用", "上周 +249 · 加速 +59%", Color(0xFF8BDDDB),
-        ),
-        WeeklyRankRow(
-            10, "langflow", "15.7 万", "流程编排", "+159",
-            "拖拽连线就能搭 AI 流程，不写代码", "上周 +172 · 放缓 −8%", Color(0xFFFBB56D),
-        ),
-    ),
-)
-
-/**
- * 帖子列表顶上那张卡：一张海报大小的缩略图 + 期次 + 一句结论。
- *
- * 放在帖子页最上面而不是底栏多一格：它是一周一次的内容，不是每天都要点的地方；
- * 底栏已经挤了六七格，再塞一格会把每一格都压窄。
+ * 它是一条"入口"，不是一块内容——帖子的列表才是这一页的主体，卡片每高一行，能看到的帖子就少一条。
+ * 这里也**不发请求**：帖子列表是打开频率最高的一页，一页列表滚一下就够把 GitHub 未认证的额度用掉；
+ * 真正的抓取发生在点开详情页的时候，卡片只读 [WeeklyRankRepository.cachedBoard] 里盘上那一份。
  */
 @Composable
 internal fun WeeklyRankTeaserCard(
-    week: WeeklyRankWeek = weeklyRankWeek47,
+    repository: WeeklyRankRepository,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val revision by repository.revision.collectAsState()
+    val cached = remember(revision) { repository.cachedBoard() }
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(12.dp),
         color = FlSurfaceLevel.Block.colorOf(scheme),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Image(
-                painter = painterResource(Res.drawable.weekly_rank_47_thumb),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                alignment = Alignment.TopCenter,
-                modifier = Modifier
-                    .width(58.dp)
-                    .height(84.dp)
-                    .clip(RoundedCornerShape(10.dp)),
+            Text(
+                text = "GitHub AI 开源周榜",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = scheme.onSurface,
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "GitHub AI 开源周榜",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = scheme.onSurface,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = "第 ${week.week} 周 · ${week.range}",
-                    fontSize = 11.sp,
-                    color = scheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = "${week.brief} · ${week.accelerating}/${week.measured} 个在加速",
-                    fontSize = 11.sp,
-                    color = RankGold,
-                )
-            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (cached != null) {
+                    "实时 · 抓取于 ${agoText(cached.fetchedAt)}"
+                } else {
+                    "实时 · 数据现拉"
+                },
+                fontSize = 10.sp,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
             Text(
                 text = "查看",
                 fontSize = 11.sp,
@@ -212,22 +110,43 @@ internal fun WeeklyRankTeaserCard(
 }
 
 /**
- * 开源周榜这一页：整张海报 + 可逐条读的榜单。
+ * 开源周榜这一页：真的去 GitHub 拉一次，再按本机快照算出本周净增。
  *
- * 海报是这一页的主体（它本来就是一张图），下面的列表是为了两件事：图在窄屏上放缩到看不清
- * 数字时还能读到数，以及长按能选中仓库名去搜。
+ * 进页面就刷新（这里才是唯一会打 GitHub 的地方），失败时把盘上那一屏继续画着并说明原因。
  */
 @Composable
 internal fun WeeklyRankScreen(
+    repository: WeeklyRankRepository,
     onNavigateBack: () -> Unit,
-    week: WeeklyRankWeek = weeklyRankWeek47,
 ) {
     val scheme = MaterialTheme.colorScheme
+    var board by remember(repository) { mutableStateOf(repository.cachedBoard()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reloads by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(repository, reloads) {
+        loading = true
+        error = null
+        val fetched = repository.refresh(force = reloads > 0)
+        if (fetched != null) board = fetched
+        error = repository.lastError
+        loading = false
+    }
+
     Scaffold(
         topBar = {
             ScreenTopBar(
                 onNavigateBack = onNavigateBack,
                 title = "开源周榜",
+                actions = {
+                    TextButton(
+                        onClick = { reloads++ },
+                        enabled = !loading,
+                    ) {
+                        Text("刷新", fontSize = 12.sp)
+                    }
+                },
             )
         },
     ) { padding ->
@@ -237,67 +156,120 @@ internal fun WeeklyRankScreen(
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 28.dp),
         ) {
-            item(key = "poster") {
-                Image(
-                    painter = painterResource(Res.drawable.weekly_rank_47),
-                    contentDescription = "GitHub AI 开源周榜 第 ${week.week} 周",
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier
-                        // 先留边距再按可用宽度定高度：比例锁在这里，宽窗口（平板横屏、桌面端）
-                        // 不会因为 LazyColumn 给的无界高度把海报上下各裁掉一截。
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .fillMaxWidth()
-                        .aspectRatio(1080f / 1886f)
-                        .clip(RoundedCornerShape(18.dp)),
-                )
-            }
-            item(key = "summary") {
+            item(key = "state") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     Text(
-                        text = "第 ${week.week} 周 · ${week.range}",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = scheme.onSurface,
+                        text = "数据来自 GitHub Search API · 本周净增由本机按天快照算出",
+                        fontSize = 11.sp,
+                        color = scheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
                     Text(
-                        text = "按本周净增排 · 第一名占 ${week.topShare}（上期 ${week.topSharePrevious}）· " +
-                            "${week.accelerating}/${week.measured} 个在加速 · ${week.brief}",
+                        text = board?.let {
+                            "抓取于 ${agoText(it.fetchedAt)} · 本机已攒 ${it.snapshotDays} 天快照"
+                        } ?: "还没有抓到数据",
                         fontSize = 11.sp,
                         color = scheme.onSurfaceVariant,
                     )
                 }
             }
-            items(week.rows, key = { row -> row.rank }) { row ->
-                WeeklyRankRowBlock(row)
+
+            if (loading && board == null) {
+                item(key = "loading") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 28.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                    }
+                }
             }
+
+            error?.let { message ->
+                item(key = "error") {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = scheme.errorContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "这次没拉到：$message",
+                                fontSize = 11.sp,
+                                color = scheme.onErrorContainer,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = if (board != null) "下面是上次抓到的，点右上角「刷新」再试。" else "点右上角「刷新」再试。",
+                                fontSize = 10.sp,
+                                color = scheme.onErrorContainer.copy(alpha = 0.85f),
+                            )
+                        }
+                    }
+                }
+            }
+
+            val rows = board?.rows.orEmpty()
+            if (rows.isNotEmpty()) {
+                item(key = "legend") {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        Text(
+                            text = if (board?.hasWeekly == true) "本周净增（近 7 天）" else "按 star 总数（本机还没攒够 7 天快照）",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = scheme.onSurface,
+                        )
+                        if (board?.hasWeekly != true) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "再过几天，这一列会换成真实的周净增：每天打开一次，本机就会多一个采样点。",
+                                fontSize = 10.sp,
+                                color = scheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                itemsIndexed(rows, key = { _, row -> row.repo }) { index, row ->
+                    RankRowBlock(rank = index + 1, row = row)
+                }
+            }
+
             item(key = "rules") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
-                    week.rules.forEach { line ->
-                        Text(
-                            text = line,
-                            fontSize = 10.sp,
-                            color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
-                        )
-                        Spacer(Modifier.height(3.dp))
-                    }
+                    Text(
+                        text = "口径：候选池是 GitHub 上带 topic:llm / ai / ai-agent 标签、按 star 最多的仓库；" +
+                            "「本周净增」= 今天与 7 天前那两个采样点的 star 差；「上期」再看前 7 天，用来判断加速还是放缓。",
+                        fontSize = 10.sp,
+                        color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "为什么第一次装上看不到净增：GitHub 只给当前 star 总数，不提供历史曲线；" +
+                            "净增只能靠本机一天一个采样点自己攒，攒不满 7 天就不编数字。",
+                        fontSize = 10.sp,
+                        color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    )
                 }
             }
         }
     }
 }
 
-/** 榜单的一行：名次 / 仓库与说明 / 分类色 / 本期净增。 */
+/** 榜单的一行：名次 / 仓库与说明 / 本周净增。 */
 @Composable
-private fun WeeklyRankRowBlock(row: WeeklyRankRow) {
+private fun RankRowBlock(rank: Int, row: RankRow) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -310,65 +282,106 @@ private fun WeeklyRankRowBlock(row: WeeklyRankRow) {
             contentAlignment = Alignment.TopEnd,
         ) {
             Text(
-                text = "${row.rank}",
+                text = "$rank",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = if (row.rank <= 3) RankGold else RankDimmed,
+                color = if (rank <= 3) RankGold else RankDimmed,
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = row.repo,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = scheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "· 总 ${row.total}",
-                    fontSize = 11.sp,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.height(2.dp))
             Text(
-                text = row.note,
-                fontSize = 11.sp,
-                color = scheme.onSurfaceVariant,
-                maxLines = 2,
+                text = row.repo,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = scheme.onSurface,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (row.description.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = row.description,
+                    fontSize = 11.sp,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .size(5.dp)
                         .clip(CircleShape)
-                        .background(row.accent),
+                        .background(RankGold.copy(alpha = 0.5f)),
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = row.category,
-                    fontSize = 10.sp,
-                    color = row.accent,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = row.previous,
+                    text = "★ ${thousands(row.stars)}",
                     fontSize = 10.sp,
                     color = scheme.onSurfaceVariant,
                 )
+                row.previous?.let { previous ->
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "上期 ${signed(previous)} · ${pace(row.week, previous)}",
+                        fontSize = 10.sp,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
             }
         }
-        Text(
-            text = row.delta,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = RankGold,
-        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = row.week?.let { signed(it) } ?: "—",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (row.week != null) RankGold else RankDimmed,
+            )
+            Spacer(Modifier.height(1.dp))
+            Text(
+                text = if (row.week != null) "近 7 天" else "待攒够",
+                fontSize = 9.sp,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** `+2,284` / `−8`：正负号都用真符号，读的人一眼知道涨还是跌。 */
+private fun signed(value: Int): String = if (value >= 0) "+${thousands(value)}" else "−${thousands(-value)}"
+
+/** 千分位：`11,684`。 */
+private fun thousands(value: Int): String {
+    val digits = value.toString()
+    val builder = StringBuilder()
+    for ((index, char) in digits.withIndex()) {
+        if (index > 0 && (digits.length - index) % 3 == 0) builder.append(',')
+        builder.append(char)
+    }
+    return builder.toString()
+}
+
+/** 相对时间：卡片和页面顶部都要一句"多久之前"。 */
+private fun agoText(at: Long): String {
+    if (at <= 0L) return "还没抓过"
+    val diff = currentTimeMillis() - at
+    return when {
+        diff < 60_000L -> "刚刚"
+        diff < 3_600_000L -> "${diff / 60_000L} 分钟前"
+        diff < 86_400_000L -> "${diff / 3_600_000L} 小时前"
+        else -> "${diff / 86_400_000L} 天前"
+    }
+}
+
+/** 这一期比上期快还是慢。 */
+private fun pace(week: Int?, previous: Int): String {
+    if (week == null) return "—"
+    if (previous <= 0) return if (week > 0) "加速" else "持平"
+    val ratio = (week - previous) * 100 / previous
+    return when {
+        ratio > 5 -> "加速 +$ratio%"
+        ratio < -5 -> "放缓 −${-ratio}%"
+        else -> "持平"
     }
 }

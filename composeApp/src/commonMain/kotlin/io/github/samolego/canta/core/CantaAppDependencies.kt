@@ -19,6 +19,7 @@ import io.github.samolego.canta.data.community.PostDraftStore
 import io.github.samolego.canta.data.community.PostReadStore
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.preset.CantaPresetStore
+import io.github.samolego.canta.data.rank.WeeklyRankRepository
 import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.Telemetry
 import io.ktor.client.HttpClient
@@ -53,6 +54,8 @@ class CantaAppDependencies(
     val postReads: PostReadStore,
     /** 上次扫出来的包列表：进应用列表页的第一帧先把这张表画出来（见 [AppListSnapshotStore]）。 */
     val appListSnapshot: AppListSnapshotStore,
+    /** 开源周榜：数据现拉 GitHub，周净增靠本机按天快照（见 [WeeklyRankRepository]）。 */
+    val weeklyRank: WeeklyRankRepository,
 )
 
 /** Names of the persisted blobs; each platform maps them to a file or storage key. */
@@ -95,6 +98,9 @@ object StoredData {
 
     /** 上次扫出来的包列表（见 [AppListSnapshotStore]）：冷启动先画它，不等整机扫描。 */
     const val APP_LIST = "app_list.json"
+
+    /** 周榜的候选、按天 star 快照与上一屏结果（见 [WeeklyRankRepository]）。 */
+    const val WEEKLY_RANK = "weekly_rank.json"
 }
 
 /**
@@ -150,5 +156,6 @@ fun cantaAppDependencies(
         postDrafts = PostDraftStore(storage(StoredData.POST_DRAFTS)),
         postReads = PostReadStore(storage(StoredData.POST_READS)),
         appListSnapshot = AppListSnapshotStore(storage(StoredData.APP_LIST)),
+        weeklyRank = WeeklyRankRepository(client, storage(StoredData.WEEKLY_RANK)),
     )
 }
