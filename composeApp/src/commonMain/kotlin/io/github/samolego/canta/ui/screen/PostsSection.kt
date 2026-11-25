@@ -115,6 +115,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.isDefaultAuthorName
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.rememberRememberedListState
+import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
@@ -1164,6 +1165,7 @@ else -> Column {
                     }
                 },
                 listState = postListState,
+                searchFocus = searchFocus,
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
                 onQueryChange = { query = it },
@@ -1308,6 +1310,8 @@ private fun PostListPane(
     /** 长按一张卡片：切收藏。 */
     onLongPress: (CommunityPost) -> Unit,
     listState: LazyListState,
+    /** 顶栏 🔍 把光标打进搜索框要用的 focusRequester（由 PostsScreen 持有）。 */
+    searchFocus: FocusRequester,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
     onQueryChange: (String) -> Unit,
