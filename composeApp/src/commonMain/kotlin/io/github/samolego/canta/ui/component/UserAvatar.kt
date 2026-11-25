@@ -1,6 +1,9 @@
 package io.github.samolego.canta.ui.component
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -12,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -28,6 +32,12 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
@@ -169,14 +179,41 @@ private object AvatarLoader {
     /** 说清楚是谁在要这张图；图床不挑，但请求里有个像样的 UA 总比拼一个空串好查。 */
     private const val USER_AGENT = "Canta/4.3 (avatar; https://github.com/303562915/unicanta)"
 
-    suspend fun load(url: String): ImageBitmap? = withTimeoutOrNull(12_000) {
+    /**
+     * 正在下载的地址 → 那一趟下载。
+     *
+     * 一屏里同一个人常常出现好几次（会话行、头像排、搜索结果、聊天气泡），每次各发一个 GET 既慢
+     * 又费流量；这里让同地址的并发请求共用一趟。**只共享字节、不共享解码**：解码留在调用方的
+     * 线程上做（和以前一样），省得把 Skia 的解码器搬来搬去。
+     */
+    private val inFlight = mutableMapOf<String, Deferred<ByteArray?>>()
+
+    /** 共享下载用的后台作用域：某个头像滚出屏幕、等待被取消，不该把别人的那一份也掐掉。 */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    suspend fun load(url: String): ImageBitmap? {
+        val bytes = bytesOf(url) ?: return null
+        return runCatching { bytes.decodeToImageBitmap() }.getOrNull()
+    }
+
+    private suspend fun bytesOf(url: String): ByteArray? {
+        inFlight[url]?.let { return it.await() }
+        val job = scope.async(start = CoroutineStart.LAZY) {
+            val result = fetch(url)
+            inFlight.remove(url)
+            result
+        }
+        inFlight[url] = job
+        return job.await()
+    }
+
+    private suspend fun fetch(url: String): ByteArray? = withTimeoutOrNull(12_000) {
         runCatching {
             val response = client.get(url) { header(HttpHeaders.UserAgent, USER_AGENT) }
             if (!response.status.isSuccess()) {
                 null
             } else {
-                val bytes = response.body<ByteArray>()
-                if (bytes.isEmpty()) null else bytes.decodeToImageBitmap()
+                response.body<ByteArray>().takeIf { it.isNotEmpty() }
             }
         }.getOrNull()
     }
@@ -242,22 +279,29 @@ fun UserAvatar(
     }
 
     val picture = bitmap
-    when {
-        picture != null -> Image(
-            bitmap = picture,
-            contentDescription = name,
-            contentScale = ContentScale.Crop,
-            modifier = modifier
-                .size(size)
-                .clip(CircleShape),
-        )
-
-        // 没上传过头像：一律骨架占位（见 [SkeletonAvatar]）。
-        //
-        // 以前这里退回首字母圆，理由是"至少能看出不是同一人"；实际上一屏几十个字母圆比灰块更乱，
-        // 而且名字本来就写在旁边。现在只有两种样子：**有图**、**还没图**——就这么简单，
-        // 头像位永远占着，不会左侧空出一块。
-        else -> SkeletonAvatar(modifier = modifier, size = size)
+    // 位置先占着，图后到、且**淡入**。
+    //
+    // 以前是"要么图、要么骨架"二选一地整块换：图一到就"啪"一下跳出来，圆越大越像闪屏。现在骨架
+    // 灰圆一直在底下占住这一格（尺寸和照片完全一样，不会有任何位移），照片到了只是盖上来、淡进来。
+    val pictureAlpha by animateFloatAsState(
+        targetValue = if (picture != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "avatar-fade",
+    )
+    Box(modifier = modifier.size(size).clip(CircleShape)) {
+        // 还没图的样子：骨架占位（见 [SkeletonAvatar]）。有图之后它被照片盖住，不必再画。
+        if (picture == null) SkeletonAvatar(size = size)
+        if (picture != null) {
+            Image(
+                bitmap = picture,
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(size)
+                    .clip(CircleShape)
+                    .alpha(pictureAlpha),
+            )
+        }
     }
 }
 
