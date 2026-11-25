@@ -1733,7 +1733,7 @@ private fun ChatTopBar(
                 title = title,
                 isGroup = isGroup,
                 peerOwner = peerOwner,
-                members = groupMembers,
+                groupMembers = groupMembers,
                 onClick = openHeader,
             )
             Spacer(Modifier.width(8.dp))

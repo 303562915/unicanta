@@ -223,10 +223,11 @@ class WeeklyRankRepository(
 
         // 今天的采样点：同一天刷新多次只留最后一次的数（star 只涨不跌，但也会掉，取最新）。
         val samples = current.samples.toMutableMap()
-        fetched.forEach { (repo, stars) ->
+        fetched.forEach { (repo, candidate) ->
             val points = samples[repo].orEmpty().toMutableList()
             points.removeAll { it.day == day }
-            points.add(Point(day, stars))
+            // 采样的是 star 数本身，不是那个仓库的整份数据（Candidate 里还有简介和地址）。
+            points.add(Point(day, candidate.stars))
             // 丢太旧的：留 KEEP_DAYS 天，够算本周与上周两段。
             samples[repo] = points.filter { it.day >= day - KEEP_DAYS }.sortedBy { it.day }
         }
