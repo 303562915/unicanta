@@ -88,6 +88,7 @@ import io.github.samolego.canta.data.community.OfficialGroups
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.AuthorLabel
 import io.github.samolego.canta.ui.component.UnreadBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.dismissInputOnTap
@@ -1818,13 +1819,12 @@ private fun OfficialGroupRow(
         InitialAvatar(label = entry.badge)
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = entry.title,
+            // 会话标题就是对方的名字（群聊是群名）：没改名的显示占位条 + 红点。
+            AuthorLabel(
+                name = entry.title,
                 style = FlText.subheadline,
-                fontWeight = FlText.emphasized,
                 color = scheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
             Text(

@@ -252,22 +252,12 @@ fun UserAvatar(
                 .clip(CircleShape),
         )
 
-        background == null -> LetterAvatar(
-            name = name,
-            modifier = modifier,
-            size = size,
-            letterColor = letterColor,
-            letterStyle = letterStyle,
-        )
-
-        else -> LetterAvatar(
-            name = name,
-            modifier = modifier,
-            size = size,
-            background = background,
-            letterColor = letterColor,
-            letterStyle = letterStyle,
-        )
+        // 没上传过头像：一律骨架占位（见 [SkeletonAvatar]）。
+        //
+        // 以前这里退回首字母圆，理由是"至少能看出不是同一人"；实际上一屏几十个字母圆比灰块更乱，
+        // 而且名字本来就写在旁边。现在只有两种样子：**有图**、**还没图**——就这么简单，
+        // 头像位永远占着，不会左侧空出一块。
+        else -> SkeletonAvatar(modifier = modifier, size = size)
     }
 }
 

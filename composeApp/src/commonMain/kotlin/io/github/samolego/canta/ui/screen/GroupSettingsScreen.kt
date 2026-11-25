@@ -53,6 +53,7 @@ import io.github.samolego.canta.data.community.ConversationDetail
 import io.github.samolego.canta.data.community.ConversationMember
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.AuthorLabel
 import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.AppLinkCard
@@ -975,12 +976,12 @@ private fun GroupMembersCard(
                         letterColor = scheme.primary,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = member.label,
-                        fontSize = 10.sp,
+                    // 成员名同理：没改名的显示成占位条，别让 `#1000x` 排成一列。
+                    AuthorLabel(
+                        name = member.label,
+                        style = TextStyle(fontSize = 10.sp),
                         color = scheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

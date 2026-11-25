@@ -94,6 +94,7 @@ import io.github.samolego.canta.data.community.PersonCard
 import io.github.samolego.canta.data.community.ShareCard
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.imagebed.ImageBed
+import io.github.samolego.canta.ui.component.AuthorLabel
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.Emotion
@@ -2023,12 +2024,12 @@ private fun ChatBubble(
         ) {
             if (showSender) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = message.label,
-                        fontSize = 9.sp,
+                    // 名字走 AuthorLabel：还没改名的群成员显示成占位条 + 红点，而不是 `#10001`。
+                    AuthorLabel(
+                        name = message.label,
+                        style = TextStyle(fontSize = 9.sp),
                         color = colors.outline,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(start = 6.dp, bottom = 5.dp),
                     )
                     // 别人在群里点了我：名字后面挂一个「@你」。比整条高亮更省事，也不会让人
