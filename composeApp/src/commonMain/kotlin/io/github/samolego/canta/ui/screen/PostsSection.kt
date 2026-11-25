@@ -150,7 +150,6 @@ private const val TAG_MAX = 5
 private const val TAG_LIMIT = 20
 
 /**
-/**
  * 编辑器工具栏的一项：图标 + 无障碍名 + 往正文末尾追加的 Markdown 片段。
  *
  * 片段都是"能直接念出来"的样子（`**粗体**` 而不是 `****`）：插进去以后改掉中间那几个字就行，
