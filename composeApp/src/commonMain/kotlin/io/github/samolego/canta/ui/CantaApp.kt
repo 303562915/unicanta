@@ -2066,10 +2066,11 @@ private fun PlanDetailRoute(
             navController.navigate(Screen.Main.route) { launchSingleTop = true }
         },
         // Sharing hands the plan to the clipboard as a code; the receiver's app reads it at launch
-        // and opens this same page.
+        // and opens this same page. The device line rides along so the message says which phone the
+        // plan was proven on, which is the part that makes the code worth opening.
         onShare = { plan ->
             val code = ShareCode.of(plan.id)
-            platform.copyToClipboard(ShareCode.message(plan.id, plan.title))
+            platform.copyToClipboard(ShareCode.message(plan.id, plan.title, plan.deviceLabel))
             platform.showMessage("分享码已复制：$code")
         },
         anchorCommentId = anchorCommentId,

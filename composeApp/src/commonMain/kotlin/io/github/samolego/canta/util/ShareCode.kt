@@ -27,17 +27,30 @@ object ShareCode {
     fun of(planId: Long): String = "$PREFIX$planId-${checksumOf(planId)}"
 
     /**
-     * The share message: the plan's name for the reader, the code for the app. Empty when [planId]
-     * is not a plan id, so a caller never copies a code that would not resolve.
+     * The share message: the plan's name and the phone it was proven on for the reader, the code
+     * for the app. Empty when [planId] is not a plan id, so a caller never copies a code that would
+     * not resolve.
+     *
+     * [device] is the plan's own device line ("Redmi K70 · HyperOS 2"), not the reader's: the same
+     * plan sold as "safe on my phone" is a different claim on somebody else's, and the receiver has
+     * to be able to see whose phone it was before opening anything. It is optional because old rows
+     * carry no device at all, and a blank one must not leave a dangling separator in the message.
      */
-    fun message(planId: Long, title: String = ""): String {
+    fun message(planId: Long, title: String = "", device: String = ""): String {
         if (planId <= 0) return ""
         val code = of(planId)
         val name = title.trim()
-        return if (name.isEmpty()) {
+        val phone = device.trim()
+        val headline = when {
+            name.isNotEmpty() && phone.isNotEmpty() -> "Canta 方案「$name」｜$phone"
+            name.isNotEmpty() -> "Canta 方案「$name」"
+            phone.isNotEmpty() -> "Canta 方案（$phone）"
+            else -> ""
+        }
+        return if (headline.isEmpty()) {
             "$code\n打开 Canta 会自动识别这段分享码。"
         } else {
-            "Canta 方案「$name」\n分享码：$code\n打开 Canta 会自动识别剪贴板里的分享码。"
+            "$headline\n分享码：$code\n打开 Canta 会自动识别剪贴板里的分享码。"
         }
     }
 

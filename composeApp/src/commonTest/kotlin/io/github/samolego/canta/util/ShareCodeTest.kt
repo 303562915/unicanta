@@ -54,6 +54,23 @@ class ShareCodeTest {
     }
 
     @Test
+    fun theMessageCarriesTheDeviceThePlanWasProvenOn() {
+        val message = ShareCode.message(1234, "极度精简", "Redmi K70 · HyperOS 2")
+        assertTrue(message.contains("极度精简"), message)
+        assertTrue(message.contains("Redmi K70"), message)
+        // The code still parses out of the longer text: the device line is decoration, not format.
+        assertEquals(1234L, ShareCode.parse(message))
+    }
+
+    @Test
+    fun aBlankDeviceLeavesNoDanglingSeparator() {
+        val message = ShareCode.message(1234, "极度精简", "   ")
+        assertTrue(message.contains("Canta 方案「极度精简」"), message)
+        assertFalse(message.contains("｜"), message)
+        assertEquals(1234L, ShareCode.parse(message))
+    }
+
+    @Test
     fun aInvalidPlanHasNoMessage() {
         assertEquals("", ShareCode.message(0))
         assertEquals("", ShareCode.message(-3))
