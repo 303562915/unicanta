@@ -574,24 +574,31 @@ internal fun PostsScreen(
     /** 当前这一屏的口径算出来的列表：分类、搜索词、排序都只在这一层做，不动网络。 */
     val shown = remember(posts, board, categoryPick, query, authorId, reads, readsVersion) {
         val keyword = query.trim()
-        val savedIds = if (board == PostBoard.Saved) reads?.savedIds()?.toHashSet().orEmpty() else emptySet()
+        // 收藏用到的是**顺序**（最近收的在前），所以要 List 而不是 Set。
+        val savedOrder = if (board == PostBoard.Saved) reads?.savedIds().orEmpty() else emptyList()
         val byFilter = posts.filter { post ->
             (categoryPick.isBlank() || post.category == categoryPick) &&
                 (keyword.isEmpty() ||
                     post.title.contains(keyword, ignoreCase = true) ||
                     post.excerpt.contains(keyword, ignoreCase = true)) &&
                 (board != PostBoard.Mine || (authorId.isNotBlank() && post.authorId == authorId)) &&
-                (board != PostBoard.Saved || savedIds.contains(post.id))
+                (board != PostBoard.Saved || savedOrder.contains(post.id))
         }
-        if (board == PostBoard.Hot) {
+        when (board) {
             // 置顶永远在前，其余按"赞 3 分、回复 2 分"排：这个权重只是让热闹的浮上来，
             // 不参与任何排序决定，改动它不会改变数据。
-            byFilter.sortedWith(
+            PostBoard.Hot -> byFilter.sortedWith(
                 compareByDescending<CommunityPost> { it.pinned }
                     .thenByDescending { it.likes * 3 + it.comments * 2 },
             )
-        } else {
-            byFilter
+
+            // 收藏栏按收藏时间倒序：这是"我收起来那一批"的自然顺序。
+            // 还没拉到列表里的那几条排到最后（indexOf 是 -1），翻到它们自然会浮上来。
+            PostBoard.Saved -> byFilter.sortedBy { post ->
+                savedOrder.indexOf(post.id).let { index -> if (index < 0) savedOrder.size else index }
+            }
+
+            else -> byFilter
         }
     }
 
@@ -621,17 +628,6 @@ internal fun PostsScreen(
                     onNavigateBack = closeThread,
                     actions = {
                         val open = thread?.post
-                        // 收进局部 val：lambda 里要用它的方法，直接用可空参数会拿不到 smart cast。
-                        val readStore = reads
-                        // 收藏放在顶栏：这是"收起来等会儿看"，不属于帖子正文里的任何一段。
-                        if (open != null && readStore != null) {
-                            TextButton(
-                                onClick = {
-                                    readStore.toggleSaved(open.id)
-                                    readsVersion++
-                                },
-                            ) { Text(if (readStore.isSaved(open.id)) "已收藏" else "收藏") }
-                        }
                         if (canDeleteOpen && open != null) {
                             TextButton(
                                 enabled = busyKey == null,
@@ -672,9 +668,16 @@ internal fun PostsScreen(
                 reply = reply,
                 authorId = authorId,
                 related = related,
+                saved = reads?.isSaved(openId) == true,
                 onReplyChange = { reply = it.take(POST_BODY_LIMIT) },
                 onSend = sendReply,
                 onToggleLike = { thread?.post?.let(toggleLike) },
+                onToggleSave = {
+                    reads?.let { store ->
+                        store.toggleSaved(openId)
+                        readsVersion++
+                    }
+                },
                 onQuote = quoteComment,
                 onCopy = {
                     thread?.post?.let { post ->
@@ -722,8 +725,12 @@ internal fun PostsScreen(
                 canWrite = canWrite,
                 hasMore = hasMore,
                 hasBackend = store != null,
-                unreadOf = { post -> reads != null && reads.isUnread(post.id, post.comments) },
+                unreadOf = { post ->
+                    // 一次都没读过（全新装上）时不画点：满屏都是点等于没有提示。
+                    reads != null && reads.hasHistory() && reads.isUnread(post.id, post.comments)
+                },
                 savedOf = { post -> reads?.isSaved(post.id) == true },
+                savedTotal = reads?.savedIds()?.size ?: 0,
                 listState = postListState,
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
@@ -784,6 +791,8 @@ private fun PostListPane(
     unreadOf: (CommunityPost) -> Boolean,
     /** 这条帖子是不是收起来了。 */
     savedOf: (CommunityPost) -> Boolean,
+    /** 收藏一共几条（不一定都在已加载的列表里，空态文案要区分这两件事）。 */
+    savedTotal: Int,
     listState: LazyListState,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
@@ -917,6 +926,8 @@ private fun PostListPane(
                     PostNote(
                         text = if (board == PostBoard.Mine && authorId.isBlank()) {
                             "还没认出身份，「我的」这一栏要等身份就绪。"
+                        } else if (board == PostBoard.Saved && savedTotal > 0) {
+                            "收藏里有 $savedTotal 条，只是都还没拉到列表里：往下翻，或者点「加载更多」。"
                         } else if (board == PostBoard.Saved) {
                             "收藏是空的：在帖子详情里点「收藏」，它就会收到这一栏。"
                         } else {
@@ -1085,7 +1096,8 @@ private fun PostCard(
                 }
                 if (saved) {
                     Spacer(modifier = Modifier.width(6.dp))
-                    PostBadge(text = "收藏", color = scheme.secondary)
+                    // 底色是 secondary，前景就用它的 on 色：深色主题下白字压在浅紫上读不清。
+                    PostBadge(text = "收藏", color = scheme.secondary, foreground = scheme.onSecondary)
                 }
             }
         }
@@ -1158,10 +1170,12 @@ private fun copyablePost(post: CommunityPost): String = buildString {
     appendLine(post.title.ifBlank { "（无标题）" })
     append("—— ")
     append(post.author.ifBlank { "匿名" })
-    val stamp = relativeStamp(post.createdAt)
-    if (stamp.isNotBlank()) {
+    // 日期用绝对的那一段（ISO 前 10 位就是 yyyy-MM-dd）：复制出去的文字可能是过几天才被人看到，
+    // "3 分钟前"贴到别处就失真了。
+    val day = post.createdAt.take(10)
+    if (day.length == 10) {
         append(" · ")
-        append(stamp)
+        append(day)
     }
     appendLine()
     if (post.body.isNotBlank()) {
@@ -1192,9 +1206,12 @@ private fun PostThreadPane(
     reply: String,
     authorId: String,
     related: List<CommunityPost>,
+    /** 这条帖子现在收着没有。 */
+    saved: Boolean,
     onReplyChange: (String) -> Unit,
     onSend: () -> Unit,
     onToggleLike: () -> Unit,
+    onToggleSave: () -> Unit,
     onQuote: (PostComment) -> Unit,
     onCopy: () -> Unit,
     onOpenRelated: (CommunityPost) -> Unit,
@@ -1263,6 +1280,10 @@ private fun PostThreadPane(
                                 Spacer(modifier = Modifier.width(4.dp))
                                 // 复制整帖（标题、作者、正文、标签）：「这帖转给我看看」最省事的做法。
                                 TextButton(onClick = onCopy) { Text("复制") }
+                                // 收藏放在这里而不是顶栏：顶栏已经有删除，再挤一个按钮标题就要被压扁了。
+                                TextButton(onClick = onToggleSave) {
+                                    Text(if (saved) "已收藏" else "收藏")
+                                }
                             }
                         },
                     )
@@ -1858,11 +1879,15 @@ private fun PostNote(text: String, modifier: Modifier = Modifier) {
 
 /** 一枚小标记：置顶、已锁、我的。 */
 @Composable
-private fun PostBadge(text: String, color: Color) {
+private fun PostBadge(
+    text: String,
+    color: Color,
+    foreground: Color = MaterialTheme.colorScheme.onPrimary,
+) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onPrimary,
+        color = foreground,
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(color)

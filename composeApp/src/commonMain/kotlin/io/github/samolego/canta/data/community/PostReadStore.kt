@@ -58,6 +58,13 @@ class PostReadStore(private val storage: AppBlobStorage) {
     // ---------------------------------------------------------------- 已读
 
     /**
+     * 这台手机上有没有任何已读记录。
+     *
+     * 用来决定"要不要画未读点"：全新装上的第一屏如果每条都算未读，满屏都是点，等于没有提示。
+     */
+    fun hasHistory(): Boolean = blob().reads.isNotEmpty()
+
+    /**
      * 这条帖子现在算不算"没看过 / 有新回复"。
      *
      * 没读过 true；读过了但回帖数比记下来的多 true；其余 false。
@@ -77,10 +84,12 @@ class PostReadStore(private val storage: AppBlobStorage) {
         if (postId <= 0L) return false
         val current = blob()
         val existing = current.reads.firstOrNull { it.id == postId }
-        // 已经对齐过就不写盘：打开同一条帖子两次是常事，不该每次都落一次盘。
-        if (existing != null && existing.comments >= comments) return false
+        // 数字一模一样就什么都不用做（打开同一条帖子两次是常事）。
+        // 用「不等」而不是「变大」：回帖被删掉时数字会变小，那时也该对齐，否则下次涨回旧值
+        // 就不算"有新回复"了。
+        if (existing != null && existing.comments == comments) return false
         val next = current.copy(
-            reads = (listOf(Entry(postId, comments, now()) + current.reads.filterNot { it.id == postId }))
+            reads = (listOf(Entry(postId, comments, now())) + current.reads.filterNot { it.id == postId })
                 .take(ReadLimit),
         )
         write(next)
