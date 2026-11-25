@@ -3,6 +3,8 @@ package io.github.samolego.canta.ui.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -13,14 +15,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Restore
@@ -133,6 +133,7 @@ private sealed interface RunStep {
  * empty "OPPO" section either; a vendor is added by adding its tweak to `rom_tweaks.json`. The one
  * tool every ROM has, restoring the apps uninstalled for this user, sits at the bottom.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TweaksScreen(
     handler: CantaHandler,
@@ -252,30 +253,39 @@ fun TweaksScreen(
                     )
                 }
                 if (open) {
-                    items(list, key = { "tw-$key-${it.id}" }) { tweak ->
-                        ToolRow(
-                            icon = iconOf(tweak),
-                            title = tweak.title,
-                            onClick = {
-                                // Which script was copied last belongs to the dialog, not to the page.
-                                copied = null
-                                detail = tweak
-                            },
-                        )
-                    }
-                    // 音频白名单是页面不是弹窗：它后面是几十行名单，弹窗里只能读。
-                    if (hasAudio) {
-                        item(key = "audio-$key") {
-                            ToolRow(
-                                icon = Icons.Default.ViewList,
-                                // 三态标题：检查中 / 有这套配置 / 本机没有（仍然可进，里面是诊断）。
-                                title = when (audioDetected) {
-                                    null -> "音频白名单 · 检查中…"
-                                    true -> "音频白名单"
-                                    false -> "音频白名单（本机不支持）"
-                                },
-                                onClick = onOpenAudio,
-                            )
+                    // 一行放几个：每个条目只有图标 + 名字，宽度跟着文字走，放不下自动换行。
+                    item(key = "grid-$key") {
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            list.forEach { tweak ->
+                                ToolChip(
+                                    icon = iconOf(tweak),
+                                    title = tweak.title,
+                                    onClick = {
+                                        // Which script was copied last belongs to the dialog, not to the page.
+                                        copied = null
+                                        detail = tweak
+                                    },
+                                )
+                            }
+                            // 音频白名单是页面不是弹窗：它后面是几十行名单，弹窗里只能读。
+                            if (hasAudio) {
+                                ToolChip(
+                                    icon = Icons.Default.ViewList,
+                                    // 三态：检查中 / 有这套配置 / 本机没有（仍可进，里面是诊断）。
+                                    title = when (audioDetected) {
+                                        null -> "音频白名单 · 检查中…"
+                                        true -> "音频白名单"
+                                        false -> "音频白名单（本机不支持）"
+                                    },
+                                    onClick = onOpenAudio,
+                                )
+                            }
                         }
                     }
                 }
@@ -465,6 +475,43 @@ private fun GroupHeader(
 }
 
 /**
+ * 一个工具，做成自适应宽度的小块：图标 + 名字，宽度只跟着文字走，由 [FlowRow] 决定一行放几个。
+ *
+ * 没有右侧箭头：整块就是一个可点的目标，箭头只会白占一截宽度。
+ */
+@Composable
+private fun ToolChip(
+    icon: ImageVector,
+    title: String,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
  * 一个工具：图标 + 名字，整行可点。
  *
  * 行上没有执行按钮：点它就是弹详情，执行在弹窗里。一页上堆六七个圆形 ▶ 只会让人分不清
@@ -481,7 +528,7 @@ private fun ToolRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 22.dp, vertical = 3.dp)
+            .padding(horizontal = 20.dp, vertical = 3.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -506,13 +553,6 @@ private fun ToolRow(
             )
             if (running) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
             }
         }
     }
