@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.cache.stableMerge
+import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.CommunityPost
 import io.github.samolego.canta.data.community.PostComment
 import io.github.samolego.canta.data.community.PostDraft
@@ -76,6 +77,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.BeijingTime
+import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -162,6 +164,8 @@ private enum class PostBoard(val label: String) {
  * @param author 署名：发帖、回帖时一起发上去，只当名字显示，不当身份。
  * @param authorId 身份码：草稿按它分开，删除按钮也只在作者本人的帖子上出现。
  * @param onNavigateBack 顶栏返回；null 表示这是底栏上的一级页面，顶栏不画返回箭头。
+ * @param loadPlans 编辑器里「分享方案」要列的方案；null 时那一格不画。它在点开时才拉，
+ *   不是为了发一条帖子先等一次网络——写帖的人大多数不贴方案。
  */
 @Composable
 internal fun PostsScreen(
@@ -173,6 +177,7 @@ internal fun PostsScreen(
     onNavigateBack: (() -> Unit)? = null,
     /** 已读痕迹与收藏；null 时列表不画未读点、详情里也没有收藏按钮。 */
     reads: PostReadStore? = null,
+    loadPlans: (suspend () -> List<CommunityPlan>)? = null,
 ) {
     val scope = rememberCoroutineScope()
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
@@ -232,6 +237,17 @@ internal fun PostsScreen(
     var savedAt by remember { mutableStateOf(0L) }
     var posting by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
+    /**
+     * 「分享方案」的选择器：开着没有、那一刻拉到的方案、拉的时候出错没有。
+     *
+     * 方案列表不跟帖子列表一起拉：写帖的人多数不贴方案，为一次可能不发生的点击先等一次网络不划算。
+     * 拉到过就留在这一次会话里复用——方案不是一秒钟变一次的东西，点第二回不必再等一次；
+     * 重开编辑器只把选择器关掉（见 [openEditor]），不留一个悬着的对话框。
+     */
+    var sharePickerOpen by remember { mutableStateOf(false) }
+    var sharePlans by remember { mutableStateOf<List<CommunityPlan>>(emptyList()) }
+    var shareLoading by remember { mutableStateOf(false) }
+    var shareError by remember { mutableStateOf<String?>(null) }
 
     // ---- 详情 ----
     /** 打开的那条帖子的 id；0 表示还在列表上。 */
@@ -377,6 +393,8 @@ internal fun PostsScreen(
         tagInput = ""
         savedAt = draft?.updatedAt ?: 0L
         editorError = null
+        // 从草稿或「写帖子」进来时不让上一次留下的选择器挡在编辑器前面。
+        sharePickerOpen = false
         composing = true
     }
 
@@ -722,6 +740,25 @@ internal fun PostsScreen(
                 onRemoveTag = { tag -> tags = tags - tag },
                 onPublish = publish,
                 onCancel = cancelEditor,
+                // 「分享方案」/「插入分享码」：点了才拉列表，拉不到只说一句，不挡着发帖。
+                // 插进去的是一整段分享文案（方案名 + 方案所属机型 + 分享码），
+                // 别人在帖子里看到就知道这是哪台机子验证过的方案。
+                onInsertShare = loadPlans?.let { load ->
+                    {
+                        sharePickerOpen = true
+                        if (sharePlans.isEmpty() && !shareLoading) {
+                            shareLoading = true
+                            shareError = null
+                            scope.launch {
+                                sharePlans = runCatching { load() }.getOrElse { problem ->
+                                    shareError = problem.message ?: "方案列表没拉到"
+                                    emptyList()
+                                }
+                                shareLoading = false
+                            }
+                        }
+                    }
+                },
                 modifier = Modifier.padding(padding),
             )
 
@@ -779,6 +816,22 @@ internal fun PostsScreen(
                 modifier = Modifier.padding(padding),
             )
         }
+    }
+
+    if (sharePickerOpen) {
+        SharePlanPickerDialog(
+            plans = sharePlans,
+            loading = shareLoading,
+            error = shareError,
+            onDismiss = { sharePickerOpen = false },
+            onPick = { plan ->
+                // 与正文里那排 Markdown 模板同一条路：只能往末尾追加（String 值拿不到游标）。
+                val glue = if (body.isBlank() || body.endsWith("\n")) "" else "\n\n"
+                body = (body + glue + ShareCode.message(plan.id, plan.title, plan.deviceLabel))
+                    .take(POST_BODY_LIMIT)
+                sharePickerOpen = false
+            },
+        )
     }
 
     confirmTarget?.let { target ->
@@ -1570,6 +1623,8 @@ private fun ReplyBar(
  * 编辑器：标题、分类、标签、正文（可切 Markdown 预览）、字数、自动保存的那一行，以及「取消」「发布」。
  *
  * 整页可滚：正文一长，键盘一弹，按钮就在屏幕外了；`verticalScroll` 让它们跟着走。
+ *
+ * @param onInsertShare 点「分享方案」时调用；null 时不画那一格（还没有能列方案的地方）。
  */
 @Composable
 private fun PostEditorPane(
@@ -1589,6 +1644,7 @@ private fun PostEditorPane(
     onRemoveTag: (String) -> Unit,
     onPublish: () -> Unit,
     onCancel: () -> Unit,
+    onInsertShare: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -1664,6 +1720,11 @@ private fun PostEditorPane(
                             onBodyChange((body + glue + snippet).take(POST_BODY_LIMIT))
                         },
                     )
+                }
+                // 比模板更进一步的一格：插进来的是一份真实的方案分享（名字 + 机型 + 分享码），
+                // 而不是一段要自己填的骨架。机型由方案那一行给，不用写帖的人手打。
+                if (onInsertShare != null) {
+                    PostChip(text = "分享方案", picked = false, onClick = onInsertShare)
                 }
             }
         }
@@ -2018,6 +2079,85 @@ private fun PostDeleteDialog(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * 「分享方案」的选择器：一列方案，点一条就把它的分享文案插进正文。
+ *
+ * 每一行都带着方案自己的机型（`deviceLabel`），这正是分享时最要紧的那一句：同一份包在
+ * REDMI K80 Ultra 上能删，换一台机器不一定是同一个结论。所以插入的文案由
+ * [ShareCode.message] 生成，机型从方案那一行走，写帖的人不用手打。
+ *
+ * 列表只到「挑一个」为止：方案能不能用、哪些包真被删过，仍然由方案详情页回答，
+ * 这里不重复一遍也不替它打包票。
+ */
+@Composable
+private fun SharePlanPickerDialog(
+    plans: List<CommunityPlan>,
+    loading: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onPick: (CommunityPlan) -> Unit,
+) {
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = "分享一个方案",
+        scrollable = true,
+        buttons = { TextButton(onClick = onDismiss) { Text("取消") } },
+    ) {
+        val scheme = MaterialTheme.colorScheme
+        when {
+            loading -> Text(
+                text = "正在拉方案…",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+
+            error != null -> Text(
+                text = error,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.error,
+            )
+
+            plans.isEmpty() -> Text(
+                text = "还没有能分享的方案。先去「方案」页传一份，或者让它拉完再来。",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+
+            else -> plans.forEach { plan ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onPick(plan) }
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = plan.title.ifBlank { "未命名方案" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        // 机型是这一格最要紧的一行：它决定这个分享码对别人是不是同一件事。
+                        text = plan.deviceLabel.ifBlank { "机型没记录" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = ShareCode.of(plan.id),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.primary,
+                    )
+                }
+            }
+        }
     }
 }
 

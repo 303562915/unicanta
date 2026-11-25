@@ -1024,9 +1024,11 @@ private fun CantaNavigation(
                 // （按身份分开存本机），身份与推荐页那一半取的是同一套。
                 var postsAuthor by remember { mutableStateOf("") }
                 var postsIdentity by remember { mutableStateOf("") }
+                var postsOwner by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
                     postsAuthor = DeviceIdentity.displayName(deps.settings)
                     val identity = DeviceIdentity.current(deps.settings)
+                    postsOwner = identity.owner
                     postsIdentity = identity.owner.ifEmpty { identity.token }
                 }
                 PostsScreen(
@@ -1036,6 +1038,16 @@ private fun CantaNavigation(
                     reads = deps.postReads,
                     author = postsAuthor,
                     authorId = postsIdentity,
+                    // 「分享方案」那一格：先列自己传过的方案，一份都没有才把最近的一批端上来，
+                    // 免得一个刚装上的人点开只看到"还没有可分享的方案"。
+                    loadPlans = {
+                        val mine = if (postsOwner.isNotBlank()) {
+                            communityRepository.plansByOwner(postsOwner)
+                        } else {
+                            emptyList()
+                        }
+                        if (mine.isNotEmpty()) mine else communityRepository.plansAll(limit = 50).orEmpty()
+                    },
                     // 底栏一级页面：不给返回箭头，离开靠点底栏别的格。
                 )
             }
