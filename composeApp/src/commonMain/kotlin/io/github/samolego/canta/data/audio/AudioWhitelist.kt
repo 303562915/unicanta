@@ -17,6 +17,17 @@ object AudioWhitelist {
     /** The read-only script every refresh runs through the privileged shell. */
     const val RESOURCE_PATH = "files/audio_whitelist_state.sh"
 
+    /**
+     * 「这台机器有没有这套配置」的一次性判定：不列包、不读属性，只找文件。
+     *
+     * 单独一条轻量脚本，是因为工具页要在**渲染入口那一行之前**知道答案——把整个
+     * [RESOURCE_PATH] 跑一遍只为问一句有没有，代价是几百行 `pm list packages`。
+     */
+    const val PROBE_PATH = "files/audio_whitelist_probe.sh"
+
+    /** What [PROBE_PATH] prints when it found something that looks like the config. */
+    const val PROBE_YES = "__yes__"
+
     /** The script that writes the property to `-1`: the one action this feature ships. */
     const val BYPASS_PATH = "files/audio_whitelist_bypass.sh"
 
@@ -48,6 +59,9 @@ object AudioWhitelist {
 
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
     suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
+
+    /** Reads the one-line probe out of the bundled resources. */
+    suspend fun probeScript(): String = Res.readBytes(PROBE_PATH).decodeToString()
 
     /** The two write scripts, read the same way: one source of shell text for the whole feature. */
     suspend fun bypassScript(): String = Res.readBytes(BYPASS_PATH).decodeToString()

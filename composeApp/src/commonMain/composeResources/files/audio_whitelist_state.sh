@@ -1,7 +1,16 @@
 P=persist.sys.scene.partition.level
 echo "##LEVEL##$(getprop "$P")"
 CFG=
-for f in /odm/etc/audio/trackefx_config.xml /odm/etc/audio/track_efx_config.xml /vendor/etc/audio/trackefx_config.xml /vendor/etc/audio/track_efx_config.xml; do if [ -f "$f" ]; then CFG="$f"; break; fi; done
+for f in /odm/etc/audio/trackefx_config.xml /odm/etc/audio/track_efx_config.xml /vendor/etc/audio/trackefx_config.xml /vendor/etc/audio/track_efx_config.xml /system/etc/audio/trackefx_config.xml; do if [ -f "$f" ]; then CFG="$f"; break; fi; done
+if [ -z "$CFG" ]; then
+for d in /odm/etc/audio /vendor/etc/audio /system/etc/audio /odm/etc /vendor/etc; do
+for f in "$d"/*.xml "$d"/*.conf "$d"/*.cfg; do
+[ -f "$f" ] || continue
+if grep -qilE 'trackefx|TrackCustomEfx|scene\.partition' "$f" 2>/dev/null; then CFG="$f"; break; fi
+done
+[ -n "$CFG" ] && break
+done
+fi
 echo "##CFG##$CFG"
 if [ -n "$CFG" ]; then
 { grep -oE '"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+"' "$CFG"; grep -oE '>[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+<' "$CFG"; } 2>/dev/null | tr -d '"><' | grep -v '\.xml$' | sort -u | sed 's|^|##PKG##|'

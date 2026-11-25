@@ -289,6 +289,9 @@ fun MessagesScreen(
     var loadPass by remember { mutableIntStateOf(0) }
     // 手指下拉的那一次还在不在转：位移与指示器都由这一页自己管（见下面 `dragPx`）。
     var refreshing by remember { mutableStateOf(false) }
+    // 这一趟刷新是不是**人自己拽出来的**。只有它结束时说一句「已刷新」——30 秒那一拍轮询不打扰人，
+    // 而人主动拽了一下却看不出有没有反应，会更难受（这正是「下拉刷新了还是怎么样」的来源）。
+    var pulledRefresh by remember { mutableStateOf(false) }
     // 顶栏那条搜索：开没开、打了什么字。会话与联系人是本地过滤（数据已经在手上），
     // 第三段「消息」要问后端，所以单独存一份结果。
     var searchActive by remember { mutableStateOf(false) }
@@ -434,6 +437,12 @@ fun MessagesScreen(
                 loading = false
                 refreshing = false
                 loadBusy = false
+                // 人拽出来的那一趟说一句结果：成功就是「已刷新」，失败时列表顶上那行原因已经在说话，
+                // 不必再叠一句。30 秒的轮询不会走到这里（`pulledRefresh` 只有手势会置位）。
+                if (pulledRefresh) {
+                    pulledRefresh = false
+                    if (loadError == null) onMessage("已刷新")
+                }
             }
         }
     }
@@ -749,6 +758,7 @@ fun MessagesScreen(
                     dragPx = travelPx
                     refreshing = true
                     loadBusy = true
+                    pulledRefresh = true
                     reloads++
                 } else if (dragPx > 0f) {
                     animate(initialValue = dragPx, targetValue = 0f) { value, _ -> dragPx = value }

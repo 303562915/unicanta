@@ -153,6 +153,8 @@ fun TweaksScreen(
     var copied by remember { mutableStateOf<String?>(null) }
     /** The card waiting for a package name; null when nothing is being asked. */
     var asking by remember { mutableStateOf<RomTweak?>(null) }
+    /** 这台机器有没有音频白名单配置；null 表示还在问（或不在这层问）。 */
+    var audioDetected by remember { mutableStateOf<Boolean?>(null) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     // 双击底栏「工具」那一格：这一页回顶部。
@@ -162,6 +164,12 @@ fun TweaksScreen(
     LaunchedEffect(Unit) {
         profile = handler.deviceProfile()
         tweaks = RomTweaks.bundled()
+        // 音频白名单这一行要先知道本机有没有那套配置：没有就写在标题上，别让人点进去看一个空转的开关。
+        if (family == familyKeyOf("hyperos") && handler.supportsTweakCommands) {
+            audioDetected = runCatching {
+                handler.runTweakCommand(AudioWhitelist.probeScript()).output.contains(AudioWhitelist.PROBE_YES)
+            }.getOrNull()
+        }
     }
 
     val allGroups = remember(tweaks, profile) { tweaks?.groupedFor(profile).orEmpty() }
@@ -275,7 +283,12 @@ fun TweaksScreen(
                         item(key = "audio-page") {
                             ToolRow(
                                 icon = Icons.Default.ViewList,
-                                title = "音频白名单 · 看名单与开关",
+                                // 三态标题：检查中 / 有这套配置 / 本机没有（仍然可进，里面是诊断）。
+                                title = when (audioDetected) {
+                                    null -> "音频白名单 · 检查中…"
+                                    true -> "音频白名单 · 看名单与开关"
+                                    false -> "音频白名单 · 本机没有这套配置（进去看诊断）"
+                                },
                                 canRun = false,
                                 running = false,
                                 onRun = {},
