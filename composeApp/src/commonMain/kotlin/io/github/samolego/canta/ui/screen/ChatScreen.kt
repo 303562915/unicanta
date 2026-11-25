@@ -101,6 +101,7 @@ import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionSpan
 import io.github.samolego.canta.ui.component.EmotionText
+import io.github.samolego.canta.ui.component.GroupGridAvatar
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.component.personAvatarUrl
@@ -1200,6 +1201,8 @@ fun ChatScreen(
                 isGroup = grouped,
                 memberCount = members,
                 peerOwner = peerOwner,
+                // 群头像拼九宫格要用成员名单；私聊传空（那边画对方一个人的头像）。
+                groupMembers = detail?.members.orEmpty(),
                 typingLine = typingLine,
                 onNavigateBack = onNavigateBack,
                 onOpenGroupInfo = onOpenGroupInfo,
@@ -1666,6 +1669,8 @@ private fun ChatTopBar(
     isGroup: Boolean,
     memberCount: Int,
     peerOwner: String,
+    /** 群成员名单：群聊顶栏那个头像要拼九宫格（见 [GroupGridAvatar]）；私聊传空。 */
+    groupMembers: List<ConversationMember> = emptyList(),
     /** 「X 正在输入…」；空串表示没人打字（这时群聊退回写「群聊」）。 */
     typingLine: String = "",
     onNavigateBack: () -> Unit,
@@ -1728,6 +1733,7 @@ private fun ChatTopBar(
                 title = title,
                 isGroup = isGroup,
                 peerOwner = peerOwner,
+                members = groupMembers,
                 onClick = openHeader,
             )
             Spacer(Modifier.width(8.dp))
@@ -1819,7 +1825,7 @@ private fun ChatTopBar(
  * 两态由 [PersonAvatar] 决定，这一层不再自己画字。
  *
  * [peerOwner] 只在私聊里有：有了身份号才能推出图床地址（见 [personAvatarUrl]）。群聊没有"一个人"
- * 可以对应，所以永远是群名首字。
+ * 可以对应，所以画**成员九宫格**（[groupMembers] 不够两个人时退回群名首字）。
  *
  * [onClick] 是「点头像进资料/主页」这一个动作；为 null 的时候就只是一个装饰圆，不抢触摸。
  */
@@ -1828,21 +1834,34 @@ private fun ChatHeaderAvatar(
     title: String,
     isGroup: Boolean,
     peerOwner: String = "",
+    /** 群成员名单：群聊用它拼九宫格，私聊传空。 */
+    groupMembers: List<ConversationMember> = emptyList(),
     onClick: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val clickModifier = if (onClick == null) {
+        Modifier
+    } else {
+        Modifier.clickable(
+            onClickLabel = if (isGroup) "打开群资料" else "看主页",
+            onClick = onClick,
+        )
+    }
+    // 群聊：成员够两个人就拼九宫格（微信群头像那种），否则退回群名首字。
+    if (isGroup && groupMembers.count { it.owner.isNotEmpty() } >= 2) {
+        GroupGridAvatar(
+            name = title.ifBlank { chatInitial(title = title, isGroup = true) },
+            members = groupMembers,
+            size = 40.dp,
+            modifier = clickModifier,
+        )
+        return
+    }
     PersonAvatar(
         name = title.ifBlank { chatInitial(title = title, isGroup = isGroup) },
         owner = if (isGroup) "" else peerOwner,
         size = 40.dp,
-        modifier = if (onClick == null) {
-            Modifier
-        } else {
-            Modifier.clickable(
-                onClickLabel = if (isGroup) "打开群资料" else "看主页",
-                onClick = onClick,
-            )
-        },
+        modifier = clickModifier,
         background = scheme.primary.copy(alpha = 0.15f),
         letterColor = scheme.primary,
     )

@@ -59,6 +59,7 @@ import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.AppLinkCard
 import io.github.samolego.canta.ui.component.AppToggleCard
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.GroupGridAvatar
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.PickConversationDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
@@ -864,38 +865,15 @@ private fun HeadAction(glyph: FlGlyph, label: String, onClick: () -> Unit) {
     }
 }
 
-/** 群头像：四个成员首字拼的 2×2，一眼看得出"这是个多人的地方"。 */
+/**
+ * 群头像：成员拼的九宫格（见 [GroupGridAvatar]）。
+ *
+ * 以前是四个首字拼的 2×2；现在每一格都是那个成员自己的头像——设过照片就是照片，没设过是首字，
+ * 而且 5 人以上自动变成 3×3，一眼看得出"这是个多人的地方"。
+ */
 @Composable
 private fun GroupAvatar(members: List<ConversationMember>, size: Dp) {
-    val scheme = MaterialTheme.colorScheme
-    val cell = size / 2
-    val fills = listOf(
-        scheme.primary.copy(alpha = 0.16f),
-        scheme.secondary.copy(alpha = 0.16f),
-        scheme.tertiary.copy(alpha = 0.16f),
-        scheme.primary.copy(alpha = 0.10f),
-    )
-    Column(modifier = Modifier.size(size).clip(RoundedCornerShape(cell / 2))) {
-        for (row in 0 until 2) {
-            Row {
-                for (column in 0 until 2) {
-                    val index = row * 2 + column
-                    val person = members.getOrNull(index)
-                    Box(
-                        modifier = Modifier.size(cell).background(fills[index]),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = person?.label?.take(1).orEmpty(),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = scheme.primary,
-                        )
-                    }
-                }
-            }
-        }
-    }
+    GroupGridAvatar(name = "", members = members, size = size)
 }
 
 /** 成员：标题带总人数（不设上限），下面一格一格的圆头像，最后一格是「邀请」。 */
