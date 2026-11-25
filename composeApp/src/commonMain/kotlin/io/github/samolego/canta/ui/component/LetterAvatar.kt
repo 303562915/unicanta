@@ -37,6 +37,13 @@ fun LetterAvatar(
      */
     letterStyle: TextStyle? = null,
 ) {
+    // 还没改名字的人：头像位画成骨架占位（见 AuthorMark.kt），不显示装机码的首字。
+    // 放在这里而不是各个页面里，是因为**所有**头像最终都落到这一个组件上——
+    // 帖子、评论、会话列表、群成员、个人主页，一处改完全站一致。
+    if (isDefaultAuthorName(name)) {
+        SkeletonAvatar(modifier = modifier, size = size)
+        return
+    }
     Box(
         modifier = modifier
             .size(size)

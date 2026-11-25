@@ -51,11 +51,12 @@ private val DefaultToken = Regex("^[0-9A-Z]{5}-[0-9A-Z]{5}$")
 /**
  * [name] 是不是"还没改名字"。
  *
- * 空串也算：没名字就是没名字。判据是形状，不是"有没有设置过"——别人的名字只有字符串可看。
+ * 只认装机码的形状。空串**不算**：调用方拿不到名字时大多会先兜一句"匿名"或"未知"，
+ * 那种位置画个骨架反而把"不知道是谁"说成"还没起名"——两件事。
  */
 fun isDefaultAuthorName(name: String): Boolean {
     val trimmed = name.trim()
-    if (trimmed.isEmpty()) return true
+    if (trimmed.isEmpty()) return false
     return DefaultCode.matches(trimmed) || DefaultToken.matches(trimmed)
 }
 
