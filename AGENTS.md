@@ -520,6 +520,24 @@ code 取值：检查 `UpdateFailure`（`RATE_LIMITED`/`TIMEOUT`/`NETWORK`/`SERVE
 `rootMayBeAvailable()`（`su` 文件或 root 管理器 App），并且 root 装不动时先 `cp` 到
 `/data/local/tmp` 再 `pm install`（`pm` 读不了 FUSE 上的 `Android/data`）。
 
+### 12.4.2 「Shizuku 没有响应」= 用户服务绑不上，先看是不是两个连接（2026-11-25）
+
+`NOT_READY` 的报告里三条通道同时写「Shizuku 没有响应」，这一点**不是**「Shizuku 没启动」：那句话
+只在 `pingBinder()` 为真、`getUid() != -1`（也就是已授权）时才会出现，含义是
+`Shizuku.bindUserService` 两轮都没把 `ShellUserService` 连上。三个已知来源，按排查顺序：
+
+1. **同一进程里两个 `ShizukuShell`**（已修）：`AndroidCantaHandler` 与 `AndroidCantaPlatform` 以前各
+   `lazy { ShizukuShell(context) }` 一个，等于同一份用户服务上挂两条 `ServiceConnection`——应用列表/
+   卸载那条能跑，自更新那条偏偏绑不上。现在只有 `ShizukuShell.shared(context)` 一个实例。
+2. **Shizuku 的用户服务进程被系统拦/杀**（HyperOS 省电策略最常见）。
+3. **管理器太老 / 是只支持 `newProcess` 的分支**：13.1 起才有 `bindUserService`。
+
+为了不必再靠人描述屏幕，`ShizukuShell` 现在把绑不上的原文（`bindUserService 失败：…` /
+`用户服务 N 秒内没连上（第 k 轮）` + `Shizuku uid=… ping=… preV11=… manager=<版本>`）放进
+`TweakRun.output`，由 `refusalText` 拼成「Shizuku 没有响应（…）」，所以它**会出现在
+`update_reports.detail` 里**；同一句话也进了安装失败的 toast（`about_install_failed`，只取第一行）。
+看报告就能判是版本、权限还是进程起不来。
+
 ### 12.5 排查顺序（别一上来就翻客户端日志）
 
 1. 先查 `update_reports` 最近同机型的行，看 `stage` + `code` + `detail`。

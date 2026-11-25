@@ -243,7 +243,7 @@ class AndroidCantaHandler(
     override val supportsDisabling: Boolean get() = true
 
     /** The tools page's scripts need a shell; Shizuku's user service is the only one Canta has. */
-    private val shell by lazy { ShizukuShell(context) }
+    private val shell by lazy { ShizukuShell.shared(context) }
 
     override val supportsTweakCommands: Boolean get() = true
 

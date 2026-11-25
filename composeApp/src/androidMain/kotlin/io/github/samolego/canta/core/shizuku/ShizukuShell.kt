@@ -27,7 +27,7 @@ import rikka.shizuku.Shizuku
  * every call is one transaction on its binder. The service is not a daemon, so it goes away with
  * Canta instead of outliving it.
  */
-class ShizukuShell(private val context: Context) {
+class ShizukuShell private constructor(private val context: Context) {
 
     private companion object {
         const val TAG = "ShizukuShell"
@@ -53,6 +53,25 @@ class ShizukuShell(private val context: Context) {
          * 所以这条等待必须由我们自己放弃。
          */
         const val RUN_TIMEOUT_MS = 30_000L
+
+        /**
+         * 全进程一个实例。
+         *
+         * 为什么必须是这一个：Shizuku 的用户服务按「应用 + tag」认，而每个 [ShizukuShell] 都带着
+         * 自己的 [ServiceConnection]。以前 `AndroidCantaHandler`（应用列表、卸载、工具页）和
+         * `AndroidCantaPlatform`（自更新安装）各 `lazy { ShizukuShell(context) }` 一个，等于同一份
+         * 用户服务上挂了两个连接：第二条连接拿不到服务，10 秒后就是我们看到的那句
+         * 「Shizuku 没有响应」。线上 `NOT_READY` 的报告里三条通道同时"没有响应"，正是这个形状 ——
+         * 同一个进程里明明已经能跑 `pm`（应用列表和卸载都靠它），自更新那一路却偏偏绑不上。
+         * 一个实例、一条连接、一个 binder，就没有这件事。
+         */
+        @Volatile
+        private var instance: ShizukuShell? = null
+
+        fun shared(context: Context): ShizukuShell =
+            instance ?: synchronized(this) {
+                instance ?: ShizukuShell(context.applicationContext).also { instance = it }
+            }
     }
 
     /**
@@ -102,9 +121,13 @@ class ShizukuShell(private val context: Context) {
     suspend fun run(script: String, timeoutMs: Long = RUN_TIMEOUT_MS): TweakRun {
         val remote = binder ?: bind()
         if (remote == null) {
+            // 把「为什么没绑上」原样带出去：这句话会进安装失败的 detail / update_reports，
+            // 下次不用再让人读屏幕，报告本身就写着是权限、版本还是进程起不来。
+            val alive = runtimeAlive()
             return TweakRun(
                 ok = false,
-                failure = if (runtimeAlive()) TweakFailure.Timeout else TweakFailure.NoPrivilege,
+                output = lastBindError.ifBlank { shizukuState() },
+                failure = if (alive) TweakFailure.Timeout else TweakFailure.NoPrivilege,
             )
         }
         // 在单独的 scope 上等：超时之后这次调用就此作废，不会再挂着界面。
@@ -114,16 +137,35 @@ class ShizukuShell(private val context: Context) {
             // 这次没答上来：丢掉这个 binder，下一次重新绑（绑不上的话就是我们自己给的那句
             // 「没有响应」，而不是一条永远转不完的进度）。
             binder = null
+            lastBindError = "${timeoutMs / 1000} 秒内没有回复"
             LogUtils.w(TAG, "The shell service did not answer within ${timeoutMs}ms")
-            return TweakRun(ok = false, failure = TweakFailure.Timeout)
+            return TweakRun(ok = false, output = lastBindError, failure = TweakFailure.Timeout)
         }
         return answer
     }
 
+    /**
+     * Shizuku 现在长什么样，一句话：版本、uid、有没有 binder。
+     *
+     * 只在失败时读：`getUid()` 在没授权时会抛，所以整段包在 runCatching 里；这段文字的唯一用途是
+     * 让「没有响应」不再是一句没有信息的话。
+     */
+    private fun shizukuState(): String = runCatching {
+        "Shizuku uid=${Shizuku.getUid()} ping=${Shizuku.pingBinder()} preV11=${Shizuku.isPreV11()} " +
+            "manager=${runCatching { context.packageManager.getPackageInfo("moe.shizuku.privileged.api", 0).versionName }.getOrNull() ?: "?"}"
+    }.getOrElse { "读不到 Shizuku 状态：${it.message ?: it}" }
+
+    /** 上一次绑定为什么没成，给 [run] 的原话；空串表示还没失败过。 */
+    @Volatile
+    private var lastBindError: String = ""
+
     /** Starts [ShellUserService] if it is not running yet; null when it cannot be started. */
     private suspend fun bind(): IBinder? = bindLock.withLock {
         binder?.let { return@withLock it }
-        if (!runtimeAlive()) return@withLock null
+        if (!runtimeAlive()) {
+            lastBindError = ""
+            return@withLock null
+        }
 
         for (round in 0 until BIND_ROUNDS) {
             if (round > 0) {
@@ -138,20 +180,27 @@ class ShizukuShell(private val context: Context) {
             val deferred = CompletableDeferred<IBinder?>()
             pending = deferred
             try {
-                val requested = runCatching { Shizuku.bindUserService(args, connection) }
-                    .onFailure { LogUtils.w(TAG, "Could not start the shell service: $it") }
-                    .isSuccess
-                if (!requested) continue
+                val started = runCatching { Shizuku.bindUserService(args, connection) }
+                if (started.isFailure) {
+                    lastBindError = "bindUserService 失败：${started.exceptionOrNull()?.message ?: started.exceptionOrNull()}"
+                    LogUtils.w(TAG, "Could not start the shell service: ${started.exceptionOrNull()}")
+                    continue
+                }
                 val bound = withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
                 if (bound != null) {
                     binder = bound
+                    lastBindError = ""
                     return@withLock bound
                 }
+                lastBindError = "用户服务 ${BIND_TIMEOUT_MS / 1000} 秒内没连上（第 ${round + 1} 轮）"
                 LogUtils.w(TAG, "The shell service did not connect (round ${round + 1}/$BIND_ROUNDS)")
             } finally {
                 pending = null
             }
         }
+        // 两轮都没连上：把「哪一步卡住」和「这台机器上的 Shizuku 长什么样」一起带出去，
+        // 下一次的报告就能直接判是版本、是权限，还是用户服务进程起不来。
+        lastBindError = listOf(lastBindError.ifBlank { "用户服务没连上" }, shizukuState()).joinToString("；")
         null
     }
 

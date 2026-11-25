@@ -18,8 +18,8 @@ import io.github.samolego.canta.generated.resources.about_download_failed_unsupp
 import io.github.samolego.canta.generated.resources.about_download_too_slow
 import io.github.samolego.canta.generated.resources.about_install_done
 import io.github.samolego.canta.generated.resources.about_install_handoff
+import io.github.samolego.canta.generated.resources.about_install_failed
 import io.github.samolego.canta.generated.resources.about_install_refused
-import io.github.samolego.canta.generated.resources.about_install_retry_wait
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_update_download_toast
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
@@ -415,6 +415,9 @@ internal class UpdateCenter(
             } else if (attempt.retryable && noteNotReady(ready.version)) {
                 // 环境没就绪：这个包本身没问题。记一条之后把卡片退回「已下载」，隔一会儿自己再来
                 // 一次 —— 绝大多数情况是 App 先起来了、Shizuku 的用户服务还在绑。
+                //
+                // 屏幕上必须给出原因（第一条通道的原话）：以前这一步什么都不说，只把卡片留在
+                // 「已下载，点击安装」，看起来就是「点了安装、什么也没发生」。
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_INSTALL,
                     outcome = UpdateReport.OUTCOME_FAILED,
@@ -425,7 +428,9 @@ internal class UpdateCenter(
                     detail = "stage=$lastStage\n$failure",
                     elapsedMs = elapsed,
                 )
-                platform.showMessage(getString(Res.string.about_install_retry_wait))
+                platform.showMessage(
+                    getString(Res.string.about_install_failed, firstReason(failure)),
+                )
                 state = UpdateState.ReadyToInstall(ready.version, ready.path)
                 installing = false
                 scope.launch {
@@ -527,6 +532,15 @@ private const val SLOW_STALL_SECONDS = 12
  */
 private const val INSTALL_NOT_READY_RETRIES = 2
 private const val INSTALL_NOT_READY_RETRY_DELAY_MILLIS = 20_000L
+
+/**
+ * 失败原因的第一行，用于 toast。
+ *
+ * `installUpdate` 的失败文字是一份逐通道的报告（每行一条通道），整份进 `update_reports.detail`；
+ * 屏幕上只放得下一行，就是第一条通道自己说的那句 —— 它已经带了 Shizuku 那边返回的原话。
+ */
+private fun firstReason(failure: String): String =
+    failure.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }?.take(140).orEmpty()
 
 /** 这条下载是不是慢到该停下、改去下载页。没有 `Content-Length`（[percent] 为负）时量不出速度，就不猜。 */
 private fun isDownloadTooSlow(startedAt: TimeMark, lastChange: TimeMark, percent: Int): Boolean {

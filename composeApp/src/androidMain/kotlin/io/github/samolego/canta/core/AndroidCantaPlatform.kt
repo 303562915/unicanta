@@ -170,7 +170,7 @@ class AndroidCantaPlatform(
     private var biometricActivity: FragmentActivity? = null
 
     /** Runs `pm install` as Shizuku; created on first update, not for every page. */
-    private val shell by lazy { ShizukuShell(context) }
+    private val shell by lazy { ShizukuShell.shared(context) }
 
     /**
      * One update download at a time. The start-up check and the about page ask for the same APK,
@@ -1465,12 +1465,20 @@ class AndroidCantaPlatform(
      * report used to say when Shizuku was not up: "推送到 /data/local/tmp 失败（偏移 0）：").
      */
     private fun refusalText(result: TweakRun, emptyOutput: String): String = when (result.failure) {
-        // 「没在运行，或没授权」合成一句的话，用户照着做也没法确定该开服务还是该点授权。
-        TweakFailure.NoPrivilege -> ShizukuPermission.refusalText(context.packageManager)
-        TweakFailure.Timeout -> "Shizuku 没有响应"
+        // 「没在运行，或没授权」合成一句的话，用户照着做也没法确定该开服务还是该点授权；
+        // 后面的括号是 ShizukuShell 带回来的原话（版本 / uid / 绑定失败的那句），
+        // 它就写在 update_reports.detail 里，下一次不用再靠人描述屏幕。
+        TweakFailure.NoPrivilege -> withDetail(ShizukuPermission.refusalText(context.packageManager), result.output)
+        TweakFailure.Timeout -> withDetail("Shizuku 没有响应", result.output)
         TweakFailure.Broken -> "Shizuku 服务异常：${summarized(result.output)}"
         TweakFailure.Unsupported -> "这台设备没有可用的 Shizuku 通道"
         null -> result.output.trim().ifBlank { emptyOutput }
+    }
+
+    /** 「一句结论（原因）」，原因空就不加括号。 */
+    private fun withDetail(headline: String, detail: String): String {
+        val reason = summarized(detail)
+        return if (reason.isBlank()) headline else "$headline（$reason）"
     }
 
     /**
