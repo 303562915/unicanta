@@ -302,6 +302,12 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
             )
         }.getOrNull()
     }
+    // 身份预热：商城、消息、我的方案这些按身份查快照的页面，第一帧就要知道「这是谁」。
+    // 不预热的话，`DeviceIdentity.current()` 得等某个页面自己把设置读完，那一帧只能先画加载圈。
+    // 只读一次，失败（设置还没落盘）就当没有，各页面自己的读取照旧。
+    LaunchedEffect(deps) {
+        runCatching { DeviceIdentity.current(deps.settings) }
+    }
     val settingsViewModel: SettingsViewModel = viewModel {
         SettingsViewModel(
             deps.settings,
@@ -1053,8 +1059,14 @@ private fun CantaNavigation(
             }
             composable(route = Screen.Store.route) {
                 // 商城：积分、积分商城、兑换中心（CDK 码池）。机场页只管投票，钱的事都在这。
+                //
+                // 身份用启动时预热过的那一份做初值：这一页按身份查快照，`LaunchedEffect` 读完设置
+                // 之前 `authorId` 一直是空串，那一帧就只能是加载圈（缓存明明就在盘上）。
+                val bootIdentity = DeviceIdentity.remembered()
                 var storeAuthor by remember { mutableStateOf("") }
-                var storeIdentity by remember { mutableStateOf("") }
+                var storeIdentity by remember {
+                    mutableStateOf(bootIdentity?.let { it.owner.ifEmpty { it.token } }.orEmpty())
+                }
                 LaunchedEffect(Unit) {
                     storeAuthor = DeviceIdentity.displayName(deps.settings)
                     val identity = DeviceIdentity.current(deps.settings)

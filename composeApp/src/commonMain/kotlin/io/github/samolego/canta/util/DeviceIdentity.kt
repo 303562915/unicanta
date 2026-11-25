@@ -57,10 +57,25 @@ object DeviceIdentity {
         return token
     }
 
+    /**
+     * 上一次读到的身份，进程内记着。
+     *
+     * 读它本身是 `suspend`（设置是异步读出来的），但界面上有一批页面**第一帧**就要知道「这是谁」：
+     * 商城、消息、我的方案都按身份查上一份快照，`current()` 还没跑完的那一帧只能画一圈加载。
+     * 启动时预热一次（见 `CantaApp` 开头），之后这些页面第一帧就能同步拿到。
+     */
+    @Volatile
+    private var lastIdentity: Identity? = null
+
+    /** 上一次 [current] 读到的身份；本进程还没读过时为 null。 */
+    fun remembered(): Identity? = lastIdentity
+
     /** Token plus the number it owns, read from the settings (0 while not signed in). */
     suspend fun current(settings: CantaSettings): Identity {
         val token = ensure(settings)
-        return Identity(token, settings.identityUserIdFlow.first())
+        val identity = Identity(token, settings.identityUserIdFlow.first())
+        lastIdentity = identity
+        return identity
     }
 
     /**
