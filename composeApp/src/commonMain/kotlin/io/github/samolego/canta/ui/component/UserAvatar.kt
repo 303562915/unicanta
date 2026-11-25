@@ -290,10 +290,10 @@ fun PersonAvatar(
     letterColor: Color = Color.White,
     letterStyle: TextStyle? = null,
 ) {
-    // 还没改名字的人：整块马赛克。与帖子卡片、楼层用的是同一个组件（见 AuthorMark.kt），
+    // 还没改名字的人：骨架灰圆。与帖子卡片、楼层用的是同一个组件（见 AuthorMark.kt），
     // 所以「没名字」在评论区和帖子区长得一模一样。
     if (isDefaultAuthorName(name)) {
-        MosaicAvatar(modifier = modifier, size = size)
+        SkeletonAvatar(modifier = modifier, size = size)
         return
     }
     UserAvatar(

@@ -2056,7 +2056,7 @@ private fun AnonymousHintBanner() {
         AnonymousDot(size = 7.dp)
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "你还没改名字：头像和名字现在都是打码的样子，别人认不出你。" +
+            text = "你还没改名字：头像和名字现在都用占位块盖着（骨架样式），别人认不出你。" +
                 "去「我的 → 昵称」写一个，帖子和评论马上换成真名。",
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
