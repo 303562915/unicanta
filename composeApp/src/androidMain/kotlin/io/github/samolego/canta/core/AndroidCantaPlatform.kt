@@ -1278,6 +1278,11 @@ class AndroidCantaPlatform(
         // "Shizuku 读不到这个目录 / root 没授权" is — and the caller prints all of them.
         val attempts = linkedMapOf<String, String>()
 
+        /** 从 IO 线程弹一句 toast：Toast 必须在有 Looper 的线程上 show，所以回主线程。 */
+        suspend fun toast(message: String) {
+            withContext(Dispatchers.Main) { showMessage(message) }
+        }
+
         suspend fun tryChannel(channel: String, install: suspend () -> String?): Boolean {
             // A channel that throws is a channel that failed: an out-of-memory base64 push or a
             // runtime that dies mid-call must become one report line, not an aborted batch.
@@ -1292,7 +1297,10 @@ class AndroidCantaPlatform(
                 "通道异常：${summarized(e.toString())}"
             } ?: return true
             attempts[channel] = summarized(failure)
+            // 这一条通道没成，用户要看得见：以前只写 LogUtils（"print"），屏幕上什么也没有，
+            // 于是整个安装过程像卡住。一句话说完一条通道，下一条通道接着试。
             LogUtils.w(TAG, "$channel refused the install: $failure")
+            toast("$channel 装不上：${summarized(failure).take(60)}")
             return false
         }
 

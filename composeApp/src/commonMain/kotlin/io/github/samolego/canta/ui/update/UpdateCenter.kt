@@ -78,9 +78,20 @@ internal class UpdateCenter(
     private val client: HttpClient,
     private val scope: CoroutineScope,
 ) {
-    /** 卡片画的唯一状态；自动路径和手动点击都改这一个。 */
-    var state by mutableStateOf<UpdateState>(UpdateState.Idle)
-        private set
+    private var stateValue by mutableStateOf<UpdateState>(UpdateState.Idle)
+
+    /**
+     * 卡片画的唯一状态；自动路径和手动点击都改这一个。
+     *
+     * 写进 [stateValue] 之后顺手同步给 [UpdateProgress]：顶栏那条常驻进度读的就是它。改状态的地方
+     * 有十几处，只在这一处同步，就不会出现「卡片在动、顶栏不动」（或者反过来）。
+     */
+    var state: UpdateState
+        get() = stateValue
+        private set(value) {
+            stateValue = value
+            UpdateProgress.sync(value)
+        }
 
     /** 下载完了等一句话（「安装前确认」开关开着时才这样）。 */
     var pendingConfirm by mutableStateOf<UpdateState.ReadyToInstall?>(null)

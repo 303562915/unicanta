@@ -235,6 +235,9 @@
     <string name="about_ready_to_install">%1$s 已下载，点击安装</string>
     <string name="about_installing">正在安装…完成后应用会退出</string>
     <string name="about_installing_version">正在安装 %1$s…完成后应用会退出</string>
+    <!-- 顶栏那条常驻进度上的小字。百分号在代码里拼，不写 %%（见第 12.2 节）。 -->
+    <string name="update_progress_downloading">正在下载 %1$s</string>
+    <string name="update_progress_installing">正在安装 %1$s</string>
     <!-- 卡片上那一行带数字的安装文案：%2$d 是按阶段折算的百分比，百分号在代码里拼。 -->
     <string name="about_installing_progress">正在安装 %1$s… %2$d</string>
     <!-- 四条通道全拒时只说一句：逐条的 pm 输出留在 update_reports 里，不糊在屏幕上。 -->

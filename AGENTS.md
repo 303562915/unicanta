@@ -463,6 +463,23 @@ Compose Multiplatform 的字符串格式化**只认 `%N$s` / `%N$d`**，用的�
 - 要加阶段：`InstallStage` 加枚举值 → `AndroidCantaPlatform.installUpdateLocked` 里 `onStage(...)` →
   `AboutScreen.installStageLabel` 加一行字符串映射（`values/` 与 `values-zh-rCN/` 都要加）。
 
+### 12.3.1 顶栏那条常驻进度（2026-11-25 加）
+
+进度以前只画在「关于」页那张卡片里，人在应用列表/消息/帖子页时什么都看不见，看起来像「点了没反应」。
+现在：
+
+- `ui/update/UpdateProgress.kt` 是一个 `internal object`，只存一份 `active: Item?`（阶段 + 版本 +
+  `fraction`）。`UpdateCenter.state` 的 setter 每次赋值都调 `UpdateProgress.sync(value)` ——
+  **改状态只有那一处**，卡片和顶栏读的是同一份，不会一个在动一个不动。
+- `ui/fl/FlTopBar.kt` 读 `UpdateProgress.active`，在顶栏下面画一行小字（`update_progress_downloading`
+  / `update_progress_installing`）加一根 `FlProgressBar(progress = fraction)`。所有用 `FlTopBar`
+  的页面（主界面 `CantaTopBar`、二级页 `ScreenTopBar`）都自动有；`ChatScreen` 那几个自绘顶栏没有。
+- 百分比来自 `UpdateState.Installing.shownPercent()`，与关于页同一份判断；量不出长度时
+  `fraction = null`，只画不确定进度条，不编数字。百分号在代码里拼（见 12.2）。
+- 「该让用户知道的结果都要 toast」= 第 8 节词表里的 `print`。所以 `installUpdateLocked` 里每条通道
+  被拒时，除了 `LogUtils.w` 还 `toast("$channel 装不上：…")`（`toast()` 会 `withContext(Dispatchers.Main)`
+  —— Toast 只能在有 Looper 的线程上 show）。
+
 ### 12.4 诊断上报：每一步结束都写一行到 `update_reports`
 
 **为什么有它**：「更新装不上」以前只能靠问当事人屏幕上写了什么。现在每次检查/下载/安装结束都上报一行，
