@@ -39,6 +39,7 @@ import io.github.samolego.canta.ui.screen.releaseHistory
 import io.github.samolego.canta.ui.screen.updateLabel
 import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.UpdateReport
+import io.github.samolego.canta.util.currentTimeMillis
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -154,9 +155,25 @@ internal class UpdateCenter(
         scope.launch { settings.setSkippedAutoInstallVersion(ready.version) }
     }
 
+    /** 上一次检查（自动或手动）的时间：关于页进来时据此决定要不要再问一次。 */
+    private var lastCheckAt = 0L
+
+    /**
+     * 关于页进来时调用：手上没有正在跑的事、并且一分钟内没查过，就自己查一次。
+     *
+     * 这样"进这一页就能看到进度/结果"不必先点一下「检查更新」——查到新版本时 [check] 会直接开始
+     * 下载，于是卡片上立刻就是进度条。一分钟的间隔是挡"来回切页把检查配额点光"。
+     */
+    fun checkOnEnter() {
+        if (state is UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing) return
+        if (currentTimeMillis() - lastCheckAt < ENTER_CHECK_INTERVAL_MS) return
+        check()
+    }
+
     /** 手动检查：走 API（答得干净），失败会把原因写在卡片上并留一行。 */
     fun check() {
         if (state is UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing) return
+        lastCheckAt = currentTimeMillis()
         // A store build cannot be replaced by this repo's APK: its signature is the store's.
         if (platform.isInstalledFromFdroid()) {
             state = UpdateState.StoreManaged
@@ -203,12 +220,13 @@ internal class UpdateCenter(
             )
             when {
                 !found.isNewerThanInstalled() -> state = UpdateState.Latest
-                // Downloading on its own is what the switch is for; it is on by default. A build
-                // that already failed to install on its own is left for a manual tap: fetching it
-                // again only to fail again is the loop this mark breaks.
-                settings.autoInstallUpdatesFlow.first() &&
-                    label != settings.skippedAutoInstallVersionFlow.first() -> startDownload(found, auto = true)
-                else -> state = UpdateState.Available(label, found)
+                // 检测到新版本就**直接下**。以前这里还要过一遍「自动下载更新包」开关：关掉它的机器
+                // 点一次检查，只得到一张「点击前往下载」的卡片，还得再点一次——"检测到了却不下载"
+                // 就是那么来的。现在那个开关只管**启动后要不要自己查**（后台轮询），查到了就下。
+                // 例外：上次自动安装失败过的这一版，再下一遍只会再失败一次，留成手点。
+                label == settings.skippedAutoInstallVersionFlow.first() ->
+                    state = UpdateState.Available(label, found)
+                else -> startDownload(found, auto = true)
             }
         }
     }
@@ -532,6 +550,14 @@ private const val SLOW_STALL_SECONDS = 12
  */
 private const val INSTALL_NOT_READY_RETRIES = 2
 private const val INSTALL_NOT_READY_RETRY_DELAY_MILLIS = 20_000L
+
+/**
+ * 关于页两次「进来就自己查一次」之间至少隔多久。
+ *
+ * 一分钟：够挡住在设置和关于之间来回切页时反复问后端（GitHub 匿名 API 是一小时 60 次），
+ * 又不至于让人等太久——想立刻确认，页面上的「检查更新」一直在。
+ */
+private const val ENTER_CHECK_INTERVAL_MS = 60_000L
 
 /**
  * 失败原因的第一行，用于 toast。

@@ -175,11 +175,23 @@ internal fun AboutScreen(
     val updateState = updateCenter.state
     // 换了更新通道，卡片上那个版本属于另一个通道：先清掉，别把旧通道的版本装到新通道头上。
     // 「最近更新」也跟着换：开发版与稳定版的发布说明是两份。
+    //
+    // **只有真的换了通道才清**：`onChannelChanged` 会取消正在跑的下载并清空状态，而这一页每次进来
+    // 都是一次新的组合；以前它无条件跑，于是"自动下载正在进行时点进关于页"会把那趟下载掐掉，
+    // 看到的就是"没在更新"。现在用记住的上一个值比对，第一次进来不算换。
+    var channelSeen by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(updateChannel) {
-        if (updateChannel != null) {
+        val channel = updateChannel ?: return@LaunchedEffect
+        if (channelSeen == null) {
+            channelSeen = channel
+        } else if (channelSeen != channel) {
+            channelSeen = channel
             updateCenter.onChannelChanged()
-            updateCenter.loadHistory(force = true)
         }
+        updateCenter.loadHistory(force = true)
+        // 进这一页就自己查一次（一分钟内查过就不重复）：查到新版本会**直接开始下载**，
+        // 所以卡片上立刻就是进度条，不用先点一下「检查更新」。
+        updateCenter.checkOnEnter()
     }
     // Read here, not in the tap handler: `getString` suspends, and a click is not a suspend call.
     val qqGroupCopied = stringResource(Res.string.about_qq_group_copied)

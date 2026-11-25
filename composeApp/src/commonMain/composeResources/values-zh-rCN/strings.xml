@@ -217,7 +217,7 @@
     <string name="about_update_failed_server">检查失败：GitHub 返回异常，稍后再试</string>
     <string name="about_update_failed_no_release">检查失败：这个渠道还没有发布版本</string>
     <string name="about_update_failed_bad_answer">检查失败：返回的不是发布数据，代理可能改写了响应</string>
-    <string name="about_update_download_toast">发现新版本 %1$s，正在下载</string>
+    <string name="about_update_download_toast">检测到更新 %1$s，正在下载</string>
     <string name="about_update_store_managed">由 F-Droid 安装，请从商店更新</string>
     <string name="about_auto_install">自动下载更新包</string>
     <string name="about_confirm_install">安装前确认</string>

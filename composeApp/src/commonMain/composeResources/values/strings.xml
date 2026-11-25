@@ -411,7 +411,7 @@
     <string name="about_update_failed_server">Check failed: GitHub answered with an error. Try again later</string>
     <string name="about_update_failed_no_release">Check failed: this channel has no published release yet</string>
     <string name="about_update_failed_bad_answer">Check failed: the answer was not release data — the proxy may have rewritten it</string>
-    <string name="about_update_download_toast">Version %1$s found — downloading</string>
+    <string name="about_update_download_toast">Update %1$s detected — downloading</string>
     <string name="about_update_store_managed">Installed from F-Droid — update it there</string>
     <string name="about_auto_install">Download updates automatically</string>
     <string name="about_confirm_install">Confirm before installing</string>
