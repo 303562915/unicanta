@@ -133,6 +133,14 @@ import kotlin.math.abs
 private const val POSTS_PAGE = 20
 
 /**
+ * 侧栏「标签」页最多列多少行。
+ *
+ * 标签是从已经拉到手的帖子里汇总的（后端没有 `/tags.json` 那样的全量接口），一屏几百条
+ * 既没人看也拖慢首帧；60 行已经盖住常用的那些，剩下的用搜索胶囊找。
+ */
+private const val DRAWER_TAG_LIMIT = 60
+
+/**
  * 帖子列表在 [ScreenCache] 里的槽位。
  *
  * 键里不带身份：帖子是公共列表，谁看都是同一份；带了身份的键反而会让换身份后白等一次加载。
@@ -237,12 +245,16 @@ private enum class PostBoard(val label: String) {
  * 为什么自己画一条而不是用 `ScreenTopBar`：那个是 72dp、标题居中，而 fluxdo 这里是 **48dp、
  * 标题左对齐**，右边只有图标。高度这件事不能靠 padding 硬凑——它决定了列表第一屏能露出几条。
  *
- * [menuOpen] / [filterOpen] 由调用方持有，用 `DropdownMenu` 打开对应的面板。
+ * 开了分类侧栏（见 [PostCategoryDrawer]）以后，☰ 变成强调色，中间那行接一句「· 分类」/「· #标签」：
+ * 抽屉一关，人得看得出列表是按什么筛的，否则会以为帖子少了。
+ *
+ * [filterMenuOpen] 由调用方持有，用 `DropdownMenu` 打开口径面板。
  */
 @Composable
 private fun PostsToolbar(
     board: PostBoard,
     category: String,
+    tag: String,
     newCount: Int,
     onOpenCategories: () -> Unit,
     onOpenFilters: () -> Unit,
@@ -258,14 +270,15 @@ private fun PostsToolbar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(modifier = Modifier.width(8.dp))
-        // ☰ 分类入口：fluxdo 打开的是分类侧栏；我们只有五个候选，用下拉面板就够。
+        // ☰ 分类入口：打开 fluxdo 那条从左侧滑出的分类侧栏（见 [PostCategoryDrawer]）。
         TopBarIconButton(
             glyph = FlGlyphs.appsList,
             label = "分类",
+            active = category.isNotBlank() || tag.isNotBlank(),
             onClick = onOpenCategories,
         )
 
-        // 「最新 ▾」：口径 + 计数。左对齐、占满中间，窄屏时文字自己省略。
+        // 「最新 ▾」：口径 + 计数 + 当前筛选。左对齐、占满中间，窄屏时文字自己省略。
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -275,10 +288,15 @@ private fun PostsToolbar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (board == PostBoard.Latest && newCount > 0) {
-                    "${board.label} ($newCount)"
-                } else {
-                    board.label
+                text = buildString {
+                    append(board.label)
+                    if (board == PostBoard.Latest && newCount > 0) append(" ($newCount)")
+                    // 当前按哪个分类/标签筛，写在这里：抽屉关了以后，列表为什么短了要有交代。
+                    if (tag.isNotBlank()) {
+                        append(" · #$tag")
+                    } else if (category.isNotBlank()) {
+                        append(" · $category")
+                    }
                 },
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
@@ -307,11 +325,15 @@ private fun PostsToolbar(
  *
  * 触控框 40dp、图标 24dp（fluxdo 的 glyph 口径）：24 是这套图标在别处的默认大小，缩到 20 会
  * 和底栏那一排对不上。
+ *
+ * [active] 是"这个入口现在管着事"：☰ 在按分类/标签筛的时候换成强调色，不然一条纯灰的图标
+ * 看不出列表的短是有原因的。
  */
 @Composable
 private fun TopBarIconButton(
     glyph: FlGlyph,
     label: String,
+    active: Boolean = false,
     onClick: () -> Unit,
 ) {
     Box(
@@ -324,7 +346,7 @@ private fun TopBarIconButton(
         FlGlyphIcon(
             glyph = glyph,
             size = 24.dp,
-            tint = MaterialTheme.colorScheme.onSurface,
+            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -467,6 +489,8 @@ internal fun PostsScreen(
     // ---- 列表筛选 ----
     var board by remember { mutableStateOf(PostBoard.Latest) }
     var categoryPick by remember { mutableStateOf("") }
+    /** 按标签筛：空串表示不按标签。标签页在分类侧栏里（见 [PostCategoryDrawer]）。 */
+    var tagPick by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
 
     /** 盘上这个身份的草稿，最近改过的在前。首帧同步读一次（`read()` 是同步的）。 */
@@ -484,8 +508,8 @@ internal fun PostsScreen(
     var freshCount by remember { mutableIntStateOf(0) }
     /** 顶栏「最新 ▾」的下拉开合。 */
     var filterMenuOpen by remember { mutableStateOf(false) }
-    /** 顶栏 ☰ 那个分类面板的开合。 */
-    var categoryMenuOpen by remember { mutableStateOf(false) }
+    /** 左侧分类侧栏（☰）的开合。侧栏内部拖到关闭时会自己把它收回 false。 */
+    var drawerOpen by remember { mutableStateOf(false) }
     /** 右下角 FAB 的展开状态（草稿 / 写新帖 / 刷新）。 */
     var fabOpen by remember { mutableStateOf(false) }
     /** 顶栏 🔍 点一下把光标打进搜索胶囊。 */
@@ -882,13 +906,14 @@ internal fun PostsScreen(
         platform.showMessage("已引用，写完点发送")
     }
 
-    /** 当前这一屏的口径算出来的列表：分类、搜索词、排序都只在这一层做，不动网络。 */
-    val shown = remember(posts, board, categoryPick, query, authorId, reads, readsVersion) {
+    /** 当前这一屏的口径算出来的列表：分类、标签、搜索词、排序都只在这一层做，不动网络。 */
+    val shown = remember(posts, board, categoryPick, tagPick, query, authorId, reads, readsVersion) {
         val keyword = query.trim()
         // 收藏用到的是**顺序**（最近收的在前），所以要 List 而不是 Set。
         val savedOrder = if (board == PostBoard.Saved) reads?.savedIds().orEmpty() else emptyList()
         val byFilter = posts.filter { post ->
             (categoryPick.isBlank() || post.category == categoryPick) &&
+                (tagPick.isBlank() || post.tags.any { it.equals(tagPick, ignoreCase = true) }) &&
                 (keyword.isEmpty() ||
                     post.title.contains(keyword, ignoreCase = true) ||
                     post.excerpt.contains(keyword, ignoreCase = true)) &&
@@ -916,6 +941,37 @@ internal fun PostsScreen(
     val canDeleteOpen = authorId.isNotBlank() && thread?.post?.authorId == authorId
 
     /**
+     * 侧栏「标签」页：从已经拉到手的帖子里汇总，出现多的在上面。
+     *
+     * 不发请求：后端只给每条帖子自己的 `tags`，没有标签目录；为一次侧栏里的一次点击去拉一遍
+     * 全部帖子不划算，而"在这批帖子里出现几次"本身就是能用的热度。
+     */
+    val drawerTags = remember(posts) {
+        posts
+            .flatMap { it.tags }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(DRAWER_TAG_LIMIT)
+            .map { PostTagCount(it.key, it.value) }
+    }
+
+    /**
+     * 侧栏「分类」页列的分类：五个候选在前，后面接**已经出现在帖子里的别的分类**。
+     *
+     * `POST_CATEGORIES` 只是发帖时的候选，后端把分类当字符串存，历史上存进去的别的名字
+     * （早期数据里有过「公告」）不会出现在那五个里；只列候选的话，那几条帖子在侧栏里
+     * 就筛不出来，点「全部话题」才看得见。
+     */
+    val drawerCategories = remember(posts) {
+        val seen = posts.map { it.category.trim() }.filter { it.isNotEmpty() }.distinct()
+        (POST_CATEGORIES + seen.filterNot { it in POST_CATEGORIES }).distinct()
+    }
+
+    /**
      * 打开的那条帖子旁边能去的地方：同分类、不是它自己，按热闹程度取三条。
      *
      * 从已经拉到手的列表里挑，不额外发请求——帖子详情页底部"还能看点什么"是个顺手的出口，
@@ -931,6 +987,9 @@ internal fun PostsScreen(
             .toList()
     }
 
+    // 分类侧栏要连顶栏一起盖住（遮罩从屏幕最上面压下来），所以 Scaffold 外面套一层 Box：
+    // 抽屉是它的第二个孩子，画在 Scaffold 之上。Scaffold 自己仍占满整屏。
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             when {
@@ -972,8 +1031,9 @@ else -> Column {
                         PostsToolbar(
                             board = board,
                             category = categoryPick,
+                            tag = tagPick,
                             newCount = freshCount,
-                            onOpenCategories = { categoryMenuOpen = true },
+                            onOpenCategories = { drawerOpen = true },
                             onOpenFilters = { filterMenuOpen = true },
                             onSearch = {
                                 // 搜索胶囊常显在工具栏下面，这里只把光标送进去。
@@ -992,37 +1052,6 @@ else -> Column {
                                         filterMenuOpen = false
                                     },
                                     trailingIcon = if (entry == board) {
-                                        { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }
-                                    } else {
-                                        null
-                                    },
-                                )
-                            }
-                        }
-                        DropdownMenu(
-                            expanded = categoryMenuOpen,
-                            onDismissRequest = { categoryMenuOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("全部分类") },
-                                onClick = {
-                                    categoryPick = ""
-                                    categoryMenuOpen = false
-                                },
-                                trailingIcon = if (categoryPick.isBlank()) {
-                                    { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }
-                                } else {
-                                    null
-                                },
-                            )
-                            POST_CATEGORIES.forEach { label ->
-                                DropdownMenuItem(
-                                    text = { Text(label) },
-                                    onClick = {
-                                        categoryPick = label
-                                        categoryMenuOpen = false
-                                    },
-                                    trailingIcon = if (label == categoryPick) {
                                         { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }
                                     } else {
                                         null
@@ -1183,6 +1212,21 @@ else -> Column {
                 onDeleteDraft = { discardDraft(it) },
                 onWrite = { openEditor(null) },
                 modifier = Modifier.padding(padding),
+            )
+        }
+    }
+
+        // 分类侧栏（☰）。只在列表形态存在：详情与编辑器各有自己的顶栏与返回。
+        if (openId <= 0L && !composing) {
+            PostCategoryDrawer(
+                open = drawerOpen,
+                categories = drawerCategories,
+                category = categoryPick,
+                tags = drawerTags,
+                tag = tagPick,
+                onDismiss = { drawerOpen = false },
+                onPickCategory = { picked -> categoryPick = picked },
+                onPickTag = { picked -> tagPick = picked },
             )
         }
     }
@@ -2808,7 +2852,8 @@ private val CATEGORY_COLORS = listOf(
     Color(0xFF3FA9A0), // 求助 / 青
 )
 
-private fun categoryColorOf(category: String): Color {
+/** 同包里的分类侧栏（`PostsDrawer.kt`）也用它：抽屉里那颗色点必须和卡片上的分类色同一个。 */
+internal fun categoryColorOf(category: String): Color {
     // 先取模再取绝对值：`hashCode()` 可能是 `Int.MIN_VALUE`（确实存在这样的字符串），
     // 对它取 abs 仍是负数，直接当下标会越界崩掉整页。
     val index = abs(category.hashCode() % CATEGORY_COLORS.size)
