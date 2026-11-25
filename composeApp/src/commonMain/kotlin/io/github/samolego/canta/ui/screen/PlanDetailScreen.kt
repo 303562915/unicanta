@@ -7,8 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
@@ -55,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
@@ -98,9 +100,8 @@ import io.github.samolego.canta.generated.resources.plan_detail_stats_packages
 import io.github.samolego.canta.generated.resources.plan_detail_stats_votes
 import io.github.samolego.canta.generated.resources.plan_detail_title
 import io.github.samolego.canta.generated.resources.plan_detail_uploader
-import io.github.samolego.canta.generated.resources.plan_reboot_note
-import io.github.samolego.canta.generated.resources.plan_test_note
 import io.github.samolego.canta.generated.resources.plan_upload_failed
+import io.github.samolego.canta.generated.resources.plan_verified_chip
 import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentOrderRow
@@ -210,6 +211,8 @@ fun PlanDetailScreen(
     anchorCommentId: Long = 0L,
     /** Opens this uploader's own page; null when this install has no identity to open. */
     onOpenUploader: ((String) -> Unit)? = null,
+    /** 卡片角上那条披带点下去要说的话：交给平台 toast，不接线就什么也不说。 */
+    onMessage: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
 
@@ -617,6 +620,8 @@ fun PlanDetailScreen(
                         query = ""
                     },
                     onOpenUploader = onOpenUploader,
+                    // 披带点下去那一句：页面只说内容，toast 由外层（CantaApp）递给平台。
+                    onMessage = onMessage,
                     comments = comments,
                     loadError = loadError,
                     me = commentAuthor,
@@ -731,11 +736,26 @@ fun PlanDetailScreen(
     }
 }
 
-/** A plan past this many packages is one tap away from a phone that will not boot again. */
-private const val BIG_PLAN_PACKAGES = 100
+/**
+ * 一条方案超过这么多个包，就算「卸得太多」。
+ *
+ * 和「能不能开机」是两件事：这样的方案多半验证过能正常启动，可日常功能会被削掉一块——通知、
+ * 拍照、支付、定位这类东西少一个包就少一样。页面在卡片角上挂一条披带说明，确认框也按这个数说话。
+ */
+private const val HEAVY_PLAN_PACKAGES = 90
 
 /** How many packages a first try should carry: few enough to name the one that broke it. */
 private const val FIRST_TRY_PACKAGES = 10
+
+/**
+ * 披带点下去说的那句话：先承认它验证过，再说它削掉了什么，最后给出怎么试。
+ *
+ * 不吓人也不打包票——它说的是「删得太多」这件事本身的代价，而不是这个方案有问题。
+ */
+private fun heavyPlanNote(count: Int): String =
+    "这条方案要卸 $count 个包：它验证过能正常开机，但删得太多会削掉日常功能" +
+        "（通知、拍照、支付、定位之类可能失效）。" +
+        "建议先挑 $FIRST_TRY_PACKAGES 个以内试一轮，重启确认正常后再分批推进。"
 
 /**
  * 使用方案前的确认。
@@ -753,7 +773,7 @@ private fun PlanUseDialog(
 ) {
     val colors = MaterialTheme.colorScheme
     var acknowledged by remember { mutableStateOf(false) }
-    val big = plan.packages.size >= BIG_PLAN_PACKAGES
+    val big = plan.packages.size > HEAVY_PLAN_PACKAGES
     val unknownPlan = plan.model.isBlank()
     val modelSame = unknownPlan || profile == null ||
         plan.model.equals(profile.model, ignoreCase = true)
@@ -821,7 +841,9 @@ private fun PlanUseDialog(
         )
         if (big) {
             Text(
-                text = "一次性应用 ${plan.packages.size} 个条目：一旦出现问题可能无法开机，难以逐个排查。" +
+                // 「删得太多会削掉日常功能」那句在卡片角上的披带里说过了，这里只留下这个框真正要
+                // 问的问题：一次全卸下去，出问题时你没法知道是哪个包。
+                text = "一次性应用 ${plan.packages.size} 个条目：出问题时难以逐个排查。" +
                     "建议先在 $FIRST_TRY_PACKAGES 个以内试用一轮，重启确认正常后再分批推进" +
                     "（方案页搜索框可按包名挑选）。",
                 fontSize = 12.sp,
@@ -868,6 +890,8 @@ private fun PlanDetailContent(
     onSearchClose: () -> Unit = {},
     /** Opens this uploader's own page; null when there is no identity to open. */
     onOpenUploader: ((String) -> Unit)? = null,
+    /** 卡片角上那条披带点下去要说的话（见 [heavyPlanNote]）。 */
+    onMessage: (String) -> Unit = {},
     comments: List<PlanComment>,
     loadError: String? = null,
     me: String,
@@ -1004,7 +1028,22 @@ private fun PlanDetailContent(
         state = listState,
         contentPadding = PaddingValues(top = topSpace, bottom = 16.dp),
     ) {
-        item { PlanHero(plan, uploaderName, me, liked, foreign, profile = profile, onVote = onVote, onUsePlan = onUsePlan, coverage = coverage, onOpenUploader = onOpenUploader, onEditNote = onEditNote) }
+        item {
+            PlanHero(
+                plan = plan,
+                uploaderName = uploaderName,
+                me = me,
+                liked = liked,
+                foreign = foreign,
+                profile = profile,
+                onVote = onVote,
+                onUsePlan = onUsePlan,
+                coverage = coverage,
+                onOpenUploader = onOpenUploader,
+                onEditNote = onEditNote,
+                onMessage = onMessage,
+            )
+        }
 
         item {
             SectionTitle(
@@ -1137,264 +1176,339 @@ private fun PlanHero(
     /** Only offered to the uploader: rewriting somebody else's note is what [saveNote] refuses.
      *  Handed the note as it stands, so the editor opens with the current text in it. */
     onEditNote: ((String) -> Unit)? = null,
+    /** 角上那条披带点下去要说的话；toast 由页面那一层负责，这里只说内容。 */
+    onMessage: (String) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
+    // 这一条要卸多少包：超过阈值就在角上挂披带（见 [HEAVY_PLAN_PACKAGES]）。
+    val heavy = plan.packages.size > HEAVY_PLAN_PACKAGES
     // The block is a card, not a band: it keeps a margin from the page edge and from the bar above,
     // so the top of the page stays the plain surface the floating title bar sits over, and its
     // corners are rounded like every other card in the app.
-    Surface(
-        color = colors.primaryContainer,
-        shape = RoundedCornerShape(20.dp),
+    //
+    // 外面这层 Box 只为一件事存在：让披带能盖在卡片上。披带自己套在一个 `matchParentSize()` 的
+    // 圆角裁切框里，所以它只在卡片轮廓内可见，越过圆角的部分跟卡片一起被裁掉——和卡片长在
+    // 一起，而不是贴上去的一张纸。
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
+        Surface(
+            color = colors.primaryContainer,
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
-            // first character of that person's name, like everywhere else. The name leads the line;
-            // the badge, if there is one, stands at the end of it. Tapping it opens the uploader's
-            // other plans, which is the next question after one of them worked.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .then(
-                        if (onOpenUploader != null) {
-                            Modifier.clickable { onOpenUploader(plan.owner) }
-                        } else {
-                            Modifier
-                        }
-                    ),
+            Column(
+                modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
             ) {
-                PersonAvatar(
-                    name = uploaderName,
-                    // 方案带着上传者的身份号：设过头像就显示照片，没设过是名字首字。
-                    owner = plan.owner,
-                    size = 20.dp,
-                    background = colors.primary,
-                    // 首字压在 primary 上：用 onPrimary 才和改之前那一版一样清楚（深色主题尤其）。
-                    letterColor = colors.onPrimary,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(Res.string.plan_detail_uploader, uploaderName),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                // The date rides the uploader's line instead of owning one: on the card's own
-                // surface a standalone "2026-11-21" cost a whole row and read like a second title.
-                // Hidden when the field is empty: a spacer plus an empty text is a blank gap that
-                // looks like the card forgot to load something.
-                if (plan.rebootedAt.isNotBlank()) {
-                    Spacer(Modifier.width(8.dp))
+                // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
+                // first character of that person's name, like everywhere else. The name leads the line;
+                // the badge, if there is one, stands at the end of it. Tapping it opens the uploader's
+                // other plans, which is the next question after one of them worked.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .then(
+                            if (onOpenUploader != null) {
+                                Modifier.clickable { onOpenUploader(plan.owner) }
+                            } else {
+                                Modifier
+                            }
+                        ),
+                ) {
+                    PersonAvatar(
+                        name = uploaderName,
+                        // 方案带着上传者的身份号：设过头像就显示照片，没设过是名字首字。
+                        owner = plan.owner,
+                        size = 20.dp,
+                        background = colors.primary,
+                        // 首字压在 primary 上：用 onPrimary 才和改之前那一版一样清楚（深色主题尤其）。
+                        letterColor = colors.onPrimary,
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        text = plan.rebootedAt.take(10),
-                        fontSize = 9.sp,
-                        color = colors.onPrimaryContainer.copy(alpha = 0.65f),
+                        text = stringResource(Res.string.plan_detail_uploader, uploaderName),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onPrimaryContainer,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    // The date rides the uploader's line instead of owning one: on the card's own
+                    // surface a standalone "2026-11-21" cost a whole row and read like a second title.
+                    // Hidden when the field is empty: a spacer plus an empty text is a blank gap that
+                    // looks like the card forgot to load something.
+                    if (plan.rebootedAt.isNotBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = plan.rebootedAt.take(10),
+                            fontSize = 9.sp,
+                            color = colors.onPrimaryContainer.copy(alpha = 0.65f),
+                            maxLines = 1,
+                        )
+                    }
+                    if (mine) {
+                        Spacer(Modifier.width(6.dp))
+                        Chip(label = "我的方案", color = colors.primary)
+                    }
+                    // 右上角那条披带就压在这一行的右边：这一行是小字、又刚好落在角上，给它让出三十见方，
+                    // 否则日期和「我的方案」会被那条红带子压掉一半。
+                    if (heavy) Spacer(Modifier.width(30.dp))
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = plan.title,
+                    fontSize = 18.sp,
+                    lineHeight = 23.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.onPrimaryContainer,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(7.dp))
+                // 两句话并成一行：一个是「这条是怎么验的」（重启验证是 Canta 自己跑的，不是上传者的
+                // 自称），一个是「在哪台机器上验的」。它们本来就是同一条信息的两个半句，各自占一行的
+                // 时候，读起来像两个小标题，而真正要读的是下面那段说明。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (plan.isTest) "测试方案" else stringResource(Res.string.plan_verified_chip),
+                        fontSize = 9.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (plan.isTest) colors.onTertiary else colors.onPrimary,
+                        modifier = Modifier
+                            .background(
+                                color = if (plan.isTest) colors.tertiary else colors.primary,
+                                shape = RoundedCornerShape(4.dp),
+                            )
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = plan.deviceLabel.ifBlank { "未记录上传机型" },
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onPrimaryContainer.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (mine) {
-                    Spacer(Modifier.width(6.dp))
-                    Chip(label = "我的方案", color = colors.primary)
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = plan.title,
-                fontSize = 18.sp,
-                lineHeight = 23.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.onPrimaryContainer,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            Column {
-                // The verdict is Canta's own reboot check, not a claim the uploader made: the line
-                // says who ran it, and the phone it belongs to is the uploader's, not this one.
-                Text(
-                    text = stringResource(
-                        if (plan.isTest) Res.string.plan_test_note else Res.string.plan_reboot_note
-                    ),
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (plan.isTest) colors.tertiary else colors.primary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = plan.deviceLabel.ifBlank { "未记录上传机型" },
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onPrimaryContainer.copy(alpha = 0.85f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 1.dp),
-                )
-            }
-            // The plan names the phone it was proven on. When that is not this one, the page says
-            // it twice: once as the mismatch, once as what will happen (nothing will stop it).
-            //
-            // Same phone and same major ROM, different build ("16.0.3" against "16.0.501") is the
-            // case the page used to hide: the plan was still listed as if it were this phone's, and
-            // the package list of one build is not the package list of the next. It stays listed —
-            // emptying the page on every point update would be worse — and says which build it is.
-            if (!foreign && profile != null && !plan.sameBuild(profile)) {
-                Text(
-                    text = "该方案在「${romLabelOf(plan.rom, plan.romVersion, plan.romBuild)}」上验证，" +
-                        "本机为「${romLabelOf(profile.rom, profile.romVersion, profile.romBuild)}」。" +
-                        "同一机型的不同系统版本可能对应不同应用清单，使用前请先核对。",
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.error,
-                    modifier = Modifier
-                        .padding(top = 6.dp)
-                        .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 8.dp, vertical = 5.dp),
-                )
-            }
-            if (foreign) {
-                Column(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
+                // The plan names the phone it was proven on. When that is not this one, the page says
+                // it twice: once as the mismatch, once as what will happen (nothing will stop it).
+                //
+                // Same phone and same major ROM, different build ("16.0.3" against "16.0.501") is the
+                // case the page used to hide: the plan was still listed as if it were this phone's, and
+                // the package list of one build is not the package list of the next. It stays listed —
+                // emptying the page on every point update would be worse — and says which build it is.
+                if (!foreign && profile != null && !plan.sameBuild(profile)) {
                     Text(
-                        // The phone is already named on the line right above; repeating it here
-                        // made the warning read as a second device line instead of a warning.
-                        text = "这不是本机机型的方案",
-                        fontSize = 11.sp,
+                        text = "该方案在「${romLabelOf(plan.rom, plan.romVersion, plan.romBuild)}」上验证，" +
+                            "本机为「${romLabelOf(profile.rom, profile.romVersion, profile.romBuild)}」。" +
+                            "同一机型的不同系统版本可能对应不同应用清单，使用前请先核对。",
+                        fontSize = 10.sp,
                         lineHeight = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.error,
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
                     )
+                }
+                if (foreign) {
+                    Column(
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            // The phone is already named on the line right above; repeating it here
+                            // made the warning read as a second device line instead of a warning.
+                            text = "这不是本机机型的方案",
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.error,
+                        )
+                        Text(
+                            text = "不会被阻止：Canta 只执行你所选的应用包，不会因机型不一致而中止。",
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = colors.onPrimaryContainer.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                }
+                if (plan.note.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "不会被阻止：Canta 只执行你所选的应用包，不会因机型不一致而中止。",
+                        text = plan.note,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = colors.onPrimaryContainer,
+                    )
+                }
+                // The other phones, when there are any: one device line says who wrote this, this says
+                // whether anybody else lived with it. Only shown past the uploader's own row, so a plan
+                // nobody else has tried stays as quiet as before.
+                if (coverage.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "也在这些机器上验过",
                         fontSize = 10.sp,
-                        lineHeight = 13.sp,
-                        color = colors.onPrimaryContainer.copy(alpha = 0.8f),
-                        modifier = Modifier.padding(top = 3.dp),
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onPrimaryContainer.copy(alpha = 0.75f),
                     )
+                    coverage.forEach { device ->
+                        Text(
+                            text = device.buildLabel +
+                                // Same line as the model chips: a count that is not a crowd (see
+                                // peopleSuffix) is noise on a line that is already one phone long.
+                                peopleSuffix(device.verified),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = colors.onPrimaryContainer.copy(alpha = 0.9f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
                 }
-            }
-            if (plan.note.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = plan.note,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    color = colors.onPrimaryContainer,
-                )
-            }
-            // The other phones, when there are any: one device line says who wrote this, this says
-            // whether anybody else lived with it. Only shown past the uploader's own row, so a plan
-            // nobody else has tried stays as quiet as before.
-            if (coverage.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "也在这些机器上验过",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onPrimaryContainer.copy(alpha = 0.75f),
-                )
-                coverage.forEach { device ->
+                // The uploader's own tap: a note written a week after the plan, once use has shown what
+                // the upload could not. Shown even with an empty note — that is the case it is for.
+                if (mine && onEditNote != null) {
+                    val edit = onEditNote
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        text = device.buildLabel +
-                            // Same line as the model chips: a count that is not a crowd (see
-                            // peopleSuffix) is noise on a line that is already one phone long.
-                            peopleSuffix(device.verified),
+                        text = if (plan.note.isEmpty()) "补一句说明" else "改说明",
                         fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                        color = colors.onPrimaryContainer.copy(alpha = 0.9f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.onPrimaryContainer.copy(alpha = 0.10f))
+                            .clickable { edit(plan.note) }
+                            .padding(horizontal = 9.dp, vertical = 4.dp),
                     )
                 }
-            }
-            // The uploader's own tap: a note written a week after the plan, once use has shown what
-            // the upload could not. Shown even with an empty note — that is the case it is for.
-            if (mine && onEditNote != null) {
-                val edit = onEditNote
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = if (plan.note.isEmpty()) "补一句说明" else "改说明",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(colors.onPrimaryContainer.copy(alpha = 0.10f))
-                        .clickable { edit(plan.note) }
-                        .padding(horizontal = 9.dp, vertical = 4.dp),
-                )
-            }
 
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Stat(
-                    value = "${plan.votes}",
-                    label = stringResource(Res.string.plan_detail_stats_votes),
-                    modifier = Modifier.weight(1f),
-                )
-                StatDivider()
-                Stat(
-                    value = "${plan.packages.size}",
-                    label = stringResource(Res.string.plan_detail_stats_packages),
-                    modifier = Modifier.weight(1f),
-                )
-                StatDivider()
-                Stat(
-                    value = "${plan.comments}",
-                    label = stringResource(Res.string.plan_detail_stats_comments),
-                    modifier = Modifier.weight(1f),
-                )
-                VoteAction(liked = liked, votes = plan.votes, onVote = onVote)
+                Spacer(Modifier.height(12.dp))
+                // 三个数一行读完：赞、包数、评论。投票按钮挪到下一行去左右两头——它和「赞」这个数
+                // 说的是同一件事，拴在数字尾巴上只会让这一行既像表又像按钮排。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Stat(
+                        value = "${plan.votes}",
+                        label = stringResource(Res.string.plan_detail_stats_votes),
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatDivider()
+                    Stat(
+                        value = "${plan.packages.size}",
+                        label = stringResource(Res.string.plan_detail_stats_packages),
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatDivider()
+                    Stat(
+                        value = "${plan.comments}",
+                        label = stringResource(Res.string.plan_detail_stats_comments),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                // 真正的两个动作：左边把清单变成这台手机上的勾选（去应用列表卸载），右边是「有用」。
+                //
+                // 主按钮只占自己那几个字：上面那排数刚说过「多少个包」，按钮里再写一遍是同一句话说
+                // 两次，还顺手把它撑成横贯卡片的一条横幅，比页面上任何东西都抢眼——可它不是这一页
+                // 唯一的去处，也不该长得像唯一去处。
+                Row(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(colors.primary)
+                            .clickable(onClick = onUsePlan)
+                            .padding(horizontal = 13.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlaylistAddCheck,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = colors.onPrimary,
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "使用方案",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.onPrimary,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    VoteAction(liked = liked, votes = plan.votes, onVote = onVote)
+                }
             }
-            // One tap from reading a plan to acting on it: its packages become the
-            // selection on the app list, where the uninstall button already is.
-            Row(
+        }
+        // 卸得太多的披带，压在卡片右上角（裁切框见上面那个 Box）。
+        if (heavy) {
+            Box(
                 modifier = Modifier
-                    .padding(top = 10.dp)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(percent = 50))
-                    .background(colors.primary)
-                    .clickable(onClick = onUsePlan)
-                    .padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(20.dp)),
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlaylistAddCheck,
-                    contentDescription = null,
-                    modifier = Modifier.size(15.dp),
-                    tint = colors.onPrimary,
-                )
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    text = "使用这套方案（${plan.packages.size} 个包）",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onPrimary,
+                CornerSash(
+                    count = plan.packages.size,
+                    onClick = { onMessage(heavyPlanNote(plan.packages.size)) },
                 )
             }
         }
+    }
+}
+
+/**
+ * 右上角那条「卸得太多」的披带：斜着压在卡片角上，字跟着走。
+ *
+ * 它不是拦截，也不是第二个按钮——点一下只说一句为什么，看完继续用不用还是自己的事。尺寸按
+ * 六十四见方的角算：一条九十长、十六厚的带子绕自己的中心转四十五度，再往角的方向推，于是它从
+ * 卡片的上边缘进、从右边缘出，正好把角盖住；越过圆角和边缘的部分由卡片那层裁切吃掉。
+ */
+@Composable
+private fun BoxScope.CornerSash(count: Int, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            // 带子自己的中心落在「离右边 15、离顶边 15」那个点上：转完之后两条边正好从上边缘和
+            // 右边缘穿出去，角被盖住一截，字落在卡片里面。
+            .offset(x = 30.dp, y = 7.dp)
+            .rotate(45f)
+            .width(90.dp)
+            .height(16.dp)
+            .background(colors.error)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "$count 包",
+            fontSize = 8.sp,
+            lineHeight = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = colors.onError,
+            maxLines = 1,
+        )
     }
 }
 

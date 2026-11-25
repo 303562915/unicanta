@@ -2105,6 +2105,9 @@ private fun PlanDetailRoute(
         onOpenUploader = { owner ->
             if (owner.isNotEmpty()) navController.navigate(Screen.Uploader.routeFor(owner))
         },
+        // 方案详情里那些「点一下说一句」的小提示（比如卡片角上「卸得太多」的披带）：走平台的
+        // toast，和别处的提示同一套。
+        onMessage = { line -> platform.showMessage(line) },
     )
 }
 
