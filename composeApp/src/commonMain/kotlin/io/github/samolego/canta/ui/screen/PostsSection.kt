@@ -1206,7 +1206,12 @@ private fun PostCard(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(verticalAlignment = Alignment.Top) {
+        // 标题行同样要 fillMaxWidth：标题吃 weight(1f) 占满剩下的宽度，未读点才好贴到右端。
+        // 这行漏掉它的时候，weight 在无界宽度下算成 0，标题整段被压没——列表里只剩头像和时间。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+        ) {
             if (post.pinned) {
                 FlGlyphIcon(glyph = FlGlyphs.pin, size = 13.dp, tint = PostPinned)
                 Spacer(modifier = Modifier.width(4.dp))
@@ -1217,8 +1222,10 @@ private fun PostCard(
             }
             Text(
                 text = post.title.ifBlank { "（无标题）" },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
+                // 16sp 粗体：标题是这一列里唯一要读的东西，比用户名大一档才立得住
+                // （`titleSmall` 只有 14sp，和下面的名字几乎一样大，整张卡没有主次）。
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
                 color = scheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1236,7 +1243,12 @@ private fun PostCard(
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 同理 fillMaxWidth：这一行中间那个 `weight(1f)` 的空档把时间推到最右，
+        // 没有有界宽度时它会被算成 0，时间就贴在名字后面。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             PostAvatar(
                 name = post.author.ifBlank { "匿" },
                 seed = post.authorId.ifEmpty { post.author },
@@ -1270,7 +1282,12 @@ private fun PostCard(
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 这一行必须是 fillMaxWidth：里面用了 weight(1f)，而 weight 只在**有界宽度**下才成立。
+        // Row 默认按内容宽（wrap）量，weight 子项于是拿 0 宽——分类和标签被压没、统计挤在左边。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             PostMetaChips(
                 category = post.category,
                 tags = post.tags,
@@ -1698,7 +1715,10 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
 
         // 参与者：几个小头像叠在一起，后面写「N 参与者」。没回帖的人不画这一行。
         if (participants.isNotEmpty()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 participants.forEachIndexed { index, (seed, name) ->
                     // 叠压：第二个往后错开 14dp，最后一个压在最上面，看起来是一摞。
                     Box(modifier = Modifier.offset(x = (-(index * 8)).dp)) {
@@ -1832,7 +1852,12 @@ private fun PostFloorCard(
         PostAvatar(name = author.ifBlank { "匿" }, seed = authorSeed, size = 36.dp)
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // fillMaxWidth 是必须的：名字那一格用了 weight(1f) 把楼层号/徽章/时间推到右边，
+            // 而没有有界宽度时 weight 会算成 0（作者名被压成一两个字，右边反而空着）。
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 AuthorLabel(
                     name = author.ifBlank { "匿名" },
                     style = MaterialTheme.typography.titleSmall,
@@ -2247,8 +2272,12 @@ private val CATEGORY_COLORS = listOf(
     Color(0xFF3FA9A0), // 求助 / 青
 )
 
-private fun categoryColorOf(category: String): Color =
-    CATEGORY_COLORS[abs(category.hashCode()) % CATEGORY_COLORS.size]
+private fun categoryColorOf(category: String): Color {
+    // 先取模再取绝对值：`hashCode()` 可能是 `Int.MIN_VALUE`（确实存在这样的字符串），
+    // 对它取 abs 仍是负数，直接当下标会越界崩掉整页。
+    val index = abs(category.hashCode() % CATEGORY_COLORS.size)
+    return CATEGORY_COLORS[index]
+}
 
 /** 「草稿 N 篇 · 继续编辑」那一行：点它接着写最新那篇。 */
 @Composable
@@ -2268,7 +2297,10 @@ private fun DraftBanner(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 text = "草稿 $count 篇 · 继续编辑",
                 style = MaterialTheme.typography.titleSmall,
