@@ -29,30 +29,35 @@ import rikka.shizuku.Shizuku
  */
 class ShizukuShell private constructor(private val context: Context) {
 
-    private companion object {
-        const val TAG = "ShizukuShell"
+    /**
+     * 常量留在 companion 里，但**这个 companion 本身是公开的**：[shared] 要被
+     * `AndroidCantaHandler` 与 `AndroidCantaPlatform` 调用，companion 写成 private 就等于把它藏起来
+     * （编译期直接报 `Cannot access 'companion object'`）。所以只有成员是 private，容器不 private。
+     */
+    companion object {
+        private const val TAG = "ShizukuShell"
 
         /** Bumped whenever [ShellUserService] changes protocol, so Shizuku starts the new code. */
-        const val SERVICE_VERSION = 1
+        private const val SERVICE_VERSION = 1
 
         /** How long the service may take to come up before the card reports a timeout. */
-        const val BIND_TIMEOUT_MS = 10_000L
+        private const val BIND_TIMEOUT_MS = 10_000L
 
         /**
          * 绑几次。实测的形状是：Shizuku 的用户服务第一次常常起不来（进程被杀、管理器刚启动），
          * 隔一秒再绑一次就好了。只绑一次的话这一次安装就白等，然后退到系统安装器。
          */
-        const val BIND_ROUNDS = 2
+        private const val BIND_ROUNDS = 2
 
         /** 两次绑定之间等多久；先 unbind 再 bind，否则 Shizuku 会当成同一次未完成的请求。 */
-        const val BIND_RETRY_DELAY_MS = 1_000L
+        private const val BIND_RETRY_DELAY_MS = 1_000L
 
         /**
          * 一次脚本调用最多等多久。`binder.transact` 是阻塞调用、没有自己的超时：Shizuku 那边
          * 卡住（用户服务死了但 binder 还在）时它会一直不返回，界面就永远停在「正在安装 90%」。
          * 所以这条等待必须由我们自己放弃。
          */
-        const val RUN_TIMEOUT_MS = 30_000L
+        private const val RUN_TIMEOUT_MS = 30_000L
 
         /**
          * 全进程一个实例。
