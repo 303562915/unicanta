@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,9 +41,17 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Drafts
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FormatBold
 import androidx.compose.material.icons.outlined.FormatItalic
@@ -64,6 +75,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -212,6 +225,189 @@ private enum class PostBoard(val label: String) {
  * @param loadPlans 编辑器里「分享方案」要列的方案；null 时那一格不画。它在点开时才拉，
  *   不是为了发一条帖子先等一次网络——写帖的人大多数不贴方案。
  */
+/**
+ * 帖子页顶上的常驻工具栏，逐项照 fluxdo `topics_page.dart` 的 `_buildToolbar`：
+ *
+ * - 高 **48dp**（`_toolbarRowHeight = 48`），不折叠
+ * - 左：**8dp 留白 + ☰**（分类入口）
+ * - 中：**「最新 ▾」**（`FilterDropdown`：文字 **13sp / w500** + `arrow_drop_down`，带计数就写 `最新 (3)`）
+ * - 右：🔍（把焦点打到下面那根搜索胶囊上） + 8dp 留白
+ *
+ * 为什么自己画一条而不是用 `ScreenTopBar`：那个是 72dp、标题居中，而 fluxdo 这里是 **48dp、
+ * 标题左对齐**，右边只有图标。高度这件事不能靠 padding 硬凑——它决定了列表第一屏能露出几条。
+ *
+ * [menuOpen] / [filterOpen] 由调用方持有，用 `DropdownMenu` 打开对应的面板。
+ */
+@Composable
+private fun PostsToolbar(
+    board: PostBoard,
+    category: String,
+    newCount: Int,
+    onOpenCategories: () -> Unit,
+    onOpenFilters: () -> Unit,
+    onSearch: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .height(48.dp)
+            .background(FlSurfaceLevel.Page.colorOf(scheme)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(modifier = Modifier.width(8.dp))
+        // ☰ 分类入口：fluxdo 打开的是分类侧栏；我们只有五个候选，用下拉面板就够。
+        TopBarIconButton(
+            glyph = FlGlyphs.appsList,
+            label = "分类",
+            onClick = onOpenCategories,
+        )
+
+        // 「最新 ▾」：口径 + 计数。左对齐、占满中间，窄屏时文字自己省略。
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(50))
+                .clickable(role = Role.Button, onClick = onOpenFilters)
+                .padding(start = 10.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (board == PostBoard.Latest && newCount > 0) {
+                    "${board.label} ($newCount)"
+                } else {
+                    board.label
+                },
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            FlGlyphIcon(
+                glyph = FlGlyphs.chevronDown,
+                size = 16.dp,
+                tint = scheme.onSurfaceVariant,
+            )
+        }
+
+        TopBarIconButton(
+            glyph = FlGlyphs.search,
+            label = "搜索",
+            onClick = onSearch,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+    }
+}
+
+/**
+ * 顶栏上的一个图标按钮。
+ *
+ * 触控框 40dp、图标 24dp（fluxdo 的 glyph 口径）：24 是这套图标在别处的默认大小，缩到 20 会
+ * 和底栏那一排对不上。
+ */
+@Composable
+private fun TopBarIconButton(
+    glyph: FlGlyph,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        FlGlyphIcon(
+            glyph = glyph,
+            size = 24.dp,
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/**
+ * 首页右下角的创作入口，照 fluxdo 的 `TopicsFab`：一个圆形 FAB，点开往上弹出三项
+ * **草稿 / 写新帖 / 刷新**（图标各 24dp），再点一次收起（图标变成 × ）。
+ *
+ * 为什么是 FAB 而不是顶栏文字：顶栏那一行在 fluxdo 里只放导航与筛选（☰ / 最新 / 🔍），
+ * 「写」是一个**动作**，动作归右下角。文字按钮还占宽度，标题一长就被挤。
+ */
+@Composable
+private fun PostsFab(
+    open: Boolean,
+    draftCount: Int,
+    canWrite: Boolean,
+    onToggle: () -> Unit,
+    onNewPost: () -> Unit,
+    onDrafts: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(horizontalAlignment = Alignment.End) {
+        if (open) {
+            FabAction(icon = Icons.Outlined.Refresh, label = "刷新", onClick = onRefresh)
+            Spacer(modifier = Modifier.height(10.dp))
+            if (canWrite) {
+                FabAction(
+                    icon = Icons.Outlined.Drafts,
+                    label = if (draftCount > 0) "草稿 ($draftCount)" else "草稿",
+                    onClick = onDrafts,
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                FabAction(icon = Icons.Outlined.Edit, label = "写新帖", onClick = onNewPost)
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                // 底色 surfaceContainerHigh：比页面高一档，不抢卡片，也不像 primary 那样刺眼。
+                .background(scheme.surfaceContainerHigh)
+                .clickable(role = Role.Button, onClickLabel = if (open) "收起" else "发帖", onClick = onToggle),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (open) Icons.Outlined.Close else Icons.Outlined.Add,
+                contentDescription = if (open) "收起" else "发帖",
+                modifier = Modifier.size(24.dp),
+                tint = scheme.onSurface,
+            )
+        }
+    }
+}
+
+/** FAB 弹出来的一项：图标 + 一行字，都压在一块圆角底上。 */
+@Composable
+private fun FabAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(scheme.surfaceContainerHigh)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(start = 14.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = scheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = scheme.onSurface,
+            maxLines = 1,
+        )
+    }
+}
+
 @Composable
 internal fun PostsScreen(
     platform: CantaPlatform,
@@ -285,6 +481,14 @@ internal fun PostsScreen(
     var seenMaxId by remember { mutableStateOf(0L) }
     /** 这一趟多出来的新帖数（横幅上的数字）；点一下刷新后归零。 */
     var freshCount by remember { mutableIntStateOf(0) }
+    /** 顶栏「最新 ▾」的下拉开合。 */
+    var filterMenuOpen by remember { mutableStateOf(false) }
+    /** 顶栏 ☰ 那个分类面板的开合。 */
+    var categoryMenuOpen by remember { mutableStateOf(false) }
+    /** 右下角 FAB 的展开状态（草稿 / 写新帖 / 刷新）。 */
+    var fabOpen by remember { mutableStateOf(false) }
+    /** 顶栏 🔍 点一下把光标打进搜索胶囊。 */
+    val searchFocus = remember { FocusRequester() }
     /** 正在编辑的那篇草稿的本地 id；空串表示没在编辑。 */
     var editorId by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
@@ -760,19 +964,102 @@ internal fun PostsScreen(
                     },
                 )
 
-                else -> ScreenTopBar(
-                    title = "帖子",
-                    // 底栏一级页面不给返回箭头（null 时 ScreenTopBar 自己就不画）；
-                    // 有返回的时候才把「先存草稿再走」挂上去。
-                    onNavigateBack = onNavigateBack?.let { leave },
-                    actions = {
-                        // 搜索框常显在列表顶上（胶囊那一条），顶栏不再放"搜索"按钮。
-                        // 编辑器开着的时候也不重复一个「写帖子」：那会让人以为能同时写两篇。
-                        if (!composing) {
-                            TextButton(onClick = { openEditor(null) }) { Text("写帖子") }
+else -> Column {
+                    // 列表页顶上不是「标题栏」而是 fluxdo 那条 48dp 工具栏：☰ / 最新▾ / 🔍。
+                    // 原来这里是 72dp 居中标题 + 「写帖子」文字按钮——两样都不在 fluxdo 的首页上。
+                    Box {
+                        PostsToolbar(
+                            board = board,
+                            category = categoryPick,
+                            newCount = freshCount,
+                            onOpenCategories = { categoryMenuOpen = true },
+                            onOpenFilters = { filterMenuOpen = true },
+                            onSearch = {
+                                // 搜索胶囊常显在工具栏下面，这里只把光标送进去。
+                                searchFocus.requestFocus()
+                            },
+                        )
+                        DropdownMenu(
+                            expanded = filterMenuOpen,
+                            onDismissRequest = { filterMenuOpen = false },
+                        ) {
+                            PostBoard.entries.forEach { entry ->
+                                DropdownMenuItem(
+                                    text = { Text(entry.label) },
+                                    onClick = {
+                                        board = entry
+                                        filterMenuOpen = false
+                                    },
+                                    trailingIcon = if (entry == board) {
+                                        { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
                         }
-                    },
-                )
+                        DropdownMenu(
+                            expanded = categoryMenuOpen,
+                            onDismissRequest = { categoryMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("全部分类") },
+                                onClick = {
+                                    categoryPick = ""
+                                    categoryMenuOpen = false
+                                },
+                                trailingIcon = if (categoryPick.isBlank()) {
+                                    { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            POST_CATEGORIES.forEach { label ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        categoryPick = label
+                                        categoryMenuOpen = false
+                                    },
+                                    trailingIcon = if (label == categoryPick) {
+                                        { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        floatingActionButton = {
+            // 右下角创作入口：只在列表形态出现（详情/编辑器各有自己的动作）。
+            // 底栏在我们这层 Scaffold 之外，所以自己垫 96：和列表的 contentPadding 同一个数。
+            if (openId <= 0L && !composing) {
+                Box(modifier = Modifier.padding(bottom = 96.dp)) {
+                    PostsFab(
+                        open = fabOpen,
+                        draftCount = draftList.size,
+                        canWrite = canWrite,
+                        onToggle = { fabOpen = !fabOpen },
+                        onNewPost = {
+                            fabOpen = false
+                            openEditor(null)
+                        },
+                        onDrafts = {
+                            fabOpen = false
+                            draftList.firstOrNull()?.let { openEditor(it) }
+                        },
+                        onRefresh = {
+                            fabOpen = false
+                            if (!refreshing) {
+                                refreshing = true
+                                reloadKey++
+                            }
+                        },
+                    )
+                }
             }
         },
     ) { padding ->
@@ -946,6 +1233,7 @@ private fun SearchCapsule(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     BasicTextField(
@@ -954,7 +1242,7 @@ private fun SearchCapsule(
         singleLine = true,
         textStyle = TextStyle(color = scheme.onSurface, fontSize = 14.sp),
         cursorBrush = SolidColor(scheme.primary),
-        modifier = modifier
+        modifier = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
             .height(40.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(scheme.surfaceContainerHighest.copy(alpha = 0.5f)),
@@ -1060,6 +1348,7 @@ private fun PostListPane(
                 SearchCapsule(
                     value = query,
                     onValueChange = onQueryChange,
+                    focusRequester = searchFocus,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 12.dp, end = 12.dp, top = 8.dp),
@@ -1084,43 +1373,6 @@ private fun PostListPane(
                 }
             }
 
-            item(key = "boards") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PostBoard.entries.forEach { entry ->
-                        PostChip(
-                            text = entry.label,
-                            picked = entry == board,
-                            onClick = { onBoardChange(entry) },
-                        )
-                    }
-                    // 一条细竖线把"口径"和"分类"分开：两者能同时生效，但含义不是一件事。
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(18.dp)
-                            .background(scheme.outlineVariant),
-                    )
-                    PostChip(
-                        text = "全部",
-                        picked = category.isBlank(),
-                        onClick = { onCategoryChange("") },
-                    )
-                    POST_CATEGORIES.forEach { label ->
-                        PostChip(
-                            text = label,
-                            picked = label == category,
-                            onClick = { onCategoryChange(if (label == category) "" else label) },
-                        )
-                    }
-                }
-            }
 
             // 我自己还没改名字：列表顶端说一次，并指出去哪儿改（旁边那个红点一直在呼吸）。
             if (authorId.isNotBlank() && isDefaultAuthorName(selfName)) {
