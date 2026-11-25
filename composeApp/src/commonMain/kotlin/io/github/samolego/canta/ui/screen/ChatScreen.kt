@@ -101,7 +101,7 @@ import io.github.samolego.canta.ui.component.Emotion
 import io.github.samolego.canta.ui.component.EmotionPicker
 import io.github.samolego.canta.ui.component.EmotionSpan
 import io.github.samolego.canta.ui.component.EmotionText
-import io.github.samolego.canta.ui.component.GroupGridAvatar
+import io.github.samolego.canta.ui.component.GroupAvatarView
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.component.personAvatarUrl
@@ -1203,6 +1203,7 @@ fun ChatScreen(
                 peerOwner = peerOwner,
                 // 群头像拼九宫格要用成员名单；私聊传空（那边画对方一个人的头像）。
                 groupMembers = detail?.members.orEmpty(),
+                conversationId = conversationId,
                 typingLine = typingLine,
                 onNavigateBack = onNavigateBack,
                 onOpenGroupInfo = onOpenGroupInfo,
@@ -1671,6 +1672,8 @@ private fun ChatTopBar(
     peerOwner: String,
     /** 群成员名单：群聊顶栏那个头像要拼九宫格（见 [GroupGridAvatar]）；私聊传空。 */
     groupMembers: List<ConversationMember> = emptyList(),
+    /** 会话号：群头像按它推图床地址（设过群头像就显示那张图）。 */
+    conversationId: Long = 0L,
     /** 「X 正在输入…」；空串表示没人打字（这时群聊退回写「群聊」）。 */
     typingLine: String = "",
     onNavigateBack: () -> Unit,
@@ -1734,6 +1737,7 @@ private fun ChatTopBar(
                 isGroup = isGroup,
                 peerOwner = peerOwner,
                 groupMembers = groupMembers,
+                conversationId = conversationId,
                 onClick = openHeader,
             )
             Spacer(Modifier.width(8.dp))
@@ -1836,6 +1840,8 @@ private fun ChatHeaderAvatar(
     peerOwner: String = "",
     /** 群成员名单：群聊用它拼九宫格，私聊传空。 */
     groupMembers: List<ConversationMember> = emptyList(),
+    /** 会话号：群头像按它推图床地址——设过群头像就显示那张图，没设过是拼图。 */
+    conversationId: Long = 0L,
     onClick: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -1847,10 +1853,11 @@ private fun ChatHeaderAvatar(
             onClick = onClick,
         )
     }
-    // 群聊：成员够两个人就拼九宫格（微信群头像那种），否则退回群名首字。
-    if (isGroup && groupMembers.count { it.owner.isNotEmpty() } >= 2) {
-        GroupGridAvatar(
+    // 群聊：设过群头像就是那张图，没设过是成员拼图（见 [GroupAvatarView]）。
+    if (isGroup) {
+        GroupAvatarView(
             name = title.ifBlank { chatInitial(title = title, isGroup = true) },
+            conversationId = conversationId,
             members = groupMembers,
             size = 40.dp,
             modifier = clickModifier,
@@ -1858,8 +1865,8 @@ private fun ChatHeaderAvatar(
         return
     }
     PersonAvatar(
-        name = title.ifBlank { chatInitial(title = title, isGroup = isGroup) },
-        owner = if (isGroup) "" else peerOwner,
+        name = title.ifBlank { chatInitial(title = title, isGroup = false) },
+        owner = peerOwner,
         size = 40.dp,
         modifier = clickModifier,
         background = scheme.primary.copy(alpha = 0.15f),
@@ -3389,4 +3396,5 @@ private fun daysBeforeMonth(year: Int, month: Int): Long {
     }
     return sum
 }
+
 

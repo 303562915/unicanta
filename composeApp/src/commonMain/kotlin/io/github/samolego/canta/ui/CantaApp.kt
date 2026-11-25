@@ -1701,6 +1701,12 @@ private fun CantaNavigation(
                     onOpenSearch = {
                         navController.navigate(Screen.Messages.route) { launchSingleTop = true }
                     },
+                    // 换群头像：和个人主页接的是同一套平台能力（相册、预览压缩、按裁剪框裁方并压到 200KB 内）。
+                    pickImage = { platform.pickImage() },
+                    compressPreview = { bytes -> platform.compressImage(bytes, ImageBed.AVATAR_PREVIEW_BYTES) },
+                    compressAvatar = { bytes, crop ->
+                        platform.compressAvatar(bytes, crop, ImageBed.AVATAR_MAX_BYTES)
+                    },
                 )
             }
             composable(route = Screen.Groups.route) {

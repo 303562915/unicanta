@@ -11,17 +11,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * A text avatar: the first character of an id or a name, on a filled circle. The app has no
- * profile pictures, so every review, comment and profile row shows this instead of an image.
+ * 文字头像：名字的第一个字符，画在一个实心圆（或方形，见 [shape]）里。
  *
- * The letter comes from [avatarLetter]: the first character of [name], so a review signed
- * "#10000" and one signed "Alice" both get a one-character avatar.
+ * 这是全 app 头像的**默认样子**：没上传过照片的人一律显示它。以前这里有一段"名字还是装机码就
+ * 换成一整块灰骨架"的短路，结果是没改名的人头像全变灰块、**一个字都看不到**——现在没有那条路了，
+ * 文字永远显示，是否改过名与头像无关。
+ *
+ * 那个字由 [avatarLetter] 取：[name] 的首个字符，`"#10000"` 与 `"Alice"` 都得到一个字符的头像。
  */
 @Composable
 fun LetterAvatar(
@@ -36,18 +39,13 @@ fun LetterAvatar(
      * 传一个更大的样式，否则字会缩在圆的中间一小块。
      */
     letterStyle: TextStyle? = null,
+    /** 外形：默认圆形；群头像九宫格里传方形（见 [GroupGridAvatar]）。 */
+    shape: Shape = CircleShape,
 ) {
-    // 还没改名字的人：头像位画成骨架占位（见 AuthorMark.kt），不显示装机码的首字。
-    // 放在这里而不是各个页面里，是因为**所有**头像最终都落到这一个组件上——
-    // 帖子、评论、会话列表、群成员、个人主页，一处改完全站一致。
-    if (isDefaultAuthorName(name)) {
-        SkeletonAvatar(modifier = modifier, size = size)
-        return
-    }
     Box(
         modifier = modifier
             .size(size)
-            .clip(CircleShape)
+            .clip(shape)
             .background(background),
         contentAlignment = Alignment.Center,
     ) {

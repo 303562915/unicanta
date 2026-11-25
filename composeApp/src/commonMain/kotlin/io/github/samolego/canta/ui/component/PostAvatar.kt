@@ -8,20 +8,16 @@ import androidx.compose.ui.unit.dp
 /**
  * 帖子与楼层里的头像。
  *
- * 全 app 的头像只有两种样子（见 [UserAvatar]）：**上传过就显示那张图，没传过就是骨架占位**。
- * 帖子这一侧现在没有头像地址，所以永远落在第二种——一块磨砂灰圆（[SkeletonAvatar]），
- * 和会话列表、群成员、评论里的"还没图"完全一样，位置也永远占着，不会让左边空一块。
- *
- * [name] 与 [seed] 留在签名里：以后帖子也接图床时按 [seed] 去取 `personAvatarUrl`，
- * 调用点一行都不用改。
+ * 和全 app 其他地方一样走 [PersonAvatar]：**设过照片就是照片，没设过是名字首字**。
+ * [seed] 是这个人的身份号（发帖人 / 楼层作者），按它就能推出图床地址；拿不到照片就显示 [name]
+ * 的首字，不会再画一块灰。
  */
 @Composable
-@Suppress("UNUSED_PARAMETER")
 fun PostAvatar(
     name: String,
     modifier: Modifier = Modifier,
     size: Dp = 36.dp,
     seed: String = name,
 ) {
-    SkeletonAvatar(modifier = modifier, size = size)
+    PersonAvatar(name = name, owner = seed, size = size, modifier = modifier)
 }

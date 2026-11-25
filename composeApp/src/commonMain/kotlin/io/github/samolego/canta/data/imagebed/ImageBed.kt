@@ -51,6 +51,14 @@ object ImageBed {
     const val CHAT_FOLDER = "$ROOT/群聊"
 
     /**
+     * 群头像的目录。
+     *
+     * 传成 `[GROUP_AVATAR_FOLDER]/<会话号>.jpg`（见 [groupAvatarId]），**覆盖式写**：同一个群重传就是换
+     * 头像，不生成新名字——所以客户端不需要后端多加一列，按会话号就能推出地址。
+     */
+    const val GROUP_AVATAR_FOLDER = "$ROOT/群头像"
+
+    /**
      * 单张图的上限：2.5 兆（2.5 MiB = 2_621_440 字节）。
      *
      * 图床自己没有这个限制（单请求 100MB），这是**我们自己的产品规则**：手机拍的图动辄 5～10MB，
@@ -104,6 +112,14 @@ object ImageBed {
      * `SocialRepository.uploadAvatar`），否则图床会拿 409 把第二次上传挡回去。
      */
     fun avatarId(owner: String): String = "$AVATAR_FOLDER/${owner.trim()}.jpg"
+
+    /**
+     * 群头像的 id：`unicanta/群头像/<会话号>.jpg`，**一个群一个名字**（覆盖式）。
+     *
+     * 和个人头像同一个道理：名字固定，重传就是换一张，所以后端不必存这一列——谁拿到会话号都能算出
+     * 地址，没传过的群那个地址就是 404，界面退回成员拼图。
+     */
+    fun groupAvatarId(conversationId: Long): String = "$GROUP_AVATAR_FOLDER/$conversationId.jpg"
 
     /** [id] 里目录那一段（没有目录就是空串）。上传时要单独交给 `folder` 字段。 */
     fun folderOf(id: String): String = id.substringBeforeLast('/', "")

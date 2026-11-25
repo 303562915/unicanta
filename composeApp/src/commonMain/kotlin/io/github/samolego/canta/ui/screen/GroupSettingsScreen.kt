@@ -23,18 +23,21 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
+import io.github.samolego.canta.core.ImageCrop
 import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.community.Conversation
 import io.github.samolego.canta.data.community.ConversationDetail
@@ -58,9 +62,12 @@ import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.AppLinkCard
 import io.github.samolego.canta.ui.component.AppToggleCard
+import io.github.samolego.canta.ui.component.AvatarCropDialog
+import io.github.samolego.canta.ui.component.AvatarCropSource
 import io.github.samolego.canta.ui.component.CantaDialog
-import io.github.samolego.canta.ui.component.GroupGridAvatar
+import io.github.samolego.canta.ui.component.GroupAvatarView
 import io.github.samolego.canta.ui.component.PersonAvatar
+import io.github.samolego.canta.ui.component.cacheAvatar
 import io.github.samolego.canta.ui.component.PickConversationDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
@@ -71,7 +78,10 @@ import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.decodeToImageBitmap
 
 /**
  * 群人数不设上限：官方群（灰度测试群、Bug 反馈群）注册即全员加入，几千人是常态，
@@ -184,6 +194,15 @@ fun GroupSettingsScreen(
     onMessage: (String) -> Unit,
     /** 查找聊天内容：跳到消息页并把搜索框打开。null 表示这一处不给入口（比如从别处直接进来）。 */
     onOpenSearch: (() -> Unit)? = null,
+    /**
+     * 换群头像要用的三件事：挑图、压预览、按裁剪框裁方并压到 20–200KB。
+     *
+     * 和 `ProfileScreen` 接的是同一套平台能力；null（桌面 / 网页 / 测试这些没相册的宿主）时，
+     * 群主的头像上不挂"换一张"的入口——点了也没反应比不显示更糟。
+     */
+    pickImage: (suspend () -> ByteArray?)? = null,
+    compressPreview: ((ByteArray) -> ByteArray?)? = null,
+    compressAvatar: ((ByteArray, ImageCrop?) -> ByteArray?)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val clipboard = LocalClipboardManager.current
@@ -212,6 +231,81 @@ fun GroupSettingsScreen(
         mutableStateOf(cached?.toDetail(conversationId)?.allowImage ?: false)
     }
     var toggling by remember { mutableStateOf(false) }
+
+    // 换群头像：选好、等着摆裁剪框的那张图，以及"正在上传"。
+    var cropTarget by remember { mutableStateOf<AvatarCropSource?>(null) }
+    var avatarBusy by remember { mutableStateOf(false) }
+    // 头像地址不变（覆盖式上传），所以要一个版本号把 `GroupAvatarView` 重建成"再读一次缓存"。
+    var avatarVersion by remember { mutableStateOf(0) }
+
+    /**
+     * 换群头像：选 → 裁 → （压到 20–200KB）→ 传图床。
+     *
+     * 和「个人主页」那一条是同一套手感：先压一张预览（长边 ≤2048）摆进圆窗里挪，确定之后才按原图下刀。
+     * 中间的解码、缩放、编码全在 [Dispatchers.Default] 上——主线程做这个会卡住几百毫秒。
+     */
+    val changeGroupAvatar: () -> Unit = {
+        val pick = pickImage
+        if (!avatarBusy && pick != null) {
+            scope.launch {
+                avatarBusy = true
+                try {
+                    val picked = pick()
+                    if (picked != null) {
+                        val preview = withContext(Dispatchers.Default) { compressPreview?.invoke(picked) }
+                        val bitmap = preview?.let { bytes ->
+                            runCatching { bytes.decodeToImageBitmap() }.getOrNull()
+                        }
+                        if (bitmap == null) {
+                            onMessage("这张图太大或者读不出来，换一张")
+                        } else {
+                            cropTarget = AvatarCropSource(source = picked, preview = bitmap)
+                        }
+                    }
+                } finally {
+                    avatarBusy = false
+                }
+            }
+        }
+    }
+
+    /** 裁剪框点了「确定」：压 + 传 + 让这一页重读一次刚上传的那张。 */
+    fun uploadGroupAvatar(source: ByteArray, crop: ImageCrop) {
+        scope.launch {
+            avatarBusy = true
+            try {
+                val ready = withContext(Dispatchers.Default) { compressAvatar?.invoke(source, crop) }
+                if (ready == null || ready.isEmpty()) {
+                    onMessage("这张图压不下来，换一张")
+                } else {
+                    val url = repository.uploadGroupAvatar(conversationId, ready)
+                    if (url == null) {
+                        onMessage(repository.lastError?.takeIf { it.isNotBlank() } ?: "群头像没上传成，检查代理后再试")
+                    } else {
+                        // 覆盖式上传：地址不变，把新字节盖进缓存，再把组件重建一次。
+                        runCatching { ready.decodeToImageBitmap() }.getOrNull()
+                            ?.let { bitmap -> cacheAvatar(url, bitmap) }
+                        avatarVersion += 1
+                        onMessage("群头像已更新")
+                    }
+                }
+            } finally {
+                avatarBusy = false
+            }
+        }
+    }
+
+    cropTarget?.let { target ->
+        AvatarCropDialog(
+            bitmap = target.preview,
+            title = "调整群头像",
+            onDismiss = { cropTarget = null },
+            onConfirm = { crop ->
+                cropTarget = null
+                uploadGroupAvatar(target.source, crop)
+            },
+        )
+    }
 
     /**
      * 把现在这一份详情与三个开关写回缓存，下一次进来先画它。
@@ -434,6 +528,10 @@ fun GroupSettingsScreen(
                         onInvite = { ensureInvite { code -> clipboard.setText(AnnotatedString(inviteLinkOf(code))); onMessage("邀请码已复制") } },
                         onShare = { sharing = true },
                         onInviteMembers = { adding = true },
+                        // 只有建群的人能换群头像（后端也按 createdBy 判；这里只是不给别人一个点了没用的入口）。
+                        onChangeAvatar = if (current.isOwner(owner) && pickImage != null) changeGroupAvatar else null,
+                        avatarBusy = avatarBusy,
+                        avatarVersion = avatarVersion,
                     )
                 }
                 // 成员卡上写人数（不写上限：官方群几千人，N/200 会读成"满了"），也有一整排头像。
@@ -791,6 +889,12 @@ private fun GroupHeadCard(
     onInvite: () -> Unit,
     onShare: () -> Unit,
     onInviteMembers: () -> Unit,
+    /** 点群头像换一张；null 表示不给这个入口（非群主 / 这个宿主没相册）。 */
+    onChangeAvatar: (() -> Unit)? = null,
+    /** 正在上传：头像半透明 + 一个小转圈。 */
+    avatarBusy: Boolean = false,
+    /** 换过头像就 +1：地址不变（覆盖式上传），靠它把头像组件重建一次、重读缓存。 */
+    avatarVersion: Int = 0,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(
@@ -802,7 +906,37 @@ private fun GroupHeadCard(
             .padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            GroupAvatar(members = detail.members, size = 56.dp)
+            // 群头像：设过就是那张图，没设过是成员方块拼图（见 [GroupAvatarView]）；
+            // 群主点它就能换一张（选图 → 裁剪 → 压到 20–200KB → 传图床）。
+            Box {
+                // key(avatarVersion)：换完头像地址不变，靠这个把它重建成"再读一次缓存"。
+                key(avatarVersion) {
+                    GroupAvatarView(
+                        name = detail.label,
+                        conversationId = conversationId,
+                        members = detail.members,
+                        size = 56.dp,
+                        modifier = Modifier
+                            .alpha(if (avatarBusy) 0.45f else 1f)
+                            .then(
+                                if (onChangeAvatar == null) {
+                                    Modifier
+                                } else {
+                                    Modifier.clickable(
+                                        onClickLabel = "换群头像",
+                                        onClick = onChangeAvatar,
+                                    )
+                                },
+                            ),
+                    )
+                }
+                if (avatarBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center).size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -863,17 +997,6 @@ private fun HeadAction(glyph: FlGlyph, label: String, onClick: () -> Unit) {
         Spacer(Modifier.height(3.dp))
         Text(text = label, fontSize = 10.sp, color = scheme.onSurfaceVariant)
     }
-}
-
-/**
- * 群头像：成员拼的九宫格（见 [GroupGridAvatar]）。
- *
- * 以前是四个首字拼的 2×2；现在每一格都是那个成员自己的头像——设过照片就是照片，没设过是首字，
- * 而且 5 人以上自动变成 3×3，一眼看得出"这是个多人的地方"。
- */
-@Composable
-private fun GroupAvatar(members: List<ConversationMember>, size: Dp) {
-    GroupGridAvatar(name = "", members = members, size = size)
 }
 
 /** 成员：标题带总人数（不设上限），下面一格一格的圆头像，最后一格是「邀请」。 */
@@ -1095,3 +1218,4 @@ private fun ScaffoldWithTopBar(
         content(PaddingValues(0.dp))
     }
 }
+

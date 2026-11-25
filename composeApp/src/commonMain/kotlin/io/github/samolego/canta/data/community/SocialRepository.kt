@@ -1575,6 +1575,23 @@ class SocialRepository(
     }
 
     /**
+     * 换一个群的头像：[bytes] 传到 `unicanta/群头像/<会话号>.jpg`，返回图床直链；失败返回 null，
+     * 原因照旧进 [lastError]。
+     *
+     * 和个人头像同一套：id 固定、覆盖式上传，所以同一个群重传就是换一张，图床上的对象不会越攒越多。
+     * 大小与压缩不在这里做（要动平台层的解码器），调用方先裁好压好再进来。
+     */
+    suspend fun uploadGroupAvatar(conversationId: Long, bytes: ByteArray): String? {
+        if (conversationId <= 0L || bytes.isEmpty()) return null
+        return uploadChatImageToImageBed(
+            id = ImageBed.groupAvatarId(conversationId),
+            bytes = bytes,
+            contentType = "image/jpeg",
+            overwrite = true,
+        )
+    }
+
+    /**
      * 把 [objectPath] 那张图读回来，2xx 返回字节，别的一律 null。
      *
      * [objectPath] 是消息体里那一格，两种形状都认：**图床的完整地址**（`https://.../file/...`，公开

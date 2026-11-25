@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +20,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
@@ -172,7 +174,7 @@ internal fun cacheAvatar(url: String, bitmap: ImageBitmap) {
  * 失败一律 null（连不上、4xx、字节不是图）：头像不是页面能不能用的前提，退回首字母圆就好，
  * 没必再往上抛一层异常。
  */
-private object AvatarLoader {
+internal object AvatarLoader {
 
     private val client = HttpClient { install(HttpTimeout) { requestTimeoutMillis = 9_000 } }
 
@@ -243,6 +245,8 @@ fun UserAvatar(
     letterColor: Color = Color.White,
     /** 首字那个字的样式：大圆传大样式，见 [LetterAvatar]。 */
     letterStyle: TextStyle? = null,
+    /** 外形：默认圆形；群头像九宫格里传方形（见 [GroupGridAvatar]）。 */
+    shape: Shape = CircleShape,
 ) {
     val key = url.trim()
     // 这个地址被写过几次。有人把新图塞进缓存（换头像）时它 +1，只有**看着同一个地址**的头像会重读
@@ -279,20 +283,24 @@ fun UserAvatar(
     }
 
     val picture = bitmap
-    // 位置先占着，图后到、且**淡入**。
+    // 文字头像一直在底下占着位置，照片到了再淡入盖上去。
     //
-    // 以前是"要么图、要么骨架"二选一地整块换：图一到就"啪"一下跳出来，圆越大越像闪屏。现在骨架
-    // 灰圆一直在底下占住这一格（尺寸和照片完全一样，不会有任何位移），照片到了只是盖上来、淡进来。
+    // 为什么不是"没图就灰块"：那样没上传过照片的人（大多数）满屏都是灰圆，一个字都读不到；
+    // 也做过"先灰块后淡入"，结果一样——用户看到的仍是一屏灰。所以底色那块**永远是名字首字**。
     val pictureAlpha by animateFloatAsState(
         targetValue = if (picture != null) 1f else 0f,
         animationSpec = tween(durationMillis = 220),
         label = "avatar-fade",
     )
-    Box(modifier = modifier.size(size).clip(CircleShape)) {
-        // 还没图（或图还没到）的样子：骨架占位（见 [SkeletonAvatar]）——一块磨砂灰圆，
-        // 不画文字头像、也不做任何模糊。位置由它一直占着，照片到了从上面淡入盖住，
-        // 看着是"换了一张"，不是"原来那儿没有东西"。
-        SkeletonAvatar(size = size)
+    Box(modifier = modifier.size(size).clip(shape)) {
+        LetterAvatar(
+            name = name,
+            size = size,
+            background = background ?: MaterialTheme.colorScheme.primary,
+            letterColor = letterColor,
+            letterStyle = letterStyle,
+            shape = shape,
+        )
         if (picture != null) {
             Image(
                 bitmap = picture,
@@ -300,7 +308,7 @@ fun UserAvatar(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(size)
-                    .clip(CircleShape)
+                    .clip(shape)
                     .alpha(pictureAlpha),
             )
         }
@@ -311,7 +319,7 @@ fun UserAvatar(
  * 按**身份号**画一个人的头像。
  *
  * 全 app 的头像都走这里：[personAvatarUrl] 从身份号推出图床地址，设过照片的人显示照片，没设过的
- * 是骨架占位（[SkeletonAvatar]）——两态由 [UserAvatar] 自己决定，调用方只管给"这是谁"。
+ * 是名字首字（[LetterAvatar]）——两态由 [UserAvatar] 自己决定，调用方只管给"这是谁"。
  *
  * 参数和 [UserAvatar] 一样，只是把 `url` 换成 `owner`：一处地方拼地址，别的页面不必各记一遍
  * 「头像在哪个目录、文件名怎么拼」。
@@ -325,6 +333,8 @@ fun PersonAvatar(
     background: Color? = null,
     letterColor: Color = Color.White,
     letterStyle: TextStyle? = null,
+    /** 外形：默认圆形；群头像九宫格里传方形。 */
+    shape: Shape = CircleShape,
 ) {
     UserAvatar(
         name = name,
@@ -334,5 +344,6 @@ fun PersonAvatar(
         background = background,
         letterColor = letterColor,
         letterStyle = letterStyle,
+        shape = shape,
     )
 }
