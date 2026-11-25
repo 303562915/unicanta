@@ -1150,6 +1150,32 @@ private fun PlanDetailContent(
 }
 
 /**
+ * 覆盖列表去掉上传者自己那台。
+ *
+ * 卡片上已经有一行说「这条是在哪台机器上验的」，而 `plan_device_coverage` 是按同一套包的分组
+ * 计数，上传者本人的那次当然也在里面——不剔掉的话，同一个机型在同一张卡上出现两次，读起来像
+ * 「还有一台和你一样的机器也验过」，其实那就是它自己。
+ *
+ * 判定的口径与后端那几列一致：机型（零售编号）+ ROM + 主版本 + 构建。同一台机器的另一个构建
+ * 是另一次验证（一年几个构建，包清单会变），所以构建对不上就留下来。
+ */
+private fun otherDevices(
+    coverage: List<DeviceCoverage>,
+    plan: CommunityPlan,
+): List<DeviceCoverage> = coverage.filterNot { device ->
+    // 老方案没有机型列，那时谈不上「和上面那台一样」，就一个也不剔。
+    if (plan.model.isBlank()) return@filterNot false
+    if (!device.model.equals(plan.model, ignoreCase = true)) return@filterNot false
+    // 机型对上、ROM 却不知道：只能按「同一台」处理，宁可少一行也不重复同一台机器。
+    if (plan.rom.isBlank() || device.rom.isBlank()) return@filterNot true
+    if (!device.rom.equals(plan.rom, ignoreCase = true)) return@filterNot false
+    if (device.romVersion != plan.romVersion) return@filterNot false
+    // 构建：任何一边不知道就当同一台；两边都有且不同，那是这台机器的另一次验证，留着。
+    plan.romBuild.isBlank() || device.romBuild.isBlank() ||
+        device.romBuild.equals(plan.romBuild, ignoreCase = true)
+}
+
+/**
  * What the plan is: who uploaded it, the title, whether it was reboot-proven, the device the plan
  * was proven on — the uploader's, never the reader's — and the three numbers people judge plans by.
  *
@@ -1356,17 +1382,18 @@ private fun PlanHero(
                     )
                 }
                 // The other phones, when there are any: one device line says who wrote this, this says
-                // whether anybody else lived with it. Only shown past the uploader's own row, so a plan
-                // nobody else has tried stays as quiet as before.
-                if (coverage.isNotEmpty()) {
+                // whether anybody else lived with it. 上传者自己那台已经在那行上说过了，这里剔掉
+                // （见 [otherDevices]）；剔完什么都不剩就整段不画，一个没人跟进的方案还是原来那样安静。
+                val others = otherDevices(coverage, plan)
+                if (others.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "也在这些机器上验过",
+                        text = "也在另外 ${others.size} 台机器上验过",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.onPrimaryContainer.copy(alpha = 0.75f),
                     )
-                    coverage.forEach { device ->
+                    others.forEach { device ->
                         Text(
                             text = device.buildLabel +
                                 // Same line as the model chips: a count that is not a crowd (see
