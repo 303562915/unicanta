@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +46,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.ui.component.AuthorLabel
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.UnreadRed
 import io.github.samolego.canta.ui.fl.FlBarButton
@@ -373,13 +375,11 @@ private fun FollowPersonRow(
         )
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = person.label,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
+            AuthorLabel(
+                name = person.label,
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
                 color = colors.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = followNoteOf(person.since, tab),

@@ -6,7 +6,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -290,15 +289,10 @@ fun UserAvatar(
         label = "avatar-fade",
     )
     Box(modifier = modifier.size(size).clip(CircleShape)) {
-        // 位置先占着、名字也在：没图（或图还没到）就是**文字头像**——名字首字画圆，不画灰块、
-        // 不做任何模糊。相册里的照片到了再淡入盖上去，看着是"换了一张"，不是"原来那儿什么都没有"。
-        LetterAvatar(
-            name = name,
-            size = size,
-            background = background ?: MaterialTheme.colorScheme.primary,
-            letterColor = letterColor,
-            letterStyle = letterStyle,
-        )
+        // 还没图（或图还没到）的样子：骨架占位（见 [SkeletonAvatar]）——一块磨砂灰圆，
+        // 不画文字头像、也不做任何模糊。位置由它一直占着，照片到了从上面淡入盖住，
+        // 看着是"换了一张"，不是"原来那儿没有东西"。
+        SkeletonAvatar(size = size)
         if (picture != null) {
             Image(
                 bitmap = picture,
@@ -317,7 +311,7 @@ fun UserAvatar(
  * 按**身份号**画一个人的头像。
  *
  * 全 app 的头像都走这里：[personAvatarUrl] 从身份号推出图床地址，设过照片的人显示照片，没设过的
- * 就是名字首字（**不**画骨架灰块、也不做模糊）——两态由 [UserAvatar] 自己决定，调用方只管给"这是谁"。
+ * 是骨架占位（[SkeletonAvatar]）——两态由 [UserAvatar] 自己决定，调用方只管给"这是谁"。
  *
  * 参数和 [UserAvatar] 一样，只是把 `url` 换成 `owner`：一处地方拼地址，别的页面不必各记一遍
  * 「头像在哪个目录、文件名怎么拼」。

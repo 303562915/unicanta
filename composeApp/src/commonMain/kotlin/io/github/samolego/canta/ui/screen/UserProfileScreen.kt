@@ -55,6 +55,7 @@ import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.SocialUserProfile
+import io.github.samolego.canta.ui.component.AuthorLabel
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.PickConversationDialog
@@ -483,12 +484,12 @@ private fun ProfileCover(
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
+                // 没改过名的人：名字显示成占位条 + 红点（见 AuthorLabel），而不是 `#1000x`。
+                AuthorLabel(
+                    name = name,
                     style = FlText.headline,
                     color = Color.White,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
