@@ -37,6 +37,14 @@ object AudioWhitelist {
     /** The one property the whole feature hangs on. */
     const val PROP = "persist.sys.scene.partition.level"
 
+    /**
+     * 上报里这个工具的 id。
+     *
+     * 工具页那张同名卡已经删掉了（音频收敛成这一页），但这个串仍是**数据库里区分工具**的键，
+     * 换掉会让 `tweak_reports` 的历史和新的行变成两个工具。所以它留在这里，不跟着卡一起走。
+     */
+    const val TWEAK_ID = "xiaomi-audio-whitelist"
+
     /** `-1`: the audio engine skips the whitelist entirely. */
     const val BYPASS = "-1"
 
