@@ -916,6 +916,11 @@ private fun PostListPane(
 ) {
     val scheme = MaterialTheme.colorScheme
     val refreshState = rememberPullToRefreshState()
+    // 置顶分组：三样东西都必须在 LazyColumn **外面**算。`LazyListScope` 不是 composable 上下文，
+    // 在那里调 remember/state 会直接编译失败（`@Composable invocations can only happen from …`）。
+    val pinnedShown = remember(shown) { shown.filter { it.pinned } }
+    val normalShown = remember(shown) { shown.filterNot { it.pinned } }
+    var pinnedOpen by remember { mutableStateOf(true) }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -1044,10 +1049,6 @@ private fun PostListPane(
 
             // 置顶话题单独成一组（截图里顶上那块「置顶话题 · 3」）：置顶的老帖混在时间序里会把
             // 新帖挤下去，分组后既看得见又不挡路。默认展开、点一下就收起。
-            val pinnedShown = shown.filter { it.pinned }
-            val normalShown = shown.filterNot { it.pinned }
-            var pinnedOpen by remember { mutableStateOf(true) }
-
             if (pinnedShown.isNotEmpty()) {
                 item(key = "pinned-head") {
                     PinnedTopicsHeader(
@@ -1362,8 +1363,6 @@ private fun SkeletonBar(widthFraction: Float, align: Boolean = true) {
     )
 }
 
-/** 元信息里的一个数：大于零才算"有"，零只画一个灰色 0，不抢注意力。 */
-@Composable
 
 /**
  * 详情底部「相关帖子」的一行：标题 + 一行元信息，点它换到那一条。
