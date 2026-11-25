@@ -929,7 +929,6 @@ internal fun PostsScreen(
  * [shown] 是已经在上面算好的口径（分类/搜索/排序），这里只负责画；点一条交给 [onOpen]。
  * 之所以把口径在外面算：筛选改动不该触发一次网络请求，也不该重置列表滚动位置。
  */
-@Composable
 /**
  * 首页那根搜索胶囊，逐项照 fluxdo 的 `widgets/common/search_capsule.dart`：
  *
@@ -992,6 +991,7 @@ private fun SearchCapsule(
     )
 }
 
+@Composable
 private fun PostListPane(
     posts: List<CommunityPost>,
     shown: List<CommunityPost>,
@@ -2093,7 +2093,6 @@ private fun ReplyBar(
  *
  * @param onInsertShare 点「分享方案」时调用；null 时不画那一格。
  */
-@Composable
 /**
  * 顶栏那颗圆形发送（照 fluxdo 的 `ComposerSubmitButton`）：40dp 正圆、图标 21dp、
  * 外面套 48dp 触控框、`padding = 0`；忙碌时圆里滚一个 18dp 的进度圈，不再是文字「正在发…」。
@@ -2142,6 +2141,7 @@ private fun PublishCircleButton(busy: Boolean, enabled: Boolean, onClick: () -> 
     }
 }
 
+@Composable
 private fun PostEditorPane(
     title: String,
     body: String,
