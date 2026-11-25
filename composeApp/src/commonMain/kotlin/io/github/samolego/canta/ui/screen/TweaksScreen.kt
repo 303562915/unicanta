@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.TweakFailure
 import io.github.samolego.canta.core.TweakRun
+import io.github.samolego.canta.data.audio.AudioWhitelist
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.cancel
 import io.github.samolego.canta.generated.resources.got_it
