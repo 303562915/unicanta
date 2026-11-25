@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -230,16 +229,9 @@ internal fun StoreScreen(
             ScreenTopBar(title = "商城")
         },
     ) { padding ->
-        if (loading) {
-            Box(
-                modifier = modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-            return@Scaffold
-        }
-
+        // 不再整页画转圈：点进商城那一刻就该看见这一页（顶栏、钱包、货架标题都在），
+        // 数据各块自己在位子上填。以前这里 `if (loading) { Box { CircularProgressIndicator() }; return }`
+        // 会让"点进来"先空白转一圈、数据回来才出现，读起来像页面加载了两遍。
         LazyColumn(
             modifier = modifier.fillMaxSize().padding(padding),
             state = listState,
@@ -275,7 +267,12 @@ internal fun StoreScreen(
             if (offers.isEmpty()) {
                 item(key = "store-empty") {
                     Note(
-                        text = error ?: "还没有人挂东西。你手上多出来的码，可以放上来换积分。",
+                        // 第一次进来（没有缓存）货架还在路上：写一句话，而不是让整页空着或转圈。
+                        text = when {
+                            loading -> "正在读取货架…"
+                            error != null -> error
+                            else -> "还没有人挂东西。你手上多出来的码，可以放上来换积分。"
+                        },
                         inset = 16.dp,
                     )
                 }
