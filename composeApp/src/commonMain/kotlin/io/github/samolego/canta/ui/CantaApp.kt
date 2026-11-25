@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,8 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -338,6 +341,18 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
         FlThemeMode.System -> systemDark
     }
     CantaTheme(darkTheme = darkTheme, accent = FlAccent.ofArgb(themeAccent)) {
+        // 系统栏（状态栏 / 导航栏）的底色跟着页面背景走。`enableEdgeToEdge()` 能让内容画到系统栏
+        // 底下时这一步看不出来；但小米 / 澎湃这类 ROM 在「经典导航键」（三键导航）下不让应用铺
+        // 过去，系统自己给那两条填色，于是浅色页面上看着是上下各一条黑框（群里 pmkarl 报的
+        // 「经典导航键模式下的黑框」/「小米14上下都有黑框」）。系统既然不给铺，就让它的颜色等于
+        // 页面底色。桌面 / 网页没有系统栏，平台侧是空实现。
+        val background = MaterialTheme.colorScheme.background
+        SideEffect {
+            deps.platform.followSystemBarColor(
+                backgroundArgb = background.toArgb().toLong() and 0xFFFFFFFFFFL,
+                lightBars = background.luminance() > 0.5f,
+            )
+        }
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             // Plain locals, so the two are smart-cast together: a delegated property is not.
             val question = lockQuestion

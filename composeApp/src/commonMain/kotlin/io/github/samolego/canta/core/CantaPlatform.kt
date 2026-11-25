@@ -240,6 +240,19 @@ interface CantaPlatform {
     fun exitApp() = Unit
 
     /**
+     * 让系统栏（状态栏 / 导航栏）的底色跟着页面背景走。
+     *
+     * 正常情况下用不上：`enableEdgeToEdge` 之后系统栏是透明的，页面自己就画到那底下。但小米 /
+     * 澎湃这类 ROM 在「经典导航键」（三键导航）下不让应用画到系统栏下面，那两条由系统自己填色，
+     * 于是在浅色页面上看着是上下各一条黑框。系统既然不给铺，就让它的颜色等于页面底色，视觉上
+     * 连成一片。桌面 / 网页 / 测试没有系统栏，沿用默认的空实现。
+     *
+     * @param backgroundArgb 页面背景色（ARGB，`MaterialTheme.colorScheme.background`）
+     * @param lightBars 背景是浅色时为 true，此时系统栏图标要用深色
+     */
+    fun followSystemBarColor(backgroundArgb: Long, lightBars: Boolean) = Unit
+
+    /**
      * 让用户挑一张图片，返回它的字节。
      *
      * 聊天里发图片走这条路：只有真的有相册的平台才需要实现它。桌面、网页、测试这些没有相册的

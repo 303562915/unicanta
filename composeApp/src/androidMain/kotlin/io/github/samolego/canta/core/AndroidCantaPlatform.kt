@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -22,6 +23,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import io.github.samolego.canta.core.root.rootMayBeAvailable
 import io.github.samolego.canta.core.shizuku.ShizukuPermission
@@ -270,6 +272,37 @@ class AndroidCantaPlatform(
         pendingImage = null
         notifyPermissionLauncher = null
         pendingNotifyPermission = null
+    }
+
+    /**
+     * 系统栏底色跟着页面背景走，见 [CantaPlatform.followSystemBarColor]。
+     *
+     * 顺手把窗口自身的底色也换成同一个颜色：`enableEdgeToEdge()` 生效时用不到（内容本来就画到
+     * 系统栏底下），但在不让应用铺到系统栏下面的 ROM 上，那两条的缝隙露的就是窗口底色——同色
+     * 之后「黑框」不再是一条看得见的边。
+     */
+    @Suppress("DEPRECATION")
+    override fun followSystemBarColor(backgroundArgb: Long, lightBars: Boolean) {
+        // `biometricActivity` 就是 attachActivity 记下的那个 Activity，这里只是借它，不再多一个字段。
+        val activity = biometricActivity ?: return
+        val color = backgroundArgb.toInt()
+        activity.runOnUiThread {
+            runCatching {
+                val window = activity.window
+                window.setBackgroundDrawable(ColorDrawable(color))
+                // Android 15 起系统强制 edge-to-edge，这两个 setter 已经是空操作；更早的版本上
+                // 它们才是真正决定系统栏颜色的那一个。
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    window.statusBarColor = color
+                    window.navigationBarColor = color
+                }
+                WindowInsetsControllerCompat(window, window.decorView).apply {
+                    // 浅色背景要深色图标，深色背景要浅色图标；写反了在纯色条上直接看不见。
+                    isAppearanceLightStatusBars = lightBars
+                    isAppearanceLightNavigationBars = lightBars
+                }
+            }.onFailure { LogUtils.w(TAG, "系统栏配色没设上：${it.message}") }
+        }
     }
 
     /**

@@ -14,15 +14,17 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -1214,15 +1216,25 @@ fun ChatScreen(
                 onToggleMute = { toggleMute() },
             )
         },
+        // 底部 inset 只留一份。Scaffold 默认已经给内容一份 navigationBars，内容里再来一次
+        // `navigationBarsPadding()`、再加一次 `imePadding()`，就是三份叠在一起：三键导航
+        // （经典导航键）下导航栏本身就有 48dp 左右，叠出来近 100dp 的空白露着 Scaffold 的黑底，
+        // 键盘弹出时正好卡在输入栏和键盘之间——群里报的「键盘与输入栏之间的黑框」就是它。
+        // 水平方向照旧留给 Scaffold（横屏时的侧边导航栏、刘海屏的侧边缺口）。
+        contentWindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal),
     ) { padding ->
-        // 整页吃输入法 inset：edge-to-edge 下系统不再缩窗口，只有 imePadding 才会把输入栏
-        // 顶到键盘上方（不加的话键盘直接盖住输入栏）。手势条那条 inset 同理。
+        // 整页吃输入法 inset：edge-to-edge 下系统不再缩窗口，只有吃到 ime inset 才会把输入栏
+        // 顶到键盘上方（不加的话键盘直接盖住输入栏）。键盘展开时 ime inset 已经把导航栏那一段
+        // 算进去了，所以这里取并集而不是相加——相加就是上面说的那条黑框。
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imePadding()
-                .navigationBarsPadding(),
+                .windowInsetsPadding(
+                    WindowInsets.ime
+                        .union(WindowInsets.navigationBars)
+                        .only(WindowInsetsSides.Bottom),
+                ),
         ) {
             loadError?.let { reason -> ChatErrorLine(reason) }
             // 翻译失败那句只借一次机会：它和 loadError 同一个样式，两秒后自己收走。
