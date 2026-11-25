@@ -181,6 +181,13 @@ internal fun PostsScreen(
     /** 已读痕迹与收藏；null 时列表不画未读点、详情里也没有收藏按钮。 */
     reads: PostReadStore? = null,
     loadPlans: (suspend () -> List<CommunityPlan>)? = null,
+    /**
+     * 列表顶上那张「GitHub AI 开源周榜」卡片点开的去处；null 时那张卡片不画。
+     *
+     * 卡片放在列表里而不是挂在底栏：一周出一期的东西不值得占一格底栏，但它在"帖子"这一页
+     * 最上面，看得见、点得到，也不打断列表本身。
+     */
+    onOpenWeeklyRank: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
@@ -814,6 +821,7 @@ internal fun PostsScreen(
                 },
                 onLoadMore = loadMore,
                 onOpen = openThread,
+                onOpenWeeklyRank = onOpenWeeklyRank,
                 onOpenDraft = { openEditor(it) },
                 onDeleteDraft = { discardDraft(it) },
                 onWrite = { openEditor(null) },
@@ -888,6 +896,8 @@ private fun PostListPane(
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onOpen: (CommunityPost) -> Unit,
+    /** 顶上那张周榜卡片的去处；null 时不画那张卡片。 */
+    onOpenWeeklyRank: (() -> Unit)? = null,
     onOpenDraft: (PostDraft) -> Unit,
     onDeleteDraft: (PostDraft) -> Unit,
     onWrite: () -> Unit,
@@ -923,6 +933,14 @@ private fun PostListPane(
                             TextButton(onClick = onCloseSearch) { Text("收起") }
                         },
                     )
+                }
+            }
+
+            // 一周一期的 GitHub AI 开源周榜：列表最上面第一条内容（搜索框展开时让位给它），
+            // 点开是整张海报 + 能逐条读的榜单。不占底栏：一周一次的东西不值得占一格。
+            if (onOpenWeeklyRank != null) {
+                item(key = "weekly-rank") {
+                    WeeklyRankTeaserCard(onClick = onOpenWeeklyRank)
                 }
             }
 

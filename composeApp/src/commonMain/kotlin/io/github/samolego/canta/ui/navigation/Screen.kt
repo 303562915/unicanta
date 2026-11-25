@@ -68,6 +68,15 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Posts : Screen("posts")
 
     /**
+     * 开源周榜：帖子页顶上那张卡片的详情——整期海报 + 这一周的十条榜单。
+     *
+     * 从 [Posts] 列表顶部的卡片进（不占底栏）。数据写死在
+     * `io.github.samolego.canta.ui.screen.WeeklyRankScreen.kt` 里的 `weeklyRankWeek47`：
+     * 一期周榜是一份快照，不是后端能实时算出来的东西，所以这一页不联网，也不用等。
+     */
+    data object WeeklyRank : Screen("weekly-rank")
+
+    /**
      * 商城：积分怎么来、怎么花。每天领分、积分商城（谁都能挂）、兑换中心（CDK 码池）。
      *
      * 它与机场分开：机场那一页只管投票榜单，钱和兑换都在这。
