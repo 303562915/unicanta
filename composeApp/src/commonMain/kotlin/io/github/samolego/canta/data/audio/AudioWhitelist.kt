@@ -42,6 +42,10 @@ object AudioWhitelist {
     internal const val TAG_SETTING = "##SETTING##"
     internal const val TAG_XML = "##XMLHEAD##"
 
+    /** Where the config would have been: the directories themselves, and anything named like it. */
+    internal const val TAG_DIRECTORY = "##DIR##"
+    internal const val TAG_FILE = "##FILE##"
+
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
     suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
 
@@ -108,6 +112,8 @@ object AudioWhitelist {
                     diagnostics += line.removePrefix(TAG_PROPERTY).trim().replace(Regex("\\s+"), " ")
                 line.startsWith(TAG_SETTING) -> diagnostics += "setting " + line.removePrefix(TAG_SETTING).trim()
                 line.startsWith(TAG_XML) -> diagnostics += "xml: " + line.removePrefix(TAG_XML).trim()
+                line.startsWith(TAG_DIRECTORY) -> diagnostics += "dir " + line.removePrefix(TAG_DIRECTORY).trim()
+                line.startsWith(TAG_FILE) -> diagnostics += "file " + line.removePrefix(TAG_FILE).trim()
                 else -> Unit
             }
         }

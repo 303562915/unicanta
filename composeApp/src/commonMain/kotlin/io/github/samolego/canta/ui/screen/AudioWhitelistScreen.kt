@@ -123,7 +123,9 @@ fun AudioWhitelistScreen(
                     loading = loading,
                     failure = failure,
                     busy = busy,
-                    canBypass = bypass != null && current?.bypassed != true,
+                    // 没有配置文件就不许解除：改了属性也不会发生任何事，只会让人以为「点了生效、可没效果」。
+                    // 恢复始终允许——这台机器上可能已经被人点过解除，得留一条路改回 1。
+                    canBypass = bypass != null && current?.supported == true && current?.bypassed != true,
                     canRestore = restore != null && current?.bypassed == true,
                     onBypass = { run("解除", bypass) },
                     onRestore = { run("恢复", restore) },
@@ -164,7 +166,10 @@ fun AudioWhitelistScreen(
             } else if (current != null && !current.supported) {
                 item(key = "no-config") {
                     Text(
-                        text = "这台机器上没找到 /odm/etc/audio/trackefx_config.xml：没有这道音频处理，所有应用都是原始音量，不需要动。",
+                        text = "这台机器上没找到 trackefx_config.xml，也没有可读的音频白名单配置：这道处理本来就不存在，" +
+                            "所有应用一直是原始音量，「解除」对它没有任何作用（按钮已置灰）。" +
+                            "如果你之前点过解除、开关现在是 -1，点「恢复」把它写回 1 就好——" +
+                            "下面那栏诊断信息里有这台机器上真实的音频属性，发给开发者可以继续找别的入口。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
@@ -210,12 +215,17 @@ private fun StatusCard(
     val headline = when {
         failure != null -> "读不到状态"
         state == null -> if (loading) "读取中…" else "读不到状态"
+        // 没有配置文件时，属性值说明不了任何事：这台机器根本没有那道处理，改了也不会发生什么。
+        // 先把这句放在最前面，别再让人以为「按名单处理/已解除」是这台机器的真实状态。
+        !state.supported && state.bypassed -> "开关被改成了 -1，但这台机器没有这道音频处理（没有配置文件），没有任何效果"
+        !state.supported -> "这台机器没有这道音频处理（没有配置文件），不需要动"
         state.bypassed -> "已解除：名单里的应用也按原始信号输出"
         state.active -> "按名单处理：名单里的应用被切低频、压低音量"
         else -> "开关值：${state.level.ifEmpty { "未设置" }}（不是 1 也不是 -1）"
     }
     val accent = when {
         failure != null -> MaterialTheme.colorScheme.error
+        state != null && !state.supported -> MaterialTheme.colorScheme.error
         state?.bypassed == true -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurface
     }

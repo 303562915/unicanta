@@ -7,6 +7,8 @@ if [ -n "$CFG" ]; then
 { grep -oE '"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+"' "$CFG"; grep -oE '>[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+<' "$CFG"; } 2>/dev/null | tr -d '"><' | grep -v '\.xml$' | sort -u | sed 's|^|##PKG##|'
 echo "##XMLHEAD##$(head -c 400 "$CFG" | tr '\n' ' ')"
 fi
+for d in /odm/etc/audio /vendor/etc/audio /system/etc/audio; do echo "##DIR##$d: $(ls -1 "$d" 2>/dev/null | tr '\n' ' ')"; done
+find /odm/etc /vendor/etc -maxdepth 3 \( -iname '*track*' -o -iname '*efx*' \) 2>/dev/null | head -n 20 | sed 's|^|##FILE##|'
 pm list packages 2>/dev/null | sed 's|^package:|##INST##|'
 getprop | grep -iE 'scene|trackefx|track_efx|whitelist|audio.*(white|bypass|scene)' | head -n 40 | sed 's|^|##PROP##|'
 echo "##SETTING##debug_audio_cloud=$(settings get global debug_audio_cloud 2>/dev/null)"
