@@ -969,6 +969,8 @@ private fun CantaNavigation(
             composable(route = Screen.Audio.route) {
                 AudioWhitelistScreen(
                     handler = handler,
+                    telemetry = deps.packageTelemetry,
+                    cantaVersion = BuildInfo.VERSION_NAME,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }

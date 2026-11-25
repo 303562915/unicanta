@@ -38,7 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.TweakFailure
+import io.github.samolego.canta.core.TweakRun
 import io.github.samolego.canta.data.audio.AudioWhitelist
+import io.github.samolego.canta.util.DeviceContext
+import io.github.samolego.canta.util.FailureReportDevice
+import io.github.samolego.canta.util.PackageTelemetry
+import io.github.samolego.canta.util.TweakReport
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import kotlinx.coroutines.launch
 
@@ -52,6 +57,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AudioWhitelistScreen(
     handler: CantaHandler,
+    telemetry: PackageTelemetry,
+    cantaVersion: String,
     onNavigateBack: () -> Unit,
 ) {
     var state by remember { mutableStateOf<AudioWhitelist.State?>(null) }
@@ -65,6 +72,43 @@ fun AudioWhitelistScreen(
     var restore by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+
+    /**
+     * 把这一页此刻的事实报到后端：「用不了」这类反馈只有本机诊断行说得清。
+     *
+     * 只在用户点了「解除」或「恢复」时调，读取本身不上报——不然每开一次页面就写一行，
+     * 数据里全是「有人打开过」而不是「有人试过」。
+     */
+    fun report(stage: String, result: TweakRun?, snapshot: AudioWhitelist.State?) {
+        val outcome = when {
+            result == null -> TweakReport.OUTCOME_FAILED
+            result.failure != null -> TweakReport.OUTCOME_BLOCKED
+            result.ok -> TweakReport.OUTCOME_OK
+            // 脚本自己的判定：没有配置文件 = 这台机器没有这套东西，比「失败」准确得多。
+            snapshot != null && !snapshot.supported -> TweakReport.OUTCOME_UNSUPPORTED
+            else -> TweakReport.OUTCOME_FAILED
+        }
+        scope.launch {
+            telemetry.recordTweak(
+                TweakReport(
+                    v = 1,
+                    platform = "android",
+                    tweak = AudioWhitelist.TWEAK_ID,
+                    stage = stage,
+                    outcome = outcome,
+                    code = codeOf(result, failure),
+                    level = snapshot?.level.orEmpty(),
+                    configPath = snapshot?.configPath.orEmpty(),
+                    entries = snapshot?.entries?.size ?: 0,
+                    installed = snapshot?.entries?.count { it.installed } ?: 0,
+                    diagnostics = snapshot?.diagnostics.orEmpty().joinToString("\n"),
+                    output = result?.output.orEmpty(),
+                    cantaVersion = cantaVersion,
+                    device = deviceOf(handler),
+                )
+            )
+        }
+    }
 
     /** Reads the phone's list and switch again; the only source of truth this page has. */
     suspend fun refresh() {
@@ -97,6 +141,12 @@ fun AudioWhitelistScreen(
             log = result.output.ifBlank { if (result.ok) "完成，没有输出" else "执行失败，没有输出" }
             busy = null
             refresh()
+            // 报的是**操作之后**的状态：解除是否真的把开关写成了 -1。
+            report(
+                stage = if (label == "恢复") TweakReport.STAGE_RESTORE else TweakReport.STAGE_RUN,
+                result = result,
+                snapshot = state,
+            )
         }
     }
 
@@ -417,6 +467,31 @@ private fun DiagnosticsCard(lines: List<String>, onCopy: () -> Unit) {
             )
         }
     }
+}
+
+/** 报给后端用的失败代号：脚本自己打的、失败枚举、最后一行输出，取第一个能用的。 */
+private fun codeOf(result: TweakRun?, failure: String?): String {
+    if (result == null) return failure?.take(60).orEmpty()
+    result.failure?.let { return it.name.uppercase() }
+    val known = listOf("STATE_FAIL", "SET_FAIL", "TIMEOUT", "RESTORE_FAIL", "RESTORE_SET_FAIL", "RESTORE_NO_KEY")
+    result.output.lineSequence().forEach { line ->
+        known.firstOrNull { it in line }?.let { return it }
+    }
+    return if (result.ok) "" else result.output.lineSequence().lastOrNull()?.take(60).orEmpty()
+}
+
+/** 这台机器在这份报告里的样子：只带机型/ROM/代号，不带任何身份。 */
+private suspend fun deviceOf(handler: CantaHandler): FailureReportDevice {
+    val context = runCatching { handler.deviceContext() }.getOrNull() ?: DeviceContext.UNKNOWN
+    val profile = runCatching { handler.deviceProfile() }.getOrNull()
+    return FailureReportDevice(
+        brand = context.brand,
+        rom = context.rom,
+        romVersion = context.romVersion,
+        sdk = context.sdk,
+        model = profile?.model.orEmpty(),
+        codename = profile?.device.orEmpty(),
+    )
 }
 
 /** Why the shell never answered, in a sentence a reader can act on. */private fun failureText(failure: TweakFailure): String = when (failure) {

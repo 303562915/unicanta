@@ -403,6 +403,42 @@ class Telemetry(
         }
     }
 
+    /**
+     * 把一次工具页操作的结果发到后端的 `tweak_report` RPC。
+     *
+     * 和 [sendUpdateReport] 一样不看 `isEnabled()`：那个开关管的是「卸了哪些系统包」，这条里只有
+     * 这台机器自己的音频/场景属性、几个目录的文件名和工具自己的输出——没有包列表、没有身份。
+     * 「音频白名单用不了」占了反馈的大头，没有这一条只能继续靠人描述屏幕。
+     *
+     * 不入队、不重试：离线时没发出去就算了，没人等这个答案。
+     */
+    suspend fun sendTweakReport(report: TweakReport): Boolean {
+        val body = JsonObject(
+            mapOf("payload" to JsonPrimitive(compactJson.encodeToString(report)))
+        ).toString()
+        return try {
+            val response = client.post(TelemetryConfig.BASE_URL + "tweak_report") {
+                rpcHeaders()
+                setBody(body)
+            }
+            if (response.status.isSuccess()) {
+                LogUtils.i(TAG, "Sent tweak report ${report.tweak}/${report.stage} ${report.code}")
+                true
+            } else {
+                LogUtils.w(
+                    TAG,
+                    "Tweak report rejected: ${response.status} ${response.bodyAsText().take(200)}",
+                )
+                false
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogUtils.w(TAG, "Tweak report dropped: $e")
+            false
+        }
+    }
+
     private suspend fun sendPending() {
         val events = buildList {
             while (true) add(pending.tryReceive().getOrNull() ?: break)

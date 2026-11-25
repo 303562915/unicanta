@@ -241,6 +241,16 @@ class PackageTelemetry(
         )
     }
 
+    /**
+     * 把一次工具页操作的结果（含页面上的诊断行）报到后端。
+     *
+     * 和 [recordUpdate] 一样不看包数据开关：诊断行里没有包列表，只有这台机器的音频/场景属性、
+     * 几个目录的文件名、以及工具自己打印的输出。页面只在**用户点了操作**时调它，读取本身不上报。
+     */
+    suspend fun recordTweak(report: TweakReport) {
+        telemetry.sendTweakReport(report)
+    }
+
     /** The phone as the reports describe it: the coarse context plus the model, which is the key the analysis groups by. */
     private suspend fun failureDevice(): FailureReportDevice {
         val context = runCatching { handler.deviceContext() }.getOrNull() ?: DeviceContext.UNKNOWN
