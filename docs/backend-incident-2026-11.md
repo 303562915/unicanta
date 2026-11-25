@@ -58,7 +58,11 @@
 | 11-25 03:50 | 490 buffers ≈ 3.9 MB | 147.9 s | **27 KB/s** |
 | 11-25 04:03 | 31 buffers ≈ 248 KB | 33.4 s | **7.5 KB/s** |
 
-Micro 档官方基线：**11 MB/s、500 IOPS**。我们跑在基线的 **0.07%–0.7%**。
+Micro 档基线（Management API `billing/addons` 的 `meta.baseline_disk_io_mbs` 实际返回值）：
+**87 MB/s**（突发上限 2085 MB/s、内存 1 GB、直连 60 连接）。我们跑在基线的 **0.086%–0.9%**。
+
+> 这一条很关键：如果只是「Disk IO Budget 用完」，性能**会回落到基线**（87 MB/s），
+> 而不是掉到基线千分之一以下。所以这不是额度耗尽，而是卷或宿主机存储层本身有问题。
 
 ### 2.2 慢在 write，不在 fsync
 
@@ -117,13 +121,20 @@ postgrest 状态码（24 小时窗口）：503 × 684、500 × 303、504 × 183
 
 ## 4. 结论与建议
 
-1. **根因**：实例存储卷的持续写带宽掉到 11 MB/s 基线的 0.07%–0.7%。表现为 Supabase 文档
-   所述 Disk IO Budget 耗尽后回落基线的形态（[High Disk I/O](https://supabase.com/kb/troubleshooting/exhaust-disk-io)、
-   [Interpreting Supabase Grafana IO charts](https://supabase.com/kb/troubleshooting/interpreting-supabase-grafana-io-charts-MUynDR)），
-   但实测值远低于文档给出的 Micro 基线，需要平台侧确认是否被异常限流。
-2. **免费手段已用尽**：参数已到社区标准、换过卷、重启多次。
-3. **唯一能提高基线的手段是升 compute 档**（Small：22 MB/s、1000 IOPS、2 GB 内存）。
-4. **同时开 support ticket**，附本文第 2 节全部数据。
+1. **根因**：实例存储卷的持续写带宽掉到 **87 MB/s** 基线的 **0.086%–0.9%**（7.5–78 KB/s）。
+   「Disk IO Budget 耗尽」只会回落到基线，不会掉到千分之一以下，所以这一条**不能**用额度机制解释，
+   需要平台侧确认是卷故障还是宿主机存储层降级。
+2. **免费手段已用尽**：参数已到社区标准、换过卷（pause/restore，会重新分配 VM 与卷）、重启多次。
+   换卷后仍复现，说明故障可能不在单块卷上，而在 ap-northeast-1 的存储集群侧。
+3. **可选的商业化手段**（Management API 已返回可购买清单，价格来自 `billing/addons`）：
+   | 档位 | 基线磁盘 IO | 内存 | 直连连接 | 价格 |
+   |---|---|---|---|---|
+   | Micro（当前） | 87 MB/s | 1 GB | 60 | ~$10/月 |
+   | Small | **174 MB/s** | 2 GB | 90 | ~$15/月 |
+   | Medium | 347 MB/s | 4 GB | 120 | ~$60/月 |
+
+   但**先别急着升级**：换卷都治不好，升档大概率只是换一台同样慢的宿主机。
+4. **首选动作：开 support ticket**（附本文第 2 节全部数据）。这是唯一能让平台侧去查宿主机存储的通道。
 
 ---
 
@@ -133,10 +144,11 @@ postgrest 状态码（24 小时窗口）：503 × 684、500 × 303、504 × 183
 >
 > **Summary**
 > Checkpoint `write=` times have been 30–148 s for two days, i.e. effective write throughput of
-> 7.5–78 KB/s, against the documented Micro baseline of 11 MB/s (500 IOPS baseline). `sync=` stays at
-> 0.003–0.177 s, so the bottleneck is the `write()` path, not fsync. This exhausted the connection
-> pool and made PostgREST return 500/504/503 for roughly 2 hours on 2026-11-24 and 4 hours on
-> 2026-11-25.
+> **7.5–78 KB/s**, against the Micro baseline of **87 MB/s** as reported by
+> `GET /v1/projects/{ref}/billing/addons` → `meta.baseline_disk_io_mbs` (burst cap 2085 MB/s).
+> That is **~1000x below baseline**. `sync=` stays at 0.003–0.177 s, so the bottleneck is the
+> `write()` path, not fsync. This exhausted the connection pool and made PostgREST return
+> 500/504/503 for roughly 2 hours on 2026-11-24 and 4 hours on 2026-11-25.
 >
 > **Measured data (`postgres_logs`, `checkpoint complete` lines)**
 > ```
@@ -173,9 +185,12 @@ postgrest 状态码（24 小时窗口）：503 × 684、500 × 303、504 × 183
 > - 2026-11-25 00:00–04:14Z: ~4 hours of 5xx (peaks of 140 × HTTP 500 and 79 × HTTP 504 per minute)
 >
 > **Questions**
-> 1. Is this project being throttled below the documented Micro baseline? The measured throughput is
->    0.07%–0.7% of it, which looks anomalous rather than "budget exhausted".
+> 1. The measured throughput is **0.086%–0.9%** of the 87 MB/s baseline. Since a depleted Disk IO
+>    Budget would only drop us *to* the baseline, this looks like a faulty/degraded volume or host
+>    storage rather than budget exhaustion — can you confirm on your side?
 > 2. Can the disk be re-provisioned / the underlying volume moved to a host with normal performance?
+>    Note that `pause` + `restore` (which re-provisions the VM and volume) did **not** fix it, so the
+>    fault may be at the host/storage-cluster level in ap-northeast-1.
 > 3. If not, is upgrading compute the only remedy we should plan for?
 
 ---
@@ -188,3 +203,22 @@ postgrest 状态码（24 小时窗口）：503 × 684、500 × 303、504 × 183
 3. **确认服务有没有在发请求**：`postgrest_logs` 里按 `source='postgrest_logs'` 过滤，看有没有
    请求、状态码是什么。有请求 + 5xx = 后端问题；没请求 = 客户端/链路问题。
 4. **查接口级**：`gh workflow run supabase-log-probe.yml -f source=postgrest_logs -f minutes=15`。
+
+---
+
+## 7. 怎么开这个工单（没有 API，只能走网页）
+
+Management API **没有** support 接口（实测 `/v1/projects/{ref}/support/tickets`、
+`/v1/support/tickets`、`/v1/organizations/{id}/support/tickets` 全部 404），所以工单只能人工提交：
+
+1. 打开 <https://supabase.com/dashboard/project/axuhfogeovtsbxokqccf/support/new>
+   （或 Dashboard → 左下角 **Support** → **New ticket**）
+2. **Subject** 填第 5 节第一行那句：
+   `Sustained 7.5–78 KB/s disk write throughput on Micro compute — project axuhfogeovtsbxokqccf (ap-northeast-1)`
+3. **Description** 粘第 5 节从 `**Summary**` 到 `**Questions**` 全部内容
+4. 附件（可选但有用）：Dashboard → Reports → 分别截 `Database` 与 `Disk IO` 两张图，覆盖
+   2026-11-24 12:00Z – 2026-11-25 06:00Z
+5. 提交
+
+> 提交后 24–48 小时没回应时，可在**同一个工单**里追加一句新的 checkpoint 数据（本文第 2 节格式），
+> 不要开新单。
