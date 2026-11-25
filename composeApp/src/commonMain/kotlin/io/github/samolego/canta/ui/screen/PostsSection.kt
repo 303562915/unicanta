@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,12 +34,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.FormatBold
+import androidx.compose.material.icons.outlined.FormatItalic
+import androidx.compose.material.icons.outlined.FormatListBulleted
+import androidx.compose.material.icons.outlined.FormatQuote
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Title
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.MaterialTheme
@@ -62,9 +71,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
@@ -138,18 +150,33 @@ private const val TAG_MAX = 5
 private const val TAG_LIMIT = 20
 
 /**
- * 编辑器里那排 Markdown 快捷插入：名字 → 追加的片段。
+/**
+ * 编辑器工具栏的一项：图标 + 无障碍名 + 往正文末尾追加的 Markdown 片段。
  *
  * 片段都是"能直接念出来"的样子（`**粗体**` 而不是 `****`）：插进去以后改掉中间那几个字就行，
  * 不用先猜这串符号是干嘛的。
  */
-private val MD_SNIPPETS = listOf(
-    "粗体" to "**粗体**",
-    "标题" to "## 小标题",
-    "列表" to "- 一项",
-    "引用" to "> 引用",
-    "代码" to "`代码`",
-    "代码块" to "```\n代码\n```",
+private class EditorTool(
+    val label: String,
+    val icon: ImageVector,
+    val snippet: String,
+)
+
+/**
+ * 工具栏的顺序照 discourse/fluxdo 的编辑器：粗体、斜体、标题、列表、引用、代码、链接。
+ *
+ * 只往末尾追加：我们用的是 String 值而不是 TextFieldValue，拿不到游标位置；与其为了
+ * "插在光标处"把整页输入框改成 TextFieldValue（会连带改草稿、自动保存和预览），
+ * 不如让人写完点一下、再把这行挪上去——多一步，但不会插错地方。
+ */
+private val EDITOR_TOOLS = listOf(
+    EditorTool("粗体", Icons.Outlined.FormatBold, "**粗体**"),
+    EditorTool("斜体", Icons.Outlined.FormatItalic, "*斜体*"),
+    EditorTool("标题", Icons.Outlined.Title, "## 小标题"),
+    EditorTool("列表", Icons.Outlined.FormatListBulleted, "- 一项"),
+    EditorTool("引用", Icons.Outlined.FormatQuote, "> 引用"),
+    EditorTool("代码", Icons.Outlined.Code, "`代码`"),
+    EditorTool("链接", Icons.Outlined.Link, "[文字](https://)"),
 )
 
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
@@ -253,6 +280,12 @@ internal fun PostsScreen(
 
     // ---- 编辑器 ----
     var composing by remember { mutableStateOf(false) }
+    /** 预览开关：和「写」「改文字」一样放在整页状态里，顶栏那个按钮要读它。 */
+    var previewing by remember { mutableStateOf(false) }
+    /** 上一次拉列表时见过的最大帖子 id：用来算「有几个新的或更新的话题」。 */
+    var seenMaxId by remember { mutableStateOf(0L) }
+    /** 这一趟多出来的新帖数（横幅上的数字）；点一下刷新后归零。 */
+    var freshCount by remember { mutableIntStateOf(0) }
     /** 正在编辑的那篇草稿的本地 id；空串表示没在编辑。 */
     var editorId by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
@@ -302,6 +335,16 @@ internal fun PostsScreen(
         if (fresh != null) {
             // 首页拿回来的条数就能说明还有没有下一页：不够一页就是到底了。
             hasMore = fresh.size >= POSTS_PAGE
+            // 「有几个新的或更新的话题」按**这一趟新出现的 id** 算，而不是按未读数：
+            // 未读是"我没看过"，新话题是"刚刚才出现"，两件事。第一次进来（seenMaxId 还是 0）
+            // 不报——否则首屏每一条都算"新"。
+            val maxId = fresh.maxOfOrNull { it.id } ?: 0L
+            freshCount = if (seenMaxId <= 0L) {
+                0
+            } else {
+                fresh.count { it.id > seenMaxId }
+            }
+            if (maxId > seenMaxId) seenMaxId = maxId
             // 就地合并：内容没变的那几条沿用旧实例，整表不重画；一个字节都没变时连状态写入都省掉。
             val merged = stableMerge(posts, fresh) { it.id }
             if (merged !== posts) {
@@ -702,8 +745,20 @@ internal fun PostsScreen(
                 )
 
                 composing -> ScreenTopBar(
-                    title = "写帖子",
+                    title = "创建话题",
                     onNavigateBack = cancelEditor,
+                    actions = {
+                        // 预览切换留在这里而不是正文上面：写的时候看不到它，看一眼才点。
+                        TextButton(onClick = { previewing = !previewing }) {
+                            Text(if (previewing) "改文字" else "预览")
+                        }
+                        // 圆形纸飞机发送（fluxdo 的 ComposerSubmitButton：40dp 正圆，图标 21dp）。
+                        PublishCircleButton(
+                            busy = posting,
+                            enabled = canWrite && !posting,
+                            onClick = publish,
+                        )
+                    },
                 )
 
                 else -> ScreenTopBar(
@@ -761,15 +816,12 @@ internal fun PostsScreen(
                 tagInput = tagInput,
                 savedAt = savedAt,
                 error = editorError,
-                posting = posting,
-                canPublish = canWrite && !posting,
+                previewing = previewing,
                 onTitleChange = { title = it.take(POST_TITLE_LIMIT) },
                 onBodyChange = { body = it.take(POST_BODY_LIMIT) },
                 onCategoryChange = { category = it },
                 onTagInputChange = onTagInputChange,
                 onRemoveTag = { tag -> tags = tags - tag },
-                onPublish = publish,
-                onCancel = cancelEditor,
                 // 「分享方案」/「插入分享码」：点了才拉列表，拉不到只说一句，不挡着发帖。
                 // 插进去的是一整段分享文案（方案名 + 方案所属机型 + 分享码），
                 // 别人在帖子里看到就知道这是哪台机子验证过的方案。
@@ -808,6 +860,7 @@ internal fun PostsScreen(
                 canWrite = canWrite,
                 hasMore = hasMore,
                 hasBackend = store != null,
+                freshCount = freshCount,
                 unreadOf = { post ->
                     // 一次都没读过（全新装上）时不画点：满屏都是点等于没有提示。
                     reads != null && reads.hasHistory() && reads.isUnread(post.id, post.comments)
@@ -878,6 +931,68 @@ internal fun PostsScreen(
  * 之所以把口径在外面算：筛选改动不该触发一次网络请求，也不该重置列表滚动位置。
  */
 @Composable
+/**
+ * 首页那根搜索胶囊，逐项照 fluxdo 的 `widgets/common/search_capsule.dart`：
+ *
+ * - 高 **40dp**（固定），圆角 **20**（胶囊）
+ * - 底色 `surfaceContainerHighest` **50%**
+ * - 左侧留白 **16**，放大镜 **20dp**，用**强调色**（不是灰色 outline）
+ * - 图标与提示文字之间 **8**，文字 **14sp**、色 `onSurfaceVariant`、右边留 **12**
+ *
+ * 为什么不用 `OutlinedTextField`：它自带 56dp 的最小高度与内部 padding，压不到 40；
+ * 而且它的 placeholder 走的是输入框那套排版（12sp 起），和这里要的 14sp 对不上。
+ * 自己搭一层 `decorationBox` 更短的代码就能把上面五个数逐个落实。
+ */
+@Composable
+private fun SearchCapsule(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = TextStyle(color = scheme.onSurface, fontSize = 14.sp),
+        cursorBrush = SolidColor(scheme.primary),
+        modifier = modifier
+            .height(40.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(scheme.surfaceContainerHighest.copy(alpha = 0.5f)),
+        decorationBox = { inner ->
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(modifier = Modifier.width(16.dp))
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = scheme.primary,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = "搜索话题…",
+                            fontSize = 14.sp,
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                    inner()
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+        },
+    )
+}
+
 private fun PostListPane(
     posts: List<CommunityPost>,
     shown: List<CommunityPost>,
@@ -895,6 +1010,8 @@ private fun PostListPane(
     canWrite: Boolean,
     hasMore: Boolean,
     hasBackend: Boolean,
+    /** 这一趟多出来的新帖数（横幅用；0 时不画横幅）。 */
+    freshCount: Int,
     /** 这条帖子现在算不算没看过 / 有新回复（见 [PostReadStore.isUnread]）。 */
     unreadOf: (CommunityPost) -> Boolean,
     /** 这条帖子是不是收起来了。 */
@@ -941,40 +1058,17 @@ private fun PostListPane(
             // 胶囊搜索框：常显，不占一个"点搜索才出现"的状态（截图里它一直在最上面）。
             // 圆角 50%、底色是比页面浅一层的 surfaceVariant、边框全透明 —— 看起来是一根软胶囊。
             item(key = "search") {
-                val searchColors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedContainerColor = scheme.surfaceVariant.copy(alpha = 0.55f),
-                    focusedContainerColor = scheme.surfaceVariant.copy(alpha = 0.75f),
-                )
-                OutlinedTextField(
+                SearchCapsule(
                     value = query,
                     onValueChange = onQueryChange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                    singleLine = true,
-                    shape = RoundedCornerShape(50),
-                    placeholder = {
-                        Text("搜索话题…", style = MaterialTheme.typography.bodySmall)
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                            tint = scheme.outline,
-                        )
-                    },
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    colors = searchColors,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 )
             }
 
             // 「↑ 查看 N 个新的或更新的话题」：只有真的有未读时才出现，点一下重拉一遍。
-            val freshCount = if (board == PostBoard.Latest) shown.count { unreadOf(it) } else 0
-            if (freshCount > 0) {
+            if (board == PostBoard.Latest && freshCount > 0) {
                 item(key = "new-topics") {
                     FreshTopicsBanner(count = freshCount, onClick = onRefresh)
                 }
@@ -1982,13 +2076,73 @@ private fun ReplyBar(
 }
 
 /**
- * 编辑器：标题、分类、标签、正文（可切 Markdown 预览）、字数、自动保存的那一行，以及「取消」「发布」。
+ * 「创建话题」页，布局照 fluxdo 的 `create_topic_page.dart`：
  *
- * 整页可滚：正文一长，键盘一弹，按钮就在屏幕外了；`verticalScroll` 让它们跟着走。
+ * ```
+ * 顶栏：返回 + 标题 + [预览] + 圆形纸飞机发送（ComposerSubmitButton，40dp 正圆）
+ * 可滚内容：
+ *   标题（无边框、headlineSmall / w600、提示文字 onSurfaceVariant 50%）+ 右下字数角标
+ *   间距 16
+ *   正文（无边框、bodyLarge、提示「正文内容（支持 Markdown）…」）+ 右下字数角标
+ * 底部（常驻吸底）：
+ *   属性条：[选择分类 ⌄] [+ 添加标签] [分享方案] —— 胶囊
+ *   工具栏：[B] [I] [H] [列表] [引用] [代码] [链接] —— 图标 16dp、触控 48dp
+ * ```
  *
- * @param onInsertShare 点「分享方案」时调用；null 时不画那一格（还没有能列方案的地方）。
+ * 为什么把分类/标签挪到底部：写作时手在正文上，属性条是"发之前核对一眼"的东西；放在标题
+ * 下面会把它和正文隔开，一屏里出现两条横带。fluxdo 的 `ComposerMetaBar` 就是常驻底部。
+ *
+ * @param onInsertShare 点「分享方案」时调用；null 时不画那一格。
  */
 @Composable
+/**
+ * 顶栏那颗圆形发送（照 fluxdo 的 `ComposerSubmitButton`）：40dp 正圆、图标 21dp、
+ * 外面套 48dp 触控框、`padding = 0`；忙碌时圆里滚一个 18dp 的进度圈，不再是文字「正在发…」。
+ *
+ * 为什么是正圆而不是一颗文字按钮：写完之后整个屏幕只有这一个"结束"动作，圆形把它从
+ * 顶栏的一排文字里拎出来；而且它不随标题长短改变宽度，位置永远在同一个角上。
+ */
+@Composable
+private fun PublishCircleButton(busy: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier.size(48.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    if (enabled || busy) scheme.primary
+                    else scheme.surfaceVariant,
+                )
+                .clickable(
+                    enabled = enabled && !busy,
+                    role = Role.Button,
+                    onClickLabel = "发送",
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = scheme.onPrimary,
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "发送",
+                    modifier = Modifier.size(21.dp),
+                    tint = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 private fun PostEditorPane(
     title: String,
     body: String,
@@ -1997,169 +2151,268 @@ private fun PostEditorPane(
     tagInput: String,
     savedAt: Long,
     error: String?,
-    posting: Boolean,
-    canPublish: Boolean,
+    previewing: Boolean,
     onTitleChange: (String) -> Unit,
     onBodyChange: (String) -> Unit,
     onCategoryChange: (String) -> Unit,
     onTagInputChange: (String) -> Unit,
     onRemoveTag: (String) -> Unit,
-    onPublish: () -> Unit,
-    onCancel: () -> Unit,
     onInsertShare: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val savedClock = draftClock(savedAt)
-    // 预览只是看一眼：不跨离开保存，所以放在这里 remember 就够。
-    var previewing by remember { mutableStateOf(false) }
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = if (savedClock.isNotEmpty()) "已自动保存 · $savedClock" else "还没存过草稿",
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            value = title,
-            onValueChange = onTitleChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("标题") },
-            placeholder = { Text("一句话说清这帖讲什么") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-        )
-        Text(
-            text = "${title.length}/$POST_TITLE_LIMIT",
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-        )
+    // 两排属性默认收起：一进来看到的是"标题 + 空白正文"，不是两条堆满 chip 的横带。
+    // 已经有内容的（改草稿）才展开，省得每次都点一下。
+    var categoryOpen by remember { mutableStateOf(category.isNotBlank()) }
+    var tagsOpen by remember { mutableStateOf(tags.isNotEmpty() || tagInput.isNotBlank()) }
 
-        FieldLabel(text = "分类（可不选，再点一下取消）")
-        CategoryChips(selected = category, onPick = onCategoryChange)
+    // 无边框输入：标题与正文都当"一页纸"写，不套输入框的壳。
+    val plainField = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Color.Transparent,
+        unfocusedBorderColor = Color.Transparent,
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
+    )
 
-        FieldLabel(text = "标签（用逗号或空格分开，最多 $TAG_MAX 个）")
-        if (tags.isNotEmpty()) {
-            TagChips(tags = tags, onRemove = onRemoveTag)
-        }
-        OutlinedTextField(
-            value = tagInput,
-            onValueChange = onTagInputChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("标签") },
-            placeholder = { Text("标签，用逗号或空格分开，最多 $TAG_MAX 个") },
-            textStyle = MaterialTheme.typography.bodySmall,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-        )
+    Column(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+        ) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = if (savedClock.isNotEmpty()) "已自动保存 · $savedClock" else "还没存过草稿",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
 
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            FieldLabel(text = if (previewing) "正文 · 预览" else "正文（支持 Markdown）")
-            Spacer(modifier = Modifier.weight(1f))
-            TextButton(onClick = { previewing = !previewing }) {
-                Text(if (previewing) "改文字" else "预览")
+            // 标题：headlineSmall + w600，提示文字压到 50% 透明度（fluxdo 的 hintStyle）。
+            OutlinedTextField(
+                value = title,
+                onValueChange = onTitleChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(
+                        text = "输入标题…",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = scheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        fontWeight = FontWeight.Normal,
+                    )
+                },
+                textStyle = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.sp,
+                ),
+                colors = plainField,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            )
+            // 字数角标：右下角，小字灰，不占一行。
+            Text(
+                text = "${title.length}/$POST_TITLE_LIMIT",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.outline,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.End,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (previewing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+                        .padding(10.dp),
+                ) {
+                    if (body.isBlank()) {
+                        Text(
+                            text = "（没有正文）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    } else {
+                        MiniMarkdown(
+                            text = body,
+                            baseStyle = MaterialTheme.typography.bodyMedium,
+                            color = scheme.onSurface,
+                        )
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = onBodyChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 14,
+                    placeholder = {
+                        Text(
+                            text = "正文内容（支持 Markdown）…",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = scheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        )
+                    },
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    colors = plainField,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                )
             }
+            Text(
+                text = "${body.length}/$POST_BODY_LIMIT",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.outline,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.End,
+            )
+            if (error != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(text = error, style = MaterialTheme.typography.labelSmall, color = scheme.error)
+            }
+            Spacer(modifier = Modifier.height(14.dp))
         }
-        if (!previewing) {
-            // 一排名目按钮：手机上打 `**` 要切键盘，点一下就能插一段模板，改字比找符号快。
-            // 只能往末尾追加——`OutlinedTextField` 用的是 String 值，拿不到游标位置。
+
+        HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+
+        // 底部常驻：属性条 + 工具栏。这两块是"发之前最后核对的东西"，吸在最下面。
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(FlSurfaceLevel.Block.colorOf(scheme)),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MD_SNIPPETS.forEach { (label, snippet) ->
-                    PostChip(
-                        text = label,
-                        picked = false,
-                        onClick = {
-                            val glue = if (body.isBlank() || body.endsWith("\n")) "" else "\n"
-                            onBodyChange((body + glue + snippet).take(POST_BODY_LIMIT))
-                        },
-                    )
-                }
-                // 比模板更进一步的一格：插进来的是一份真实的方案分享（名字 + 机型 + 分享码），
-                // 而不是一段要自己填的骨架。机型由方案那一行给，不用写帖的人手打。
+                ComposerPill(
+                    text = category.ifBlank { "选择分类" },
+                    accent = category.isBlank(),
+                    onClick = { categoryOpen = !categoryOpen },
+                )
+                ComposerPill(
+                    text = if (tags.isEmpty()) "+ 添加标签" else "+ 标签 (${tags.size}/$TAG_MAX)",
+                    accent = tags.isEmpty(),
+                    onClick = { tagsOpen = !tagsOpen },
+                )
                 if (onInsertShare != null) {
-                    PostChip(text = "分享方案", picked = false, onClick = onInsertShare)
+                    // 比模板更进一步的一格：插进来的是一份真实的方案分享（名字 + 机型 + 分享码），
+                    // 而不是一段要自己填的骨架。
+                    ComposerPill(text = "分享方案", accent = false, onClick = onInsertShare)
                 }
             }
-        }
-        if (previewing) {
-            Box(
+
+            if (categoryOpen) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CategoryChips(selected = category, onPick = onCategoryChange)
+                }
+            }
+
+            if (tagsOpen) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (tags.isNotEmpty()) {
+                        TagChips(tags = tags, onRemove = onRemoveTag)
+                    }
+                    OutlinedTextField(
+                        value = tagInput,
+                        onValueChange = onTagInputChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("标签，用逗号或空格分开，最多 $TAG_MAX 个") },
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    )
+                }
+            }
+
+            // 工具栏：图标 16dp、触控 48dp，横向可滚（按钮多，窄屏放不下就滚）。
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
-                    .padding(10.dp),
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (body.isBlank()) {
-                    Text(
-                        text = "（没有正文）",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                    )
-                } else {
-                    MiniMarkdown(
-                        text = body,
-                        baseStyle = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurface,
-                    )
+                EDITOR_TOOLS.forEach { tool ->
+                    EditorToolButton(tool = tool) {
+                        val glue = if (body.isBlank() || body.endsWith("\n")) "" else "\n"
+                        onBodyChange((body + glue + tool.snippet).take(POST_BODY_LIMIT))
+                    }
                 }
             }
-        } else {
-            OutlinedTextField(
-                value = body,
-                onValueChange = onBodyChange,
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 10,
-                label = { Text("正文") },
-                placeholder = { Text("细节、机型、ROM、试过什么") },
-                textStyle = MaterialTheme.typography.bodySmall,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-            )
         }
+    }
+}
+
+/** 属性条上的一个胶囊。数值照 fluxdo `topic_editor_helpers.dart` 的 `_pill`（移动端分支）。 */
+@Composable
+private fun ComposerPill(text: String, accent: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(scheme.surfaceContainerHighest.copy(alpha = 0.42f))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
-            text = "${body.length}/$POST_BODY_LIMIT",
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (accent) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (accent) scheme.primary else scheme.onSurfaceVariant,
+            maxLines = 1,
         )
-        if (error != null) {
-            Text(text = error, style = MaterialTheme.typography.labelSmall, color = scheme.error)
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onCancel) { Text("取消") }
-            Button(enabled = canPublish, onClick = onPublish) {
-                Text(if (posting) "正在发…" else "发布")
-            }
-        }
-        Text(
-            text = "写下的字（含分类与标签）自动存成本地草稿，取消也不会丢；发出去成功之后草稿才删掉。" +
-                "同一身份一分钟只能发一帖。",
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
+        Spacer(modifier = Modifier.width(2.dp))
+        // 下拉小三角：告诉人"这里点开是一列选项"，不是一个开关。
+        FlGlyphIcon(
+            glyph = FlGlyphs.chevronDown,
+            size = 14.dp,
+            tint = if (accent) scheme.primary else scheme.onSurfaceVariant,
         )
     }
 }
 
-/** 编辑器里某一栏的小标题。 */
+/** 工具栏里的一个按钮：图标 16dp、触控 48dp（fluxdo 的 `_ToolbarButton`）。 */
 @Composable
-private fun FieldLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun EditorToolButton(tool: EditorTool, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = tool.icon,
+            contentDescription = tool.label,
+            modifier = Modifier.size(16.dp),
+            tint = scheme.onSurfaceVariant,
+        )
+    }
 }
+
 
 /**
  * 分类：一行可点的 chip。
