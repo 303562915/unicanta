@@ -3,6 +3,7 @@ package io.github.samolego.canta.ui.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
@@ -131,7 +132,8 @@ private sealed interface RunStep {
  *
  * Only vendors that actually ship a tool get a group — an OPPO owner sees no Xiaomi entry and no
  * empty "OPPO" section either; a vendor is added by adding its tweak to `rom_tweaks.json`. The one
- * tool every ROM has, restoring the apps uninstalled for this user, sits at the bottom.
+ * tool every ROM has, restoring the apps uninstalled for this user, rides as one more chip in the
+ * phone's own group, and only falls back to a full-width row on the page when that group is absent.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -241,10 +243,12 @@ fun TweaksScreen(
             allGroups.forEach { (key, list) ->
                 val open = key in expanded
                 val hasAudio = key == familyKeyOf("hyperos")
+                // 本机这一组还多两块：音频白名单（后面是页面不是弹窗）和恢复所有已卸载的应用。
+                val hasRestore = key == mine
                 item(key = "head-$key") {
                     GroupHeader(
                         title = groupTitle(key),
-                        count = list.size + if (hasAudio) 1 else 0,
+                        count = list.size + (if (hasAudio) 1 else 0) + (if (hasRestore) 1 else 0),
                         mine = key == mine,
                         expanded = open,
                         onToggle = {
@@ -266,6 +270,7 @@ fun TweaksScreen(
                                 ToolChip(
                                     icon = iconOf(tweak),
                                     title = tweak.title,
+                                    badge = tweak.badge.ifEmpty { null },
                                     onClick = {
                                         // Which script was copied last belongs to the dialog, not to the page.
                                         copied = null
@@ -277,13 +282,24 @@ fun TweaksScreen(
                             if (hasAudio) {
                                 ToolChip(
                                     icon = Icons.Default.ViewList,
-                                    // 三态：检查中 / 有这套配置 / 本机没有（仍可进，里面是诊断）。
-                                    title = when (audioDetected) {
-                                        null -> "音频白名单 · 检查中…"
-                                        true -> "音频白名单"
-                                        false -> "音频白名单（本机不支持）"
+                                    // 角标三态：检查中 / 有这套配置（不挂角标）/ 本机没有。
+                                    title = "音频白名单",
+                                    badge = when (audioDetected) {
+                                        null -> "检查中"
+                                        false -> "不支持"
+                                        true -> null
                                     },
                                     onClick = onOpenAudio,
+                                )
+                            }
+                            // 恢复所有已卸载的应用：本来在页底独占一整行，现在做成同样的小块放进本机那一组，
+                            // 一行放得下就并排，右侧的空位不再白留。只有本机这组能接——它是每台机器都能做的事。
+                            if (hasRestore) {
+                                ToolChip(
+                                    icon = Icons.Default.Restore,
+                                    title = stringResource(Res.string.tweaks_restore_button),
+                                    running = step is RestoreStep.Loading || step is RestoreStep.Running,
+                                    onClick = { askToRestoreAll() },
                                 )
                             }
                         }
@@ -301,16 +317,18 @@ fun TweaksScreen(
                 }
             }
 
-            // The one tool every ROM has: last on the page, not repeated under each vendor.
-            // 它自己就是一次动作（会先弹确认框），所以整行点击 = 开始恢复。
-            item(key = "separator") { Spacer(modifier = Modifier.height(10.dp)) }
-            item(key = "restore-tool") {
-                ToolRow(
-                    icon = Icons.Default.Restore,
-                    title = stringResource(Res.string.tweaks_restore_button),
-                    running = step is RestoreStep.Loading || step is RestoreStep.Running,
-                    onClick = { askToRestoreAll() },
-                )
+            // 页底那一行只在「本机这一组没出现」时才有：认不出 ROM（没有 mine）或者这一家没工具，
+            // 这时它是页面上唯一的动作，不能跟着分组一起消失。
+            if (allGroups.none { (key, _) -> key == mine }) {
+                item(key = "separator") { Spacer(modifier = Modifier.height(10.dp)) }
+                item(key = "restore-tool") {
+                    ToolRow(
+                        icon = Icons.Default.Restore,
+                        title = stringResource(Res.string.tweaks_restore_button),
+                        running = step is RestoreStep.Loading || step is RestoreStep.Running,
+                        onClick = { askToRestoreAll() },
+                    )
+                }
             }
             item(key = "bottom-space") { Spacer(modifier = Modifier.height(88.dp)) }
         }
@@ -483,6 +501,8 @@ private fun GroupHeader(
 private fun ToolChip(
     icon: ImageVector,
     title: String,
+    badge: String? = null,
+    running: Boolean = false,
     onClick: () -> Unit,
 ) {
     Card(
@@ -490,23 +510,54 @@ private fun ToolChip(
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Box {
+            Row(
+                // 角上有字的时候顶上多留 3dp，让标题和那一小块字错开，不用把它挤成一整行。
+                modifier = Modifier.padding(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = if (badge == null) 9.dp else 12.dp,
+                    bottom = 9.dp,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // 条件写在角上，不写在名字后面：`停用应用（root）` 比 `停用应用` 宽出一大截，
+            // 一行就少放一个，右边剩下的空位全是浪费。
+            if (badge != null) {
+                Text(
+                    text = badge,
+                    fontSize = 8.sp,
+                    lineHeight = 9.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 2.dp, end = 3.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(4.dp),
+                        )
+                        .padding(horizontal = 3.dp),
+                )
+            }
+            if (running) {
+                Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(10.dp), strokeWidth = 1.5.dp)
+                }
+            }
         }
     }
 }

@@ -109,6 +109,15 @@ object AudioWhitelist {
 
         /** This phone has the config, so the list is real rather than an empty read. */
         val supported: Boolean get() = configPath.isNotEmpty()
+
+        /**
+         * 能不能去动那个开关：有名单文件固然可以，**没有文件但属性存在**也可以。
+         *
+         * 名单在澎湃OS 3 上可能整份由云控下发（K90 / K90 Pro Max 这类机器上 /odm 里就没有
+         * trackefx_config.xml），这时按「没有文件 = 不支持」把按钮置灰，等于替用户判了一个我们
+         * 证明不了的结论：属性照样写得进去，有没有效果只能写完听一遍。两个都没有才是真的没得动。
+         */
+        val writable: Boolean get() = supported || level.isNotEmpty()
     }
 
     /** Turns the script's tagged lines into [State]; unknown lines are ignored, not fatal. */

@@ -27,6 +27,13 @@ data class RomTweak(
      * with whatever the shell already has.
      */
     val needs: String = "",
+    /**
+     * 芯片右上角那一小块字，代替标题里的括号。
+     *
+     * 括号挂在标题后面会把整块撑宽（`停用应用（root）` 比 `停用应用` 宽出一大截，一行就少放一个，
+     * 右边的空位全浪费），所以「只有 root 能做」写成 [badge] = "root" 画在角上，标题只留动作本身。
+     */
+    val badge: String = "",
     val why: String = "",
     val command: String = "",
     val action: String? = null,

@@ -70,17 +70,25 @@ fun AudioWhitelistScreen(
     var query by remember { mutableStateOf("") }
     var bypass by remember { mutableStateOf<String?>(null) }
     var restore by remember { mutableStateOf<String?>(null) }
+    /** 「本机没有名单文件」这一页已经报过一次了；同一次进入不重复写。 */
+    var reportedUnsupported by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
 
     /**
      * 把这一页此刻的事实报到后端：「用不了」这类反馈只有本机诊断行说得清。
      *
-     * 只在用户点了「解除」或「恢复」时调，读取本身不上报——不然每开一次页面就写一行，
-     * 数据里全是「有人打开过」而不是「有人试过」。
+     * 用户点「解除」或「恢复」之后调，报的是操作**之后**的状态。读取本身平时不上报（不然每开一次
+     * 页面就写一行，数据里全是「有人打开过」），只有一个例外：「本机没有名单文件」这个结论第一次
+     * 读出来时报一行——那是我们自己机器上永远看不到、而反馈里最多的一种。
      */
-    fun report(stage: String, result: TweakRun?, snapshot: AudioWhitelist.State?) {
-        val outcome = when {
+    fun report(
+        stage: String,
+        result: TweakRun?,
+        snapshot: AudioWhitelist.State?,
+        overrideOutcome: String? = null,
+    ) {
+        val outcome = overrideOutcome ?: when {
             result == null -> TweakReport.OUTCOME_FAILED
             result.failure != null -> TweakReport.OUTCOME_BLOCKED
             result.ok -> TweakReport.OUTCOME_OK
@@ -122,7 +130,17 @@ fun AudioWhitelistScreen(
                 state = null
             }
             !run.ok -> failure = run.output.ifBlank { "读取失败，没有任何输出" }
-            else -> state = AudioWhitelist.parse(run.output)
+            else -> {
+                val parsed = AudioWhitelist.parse(run.output)
+                state = parsed
+                // 「本机没有这份名单」是反馈最多的一种，也是唯一没法从我们自己机器上复现的一种：
+                // K90 / K90 Pro Max 这类机器 /odm 里到底有什么，只能靠它们自己送上来。所以这一条
+                // 在页面第一次读出这个结论时报一行（诊断行里没有包列表），同一页重复刷新不再写。
+                if (!parsed.supported && !reportedUnsupported) {
+                    reportedUnsupported = true
+                    report(TweakReport.STAGE_READ, null, parsed, TweakReport.OUTCOME_UNSUPPORTED)
+                }
+            }
         }
     }
 
@@ -173,9 +191,10 @@ fun AudioWhitelistScreen(
                     loading = loading,
                     failure = failure,
                     busy = busy,
-                    // 没有配置文件就不许解除：改了属性也不会发生任何事，只会让人以为「点了生效、可没效果」。
+                    // 名单文件找不到也允许解除：名单可能整份由云控下发，本机没有文件不等于开关无效。
+                    // 真正没法动的只有「既没有文件、属性也读不出来」那种机器（[AudioWhitelist.State.writable]）。
                     // 恢复始终允许——这台机器上可能已经被人点过解除，得留一条路改回 1。
-                    canBypass = bypass != null && current?.supported == true && current?.bypassed != true,
+                    canBypass = bypass != null && current?.writable == true && current?.bypassed != true,
                     canRestore = restore != null && current?.bypassed == true,
                     onBypass = { run("解除", bypass) },
                     onRestore = { run("恢复", restore) },
@@ -216,10 +235,11 @@ fun AudioWhitelistScreen(
             } else if (current != null && !current.supported) {
                 item(key = "no-config") {
                     Text(
-                        text = "这台机器上没找到 trackefx_config.xml，也没有可读的音频白名单配置：这道处理本来就不存在，" +
-                            "所有应用一直是原始音量，「解除」对它没有任何作用（按钮已置灰）。" +
-                            "如果你之前点过解除、开关现在是 -1，点「恢复」把它写回 1 就好——" +
-                            "下面那栏诊断信息里有这台机器上真实的音频属性，发给开发者可以继续找别的入口。",
+                        text = "这台机器上没找到名单文件：按名字（trackefx_config.xml）、按目录（odm / vendor / system_ext / product）、" +
+                            "按内容都翻过一遍，odm 的 audio 目录里只有什么，下面那栏诊断信息里列着。" +
+                            "没找到不代表开关没用——K90 / K90 Pro Max 这一代可能整份名单都由云控下发。" +
+                            "所以「解除」还能点：写下去自己听一遍，低频回来了就是生效；没有变化就点「恢复」写回原值。" +
+                            "把这段诊断发给开发者，能继续找这台机器上真正的入口。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
@@ -265,17 +285,16 @@ private fun StatusCard(
     val headline = when {
         failure != null -> "读不到状态"
         state == null -> if (loading) "读取中…" else "读不到状态"
-        // 没有配置文件时，属性值说明不了任何事：这台机器根本没有那道处理，改了也不会发生什么。
-        // 先把这句放在最前面，别再让人以为「按名单处理/已解除」是这台机器的真实状态。
-        !state.supported && state.bypassed -> "开关被改成了 -1，但这台机器没有这道音频处理（没有配置文件），没有任何效果"
-        !state.supported -> "这台机器没有这道音频处理（没有配置文件），不需要动"
+        // 没有名单文件时，属性值说明不了「效果如何」：名单可能由云控下发，本机没有文件不等于这道处理不存在。
+        !state.supported && state.bypassed -> "开关已经是 -1，但这台机器上没找到名单文件：效果得自己听一遍"
+        !state.supported -> "这台机器上没找到名单文件（名单可能由云控下发），仍可写一次开关试试"
         state.bypassed -> "已解除：名单里的应用也按原始信号输出"
         state.active -> "按名单处理：名单里的应用被切低频、压低音量"
         else -> "开关值：${state.level.ifEmpty { "未设置" }}（不是 1 也不是 -1）"
     }
     val accent = when {
         failure != null -> MaterialTheme.colorScheme.error
-        state != null && !state.supported -> MaterialTheme.colorScheme.error
+        state != null && !state.supported -> MaterialTheme.colorScheme.onSurfaceVariant
         state?.bypassed == true -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurface
     }
