@@ -964,23 +964,6 @@ private fun CantaNavigation(
                 TweaksScreen(
                     handler = handler,
                     onOpenAudio = { navController.navigate(Screen.Audio.route) },
-                    onOpenFamily = { family -> navController.navigate(Screen.TweaksFamily.routeFor(family)) },
-                    onNavigateBack = { navController.navigateUp() },
-                )
-            }
-            composable(route = Screen.TweaksFamily.route) { entry ->
-                // Navigation 2.10 hands out a SavedState, not a Bundle: read it through `read`, the
-                // same way every other page here reads its path arguments.
-                val family = entry.arguments?.let { args ->
-                    runCatching { args.read { if (contains("family")) getString("family") else null } }
-                        .getOrNull()
-                }
-                TweaksScreen(
-                    handler = handler,
-                    onOpenAudio = { navController.navigate(Screen.Audio.route) },
-                    onOpenFamily = { key -> navController.navigate(Screen.TweaksFamily.routeFor(key)) },
-                    onNavigateBack = { navController.navigateUp() },
-                    family = family,
                 )
             }
             composable(route = Screen.Audio.route) {

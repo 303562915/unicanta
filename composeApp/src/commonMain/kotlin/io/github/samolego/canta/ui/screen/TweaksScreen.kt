@@ -18,15 +18,16 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -79,7 +80,6 @@ import io.github.samolego.canta.generated.resources.tweaks_run_timeout
 import io.github.samolego.canta.generated.resources.tweaks_run_unsupported
 import io.github.samolego.canta.generated.resources.tweaks_running
 import io.github.samolego.canta.generated.resources.tweaks_splash_needs_service
-import io.github.samolego.canta.generated.resources.tweaks_this_device
 import io.github.samolego.canta.generated.resources.tweaks_title
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
@@ -124,17 +124,12 @@ private sealed interface RunStep {
 }
 
 /**
- * The tools page, in two layers: a list of vendors, and one vendor's tools.
+ * 一页到底：每个厂商一个可折叠的分组，默认全部折叠；点分组标题展开，再点收起。
  *
- * With [family] null this is the page the bottom bar leads to: one row per vendor that ships a
- * tool, the phone's own vendor first. With [family] set it is that vendor's page — its tools, and
- * for Xiaomi the row that opens the audio-whitelist page, which is a page of its own because the
- * list behind it is dozens of rows long.
+ * 行上没有执行按钮——点条目就是弹详情，弹窗里再执行；只有音频白名单那一行是直接进页面，
+ * 因为它后面是几十行名单，不是一个动作。
  *
- * The two layers are one composable rather than two: the run/restore/dialog machinery below is the
- * same on both, and a second copy of it would drift.
- *
- * Only vendors that actually ship a tool get a row — an OPPO owner sees no Xiaomi entry and no
+ * Only vendors that actually ship a tool get a group — an OPPO owner sees no Xiaomi entry and no
  * empty "OPPO" section either; a vendor is added by adding its tweak to `rom_tweaks.json`. The one
  * tool every ROM has, restoring the apps uninstalled for this user, sits at the bottom.
  */
@@ -142,9 +137,6 @@ private sealed interface RunStep {
 fun TweaksScreen(
     handler: CantaHandler,
     onOpenAudio: () -> Unit,
-    onOpenFamily: (String) -> Unit,
-    onNavigateBack: () -> Unit,
-    family: String? = null,
 ) {
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
     var tweaks by remember { mutableStateOf<RomTweaks?>(null) }
@@ -154,8 +146,10 @@ fun TweaksScreen(
     var copied by remember { mutableStateOf<String?>(null) }
     /** The card waiting for a package name; null when nothing is being asked. */
     var asking by remember { mutableStateOf<RomTweak?>(null) }
-    /** 这台机器有没有音频白名单配置；null 表示还在问（或不在这层问）。 */
+    /** 这台机器有没有音频白名单配置；null 表示还在问。 */
     var audioDetected by remember { mutableStateOf<Boolean?>(null) }
+    /** 展开了哪几个厂商的分组；默认全部折叠。 */
+    var expanded by remember { mutableStateOf(emptySet<String>()) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     // 双击底栏「工具」那一格：这一页回顶部。
@@ -165,8 +159,8 @@ fun TweaksScreen(
     LaunchedEffect(Unit) {
         profile = handler.deviceProfile()
         tweaks = RomTweaks.bundled()
-        // 音频白名单这一行要先知道本机有没有那套配置：没有就写在标题上，别让人点进去看一个空转的开关。
-        if (family == familyKeyOf("hyperos") && handler.supportsTweakCommands) {
+        // 音频白名单那一行要先知道本机有没有那套配置：没有就写在标题上，别让人点进去看一个空转的开关。
+        if (handler.supportsTweakCommands) {
             audioDetected = runCatching {
                 handler.runTweakCommand(AudioWhitelist.probeScript()).output.contains(AudioWhitelist.PROBE_YES)
             }.getOrNull()
@@ -175,8 +169,6 @@ fun TweaksScreen(
 
     val allGroups = remember(tweaks, profile) { tweaks?.groupedFor(profile).orEmpty() }
     val mine = profile?.let { familyKeyOf(it.rom) }
-    // 目录层只列厂商；进了某一层就只留那一组，标题也换成厂商名。
-    val groups = if (family == null) emptyList() else allGroups.filter { (key, _) -> key == family }
 
     /** Reads which apps are uninstalled for this user and asks before touching any of them. */
     fun askToRestoreAll() {
@@ -240,38 +232,30 @@ fun TweaksScreen(
 
     Scaffold(
         topBar = {
-            ScreenTopBar(
-                // 目录层是底栏自己的一页，不画返回箭头；厂商层是压在它上面的一页。
-                onNavigateBack = if (family == null) null else onNavigateBack,
-                title = family?.let { familyLabel(it) } ?: stringResource(Res.string.tweaks_title),
-            )
+            ScreenTopBar(title = stringResource(Res.string.tweaks_title))
         },
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = tweakListState) {
-            if (family == null) {
-                // 目录层：一个厂商一行，本机那个排在最前（groupedFor 已经把它排好）。
-                items(allGroups, key = { (key, _) -> "fam-$key" }) { (key, list) ->
-                    ToolRow(
-                        icon = Icons.Default.Build,
-                        title = familyLabel(key) + " · " + list.size + " 个工具" +
-                            if (key == mine) "（本机）" else "",
-                        canRun = false,
-                        running = false,
-                        onRun = {},
-                        onClick = { onOpenFamily(key) },
+            // 一个厂商一个折叠分组：标题带项数，点开才铺出条目，默认全部收起。
+            allGroups.forEach { (key, list) ->
+                val open = key in expanded
+                val hasAudio = key == familyKeyOf("hyperos")
+                item(key = "head-$key") {
+                    GroupHeader(
+                        title = groupTitle(key),
+                        count = list.size + if (hasAudio) 1 else 0,
+                        mine = key == mine,
+                        expanded = open,
+                        onToggle = {
+                            expanded = if (open) expanded - key else expanded + key
+                        },
                     )
                 }
-            } else {
-                groups.forEach { (key, list) ->
-                    item(key = "head-$key") { GroupHeading(family = key, mine = key == mine) }
-                    items(list, key = { it.id }) { tweak ->
+                if (open) {
+                    items(list, key = { "tw-$key-${it.id}" }) { tweak ->
                         ToolRow(
                             icon = iconOf(tweak),
                             title = tweak.title,
-                            // A card Canta cannot act on gets no button; its explanation lives in the detail.
-                            canRun = runnable(tweak),
-                            running = (run as? RunStep.Running)?.tweak?.id == tweak.id,
-                            onRun = { runTweak(tweak) },
                             onClick = {
                                 // Which script was copied last belongs to the dialog, not to the page.
                                 copied = null
@@ -279,27 +263,24 @@ fun TweaksScreen(
                             },
                         )
                     }
-                    // 音频白名单单独一页：那份名单有几十行，弹窗里只能读，页面上能筛、能开合。
-                    if (key == familyKeyOf("hyperos")) {
-                        item(key = "audio-page") {
+                    // 音频白名单是页面不是弹窗：它后面是几十行名单，弹窗里只能读。
+                    if (hasAudio) {
+                        item(key = "audio-$key") {
                             ToolRow(
                                 icon = Icons.Default.ViewList,
                                 // 三态标题：检查中 / 有这套配置 / 本机没有（仍然可进，里面是诊断）。
                                 title = when (audioDetected) {
                                     null -> "音频白名单 · 检查中…"
-                                    true -> "音频白名单 · 看名单与开关"
-                                    false -> "音频白名单 · 本机没有这套配置（进去看诊断）"
+                                    true -> "音频白名单"
+                                    false -> "音频白名单（本机不支持）"
                                 },
-                                canRun = false,
-                                running = false,
-                                onRun = {},
                                 onClick = onOpenAudio,
                             )
                         }
                     }
                 }
             }
-            if ((family == null && allGroups.isEmpty()) || (family != null && groups.isEmpty())) {
+            if (allGroups.isEmpty()) {
                 item(key = "no-tools") {
                     Text(
                         text = stringResource(Res.string.tweaks_empty),
@@ -311,15 +292,14 @@ fun TweaksScreen(
             }
 
             // The one tool every ROM has: last on the page, not repeated under each vendor.
+            // 它自己就是一次动作（会先弹确认框），所以整行点击 = 开始恢复。
             item(key = "separator") { Spacer(modifier = Modifier.height(10.dp)) }
             item(key = "restore-tool") {
                 ToolRow(
                     icon = Icons.Default.Restore,
                     title = stringResource(Res.string.tweaks_restore_button),
-                    canRun = true,
                     running = step is RestoreStep.Loading || step is RestoreStep.Running,
-                    onRun = { askToRestoreAll() },
-                    onClick = null,
+                    onClick = { askToRestoreAll() },
                 )
             }
             item(key = "bottom-space") { Spacer(modifier = Modifier.height(88.dp)) }
@@ -410,6 +390,12 @@ fun TweaksScreen(
     }
 }
 
+/** 组名：小米这一组直接叫「米系工具」，其余仍用厂商全称。 */
+private fun groupTitle(family: String): String = when (family) {
+    "xiaomi" -> "米系工具"
+    else -> familyLabel(family)
+}
+
 /** The icon a card shows: one per kind of action, so the button reads as the same job everywhere. */
 private fun iconOf(tweak: RomTweak): ImageVector = when (tweak.action) {
     RomTweaks.ACTION_SHELL, RomTweaks.ACTION_SHELL_WITH_PACKAGE -> Icons.Default.Bolt
@@ -418,51 +404,41 @@ private fun iconOf(tweak: RomTweak): ImageVector = when (tweak.action) {
 }
 
 /**
- * Heading above a vendor group. The phone's own group is headed by what that means for the user —
- * "本机可用" — instead of the vendor string plus a second "你的系统" line, so the section says at a
- * glance that these are the tools that can actually run here.
+ * 一个厂商的折叠标题：左边是组名（小米就叫「米系工具」），右边是项数与展开箭头。
+ *
+ * 本机那个厂商用主题色，和别的厂商区分开——这些才是真能在这台手机上跑的。
  */
 @Composable
-private fun GroupHeading(family: String, mine: Boolean) {
-    Text(
-        text = if (mine) stringResource(Res.string.tweaks_this_device) else familyLabel(family),
-        style = MaterialTheme.typography.titleSmall,
-        color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 4.dp),
-    )
-}
-
-/**
- * One tool: icon, name, and — when it can actually do something — an icon button that runs it.
- * Tapping the row itself opens the full text and the copyable command, so the row stays one line
- * and does not repeat the explanation that dialog shows.
- */
-@Composable
-private fun ToolRow(
-    icon: ImageVector,
+private fun GroupHeader(
     title: String,
-    canRun: Boolean,
-    running: Boolean,
-    onRun: () -> Unit,
-    onClick: (() -> Unit)?,
+    count: Int,
+    mine: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 3.dp)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .padding(horizontal = 14.dp, vertical = 4.dp)
+            .clickable(onClick = onToggle),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(
+            containerColor = if (mine) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        ),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
-                imageVector = icon,
+                imageVector = Icons.Default.Build,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
             Text(
@@ -473,22 +449,70 @@ private fun ToolRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (canRun) {
-                FilledTonalIconButton(
-                    onClick = onRun,
-                    enabled = !running,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    if (running) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = stringResource(Res.string.tweaks_run),
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
+            Text(
+                text = "$count 项",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 一个工具：图标 + 名字，整行可点。
+ *
+ * 行上没有执行按钮：点它就是弹详情，执行在弹窗里。一页上堆六七个圆形 ▶ 只会让人分不清
+ * 「这行是打开还是执行」，而且真要执行的东西本来就需要先读一遍弹窗里的说明。
+ * [running] 只用来在这一行显示一个转圈，表示这个工具正在跑（比如恢复已卸载的应用）。
+ */
+@Composable
+private fun ToolRow(
+    icon: ImageVector,
+    title: String,
+    running: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 22.dp, vertical = 3.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (running) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
