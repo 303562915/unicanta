@@ -268,10 +268,14 @@ internal fun StoreScreen(
                 item(key = "store-empty") {
                     Note(
                         // 第一次进来（没有缓存）货架还在路上：写一句话，而不是让整页空着或转圈。
+                        //
+                        // `error` 是 `remember { mutableStateOf<String?>(null) }` 的委托属性，
+                        // 编译器不对它做智能转换 —— 写成 `error != null -> error` 那一支仍然是
+                        // `String?`，`Note(text: String)` 收不了（`ba438bd` 就是这么红的）。
+                        // 所以这里用 `?:` 给默认句，而不是靠 when 的空值分支去收窄。
                         text = when {
                             loading -> "正在读取货架…"
-                            error != null -> error
-                            else -> "还没有人挂东西。你手上多出来的码，可以放上来换积分。"
+                            else -> error ?: "还没有人挂东西。你手上多出来的码，可以放上来换积分。"
                         },
                         inset = 16.dp,
                     )
