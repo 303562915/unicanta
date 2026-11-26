@@ -288,6 +288,12 @@ fun UploadPlanDialog(
     var note by rememberSaveable { mutableStateOf("") }
     // Order is kept as given: the plan's package list is what the uploader ticked, in list order.
     var selected by remember { mutableStateOf(preselected.toList()) }
+    // 点分类胶囊时自动写进名字里的内容（名字 + 本机型号），用户手动改过名字就以手动的为准。
+    var autoNamed by remember { mutableStateOf("") }
+
+    // 方案名后面带上本机型号：同一个方案名在不同机型上意思完全不同，社区里也没法按名字分辨。
+    // 型号优先用营销名（Redmi K70），取不到才退回零售编号（23113RKC6C）。
+    val deviceName = profile?.displayModel?.trim().orEmpty()
 
     val close: () -> Unit = { if (!publishing) onDismiss() }
 
@@ -435,13 +441,23 @@ fun UploadPlanDialog(
                             PickRow(
                                 hits = pickHits,
                                 selected = selected,
-                                onToggle = { packages ->
+                                onToggle = { packages, label ->
                                     val set = packages.toSet()
                                     // 全都勾上了点一下就整批取消：同一个胶囊第二次点是反选。
-                                    selected = if (set.all { it in selected }) {
+                                    val turningOff = set.all { it in selected }
+                                    selected = if (turningOff) {
                                         selected.filterNot { it in set }
                                     } else {
                                         (selected + packages).distinct()
+                                    }
+                                    // 勾这一类的同时把名字也填上：方案名 = 分类 + 本机型号。
+                                    // 只在「还没改过名字」或「名字就是上一次自动填的」时才写，手动打过的名字不动。
+                                    if (!turningOff) {
+                                        val suggested = if (deviceName.isBlank()) label else "$label · $deviceName"
+                                        if (title.isBlank() || title == autoNamed) {
+                                            title = suggested.take(40)
+                                            autoNamed = title
+                                        }
                                     }
                                 },
                             )
@@ -480,6 +496,25 @@ fun UploadPlanDialog(
                                 value = title,
                                 onValueChange = { if (it.length <= 40) title = it },
                                 label = { Text(stringResource(Res.string.plan_upload_name_label), fontSize = 12.sp) },
+                                // 名字后面带上本机型号，社区列表里一眼能看出这是哪台机器上的方案。
+                                trailingIcon = if (deviceName.isNotBlank()) {
+                                    {
+                                        TextButton(onClick = {
+                                            title = (if (title.isBlank()) {
+                                                deviceName
+                                            } else if (title.contains(deviceName)) {
+                                                title
+                                            } else {
+                                                "$title · $deviceName"
+                                            }).take(40)
+                                            autoNamed = title
+                                        }) {
+                                            Text("+型号", fontSize = 10.sp)
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -487,6 +522,7 @@ fun UploadPlanDialog(
                             // already use for these sets ("极简"、"省电"), so a title takes a tap
                             // instead of typing on a phone keyboard. 名字多了以后这一行也横滑，
                             // 否则七格之后会被挤成两行、把下面的备注框往外推。
+                            // 点一下等于「分类 + 本机型号」，例如「遥测诊断 · Redmi K70」。
                             LazyRow(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -495,7 +531,13 @@ fun UploadPlanDialog(
                             ) {
                                 items(PLAN_NAME_PRESETS.size) { index ->
                                     val preset = PLAN_NAME_PRESETS[index]
-                                    val picked = title.trim() == preset
+                                    // 「点了这一格」按前缀判断：自动填进去的可能是「遥测诊断 · Redmi K70」。
+                                    val picked = title.trim() == preset || title.startsWith("$preset · ")
+                                    val suggestion = if (deviceName.isBlank()) {
+                                        preset
+                                    } else {
+                                        "$preset · $deviceName".take(40)
+                                    }
                                     Text(
                                         text = preset,
                                         fontSize = 11.sp,
@@ -515,7 +557,15 @@ fun UploadPlanDialog(
                                                     MaterialTheme.colorScheme.surfaceContainerHigh
                                                 }
                                             )
-                                            .clickable { title = if (picked) "" else preset }
+                                            .clickable {
+                                                if (picked && title == autoNamed) {
+                                                    title = ""
+                                                    autoNamed = ""
+                                                } else {
+                                                    title = suggestion
+                                                    autoNamed = suggestion
+                                                }
+                                            }
                                             .padding(horizontal = 8.dp, vertical = 4.dp),
                                     )
                                 }
@@ -802,7 +852,8 @@ private fun DeviceCard(profile: DeviceProfile?, totalCount: Int) {
 private fun PickRow(
     hits: List<Pair<PlanPick, List<String>>>,
     selected: List<String>,
-    onToggle: (List<String>) -> Unit,
+    /** 第二参数是这一格的分类名，调用方用它顺手把方案名填上。 */
+    onToggle: (List<String>, String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val rowState = rememberLazyListState()
@@ -840,7 +891,7 @@ private fun PickRow(
                         .width(PICK_WIDTH)
                         .clip(RoundedCornerShape(10.dp))
                         .background(container)
-                        .clickable(enabled = enabled) { onToggle(packages) }
+                        .clickable(enabled = enabled) { onToggle(packages, pick.label) }
                         .padding(horizontal = 9.dp, vertical = 5.dp),
                 ) {
                     Text(
