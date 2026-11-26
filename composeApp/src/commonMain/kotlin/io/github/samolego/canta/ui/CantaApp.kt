@@ -1744,7 +1744,7 @@ private fun CantaNavigation(
                         chatTitle = opened
                             ?.let { row -> row.title.ifBlank { row.peerName.ifBlank { row.peer } } }
                             .orEmpty()
-                            .ifBlank { if (opened.isGroup) OfficialGroups.UNNAMED_GROUP_LABEL else "" }
+                            .ifBlank { if (opened?.isGroup == true) OfficialGroups.UNNAMED_GROUP_LABEL else "" }
                         chatIsGroup = chatIsGroup || opened?.isGroup == true
                         chatPeer = opened?.peer.orEmpty().ifEmpty { opened?.peerName.orEmpty() }
                     }
