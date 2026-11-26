@@ -25,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -54,7 +53,6 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.rank.RankBoard
 import io.github.samolego.canta.data.rank.RankRow
 import io.github.samolego.canta.data.rank.WeeklyRankRepository
-import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.currentTimeMillis
@@ -216,20 +214,9 @@ internal fun WeeklyRankScreen(
     val rows = current?.rows.orEmpty()
     val hasWeekly = current?.hasWeekly == true
 
-    Scaffold(
-        containerColor = RankBackground,
-        topBar = {
-            ScreenTopBar(
-                onNavigateBack = onNavigateBack,
-                title = "开源周榜",
-                actions = {
-                    TextButton(onClick = { reloads++ }, enabled = !loading) {
-                        Text("刷新", fontSize = 12.sp)
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    // 不带顶栏：这一页本身就是一张海报，顶栏的标题和返回箭头会把它压成"又一个列表页"。
+    // 返回靠系统手势/返回键；「刷新」和返回箭头画在页面里，不占一整条。
+    Scaffold(containerColor = RankBackground) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -239,10 +226,18 @@ internal fun WeeklyRankScreen(
                         listOf(Color(0xFF242518), RankBackground, Color(0xFF1B222B)),
                     ),
                 ),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
+            item(key = "actions") {
+                RankOverlayActions(
+                    loading = loading,
+                    onBack = onNavigateBack,
+                    onRefresh = { reloads++ },
+                )
+            }
+
             item(key = "header") {
                 RankHeader(board = current, loading = loading, failed = error != null)
             }
@@ -425,6 +420,37 @@ private fun RankMiniTag(text: String, tint: Color) {
             .background(tint.copy(alpha = 0.10f), RoundedCornerShape(3.dp))
             .padding(horizontal = 4.dp, vertical = 1.dp),
     )
+}
+
+/** 页面内那一行小操作：左边返回、右边刷新，浮在海报顶上，不画成一整条顶栏。 */
+@Composable
+private fun RankOverlayActions(loading: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .widthIn(max = 760.dp)
+            .fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "‹ 返回",
+            color = RankMuted,
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(onClick = onBack)
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = if (loading) "刷新中…" else "刷新",
+            color = if (loading) RankMuted else RankGold,
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(enabled = !loading, onClick = onRefresh)
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+        )
+    }
 }
 
 /** 顶部那种小方标签：浅色半透明底 + 一点色边，和图里「按本周净增排」那块一样。 */
