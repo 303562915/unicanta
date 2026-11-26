@@ -338,12 +338,24 @@ class Telemetry(
     /**
      * 网络源都读不到时，要不要退回**随包内置**那份快照（`BUNDLED_SCORES_PATH`）。
      *
-     * 默认要：断网时它比什么都没有强。但**测试里关掉**——那份文件是真实数据（1.1 MB，
-     * 里面真有 hyperos/rom_version 行），开着就等于让测试的 mock 之外多出一个内容来源，
-     * `fetchScores` 会在该问后端的时候直接命中内置快照，用例量到的东西全变。
+     * 默认要：断网时它比什么都没有强。但**两个网络源都传空串时必须自动关掉** ——
+     * 那是「这一趟完全不读快照」的约定（见 [scoresSnapshotUrl] 的注释），而内置那份里
+     * 真的有 `hyperos` 行：不关它，`fetchScores` 就会在本该问后端的时候命中快照，
+     * 用例量到的东西全变（`TelemetryTest` 那四个 NPE 就是这么来的）。
+     *
+     * 所以默认值不是写死的 `true`，而是由两个源推导；显式传值时以传进来的为准。
      */
-    private val allowBundledSnapshot: Boolean = true,
+    allowBundledSnapshot: Boolean? = null,
 ) {
+    /**
+     * 这一趟要不要读随包内置的那份分数快照。
+     *
+     * - 显式传了 `allowBundledSnapshot` → 用它；
+     * - 否则：两个网络源都空（= 调用方说「不读快照」）→ **不读内置**；否则读。
+     */
+    private val readBundledSnapshot: Boolean =
+        allowBundledSnapshot
+            ?: (scoresSnapshotUrl.isNotBlank() || scoresSnapshotMirrorUrl.isNotBlank())
     private companion object {
         const val TAG = "Telemetry"
     }
@@ -668,7 +680,7 @@ class Telemetry(
             }
             if (inBackoff) return@withLock SnapshotScores.Empty
             // 调用方说不要内置那份（测试）：网络源已经全试过了，这里到此为止。
-            if (!allowBundledSnapshot) return@withLock SnapshotScores.Empty
+            if (!readBundledSnapshot) return@withLock SnapshotScores.Empty
             snapshotFailedAt = currentTimeMillis()
             val bundled = runCatching {
                 parseScoresRows(Res.readBytes(BUNDLED_SCORES_PATH).decodeToString())
