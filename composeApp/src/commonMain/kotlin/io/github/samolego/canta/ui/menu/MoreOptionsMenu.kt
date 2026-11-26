@@ -11,15 +11,13 @@ import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.badge_info
 import io.github.samolego.canta.generated.resources.logs
-import io.github.samolego.canta.generated.resources.presets
-import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.ui.navigation.Screen
 
 /**
  * 应用页右上角那个「更多」。
  *
- * 「我的」那一行已经撤了：底栏最后一格本来就是「我的」，从这一页再放一个入口等于两处通同一个
- * 地方。这里只留那些**不挂在底栏**的页：标记说明、日志、设置、预设。
+ * 只留两样：标记说明与日志。**设置与预设都已撤掉**——它们各自有正经入口（设置从底栏「我的」
+ * 进，预设从设置页进），放在这个下拉里等于同一页两处门。之前的「我的」也是同一个理由撤的。
  */
 @Composable
 fun MoreOptionsMenu(
@@ -50,23 +48,6 @@ fun MoreOptionsMenu(
                     navigateToPage(Screen.Logs.route)
                     onDismiss()
                 }
-        )
-
-        // 设置：开关都在这里，布局照关于页。
-        DropdownMenuItem(
-                text = { Text(stringResource(Res.string.settings)) },
-                onClick = {
-                    navigateToPage(Screen.Settings.route)
-                    onDismiss()
-                }
-        )
-
-        DropdownMenuItem(
-            text = { Text(stringResource(Res.string.presets)) },
-            onClick = {
-                navigateToPage(Screen.Presets.route)
-                onDismiss()
-            }
         )
     }
 }

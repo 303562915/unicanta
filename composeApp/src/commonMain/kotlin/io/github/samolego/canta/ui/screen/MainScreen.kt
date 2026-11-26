@@ -89,6 +89,7 @@ fun MainScreen(
     settingsViewModel: SettingsViewModel,
     /** The uninstall/restore log shown by the middle records tab. */
     history: OperationLogStore,
+    /** 预设编辑态：为 true 时 FAB 换成「完成」按钮。预设页已从应用页撤掉，正常路径下恒为 false。 */
     presetEditMode: Boolean,
     onPresetEditFinish: () -> Unit,
     navigateToPage: (route: String) -> Unit,
@@ -134,9 +135,7 @@ fun MainScreen(
         floatingActionButton = {
             MainFab(
                 visible = selectedAppsType != null && appListViewModel.selectedApps.isNotEmpty(),
-                presetEditMode = presetEditMode,
                 appsType = selectedAppsType,
-                onPresetEditFinish = onPresetEditFinish,
                 onClick = { selectedAppsType?.let { mainViewModel.applyToSelected(it) } },
             )
         },

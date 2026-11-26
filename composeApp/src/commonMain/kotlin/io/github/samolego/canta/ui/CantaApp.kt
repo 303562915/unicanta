@@ -76,7 +76,6 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.privilege_root_refused
 import io.github.samolego.canta.generated.resources.privilege_root_opened
 import io.github.samolego.canta.generated.resources.about_auto_install_paused
-import io.github.samolego.canta.generated.resources.preset_save_error
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.generated.resources.tab_apps
 import io.github.samolego.canta.generated.resources.tab_recommend
@@ -128,7 +127,6 @@ import io.github.samolego.canta.ui.screen.MyPlansScreen
 import io.github.samolego.canta.ui.screen.UserProfileScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
-import io.github.samolego.canta.ui.screen.PresetsScreen
 import io.github.samolego.canta.ui.screen.RecommendationsScreen
 import io.github.samolego.canta.ui.screen.UploaderProfileScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
@@ -150,7 +148,6 @@ import io.github.samolego.canta.ui.theme.CantaTheme
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.ui.viewmodel.CURRENT_ONBOARDING_VERSION
 import io.github.samolego.canta.ui.viewmodel.MainViewModel
-import io.github.samolego.canta.ui.viewmodel.PresetsViewModel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.CrashReportStore
@@ -446,7 +443,6 @@ private fun CantaNavigation(
             deps.appListSnapshot,
         )
     }
-    val presetViewModel: PresetsViewModel = viewModel { PresetsViewModel(deps.presetStore, handler, platform) }
     val mainViewModel: MainViewModel = viewModel { MainViewModel(handler, platform, deps.settings, appListViewModel) }
 
     // Hoisted so preset-applying (below) knows which tab is showing.
@@ -974,23 +970,9 @@ private fun CantaNavigation(
                     appListViewModel = appListViewModel,
                     settingsViewModel = settingsViewModel,
                     history = deps.history,
-                    presetEditMode = presetViewModel.editingPreset != null,
-                    onPresetEditFinish = {
-                        val preset = presetViewModel.editingPreset ?: return@MainScreen
-                        presetViewModel.setPresetApps(
-                            preset = preset,
-                            // Snapshot: the selection is cleared right after saving.
-                            newApps = appListViewModel.selectedApps.toSet(),
-                            onSuccess = {
-                                appListViewModel.selectedApps.clear()
-                                presetViewModel.editingPreset = null
-                                navController.navigate(Screen.Presets.route)
-                            },
-                            onError = {
-                                coroutineScope.launch { platform.showMessage(getString(Res.string.preset_save_error)) }
-                            },
-                        )
-                    },
+                    // 预设入口已从应用页撤掉（设置页里另有入口），这里不再有编辑态。
+                    presetEditMode = false,
+                    onPresetEditFinish = {},
                     navigateToPage = { navController.navigate(it) },
                     closeApp = closeApp,
                     // 全选不再藏在「连点版本号」后面：它默认隐藏，勾了一个应用才出现（见 AppList）。
@@ -1368,28 +1350,6 @@ private fun CantaNavigation(
                             platform.showMessage(restoreExportMessage(exported))
                         }
                     },
-                )
-            }
-            composable(route = Screen.Presets.route) {
-                PresetsScreen(
-                    platform = platform,
-                    presetViewModel = presetViewModel,
-                    onNavigateBack = { appliedPreset ->
-                        appliedPreset?.let { preset ->
-                            // Select only preset apps shown on the current tab.
-                            // Unknown packages can't match any tab, so they are
-                            // dropped too: handlers couldn't act on them anyway.
-                            val byPackage = appListViewModel.apps.associateBy { it.packageName }
-                            appListViewModel.selectedApps.clear()
-                            appListViewModel.selectedApps.addAll(
-                                preset.apps.filter { pkg ->
-                                    byPackage[pkg]?.let { selectedAppsType.matches(it) } == true
-                                }
-                            )
-                        }
-                        navController.navigateUp()
-                    },
-                    appListViewModel = appListViewModel,
                 )
             }
             composable(route = Screen.PlanComment.route) { entry ->
@@ -2035,7 +1995,6 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Messages.route,
     // 底栏最后一格是「我的」；设置页从它里面进，设置页本身不是底栏的一格。
     Screen.Mine.route,
-    Screen.Presets.route,
 )
 
 /** Stable keys of the bar entries. */
