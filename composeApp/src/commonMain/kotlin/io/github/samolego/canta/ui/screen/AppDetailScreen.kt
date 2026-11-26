@@ -1883,7 +1883,11 @@ private fun RelatedPlansPanel(
 @Composable
 private fun SectionLabel(title: String, hint: String) {
     val scheme = MaterialTheme.colorScheme
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, top = 12.dp, bottom = 4.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+    ) {
         Text(
             text = title,
             style = FlText.caption1.copy(fontWeight = FontWeight.SemiBold),

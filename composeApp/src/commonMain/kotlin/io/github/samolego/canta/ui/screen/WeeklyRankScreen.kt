@@ -329,8 +329,8 @@ private fun RankHeader(board: RankBoard?, loading: Boolean, failed: Boolean) {
                             tint = RankGold,
                         )
                     }
-                    share?.let {
-                        RankHeaderStat(value = it, label = "第一名占比", tint = RankInk)
+                    if (share?.isNotEmpty() == true) {
+                        RankHeaderStat(value = share, label = "第一名占比", tint = RankInk)
                     } else if (!weekly) {
                         RankHeaderPill(text = "待攒够周快照", tint = RankMuted)
                     }
