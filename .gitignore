@@ -51,3 +51,8 @@ node_modules/
 
 # Session handoff notes (local working memory)
 /.dsh-handoff*.md
+
+# Internal ops notes / incident postmortems (local only, like /backups/).
+# These carry the real architecture, credentials-adjacent detail and traffic numbers;
+# they stay on the machine that operates the backend and never ship with the client.
+/ops-notes/
