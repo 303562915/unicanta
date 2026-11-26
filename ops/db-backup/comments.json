@@ -5004,6 +5004,18 @@
   "target": "com.android.browser"
  },
  {
+  "author": "红米 k70",
+  "author_id": "12337",
+  "body": "电信的还是可以",
+  "created_at": "2026-11-26T18:58:09.344303+00:00",
+  "device_model": "Redmi K70",
+  "id": 763,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.308",
+  "target": "com.xiaomi.registration"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "[不看]你们这个没改名字的，主页那里闪动吗？",
