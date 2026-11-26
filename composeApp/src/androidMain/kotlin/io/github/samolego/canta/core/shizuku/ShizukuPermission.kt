@@ -139,11 +139,6 @@ object ShizukuPermission {
         lastDenialSeen = true
     }
 
-    /** 授权确认走完之后，清掉"被拒"标记，让界面按最新状态显示。 */
-    fun clearDenial() {
-        lastDenialSeen = false
-    }
-
     /** Whether either manager is on this phone: the original, or a fork that speaks its API. */
     private fun runtimeInstalled(packageManager: PackageManager): Boolean =
         listOf(SHIZUKU_PACKAGE_NAME, STELLAR_PACKAGE_NAME).any { name ->
