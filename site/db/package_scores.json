@@ -9431,8 +9431,8 @@
    {
     "pkg": "com.android.captiveportallogin",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-25T07:27:02.251514+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-26T16:25:36.293574+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -9445,8 +9445,8 @@
    {
     "pkg": "com.android.cellbroadcastreceiver",
     "small_batch": false,
-    "uninstalls": 26,
-    "updated_at": "2026-11-26T11:15:47.598653+00:00",
+    "uninstalls": 27,
+    "updated_at": "2026-11-26T16:25:36.293574+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -9501,8 +9501,8 @@
    {
     "pkg": "com.android.devicediagnostics",
     "small_batch": false,
-    "uninstalls": 85,
-    "updated_at": "2026-11-26T15:05:27.969839+00:00",
+    "uninstalls": 86,
+    "updated_at": "2026-11-26T16:25:36.293574+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -10026,8 +10026,8 @@
    {
     "pkg": "com.android.systemui.overlay.miui",
     "small_batch": false,
-    "uninstalls": 191,
-    "updated_at": "2026-11-26T16:15:48.750092+00:00",
+    "uninstalls": 192,
+    "updated_at": "2026-11-26T16:24:47.041619+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16154,8 +16154,8 @@
    {
     "pkg": "com.android.captiveportallogin",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-25T07:27:02.251514+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-26T16:25:36.293574+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -16168,8 +16168,8 @@
    {
     "pkg": "com.android.cellbroadcastreceiver",
     "small_batch": false,
-    "uninstalls": 23,
-    "updated_at": "2026-11-26T11:15:47.598653+00:00",
+    "uninstalls": 24,
+    "updated_at": "2026-11-26T16:25:36.293574+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16203,8 +16203,8 @@
    {
     "pkg": "com.android.devicediagnostics",
     "small_batch": false,
-    "uninstalls": 73,
-    "updated_at": "2026-11-26T15:05:27.969839+00:00",
+    "uninstalls": 74,
+    "updated_at": "2026-11-26T16:25:36.293574+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16588,8 +16588,8 @@
    {
     "pkg": "com.android.systemui.overlay.miui",
     "small_batch": false,
-    "uninstalls": 158,
-    "updated_at": "2026-11-26T15:38:44.751222+00:00",
+    "uninstalls": 159,
+    "updated_at": "2026-11-26T16:24:47.041619+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -38956,7 +38956,7 @@
     "pkg": "cn.nubia.gamelab",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-26T16:23:58.199622+00:00",
+    "updated_at": "2026-11-26T16:24:49.734302+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42714,7 +42714,7 @@
     "pkg": "cn.nubia.gamelab",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-26T16:23:58.199622+00:00",
+    "updated_at": "2026-11-26T16:24:49.734302+00:00",
     "verdict": "INSUFFICIENT"
    },
    {

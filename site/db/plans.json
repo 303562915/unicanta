@@ -736,9 +736,9 @@
    "com.oppo.instant.local.service"
   ],
   "rebooted_at": "2026-11-23T00:35:13.624261+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "C17省电",
   "votes": 54
@@ -875,9 +875,9 @@
    "com.coloros.remoteguardservice"
   ],
   "rebooted_at": "2026-11-22T23:39:56.200222+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "Coloros17 功能全正常但省电",
   "votes": 52
@@ -1600,9 +1600,9 @@
    "com.oppo.instant.local.service"
   ],
   "rebooted_at": "2026-11-23T00:04:42.106489+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "opad省电增强",
   "votes": 51
@@ -2163,9 +2163,9 @@
    "com.coloros.remoteguardservice"
   ],
   "rebooted_at": "2026-11-20T15:51:00.641398+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "安全",
   "votes": 50
@@ -2868,9 +2868,9 @@
    "com.coloros.remoteguardservice"
   ],
   "rebooted_at": "2026-11-22T07:22:57.570422+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "极简",
   "votes": 50
@@ -3400,9 +3400,9 @@
    "com.oplus.lfeh"
   ],
   "rebooted_at": "2026-11-22T16:01:34.390064+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "增强",
   "votes": 50
@@ -3591,9 +3591,9 @@
    "com.coloros.remoteguardservice"
   ],
   "rebooted_at": "2026-11-22T23:43:52.082383+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "oppo pad省电",
   "votes": 50
@@ -5459,9 +5459,9 @@
    "com.oplus.engineermode"
   ],
   "rebooted_at": "2026-11-23T14:39:52.24559+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "1",
   "votes": 20
@@ -5570,9 +5570,9 @@
    "com.oplus.engineernetwork"
   ],
   "rebooted_at": "2026-11-23T15:10:33.868378+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "干净",
   "votes": 20
@@ -5664,9 +5664,9 @@
    "com.zte.mfvkeyguard"
   ],
   "rebooted_at": "2026-11-23T16:53:42.545101+00:00",
-  "rom": "stock",
+  "rom": "myos",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "z80ultra星云2",
   "votes": 20
@@ -6425,9 +6425,9 @@
    "com.meizu.assistant"
   ],
   "rebooted_at": "2026-11-24T14:18:38.932661+00:00",
-  "rom": "stock",
+  "rom": "flyme",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 13,
   "sdk": 33,
   "title": "魅族17",
   "votes": 20
@@ -6727,9 +6727,9 @@
    "com.oplus.ovoicemanager"
   ],
   "rebooted_at": "2026-11-24T21:15:40.012702+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "干净",
   "votes": 20
@@ -7134,9 +7134,9 @@
    "com.oplus.healthservice"
   ],
   "rebooted_at": "2026-11-25T03:07:12.100485+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "一加平板Pro省电",
   "votes": 20
@@ -7476,9 +7476,9 @@
    "com.coloros.operationManual"
   ],
   "rebooted_at": "2026-11-25T06:16:00.567997+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "省电",
   "votes": 20
@@ -8123,9 +8123,9 @@
    "com.oplus.securitykeyboard"
   ],
   "rebooted_at": "2026-11-25T10:38:02.284287+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "一加平板pro省电增强",
   "votes": 20
@@ -9271,9 +9271,9 @@
    "com.oplus.securitykeyboard"
   ],
   "rebooted_at": "2026-11-26T13:53:55.72984+00:00",
-  "rom": "stock",
+  "rom": "realmeui",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "真我Neo8",
   "votes": 1
@@ -9452,9 +9452,9 @@
    "com.opos.ads"
   ],
   "rebooted_at": "2026-11-25T16:35:02.735249+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "省电",
   "votes": 0
@@ -10033,9 +10033,9 @@
    "com.coloros.smartlock"
   ],
   "rebooted_at": "2026-11-26T02:41:02.268059+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "日常",
   "votes": 0
@@ -10472,9 +10472,9 @@
    "com.coloros.digitalwellbeing"
   ],
   "rebooted_at": "2026-11-26T13:14:13.894911+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "无所谓都可删",
   "votes": 0
@@ -10505,9 +10505,9 @@
    "com.coloros.remoteguardservice"
   ],
   "rebooted_at": "2026-11-26T13:27:21.921947+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 16,
   "sdk": 36,
   "title": "OPPO Find X9 Pro",
   "votes": 0
@@ -10546,9 +10546,9 @@
    "com.oplus.subsys"
   ],
   "rebooted_at": "2026-11-26T13:53:32.598292+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "日常",
   "votes": 0
@@ -10994,9 +10994,9 @@
    "com.oplus.nhs"
   ],
   "rebooted_at": "2026-11-26T15:56:49.085664+00:00",
-  "rom": "stock",
+  "rom": "coloros",
   "rom_build": "",
-  "rom_version": 0,
+  "rom_version": 17,
   "sdk": 37,
   "title": "省电 · 一加 Ace",
   "votes": 0
