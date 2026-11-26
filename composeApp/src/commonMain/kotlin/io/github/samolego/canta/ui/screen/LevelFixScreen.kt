@@ -46,6 +46,7 @@ import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
+import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 
 /** Green for「这条改得对」，与描述修正那一页同一个色。 */
@@ -74,6 +75,8 @@ fun LevelFixScreen(
     author: String = "",
     /** 本机身份号：「我提的」「一人一票」都按它算。 */
     authorId: String = "",
+    /** 名字与头像设过了没有：没设过这一页只能看和投票，提不了新修正（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -108,6 +111,11 @@ fun LevelFixScreen(
 
     fun submit() {
         if (sending) return
+        // 名字/头像没设完：发送键已经是灰的，这里再挡一次。
+        if (!setupGate.ready) {
+            notice = setupGate.refusal
+            return
+        }
         val removal = chosen.ifEmpty { mine?.removal.orEmpty() }
         if (removal.isEmpty()) return
         sending = true
@@ -263,7 +271,8 @@ fun LevelFixScreen(
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(Modifier.width(8.dp))
-                            val canSend = chosen.ifEmpty { mine?.removal.orEmpty() }.isNotEmpty() && !sending
+                            val canSend = chosen.ifEmpty { mine?.removal.orEmpty() }.isNotEmpty() && !sending &&
+                                setupGate.ready
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(percent = 50))

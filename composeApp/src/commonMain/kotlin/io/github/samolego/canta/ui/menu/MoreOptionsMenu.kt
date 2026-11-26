@@ -15,6 +15,12 @@ import io.github.samolego.canta.generated.resources.presets
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.ui.navigation.Screen
 
+/**
+ * 应用页右上角那个「更多」。
+ *
+ * 「我的」那一行已经撤了：底栏最后一格本来就是「我的」，从这一页再放一个入口等于两处通同一个
+ * 地方。这里只留那些**不挂在底栏**的页：标记说明、日志、设置、预设。
+ */
 @Composable
 fun MoreOptionsMenu(
         showMenu: Boolean,
@@ -42,15 +48,6 @@ fun MoreOptionsMenu(
                 text = { Text(stringResource(Res.string.logs)) },
                 onClick = {
                     navigateToPage(Screen.Logs.route)
-                    onDismiss()
-                }
-        )
-
-        // 我的：身份与"我写过的"，底栏那个齿轮通往的那一页。
-        DropdownMenuItem(
-                text = { Text("我的") },
-                onClick = {
-                    navigateToPage(Screen.Mine.route)
                     onDismiss()
                 }
         )

@@ -473,6 +473,13 @@ fun EmotionPicker(
      * off the top of a short screen — which is the bug that made the input box disappear.
      */
     panelHeight: androidx.compose.ui.unit.Dp = 300.dp,
+    /**
+     * 面板底色；`null` 用主题默认值（`surfaceContainerLow`）。
+     *
+     * 聊天页传半透明色：表情面板是贴在输入栏上面的，底下一整条都是消息，能透过去才像"浮起来",
+     * 一整块实底看上去像页面上多了一页。透明由调用方定，这里只认这个参数。
+     */
+    background: Color? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val recent = recentEmotions.toList()
@@ -480,7 +487,7 @@ fun EmotionPicker(
         modifier = modifier
             .fillMaxWidth()
             .height(panelHeight)
-            .background(colors.surfaceContainerLow),
+            .background(background ?: colors.surfaceContainerLow),
     ) {
         if (recent.isNotEmpty()) {
             SectionHeader(title = "最近使用", action = "装扮 >")

@@ -114,6 +114,7 @@ import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -233,6 +234,8 @@ fun RecommendationsScreen(
     /** 自上次看过投票那一格以来，新进精选的条目数：那个点就画在投票标签上。 */
     newApplied: Int = 0,
     onVoteQueueSeen: (String) -> Unit = {},
+    /** 名字与头像设过了没有：没设过提交键灰掉（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
     // 上一次进来画出来的那一份：先画它，网络回来再顶掉（见 [RecommendationsSnapshot]）。
@@ -438,6 +441,7 @@ fun RecommendationsScreen(
                 authorId = authorId,
                 state = airportState,
                 modifier = Modifier.fillMaxSize().padding(padding),
+                setupGate = setupGate,
             )
         } else if (tab == TAB_VOTE) {
             // The queue on its own page: what others filed, one line each, and the form that adds
@@ -616,6 +620,7 @@ fun RecommendationsScreen(
                 submitError = null
             },
             onSubmit = submit,
+            setupGate = setupGate,
         )
     }
 }
@@ -1172,6 +1177,8 @@ private fun SuggestComposerDialog(
     error: String?,
     onDismiss: () -> Unit,
     onSubmit: (String, String, String, String, String) -> Unit,
+    /** 名字与头像设过了没有：没设过提交键灰掉并说一句为什么（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scheme = MaterialTheme.colorScheme
     var url by remember { mutableStateOf("") }
@@ -1181,7 +1188,7 @@ private fun SuggestComposerDialog(
     var category by remember { mutableStateOf("tools") }
 
     val normalized = githubProjectUrl(url)
-    val canSend = normalized != null && name.trim().isNotEmpty() && !submitting
+    val canSend = normalized != null && name.trim().isNotEmpty() && !submitting && setupGate.ready
 
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -1193,11 +1200,21 @@ private fun SuggestComposerDialog(
             Button(
                 enabled = canSend,
                 onClick = {
+                    if (!setupGate.ready) return@Button
                     onSubmit(name.trim(), normalized.orEmpty(), summary.trim(), category, license.trim())
                 },
             ) { Text(if (submitting) "正在提交…" else "提交") }
         },
     ) {
+        // 差哪一步先摆出来：藏在灰按钮里没人看得懂。
+        if (!setupGate.ready) {
+            Text(
+                text = setupGate.prompt,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.error,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
         Text(
             text = "只收 GitHub 上的开源项目。提交后大家投票：满 " +
                 "${SuggestedApp.VOTES_NEEDED} 票、且认同率到 " +

@@ -95,6 +95,8 @@ fun DescriptionFixScreen(
     author: String = "",
     /** This install's identity number: what "my rewrite" and one vote per identity are keyed on. */
     authorId: String = "",
+    /** 名字与头像设过了没有：没设过这一页只读，发不了新修正（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -144,7 +146,10 @@ fun DescriptionFixScreen(
     val submit: () -> Unit = {
         val text = body.trim()
         val why = note.trim()
-        if (text.length >= 4 && !sending) {
+        // 名字/头像没设完：发送键已经是灰的，这里再挡一次，并说清差哪一步。
+        if (!setupGate.ready) {
+            notice = setupGate.refusal
+        } else if (text.length >= 4 && !sending) {
             scope.launch {
                 sending = true
                 val id = repository?.addDescriptionFix(
@@ -303,7 +308,7 @@ fun DescriptionFixScreen(
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
-                        val canSend = body.trim().length >= 4 && !sending
+                        val canSend = body.trim().length >= 4 && !sending && setupGate.ready
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(percent = 50))

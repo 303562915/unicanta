@@ -63,6 +63,7 @@ import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsItem
 import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.component.cacheAvatar
+import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,6 +117,12 @@ fun ProfileScreen(
     compressImage: (ByteArray) -> ByteArray?,
     /** 头像专用：按裁剪框裁成正方形、缩到头像尺寸，再压到 `20–200KB` 那一档（见 `ImageBed`）。 */
     compressAvatar: (ByteArray, ImageCrop?) -> ByteArray?,
+    /**
+     * 名字与头像设过了没有；没设过就发不了言（见 [IdentitySetup]）。
+     *
+     * 这一页就是设它们的地方，所以缺口直接写成一行提示摆在名字那一行上面，改完即刻消失。
+     */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
     onNavigateBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -279,6 +286,19 @@ fun ProfileScreen(
             }
 
             Spacer(Modifier.height(10.dp))
+
+            // 两样没设完就发不了言：把这条规则和缺口摆在这里，别让人到评论区才发现发不出去。
+            if (!setupGate.ready) {
+                Text(
+                    text = setupGate.prompt,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 4.dp),
+                )
+                Spacer(Modifier.height(6.dp))
+            }
 
             SettingsGroup {
                 SettingsItem(

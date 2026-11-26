@@ -148,11 +148,6 @@ internal fun AboutScreen(
      */
     updateAvailable: Boolean = false,
     /**
-     * 连点版本号的手势：原来挂在设置页，设置页拆成"我的"+"设置"之后挂到这里——
-     * 版本号本来就在这一页。
-     */
-    onVersionTap: () -> Unit = {},
-    /**
      * 更新链路的唯一实现（检查 / 下载 / 安装 / 留痕）与它那份状态。
      *
      * 这一页不再自己发请求：卡片画的是 [UpdateCenter.state]，所以启动时那条自动下载进来，
@@ -208,7 +203,7 @@ internal fun AboutScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(top = 6.dp, bottom = 28.dp),
         ) {
-            AppHero(onVersionTap = onVersionTap)
+            AppHero()
             Spacer(Modifier.height(16.dp))
 
             UpdateCard(
@@ -342,7 +337,7 @@ internal fun AboutScreen(
 
 /** The app itself: icon tile, name, version, one line about what it does. */
 @Composable
-private fun AppHero(onVersionTap: () -> Unit) {
+private fun AppHero() {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -372,8 +367,6 @@ private fun AppHero(onVersionTap: () -> Unit) {
                 },
                 style = FlText.footnote,
                 color = scheme.onSurfaceVariant,
-                // 连点版本号的那个手势（全选推荐应用的隐藏开关）挂在这一行上。
-                modifier = Modifier.clickable(onClick = onVersionTap),
             )
             Text(
                 text = stringResource(Res.string.about_tagline),

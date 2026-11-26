@@ -57,6 +57,7 @@ import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.launch
 
@@ -109,6 +110,8 @@ internal fun StoreScreen(
     author: String,
     authorId: String,
     modifier: Modifier = Modifier,
+    /** 名字与头像设过了没有：没设过能买能兑换，但上不了架（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
@@ -315,6 +318,7 @@ internal fun StoreScreen(
                     platform = platform,
                     author = author,
                     authorId = who,
+                    setupGate = setupGate,
                 )
             }
 
@@ -338,6 +342,10 @@ internal fun StoreScreen(
             },
             onSubmit = submit@{ title, kind, price, stock, detail, deliverable ->
                 val repo = repository
+                if (!setupGate.ready) {
+                    offerError = setupGate.refusal
+                    return@submit
+                }
                 if (repo == null) {
                     offerError = "社区后端没连上，发布没发出去。"
                     return@submit
@@ -365,6 +373,7 @@ internal fun StoreScreen(
                     }
                 }
             },
+            setupGate = setupGate,
         )
     }
 
@@ -662,6 +671,8 @@ private fun OfferComposerDialog(
     error: String?,
     onDismiss: () -> Unit,
     onSubmit: (String, String, Int, Int, String, String) -> Unit,
+    /** 名字与头像设过了没有：没设过上架键灰掉并说一句为什么（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scheme = MaterialTheme.colorScheme
     var title by remember { mutableStateOf("") }
@@ -673,7 +684,8 @@ private fun OfferComposerDialog(
 
     val priceValue = price.toIntOrNull()?.coerceIn(1, 5000)
     val stockValue = stock.toIntOrNull()?.coerceIn(0, 999)
-    val canSend = title.trim().isNotEmpty() && priceValue != null && stockValue != null && !submitting
+    val canSend = title.trim().isNotEmpty() && priceValue != null && stockValue != null &&
+        !submitting && setupGate.ready
 
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -697,6 +709,14 @@ private fun OfferComposerDialog(
             ) { Text(if (submitting) "正在发布…" else "上架") }
         },
     ) {
+        if (!setupGate.ready) {
+            Text(
+                text = setupGate.prompt,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.error,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
         Text(
             text = "发布不花积分。别人兑换时，买家扣分、你得分，全额到账；交付内容只有买家看得到。",
             style = MaterialTheme.typography.labelSmall,

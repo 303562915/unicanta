@@ -54,6 +54,7 @@ import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 
 /**
@@ -115,6 +116,8 @@ internal fun RecommendationsAirportTab(
     authorId: String,
     state: AirportTabState,
     modifier: Modifier = Modifier,
+    /** 名字与头像设过了没有：没设过能看能投能兑换，但分享不了新机场（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
@@ -294,6 +297,10 @@ internal fun RecommendationsAirportTab(
             },
             onSubmit = submit@{ name, kind, url, subscribeUrl, summary ->
                 val repo = repository
+                if (!setupGate.ready) {
+                    airportError = setupGate.refusal
+                    return@submit
+                }
                 if (repo == null) {
                     airportError = "社区后端没连上，提交没发出去。"
                     return@submit
@@ -320,6 +327,7 @@ internal fun RecommendationsAirportTab(
                     }
                 }
             },
+            setupGate = setupGate,
         )
     }
 
@@ -615,6 +623,8 @@ private fun AirportComposerDialog(
     error: String?,
     onDismiss: () -> Unit,
     onSubmit: (String, String, String, String, String) -> Unit,
+    /** 名字与头像设过了没有：没设过提交键灰掉并说一句为什么（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scheme = MaterialTheme.colorScheme
     var name by remember { mutableStateOf("") }
@@ -623,7 +633,7 @@ private fun AirportComposerDialog(
     var subscribeUrl by remember { mutableStateOf("") }
     var summary by remember { mutableStateOf("") }
 
-    val canSend = name.trim().isNotEmpty() && !submitting
+    val canSend = name.trim().isNotEmpty() && !submitting && setupGate.ready
 
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -646,6 +656,15 @@ private fun AirportComposerDialog(
             ) { Text(if (submitting) "正在提交…" else "提交") }
         },
     ) {
+        // 差哪一步先摆出来：藏在灰按钮里没人看得懂。
+        if (!setupGate.ready) {
+            Text(
+                text = setupGate.prompt,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.error,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
         Text(
             text = "名字和一句介绍就够。订阅链接可以留空；填了的话，只有投过票或打过分的人才取得出来。",
             style = MaterialTheme.typography.labelSmall,

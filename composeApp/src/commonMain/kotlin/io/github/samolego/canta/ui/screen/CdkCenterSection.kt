@@ -48,6 +48,7 @@ import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 
 /** 这一块自己左右留 16dp：父级的 LazyColumn 不管别人的边距，子项各自留才对齐。 */
@@ -93,6 +94,8 @@ internal fun CdkCenterSection(
     author: String,
     authorId: String,
     modifier: Modifier = Modifier,
+    /** 名字与头像设过了没有：没设过能兑换、能看余额，但上架不了新码（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
@@ -230,6 +233,10 @@ internal fun CdkCenterSection(
             },
             onSubmit = submit@{ title, detail, price, codesText, kind ->
                 val s = store
+                if (!setupGate.ready) {
+                    publishError = setupGate.refusal
+                    return@submit
+                }
                 if (s == null) {
                     publishError = "社区后端没连上，提交没发出去。"
                     return@submit
@@ -257,6 +264,7 @@ internal fun CdkCenterSection(
                     }
                 }
             },
+            setupGate = setupGate,
         )
     }
 
@@ -544,6 +552,8 @@ private fun CdkPublishDialog(
     error: String?,
     onDismiss: () -> Unit,
     onSubmit: (String, String, Int, String, String) -> Unit,
+    /** 名字与头像设过了没有：没设过上架键灰掉并说一句为什么（见 [IdentitySetup]）。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scheme = MaterialTheme.colorScheme
     var title by remember { mutableStateOf("") }
@@ -553,7 +563,8 @@ private fun CdkPublishDialog(
     var codes by remember { mutableStateOf("") }
 
     val priceValue = price.toIntOrNull()?.coerceIn(1, 5000)
-    val canSend = title.trim().isNotEmpty() && codes.isNotBlank() && priceValue != null && !submitting
+    val canSend = title.trim().isNotEmpty() && codes.isNotBlank() && priceValue != null &&
+        !submitting && setupGate.ready
 
     CantaDialog(
         onDismissRequest = onDismiss,
@@ -576,6 +587,14 @@ private fun CdkPublishDialog(
             ) { Text(if (submitting) "正在上架…" else "上架") }
         },
     ) {
+        if (!setupGate.ready) {
+            Text(
+                text = setupGate.prompt,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.error,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
         Text(
             text = "一行一个码。上架不花积分；别人兑换时，买家扣分、你得分，全额到账，" +
                 "他拿到的是池子里一个没人用过的码。",

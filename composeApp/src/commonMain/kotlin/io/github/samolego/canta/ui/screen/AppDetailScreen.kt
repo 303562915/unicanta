@@ -105,6 +105,7 @@ import io.github.samolego.canta.generated.resources.description_translated_sourc
 import org.jetbrains.compose.resources.stringResource
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.IdentitySetup
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.launch
 
@@ -334,6 +335,13 @@ fun AppDetailScreen(
     onUninstall: (() -> Unit)? = null,
     /** 已卸载的包直接装回去；null 与 [onUninstall] 同理。 */
     onReinstall: (() -> Unit)? = null,
+    /**
+     * 名字与头像设过了没有——没设过这一页的评论发不出去（见 [IdentitySetup]）。
+     *
+     * 默认 [IdentitySetup.UNSET] 就是"没设过"：漏接的调用点宁可发不出去，也不给一条顶着 `#10000`
+     * 的评论。上层传的是 `settingsViewModel.identitySetup`，改完名字当场就放开。
+     */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
     // 这个包上一次画出来的那一份（进程级，见 [ScreenCache]）：有它就先画它，网络回来的那一版再
@@ -561,7 +569,11 @@ fun AppDetailScreen(
 
     val send: () -> Unit = {
         val body = draft.trim()
-        if (body.isNotEmpty() && !sending) {
+        // 名字/头像没设完：连本地那份也不写——写了就是一条谁都没收到的"我的评论"。
+        if (!setupGate.ready) {
+            sendError = setupGate.refusal
+            submitFailed = true
+        } else if (body.isNotEmpty() && !sending) {
             val signature = author.ifEmpty { "u-anon" }
             scope.launch {
                 sending = true
@@ -687,6 +699,7 @@ fun AppDetailScreen(
                 failLabel = sendError ?: "发送失败，检查一下网络再试",
                 pickerOpen = pickerOpen,
                 onPickerOpenChange = { pickerOpen = it },
+                gateHint = setupGate.prompt,
             )
         },
     ) { padding ->

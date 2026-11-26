@@ -121,6 +121,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.BeijingTime
+import io.github.samolego.canta.util.IdentitySetup
 import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.delay
@@ -454,6 +455,12 @@ internal fun PostsScreen(
      * 最上面，看得见、点得到，也不打断列表本身。
      */
     onOpenWeeklyRank: (() -> Unit)? = null,
+    /**
+     * 名字与头像设过了没有：没设过就发不了帖（见 [IdentitySetup]）。
+     *
+     * 只挡「发」，不挡「写」：草稿照旧能存，发的时候按钮是灰的并说清差哪一步。
+     */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
@@ -731,6 +738,11 @@ internal fun PostsScreen(
     /** 发布：成功后删草稿、关编辑器、刷新列表；失败就把后端那句话摆在编辑器里。 */
     val publish: () -> Unit = pub@{
         val current = store
+        // 名字/头像没设完：帖子也是发言，按钮已经是灰的，这里挡住回车那条路。
+        if (!setupGate.ready) {
+            editorError = setupGate.refusal
+            return@pub
+        }
         if (current == null) {
             editorError = "社区后端没连上，帖子没发出去。"
             return@pub
@@ -1026,7 +1038,7 @@ internal fun PostsScreen(
                         // 圆形纸飞机发送（fluxdo 的 ComposerSubmitButton：40dp 正圆，图标 21dp）。
                         PublishCircleButton(
                             busy = posting,
-                            enabled = canWrite && !posting,
+                            enabled = canWrite && !posting && setupGate.ready,
                             onClick = publish,
                         )
                     },

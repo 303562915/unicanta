@@ -6,12 +6,14 @@ import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.IdentitySetup
 import io.github.samolego.canta.util.PackageTelemetry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -84,6 +86,17 @@ class SettingsViewModel(
      * 默认状态，页面不会先闪一张别人的图再换回来。
      */
     val avatarUrl = settingsStore.avatarUrlFlow.state("")
+
+    /**
+     * 名字与头像都设过了没有——**没设过就不许往社区里写任何东西**（见 [IdentitySetup]）。
+     *
+     * 由 [userName] 与 [avatarUrl] 合出来，所以改名或换头像当场就变绿，不用重启；两样都没读出来
+     * 的那一版是 `UNSET`，也就是"按没设过处理"，没人能在设置还没读到的那几帧里先发一条。
+     */
+    val identitySetup: StateFlow<IdentitySetup> =
+        combine(settingsStore.userNameFlow, settingsStore.avatarUrlFlow) { name, avatar ->
+            IdentitySetup(name = name, avatarUrl = avatar)
+        }.state(IdentitySetup.UNSET)
 
     /** The optional bar entries: off by default, turned on in the settings. */
     val showTweaksTab = settingsStore.showTweaksTabFlow.state(false)

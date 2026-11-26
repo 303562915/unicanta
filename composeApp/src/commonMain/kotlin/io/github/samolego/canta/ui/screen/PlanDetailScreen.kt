@@ -119,6 +119,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlTopBarCompactHeight
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.IdentitySetup
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.SafetyStatus
 import io.github.samolego.canta.util.SafetyVerdict
@@ -213,6 +214,13 @@ fun PlanDetailScreen(
     onOpenUploader: ((String) -> Unit)? = null,
     /** 卡片角上那条披带点下去要说的话：交给平台 toast，不接线就什么也不说。 */
     onMessage: (String) -> Unit = {},
+    /**
+     * 名字与头像设过了没有——没设过这一页的评论发不出去（见 [IdentitySetup]）。
+     *
+     * 默认 [IdentitySetup.UNSET] 即"没设过"：漏接的调用点宁可发不出去，也不收一条顶着 `#10000`
+     * 的评论。上层传 `settingsViewModel.identitySetup`，改完名字当场放开。
+     */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -373,7 +381,11 @@ fun PlanDetailScreen(
 
     val sendComment: () -> Unit = {
         val body = draft.trim()
-        if (body.isNotEmpty() && !sending) {
+        // 名字/头像没设完：发送键已经是灰的，这里再挡一次（键盘回车也会走到这儿）。
+        if (!setupGate.ready) {
+            sendError = setupGate.refusal
+            submitFailed = true
+        } else if (body.isNotEmpty() && !sending) {
             scope.launch {
                 sending = true
                 val posted = repository.commentOnPlan(
@@ -565,6 +577,7 @@ fun PlanDetailScreen(
                     failLabel = sendError ?: stringResource(Res.string.plan_upload_failed),
                     pickerOpen = pickerOpen,
                     onPickerOpenChange = { pickerOpen = it },
+                    gateHint = setupGate.prompt,
                 )
             }
         },

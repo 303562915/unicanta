@@ -121,6 +121,7 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.ui.fl.isDark
 import io.github.samolego.canta.util.BeijingTime
+import io.github.samolego.canta.util.IdentitySetup
 import io.github.samolego.canta.util.currentTimeMillis
 import io.github.samolego.canta.util.rememberVoiceInput
 import kotlin.random.Random
@@ -428,6 +429,13 @@ fun ChatScreen(
      * 由上层读出来传进来。被拉黑时这一页照旧能看历史，只是输入栏整个收起来（见 [ChatComposer]）。
      */
     blocked: Boolean = false,
+    /**
+     * 名字与头像设过了没有：没设过就发不了言（见 [IdentitySetup]）。
+     *
+     * 处理方式和 [blocked] 同一套——输入栏整条换成一行说明，没有输入框、没有发送键；
+     * 区别只是这句话领人去「我的 → 个人主页」。默认"没设过"，漏接的调用点宁可发不出去。
+     */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     val scope = rememberCoroutineScope()
     // 上一次看过的这一屏先画出来：从消息页点进来时不该再看一次「… → 等网络」。
@@ -901,7 +909,10 @@ fun ChatScreen(
     /** 发一条：写成功才清空输入框，写失败把输入留着，别让人重打一遍。 */
     val send: () -> Unit = {
         val body = draft.trim()
-        if (body.isNotEmpty() && !sending) {
+        // 名字/头像没设完：输入栏已经被 [GateComposerBar] 换掉了，这里挡住的是回车与粘贴那条路。
+        if (!setupGate.ready) {
+            imageHint = setupGate.refusal
+        } else if (body.isNotEmpty() && !sending) {
             scope.launch {
                 sending = true
                 sendFailed = false
@@ -939,7 +950,10 @@ fun ChatScreen(
      * 差别只在于正文是那一颗的 token（如 `[偷笑]`），发出去之后气泡里画成图。
      */
     val sendSticker: (Emotion) -> Unit = { emotion ->
-        if (!sending && conversationId > 0L) {
+        // 快捷表情也只是一句话：闸门没开就同样发不出去，还要说清差哪一步。
+        if (!setupGate.ready) {
+            imageHint = setupGate.refusal
+        } else if (!sending && conversationId > 0L) {
             scope.launch {
                 sending = true
                 sendFailed = false
@@ -980,7 +994,10 @@ fun ChatScreen(
      * 上了，这一层没有删它的接口，所以只提示，不假装撤回过。
      */
     val sendImage: () -> Unit = {
-        if (!sendingImage) {
+        if (!setupGate.ready) {
+            // 发图也是发言：先挡住，别让人白挑一张、压一遍、传上去。
+            imageHint = setupGate.refusal
+        } else if (!sendingImage) {
             scope.launch {
                 sendingImage = true
                 imageHint = null
@@ -1518,7 +1535,11 @@ fun ChatScreen(
                         keyboardController?.show()
                     },
                     onSend = send,
-                    canSend = draft.isNotBlank() && !sending,
+                    canSend = draft.isNotBlank() && !sending && setupGate.ready,
+                    // 半透明底色：面板下面是消息，一整块实底看着像"又开了一页"。
+                    // 深色主题多给一点不透明度，否则底下的字会透出来压住表情。
+                    background = composerBarColor(MaterialTheme.colorScheme)
+                        .copy(alpha = if (MaterialTheme.colorScheme.isDark) 0.86f else 0.72f),
                 )
             }
             if (showMentions) {
@@ -1593,6 +1614,8 @@ fun ChatScreen(
                 },
                 fieldFocus = composerFocus,
                 blocked = blocked,
+                // 没设名字/头像：输入栏整条换成一行说明，和拉黑同一个形状。
+                gateHint = setupGate.prompt,
             )
             // 图片这一路的提示与文字那条同款：传的时候一直亮，失败了才说话，成功了不说话。
             if (sendingImage) {
@@ -2077,8 +2100,6 @@ private fun ChatBubble(
     mentionsMe: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    // 任何一条消息长按都弹菜单：回复和转发对别人的消息同样成立，而"长按即复制"那个老手势
-    // 把这两个入口逼没了。菜单里第一项仍然是复制，所以习惯长按复制的人按下去还是一样的结果。
     val menuable = onLongPress != null || onReply != null || onForward != null ||
         onDelete != null || onHide != null || onTranslate != null
     var menuOpen by remember { mutableStateOf(false) }
@@ -2121,8 +2142,11 @@ private fun ChatBubble(
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
-        // 私聊里对方不画头像（截图上就是干净的）；群里谁发言谁有自己的一张头像，
+        /** 私聊里对方不画头像（截图上就是干净的）；群里谁发言谁有自己的一张头像，
         // 身份是 message.sender，点了进那个人的主页。
+        //
+        // 自己这一侧的头像现在**私聊也画**（用户要求：消息页那一张脸和这儿要一致）；
+        // 群里规则不变，免得每条消息两边各贴一张。
         if (!mine && showSender) {
             ChatRowAvatar(
                 label = message.label,
@@ -3185,9 +3209,19 @@ private fun ChatComposer(
     fieldFocus: FocusRequester = remember { FocusRequester() },
     /** 对面这个人被本机拉黑了：输入栏整条换成一行灰字，见 [BlockedComposerBar]。 */
     blocked: Boolean = false,
+    /**
+     * 名字/头像没设过时那句话（见 [IdentitySetup]）；空串 = 闸门开着。
+     *
+     * 和 [blocked] 一样整条收起来：留一个能点却发不出去的框，比直接收起来更像坏了。
+     */
+    gateHint: String = "",
 ) {
     if (blocked) {
         BlockedComposerBar()
+        return
+    }
+    if (gateHint.isNotEmpty()) {
+        GateComposerBar(hint = gateHint)
         return
     }
     val colors = MaterialTheme.colorScheme
@@ -3337,6 +3371,27 @@ private fun BlockedComposerBar() {
         fontSize = 11.sp,
         lineHeight = 15.sp,
         color = scheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(composerBarColor(scheme))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    )
+}
+
+/**
+ * 名字/头像还没设过时的输入区：一行说明，没有输入框。
+ *
+ * 和 [BlockedComposerBar] 同一个形状，用系统报错色：这不是"对方不想理你"，是"你还差一步"，
+ * 所以这句话要说清去哪一步（见 `IdentitySetup.prompt`）。
+ */
+@Composable
+private fun GateComposerBar(hint: String) {
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        text = hint,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        color = scheme.error,
         modifier = Modifier
             .fillMaxWidth()
             .background(composerBarColor(scheme))

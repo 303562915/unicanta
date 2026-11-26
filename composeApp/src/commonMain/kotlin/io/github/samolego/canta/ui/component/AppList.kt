@@ -75,6 +75,8 @@ fun AppList(
     settingsViewModel: SettingsViewModel,
     platform: CantaPlatform,
     handler: CantaHandler,
+    /** 已经没用：全选现在默认隐藏、选中一个应用才出现，见下面那段。留着只为不打破调用方。 */
+    @Suppress("UNUSED_PARAMETER")
     enableSelectAll: Boolean = false,
     /**
      * Packages Canta itself uninstalled, from the records tab's log. Everything else on the
@@ -149,8 +151,8 @@ fun AppList(
                 LoadingBadgesIndicator()
             }
             // 全选只在「已经选了东西」之后才出现：什么都没选时那一行复选框只是挡住列表，
-            // 而且一不小心就把整屏删了。现在默认隐藏，勾一个应用才出现（[enableSelectAll] 只是
-            // 保留给调用方的口子，不再决定这一行出现与否）。
+            // 而且一不小心就把整屏删了。现在是默认隐藏、勾一个应用才出现，和旧版的隐藏手势无关
+            // （[enableSelectAll] 保留只为不打破调用方签名）。
             val visiblePackages = appList.map { it.packageName }
             if (visiblePackages.isNotEmpty() && selectedAppList.isNotEmpty()) {
                 // Derived from the selection, and scoped to the visible apps, so it

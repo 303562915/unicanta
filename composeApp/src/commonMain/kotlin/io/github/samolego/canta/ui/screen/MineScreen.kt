@@ -49,6 +49,7 @@ import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
+import io.github.samolego.canta.util.IdentitySetup
 import org.jetbrains.compose.resources.stringResource
 
 /** 底栏画在这一页之上，最后一张卡片下面留出它的位置。 */
@@ -80,6 +81,8 @@ fun MineScreen(
 ) {
     val userName by settingsViewModel.userName.collectAsStateWithLifecycle()
     val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
+    // 名字和头像都设过没有：没设过就发不了言，这张卡要把缺口说清（见 `IdentitySetup`）。
+    val setup by settingsViewModel.identitySetup.collectAsStateWithLifecycle()
     // 双击底栏「我的」那一格：这一页用的是普通竖向滚动，也跟着回顶部。
     val mineScroll = rememberScrollState()
     ScrollToTopEffect(mineScroll)
@@ -102,6 +105,7 @@ fun MineScreen(
                     name = userName,
                     identityUserId = identityUserId,
                     avatarUrl = avatarUrl,
+                    setup = setup,
                     onOpen = onOpenProfile,
                 )
             }
@@ -153,6 +157,8 @@ private fun UserCard(
     name: String,
     identityUserId: Long = 0L,
     avatarUrl: String = "",
+    /** 名字与头像设过了没有；没设过就发言发不出去，卡片要把这一条说出来。 */
+    setup: IdentitySetup = IdentitySetup.UNSET,
     onOpen: () -> Unit,
 ) {
     val defaultName = stringResource(Res.string.profile_default_name)
@@ -162,6 +168,8 @@ private fun UserCard(
     val identityTag = if (identityUserId > 0L) "#$identityUserId" else ""
     val shown = name.trim().ifEmpty { identityTag.ifEmpty { defaultName } }
     val unnamed = isDefaultIdentityName(name) || (name.isBlank() && identityTag.isNotEmpty())
+    // 还没设完（缺名字或缺头像）= 现在发不了言：卡片按同一种黄提示，不另起一套颜色。
+    val incomplete = !setup.ready
     // The pulse: pale yellow fading in and out for as long as the name is a number. Slow on
     // purpose — a fast blink reads as an error to dismiss, while this is a request the page makes
     // until it is answered, and nothing but picking a name switches it off.
@@ -177,14 +185,14 @@ private fun UserCard(
     )
     // Kept inside 0.10..0.20 alpha: enough to notice out of the corner of an eye, soft enough that
     // the row stays readable — a wall of colour would read as a warning, and this is a nudge.
-    val highlight = if (unnamed) 0.10f + 0.10f * glow else 0f
+    val highlight = if (unnamed || incomplete) 0.10f + 0.10f * glow else 0f
     val glowText = Color(0xFF8A6D00)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 6.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (unnamed) Color(0xFFFFE96B).copy(alpha = highlight) else Color.Transparent)
+            .background(if (unnamed || incomplete) Color(0xFFFFE96B).copy(alpha = highlight) else Color.Transparent)
             .clickable(onClick = onOpen)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -214,16 +222,20 @@ private fun UserCard(
                     text = shown,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
-                    color = if (unnamed) glowText else Color.Unspecified,
+                    color = if (unnamed || incomplete) glowText else Color.Unspecified,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (unnamed) {
+                if (unnamed || incomplete) {
                     Spacer(Modifier.width(6.dp))
                     // The one place the page says why it keeps pulsing, instead of a dialog the
                     // reader would dismiss without reading.
                     Text(
-                        text = "还没起名字",
+                        text = when {
+                            unnamed && incomplete -> "还没起名字、没换头像"
+                            unnamed -> "还没起名字"
+                            else -> "还没换头像"
+                        },
                         fontSize = 9.sp,
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
@@ -234,22 +246,24 @@ private fun UserCard(
                 }
             }
             Text(
-                text = if (unnamed) {
-                    // The number is quoted back, so the request is about something the reader can
-                    // see on screen rather than an abstract "rename yourself".
-                    "点这里起个名字，别拿 $shown 当名字"
-                } else {
-                    stringResource(Res.string.profile_edit_name)
+                text = when {
+                    unnamed -> {
+                        // The number is quoted back, so the request is about something the reader can
+                        // see on screen rather than an abstract "rename yourself".
+                        "点这里起个名字，别拿 $shown 当名字"
+                    }
+                    incomplete -> setup.prompt.replaceFirst("先去「我的 → 个人主页」", "点这里")
+                    else -> stringResource(Res.string.profile_edit_name)
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (unnamed) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (unnamed || incomplete) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Icon(
             imageVector = Icons.Default.Edit,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = if (unnamed) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (unnamed || incomplete) glowText else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

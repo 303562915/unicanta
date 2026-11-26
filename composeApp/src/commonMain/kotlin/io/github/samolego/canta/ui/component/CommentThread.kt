@@ -959,6 +959,14 @@ fun CommentComposer(
     pickerOpen: Boolean = false,
     /** Asked for when the panel's key is tapped: true to open it, false to go back to the keyboard. */
     onPickerOpenChange: (Boolean) -> Unit = {},
+    /**
+     * 这一条发言的先决条件（名字 + 头像都设过）没满足时的那句话。
+     *
+     * 非空就是"现在不许发"：发送键灰掉、输入框只读、这句话摆在输入栏上面；空串（默认）等于不设闸，
+     * 老调用方一行不用改。判断本身在 [io.github.samolego.canta.util.IdentitySetup] 里，页面只把结果
+     * 那句话递进来——见 `IdentitySetupGate`。
+     */
+    gateHint: String = "",
 ) {    val colors = MaterialTheme.colorScheme
     val focusRequester = remember { FocusRequester() }
     val imeController = LocalSoftwareKeyboardController.current
@@ -1013,6 +1021,17 @@ fun CommentComposer(
                 if (replyToName.isNotEmpty()) {
                     ReplyChip(name = replyToName, onCancel = onCancelReply)
                 }
+                // 名字/头像还没设过：先说清为什么发不出去，再画那条按不动的输入栏。
+                // 摆在输入栏上面而不是塞进占位文案里：占位文案只在没字的时候看得见，人一开始打字就不见了。
+                if (gateHint.isNotEmpty()) {
+                    Text(
+                        text = gateHint,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = colors.error,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+                    )
+                }
                 // 抖音那套形状：收着的时候（没焦点、没字）整条就是一个胶囊，占位文案在左，
                 // 「@ / 表情」两个键贴在它右端，没有发送键；一动笔就换成
                 // 「一个空胶囊 + 下面一行工具条」——工具条的键靠左，发送靠右。
@@ -1065,7 +1084,7 @@ fun CommentComposer(
                 // 发送：抖音是粉底白字的小胶囊，禁用的时灰底灰字（截图里就是这样），
                 // 和表情面板右下角那颗是同一个颜色，两处不能长得不一样。
                 val sendKey: @Composable () -> Unit = {
-                    val canSend = draft.isNotBlank() && !sending
+                    val canSend = draft.isNotBlank() && !sending && gateHint.isEmpty()
                     Row(
                         modifier = Modifier
                             .height(32.dp)
@@ -1147,6 +1166,8 @@ fun CommentComposer(
                             Box(modifier = Modifier.fillMaxWidth()) {
                                 BasicTextField(
                                     value = fieldValue,
+                                    // 闸门没开就只读：还能看见自己上一条草稿，打不出新的字。
+                                    readOnly = gateHint.isNotEmpty(),
                                     onValueChange = { typed ->
                                         // Backspace over a sticker takes the whole sticker: half a
                                         // token on screen would be a bracket the reader never typed.
@@ -1274,7 +1295,7 @@ fun CommentComposer(
                         // 面板右下角那颗「发送」走同一条发送路径：截图里它一直在，
                         // 没字/正在发的时候画成灰的。
                         onSend = onSend,
-                        canSend = draft.isNotBlank() && !sending,
+                        canSend = draft.isNotBlank() && !sending && gateHint.isEmpty(),
                         panelHeight = panelHeight,
                     )
                 }
