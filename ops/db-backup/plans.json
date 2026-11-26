@@ -7160,12 +7160,12 @@
  {
   "brand": "REDMAGIC",
   "codename": "NX809J",
-  "created_at": "2026-11-26T16:35:11.672274+00:00",
-  "id": 371,
+  "created_at": "2026-11-26T16:45:03.824837+00:00",
+  "id": 372,
   "is_test": false,
   "market_name": "",
   "model": "NX809J",
-  "note": "红魔11pro+，11.0.13MR1，安卓16，测试正常",
+  "note": "红魔11pro+，11.0.13MR1，日用省电没问题",
   "owner": "12515",
   "packages": [
    "cn.nubia.magicelvesbroadcast",
@@ -7281,12 +7281,12 @@
    "com.qualcomm.qtil.aptxacu"
   ],
   "reboot_verified": true,
-  "rebooted_at": "2026-11-26T16:35:11.629233+00:00",
+  "rebooted_at": "2026-11-26T16:45:03.505451+00:00",
   "rom": "stock",
   "rom_build": "",
   "rom_version": 0,
   "sdk": 36,
-  "title": "省电"
+  "title": "省电 · NX809J"
  },
  {
   "brand": "Xiaomi",
