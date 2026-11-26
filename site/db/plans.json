@@ -33,7 +33,7 @@
   "rom_version": 4,
   "sdk": 37,
   "title": "小米17max三大运营商遥测卸载",
-  "votes": 127
+  "votes": 128
  },
  {
   "brand": "Xiaomi",
@@ -10137,6 +10137,39 @@
   "rom_version": 4,
   "sdk": 37,
   "title": "干净 · Xiaomi 17 Pro Max",
+  "votes": 0
+ },
+ {
+  "brand": "Vivo",
+  "created_at": "2026-11-26T12:23:41.339728+00:00",
+  "id": 200,
+  "is_test": false,
+  "market_name": "iQOO 15 Ultra",
+  "model": "V2546A",
+  "note": "",
+  "owner": "13862",
+  "owner_name": "",
+  "packages": [
+   "com.android.adservices.api",
+   "com.vivo.fuelsummary",
+   "com.mobiletools.systemhelper",
+   "com.vivo.nps",
+   "com.vivo.floatingball",
+   "com.vivo.pushservice",
+   "com.bbk.iqoo.logsystem",
+   "com.android.bbklog",
+   "com.vivo.hybrid",
+   "com.vivo.magazine",
+   "com.vivo.devicereg",
+   "com.vivo.video.floating",
+   "com.android.traceur"
+  ],
+  "rebooted_at": "2026-11-26T12:23:40.450975+00:00",
+  "rom": "funtouch",
+  "rom_build": "17.0",
+  "rom_version": 17,
+  "sdk": 37,
+  "title": "iQOO15U",
   "votes": 0
  }
 ]
