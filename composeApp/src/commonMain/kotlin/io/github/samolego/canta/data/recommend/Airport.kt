@@ -35,6 +35,12 @@ data class CommunityAirport(
     val myStars: Int = 0,
     /** 这条有没有订阅链接可取（链接本身不在列表里，要先投票或打分）。 */
     val hasSubscription: Boolean = false,
+    /**
+     * 详情：价格、流量、速度、协议、备注里的一段。列表只显示一行小字，点开卡片才连这份一起画。
+     *
+     * 它是列表回答里带的，不额外跑一趟网络——所以是一个字段而不是一次查询。
+     */
+    val detail: AirportDetail = AirportDetail(),
 ) {
     /** 图标方块里的字，与目录条目一致。 */
     val tileMark: String get() = name.trim().take(1).ifBlank { "?" }
@@ -70,6 +76,31 @@ data class CommunityAirport(
      * 可能是在投票之前拉的，用旧快照拦人会把刚投完票的人挡在门外。
      */
     val unlocked: Boolean get() = mine != null || myStars > 0
+}
+
+/**
+ * 一条机场摊开看时多出来的那几格：价格、流量、速度、设备数、协议和一段更长的备注。
+ *
+ * 全都可以为空。那些为空的是"这家没说"，不是"零"：页面据此少画一行，而不是写一个 0。
+ */
+data class AirportDetail(
+    /** 参考价格原文：`¥6 / 月`、`≈ $0.6 / 月`、`¥208.95 按量`，币种和周期都保留。 */
+    val price: String = "",
+    /** 流量原文：`1000GB/月`、`300GB 总量`。 */
+    val traffic: String = "",
+    /** 速度上限原文：`3Gbps`、`不限速`。 */
+    val speed: String = "",
+    /** 设备数原文：`20 台`、`不限制`。 */
+    val devices: String = "",
+    /** 协议，逗号分隔：`hysteria2, vless`；自建节点多半是空的。 */
+    val protocols: String = "",
+    /** 更长的介绍：官网、参考汇率、营业状态之类的说明。 */
+    val note: String = "",
+) {
+    /** 有没有任何一格能画：空的详情不占地方，也不显示一条空的分隔线。 */
+    val isEmpty: Boolean
+        get() = price.isBlank() && traffic.isBlank() && speed.isBlank() &&
+            devices.isBlank() && protocols.isBlank() && note.isBlank()
 }
 
 /** 一次投票之后服务器回答的三个数。 */

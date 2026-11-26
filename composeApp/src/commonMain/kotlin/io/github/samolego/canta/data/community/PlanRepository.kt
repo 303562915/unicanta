@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.community
 
+import io.github.samolego.canta.data.recommend.AirportDetail
 import io.github.samolego.canta.data.recommend.AirportRatingResult
 import io.github.samolego.canta.data.recommend.AirportSubscription
 import io.github.samolego.canta.data.recommend.AirportVoteResult
@@ -1919,6 +1920,22 @@ class PlanRepository(
             ratingCount = o["rating_count"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             myStars = o["my_stars"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             hasSubscription = o["has_subscription"]?.jsonPrimitive?.booleanOrNull == true,
+            detail = parseAirportDetail(o["detail"]),
+        )
+    }
+
+    /** 列表回答里那一格 `detail`；老回答没有它，就是空详情（卡片照样画得出来）。 */
+    private fun parseAirportDetail(element: kotlinx.serialization.json.JsonElement?): AirportDetail {
+        if (element == null) return AirportDetail()
+        val o = runCatching { element.jsonObject }.getOrNull() ?: return AirportDetail()
+        fun text(key: String): String = o[key]?.jsonPrimitive?.contentOrNull.orEmpty()
+        return AirportDetail(
+            price = text("price"),
+            traffic = text("traffic"),
+            speed = text("speed"),
+            devices = text("devices"),
+            protocols = text("protocols"),
+            note = text("note"),
         )
     }
 
