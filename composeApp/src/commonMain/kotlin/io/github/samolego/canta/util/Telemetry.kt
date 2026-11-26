@@ -2,8 +2,12 @@ package io.github.samolego.canta.util
 
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.data.community.GITHUB_SCORES_URL
+import io.github.samolego.canta.data.community.PAGES_SCORES_URL
+import io.github.samolego.canta.generated.resources.Res
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -17,12 +21,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -114,6 +122,35 @@ fun cohortWeekOf(instant: Instant): String {
 
 /** Above this many apps in one go, a batch counts as large (see [batchBucketOf] and the confirm dialog). */
 const val LARGE_BATCH_THRESHOLD = 11
+
+/**
+ * 包分数快照的地址：GitHub Pages（国内 CDN）与 raw，两个都失效才算真读不到。
+ *
+ * 同一个 `db-backup.yml` 生成，文件名换成 `package_scores.json`。它回答的是
+ * `package_scores_for(p_rom, p_rom_version)` 那一问，而那个函数**不带身份**——
+ * 同一个 ROM 上所有人拿到同一份数据，没有理由让每台手机各自去库里聚一遍。
+ */
+private const val SCORES_SNAPSHOT_MIRROR_URL = PAGES_SCORES_URL
+private const val SCORES_SNAPSHOT_URL = GITHUB_SCORES_URL
+
+/** 快照最多等这么久；它是内容来源，不该比一次正常请求还慢。 */
+private const val SCORES_SNAPSHOT_TIMEOUT_MS = 15_000L
+
+/**
+ * 快照读失败之后多久之内不再重试。
+ *
+ * 两轮各 15 秒超时，断网时一次刷新就是 30 秒；失败后停 60 秒，期间直接问后端。
+ */
+private const val SCORES_SNAPSHOT_RETRY_BACKOFF_MS = 60_000L
+
+/**
+ * 随包带的那一份包分数（composeResources/files/package_scores_snapshot.json）。
+ *
+ * 由 db-backup.yml 与 `site/db/package_scores.json` 一起生成，行是**扁平**的
+ * （每行带 rom / rom_version），读不到网络快照时就靠它——断网的人看到的是装机那天的事实，
+ * 而不是「没有任何数据」。
+ */
+private const val BUNDLED_SCORES_PATH = "files/package_scores_snapshot.json"
 
 /** Coarse uninstall batch size, so exact counts are never sent. */
 fun batchBucketOf(count: Int): String = when {
@@ -287,6 +324,12 @@ class Telemetry(
     private val platform: String,
     private val scope: CoroutineScope,
     private val isEnabled: suspend () -> Boolean,
+    /**
+     * 包分数快照的两个源（Pages 优先）。传空串表示这一趟不读快照，直接问后端——
+     * 量「后端那条路」的测试与「某个部署没发布快照」都走这条。
+     */
+    private val scoresSnapshotUrl: String = SCORES_SNAPSHOT_URL,
+    private val scoresSnapshotMirrorUrl: String = SCORES_SNAPSHOT_MIRROR_URL,
 ) {
     private companion object {
         const val TAG = "Telemetry"
@@ -525,9 +568,21 @@ class Telemetry(
     suspend fun fetchScores(device: DeviceContext? = null): Map<String, CommunityScore>? {
         val overall = fetchRows("package_scores", "{}") ?: return null
         val known = device != null && device.hasRom
-        suspend fun forRom(version: Int) = fetchRows(
-            "package_scores_for", """{"p_rom":"${device!!.rom}","p_rom_version":$version}""",
-        ).orEmpty()
+        // **先在 GitHub 快照里本地筛**，筛不出来才问后端。方向与 PlanRepository.plansAll() 一样：
+        // `package_scores_for` 实测 377,695 个数据块，而它要回答的问题只是「这个 ROM 上这个包安不安全」。
+        // 那个函数不带身份（同一个 ROM 上所有人看到同一份），所以适合快照；快照里 rom 与
+        // rom_version 都在，本地过滤一次网络往返都不用。
+        //
+        // 快照还没发布过（仓库里没这个文件）、或者两个源都读不到，就退回 `rpc`——那是**正常路径**，
+        // 不是错误：这一趟是「内容来源」，失败不该让下面那两条请求跟着不敢发。
+        val snapshot = if (known) deviceScoresFromSnapshot(device!!) else SnapshotScores.Empty
+        suspend fun forRom(version: Int) = if (snapshot.has(version)) {
+            snapshot.of(version)
+        } else {
+            fetchRows(
+                "package_scores_for", """{"p_rom":"${device!!.rom}","p_rom_version":$version}""",
+            ).orEmpty()
+        }
         val family = if (known) forRom(-1) else emptyMap()
         val forDevice = if (known) forRom(device!!.romVersion) else emptyMap()
         val label = device?.romLabel().orEmpty()
@@ -537,6 +592,83 @@ class Telemetry(
             CommunityScore(overall[it], forDevice[it], label, family[it], rom, familyLabel, device?.romVersion ?: 0)
         }
     }
+
+    /** 快照读成功过一次就记着：内容是所有人一样的，整个会话不必再拉一遍几百 KB。 */
+    @Volatile
+    private var snapshotGroups: Map<String, Map<Int, Map<String, PackageScore>>>? = null
+
+    /** 上一次「三个源都读不到」的时间；失败后 [SCORES_SNAPSHOT_RETRY_BACKOFF_MS] 内不再去网上试。 */
+    @Volatile
+    private var snapshotFailedAt: Long = 0L
+
+    /** 同一时刻只让一个调用去拉快照：列表页与详情页可能同时走到这里。 */
+    private val snapshotLock = Mutex()
+
+    /** 这个 ROM 在快照里有的那几个版本（`-1` 是整个家族）。 */
+    private class SnapshotScores(private val byVersion: Map<Int, Map<String, PackageScore>>) {
+        fun has(version: Int) = byVersion.containsKey(version)
+
+        fun of(version: Int): Map<String, PackageScore> = byVersion[version].orEmpty()
+
+        companion object {
+            val Empty = SnapshotScores(emptyMap())
+        }
+    }
+
+    /**
+     * 这个设备的 ROM 那几组行，依次从 GitHub Pages、GitHub raw、APK 内置取。
+     *
+     * 失败不出声：这里不是一次业务请求，读不到就是「这边没有，去问后端」。
+     */
+    private suspend fun deviceScoresFromSnapshot(device: DeviceContext): SnapshotScores {
+        val rom = device.rom.lowercase()
+        snapshotGroups?.get(rom)?.let { return SnapshotScores(it) }
+        return snapshotLock.withLock {
+            // 等锁的这段时间里，别的调用可能已经把这台设备的 ROM 拉下来了。
+            snapshotGroups?.get(rom)?.let { return@withLock SnapshotScores(it) }
+            val inBackoff = inSnapshotBackoff()
+            var fetched: Map<String, Map<Int, Map<String, PackageScore>>>? = null
+            for (url in listOf(scoresSnapshotMirrorUrl, scoresSnapshotUrl)) {
+                if (url.isBlank() || inBackoff) continue
+                val text = runCatching {
+                    withTimeoutOrNull(SCORES_SNAPSHOT_TIMEOUT_MS) {
+                        val response = client.get(url)
+                        if (response.status.isSuccess()) response.bodyAsText() else null
+                    }
+                }.getOrNull() ?: continue
+                val groups = runCatching { parseScoresSnapshot(text) }.getOrDefault(emptyMap())
+                // 解析出一个空表多半是文件被写坏了：那也算没读到，接着试下一个源。
+                if (groups.isEmpty()) continue
+                fetched = groups
+                break
+            }
+            if (fetched != null) {
+                snapshotGroups = fetched
+                snapshotFailedAt = 0L
+                // 快照读得到，但里面没有这个 ROM（小众 ROM 不会进快照）——那就是「这边没有」，
+                // 别再去试第二个源，也别记成失败。
+                return@withLock SnapshotScores(fetched[rom].orEmpty())
+            }
+            if (inBackoff) return@withLock SnapshotScores.Empty
+            snapshotFailedAt = currentTimeMillis()
+            val bundled = runCatching {
+                parseScoresRows(Res.readBytes(BUNDLED_SCORES_PATH).decodeToString())
+            }.getOrDefault(emptyList())
+            if (bundled.isEmpty()) return@withLock SnapshotScores.Empty
+            // 内置那份是扁平行，按 rom / rom_version 现分组；某个版本没行就不算「有」，
+            // 那一问照常去问后端。
+            val grouped = bundled.groupBy { it.rom.lowercase() }.mapValues { (_, rows) ->
+                rows.groupBy { it.romVersion }.mapValues { (_, ofVersion) ->
+                    ofVersion.associate { it.score.pkg to it.score }
+                }
+            }
+            snapshotGroups = grouped
+            SnapshotScores(grouped[rom].orEmpty())
+        }
+    }
+
+    private fun inSnapshotBackoff(): Boolean =
+        snapshotFailedAt != 0L && currentTimeMillis() - snapshotFailedAt < SCORES_SNAPSHOT_RETRY_BACKOFF_MS
 
     private suspend fun fetchRows(function: String, body: String): Map<String, PackageScore>? = try {
         val response = client.post(TelemetryConfig.BASE_URL + function) {
@@ -558,18 +690,58 @@ class Telemetry(
 }
 
 internal fun parseScores(json: String): Map<String, PackageScore> =
+    parseScoresRows(json).associateBy { it.score.pkg }
+
+/**
+ * 一份 JSON 数组行 → 分数行。快照与 `package_scores_for` 的返回**同形状**（列名一致），
+ * 所以两条路共用这一支；丢掉读不出 pkg 的行，一个坏行不该毁掉整份。
+ *
+ * [SnapshotScoreRow.rom] / [SnapshotScoreRow.romVersion] 只在**扁平**那份内置快照里才有值；
+ * RPC 返回本来就已经按 ROM 筛过，那两列是空串 / 0。
+ */
+internal fun parseScoresRows(json: String): List<SnapshotScoreRow> =
     Json.parseToJsonElement(json).jsonArray.mapNotNull { element ->
         val o = element.jsonObject
         val pkg = o["pkg"]?.jsonPrimitive?.content ?: return@mapNotNull null
-        PackageScore(
-            pkg = pkg,
-            uninstalls = o["uninstalls"]?.jsonPrimitive?.intOrNull ?: 0,
-            smallBatch = o["small_batch"]?.jsonPrimitive?.booleanOrNull ?: false,
-            verdict = Verdict.parse(o["verdict"]?.jsonPrimitive?.content),
-            updatedAt = o["updated_at"]?.jsonPrimitive?.content,
-            mainRom = (o["main_rom"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content,
-            mainRomShare = (o["main_rom_share"] as? JsonPrimitive)?.doubleOrNull,
-            mainVersion = (o["main_version"] as? JsonPrimitive)?.intOrNull,
-            mainVersionShare = (o["main_version_share"] as? JsonPrimitive)?.doubleOrNull,
+        SnapshotScoreRow(
+            rom = o["rom"]?.jsonPrimitive?.content.orEmpty(),
+            romVersion = o["rom_version"]?.jsonPrimitive?.intOrNull ?: 0,
+            score = PackageScore(
+                pkg = pkg,
+                uninstalls = o["uninstalls"]?.jsonPrimitive?.intOrNull ?: 0,
+                smallBatch = o["small_batch"]?.jsonPrimitive?.booleanOrNull ?: false,
+                verdict = Verdict.parse(o["verdict"]?.jsonPrimitive?.content),
+                updatedAt = o["updated_at"]?.jsonPrimitive?.content,
+                mainRom = (o["main_rom"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content,
+                mainRomShare = o["main_rom_share"]?.jsonPrimitive?.doubleOrNull,
+                mainVersion = o["main_version"]?.jsonPrimitive?.intOrNull,
+                mainVersionShare = o["main_version_share"]?.jsonPrimitive?.doubleOrNull,
+            ),
         )
-    }.associateBy { it.pkg }
+    }
+
+/** 快照里的一行：哪个 ROM、哪个版本、这个包的分数。 */
+internal data class SnapshotScoreRow(val rom: String, val romVersion: Int, val score: PackageScore)
+
+/**
+ * `site/db/package_scores.json` → ROM（小写）→ ROM 版本 → 包名 → 分数。
+ *
+ * 文件形如 `[{"rom":"hyperos","rom_version":-1,"scores":[...]}]`，`-1` 是整个家族
+ * （后端 `package_scores_for` 的约定）。行内列名与那个 RPC 的返回逐列对齐，只是外面多套了
+ * rom / rom_version：它把**每一个** ROM 的答案都放进了同一个文件。
+ */
+internal fun parseScoresSnapshot(text: String): Map<String, Map<Int, Map<String, PackageScore>>> {
+    val root = Json.parseToJsonElement(text).jsonArray
+    return root.fold(mutableMapOf()) { acc, group ->
+        val o = group as? JsonObject ?: return@fold acc
+        val rom = o["rom"]?.jsonPrimitive?.content?.lowercase().orEmpty()
+        val version = o["rom_version"]?.jsonPrimitive?.intOrNull ?: return@fold acc
+        if (rom.isBlank()) return@fold acc
+        val scores = (o["scores"] as? JsonArray).orEmpty().mapNotNull { row ->
+            val e = row as? JsonObject ?: return@mapNotNull null
+            parseScoresRows("[$e]").firstOrNull()
+        }.associate { it.score.pkg to it.score }
+        if (scores.isNotEmpty()) acc[rom] = acc[rom].orEmpty() + (version to scores)
+        acc
+    }
+}

@@ -215,7 +215,7 @@ jobs:
                              jsonb_agg(jsonb_build_object(
                                  'pkg', d.pkg,
                                  'uninstalls', d.uninstalls,
-                                 'small_batch', d.small_batch,
+                                 'small_batch', d.small_batch_uninstalls * 2 >= d.uninstalls,
                                  'verdict', public.verdict_of(d.uninstalls, d.survived,
                                                               d.reinstalled, d.restored),
                                  'updated_at', d.updated_at
@@ -301,13 +301,6 @@ jobs:
                   return None
 
           counts, digests, previous = {}, {}, {}
-          # 三份**派生快照**也进同一个「变没变」判断，名字按文件叫（顶层三个数组）。
-          #   plans               -> site/db/plans.json
-          #   package_scores       -> site/db/package_scores.json（按 rom / rom_version 聚合）
-          #   package_scores_rows  -> 上面那份展开成的行，APK 内置保底
-          # 以前只有 plans.json 单独参与判断，是因为「只有票数变化时 plans.json 会变，
-          # 而 plans 表本身没变」。package_scores 是同一个道理：它由只增不减的计数算出来。
-          fields = ['plans', 'package_scores', 'package_scores_rows']
           for t in tables:
               path = f'{out}/{t}.json'
               rows = load(path)
@@ -335,14 +328,9 @@ jobs:
           # 特殊情形：仓库里还没有 _meta.json（第一次跑），或者上一版没有 digests 字段
           # （老格式），一律当作「变了」，保证第一次一定能落地。
           # ---------------------------------------------------------------------------------
-          # 指纹只管「六张表内容变没变」——提交信息里的「变化：…」就是从它算的。
-          fingerprint = '|'.join(f'{t}:{digests[t]}' for t in tables)
+          # 指纹只管「六张表内容变没变」——提交信息里的「变化：…」是从它算的。
+          digest_fingerprint = '|'.join(f'{t}:{digests[t]}' for t in tables)
           old_fingerprint = ''
-          # 那一串**拼出来**的、要写进新 _meta.json 的指纹：六张表，外加下面这三份派生快照。
-          # 写成同一个字段而不是新开一个字段，是为了让「老仓库里没有这个字段」这条老规则
-          # （= 当作变了，保证第一次一定能落地）直接覆盖到新加的这三份：
-          # 升级当天的第一轮若只看见了新字段的一半，会漏掉一份从没生成过的快照。
-          digest_fields = [f'{t}:{digests[t]}' for t in fields]
           try:
               old_meta = json.loads(subprocess.run(
                   ['git', 'show', f'HEAD:{out}/_meta.json'],
@@ -351,41 +339,59 @@ jobs:
               old_digests = old_meta.get('digests') or {}
               if old_digests:
                   old_fingerprint = '|'.join(
-                      f'{t}:{old_digests.get(t, "")}' for t in tables + fields)
+                      f'{t}:{old_digests.get(t, "")}' for t in tables)
           except Exception:
+              old_meta = {}
               old_fingerprint = ''
 
-          # 客户端快照也参与判断：只有票数变化时 plans.json 会变，而 plans 表本身没变；
-          # package_scores.json 由只增不减的计数算出来，同理。两份都按文件内容比 sha。
-          snapshot_shas = {}
-          for name, path in (('plans', 'site/db/plans.json'),
-                             ('package_scores', 'site/db/package_scores.json')):
-              try:
-                  old = subprocess.run(
-                      ['git', 'show', f'HEAD:{path}'], capture_output=True, check=True
-                  ).stdout
-                  before = hashlib.sha256(old).hexdigest()
-              except Exception:
-                  before = ''
-              try:
-                  after = hashlib.sha256(open(path, 'rb').read()).hexdigest()
-              except Exception:
-                  after = ''
-              snapshot_shas[name] = (before, after)
+          # 客户端快照也参与判断：只有票数变化时 plans.json 会变，而 plans 表本身没变。
+          snapshot_path = 'site/db/plans.json'
+          try:
+              old_snapshot = subprocess.run(
+                  ['git', 'show', f'HEAD:{snapshot_path}'], capture_output=True, check=True
+              ).stdout
+              old_snapshot_sha = hashlib.sha256(old_snapshot).hexdigest()
+          except Exception:
+              old_snapshot_sha = ''
+          try:
+              new_snapshot_sha = hashlib.sha256(
+                  open(snapshot_path, 'rb').read()).hexdigest()
+          except Exception:
+              new_snapshot_sha = ''
+
+          # 包的安全分数（package_scores_for 的快照）同理：它由只增不减的计数算出来，
+          # 表没变它也可能变（新事件落在没人上报过的 ROM 版本上就会多出一行）。
+          # 和 plans 一样按**文件内容**比：工作区里那份是上一轮工作流写下的。
+          scores_path = 'site/db/package_scores.json'
+          try:
+              old_scores_sha = hashlib.sha256(subprocess.run(
+                  ['git', 'show', f'HEAD:{scores_path}'], capture_output=True, check=True
+              ).stdout).hexdigest()
+          except Exception:
+              old_scores_sha = ''
+          try:
+              new_scores_sha = hashlib.sha256(open(scores_path, 'rb').read()).hexdigest()
+          except Exception:
+              new_scores_sha = ''
+
+          # 仓库里还没有 package_scores.json（这个快照刚落地）时 old_scores_sha 是空串，
+          # 那一份永远等不到「变化」——所以「文件不存在」也要单独当一次变化，
+          # 否则第一份要等到某张表变化才会生成。
+          missing_scores = (old_scores_sha == '' and new_scores_sha == '')
 
           content_changed = (
               old_fingerprint == ''                      # 没有上一版，或有但缺 digests
               or old_fingerprint != digest_fingerprint    # 数据变了
-              or any(before and before != after for before, after in snapshot_shas.values())
+              or (old_snapshot_sha and old_snapshot_sha != new_snapshot_sha)
+              or (old_scores_sha and old_scores_sha != new_scores_sha)
+              or missing_scores
           )
 
-          # 「变化：…」只列六张表：提交信息要短，而且派生快照改动的起因本来就在这几张表里。
-          # 表被清空成 [] 时它的指纹（空表的 sha）会出现在老指纹里，所以还要看条数。
-          def changed_table(t):
-              if not old_fingerprint or f'{t}:{digests[t]}' not in old_fingerprint:
-                  return True
-              return old_meta.get('tables', {}).get(t) != counts[t]
-          changed_tables = [t for t in tables if changed_table(t)]
+          changed_tables = [t for t in tables
+                            if not old_fingerprint
+                            or f':{digests[t]}' not in old_fingerprint
+                            or old_fingerprint.split('|')[[f'{x}:' for x in tables].index(f'{t}:')]
+                               != f'{t}:{digests[t]}']
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
               f.write(f'changed={"true" if content_changed else "false"}\n')
@@ -465,7 +471,6 @@ jobs:
           import json
 
           src = json.load(open('/tmp/dump.json', encoding='utf-8'))
-          dump = json.load(open('/tmp/dump.json', encoding='utf-8'))
 
           # 先把两个计数汇总成字典再拼行。
           #

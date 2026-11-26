@@ -36,6 +36,13 @@ class TelemetryTest {
 
     private val device = DeviceContext("xiaomi", "hyperos", 1, 34)
 
+    /**
+     * 这一组测试量的是**后端**那条路（哪几个 RPC、body 长什么样），所以把快照两个源置空：
+     * 传空串等于「这个部署没发布快照」，读快照那一步直接跳过，和加快照之前的行为一致。
+     * 快照自己的行为由 [scoresComeFromSnapshotFirst] 那几个用例管。
+     */
+    private val noSnapshot = Pair("", "")
+
     /** The payload shape of protocol drafts without a device; only used for the fixed PoW vector. */
     private val powPayload =
         """{"v":1,"platform":"android","events":[{"e":"uninstalled","p":"com.example.bloat","w":"2026-10-26","b":"1"}]}"""
@@ -169,7 +176,7 @@ class TelemetryTest {
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val t = Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true })
+        val t = Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second)
         val s = assertNotNull(t.fetchScores(device))["a.b"]!!
         assertEquals(Verdict.SAFE, s.overall!!.verdict)
         assertEquals(Verdict.BOOTLOOP, s.device!!.verdict)
@@ -197,7 +204,7 @@ class TelemetryTest {
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val s = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }).fetchScores(device))["a.b"]!!
+        val s = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second).fetchScores(device))["a.b"]!!
         assertNull(s.family)
         assertNull(s.device)
         assertEquals(Verdict.SAFE, s.verdict)
@@ -260,14 +267,136 @@ class TelemetryTest {
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val scores = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }).fetchScores())
+        val scores = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second).fetchScores())
         assertEquals(Verdict.SAFE, scores["a.b"]!!.overall!!.verdict)
         assertEquals(Verdict.UNKNOWN, scores["c.d"]!!.overall!!.verdict)
         assertTrue(scores["c.d"]!!.overall!!.smallBatch)
         assertFalse(scores["a.b"]!!.overall!!.smallBatch)
 
         val failing = MockEngine { respondError(HttpStatusCode.BadRequest) }
-        assertNull(Telemetry(HttpClient(failing), "web", CoroutineScope(Job()), { true }).fetchScores())
+        assertNull(Telemetry(HttpClient(failing), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second).fetchScores())
+    }
+
+    /**
+     * 快照里有的那两行（家族 / 这个版本）**不再问后端**：只发一条 `package_scores`。
+     * 这是 `package_scores_for` 从「每次都查库」改成「先读 GitHub」的核心行为。
+     */
+    @Test
+    fun scoresComeFromSnapshotFirst() = runTest {
+        val paths = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            paths += request.url.encodedPath
+            val json = headersOf(HttpHeaders.ContentType, "application/json")
+            when {
+                request.url.encodedPath.endsWith("package_scores_for") ->
+                    respondError(HttpStatusCode.InternalServerError)
+                request.url.encodedPath.contains("package_scores") ->
+                    respond(
+                        """[{"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"safe","updated_at":"x"}]""",
+                        HttpStatusCode.OK, json,
+                    )
+                else -> respond(
+                    """[{"rom":"hyperos","rom_version":-1,"scores":[
+                        {"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"bootloop","updated_at":"x"}]},
+                       {"rom":"hyperos","rom_version":1,"scores":[
+                        {"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"breaks","updated_at":"x"}]}]""",
+                    HttpStatusCode.OK, json,
+                )
+            }
+        }
+        val t = Telemetry(
+            HttpClient(engine), "web", CoroutineScope(Job()), { true },
+            "https://snapshot.test/package_scores.json", "",
+        )
+        val s = assertNotNull(t.fetchScores(device))["a.b"]!!
+        assertEquals(Verdict.BREAKS, s.device!!.verdict)
+        assertEquals(Verdict.BOOTLOOP, s.family!!.verdict)
+        assertEquals(Verdict.SAFE, s.overall!!.verdict)
+        assertEquals(1, paths.count { it.endsWith("package_scores") && !it.endsWith("package_scores_for") })
+        assertTrue(paths.none { it.endsWith("package_scores_for") })
+    }
+
+    /**
+     * 快照读到了、但没有这个设备那条版本 → 那一行照旧问后端；也**不会**把家族行拿来顶替
+     * （两者口径不同，顶替等于报了一个这台机器上没验证过的结论）。
+     */
+    @Test
+    fun snapshotWithoutThisVersionStillAsksBackend() = runTest {
+        val paths = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            paths += request.url.encodedPath
+            val json = headersOf(HttpHeaders.ContentType, "application/json")
+            when {
+                request.url.encodedPath.endsWith("package_scores_for") -> respond(
+                    """[{"pkg":"a.b","uninstalls":40,"small_batch":false,"verdict":"breaks","updated_at":"x"}]""",
+                    HttpStatusCode.OK, json,
+                )
+                request.url.encodedPath.contains("package_scores") -> respond(
+                    """[{"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"safe","updated_at":"x"}]""",
+                    HttpStatusCode.OK, json,
+                )
+                else -> respond(
+                    """[{"rom":"hyperos","rom_version":-1,"scores":[
+                        {"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"bootloop","updated_at":"x"}]}]""",
+                    HttpStatusCode.OK, json,
+                )
+            }
+        }
+        val t = Telemetry(
+            HttpClient(engine), "web", CoroutineScope(Job()), { true },
+            "https://snapshot.test/package_scores.json", "",
+        )
+        val s = assertNotNull(t.fetchScores(device))["a.b"]!!
+        assertEquals(Verdict.BREAKS, s.device!!.verdict)
+        assertEquals(Verdict.BOOTLOOP, s.family!!.verdict)
+        assertEquals(1, paths.count { it.endsWith("package_scores_for") })
+    }
+
+    /**
+     * 快照还没发布（404 / 空文件）→ 两条都照旧问后端，且**不算失败**：
+     * 「快照不存在」是正常路径，不该让下面那两条请求跟着不敢发。
+     */
+    @Test
+    fun missingSnapshotFallsBackToBackend() = runTest {
+        val paths = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            paths += request.url.encodedPath
+            val json = headersOf(HttpHeaders.ContentType, "application/json")
+            if (request.url.encodedPath.contains("package_scores")) {
+                respond(
+                    """[{"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"${if (request.url.encodedPath.endsWith("package_scores_for")) "breaks" else "safe"}","updated_at":"x"}]""",
+                    HttpStatusCode.OK, json,
+                )
+            } else {
+                respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val t = Telemetry(
+            HttpClient(engine), "web", CoroutineScope(Job()), { true },
+            "https://snapshot.test/package_scores.json", "",
+        )
+        val s = assertNotNull(t.fetchScores(device))["a.b"]!!
+        assertEquals(Verdict.BREAKS, s.device!!.verdict)
+        // 第二个源是空的，所以只拉了一次快照；两条 `package_scores_for`（-1 与这个版本）都照旧发了。
+        assertEquals(2, paths.count { it.endsWith("package_scores_for") })
+    }
+
+    /** 快照的解析：按 rom / rom_version 分组，坏行丢掉，不认得的键忽略。 */
+    @Test
+    fun snapshotParsesGroups() {
+        val groups = parseScoresSnapshot(
+            """[{"rom":"HyperOS","rom_version":-1,"scores":[
+                    {"pkg":"a.b","uninstalls":5,"verdict":"safe","extra":1},
+                    {"pkg":""}]},
+               {"rom":"hyperos","rom_version":2,"scores":[
+                    {"pkg":"a.b","uninstalls":5,"verdict":"bootloop"}]},
+               {"rom":"","rom_version":1,"scores":[{"pkg":"x.y"}]},
+               {"rom":"oneui","rom_version":1,"scores":[]}]""",
+        )
+        assertEquals(setOf("hyperos"), groups.keys)
+        assertEquals(setOf(-1, 2), groups["hyperos"]!!.keys)
+        assertEquals(Verdict.SAFE, groups["hyperos"]!![-1]!!["a.b"]!!.verdict)
+        assertEquals(Verdict.BOOTLOOP, groups["hyperos"]!![2]!!["a.b"]!!.verdict)
     }
 
     /** Hands out [challenge]; an easy-to-solve one is not possible, so the real PoW runs. */
