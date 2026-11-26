@@ -563,6 +563,22 @@ object FlGlyphs {
         ),
     )
 
+    /**
+     * 三条等长横线：「分类侧栏」那个 ☰。
+     *
+     * 和 [appsList] 不是同一个符号：那个左右两半不一样（左边三块、右边三根线），看着像
+     * "应用列表 / 网格"；`Symbols.menu_rounded` 才是三条一样长的横线，也就是"把这边的东西
+     * 列出来"的那个 ☰。
+     */
+    val menu = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(listOf(GlyphVertex(4f, 7f, 0f), GlyphVertex(20f, 7f, 0f)), role = GlyphRole.Line),
+            GlyphPolyline(listOf(GlyphVertex(4f, 12f, 0f), GlyphVertex(20f, 12f, 0f)), role = GlyphRole.Line),
+            GlyphPolyline(listOf(GlyphVertex(4f, 17f, 0f), GlyphVertex(20f, 17f, 0f)), role = GlyphRole.Line),
+        ),
+    )
+
     val iconTile = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(

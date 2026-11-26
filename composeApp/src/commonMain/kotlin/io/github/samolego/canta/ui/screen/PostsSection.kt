@@ -240,20 +240,24 @@ private enum class PostBoard(val label: String) {
  *   不是为了发一条帖子先等一次网络——写帖的人大多数不贴方案。
  */
 /**
- * 帖子页顶上的常驻工具栏，逐项照 fluxdo `topics_page.dart` 的 `_buildToolbar`：
+ * 帖子页顶上的常驻工具栏，逐项照 fluxdo `topics_page.dart:1267-1323` 的 `_buildToolbar` 与
+ * `widgets/topic/topic_filter_menu.dart` 的 `titleStyle` 形态：
  *
- * - 高 **48dp**（`_toolbarRowHeight = 48`），不折叠
- * - 左：**8dp 留白 + ☰**（分类入口）
- * - 中：**「最新 ▾」**（`FilterDropdown`：文字 **13sp / w500** + `arrow_drop_down`，带计数就写 `最新 (3)`）
- * - 右：🔍（把焦点打到下面那根搜索胶囊上） + 8dp 留白
+ * - 高 **48dp**（`_toolbarRowHeight = 48`），永不折叠
+ * - 左：**8dp 留白 + ☰**（三条等长横线，`Symbols.menu_rounded`；打开分类侧栏）
+ * - 中：**筛选用页面标题的样子**——「最新」**17sp / w700 / onSurface**（不是 13sp 的下拉小字），
+ *   右侧一个 **20dp 圆**里住着 chevron：底 `surfaceContainerHighest` 60%，菜单开着换
+ *   `secondaryContainer` 并翻转 180°（`topic_filter_menu.dart:298-343`）
+ * - 右：**没有搜索**。fluxdo 的搜索是工具栏**下面一行**的胶囊（`_capsuleRowHeight = 48`），
+ *   顶栏右端只有一个"胶囊收拢成图标时"的落位格；不登录时那儿是 🔔。我们这边胶囊常驻在
+ *   列表上方一行，所以右端只留 8dp。
+ * - 计数只跟两种口径走：最新 = 新帖 + 未读，未读 = 未读（`_countForFilter`）；其余口径不挂数字。
  *
  * 为什么自己画一条而不是用 `ScreenTopBar`：那个是 72dp、标题居中，而 fluxdo 这里是 **48dp、
- * 标题左对齐**，右边只有图标。高度这件事不能靠 padding 硬凑——它决定了列表第一屏能露出几条。
+ * 左边图标 + 标题左对齐**。高度这件事不能靠 padding 硬凑——它决定了列表第一屏能露出几条。
  *
  * 开了分类侧栏（见 [PostCategoryDrawer]）以后，☰ 变成强调色，中间那行接一句「· 分类」/「· #标签」：
  * 抽屉一关，人得看得出列表是按什么筛的，否则会以为帖子少了。
- *
- * [filterMenuOpen] 由调用方持有，用 `DropdownMenu` 打开口径面板。
  */
 @Composable
 private fun PostsToolbar(
@@ -261,9 +265,9 @@ private fun PostsToolbar(
     category: String,
     tag: String,
     newCount: Int,
+    menuOpen: Boolean,
     onOpenCategories: () -> Unit,
     onOpenFilters: () -> Unit,
-    onSearch: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -276,26 +280,28 @@ private fun PostsToolbar(
     ) {
         Spacer(modifier = Modifier.width(8.dp))
         // ☰ 分类入口：打开 fluxdo 那条从左侧滑出的分类侧栏（见 [PostCategoryDrawer]）。
+        // 图标必须是**三条等长横线**：`appsList` 那种"左三块右三线"的格子看着像应用列表。
         TopBarIconButton(
-            glyph = FlGlyphs.appsList,
-            label = "分类",
+            glyph = FlGlyphs.menu,
+            label = "浏览分类",
             active = category.isNotBlank() || tag.isNotBlank(),
             onClick = onOpenCategories,
         )
 
-        // 「最新 ▾」：口径 + 计数 + 当前筛选。左对齐、占满中间，窄屏时文字自己省略。
+        // 「最新」+ 活指示器：**页面标题字号**（17sp / w700 / onSurface），不是下拉小按钮的 13sp。
+        // 左对齐、占满中间；窄屏时文字自己省略。
         Row(
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(50))
                 .clickable(role = Role.Button, onClick = onOpenFilters)
-                .padding(start = 10.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
+                .padding(start = 4.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = buildString {
                     append(board.label)
-                    if (board == PostBoard.Latest && newCount > 0) append(" ($newCount)")
+                    if (newCount > 0) append(" ($newCount)")
                     // 当前按哪个分类/标签筛，写在这里：抽屉关了以后，列表为什么短了要有交代。
                     if (tag.isNotBlank()) {
                         append(" · #$tag")
@@ -303,24 +309,38 @@ private fun PostsToolbar(
                         append(" · $category")
                     }
                 },
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
                 color = scheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            FlGlyphIcon(
-                glyph = FlGlyphs.chevronDown,
-                size = 16.dp,
-                tint = scheme.onSurfaceVariant,
-            )
+            Spacer(modifier = Modifier.width(6.dp))
+            // chevron 住在 20dp 的色调小圆里：开着换 `secondaryContainer` 并翻转 180°
+            // （`topic_filter_menu.dart:320-343`）。比一个裸 ▾ 更像"这里能开"。
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (menuOpen) {
+                            scheme.secondaryContainer
+                        } else {
+                            scheme.surfaceContainerHighest.copy(alpha = 0.6f)
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                FlGlyphIcon(
+                    glyph = FlGlyphs.chevronDown,
+                    size = 15.dp,
+                    tint = if (menuOpen) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
+                    modifier = Modifier.rotate(if (menuOpen) 180f else 0f),
+                )
+            }
         }
 
-        TopBarIconButton(
-            glyph = FlGlyphs.search,
-            label = "搜索",
-            onClick = onSearch,
-        )
+        // 右端只有 8dp 留白：搜索不在这条栏上（胶囊常驻在列表上方那一行）。
         Spacer(modifier = Modifier.width(8.dp))
     }
 }
@@ -523,7 +543,7 @@ internal fun PostsScreen(
     var drawerOpen by remember { mutableStateOf(false) }
     /** 右下角 FAB 的展开状态（草稿 / 写新帖 / 刷新）。 */
     var fabOpen by remember { mutableStateOf(false) }
-    /** 顶栏 🔍 点一下把光标打进搜索胶囊。 */
+    /** 搜索胶囊的焦点。胶囊常驻在列表上方一行，这一页没有「点图标跳进去」的入口。 */
     val searchFocus = remember { FocusRequester() }
     /** 正在编辑的那篇草稿的本地 id；空串表示没在编辑。 */
     var editorId by remember { mutableStateOf("") }
@@ -1065,7 +1085,8 @@ internal fun PostsScreen(
                 )
 
 else -> Column {
-                    // 列表页顶上不是「标题栏」而是 fluxdo 那条 48dp 工具栏：☰ / 最新▾ / 🔍。
+                    // 列表页顶上不是「标题栏」而是 fluxdo 那条 48dp 工具栏：☰ / 最新▾（没有 🔍，
+                    // 搜索是它下面那一行常驻的胶囊）。
                     // 原来这里是 72dp 居中标题 + 「写帖子」文字按钮——两样都不在 fluxdo 的首页上。
                     Box {
                         PostsToolbar(
@@ -1073,12 +1094,9 @@ else -> Column {
                             category = categoryPick,
                             tag = tagPick,
                             newCount = freshCount,
+                            menuOpen = filterMenuOpen,
                             onOpenCategories = { drawerOpen = true },
                             onOpenFilters = { filterMenuOpen = true },
-                            onSearch = {
-                                // 搜索胶囊常显在工具栏下面，这里只把光标送进去。
-                                searchFocus.requestFocus()
-                            },
                         )
                         DropdownMenu(
                             expanded = filterMenuOpen,
@@ -1239,6 +1257,8 @@ else -> Column {
                 },
                 listState = postListState,
                 searchFocus = searchFocus,
+                drawnCategories = drawerCategories,
+                onOpenDrawer = { drawerOpen = true },
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
                 onQueryChange = { query = it },
@@ -1403,8 +1423,12 @@ private fun PostListPane(
     /** 长按一张卡片：切收藏。 */
     onLongPress: (CommunityPost) -> Unit,
     listState: LazyListState,
-    /** 顶栏 🔍 把光标打进搜索框要用的 focusRequester（由 PostsScreen 持有）。 */
+    /** 搜索胶囊的焦点（胶囊常驻，这一页没有「点图标跳过去」的入口）。 */
     searchFocus: FocusRequester,
+    /** 分类 chips 行要列的分类（与侧栏同一份清单）。 */
+    drawnCategories: List<String>,
+    /** 分类 chips 行末尾那颗「＋」：打开侧栏（pin / 订阅都在那边）。 */
+    onOpenDrawer: () -> Unit,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
     onQueryChange: (String) -> Unit,
@@ -1427,6 +1451,11 @@ private fun PostListPane(
     val pinnedShown = remember(shown) { shown.filter { it.pinned } }
     val normalShown = remember(shown) { shown.filterNot { it.pinned } }
     var pinnedOpen by remember { mutableStateOf(true) }
+    // 分类 chips 行（工具条下面那一行，`_navRowHeight = 40`）。初始选中「全部」，即 `category == ""`。
+    // 「＋」那一颗永远是**操作**，不是分类：它打开侧栏（pin / 订阅都在那边）。
+    val chipLabels = remember(category, drawnCategories) {
+        listOf("全部") + drawnCategories
+    }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -1434,178 +1463,188 @@ private fun PostListPane(
         state = refreshState,
         modifier = modifier.fillMaxSize(),
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = PaddingValues(bottom = 96.dp),
-        ) {
-            // 胶囊搜索框：常显，不占一个"点搜索才出现"的状态（截图里它一直在最上面）。
-            // 圆角 50%、底色是比页面浅一层的 surfaceVariant、边框全透明 —— 看起来是一根软胶囊。
-            item(key = "search") {
-                SearchCapsule(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    focusRequester = searchFocus,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                )
-            }
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 搜索胶囊**常驻在列表外面**的那一行：fluxdo 的搜索是工具栏下面整行 48dp 的胶囊
+            // （`_capsuleRowHeight = 48`，展开态 rect 在 `statusBar + 48 + 4`），它不跟着列表滚走。
+            // 放进 LazyColumn 里的话往下滑就看不见了——那不是同一个东西。
+            SearchCapsule(
+                value = query,
+                onValueChange = onQueryChange,
+                focusRequester = searchFocus,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+            )
 
-            // 「↑ 查看 N 个新的或更新的话题」：只有真的有未读时才出现，点一下重拉一遍。
-            if (board == PostBoard.Latest && freshCount > 0) {
-                item(key = "new-topics") {
-                    FreshTopicsBanner(count = freshCount, onClick = onRefresh)
+            // 分类 chips 行：与顶栏、胶囊一样常驻。选中态是 `secondaryContainer` 实心 + w600
+            // （`topics_page.dart:2406-2470` 的 `_CategoryChip`）。
+            PostsCategoryChips(
+                labels = chipLabels,
+                selected = category,
+                onPick = onCategoryChange,
+                onManage = onOpenDrawer,
+            )
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 96.dp),
+            ) {
+                // 「↑ 查看 N 个新的或更新的话题」：只有真的有未读时才出现，点一下重拉一遍。
+                if (board == PostBoard.Latest && freshCount > 0) {
+                    item(key = "new-topics") {
+                        FreshTopicsBanner(count = freshCount, onClick = onRefresh)
+                    }
                 }
-            }
 
-            // 一周一期的 GitHub AI 开源周榜：列表最上面一条**单行文字入口**（搜索框展开时让位给它），
-            // 点开是实时榜单。不占底栏，也不占多少高度：帖子列表才是这一页的主体。
-            if (weeklyRank != null && onOpenWeeklyRank != null) {
-                item(key = "weekly-rank") {
-                    WeeklyRankTeaserCard(
-                        repository = weeklyRank,
-                        onClick = onOpenWeeklyRank,
-                    )
-                }
-            }
-
-
-            // 我自己还没改名字：列表顶端说一次，并指出去哪儿改（旁边那个红点一直在呼吸）。
-            if (authorId.isNotBlank() && isDefaultAuthorName(selfName)) {
-                item(key = "anonymous-banner") { AnonymousHintBanner() }
-            }
-
-            if (drafts.isNotEmpty()) {
-                val newest = drafts.first()
-                item(key = "drafts-head") {
-                    DraftBanner(
-                        count = drafts.size,
-                        newest = newest,
-                        onContinue = { onOpenDraft(newest) },
-                    )
-                }
-                items(drafts, key = { "draft-${it.id}" }) { draft ->
-                    DraftRow(
-                        draft = draft,
-                        onClick = { onOpenDraft(draft) },
-                        onDelete = { onDeleteDraft(draft) },
-                    )
-                }
-            }
-
-            // 置顶话题单独成一组（截图里顶上那块「置顶话题 · 3」）：置顶的老帖混在时间序里会把
-            // 新帖挤下去，分组后既看得见又不挡路。默认展开、点一下就收起。
-            if (pinnedShown.isNotEmpty()) {
-                item(key = "pinned-head") {
-                    PinnedTopicsHeader(
-                        count = pinnedShown.size,
-                        unreadCount = pinnedShown.count { unreadOf(it) },
-                        open = pinnedOpen,
-                        onToggle = { pinnedOpen = !pinnedOpen },
-                    )
-                }
-                if (pinnedOpen) {
-                    items(pinnedShown, key = { "pin-${it.id}" }) { post ->
-                        PostCard(
-                            post = post,
-                            mine = authorId.isNotBlank() && post.authorId == authorId,
-                            unread = unreadOf(post),
-                            read = readOf(post),
-                            saved = savedOf(post),
-                            onClick = { onOpen(post) },
-                            onLongClick = { onLongPress(post) },
+                // 一周一期的 GitHub AI 开源周榜：列表最上面一条**单行文字入口**（搜索框展开时让位给它），
+                // 点开是实时榜单。不占底栏，也不占多少高度：帖子列表才是这一页的主体。
+                if (weeklyRank != null && onOpenWeeklyRank != null) {
+                    item(key = "weekly-rank") {
+                        WeeklyRankTeaserCard(
+                            repository = weeklyRank,
+                            onClick = onOpenWeeklyRank,
                         )
                     }
                 }
-            }
 
-            item(key = "posts-head") {
-                PostSectionHeader(
-                    label = when {
-                        board == PostBoard.Mine -> "我发的"
-                        board == PostBoard.Hot -> "热门"
-                        category.isNotBlank() -> category
-                        else -> "帖子"
-                    },
-                    count = normalShown.size,
-                )
-            }
 
-            if (error != null) {
-                item(key = "posts-error") { PostNote(text = error) }
-            }
-
-            if (loading && posts.isEmpty()) {
-                // 首屏还不知道有没有帖子：画四张灰卡而不是转圈。灰卡说的是"一列帖子马上到"，
-                // 转圈说的是"卡住了"。也不说"还没有人发帖"：那是另一件事。
-                items(count = 4, key = { "posts-skeleton-$it" }) {
-                    PostSkeletonCard()
+                // 我自己还没改名字：列表顶端说一次，并指出去哪儿改（旁边那个红点一直在呼吸）。
+                if (authorId.isNotBlank() && isDefaultAuthorName(selfName)) {
+                    item(key = "anonymous-banner") { AnonymousHintBanner() }
                 }
-            }
 
-            if (!loading && posts.isNotEmpty() && shown.isEmpty()) {
-                item(key = "posts-filtered-empty") {
-                    PostNote(
-                        text = if (board == PostBoard.Mine && authorId.isBlank()) {
-                            "还没认出身份，「我的」这一栏要等身份就绪。"
-                        } else if (board == PostBoard.Saved && savedTotal > 0) {
-                            "收藏里有 $savedTotal 条，只是都还没拉到列表里：往下翻，或者点「加载更多」。"
-                        } else if (board == PostBoard.Saved) {
-                            "收藏是空的：在帖子详情里点「收藏」，它就会收到这一栏。"
-                        } else {
-                            "这个口径下没有帖子，换个分类或者点「最新」看看。"
-                        },
-                    )
+                if (drafts.isNotEmpty()) {
+                    val newest = drafts.first()
+                    item(key = "drafts-head") {
+                        DraftBanner(
+                            count = drafts.size,
+                            newest = newest,
+                            onContinue = { onOpenDraft(newest) },
+                        )
+                    }
+                    items(drafts, key = { "draft-${it.id}" }) { draft ->
+                        DraftRow(
+                            draft = draft,
+                            onClick = { onOpenDraft(draft) },
+                            onDelete = { onDeleteDraft(draft) },
+                        )
+                    }
                 }
-            }
 
-            if (posts.isEmpty() && !loading && error == null) {
-                item(key = "posts-empty") {
-                    PostNote(
-                        text = if (hasBackend) {
-                            "还没有人发帖。第一帖可以是你在用的某个方案、某台机器，或者一句吐槽。"
-                        } else {
-                            "社区后端没连上：这一栏现在只是一张空页，连上没有帖子的时候才是真的没人发。"
-                        },
-                    )
-                }
-            }
-
-            items(normalShown, key = { "post-${it.id}" }) { post ->
-                PostCard(
-                    post = post,
-                    mine = authorId.isNotBlank() && post.authorId == authorId,
-                    unread = unreadOf(post),
-                    read = readOf(post),
-                    saved = savedOf(post),
-                    onClick = { onOpen(post) },
-                    onLongClick = { onLongPress(post) },
-                )
-            }
-
-            if (hasMore && posts.size >= POSTS_PAGE) {
-                item(key = "posts-more") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        TextButton(onClick = onLoadMore, enabled = !loadingMore) {
-                            Text(if (loadingMore) "正在拉…" else "加载更多")
+                // 置顶话题单独成一组（截图里顶上那块「置顶话题 · 3」）：置顶的老帖混在时间序里会把
+                // 新帖挤下去，分组后既看得见又不挡路。默认展开、点一下就收起。
+                if (pinnedShown.isNotEmpty()) {
+                    item(key = "pinned-head") {
+                        PinnedTopicsHeader(
+                            count = pinnedShown.size,
+                            unreadCount = pinnedShown.count { unreadOf(it) },
+                            open = pinnedOpen,
+                            onToggle = { pinnedOpen = !pinnedOpen },
+                        )
+                    }
+                    if (pinnedOpen) {
+                        items(pinnedShown, key = { "pin-${it.id}" }) { post ->
+                            PostCard(
+                                post = post,
+                                mine = authorId.isNotBlank() && post.authorId == authorId,
+                                unread = unreadOf(post),
+                                read = readOf(post),
+                                saved = savedOf(post),
+                                onClick = { onOpen(post) },
+                                onLongClick = { onLongPress(post) },
+                            )
                         }
                     }
                 }
-            }
 
-            item(key = "posts-foot") {
-                PostNote(
-                    text = if (canWrite) {
-                        "帖子只经后端读写：认不出身份就发不出去，也删不了别人的帖子。" +
-                            "手停下来 700 毫秒存一次本地草稿，发出去成功之后才删。"
-                    } else {
-                        "现在只能看：还没认出身份，写帖子会提示重新进一次社区页。"
-                    },
-                )
+                item(key = "posts-head") {
+                    PostSectionHeader(
+                        label = when {
+                            board == PostBoard.Mine -> "我发的"
+                            board == PostBoard.Hot -> "热门"
+                            category.isNotBlank() -> category
+                            else -> "帖子"
+                        },
+                        count = normalShown.size,
+                    )
+                }
+
+                if (error != null) {
+                    item(key = "posts-error") { PostNote(text = error) }
+                }
+
+                if (loading && posts.isEmpty()) {
+                    // 首屏还不知道有没有帖子：画四张灰卡而不是转圈。灰卡说的是"一列帖子马上到"，
+                    // 转圈说的是"卡住了"。也不说"还没有人发帖"：那是另一件事。
+                    items(count = 4, key = { "posts-skeleton-$it" }) {
+                        PostSkeletonCard()
+                    }
+                }
+
+                if (!loading && posts.isNotEmpty() && shown.isEmpty()) {
+                    item(key = "posts-filtered-empty") {
+                        PostNote(
+                            text = if (board == PostBoard.Mine && authorId.isBlank()) {
+                                "还没认出身份，「我的」这一栏要等身份就绪。"
+                            } else if (board == PostBoard.Saved && savedTotal > 0) {
+                                "收藏里有 $savedTotal 条，只是都还没拉到列表里：往下翻，或者点「加载更多」。"
+                            } else if (board == PostBoard.Saved) {
+                                "收藏是空的：在帖子详情里点「收藏」，它就会收到这一栏。"
+                            } else {
+                                "这个口径下没有帖子，换个分类或者点「最新」看看。"
+                            },
+                        )
+                    }
+                }
+
+                if (posts.isEmpty() && !loading && error == null) {
+                    item(key = "posts-empty") {
+                        PostNote(
+                            text = if (hasBackend) {
+                                "还没有人发帖。第一帖可以是你在用的某个方案、某台机器，或者一句吐槽。"
+                            } else {
+                                "社区后端没连上：这一栏现在只是一张空页，连上没有帖子的时候才是真的没人发。"
+                            },
+                        )
+                    }
+                }
+
+                items(normalShown, key = { "post-${it.id}" }) { post ->
+                    PostCard(
+                        post = post,
+                        mine = authorId.isNotBlank() && post.authorId == authorId,
+                        unread = unreadOf(post),
+                        read = readOf(post),
+                        saved = savedOf(post),
+                        onClick = { onOpen(post) },
+                        onLongClick = { onLongPress(post) },
+                    )
+                }
+
+                if (hasMore && posts.size >= POSTS_PAGE) {
+                    item(key = "posts-more") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            TextButton(onClick = onLoadMore, enabled = !loadingMore) {
+                                Text(if (loadingMore) "正在拉…" else "加载更多")
+                            }
+                        }
+                    }
+                }
+
+                item(key = "posts-foot") {
+                    PostNote(
+                        text = if (canWrite) {
+                            "帖子只经后端读写：认不出身份就发不出去，也删不了别人的帖子。" +
+                                "手停下来 700 毫秒存一次本地草稿，发出去成功之后才删。"
+                        } else {
+                            "现在只能看：还没认出身份，写帖子会提示重新进一次社区页。"
+                        },
+                    )
+                }
             }
         }
     }
@@ -2274,6 +2313,91 @@ private fun ThreadMetaDivider() {
         color = MaterialTheme.colorScheme.outline,
         modifier = Modifier.padding(horizontal = 6.dp),
     )
+}
+
+/**
+ * 分类 chips 行（工具条下面那一行，`_navRowHeight = 40`）：
+ *
+ * 「全部」+ 分类 + 「＋」。
+ *
+ * - 几何照 `topics_page.dart:2406-2480` 的 `_CategoryChip`：整行高 **40**（chip 上下各 6 留白），
+ *   横向可滚、左右 padding **12**、chip 之间 **8**；chip 内左右 **14**，文字 **13sp / 行高 1.0**，
+ *   选中 **w600**、未选 **w500**。
+ * - 颜色：选中 = `secondaryContainer` + `onSecondaryContainer`（M3 filter chip 的选中态）；
+ *   未选 = `surfaceContainerHigh` + `onSurface` 85%；「＋」是**操作**，用更淡的
+ *   `surfaceContainerHighest` 35% + `onSurfaceVariant` 80%。
+ * - 「全部」= `category == ""`；点已选的那一颗什么都不做（不看分类时就该滚回顶部，这边没有那个动作）。
+ *
+ * 为什么不复用 [PostChip]：那是编辑器里的属性 chip（实心主色 / 描边两态、labelSmall），
+ * 尺寸与配色都和首页导航这一行不一样，混用会让两处看起来像同一种控件。
+ */
+@Composable
+private fun PostsCategoryChips(
+    labels: List<String>,
+    selected: String,
+    onPick: (String) -> Unit,
+    onManage: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        labels.forEach { label ->
+            val name = if (label == "全部") "" else label
+            CategoryChip(
+                label = label,
+                selected = name == selected,
+                onClick = { onPick(name) },
+            )
+        }
+        // ＋：分类管理（pin / 订阅都在侧栏里）。视觉上是"操作"，不是某一类。
+        CategoryChip(label = "＋", selected = false, isAction = true, onClick = onManage)
+    }
+}
+
+/** chips 行里的一颗药丸，几何与配色见 [PostsCategoryChips]。 */
+@Composable
+private fun CategoryChip(
+    label: String,
+    selected: Boolean,
+    isAction: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val bg = when {
+        selected -> scheme.secondaryContainer
+        isAction -> scheme.surfaceContainerHighest.copy(alpha = 0.35f)
+        else -> scheme.surfaceContainerHigh
+    }
+    val fg = when {
+        selected -> scheme.onSecondaryContainer
+        isAction -> scheme.onSurfaceVariant.copy(alpha = 0.8f)
+        else -> scheme.onSurface.copy(alpha = 0.85f)
+    }
+    Box(
+        modifier = Modifier
+            // 整行 40：chip 本身撑满这一格的高，上下各留 6 靠外层 padding。
+            .padding(vertical = 6.dp)
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            lineHeight = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = fg,
+            maxLines = 1,
+        )
+    }
 }
 
 /** 分类标签：一小块颜色 + 分类名，浅底圆角。颜色与列表里的色块同一个来源（后端下发 / 兜底 / 可读化）。 */
