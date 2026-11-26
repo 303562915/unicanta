@@ -9,6 +9,14 @@ const val COMMENT_KIND_PLAN: String = "plan"
 const val COMMENT_KIND_APP: String = "app"
 
 /**
+ * 一条机场下面的评论：`target` 是 `airport_entries.id` 的字符串。
+ *
+ * 机场的底子（认同 / 不认同、五星）已经能说「这条值不值得看」，但说不清「哪条线路挂了」
+ * 「续费从哪进」——那是评论的话。
+ */
+const val COMMENT_KIND_AIRPORT: String = "airport"
+
+/**
  * How many rows one page of an inbox list holds.
  *
  * The page asks for this many and no more: a phone that parses 200 rows of history before it can

@@ -1723,6 +1723,65 @@ class PlanRepository(
         }.getOrNull()
     }
 
+    /**
+     * 一条机场下面的评论，最新在前。[viewer] 决定哪些心是点亮的。
+     *
+     * 先走机场专用的 `airport_comments_for`（它只收一个 id，客户端不必拼 `kind`）；后端还没有
+     * 这个函数时退回通用的 `comments_for('airport', id)`，再没有就拿空表——一个老后端的机场
+     * 页面因此是「还没有人评论」，而不是报错。
+     */
+    suspend fun airportComments(airportId: Long, viewer: String = ""): List<PlanComment> {
+        if (airportId <= 0L) return emptyList()
+        rpc("airport_comments_for", buildJsonObject { put("p_id", airportId) }.toString())
+            ?.let { text -> return parseComments(text) }
+        if (!functionMissing) return emptyList()
+        return commentsFor(COMMENT_KIND_AIRPORT, airportId.toString(), viewer)
+    }
+
+    /**
+     * 在一条机场下面发一条评论 / 一条回复，回答它的 id；null 表示后端没接。
+     *
+     * 身份与其它写函数一致：认出来的身份优先，认不出来才用自报号码；名字空着时后端按 `#编号`
+     * 补一个，读的人至少看得出这是两个人。
+     */
+    suspend fun commentOnAirport(
+        airportId: Long,
+        body: String,
+        author: String,
+        authorId: String = "",
+        replyTo: Long = 0L,
+        deviceModel: String = "",
+        systemName: String = "",
+    ): Long? {
+        if (airportId <= 0L || body.isBlank()) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_target", airportId.toString())
+            put("p_body", body)
+            put("p_author", author)
+            put("p_author_id", authorId)
+            put("p_model", deviceModel)
+            put("p_system", systemName)
+            if (replyTo > 0L) put("p_parent", replyTo)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        rpc("airport_comment_add", payload)?.let { text ->
+            return runCatching { json.parseToJsonElement(text).jsonPrimitive.longOrNull }.getOrNull()
+        }
+        if (!functionMissing) return null
+        // 后端还没有机场专用的写函数：走通用的那条，kind 由这里写死，机场页面因此照样能发。
+        return comment(
+            kind = COMMENT_KIND_AIRPORT,
+            target = airportId.toString(),
+            body = body,
+            author = author,
+            authorId = authorId,
+            replyTo = replyTo,
+            deviceModel = deviceModel,
+            systemName = systemName,
+        )
+    }
+
     // ---------------------------------------------------------------- 积分（签到 + 商城）
 
     /** 这个身份的钱包：余额、今天签到了没有、连签几天。 */

@@ -47,10 +47,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.community.COMMENT_KIND_AIRPORT
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
+import io.github.samolego.canta.ui.component.shortStamp
+import io.github.samolego.canta.ui.component.threadKey
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
@@ -95,6 +99,14 @@ private val AirportTileSize = 34.dp
  * 十条刚好是手机一屏多一点，慢机也测得出来，快机划两下就到底。
  */
 private const val AirportPageSize = 10
+
+/**
+ * 详情弹窗里先画几条一级评论。
+ *
+ * 弹窗自己滚动、高度有限，一口气画几十条会把它变成一个长页面；先画这么多，剩下的在下面说一句
+ * 「还有 N 条」——想看的人自然会往下翻、往下发。
+ */
+private const val AIRPORT_COMMENTS_SHOWN = 12
 
 /** 机场类型：值 → 页面上的名字，顺序就是选择器的顺序。 */
 private val AirportKinds = listOf(
@@ -384,6 +396,8 @@ internal fun RecommendationsAirportTab(
             entry = opened,
             busy = busyKey == "airport:${opened.id}",
             canAct = who.isNotEmpty(),
+            canComment = setupGate.ready,
+            commentGate = setupGate.prompt,
             subscribeUrl = subscriptions[opened.id].orEmpty(),
             noteExpanded = detailsExpanded,
             onToggleNote = { detailsExpanded = !detailsExpanded },
@@ -394,6 +408,10 @@ internal fun RecommendationsAirportTab(
             onOpenUrl = {
                 if (opened.url.isNotBlank()) platform.openUrl(opened.url)
             },
+            repository = repository,
+            author = author,
+            authorId = who,
+            platform = platform,
         )
     }
 
@@ -663,6 +681,9 @@ private fun AirportDetailDialog(
     entry: CommunityAirport,
     busy: Boolean,
     canAct: Boolean,
+    /** 名字与头像设过了没有：没设过能看能投，但发不了评论（见 [IdentitySetup]）。 */
+    canComment: Boolean,
+    commentGate: String,
     subscribeUrl: String,
     noteExpanded: Boolean,
     onToggleNote: () -> Unit,
@@ -671,6 +692,10 @@ private fun AirportDetailDialog(
     onRate: (Int) -> Unit,
     onSubscribe: () -> Unit,
     onOpenUrl: () -> Unit,
+    repository: PlanRepository?,
+    author: String,
+    authorId: String,
+    platform: CantaPlatform,
 ) {
     val scheme = MaterialTheme.colorScheme
     CantaDialog(
@@ -881,6 +906,314 @@ private fun AirportDetailDialog(
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
         )
+
+        // 评论区：投票决定它排多前，评论说的是「哪条线路挂了」「怎么续费」这种具体的事。
+        Spacer(modifier = Modifier.height(14.dp))
+        AirportCommentSection(
+            entryId = entry.id,
+            repository = repository,
+            author = author,
+            authorId = authorId,
+            me = authorId.ifEmpty { author },
+            canComment = canComment,
+            gateHint = commentGate,
+            platform = platform,
+        )
+    }
+}
+
+/**
+ * 一条机场下面的评论：列表 + 输入栏，发完立刻重拉。
+ *
+ * 为什么自己拉而不走外层的 state：评论只在弹窗开着时才有人看，且每条机场各有一份；把它塞进
+ * [AirportTabState] 会让整个榜单跟着一份评论的重拉而去组合。所以这一块自己拿、自己发，
+ * 弹窗关掉就随组合一起消失。
+ */
+@Composable
+private fun AirportCommentSection(
+    entryId: Long,
+    repository: PlanRepository?,
+    author: String,
+    authorId: String,
+    me: String,
+    canComment: Boolean,
+    gateHint: String,
+    platform: CantaPlatform,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    var comments by remember(entryId) { mutableStateOf<List<PlanComment>>(emptyList()) }
+    var loading by remember(entryId) { mutableStateOf(true) }
+    var error by remember(entryId) { mutableStateOf<String?>(null) }
+    var draft by remember(entryId) { mutableStateOf("") }
+    var replyTo by remember(entryId) { mutableStateOf<PlanComment?>(null) }
+    var sending by remember(entryId) { mutableStateOf(false) }
+    /** 重拉的开关：发完一条 +1。 */
+    var reloadKey by remember(entryId) { mutableIntStateOf(0) }
+    /** 展开回复的那几条（线程起始评论的 id）。 */
+    var expanded by remember(entryId) { mutableStateOf(setOf<Long>()) }
+
+    LaunchedEffect(entryId, reloadKey) {
+        val repo = repository
+        if (repo == null) {
+            loading = false
+            error = "社区后端没连上，评论拉不到。"
+            return@LaunchedEffect
+        }
+        if (comments.isEmpty()) loading = true
+        val fresh = if (entryId <= 0L) null else repo.airportComments(entryId, me)
+        if (fresh != null) {
+            comments = fresh
+            error = null
+        } else {
+            error = repo.lastError ?: "评论没拉到，检查一下网络或代理。"
+        }
+        loading = false
+    }
+
+    val send: () -> Unit = send@{
+        val body = draft.trim()
+        val repo = repository
+        when {
+            !canComment -> platform.showMessage(gateHint.ifBlank { "先把名字和头像设好再发。" })
+            repo == null -> platform.showMessage("社区后端没连上，评论没发出去。")
+            body.isEmpty() || sending -> Unit
+            else -> scope.launch {
+                sending = true
+                // 先记下回复的是哪一条：下面要把 `replyTo` 清掉，清掉之后就取不到了。
+                val answered = replyTo
+                val id = repo.commentOnAirport(
+                    airportId = entryId,
+                    body = body,
+                    author = author,
+                    authorId = authorId,
+                    replyTo = answered?.id ?: 0L,
+                )
+                sending = false
+                if (id == null) {
+                    platform.showMessage("没发出去：${repo.lastError ?: "检查一下网络再试"}")
+                } else {
+                    draft = ""
+                    replyTo = null
+                    // 回复挂在起始评论下面：把那一条拉开，让人立刻看见自己刚发的那句。
+                    answered?.let { expanded = expanded + threadKey(it, 0) }
+                    reloadKey++
+                    platform.showMessage("评论已发出")
+                }
+            }
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "评论",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.primary,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = comments.size.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        if (loading) {
+            Text(
+                text = "正在读…",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    when {
+        error != null && comments.isEmpty() -> Text(
+            text = error.orEmpty(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+
+        !loading && comments.isEmpty() -> Text(
+            text = "还没有人评论。用过的可以在这里说一句线路和坑。",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+
+        else -> {
+            val threads = remember(comments) { comments.threads() }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                threads.take(AIRPORT_COMMENTS_SHOWN).forEach { thread ->
+                    val key = threadKey(thread.comment, 0)
+                    val open = key in expanded
+                    CommentThreadRow(
+                        comment = thread.comment,
+                        indent = false,
+                        onReply = {
+                            replyTo = thread.comment
+                            platform.showMessage("正在回复 ${thread.comment.author}")
+                        },
+                    )
+                    if (thread.replies.isNotEmpty()) {
+                        Text(
+                            text = if (open) "收起 ${thread.replies.size} 条回复" else "展开 ${thread.replies.size} 条回复",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = scheme.primary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(percent = 50))
+                                .clickable(role = Role.Button) {
+                                    expanded = if (open) expanded - key else expanded + key
+                                }
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                        )
+                        if (open) {
+                            thread.replies.forEach { answer ->
+                                CommentThreadRow(
+                                    comment = answer,
+                                    indent = true,
+                                    onReply = {
+                                        // 回复挂在起始评论下面：后端只有两层。
+                                        replyTo = thread.comment
+                                        platform.showMessage("正在回复 ${answer.author}")
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                if (threads.size > AIRPORT_COMMENTS_SHOWN) {
+                    Text(
+                        text = "还有 ${threads.size - AIRPORT_COMMENTS_SHOWN} 条，下面发一条就问得到。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+    if (!canComment && gateHint.isNotBlank()) {
+        Text(
+            text = gateHint,
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.error,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
+    if (replyTo != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "回复 @${replyTo?.author.orEmpty()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.primary,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "取消",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .clickable(role = Role.Button) { replyTo = null }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it.take(500) },
+            modifier = Modifier.weight(1f),
+            enabled = canComment && !sending,
+            placeholder = {
+                Text(
+                    text = if (replyTo != null) "回一句…" else "这条好不好用？说一句",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            },
+            textStyle = MaterialTheme.typography.bodySmall,
+            maxLines = 3,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Button(
+            enabled = canComment && !sending && draft.isNotBlank(),
+            onClick = send,
+        ) {
+            Text(if (sending) "发送中…" else "发送", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+/** 一条评论：谁写的、什么时候、正文，以及「回复」那一行小字。 */
+@Composable
+private fun CommentThreadRow(
+    comment: PlanComment,
+    indent: Boolean,
+    onReply: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (indent) Modifier.padding(start = 18.dp) else Modifier)
+            .clip(RoundedCornerShape(10.dp))
+            .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = comment.author.ifBlank { "匿名" },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.onSurface,
+            )
+            if (comment.deviceModel.isNotBlank()) {
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = comment.deviceModel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = shortStamp(comment.createdAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            text = comment.body,
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurface,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "回复",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .clickable(role = Role.Button, onClick = onReply)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+            if (comment.likes > 0) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "♥ ${comment.likes}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
