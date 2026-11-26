@@ -42,6 +42,20 @@
   "url": "https://github.com/gkd-kit/gkd"
  },
  {
+  "agrees": 43,
+  "applied": true,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "media",
+  "created_at": "2026-11-22T08:44:54.633742+00:00",
+  "disagrees": 2,
+  "id": 6,
+  "license": "MIT",
+  "name": "mpv-android",
+  "summary": "libmpv 内核的播放器，硬解、字幕、什么格式都能放。",
+  "url": "https://github.com/mpv-android/mpv-android"
+ },
+ {
   "agrees": 39,
   "applied": true,
   "author": "开发者",
@@ -54,20 +68,6 @@
   "name": "Shizuku",
   "summary": "用 ADB 权限唤醒系统接口，不 root 也能让 Canta 这类工具真正跑起来。",
   "url": "https://github.com/RikkaApps/Shizuku"
- },
- {
-  "agrees": 42,
-  "applied": false,
-  "author": "开发者",
-  "author_id": "10003",
-  "category": "media",
-  "created_at": "2026-11-22T08:44:54.633742+00:00",
-  "disagrees": 2,
-  "id": 6,
-  "license": "MIT",
-  "name": "mpv-android",
-  "summary": "libmpv 内核的播放器，硬解、字幕、什么格式都能放。",
-  "url": "https://github.com/mpv-android/mpv-android"
  },
  {
   "agrees": 37,
