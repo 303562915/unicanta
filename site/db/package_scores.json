@@ -11458,8 +11458,8 @@
    {
     "pkg": "com.miui.carlink",
     "small_batch": false,
-    "uninstalls": 316,
-    "updated_at": "2026-11-26T18:45:18.461482+00:00",
+    "uninstalls": 317,
+    "updated_at": "2026-11-26T21:54:01.473565+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11815,8 +11815,8 @@
    {
     "pkg": "com.miui.touchassistant",
     "small_batch": false,
-    "uninstalls": 224,
-    "updated_at": "2026-11-26T19:12:56.086015+00:00",
+    "uninstalls": 225,
+    "updated_at": "2026-11-26T21:54:01.473565+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -12389,8 +12389,8 @@
    {
     "pkg": "com.xiaomi.digitalkey",
     "small_batch": false,
-    "uninstalls": 266,
-    "updated_at": "2026-11-26T19:17:41.145859+00:00",
+    "uninstalls": 267,
+    "updated_at": "2026-11-26T21:54:01.473565+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17838,8 +17838,8 @@
    {
     "pkg": "com.miui.carlink",
     "small_batch": false,
-    "uninstalls": 233,
-    "updated_at": "2026-11-26T18:28:25.70196+00:00",
+    "uninstalls": 234,
+    "updated_at": "2026-11-26T21:54:01.473565+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -18076,8 +18076,8 @@
    {
     "pkg": "com.miui.touchassistant",
     "small_batch": false,
-    "uninstalls": 150,
-    "updated_at": "2026-11-26T17:30:22.084632+00:00",
+    "uninstalls": 151,
+    "updated_at": "2026-11-26T21:54:01.473565+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -18538,8 +18538,8 @@
    {
     "pkg": "com.xiaomi.digitalkey",
     "small_batch": false,
-    "uninstalls": 206,
-    "updated_at": "2026-11-26T19:17:41.145859+00:00",
+    "uninstalls": 207,
+    "updated_at": "2026-11-26T21:54:01.473565+00:00",
     "verdict": "BREAKS"
    },
    {
