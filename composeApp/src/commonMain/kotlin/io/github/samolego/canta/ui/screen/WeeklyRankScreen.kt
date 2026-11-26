@@ -37,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -223,11 +222,8 @@ internal fun WeeklyRankScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFFF7F4EA), RankBackground, Color(0xFFF2F4F7)),
-                    ),
-                ),
+                // 顶部不要色差：整页就是一块纯色，不再叠渐变（之前那条会把页头和工具栏衬出两种白）。
+                .background(RankBackground),
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -344,7 +340,7 @@ private fun RankHeader(board: RankBoard?, loading: Boolean, failed: Boolean) {
                 Text("GitHub  |  开源项目榜单", color = RankMuted, fontSize = 10.sp)
                 Text(
                     text = "GitHub AI",
-                    color = Color.White,
+                    color = RankInk,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 34.sp,
                     lineHeight = 38.sp,
@@ -567,7 +563,7 @@ private fun RankPosterRow(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = row.repo.substringAfterLast('/'),
-                    color = Color.White,
+                    color = RankInk,
                     fontSize = 14.sp,
                     lineHeight = 17.sp,
                     fontWeight = FontWeight.Bold,
