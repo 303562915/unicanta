@@ -115,8 +115,12 @@ private val PICK_WIDTH = 96.dp
  * They are words people use for the same idea — "极简" is not a different plan from "干净" — so
  * this is a naming shortcut, not a set of built-in plans: the packages are still whatever the
  * uploader picked, and the title is the only thing a tap writes.
+ *
+ * 分类胶囊那排也补上同样的名字：上传的人点完「遥测诊断」勾了一批包，方案名十有八九就叫这个，
+ * 于是再点一次分类就等于取这个名字。命名用的那几个词在「取名字」那一行里也照旧保留。
  */
-private val PLAN_NAME_PRESETS = listOf("极简", "省电", "游戏", "长辈机", "干净", "日常")
+private val PLAN_NAME_PRESETS =
+    listOf("极简", "省电", "游戏", "长辈机", "干净", "日常", "遥测诊断", "云同步备份", "输入法语音")
 
 /**
  * 一键勾一批的主题清单。社区里实际在用的那几个说法在最前面（最精简、广告追踪、精简游戏、精简AI），
@@ -481,14 +485,16 @@ fun UploadPlanDialog(
                             )
                             // One tap names the plan: the same handful of shorthand words people
                             // already use for these sets ("极简"、"省电"), so a title takes a tap
-                            // instead of typing on a phone keyboard.
-                            Row(
+                            // instead of typing on a phone keyboard. 名字多了以后这一行也横滑，
+                            // 否则七格之后会被挤成两行、把下面的备注框往外推。
+                            LazyRow(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                PLAN_NAME_PRESETS.forEach { preset ->
+                                items(PLAN_NAME_PRESETS.size) { index ->
+                                    val preset = PLAN_NAME_PRESETS[index]
                                     val picked = title.trim() == preset
                                     Text(
                                         text = preset,
@@ -499,6 +505,7 @@ fun UploadPlanDialog(
                                         } else {
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         },
+                                        maxLines = 1,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(
