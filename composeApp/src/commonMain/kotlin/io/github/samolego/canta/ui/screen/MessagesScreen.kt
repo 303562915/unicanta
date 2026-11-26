@@ -246,8 +246,13 @@ fun MessagesScreen(
      * 就一条头像都没有（截图里「群里没有头像」）。所以这一页手上已经有这一行了，顺手把结论带过去。
      */
     onOpenChat: (conversationId: Long, isGroup: Boolean) -> Unit,
-    /** 发起群聊：挑人、起名、建群。 */
-    onOpenCreateGroup: () -> Unit = {},
+    /**
+     * 发起群聊：挑人、起名、建群。
+     *
+     * 建群现在关着（后端 `group_create` 一律返回建不成），这一页**不调用它**，点那个按钮是在原地说
+     * 一句「群聊暂未开放」。参数留着，重新开放时把 `onNewGroup` 换回它就行。
+     */
+    @Suppress("UNUSED_PARAMETER") onOpenCreateGroup: () -> Unit = {},
     /** 打开和某人的私聊：没有会话就先开一个（后端 dm_open 是幂等的）。 */
     onOpenDm: (peerOwner: String) -> Unit = {},
     /** 打开「折叠的群聊」页：这一页只露最近说话的那个折叠群，全部折叠群在那边看。 */
@@ -757,7 +762,9 @@ fun MessagesScreen(
                 searchKeyword = ""
                 searchActive = false
             },
-            onNewGroup = onOpenCreateGroup,
+            // 建群先关着：后端 `group_create` 现在一律返回 `conversation_id = 0`，进来也是一页
+            // 建不成的表单。所以点在原地说一句，人不会白填一遍再被拒。
+            onNewGroup = { onMessage("群聊暂未开放，只能进官方群") },
             // 左上角那个图标不再是菜单了：点一下展开 / 收起最近联系人那一排，长按才是「全部标为已读」。
             contactsExpanded = MessagesPanelState.contactsExpanded,
             onToggleContacts = {
@@ -1204,9 +1211,11 @@ private fun MessagesTopBar(
                     iconSize = 20.dp,
                     filled = false,
                 )
+                // 建群暂时关掉（后端 `group_create` 直接返回不建）：按钮留着但点下去说一句，
+                // 比藏起来更好——藏了人会以为是自己找不到入口。
                 FlBarButton(
                     glyph = FlGlyphs.addCircle,
-                    contentDescription = "新建群聊",
+                    contentDescription = "新建群聊（暂未开放）",
                     onClick = onNewGroup,
                     iconSize = 20.dp,
                     filled = false,

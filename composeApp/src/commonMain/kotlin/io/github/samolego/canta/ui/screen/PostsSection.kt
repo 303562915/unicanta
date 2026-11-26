@@ -268,6 +268,10 @@ private fun PostsToolbar(
     menuOpen: Boolean,
     onOpenCategories: () -> Unit,
     onOpenFilters: () -> Unit,
+    /** 开源周榜入口；null 时不画那颗按钮。 */
+    onOpenWeeklyRank: (() -> Unit)? = null,
+    /** 顶栏底色：与它所在页面的底一致（见调用点注释）。 */
+    background: Color = Color.Unspecified,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -275,7 +279,7 @@ private fun PostsToolbar(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(48.dp)
-            .background(FlSurfaceLevel.Page.colorOf(scheme)),
+            .background(if (background.alpha > 0f) background else FlSurfaceLevel.Page.colorOf(scheme)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(modifier = Modifier.width(8.dp))
@@ -340,7 +344,11 @@ private fun PostsToolbar(
             }
         }
 
-        // 右端只有 8dp 留白：搜索不在这条栏上（胶囊常驻在列表上方那一行）。
+        // 右端：开源周榜那颗按钮（有数据层才画） + 8dp 留白。
+        // 搜索不在这条栏上：胶囊常驻在它下面那一行。
+        if (onOpenWeeklyRank != null) {
+            WeeklyRankIconButton(onClick = onOpenWeeklyRank)
+        }
         Spacer(modifier = Modifier.width(8.dp))
     }
 }
@@ -1097,6 +1105,10 @@ else -> Column {
                             menuOpen = filterMenuOpen,
                             onOpenCategories = { drawerOpen = true },
                             onOpenFilters = { filterMenuOpen = true },
+                            // 开源周榜：入口搬到顶栏右上角（列表里那条 40dp 横条删掉了）。
+                            onOpenWeeklyRank = if (weeklyRank != null) onOpenWeeklyRank else null,
+                            // 顶栏与页面同色：两者都取 Page 这一级，栏不再比背景浅一层/深一层。
+                            background = FlSurfaceLevel.Page.colorOf(MaterialTheme.colorScheme),
                         )
                         DropdownMenu(
                             expanded = filterMenuOpen,
@@ -1257,8 +1269,6 @@ else -> Column {
                 },
                 listState = postListState,
                 searchFocus = searchFocus,
-                drawnCategories = drawerCategories,
-                onOpenDrawer = { drawerOpen = true },
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
                 onQueryChange = { query = it },
@@ -1425,10 +1435,6 @@ private fun PostListPane(
     listState: LazyListState,
     /** 搜索胶囊的焦点（胶囊常驻，这一页没有「点图标跳过去」的入口）。 */
     searchFocus: FocusRequester,
-    /** 分类 chips 行要列的分类（与侧栏同一份清单）。 */
-    drawnCategories: List<String>,
-    /** 分类 chips 行末尾那颗「＋」：打开侧栏（pin / 订阅都在那边）。 */
-    onOpenDrawer: () -> Unit,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
     onQueryChange: (String) -> Unit,
@@ -1451,11 +1457,6 @@ private fun PostListPane(
     val pinnedShown = remember(shown) { shown.filter { it.pinned } }
     val normalShown = remember(shown) { shown.filterNot { it.pinned } }
     var pinnedOpen by remember { mutableStateOf(true) }
-    // 分类 chips 行（工具条下面那一行，`_navRowHeight = 40`）。初始选中「全部」，即 `category == ""`。
-    // 「＋」那一颗永远是**操作**，不是分类：它打开侧栏（pin / 订阅都在那边）。
-    val chipLabels = remember(category, drawnCategories) {
-        listOf("全部") + drawnCategories
-    }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -1476,14 +1477,8 @@ private fun PostListPane(
                     .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
             )
 
-            // 分类 chips 行：与顶栏、胶囊一样常驻。选中态是 `secondaryContainer` 实心 + w600
-            // （`topics_page.dart:2406-2470` 的 `_CategoryChip`）。
-            PostsCategoryChips(
-                labels = chipLabels,
-                selected = category,
-                onPick = onCategoryChange,
-                onManage = onOpenDrawer,
-            )
+            // 分类 chips 行**不要**：分类入口只有顶栏那颗 ☰（打开侧栏）。不要再把它摆到搜索下面，
+                    // 也不要在列表里插「帖子 · N」那种统计行。
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -1497,16 +1492,8 @@ private fun PostListPane(
                     }
                 }
 
-                // 一周一期的 GitHub AI 开源周榜：列表最上面一条**单行文字入口**（搜索框展开时让位给它），
-                // 点开是实时榜单。不占底栏，也不占多少高度：帖子列表才是这一页的主体。
-                if (weeklyRank != null && onOpenWeeklyRank != null) {
-                    item(key = "weekly-rank") {
-                        WeeklyRankTeaserCard(
-                            repository = weeklyRank,
-                            onClick = onOpenWeeklyRank,
-                        )
-                    }
-                }
+                // 开源周榜**不在这张列表里**了：它搬到了顶栏右上角那颗按钮（见 [WeeklyRankIconButton]）。
+                // 列表里留一条 40dp 的横条等于每屏少一条帖子，而它是个入口不是内容。
 
 
                 // 我自己还没改名字：列表顶端说一次，并指出去哪儿改（旁边那个红点一直在呼吸）。
@@ -2316,89 +2303,15 @@ private fun ThreadMetaDivider() {
 }
 
 /**
- * 分类 chips 行（工具条下面那一行，`_navRowHeight = 40`）：
+ * 分类 chips 行：**不用**。分类的唯一入口是顶栏那颗 ☰（打开 [PostCategoryDrawer]）。
  *
- * 「全部」+ 分类 + 「＋」。
- *
- * - 几何照 `topics_page.dart:2406-2480` 的 `_CategoryChip`：整行高 **40**（chip 上下各 6 留白），
- *   横向可滚、左右 padding **12**、chip 之间 **8**；chip 内左右 **14**，文字 **13sp / 行高 1.0**，
- *   选中 **w600**、未选 **w500**。
- * - 颜色：选中 = `secondaryContainer` + `onSecondaryContainer`（M3 filter chip 的选中态）；
- *   未选 = `surfaceContainerHigh` + `onSurface` 85%；「＋」是**操作**，用更淡的
- *   `surfaceContainerHighest` 35% + `onSurfaceVariant` 80%。
- * - 「全部」= `category == ""`；点已选的那一颗什么都不做（不看分类时就该滚回顶部，这边没有那个动作）。
- *
- * 为什么不复用 [PostChip]：那是编辑器里的属性 chip（实心主色 / 描边两态、labelSmall），
- * 尺寸与配色都和首页导航这一行不一样，混用会让两处看起来像同一种控件。
+ * fluxdo 首页在工具栏下面还有一条 40dp 的 chips 导航行（`_navRowHeight = 40`，`_CategoryChip`），
+ * 但用户明确要求这里不要它——把分类摆到搜索下面，等于同一个东西有两个入口，而且那一条会
+ * 常驻占掉 40dp 的列表高度。所以这段保留成注释，谁要恢复就照着补回来：
+ * 几何 = 行高 40（chip 上下各 6 留白）、左右 12、chip 间距 8、chip 内左右 14、
+ * 字 13sp/行高 1.0、选中 w600；颜色 = 选中 `secondaryContainer` + `onSecondaryContainer`，
+ * 未选 `surfaceContainerHigh` + `onSurface` 85%，「＋」用 `surfaceContainerHighest` 35%。
  */
-@Composable
-private fun PostsCategoryChips(
-    labels: List<String>,
-    selected: String,
-    onPick: (String) -> Unit,
-    onManage: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        labels.forEach { label ->
-            val name = if (label == "全部") "" else label
-            CategoryChip(
-                label = label,
-                selected = name == selected,
-                onClick = { onPick(name) },
-            )
-        }
-        // ＋：分类管理（pin / 订阅都在侧栏里）。视觉上是"操作"，不是某一类。
-        CategoryChip(label = "＋", selected = false, isAction = true, onClick = onManage)
-    }
-}
-
-/** chips 行里的一颗药丸，几何与配色见 [PostsCategoryChips]。 */
-@Composable
-private fun CategoryChip(
-    label: String,
-    selected: Boolean,
-    isAction: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val bg = when {
-        selected -> scheme.secondaryContainer
-        isAction -> scheme.surfaceContainerHighest.copy(alpha = 0.35f)
-        else -> scheme.surfaceContainerHigh
-    }
-    val fg = when {
-        selected -> scheme.onSecondaryContainer
-        isAction -> scheme.onSurfaceVariant.copy(alpha = 0.8f)
-        else -> scheme.onSurface.copy(alpha = 0.85f)
-    }
-    Box(
-        modifier = Modifier
-            // 整行 40：chip 本身撑满这一格的高，上下各留 6 靠外层 padding。
-            .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(50))
-            .background(bg)
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
-            .padding(horizontal = 14.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            lineHeight = 13.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            color = fg,
-            maxLines = 1,
-        )
-    }
-}
 
 /** 分类标签：一小块颜色 + 分类名，浅底圆角。颜色与列表里的色块同一个来源（后端下发 / 兜底 / 可读化）。 */
 @Composable

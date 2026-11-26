@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.Conversation
+import io.github.samolego.canta.data.community.OfficialGroups
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.bottomHairline
@@ -103,7 +104,7 @@ fun GroupsScreen(
     repository: SocialRepository,
     owner: String,
     onOpenChat: (conversationId: Long, isGroup: Boolean) -> Unit,
-    onOpenCreateGroup: () -> Unit,
+    @Suppress("UNUSED_PARAMETER") onOpenCreateGroup: () -> Unit,
     onNavigateBack: () -> Unit,
     onMessage: (String) -> Unit = {},
 ) {
@@ -139,7 +140,8 @@ fun GroupsScreen(
         // 一个查询就够：群聊是会话的一种，后端已经把两者放在同一张表里返回，这里挑出折叠的群。
         // 只看 `folded`：没折叠的群留在消息页主列表里，这边不该再列一遍。
         val fresh = repository.conversationsFor(owner)
-            .filter { it.isGroup && it.folded }
+            // 没名字的群（早期测试留下的空群）在这里也不列，和消息页同一道过滤。
+            .filter { it.isGroup && it.folded && OfficialGroups.isVisibleInList(it) }
             .sortedByDescending { it.lastAt }
         // 拉不到就是空列表，和「真的一个群都没有」在界面上长得一样，所以要留一句原因。
         //
@@ -159,7 +161,8 @@ fun GroupsScreen(
         topBar = {
             GroupsTopBar(
                 onNavigateBack = onNavigateBack,
-                onCreateGroup = onOpenCreateGroup,
+                // 建群先关着（后端 `group_create` 一律返回建不成），点在原地说明一句。
+                onCreateGroup = { onMessage("群聊暂未开放，只能进官方群") },
             )
         },
     ) { padding ->
