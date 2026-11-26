@@ -4980,6 +4980,18 @@
   "target": "com.mobiletools.systemhelper"
  },
  {
+  "author": "我是你爹",
+  "author_id": "10362",
+  "body": "这个app出厂就被停用了，哪怕你启用了，手机重启也会停用。[6]",
+  "created_at": "2026-11-26T17:18:31.073164+00:00",
+  "device_model": "REDMI K90",
+  "id": 761,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.24",
+  "target": "com.android.devicelockcontroller"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "[不看]你们这个没改名字的，主页那里闪动吗？",
