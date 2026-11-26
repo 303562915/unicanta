@@ -25,6 +25,8 @@
     <string name="uninstall">解除安裝</string>
     <string name="reinstall">重新安裝</string>
     <string name="only_system">僅系統</string>
+    <string name="filter_show_system">目前只顯示系統應用，點一下顯示全部</string>
+    <string name="filter_show_all">目前顯示全部，點一下只看系統應用</string>
     <string name="no_apps_found">沒有找到應用程式</string>
     <string name="loading_apps">正在載入應用程式</string>
     <string name="badge_info">徽章資訊</string>

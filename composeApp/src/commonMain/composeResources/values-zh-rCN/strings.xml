@@ -43,6 +43,8 @@
     <string name="uninstall">卸载</string>
     <string name="reinstall">重新安装</string>
     <string name="only_system">仅显示系统应用</string>
+    <string name="filter_show_system">当前只显示系统应用，点一下显示全部</string>
+    <string name="filter_show_all">当前显示全部，点一下只看系统应用</string>
     <string name="no_apps_found">未找到应用</string>
     <string name="loading_apps">正在加载应用列表</string>
     <string name="badge_info">“特殊标志”信息</string>

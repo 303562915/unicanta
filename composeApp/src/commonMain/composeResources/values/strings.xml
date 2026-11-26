@@ -47,6 +47,8 @@
     <string name="uninstall">Uninstall</string>
     <string name="reinstall">ReInstall</string>
     <string name="only_system">Only system</string>
+    <string name="filter_show_system">Showing system apps only. Tap to show all apps.</string>
+    <string name="filter_show_all">Showing all apps. Tap to show system apps only.</string>
     <string name="no_apps_found">No apps found</string>
     <string name="loading_apps">Loading apps</string>
     <string name="badge_info">Badge info</string>
