@@ -185,9 +185,15 @@ private const val SECRET_TAPS_HINT_AFTER = 3
  * Five minutes, not thirty seconds. The loop already stops itself the moment it finds a newer
  * build (or a build that already failed to install), so this number only decides how long a person
  * waits *after opening the app* before a new release is noticed — and five minutes is still far
- * inside the window where they are looking at the app. Thirty seconds meant up to 120 release-page
- * reads an hour per device for a file that changes once a day at most; that is pure traffic, and on
- * the free backend instance it competes with the queries that actually draw the screen.
+ * inside the window where they are looking at the app.
+ *
+ * What a poll actually costs: [UpdateChecker.fetchRelease] asks `latest.json` /
+ * `development.json` on our own GitHub Pages site first, and only falls back to the GitHub API and
+ * the release HTML page when the static site has not been deployed yet. So a steady-state poll is
+ * **not** a GitHub API call and cannot burn the anonymous quota — it is still a real HTTP request
+ * though, for two files `pages.yml` rewrites only when a release is published, i.e. a handful of
+ * times a day. Thirty seconds meant up to 120 of those an hour on every open device: 99.9% of them
+ * read a byte-for-byte identical answer.
  *
  * The About page keeps its own explicit "check now", so anyone impatient has a button.
  */
