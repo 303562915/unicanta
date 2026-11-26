@@ -107,7 +107,8 @@ class DeletionListStore(
     suspend fun currentState(): DeletionSnapshot {
         val removed = runCatching { history.recentlyRemovedPackages() }.getOrDefault(emptyList())
         return DeletionSnapshot(
-            uninstall = removed.filter(::isValidBackupPackage).distinct().sortedWith(BACKUP_ORDER),
+            // 这里的元素是包名字符串，`isValidBackupPackage` 是 String 的扩展，不能当普通函数传引用。
+            uninstall = removed.filter { it.isValidBackupPackage() }.distinct().sortedWith(BACKUP_ORDER),
         )
     }
 
