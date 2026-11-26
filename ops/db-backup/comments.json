@@ -4356,6 +4356,30 @@
   "target": "com.android.quicksearchbox"
  },
  {
+  "author": "9527",
+  "author_id": "13736",
+  "body": "停用小米服务框架后，无法使用手机丢失查找，以及一些银行APP发生支付也收不到信息了。",
+  "created_at": "2026-11-26T09:41:01.46198+00:00",
+  "device_model": "Xiaomi 13 Pro",
+  "id": 570,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.312",
+  "target": "com.xiaomi.xmsf"
+ },
+ {
+  "author": "大大怪",
+  "author_id": "10970",
+  "body": "k70可以参考我k70e的，一个系列比参考这个强点",
+  "created_at": "2026-11-26T09:44:52.72941+00:00",
+  "device_model": "Redmi K70E",
+  "id": 571,
+  "kind": "plan",
+  "parent_id": 303,
+  "system_name": "HyperOS 3.0.305",
+  "target": "11"
+ },
+ {
   "author": "#10239",
   "author_id": "10239",
   "body": "应用程序扩展服务就是给小米系统自带的键盘提供键盘底栏的工具。\n卸载只会让底栏消失，对于日常使用无影响\n已知的重大影响:在澎湃OS4以下的系统升级该应用会让包括系统桌面、系统设置等系统应用全部崩溃，ADB同意弹窗无法同意",

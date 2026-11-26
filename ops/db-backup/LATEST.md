@@ -1,15 +1,15 @@
 # 社区数据库备份
 
-最近一次导出：2026-11-26T09:35:46Z　（每天 06:17 UTC 由 `db-backup.yml` 自动跑）
+最近一次导出：2026-11-26T09:56:13Z　（每天 06:17 UTC 由 `db-backup.yml` 自动跑）
 
 只含用户贡献的社区内容；身份表、设备表、遥测表不在里面（见工作流头部说明）。
 
 | 表 | 条数 | 上一次 | 变化 | 指纹 |
 | --- | ---: | ---: | ---: | --- |
-| 方案 plans | 138 | 137 | +1 | `67923b6832e9ba61` |
-| 方案点赞 plan_votes | 4411 | 4410 | +1 | `ac93f75cb7bd5c8f` |
-| 评论 community_comments | 398 | 397 | +1 | `479339d87975c550` |
-| 推荐条 recommend_suggestions | 28 | 28 | — | `396833ece3400e78` |
+| 方案 plans | 138 | 138 | — | `c9ab80de6172ca45` |
+| 方案点赞 plan_votes | 4412 | 4411 | +1 | `cc07bca230fc728f` |
+| 评论 community_comments | 400 | 398 | +2 | `e40f61299c7175c7` |
+| 推荐条 recommend_suggestions | 28 | 28 | — | `cc6bc87997ccb7eb` |
 | 描述修正 description_fixes | 10 | 10 | — | `872573e65f439e0d` |
 | 档位修正 level_fixes | 0 | 0 | — | `4f53cda18c2baa0c` |
 
