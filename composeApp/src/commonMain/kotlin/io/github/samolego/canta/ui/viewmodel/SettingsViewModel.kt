@@ -88,14 +88,44 @@ class SettingsViewModel(
     val avatarUrl = settingsStore.avatarUrlFlow.state("")
 
     /**
+     * 这台机器的身份号（`#10003` 里的那个数字），读到之后才非空。
+     *
+     * 只为 [identitySetup] 服务：本机没存头像直链时，靠它把地址推回来（见那道门的注释）。
+     * 单独放在这里而不是每个页面各读一次——`DeviceIdentity.current` 是 suspend 的，而这道门是
+     * 全 app 共用的一个 `StateFlow`。
+     */
+    private val avatarOwner = MutableStateFlow("")
+
+    init {
+        // 身份号只读一次：它不会变（`identityUserId` 在第一次连上之后定下来就一直是它），
+        // 而这道门在每个页面的每一帧都被读。
+        viewModelScope.launch {
+            val identity = runCatching { DeviceIdentity.current(settingsStore) }.getOrNull()
+            val owner = identity?.owner.orEmpty()
+            if (owner.isNotEmpty()) avatarOwner.value = owner
+        }
+    }
+
+    /**
      * 名字与头像都设过了没有——**没设过就不许往社区里写任何东西**（见 [IdentitySetup]）。
      *
      * 由 [userName] 与 [avatarUrl] 合出来，所以改名或换头像当场就变绿，不用重启；两样都没读出来
      * 的那一版是 `UNSET`，也就是"按没设过处理"，没人能在设置还没读到的那几帧里先发一条。
      */
-    val identitySetup: StateFlow<IdentitySetup> =
+    private val storedIdentitySetup: Flow<IdentitySetup> =
         combine(settingsStore.userNameFlow, settingsStore.avatarUrlFlow) { name, avatar ->
             IdentitySetup(name = name, avatarUrl = avatar)
+        }
+
+    val identitySetup: StateFlow<IdentitySetup> =
+        combine(storedIdentitySetup, avatarOwner) { setup, owner ->
+            // 本机没存直链 ≠ 没设过头像。头像上传是覆盖式的、后端没有头像列，图床对象名固定是
+            // `unicanta/头像/<身份号>.jpg`（见 `ImageBed.avatarId`），所以清一次应用数据之后
+            // 这扇门不该关着——地址能从身份号推回来（见 `personAvatarUrl`）。
+            //
+            // 这里只解决"有没有"：`ready` 只回答"能不能发言"，不回答"图片下载到了没有"。
+            // 图床此刻被拦着、图下不下来，是网络的事，不该把人锁在"没换头像"里。
+            if (setup.hasAvatar || owner.isEmpty()) setup else setup.copy(avatarUrl = owner)
         }.state(IdentitySetup.UNSET)
 
     /** The optional bar entries: off by default, turned on in the settings. */
