@@ -533,7 +533,7 @@ private fun RankPosterRow(
                 onClickLabel = "在浏览器打开 ${row.repo}",
                 onClick = onOpen,
             )
-            .background(if (rank % 2 == 0) Color(0xFF1B212B) else Color(0xFF141E21))
+            .background(if (rank % 2 == 0) Color(0xFFF4F1EA) else Color(0xFFFBF9F4))
             .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         val fontScale = LocalDensity.current.fontScale
