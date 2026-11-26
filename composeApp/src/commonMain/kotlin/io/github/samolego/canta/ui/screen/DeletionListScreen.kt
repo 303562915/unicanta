@@ -43,6 +43,7 @@ import io.github.samolego.canta.data.app.BackupTime
 import io.github.samolego.canta.data.app.DeletionBackup
 import io.github.samolego.canta.data.app.DeletionBackupExport
 import io.github.samolego.canta.data.app.DeletionListStore
+import io.github.samolego.canta.data.app.DeletionSnapshot
 import io.github.samolego.canta.data.app.ImportedBackup
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
@@ -79,9 +80,9 @@ fun DeletionListScreen(
     onNavigateBack: () -> Unit,
     /** 装回 / 启用一个包，返回成功的条数（走应用列表那条路，不在这里另写一套）。 */
     onRestore: suspend (packageName: String, kind: OperationKind) -> Int = { _, _ -> 0 },
-    /** 现在这一刻本机的两份名单：备份按钮用它，只用来做备份，不落盘。 */
-    currentSnapshot: suspend () -> Pair<List<BackupApp>, List<BackupApp>> =
-        suspend { emptyList<BackupApp>() to emptyList() },
+    /** 现在这一刻本机的两份名单（卸载名单 / 冻结名单）：备份按钮用它，只用来做备份，不落盘。 */
+    currentSnapshot: suspend () -> DeletionSnapshot =
+        suspend { DeletionSnapshot() },
     /** 这台手机型号 / ROM 一句话，备份时记进文件。 */
     deviceLabel: suspend () -> String = { "" },
 ) {
@@ -104,7 +105,7 @@ fun DeletionListScreen(
 
     LaunchedEffect(Unit) {
         deletionList.ensureReady()
-        runCatching { currentSnapshot() }.getOrNull()?.let { (gone, frozen) -> snapshotSize = gone.size + frozen.size }
+        runCatching { currentSnapshot() }.getOrNull()?.let { snapshotSize = it.total }
     }
 
     Scaffold(
@@ -151,13 +152,12 @@ fun DeletionListScreen(
                 onClick = {
                     scope.launch {
                         busy = true
-                        val (gone, frozen) = runCatching { currentSnapshot() }
-                            .getOrElse { emptyList<BackupApp>() to emptyList<BackupApp>() }
+                        val snapshot = runCatching { currentSnapshot() }.getOrNull() ?: DeletionSnapshot()
                         val device = runCatching { deviceLabel() }.getOrDefault("")
-                        if (gone.isEmpty() && frozen.isEmpty()) {
+                        if (snapshot.total == 0) {
                             platform.showMessage("现在没有可备份的：没有删掉未装回的包，也没有冻结的包")
                         } else {
-                            val backup = deletionList.createBackup(gone, frozen, device)
+                            val backup = deletionList.createBackup(snapshot.uninstall, snapshot.frozen, device)
                             snapshotSize = backup.total
                             expanded = backup.id
                             platform.showMessage("已备份「${backup.name}」：${backup.counts}")

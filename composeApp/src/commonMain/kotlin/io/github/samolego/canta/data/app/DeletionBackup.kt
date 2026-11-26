@@ -34,6 +34,19 @@ data class BackupApp(
 }
 
 /**
+ * 一个应用包在备份里的样子：名字、版本、是不是系统应用都照那一眼读到的写下来。
+ *
+ * 放在这里而不是放进 `AppInfo`，是因为备份是纯数据（要序列化、要被导入导出），
+ * 不该拖着 UI 侧的图标与徽标一起走。
+ */
+fun AppInfo.toBackupApp(): BackupApp = BackupApp(
+    packageName = packageName,
+    label = name,
+    versionName = versionName,
+    isSystem = isSystemApp,
+)
+
+/**
  * 一次备份：**点击备份那一刻**这台手机的两份名单。
  *
  *  1. `uninstall` —— 卸载名单：Canta 删掉、到现在还没装回来的包（记录算出来的）。

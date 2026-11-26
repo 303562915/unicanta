@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import io.github.samolego.canta.data.app.BackupApp
+import io.github.samolego.canta.data.app.toBackupApp
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import androidx.compose.ui.Alignment
@@ -1233,30 +1234,18 @@ private fun CantaNavigation(
                             kind = kind,
                         )
                     },
-                    // 点备份那一刻的两份名单：卸载名单由记录现算，冻结名单问应用列表（它才知道谁被停用）。
+                    // 点备份那一刻的两份名单，口径与「未安装」「停用」两格完全一致：都读应用列表同一份扫描结果
+                    // （`MATCH_UNINSTALLED_PACKAGES` 扫回来、`installed` 为假的就是未安装）。
                     currentSnapshot = {
-                        val removed = deps.deletionList.currentState().uninstall
-                        val byPackage = appListViewModel.apps.associateBy { it.packageName }
                         val frozen = appListViewModel.apps
-                            .filter { it.isDisabled }
-                            .map { app ->
-                                BackupApp(
-                                    packageName = app.packageName,
-                                    label = app.name,
-                                    versionName = app.versionName,
-                                    isSystem = app.isSystemApp,
-                                )
-                            }
-                        val uninstall = removed.map { pkg ->
-                            val app = byPackage[pkg]
-                            BackupApp(
-                                packageName = pkg,
-                                label = app?.name.orEmpty(),
-                                versionName = app?.versionName.orEmpty(),
-                                isSystem = app?.isSystemApp == true,
-                            )
-                        }
-                        uninstall to frozen
+                            .filter { it.isDisabledByUser && !it.isUninstalled }
+                            .map { it.toBackupApp() }
+                        // 卸载那一格：整个应用列表里现在算"未安装"的包，不按 Canta 自己的记录算——
+                        // 按记录算会漏掉卸载失败的、别的工具删掉的、记录被清过的，于是只有一两个。
+                        val gone = appListViewModel.apps
+                            .filter { it.isUninstalled }
+                            .map { it.toBackupApp() }
+                        deps.deletionList.snapshotFrom(gone.map { it to true }, frozen)
                     },
                     deviceLabel = { appListViewModel.deviceLabel() },
                 )

@@ -103,12 +103,37 @@ class DeletionListStore(
         return backup
     }
 
-    /** 现在这一刻本机删掉、还没装回来的包（冻结名单要问应用列表，那边才知道谁被停用）。 */
+    /** 现在这一刻本机删掉的包名（记录口径；备份按钮不走它，见 [DeletionListStore.snapshotFrom]）。 */
     suspend fun currentState(): DeletionSnapshot {
         val removed = runCatching { history.recentlyRemovedPackages() }.getOrDefault(emptyList())
+        // 这里的元素是包名字符串，`isValidBackupPackage` 是 String 的扩展，不能当普通函数传引用。
+        val names = removed.filter { it.isValidBackupPackage() }.distinct().sortedWith(BACKUP_ORDER)
+        return DeletionSnapshot(uninstall = names.map { BackupApp(packageName = it) })
+    }
+
+    /**
+     * 这台手机**现在**的名单：卸载名单 = 应用页「未安装」那一格里的包，冻结名单 = 「停用」那一格里的包。
+     *
+     * 为什么按应用列表分格而不是按操作记录算：两边的口径必须一样。用户说的"就照未安装那个"
+     * 指的是应用页那一格——它读的是这个包**在不在系统里**（`MATCH_UNINSTALLED_PACKAGES` 扫回来、
+     * `installed` 为假），不是 Canta 自己的操作记录。按记录算会漏掉卸载时失败的、被别的工具删掉的、
+     * 记录被清过的包，于是「未安装页几十个、备份里只有一两个」。
+     *
+     * @param apps 应用列表里的全部应用，以及它们**现在**算不算未安装；由调用方从
+     *   `AppListViewModel.apps` 交进来，页面和这里看的是同一份判断。
+     */
+    fun snapshotFrom(apps: List<Pair<BackupApp, Boolean>>, frozen: List<BackupApp>): DeletionSnapshot {
+        val frozenKeys = frozen.mapTo(HashSet()) { it.packageName.lowercase() }
+        val uninstall = apps.filter { (_, gone) -> gone }
+            .map { (app, _) -> app }
+            // 一个包只归一格：冻结的包还在这台手机上，不进卸载名单。
+            .filter { it.packageName.lowercase() !in frozenKeys }
+            .distinctBy { it.packageName.lowercase() }
+            .sortedWith(compareBy(BACKUP_ORDER) { it.packageName })
         return DeletionSnapshot(
-            // 这里的元素是包名字符串，`isValidBackupPackage` 是 String 的扩展，不能当普通函数传引用。
-            uninstall = removed.filter { it.isValidBackupPackage() }.distinct().sortedWith(BACKUP_ORDER),
+            uninstall = uninstall,
+            frozen = frozen.distinctBy { it.packageName.lowercase() }
+                .sortedWith(compareBy(BACKUP_ORDER) { it.packageName }),
         )
     }
 
@@ -236,11 +261,16 @@ class DeletionListStore(
     }
 }
 
-/** 现在这一刻本机删掉的包（不落盘；备份时由页面配上应用名和冻结名单）。 */
+/**
+ * 现在这一刻本机的两份名单（不落盘）：备份按钮照它存一份，恢复不看它。
+ *
+ * [uninstall] 与 [frozen] 里的元素是完整的一行（包名、名字、版本），恢复时只取包名。
+ */
 data class DeletionSnapshot(
-    val uninstall: List<String> = emptyList(),
+    val uninstall: List<BackupApp> = emptyList(),
+    val frozen: List<BackupApp> = emptyList(),
 ) {
-    val total: Int get() = uninstall.size
+    val total: Int get() = uninstall.size + frozen.size
 }
 
 /** 存 / 分享的结果。 */
