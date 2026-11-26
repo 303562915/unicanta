@@ -213,7 +213,9 @@ only; they are not part of this repository.
   > The app does **not** talk to the upstream repository directly: `bloat-list-sync.yml` mirrors upstream's
   > `uad_lists.json` into this repository at `site/bloat/bloat_list.json` weekly (with `_sync_meta.json`
   > recording the upstream commit), and the app reads that copy by default. Level objections go to
-  > `bloat_overrides.json` / the backend `package_level_fixes` table instead of the upstream file.
+  > `site/bloat/level_fixes.json` in this repository — neither upstream's file nor a database: open the
+  > level-correction issue form, a maintainer confirms it, `bloat-corrections.yml` merges it, and every
+  > phone picks it up within a week without a release.
 - [@RikkaApps](https://github.com/RikkaApps): Shizuku;
 - icon from [icon kitchen](https://icon.kitchen).
 

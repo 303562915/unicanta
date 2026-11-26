@@ -5,7 +5,6 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.bloat_description_language
 import io.github.samolego.canta.util.LogUtils
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.getString
 
@@ -22,8 +21,20 @@ data class BloatOverrideEntry(
     val removal: String = "",
     /** Extra sentence per interface language (`en` is the fallback). */
     val notes: Map<String, String> = emptyMap(),
+    /** 谁定下这条：`maintainer` = 我们自己写的（随包发），`community` = 用户提、工作流合并的。 */
+    val source: String = "",
+    /** 用户提案所在的那张 issue 的编号；我们自己写的那几条是 0。 */
+    val issue: Int = 0,
 )
 
+/**
+ * One package's entry in the corrections table, as this project publishes it in
+ * `site/bloat/level_fixes.json` (and ships the same shape in `files/bloat_overrides.json`).
+ *
+ * 为什么带着 [source] / [issue]：这两个字段让「这条是谁改的、依据是什么」跟着文件走。一类是
+ * 我们自己写下的（[source] = `maintainer`），一类是用户从应用里提、工作流核对合并的
+ * （[source] = `community`，[issue] 指向那张提案）。
+ */
 @Serializable
 data class BloatOverrideTable(
     /** Free-form explanation for whoever edits the file; never read by the app. */
@@ -35,18 +46,6 @@ data class BloatOverrideTable(
 )
 
 /**
- * One correction as `public.package_level_fix_list()` answers it: the row of
- * `package_level_fixes`, minus the columns the app has no use for.
- */
-@Serializable
-data class RemoteLevelFix(
-    val pkg: String = "",
-    /** Same vocabulary as the list's `removal`; blank is dropped by [BloatOverrides.fromRemote]. */
-    val removal: String = "",
-    val notes: Map<String, String> = emptyMap(),
-)
-
-/**
  * The corrections this build ships for the bloat list.
  *
  * The list is the UAD community's, graded **per package name**: it cannot know that a vendor ROM
@@ -54,6 +53,10 @@ data class RemoteLevelFix(
  * Honor `com.qualcomm.location` case, listed as "Recommended" while being the emergency-call
  * locator. Editing the downloaded list is not an option (it is replaced on the next refresh) and
  * forking the list is worse; this table is the smallest thing that stays under our control.
+ *
+ * 两张同样的表：随包发的 `files/bloat_overrides.json`（我们写完要等下一个版本），以及仓库里
+ * `site/bloat/level_fixes.json`（改一行、推上去，一周内所有手机都拿到，不用发版）。后者叠在前者
+ * 上面，见 [overriddenBy]。
  *
  * Everything here degrades to "no correction": a missing or malformed file leaves the upstream
  * list exactly as it is, which is the behaviour every earlier build had.
@@ -111,20 +114,20 @@ class BloatOverrides(
         fun empty(): BloatOverrides = BloatOverrides(BloatOverrideTable())
 
         /**
-         * The corrections as the backend answered them ([RemoteLevelFix] rows), or [empty] when the
-         * payload is unreadable.
+         * The corrections as **we publish them in `site/bloat/level_fixes.json`**, or [empty] when
+         * the payload is unreadable.
          *
-         * Nothing here is fatal: a deployment that predates `package_level_fix_list()` answers with
-         * an error, not an array, and a build that read `[]` from it simply keeps the bundled table.
-         * Rows with a blank package name are dropped — they cannot be matched to anything anyway.
+         * Same shape as the bundled `files/bloat_overrides.json`, deliberately: one format means the
+         * repository copy can be laid straight over the shipped one ([overriddenBy]), and a maintainer
+         * moving an entry between them never has to translate it.
+         *
+         * Nothing here is fatal: a missing file, a build with no route to GitHub, or a payload someone
+         * broke leaves the shipped table in charge — which is exactly what earlier builds did.
          */
         fun fromRemote(json: String, language: String = "en"): BloatOverrides = runCatching {
-            val fixes = Json { ignoreUnknownKeys = true }
-                .decodeFromString(ListSerializer(RemoteLevelFix.serializer()), json)
-            val packages = fixes
-                .filter { it.pkg.isNotBlank() }
-                .associate { it.pkg to BloatOverrideEntry(removal = it.removal.trim(), notes = it.notes) }
-            BloatOverrides(BloatOverrideTable(packages = packages), language)
+            val table = Json { ignoreUnknownKeys = true }
+                .decodeFromString(BloatOverrideTable.serializer(), json)
+            BloatOverrides(table.copy(packages = table.packages.filterValues { it.removal.isNotBlank() || it.notes.isNotEmpty() }), language)
         }.onFailure {
             LogUtils.w("BloatOverrides", "Remote corrections are unreadable: $it")
         }.getOrDefault(empty())

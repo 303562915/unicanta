@@ -95,10 +95,10 @@ class CantaSettings(storage: AppBlobStorage) {
      */
     val bloatListCheckedDayFlow = field { it.bloatListCheckedDay }
     /**
-     * 图上那份修正表（`package_level_fix_list()` + `level_fix_list()` 两张一起），以及它是什么时候拿的。
+     * 修正表（`site/bloat/level_fixes.json`，GitHub 上的静态文件，不是数据库），以及它是什么时候拿的。
      *
-     * 与 [bloatListCheckedDayFlow]（列表本身的每周核对）分开记账：等级修正必须比列表更勤。
-     * 等级标错就是"一键删掉系统服务"，不能等七天、更不能等发版。两天一次，每次一个请求。
+     * 与 [bloatListCheckedDayFlow] 分开记账：两者都是自然周一次。分开记是因为它们的来源和周期
+     * 将来都可能各自变——修正表要能独立地改频率，而不牵动那份 1.6 MB 的名单。
      */
     val correctionsFetchedDayFlow = field { it.correctionsFetchedDay }
     val bloatListUrlFlow = field { it.bloatListUrl.ifEmpty { DEFAULT_BLOAT_URL } }

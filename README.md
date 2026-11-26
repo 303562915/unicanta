@@ -202,8 +202,10 @@ cd server/node && node test/e2e.test.mjs
 - **Canta**：本项目的基础；
 - [Universal-Debloater-Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/)：debloat 列表与安全建议来源；
   > 客户端**不直接**连上游：`bloat-list-sync.yml` 每周把上游 `uad_lists.json` 同步到本仓库
-  > `site/bloat/bloat_list.json`（附带 `_sync_meta.json` 记上游 commit），应用默认读这份自己托管的副本，
-  > 版本可追溯、国内也连得上。分等级的异议走 `bloat_overrides.json` / 后端 `package_level_fixes`，不改上游那份。
+  > `site/bloat/bloat_list.json`（附带 `_sync_meta.json` 记上游 commit），应用默认读这份自己托管的副本。
+  > 分等级的异议不进上游、也不进数据库，走本仓库的 `site/bloat/level_fixes.json`：
+  > 谁要改就按 `.github/ISSUE_TEMPLATE/level-correction.md` 提一张 issue，维护者打 `level-fix-confirm`
+  > 标签，`bloat-corrections.yml` 核对后合并进那份文件，一周内所有手机自动生效，不需要发版。
 - [@RikkaApps](https://github.com/RikkaApps)：Shizuku；
 - 图标来自 [icon kitchen](https://icon.kitchen)。
 

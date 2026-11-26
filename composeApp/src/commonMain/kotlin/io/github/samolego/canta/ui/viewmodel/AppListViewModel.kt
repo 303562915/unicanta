@@ -325,8 +325,8 @@ class AppListViewModel(
         badgeRefreshJob?.cancel()
         badgeRefreshJob = viewModelScope.launch {
             val start = currentTimeMillis()
-            // 等级修正一天一次，列表一周一次：先跑修正，它带回来新内容就重画；再跑列表核对。
-            // 两次都是单个请求，修正是几十行的小表，不是逐包查库。
+            // 修正表和名单同一个周期（一周）：先跑修正，带回来新内容就重画；再跑名单核对。
+            // 两个都是 GitHub 上的静态文件、每个周期各一个请求，不碰数据库。
             val correctionsChanged = runCatching { bloatRepository.refreshCorrections() }.getOrDefault(false)
             if (correctionsChanged) applyBloatData(bloatRepository.local())
             val fresh = runCatching { bloatRepository.refresh() }.getOrNull()

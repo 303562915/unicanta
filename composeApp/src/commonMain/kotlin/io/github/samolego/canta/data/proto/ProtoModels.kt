@@ -280,10 +280,10 @@ data class AppSettingsProto(
      */
     @ProtoNumber(46) val updateHistoryExpanded: Boolean = false,
     /**
-     * 上一次拉「图上那份等级修正表」的本地日期（`YYYY-MM-DD`）；空串 = 从没拉过。
+     * 上一次拉「分级修正表」的本地日期（`YYYY-MM-DD`）；空串 = 从没拉过。
      *
-     * 单独一格、不与 [bloatListCheckedDay] 共用：等级修正两天拉一次，列表一周一次。等级标错是
-     * "一键删掉系统服务"，等不了七天。见 `BloatRepository.syncRemoteCorrections()`。
+     * 单独一格、不与 [bloatListCheckedDay] 共用：两者现在都是自然周一次，但来源不同、将来频率也可能
+     * 各自变。见 `BloatRepository.refreshCorrections()`。
      */
     @ProtoNumber(48) val correctionsFetchedDay: String = "",
 )

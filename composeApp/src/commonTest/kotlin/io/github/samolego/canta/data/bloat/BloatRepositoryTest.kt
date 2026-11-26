@@ -27,19 +27,34 @@ class BloatRepositoryTest {
     private val cachedJson = """{"com.cached": {"description": "C", "removal": "Expert"}}"""
     private val bundledJson = """{"com.bundled": {"description": "B", "removal": "Caution"}}"""
 
-    /** Serves the commits API and the list; records requested URLs. */
-    private class Server(var sha: String? = "new", var listOk: Boolean = true, val list: String) {
+    /**
+     * Serves the corrections file, the commits API and the list; records requested URLs.
+     *
+     * 修正表另有自己的 URL（[fixesUrl]），必须排在名单那条前面判断：两边都可能是
+     * `raw.githubusercontent.com` 上的文件，靠"哪个 URL 先匹配"来分。
+     */
+    private class Server(
+        var sha: String? = "new",
+        var listOk: Boolean = true,
+        val list: String,
+        var fixes: String? = null,
+    ) {
         val requests = mutableListOf<String>()
         val client = HttpClient(MockEngine { request ->
             val url = request.url.toString()
             requests += url
             when {
+                url == fixesUrl && fixes != null -> respond(fixes)
                 "api.github.com" in url && sha != null -> respond("""[{"sha": "$sha"}]""")
                 "raw.githubusercontent.com" in url && listOk -> respond(list)
                 else -> respondError(HttpStatusCode.ServiceUnavailable)
             }
         })
-        val listDownloads get() = requests.count { "raw.githubusercontent.com" in it }
+        val listDownloads get() = requests.count { it != fixesUrl && "raw.githubusercontent.com" in it }
+    }
+
+    private companion object {
+        const val fixesUrl = "https://example.test/level_fixes.json"
     }
 
     private suspend fun settings(latestHash: String = "", autoUpdate: Boolean = true) =
@@ -206,25 +221,37 @@ class BloatRepositoryTest {
 
     // ---- 库里的分级修正：同一个窗口下来一次，落在本地，下次不联网也在 ------------------------
 
-    private val remoteFixes =
-        """[{"pkg": "com.cached", "removal": "Expert", "notes": {"en": "Emergency-call locator."}}]"""
+    private val remoteFixes = """
+        {
+          "version": 2,
+          "updated": "2026-11-26",
+          "packages": {
+            "com.cached": {
+              "removal": "Expert",
+              "source": "maintainer",
+              "notes": {"en": "Emergency-call locator."}
+            }
+          }
+        }
+    """.trimIndent()
 
     private fun correctionsBundled() = BloatOverrides(
         BloatOverrideTable(packages = mapOf("com.cached" to BloatOverrideEntry(removal = "Recommended"))),
     )
 
-    /** 库里把随包的 Recommended 改成了 Expert：列表上看到的是 Expert，答复本身也落了盘。 */
+    /** 仓库里那份把随包的 Recommended 改成了 Expert：列表上看到的是 Expert，文件本身也落了盘。 */
     @Test
-    fun theBackendsCorrectionsAreFetchedCachedAndApplied() = runTest {
-        val server = Server(sha = "same", list = listJson)
+    fun theRepositoryCorrectionsAreFetchedCachedAndApplied() = runTest {
+        val server = Server(sha = "same", list = listJson, fixes = remoteFixes)
         val fixes = MemoryStorage()
-
         val repository = BloatRepository(
             server.client,
             MemoryStorage(cachedJson.encodeToByteArray()),
             settings("same"),
             overrides = { correctionsBundled() },
-            remoteCorrections = { remoteFixes },
+            // 修正表现在是仓库里的静态文件：地址给一个占位，真正的内容由 MockEngine 按 URL 返回。
+            correctionsUrl = { fixesUrl },
+            correctionsCommitsUrl = null,
             correctionsCache = fixes,
         )
         assertTrue(repository.refreshCorrections())
@@ -245,7 +272,8 @@ class BloatRepositoryTest {
             MemoryStorage(cachedJson.encodeToByteArray()),
             settings,
             overrides = { correctionsBundled() },
-            remoteCorrections = { error("the stored table has to be enough") },
+            correctionsUrl = { error("the stored table has to be enough") },
+            correctionsCommitsUrl = null,
             correctionsCache = MemoryStorage(remoteFixes.encodeToByteArray()),
         ).local()
 
@@ -256,7 +284,7 @@ class BloatRepositoryTest {
     /** 拉取失败：手上那张随包的表照旧生效，不因为这次没连上就退回上游的分级。 */
     @Test
     fun aFailedFetchKeepsWhatIsAlreadyKnown() = runTest {
-        val server = Server(sha = "same", list = listJson)
+        val server = Server(sha = "same", list = listJson)  // fixes = null → 这个 URL 回 503
         val settings = settings("same")
         val fixes = MemoryStorage()
 
@@ -265,25 +293,26 @@ class BloatRepositoryTest {
             MemoryStorage(cachedJson.encodeToByteArray()),
             settings,
             overrides = { correctionsBundled() },
-            remoteCorrections = { null },
+            correctionsUrl = { fixesUrl },
+            correctionsCommitsUrl = null,
             correctionsCache = fixes,
         )
 
         repository.load()
 
-        // 修正的核对从 load/refresh 里拆出来了（列表一周一次、修正每天一次），所以这一条也要显式跑一次：
-        // 拉不到就是拉不到，盘上不留东西，界面上仍然是我们随包的那张表。
+        // 修正的核对从 load/refresh 里拆出来了（列表与修正都是同一个周窗口），所以这里显式跑一次：
+        // 拉不到（MockEngine 对未知 URL 回 503）就是拉不到，盘上不留东西，界面上仍是我们随包那张表。
         assertEquals(false, repository.refreshCorrections())
         assertNull(fixes.content)
-        // 没拉到东西不算用掉今天这一次：下次启动还会再试。
+        // 没拉到东西不算用掉这一周的那次核对：下次启动还会再试。
         assertEquals("", settings.correctionsFetchedDayFlow.first())
         assertEquals(AppBadgeInfo.RECOMMENDED, repository.local().getValue("com.cached").badgeInfo)
     }
 
-    /** 修正每天拉一次：当天拉过就不再联网，这与列表那份周核对是两笔账。 */
+    /** 修正也是按自然周核对：同一周内第二次进列表，一个请求都不发。 */
     @Test
-    fun theCorrectionsAreFetchedAtMostOnceADay() = runTest {
-        val server = Server(sha = "same", list = listJson)
+    fun theCorrectionsAreCheckedOnceAWeek() = runTest {
+        val server = Server(sha = "same", list = listJson, fixes = remoteFixes)
         val settings = settings("same")
         var fetches = 0
         val repository = BloatRepository(
@@ -291,32 +320,31 @@ class BloatRepositoryTest {
             MemoryStorage(cachedJson.encodeToByteArray()),
             settings,
             overrides = { correctionsBundled() },
-            remoteCorrections = { fetches++; remoteFixes },
+            correctionsUrl = { fetches++; fixesUrl },
+            correctionsCommitsUrl = null,
             correctionsCache = MemoryStorage(),
         )
 
         assertTrue(repository.refreshCorrections())
         assertEquals(1, fetches)
-        assertEquals(today(), settings.correctionsFetchedDayFlow.first())
 
-        // 同一天再进列表：不联网，也不重复解析。
+        // 同一周再进列表：不联网，也不重复解析。
         assertEquals(false, repository.refreshCorrections())
         assertEquals(1, fetches)
         assertEquals(AppBadgeInfo.EXPERT, repository.local().getValue("com.cached").badgeInfo)
 
-        // 昨天拉过的那台手机，今天打开时会再拉一次。
-        val stale = settings("same").apply { setCorrectionsFetchedDay(dayOffset(1)) }
+        // 上次核对已经是 8 天前：下一周这次照常发请求。
+        val stale = settings("same").apply { setCorrectionsFetchedDay(dayOffset(8)) }
         var refetches = 0
         BloatRepository(
             server.client,
             MemoryStorage(cachedJson.encodeToByteArray()),
             stale,
             overrides = { correctionsBundled() },
-            remoteCorrections = { refetches++; remoteFixes },
+            correctionsUrl = { refetches++; fixesUrl },
+            correctionsCommitsUrl = null,
             correctionsCache = MemoryStorage(),
-        ).let {
-            assertTrue(it.refreshCorrections())
-        }
+        ).let { assertTrue(it.refreshCorrections()) }
         assertEquals(1, refetches)
     }
 

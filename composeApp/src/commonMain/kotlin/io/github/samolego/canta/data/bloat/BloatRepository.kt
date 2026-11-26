@@ -38,6 +38,21 @@ const val DEFAULT_BLOAT_URL =
 const val DEFAULT_BLOAT_COMMITS_URL =
     "https://api.github.com/repos/303562915/unicanta/commits?path=site%2Fbloat%2Fbloat_list.json"
 
+/**
+ * 分级修正表的默认地址：也是我们自己托管的静态文件，**不是数据库**。
+ *
+ * 内容：`{ "packages": { "<包名>": { "removal": "...", "notes": {...} } } }`，
+ * 一部分是我们自己确认过写下的，一部分是用户从应用里提交、`bloat-corrections.yml` 核对合并的
+ * （见 `.github/ISSUE_TEMPLATE/level-correction.yml`）。随包发的 `files/bloat_overrides.json`
+ * 是同一个格式，所以两份表可以直接叠。
+ */
+const val DEFAULT_LEVEL_FIXES_URL =
+    "https://raw.githubusercontent.com/303562915/unicanta/master/site/bloat/level_fixes.json"
+
+/** 修正表的「变没变」判据：同一路径的提交列表，与名单那条是同一个办法。 */
+const val DEFAULT_LEVEL_FIXES_COMMITS_URL =
+    "https://api.github.com/repos/303562915/unicanta/commits?path=site%2Fbloat%2Flevel_fixes.json"
+
 /** An app's entry in the UAD bloat list. */
 data class BloatData(
     internal val description: String?,
@@ -92,13 +107,18 @@ class BloatRepository(
      */
     private val overrides: suspend () -> BloatOverrides = { BloatOverrides.empty() },
     /**
-     * The backend's correction table (`package_level_fix_list()`), as raw JSON; null when this build
-     * has no backend wired, in which case the bundled table is all there is.
+     * 修正表的来源（`site/bloat/level_fixes.json` 的原文 URL），默认就是本仓库托管的那份；
+     * null = 这个构建不带这个能力，随包的那张表就是全部。
      *
-     * Kept as a lambda rather than a repository: this class already owns the "check once a week,
-     * cache the answer, fail quietly" mechanics, and the call itself is one line of HTTP.
+     * 分成 [correctionsUrl] 与 [correctionsCommitsUrl] 两个 lambda 而不是塞一个仓储进来：这个类
+     * 已经管着「按日历天数核对、把答复落盘、失败不出声」这套机制，调用本身只有一行 HTTP。
+     *
+     * **不走数据库**：修正表是一张静态文件。GitHub 免费、无请求数计费，而数据库那一侧 2026-11-25
+     * 刚因为请求量把 426 MB 的实例压到开 swap（见 `ops-notes/backend-incident-2026-11-25.md`）。
      */
-    private val remoteCorrections: (suspend () -> String?)? = null,
+    private val correctionsUrl: (suspend () -> String)? = null,
+    /** 核对修正表有没有变（同一路径的 commits API）；null = 每次直接下载。 */
+    private val correctionsCommitsUrl: (suspend () -> String)? = null,
     /** Where the last fetched correction table lives between launches. */
     private val correctionsCache: AppBlobStorage? = null,
 ) {
@@ -113,6 +133,15 @@ class BloatRepository(
          * 「检查更新」或在设置里改地址。
          */
         const val CHECK_INTERVAL_DAYS = 7L
+
+        /**
+         * 修正表的核对间隔：与列表同一套「按日历天数、失败不算用掉额度」的规矩。
+         *
+         * 修正表只有几十行，一周一次足够：改一条就要等七天以内生效，而它本来也不该天天动——
+         * 门槛是「我们确认过这个包在某台机器上确实删不得」，不是社区投票。每周同步时它跟名单
+         * 一起核对，所以手机真正联网的次数**没有增加**。
+         */
+        const val CORRECTIONS_INTERVAL_DAYS = 7L
     }
 
     /** Resolved once: the table is a bundled file, it does not change while the app runs. */
@@ -153,31 +182,27 @@ class BloatRepository(
     }
 
     /**
-     * Fetches the backend's correction table once and stores it, answering true when it changed.
+     * 把仓库里那份修正表拉一次、落盘，变了才返回 true。
      *
-     * Every failure is a no-op: no fetch configured, no storage to keep it in, a deployment without
-     * the function, a request that timed out. None of them is a reason to lose the corrections
-     * already on disk, and none of them spends the fetch window — that is [refreshCorrections]'s call.
-     *
-     * 一天最多一次：以前它挂在列表核对（一周一次）上，等于等级标错要等七天。现在单独记账
-     * （[CantaSettings.correctionsFetchedDayFlow]），列表还是每周问一次，这张表天天问。
-     * 一次请求、一张几十行的表——不是逐包查库。
+     * 每一条失败都是空操作：没配 URL、没地方存、请求超时、答复读不懂——都不是丢掉盘上已有修正的
+     * 理由，也都不算用掉这一周的那次核对（那由 [refreshCorrections] 记账）。
      */
     private suspend fun syncRemoteCorrections(): Boolean {
-        val fetch = remoteCorrections ?: return false
+        val url = correctionsUrl?.invoke() ?: return false
         val storage = correctionsCache ?: return false
         val language = bundledCorrections().language
-        val text = runCatching { fetch() }.getOrNull()?.takeIf { it.isNotBlank() } ?: return false
-        val remote = BloatOverrides.fromRemote(text, language)
+        val text = runCatching { client.get(url).bodyAsText() }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: return false
         val stored = runCatching { storage.read()?.decodeToString() }.getOrNull()
         if (stored == text) {
             settings.setCorrectionsFetchedDay(todayKey())
             return false
         }
+        // 先确认读得懂再落盘：一份格式坏掉的答复不该顶掉盘上那份好用的。
+        val remote = BloatOverrides.fromRemote(text, language)
         runCatching { storage.write(text.encodeToByteArray()) }
             .onFailure { LogUtils.w(TAG, "Failed to cache level corrections: $it") }
-        // An empty answer is a real one (the operator retracted the corrections): laid over the
-        // bundled table it changes nothing, which is exactly what retracting means.
         resolvedCorrections = bundledCorrections().overriddenBy(remote)
         settings.setCorrectionsFetchedDay(todayKey())
         LogUtils.i(TAG, "Level corrections updated (${remote.size} entries)")
@@ -185,19 +210,18 @@ class BloatRepository(
     }
 
     /**
-     * 等级修正的每日核对：今天已经拉过就直接用手上那份，不联网。返回 true 表示**这一趟带来了
+     * 等级修正的核对：这一周已经拉过就直接用手上那份，不联网。返回 true 表示**这一趟带来了
      * 新修正**，调用方据此决定要不要重画列表。
      *
-     * 与 [refresh] 分开：列表一周一次、修正每天一次。删错一个系统服务的代价太大，不能让修正
-     * 排在那份 1.6 MB 的名单后面等一周。
-     *
-     * "今天拉过"这一格只在**真的拉到了东西**时才写：没配后端、请求失败、答复是空的，都不算用掉
-     * 今天的额度，下次启动还会再试（和 [refresh] 的"离线不算用掉"是同一条规矩）。
+     * 修正表是 `site/bloat/level_fixes.json` 一张静态文件，跟名单同一个节拍（一周），
+     * 所以手机真正联网的次数没有增加：同一次应用列表刷新里，两个请求并排，而不是多出一次数据库。
      */
     suspend fun refreshCorrections(): Boolean {
         if (!settings.autoUpdateBloatListFlow.first()) return false
         val today = todayKey()
-        if (settings.correctionsFetchedDayFlow.first() == today) return false
+        if (checkedRecently(settings.correctionsFetchedDayFlow.first(), today, CORRECTIONS_INTERVAL_DAYS)) {
+            return false
+        }
         return syncRemoteCorrections()
     }
 
@@ -272,8 +296,8 @@ class BloatRepository(
         // the stored commit says, or a corrupt file would keep the list empty forever.
         val cached = readCache(l10n)
 
-        // 等级修正由 [refreshCorrections] 每天单独核对，这里不再顺带拉：混在一起会把修正绑到
-        // 这份名单的一周节拍上（见 `CantaSettings.correctionsFetchedDayFlow`）。
+        // 等级修正由 [refreshCorrections] 单独核对（同一个周窗口，但它读的是另一份文件、记的是另一格
+        // 日期），这里不再顺带拉：两份文件各自能改频率，互不牵制。
 
         // Empty when unknown (offline, rate limited, ...).
         val remoteHash = fetchLatestHash()
@@ -310,11 +334,11 @@ class BloatRepository(
      * 记的是日期不是时间戳（见 [CantaSettings.bloatListCheckedDayFlow]），所以这里比的是日历天数；
      * 日期读不懂（旧版本写的怪值）当作没核对过，宁可多问一次也不要永远不再问。
      */
-    private fun checkedRecently(lastCheckedKey: String, todayKey: String): Boolean {
+    private fun checkedRecently(lastCheckedKey: String, todayKey: String, windowDays: Long = CHECK_INTERVAL_DAYS): Boolean {
         if (lastCheckedKey.isBlank()) return false
         val last = runCatching { LocalDate.parse(lastCheckedKey) }.getOrNull() ?: return false
         val today = runCatching { LocalDate.parse(todayKey) }.getOrNull() ?: return false
-        return today.toEpochDays().toLong() - last.toEpochDays().toLong() < CHECK_INTERVAL_DAYS
+        return today.toEpochDays().toLong() - last.toEpochDays().toLong() < windowDays
     }
 
     /** 本地日期键 `YYYY-MM-DD`：一天的判据按手机自己的时区，不是 UTC。 */

@@ -109,18 +109,25 @@ class BloatOverridesTest {
         assertNull(patched.badgeInfo)
     }
 
-    // ---- 库里那份（package_level_fix_list 的答复）----------------------------------------
+    // ---- 仓库里那份（site/bloat/level_fixes.json）----------------------------------------
 
     private val remoteJson = """
-        [
-          {"pkg": "com.qualcomm.location", "removal": "Expert",
-           "notes": {"en": "Emergency-call locator on some ROMs.", "zh": "部分 ROM 上是紧急呼叫定位。"},
-           "author": "开发者", "updated_at": "2026-11-24T09:55:32Z"}
-        ]
+        {
+          "version": 2,
+          "updated": "2026-11-26",
+          "packages": {
+            "com.qualcomm.location": {
+              "removal": "Expert",
+              "source": "community",
+              "issue": 42,
+              "notes": {"en": "Emergency-call locator on some ROMs.", "zh": "部分 ROM 上是紧急呼叫定位。"}
+            }
+          }
+        }
     """.trimIndent()
 
     @Test
-    fun theBackendAnswerReadsAsACorrection() {
+    fun theRepositoryCorrectionsReadAsACorrection() {
         val table = BloatOverrides.fromRemote(remoteJson, "zh")
 
         val patched = table.apply("com.qualcomm.location", published.getValue("com.qualcomm.location"))
@@ -129,17 +136,17 @@ class BloatOverridesTest {
         assertTrue(patched.description!!.endsWith("部分 ROM 上是紧急呼叫定位。"), patched.description)
     }
 
-    /** 老部署答的是错误正文而不是数组：那就是"没有修正"，不是崩溃。 */
+    /** 有人把文件写坏了：那就是"没有修正"，不是崩溃。 */
     @Test
     fun anUnreadableAnswerIsNoCorrection() {
         assertEquals(0, BloatOverrides.fromRemote("{\"message\":\"Could not find the function\"}").size)
         assertEquals(0, BloatOverrides.fromRemote("").size)
-        assertEquals(0, BloatOverrides.fromRemote("[]").size)
+        assertEquals(0, BloatOverrides.fromRemote("{\"version\":1,\"packages\":{}}").size)
     }
 
     @Test
-    fun rowsWithoutAPackageAreDropped() {
-        val table = BloatOverrides.fromRemote("""[{"pkg": "", "removal": "Expert"}, {"removal": "Expert"}]""")
+    fun entriesWithNothingInThemAreDropped() {
+        val table = BloatOverrides.fromRemote("""{"packages": {"com.a": {}, "com.b": {"removal": ""}}}""")
         assertEquals(0, table.size)
     }
 

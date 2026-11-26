@@ -1,0 +1,216 @@
+name: 🛠️ Bloat corrections
+
+# 把用户提的「分级修正」issue 合并进 `site/bloat/level_fixes.json`，再跟着名单一起被手机取走。
+#
+# 设计约束（重要，别改成数据库）：
+#   * 修正表是**静态文件**，客户端只读 GitHub。数据库那一侧是按请求数撑着的（Free 档 426 MB，
+#     2026-11-25 三次全站白屏就是请求量压垮的，见 ops-notes/backend-incident-2026-11-25.md），
+#     一张几行的表不值得再多一条每台手机每天一次的路径。
+#   * 同一份文件里有两类条目：`source=maintainer`（我们自己确认过写下的）、`source=community`
+#     （从 issue 合并来的）。工作流**只碰 community 那部分**，maintainer 的条目一个字都不改。
+#   * 不是投票：由维护者用 label 放行（`level-fix-confirm`）。档位改错等于让人一键删掉系统服务，
+#     门槛应该是「有人在那台机器上验过」，不是「多少人点了赞」。
+#
+# 放行流程：
+#   1. 用户按 `.github/ISSUE_TEMPLATE/level-correction.yml` 填；
+#   2. 维护者在 issue 上核实、打 `level-fix-confirm` 标签；
+#   3. 打标签即触发本工作流（也可以手工 dispatch 指定 issue 号）；
+#   4. 合并结果提交进 master，一周内所有手机的下一次核对待到新表，不需要发版。
+# 撤回：从 JSON 里删掉那一条并提交（或者把标签换成 `level-fix-reject`）。
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "要合并的 issue 编号"
+        required: true
+        type: string
+      dry_run:
+        description: "只校验不提交"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: bloat-corrections
+  cancel-in-progress: false
+
+env:
+  TARGET: site/bloat/level_fixes.json
+
+jobs:
+  merge:
+    # 只有「打上放行标签」或手工触发才干活；拒回标签与其它标签一律不动。
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.label.name == 'level-fix-confirm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: 📥 Read the issue
+        id: read
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}" > /tmp/issue.json
+          jq -r '.body // ""' /tmp/issue.json > /tmp/body.txt
+          echo "number=${ISSUE}" >> "$GITHUB_OUTPUT"
+          echo "--- body ---"
+          cat /tmp/body.txt
+
+      - name: 🧾 Parse the form
+        id: parse
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re, sys
+
+          body = open('/tmp/body.txt', encoding='utf-8').read()
+          allowed = {'Recommended', 'Advanced', 'Expert', 'Unsafe', 'System'}
+
+          def grab(key):
+              # 表单里是 ``` 代码块里的 `key: value`，也容忍有人直接写成 `key: value` 的段落
+              m = re.search(rf'^\s*{key}\s*:\s*(\S.*)$', body, re.MULTILINE)
+              return m.group(1).strip() if m else ''
+
+          pkg = grab('pkg')
+          current = grab('current')
+          proposed = grab('proposed')
+
+          # 「为什么」那一节：题干之后的第一个代码块，或「为什么」标题下的正文
+          why = ''
+          m = re.search(r'##\s*为什么[^\n]*\n+(?:<!--.*?-->\s*)*```\s*\n(.*?)```', body, re.S)
+          if m:
+              why = m.group(1).strip()
+          else:
+              m = re.search(r'##\s*为什么[^\n]*\n+(.+?)(?=\n##|\Z)', body, re.S)
+              if m:
+                  why = re.sub(r'<!--.*?-->', '', m.group(1), flags=re.S).strip()
+
+          errors = []
+          if not re.fullmatch(r'[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+', pkg or ''):
+              errors.append(f'pkg 不是一个合法的包名：{pkg!r}')
+          if proposed not in allowed:
+              errors.append(f'proposed 不在档位里：{proposed!r}（只接受 {sorted(allowed)}）')
+          if current and current not in allowed:
+              errors.append(f'current 不在档位里：{current!r}')
+          if len(why) < 8:
+              errors.append(f'「为什么」太短或为空：{why!r}')
+
+          # 「你的机器」那三行也收一下，写进注记的署名行
+          def line(label):
+              m = re.search(rf'^-\s*{label}\s*[:：]\s*(\S.*)$', body, re.MULTILINE)
+              return m.group(1).strip() if m else ''
+          device = ' / '.join(x for x in (line('机型'), line('ROM 与版本')) if x)
+
+          if errors:
+              print('::error::表单不合格：' + '；'.join(errors))
+              open('/tmp/errors.txt', 'w', encoding='utf-8').write('\n'.join(errors))
+              sys.exit(1)
+
+          out = {'pkg': pkg, 'current': current, 'proposed': proposed, 'why': why, 'device': device}
+          json.dump(out, open('/tmp/parsed.json', 'w', encoding='utf-8'), ensure_ascii=False)
+          print(json.dumps(out, ensure_ascii=False, indent=2))
+          PY
+
+      - name: 🔍 Is the package in the list?
+        run: |
+          set -euo pipefail
+          PKG=$(jq -r '.pkg' /tmp/parsed.json)
+          CURRENT=$(jq -r '.current' /tmp/parsed.json)
+          if [ -f site/bloat/bloat_list.json ]; then
+            ENTRY_LEVEL=$(jq -r --arg p "$PKG" '.[$p].removal // "MISSING"' site/bloat/bloat_list.json)
+            if [ "$ENTRY_LEVEL" = "MISSING" ]; then
+              echo "::error::$PKG 不在这份名单里，改档位没有意义（先确认包名，或者这是新包的收录请求）"
+              exit 1
+            fi
+            if [ -n "$CURRENT" ] && [ "$CURRENT" != "$ENTRY_LEVEL" ]; then
+              echo "::warning::表单写的现在是 $CURRENT，名单里是 $ENTRY_LEVEL；以名单为准继续。"
+            fi
+            echo "名单里 $PKG 当前是 $ENTRY_LEVEL"
+          else
+            echo "::warning::仓库里还没有 bloat_list.json，跳过存在性校验"
+          fi
+
+      - name: 🧩 Merge into level_fixes.json
+        env:
+          ISSUE: ${{ steps.parse.outputs.number || inputs.issue }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, datetime, sys
+
+          path = os.environ['TARGET']
+          data = json.load(open(path, encoding='utf-8'))
+          entry_in = json.load(open('/tmp/parsed.json', encoding='utf-8'))
+          pkg = entry_in['pkg']
+
+          packages = data.setdefault('packages', {})
+          existing = packages.get(pkg)
+          if existing and existing.get('source') == 'maintainer':
+              sys.exit(f'{pkg} 是我们自己写下的一条（source=maintainer），工作流不动它；'
+                       '要改请在文件里直接改。')
+
+          issue = int(os.environ['ISSUE'])
+          who = entry_in.get('device') or 'user report'
+          note = (
+              f"{entry_in['why']}（依据：issue #{issue}，{who}）" if not entry_in.get('device')
+              else f"{entry_in['why']}（依据：issue #{issue}，{entry_in['device']}）"
+          )
+
+          packages[pkg] = {
+              'removal': entry_in['proposed'],
+              'source': 'community',
+              'issue': issue,
+              'notes': {'zh': note, 'en': note},
+          }
+          data['version'] = int(data.get('version', 1)) + 1
+          data['updated'] = datetime.date.today().isoformat()
+          json.dump(data, open(path, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+          open(path, 'a', encoding='utf-8').write('\n')
+          print(f'{pkg} -> {entry_in["proposed"]}')
+          PY
+
+      - name: 🚀 Commit & push
+        if: ${{ !inputs.dry_run }}
+        env:
+          ISSUE: ${{ steps.parse.outputs.number || inputs.issue }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$TARGET"
+          if git diff --cached --quiet; then
+            echo "修正表没变化，不提交。"
+            exit 0
+          fi
+          git commit -m "fix(bloat): 合并用户的分级修正（issue #${ISSUE}）"
+          git push origin HEAD:master
+
+      - name: 💬 Tell the reporter
+        if: always() && github.event.issue.number
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          OUTCOME: ${{ job.status }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "$OUTCOME" = "success" ]; then
+            BODY='这条修正已合并进 `site/bloat/level_fixes.json`，所有手机在下一次核对（一周内）就会拿到新档位，不需要等发版。谢谢。'
+          else
+            BODY='这条修正没有合并成功，原因见上面的 Actions 日志（通常是包名、档位或「为什么」不合格）。改好之后请维护者重新打 `level-fix-confirm` 标签。'
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}/comments" -f body="$BODY" > /dev/null

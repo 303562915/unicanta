@@ -10,10 +10,10 @@ By default, the only thing Canta sends over the network is a request to download
 There is one **optional**, opt-in feature that sends anonymous package statistics; it is off unless you turn it on.
 
 ### Network connections
-Canta connects to GitHub (`raw.githubusercontent.com` and `api.github.com`) to download and update the packaged app list (app descriptions and badges).
-By default that list is this project's own copy of the [Universal Debloater Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation) list, published in this repository under `site/bloat/` and refreshed from upstream weekly by a scheduled workflow; if you have pointed the list URL at a different source in Settings, that source is used instead.
+Canta connects to GitHub (`raw.githubusercontent.com` and `api.github.com`) to download and update the packaged app list (app descriptions and badges) and its removal-level corrections.
+By default both are this project's own copies, published in this repository under `site/bloat/` — the list is refreshed from the [Universal Debloater Alliance](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation) weekly by a scheduled workflow, and the corrections are maintained here. If you have pointed the list URL at a different source in Settings, that source is used instead.
 These requests are ordinary requests to GitHub and are subject to [GitHub's privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
-You can turn auto-updating off in Settings.
+They are checked at most once a week; you can turn auto-updating off in Settings.
 
 ### Package analytics (optional, opt-in)
 Package analytics is **off** unless you choose "Contribute" during onboarding or enable it in Settings.

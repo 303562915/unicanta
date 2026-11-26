@@ -7,11 +7,12 @@ import io.github.samolego.canta.data.bloat.BloatDescriptions
 import io.github.samolego.canta.data.bloat.BloatOverrides
 import io.github.samolego.canta.data.bloat.BloatRepository
 import io.github.samolego.canta.data.bloat.BundledBloatList
+import io.github.samolego.canta.data.bloat.DEFAULT_LEVEL_FIXES_COMMITS_URL
+import io.github.samolego.canta.data.bloat.DEFAULT_LEVEL_FIXES_URL
 import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.ChatMessageCache
 import io.github.samolego.canta.data.community.ChatMessageStore
-import io.github.samolego.canta.data.community.CommunityRpc
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
@@ -65,10 +66,11 @@ object StoredData {
     const val BLOAT_LIST = "bloat_list.json"
 
     /**
-     * 库里那张家里的分级修正（`package_level_fix_list()` 的原文）。
+     * 仓库里那份分级修正（`site/bloat/level_fixes.json` 的原文）。
      *
      * 单独一个文件而不是塞进 [BLOAT_LIST]：列表是上游的、会被整份覆盖，修正是我们自己的、要能
-     * 在列表没换的情况下单独生效（见 [BloatRepository]）。
+     * 在列表没换的情况下单独生效（见 [BloatRepository]）。**这张表从 GitHub 读，不从数据库读**：
+     * 数据库那一侧按请求数撑着，见 [BloatRepository] 的构造参数注释。
      */
     const val BLOAT_LEVEL_FIXES = "bloat_level_fixes.json"
 
@@ -118,8 +120,6 @@ fun cantaAppDependencies(
     val settings = CantaSettings(storage(StoredData.SETTINGS))
     val client = HttpClient()
     val cantaHandler = handler(settings)
-    // 只用来问一件事：库里的分级修正表。跟列表核对同一个七天窗口，不是每次进列表都发请求。
-    val communityRpc = CommunityRpc(client)
     // 消息页的会话列表落盘：冷启动那一屏要能先画出来，而不是转几秒等网络。
     // 这里绑一次就够，之后写入由 ConversationCache 自己派到后台。
     ConversationCache.bind(ConversationStore(storage(StoredData.CONVERSATIONS)))
@@ -145,7 +145,11 @@ fun cantaAppDependencies(
             descriptions = { BloatDescriptions.bundled() },
             bundled = { BundledBloatList.raw() },
             overrides = { BloatOverrides.bundled() },
-            remoteCorrections = { communityRpc.post("package_level_fix_list", "{}") },
+            // 修正表读仓库里的静态文件，**不读数据库**：数据库那一侧是按请求数撑着的（Free 档
+            // 426 MB 内存，2026-11-25 白屏事故见 ops-notes/backend-incident-2026-11-25.md），
+            // 一张几行的表不值得再多一条每天一次的路径。
+            correctionsUrl = { DEFAULT_LEVEL_FIXES_URL },
+            correctionsCommitsUrl = { DEFAULT_LEVEL_FIXES_COMMITS_URL },
             correctionsCache = storage(StoredData.BLOAT_LEVEL_FIXES),
         ),
         telemetry = telemetry,
