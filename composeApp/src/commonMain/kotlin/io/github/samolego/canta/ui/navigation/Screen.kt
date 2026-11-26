@@ -63,6 +63,17 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Posts : Screen("posts")
 
     /**
+     * 写新话题：从 [Posts] 里单独开出来的一页，**不挂底栏**。
+     *
+     * 以前编辑器是 [Posts] 内部的一个 pane —— 点「发帖」后整页在原地换成编辑态，
+     * 底栏还在下面。写东西的时候底栏那一排图标既没用又占地方，手指还容易误触走掉；
+     * 所以改成一条独立路由，离开时 [Posts] 的列表就留在它自己的返回栈里。
+     *
+     * 草稿仍然只在 [Posts] 那一份（`deps.postDrafts`），这里不另存。
+     */
+    data object PostEditor : Screen("posts/new")
+
+    /**
      * 开源周榜：帖子页顶上那张卡片的详情——整期海报 + 这一周的十条榜单。
      *
      * 从 [Posts] 列表顶部的卡片进（不占底栏）。数据写死在

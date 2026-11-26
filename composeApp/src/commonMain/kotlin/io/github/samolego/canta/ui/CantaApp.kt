@@ -1119,6 +1119,46 @@ private fun CantaNavigation(
                     // 底栏一级页面：不给返回箭头，离开靠点底栏别的格。
                     // 名字/头像没设完：帖子能写能存草稿，但发不出去（按钮灰掉 + 说一句为什么）。
                     setupGate = setupGate,
+                    // 「创建话题」不再在列表页里原地换 pane：交给独立路由，那一页不挂底栏。
+                    // 新页进来时自己会开一条新的编辑器（openEditorOnEnter）；从草稿继续写
+                    // 那条路仍留在本页（草稿行点一下就是页内打开，不必为它多一层返回栈）。
+                    onOpenCompose = { _ -> navController.navigate(Screen.PostEditor.route) },
+                )
+            }
+            composable(route = Screen.PostEditor.route) {
+                // 写新话题：**独立一页，不挂底栏**（见 BOTTOM_BAR_ROUTES —— 它不在那张表里）。
+                // 编辑器、草稿、发布仍走 PostsScreen 那一份实现，这里只改变「起步停在哪一格」：
+                // openEditorOnEnter 让它一进来就是编辑态，onEditorClosed 在取消/发布成功后
+                // 把这一页弹回去。写东西时底栏那一排图标既没用又容易误触走掉，所以这里不要它。
+                var editorAuthor by remember { mutableStateOf("") }
+                var editorIdentity by remember { mutableStateOf("") }
+                var editorOwner by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) {
+                    editorAuthor = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    editorOwner = identity.owner
+                    editorIdentity = identity.owner.ifEmpty { identity.token }
+                }
+                PostsScreen(
+                    platform = platform,
+                    store = postStore,
+                    drafts = deps.postDrafts,
+                    reads = deps.postReads,
+                    author = editorAuthor,
+                    authorId = editorIdentity,
+                    loadPlans = {
+                        val mine = if (editorOwner.isNotBlank()) {
+                            communityRepository.plansByOwner(editorOwner)
+                        } else {
+                            emptyList()
+                        }
+                        if (mine.isNotEmpty()) mine else communityRepository.plansAll(limit = 50).orEmpty()
+                    },
+                    weeklyRank = deps.weeklyRank,
+                    onOpenWeeklyRank = null,
+                    setupGate = setupGate,
+                    openEditorOnEnter = true,
+                    onEditorClosed = { navController.popBackStack() },
                 )
             }
             composable(route = Screen.WeeklyRank.route) {

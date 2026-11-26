@@ -1,7 +1,12 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -37,7 +43,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
@@ -45,21 +50,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Drafts
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.FormatBold
-import androidx.compose.material.icons.outlined.FormatItalic
-import androidx.compose.material.icons.outlined.FormatListBulleted
-import androidx.compose.material.icons.outlined.FormatQuote
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Title
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.MaterialTheme
 import io.github.samolego.canta.ui.fl.isDark
@@ -184,25 +174,30 @@ private const val TAG_LIMIT = 20
  */
 private class EditorTool(
     val label: String,
-    val icon: ImageVector,
+    val glyph: FlGlyph,
     val snippet: String,
 )
 
 /**
  * 工具栏的顺序照 discourse/fluxdo 的编辑器：粗体、斜体、标题、列表、引用、代码、链接。
  *
+ * 图标一律用 [FlGlyphs] 自绘：编辑器和顶栏、FAB 在同一屏里，图标族的笔画粗细必须一致
+ * （FlGlyph 是 1.8/24 的中心线，Material 的 outlined 在 16dp 下会掉到 1.3px，混着摆一眼能看出
+ * 两套粗细）。`bold / italic / heading / bulletList / quote` 是本仓新补的，FlClash 原版没有
+ * 写作工具；`code / link` 用的是它原有的那两个。
+ *
  * 只往末尾追加：我们用的是 String 值而不是 TextFieldValue，拿不到游标位置；与其为了
  * "插在光标处"把整页输入框改成 TextFieldValue（会连带改草稿、自动保存和预览），
  * 不如让人写完点一下、再把这行挪上去——多一步，但不会插错地方。
  */
 private val EDITOR_TOOLS = listOf(
-    EditorTool("粗体", Icons.Outlined.FormatBold, "**粗体**"),
-    EditorTool("斜体", Icons.Outlined.FormatItalic, "*斜体*"),
-    EditorTool("标题", Icons.Outlined.Title, "## 小标题"),
-    EditorTool("列表", Icons.Outlined.FormatListBulleted, "- 一项"),
-    EditorTool("引用", Icons.Outlined.FormatQuote, "> 引用"),
-    EditorTool("代码", Icons.Outlined.Code, "`代码`"),
-    EditorTool("链接", Icons.Outlined.Link, "[文字](https://)"),
+    EditorTool("粗体", FlGlyphs.bold, "**粗体**"),
+    EditorTool("斜体", FlGlyphs.italic, "*斜体*"),
+    EditorTool("标题", FlGlyphs.heading, "## 小标题"),
+    EditorTool("列表", FlGlyphs.bulletList, "- 一项"),
+    EditorTool("引用", FlGlyphs.quote, "> 引用"),
+    EditorTool("代码", FlGlyphs.code, "`代码`"),
+    EditorTool("链接", FlGlyphs.link, "[文字](https://)"),
 )
 
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
@@ -270,6 +265,14 @@ private fun PostsToolbar(
     onOpenFilters: () -> Unit,
     /** 开源周榜入口；null 时不画那颗按钮。 */
     onOpenWeeklyRank: (() -> Unit)? = null,
+    /**
+     * 「创建话题」那颗图标；null 时不画。
+     *
+     * 为什么顶栏也要有一个：FAB 是"展开菜单再点第二下"的两段动作，而 fluxdo 的首页工具栏
+     * 右端就是一颗直达的创作按钮——新建话题是这一页最常用的写操作，不该只能从右下角绕进去。
+     * 两颗入口同时存在不是重复：FAB 那三个格（草稿 / 写新帖 / 刷新）仍然只有它给得了。
+     */
+    onCompose: (() -> Unit)? = null,
     /** 顶栏底色：与它所在页面的底一致（见调用点注释）。 */
     background: Color = Color.Unspecified,
 ) {
@@ -349,6 +352,16 @@ private fun PostsToolbar(
         if (onOpenWeeklyRank != null) {
             WeeklyRankIconButton(onClick = onOpenWeeklyRank)
         }
+        // 「创建话题」：一颗直达的写作入口，照 fluxdo 首页工具栏右端的创作按钮。
+        // 图标用 [FlGlyphs.edit]（笔），和 FAB 菜单里「写新帖」同一颗——同一件事在哪儿都是同一件图标。
+        // 身份没认出来时（[onCompose] 由调用方传 null）不画：那颗按钮点了也只能说"还没认出身份"。
+        if (onCompose != null) {
+            TopBarIconButton(
+                glyph = FlGlyphs.edit,
+                label = "创建话题",
+                onClick = onCompose,
+            )
+        }
         Spacer(modifier = Modifier.width(8.dp))
     }
 }
@@ -421,17 +434,37 @@ private fun PostsFab(
     // 圆角 16 → 正圆（28 = 56/2），跟着进度插值。
     val corner = RoundedCornerShape((16f + (28f - 16f) * tint).dp)
 
-    Column(horizontalAlignment = Alignment.End) {
-        if (open) {
-            FabAction(icon = Icons.Outlined.Refresh, label = "刷新", onClick = onRefresh)
-            if (canWrite) {
-                FabAction(
-                    icon = Icons.Outlined.Drafts,
-                    label = if (draftCount > 0) "草稿 ($draftCount)" else "草稿",
-                    onClick = onDrafts,
-                )
-                FabAction(icon = Icons.Outlined.Edit, label = "写新帖", onClick = onNewPost)
-            }
+    // 间距 4：`M3eFabMenu` 的 `_itemSpacing`（原写 10，太散）。**必须是 4** ——
+    // 之前这段注释写着 4，代码里却没有 `verticalArrangement`，实际间距是 0，菜单项贴着排。
+    //
+    // 三个菜单项**不套** `if (open)`：动画要能播退出就必须一直留在树上，由 AnimatedVisibility
+    // 自己按 `visible` 决定进出。外面再包一层 `if` 的话，`open` 变 false 的那一帧整棵子树就被
+    // 摘掉了，`exit` 规格根本轮不到执行——按下去会"啪"地消失。
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // 弹出：每项从 0.2 缩放到 1 并淡入，收起时反向（`m3e_fab_menu.dart` 的 `_buildItem`）。
+        FabAction(
+            visible = open,
+            glyph = FlGlyphs.refresh,
+            label = "刷新",
+            onClick = onRefresh,
+        )
+        if (canWrite) {
+            // 顺序照 `M3eFabMenu`：离 FAB 最近的是"写新帖"（主动作），草稿在它上面一格。
+            FabAction(
+                visible = open,
+                glyph = FlGlyphs.edit,
+                label = "写新帖",
+                onClick = onNewPost,
+            )
+            FabAction(
+                visible = open,
+                glyph = FlGlyphs.drafts,
+                label = if (draftCount > 0) "草稿 ($draftCount)" else "草稿",
+                onClick = onDrafts,
+            )
         }
         Box(
             modifier = Modifier
@@ -441,43 +474,61 @@ private fun PostsFab(
                 .clickable(role = Role.Button, onClickLabel = if (open) "收起" else "发帖", onClick = onToggle),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = if (open) Icons.Outlined.Close else Icons.Outlined.Add,
-                contentDescription = if (open) "收起" else "发帖",
-                modifier = Modifier.size((24f - 4f * tint).dp),
+            // ＋ / × 走自绘：这颗 FAB 两态要同一个族，而 Material 的 Add/Close 笔画粗细
+            // 和 FlGlyph 的 1.8/24 对不上（24→20 缩放后 Material 是 2.5 个逻辑像素）。
+            FlGlyphIcon(
+                glyph = if (open) FlGlyphs.close else FlGlyphs.add,
+                size = (24f - 4f * tint).dp,
                 tint = ink,
             )
         }
     }
 }
 
-/** FAB 弹出来的一项：图标 + 一行字，都压在一块圆角底上。 */
+/**
+ * FAB 弹出来的一项：图标 + 一行字，都压在一块圆角底上。
+ *
+ * [visible] 走 [AnimatedVisibility]：弹出时从 0.2 缩放到 1 并淡入，收起时反向。
+ * 调用方**不要**再在外面包 `if`——包了就没有退出动画（见 [PostsFab] 那段注释）。
+ */
 @Composable
-private fun FabAction(icon: ImageVector, label: String, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            // 菜单项：`primaryContainer` 胶囊、**图标在右、文字在左**、内边距 24/8（照
-            // `M3eFabMenuItem` 的 `iconAlignment: end`），与那颗展开成 primary 的 FAB 是同一族颜色。
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
-            .background(scheme.primaryContainer)
-        .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun FabAction(visible: Boolean, glyph: FlGlyph, label: String, onClick: () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.2f, animationSpec = tween(220)),
+        exit = fadeOut(tween(160)) + scaleOut(targetScale = 0.2f, animationSpec = tween(160)),
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = scheme.onPrimaryContainer,
-            maxLines = 1,
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(24.dp),
-            tint = scheme.onPrimaryContainer,
-        )
+        val scheme = MaterialTheme.colorScheme
+        Row(
+            modifier = Modifier
+                // 顺序是 `clip → background → clickable → padding`：背景必须画在点击层**下面**，
+                // 反过来（先 clickable 再 background）背景会盖住涟漪，和抽屉、全仓其它胶囊都反着。
+                .heightIn(min = 40.dp)
+                .clip(RoundedCornerShape(50))
+                .background(scheme.primaryContainer)
+                .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 菜单项：`primaryContainer` 胶囊、**图标在右、文字在左**（照 `M3eFabMenuItem`
+                // 的 `iconAlignment: end`），与那颗展开成 primary 的 FAB 是同一族颜色。
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = scheme.onPrimaryContainer,
+                    maxLines = 1,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                FlGlyphIcon(
+                    glyph = glyph,
+                    size = 24.dp,
+                    tint = scheme.onPrimaryContainer,
+                )
+            }
+        }
     }
 }
 
@@ -510,6 +561,31 @@ internal fun PostsScreen(
      * 只挡「发」，不挡「写」：草稿照旧能存，发的时候按钮是灰的并说清差哪一步。
      */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
+    /**
+     * 一进来就打开编辑器（写新话题），而不是先画列表。
+     *
+     * 给独立路由 `Screen.PostEditor` 用：那一页从「帖子」里单独开出来、不挂底栏，
+     * 进来唯一的目的就是写。为 false 时是原来的 [io.github.samolego.canta.ui.navigation.Screen.Posts]：
+     * 列表起步，点「发帖」才在页内换成编辑态。
+     *
+     * 编辑器本身、草稿、发布逻辑全都还是这一份 —— 这里只是决定「起步停在哪一格」，
+     * 所以两条路不会写出两种行为。
+     */
+    openEditorOnEnter: Boolean = false,
+    /**
+     * 编辑态结束（取消或发成功）时回调。
+     *
+     * 独立那一页（[openEditorOnEnter] = true）用它把自己弹回列表：那一页存在的理由就是写，
+     * 写完了留在原地会是一个空的编辑器。为 null 时是原来的页内切换，什么都不用做。
+     */
+    onEditorClosed: (() -> Unit)? = null,
+    /**
+     * 「创建话题」/ FAB 的「写新帖」要去的去处；null 时退回页内切换（老行为）。
+     *
+     * 传进来的话，这一页就只负责列表：点发帖交给外面导航到 `Screen.PostEditor`，
+     * 那一页不挂底栏。带参数的是「从某条草稿继续写」，null 是写新的。
+     */
+    onOpenCompose: ((PostDraft?) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
@@ -555,7 +631,8 @@ internal fun PostsScreen(
     }
 
     // ---- 编辑器 ----
-    var composing by remember { mutableStateOf(false) }
+    // 独立那一页（`Screen.PostEditor`）进来就是编辑态；「帖子」自己那一页从列表起步。
+    var composing by remember { mutableStateOf(openEditorOnEnter) }
     /** 预览开关：和「写」「改文字」一样放在整页状态里，顶栏那个按钮要读它。 */
     var previewing by remember { mutableStateOf(false) }
     /** 上一次拉列表时见过的最大帖子 id：用来算「有几个新的或更新的话题」。 */
@@ -755,6 +832,18 @@ internal fun PostsScreen(
         composing = true
     }
 
+    /**
+     * 所有「去写点东西」的入口都走这里。
+     *
+     * 有 [onOpenCompose] 就把活交给外面（导航到独立那一页 `Screen.PostEditor`，不挂底栏），
+     * 没有就还是页内切换。**新增入口也请走这个函数**，别直接调 [openEditor] ——
+     * 直接调会绕过外面那条路由，于是同一个按钮在不同页面上行为不一样。
+     */
+    val startCompose: (PostDraft?) -> Unit = compose@{ draft ->
+        val navigate = onOpenCompose
+        if (navigate != null) navigate(draft) else openEditor(draft)
+    }
+
     /** 取消：有内容就存成草稿并说一声；空的一次什么都不留。 */
     val cancelEditor: () -> Unit = cancel@{
         val draftStore = drafts
@@ -764,6 +853,9 @@ internal fun PostsScreen(
             draftList = draftStore?.drafts(who).orEmpty()
             composing = false
             editorId = ""
+            // 独立那一页（`Screen.PostEditor`）存在的理由就是写；取消了就回去，
+            // 别把人留在一条空编辑器上。页内切换时这里是 null，什么都不做。
+            onEditorClosed?.invoke()
             return@cancel
         }
         if (draftStore != null && who.isNotEmpty()) {
@@ -782,6 +874,7 @@ internal fun PostsScreen(
         }
         composing = false
         platform.showMessage("已存为草稿")
+        onEditorClosed?.invoke()
     }
 
     /** 发布：成功后删草稿、关编辑器、刷新列表；失败就把后端那句话摆在编辑器里。 */
@@ -826,6 +919,8 @@ internal fun PostsScreen(
             draftList = drafts?.drafts(who).orEmpty()
             reloadKey++
             platform.showMessage("已发布")
+            // 发完了就回去看列表里的新帖：独立那一页留在这里只会是一条空编辑器。
+            onEditorClosed?.invoke()
         }
     }
 
@@ -1122,6 +1217,9 @@ else -> Column {
                             menuOpen = filterMenuOpen,
                             onOpenCategories = { drawerOpen = true },
                             onOpenFilters = { filterMenuOpen = true },
+                            // 「创建话题」：身份认出来了才画（发不了帖的按钮不如不放，
+                            // 点了只会说"还没认出身份"）。它和 FAB 的「写新帖」进同一个编辑器。
+                            onCompose = if (canWrite) ({ startCompose(null) }) else null,
                             // 开源周榜：入口搬到顶栏右上角（列表里那条 40dp 横条删掉了）。
                             onOpenWeeklyRank = if (weeklyRank != null) onOpenWeeklyRank else null,
                             // 顶栏与**页面**同色：Scaffold 的默认底色是 `colorScheme.surface`（主题的页面底色），
@@ -1141,7 +1239,7 @@ else -> Column {
                                         filterMenuOpen = false
                                     },
                                     trailingIcon = if (entry == board) {
-                                        { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }
+                                        { FlGlyphIcon(glyph = FlGlyphs.check, size = 16.dp) }
                                     } else {
                                         null
                                     },
@@ -1164,11 +1262,11 @@ else -> Column {
                         onToggle = { fabOpen = !fabOpen },
                         onNewPost = {
                             fabOpen = false
-                            openEditor(null)
+                            startCompose(null)
                         },
                         onDrafts = {
                             fabOpen = false
-                            draftList.firstOrNull()?.let { openEditor(it) }
+                            draftList.firstOrNull()?.let { startCompose(it) }
                         },
                         onRefresh = {
                             fabOpen = false
@@ -1299,9 +1397,9 @@ else -> Column {
                 },
                 onLoadMore = loadMore,
                 onOpen = openThread,
-                onOpenDraft = { openEditor(it) },
+                onOpenDraft = { startCompose(it) },
                 onDeleteDraft = { discardDraft(it) },
-                onWrite = { openEditor(null) },
+                onWrite = { startCompose(null) },
                 modifier = Modifier.padding(padding),
             )
         }
@@ -1392,10 +1490,10 @@ private fun SearchCapsule(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(modifier = Modifier.width(16.dp))
-                Icon(
-                    imageVector = Icons.Outlined.Search,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
+                // 放大镜用自绘的：`CantaTopBar` 那颗搜索也是它，两颗得同族。
+                FlGlyphIcon(
+                    glyph = FlGlyphs.search,
+                    size = 20.dp,
                     tint = scheme.primary,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -2539,10 +2637,11 @@ private fun PublishCircleButton(busy: Boolean, enabled: Boolean, onClick: () -> 
                     strokeWidth = 2.dp,
                 )
             } else {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "发送",
-                    modifier = Modifier.size(21.dp),
+                // 与详情页吸底回复栏那颗发送同一个 glyph（`ReplyBar` 用的是 `FlGlyphs.send`）：
+                // 同一个页面里两个"发送"不能一个 Material 纸飞机、一个自绘纸飞机。
+                FlGlyphIcon(
+                    glyph = FlGlyphs.send,
+                    size = 21.dp,
                     tint = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
                 )
             }
@@ -2570,9 +2669,15 @@ private fun PostEditorPane(
 ) {
     val scheme = MaterialTheme.colorScheme
     val savedClock = draftClock(savedAt)
-    // 两排属性默认收起：一进来看到的是"标题 + 空白正文"，不是两条堆满 chip 的横带。
-    // 已经有内容的（改草稿）才展开，省得每次都点一下。
-    var categoryOpen by remember { mutableStateOf(category.isNotBlank()) }
+    // 分类是一列选项、标签是一行输入：两者形态不同，所以各用一种展开方式。
+    //   - 分类照着 fluxdo 的 `_CategoryPicker`：**点开是一个 DropdownMenu**（一列五个候选，
+    //     当前那个打勾），选完就收起。之前是"在底部内联铺一排 chip"，等于每次选分类都把
+    //     底部那两块高度顶上去 26dp，正文区跟着缩一下。
+    //   - 标签是一格输入框 + 已成的 chip，没办法做成"一列选项"，所以还是内联展开。
+    //
+    // 两个开合都放在这里（而不是提到 PostsScreen）：它们只影响这一屏的排版，
+    // 页面级状态里已经有十几个了，再塞两个会让"编辑器状态"那段更难读。
+    var categoryMenuOpen by remember { mutableStateOf(false) }
     var tagsOpen by remember { mutableStateOf(tags.isNotEmpty() || tagInput.isNotBlank()) }
 
     // 无边框输入：标题与正文都当"一页纸"写，不套输入框的壳。
@@ -2687,9 +2792,12 @@ private fun PostEditorPane(
         HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
 
         // 底部常驻：属性条 + 工具栏。这两块是"发之前最后核对的东西"，吸在最下面。
+        // `imePadding`：这一块贴在屏幕底边，键盘一起来它就会被整个盖住——写长文时
+        // "分类/标签/工具栏"这三样全看不见。回复栏（[ReplyBar]）早就垫了这一下，这里漏了。
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .background(FlSurfaceLevel.Block.colorOf(scheme)),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -2701,11 +2809,50 @@ private fun PostEditorPane(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ComposerPill(
-                    text = category.ifBlank { "选择分类" },
-                    accent = category.isBlank(),
-                    onClick = { categoryOpen = !categoryOpen },
-                )
+                // 分类：胶囊 + 下拉菜单，两件事必须包在一个 Box 里 —— DropdownMenu 拿不到
+                // 外面的滚动坐标，锚点必须紧跟胶囊，否则 popup 会落在屏幕上别处。
+                Box {
+                    ComposerPill(
+                        text = category.ifBlank { "选择分类" },
+                        accent = category.isBlank(),
+                        dropdown = true,
+                        onClick = { categoryMenuOpen = true },
+                    )
+                    DropdownMenu(
+                        expanded = categoryMenuOpen,
+                        onDismissRequest = { categoryMenuOpen = false },
+                    ) {
+                        // 第一项是"不选"：分类本来就可以空着（后端当字符串存，空串合法），
+                        // 没有这一项的话，选错了就只能点同一个 chip 再点一次才能取消。
+                        DropdownMenuItem(
+                            text = { Text("不选分类") },
+                            onClick = {
+                                onCategoryChange("")
+                                categoryMenuOpen = false
+                            },
+                            trailingIcon = if (category.isBlank()) {
+                                { FlGlyphIcon(glyph = FlGlyphs.check, size = 16.dp) }
+                            } else {
+                                null
+                            },
+                        )
+                        POST_CATEGORIES.forEach { label ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    onCategoryChange(label)
+                                    categoryMenuOpen = false
+                                },
+                                trailingIcon = if (label == category) {
+                                    { FlGlyphIcon(glyph = FlGlyphs.check, size = 16.dp) }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+                    }
+                }
+                // 标签没有"一列候选"可给（标签是用户自己写的词），所以还是内联展开一格输入框。
                 ComposerPill(
                     text = if (tags.isEmpty()) "+ 添加标签" else "+ 标签 (${tags.size}/$TAG_MAX)",
                     accent = tags.isEmpty(),
@@ -2715,19 +2862,6 @@ private fun PostEditorPane(
                     // 比模板更进一步的一格：插进来的是一份真实的方案分享（名字 + 机型 + 分享码），
                     // 而不是一段要自己填的骨架。
                     ComposerPill(text = "分享方案", accent = false, onClick = onInsertShare)
-                }
-            }
-
-            if (categoryOpen) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CategoryChips(selected = category, onPick = onCategoryChange)
                 }
             }
 
@@ -2772,9 +2906,19 @@ private fun PostEditorPane(
     }
 }
 
-/** 属性条上的一个胶囊。数值照 fluxdo `topic_editor_helpers.dart` 的 `_pill`（移动端分支）。 */
+/**
+ * 属性条上的一个胶囊。数值照 fluxdo `topic_editor_helpers.dart` 的 `_pill`（移动端分支）。
+ *
+ * [dropdown] 决定右端那颗小箭头画不画：分类是"点开一列选项"，箭头照着 `chevronDown` 画；
+ * 标签和分享方案是开关/动作，挂一个 ▾ 反而像"这里还有一层菜单"。
+ */
 @Composable
-private fun ComposerPill(text: String, accent: Boolean, onClick: () -> Unit) {
+private fun ComposerPill(
+    text: String,
+    accent: Boolean,
+    onClick: () -> Unit,
+    dropdown: Boolean = false,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -2791,13 +2935,15 @@ private fun ComposerPill(text: String, accent: Boolean, onClick: () -> Unit) {
             color = if (accent) scheme.primary else scheme.onSurfaceVariant,
             maxLines = 1,
         )
-        Spacer(modifier = Modifier.width(2.dp))
-        // 下拉小三角：告诉人"这里点开是一列选项"，不是一个开关。
-        FlGlyphIcon(
-            glyph = FlGlyphs.chevronDown,
-            size = 14.dp,
-            tint = if (accent) scheme.primary else scheme.onSurfaceVariant,
-        )
+        if (dropdown) {
+            Spacer(modifier = Modifier.width(2.dp))
+            // 下拉小三角：告诉人"这里点开是一列选项"，不是一个开关。
+            FlGlyphIcon(
+                glyph = FlGlyphs.chevronDown,
+                size = 14.dp,
+                tint = if (accent) scheme.primary else scheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -2809,13 +2955,12 @@ private fun EditorToolButton(tool: EditorTool, onClick: () -> Unit) {
         modifier = Modifier
             .size(48.dp)
             .clip(RoundedCornerShape(50))
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(role = Role.Button, onClickLabel = tool.label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = tool.icon,
-            contentDescription = tool.label,
-            modifier = Modifier.size(16.dp),
+        FlGlyphIcon(
+            glyph = tool.glyph,
+            size = 16.dp,
             tint = scheme.onSurfaceVariant,
         )
     }
@@ -2823,31 +2968,12 @@ private fun EditorToolButton(tool: EditorTool, onClick: () -> Unit) {
 
 
 /**
- * 分类：一行可点的 chip。
+ * 分类**不再**用一排 chip 铺在底部：它现在是一个 [ComposerPill] 点开的 [DropdownMenu]
+ * （照 fluxdo 的 `_CategoryPicker`）。内联铺 chip 的做法会把底部那两块高度顶上去 26dp，
+ * 每选一次分类正文区就缩一下。
  *
- * 用一排手画的 chip 而不是 `FlSegmentedControl`：那个是按等宽分段画的，而且只认"选中第几个"，
- * 表达不了"一个都没选"这个状态——而分类默认就是不选。
+ * 选择逻辑本身没变，仍在 [PostsSection] 的 `onCategoryChange`，候选仍是 [POST_CATEGORIES]。
  */
-@Composable
-private fun CategoryChips(
-    selected: String,
-    onPick: (String) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        POST_CATEGORIES.forEach { label ->
-            val picked = label == selected
-            PostChip(
-                text = label,
-                picked = picked,
-                onClick = { onPick(if (picked) "" else label) },
-            )
-        }
-    }
-}
 
 /** 已经成形的标签：点一下删掉它。 */
 @Composable
@@ -3196,10 +3322,11 @@ private fun FreshTopicsBanner(count: Int, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Outlined.ArrowUpward,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
+        // 向上的箭头用自绘：FlGlyphs 有四个方向的 chevron，但没有直箭头，所以新补了
+        // `arrowUpward`（与 `arrowBack` 同构，转 90°）。
+        FlGlyphIcon(
+            glyph = FlGlyphs.arrowUpward,
+            size = 14.dp,
             tint = scheme.primary,
         )
         Spacer(modifier = Modifier.width(8.dp))
