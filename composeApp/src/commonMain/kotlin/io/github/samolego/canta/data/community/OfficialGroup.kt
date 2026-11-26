@@ -51,4 +51,19 @@ object OfficialGroups {
         entries.indexOfFirst { it.title == title }.let { if (it < 0) Int.MAX_VALUE else it }
 
     fun byTitle(title: String): OfficialGroupEntry? = entries.firstOrNull { it.title == title }
+
+    /**
+     * 这个群该不该出现在消息页的列表里。
+     *
+     * **没名字的群不显示**：`conversations.title` 为空的那几个是早期测试留下的空群（`id = 13`、
+     * `14`，`created_by = 10003`，只有 1–2 个成员），它们不该占着任何人的消息页。判据取的是群名
+     * 为空，而不是写死群号——以后再冒出这种群也照样被挡住。
+     *
+     * 只有群才过滤：私聊的标题来自对方的名字，跟这件事无关。
+     */
+    fun isVisibleInList(conversation: Conversation): Boolean =
+        !conversation.isGroup || conversation.title.isNotBlank()
+
+    /** 空标题的群在聊天页顶栏上显示成什么：不说「默认那个群」，就按它的性质写。 */
+    const val UNNAMED_GROUP_LABEL: String = "未命名群聊"
 }

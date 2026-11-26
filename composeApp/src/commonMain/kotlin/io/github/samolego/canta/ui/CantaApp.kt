@@ -63,6 +63,7 @@ import io.github.samolego.canta.data.community.ChatRealtimeHub
 import io.github.samolego.canta.data.community.ChatUnread
 import io.github.samolego.canta.data.community.CommunityRpc
 import io.github.samolego.canta.data.community.LevelFixRepository
+import io.github.samolego.canta.data.community.OfficialGroups
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.SocialRepository
@@ -1732,7 +1733,9 @@ private fun CantaNavigation(
                             .firstOrNull { it.id == conversationId }
                         chatTitle = opened
                             ?.let { row -> row.title.ifBlank { row.peerName.ifBlank { row.peer } } }
-                            .orEmpty()
+                            // 没名字的群（早期测试留下的空群）在消息页不列，但人可能从退回来的路由
+                            // 直接进到这里：给顶栏一句话，别让标题空着。
+                            .ifBlank { if (opened?.isGroup == true) OfficialGroups.UNNAMED_GROUP_LABEL else "" }
                         chatIsGroup = chatIsGroup || opened?.isGroup == true
                         chatPeer = opened?.peer.orEmpty().ifEmpty { opened?.peerName.orEmpty() }
                     }

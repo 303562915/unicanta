@@ -661,6 +661,8 @@ fun MessagesScreen(
     // 由 [OfficialGroups] 那份常量画出来（见下面 `officialRows`），所以没进群的人也看得到这两行。
     val visibleConversations = reachableConversations
         .filterNot { it.isFoldedGroup() }
+        // 没名字的群（早期测试留下的空群，`title = ''`）一律不列：见 [OfficialGroups.isVisibleInList]。
+        .filter { OfficialGroups.isVisibleInList(it) }
         // 已经在列表里的官方群要剔掉：它由下面 `officialRows` 自己画，再列一遍就是同一个群占两处。
         .filterNot { it.kind == "group" && it.title in OfficialGroups.titles }
     // 已经在群里的官方群：那一行直接进这个会话，不必再走一次加入。
@@ -674,7 +676,8 @@ fun MessagesScreen(
     }
     val anyJoinedOfficial = joinedOfficial.isNotEmpty()
     // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
-    val foldedGroups = conversations.filter { it.isFoldedGroup() }
+    // 没名字的群同样剔掉：折叠栏也不该冒出「空白群」这一行。
+    val foldedGroups = conversations.filter { it.isFoldedGroup() && OfficialGroups.isVisibleInList(it) }
     // 折叠的群聊那一行只亮「最近说过话的那个群」：它的最后一句就是这个入口的预览。
     val latestGroup = foldedGroups.maxByOrNull { it.lastAt }
     val groupUnread = foldedGroups.sumOf { it.unread }
