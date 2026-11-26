@@ -273,6 +273,23 @@ class PlanRepository(
     private suspend fun callerToken(): String =
         runCatching { identityToken() }.getOrDefault("").trim()
 
+    /** 级别修正这边要同一份凭据；`LevelFixRepository` 拿不到 private 的 [callerToken]。 */
+    suspend fun callerTokenForLevelFix(): String = callerToken()
+
+    /**
+     * 一个包的级别修正（`level_fixes_for`），原样返回 JSON。
+     *
+     * 级别修正放在 [io.github.samolego.canta.data.community.LevelFixRepository] 里解析，这里只管
+     * 发请求：应用的列表页每进一次已经四个请求了，级别修正不能让它变五个。
+     */
+    suspend fun levelFixesFor(body: String): String? = rpc("level_fixes_for", body)
+
+    /** 提一条级别修正（`level_fix_add`），返回原样 JSON。 */
+    suspend fun addLevelFix(body: String): String? = rpc("level_fix_add", body)
+
+    /** 给级别修正投票（`level_fix_vote`），返回原样 JSON。 */
+    suspend fun voteLevelFix(body: String): String? = rpc("level_fix_vote", body)
+
     /**
      * Why the last call came back empty: the backend's own message when it refused (a missing
      * function, a rejected upload, a bad key), or the network error. "上传失败" without this is a

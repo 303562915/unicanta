@@ -304,6 +304,12 @@ fun AppDetailScreen(
     token: String = "",
     /** Opens the page where this app's description can be corrected and voted on. */
     onOpenDescriptionFixes: (String) -> Unit = {},
+    /**
+     * 打开「这个包该标成什么级别」那一页：提案 + 投票，票够之后由工作流合并进名单仓库。
+     *
+     * 与 [onOpenDescriptionFixes] 分开两个入口：一个改说明、一个改徽标，门槛和生效方式都不同。
+     */
+    onOpenLevelFixes: (String) -> Unit = {},
     /** Opens one of the plans that hold this app, from the related-plans drawer. */
     onOpenPlan: (Long) -> Unit = {},
     /**
@@ -776,6 +782,7 @@ fun AppDetailScreen(
                     onVote = castVote,
                     fixes = descriptionFixes,
                     onOpenDescriptionFixes = { onOpenDescriptionFixes(packageName) },
+                    onOpenLevelFixes = { onOpenLevelFixes(packageName) },
                     onUninstall = onUninstall,
                     onReinstall = onReinstall,
                 )
@@ -938,6 +945,8 @@ private fun AppHero(
     /** The community's corrections of this app's description; empty when nobody filed one. */
     fixes: List<DescriptionFix> = emptyList(),
     onOpenDescriptionFixes: () -> Unit = {},
+    /** 打开「级别修正」那一页；这一页自己不发请求，只在点开时联网。 */
+    onOpenLevelFixes: () -> Unit = {},
     /** 卸载这个包；null 表示这一页不提供这个动作。 */
     onUninstall: (() -> Unit)? = null,
     /** 把已卸载的包装回去；null 与 [onUninstall] 同理。 */
@@ -1065,6 +1074,16 @@ private fun AppHero(
                 accepted = appliedFix != null,
                 onClick = onOpenDescriptionFixes,
             )
+            // 级别那一行紧跟在徽标与说明下面：读的人刚看完「这包标成推荐卸载」，下一个问题
+            // 通常就是「这台机器上真的能删吗」。
+            if (app.badgeInfo != null) {
+                Spacer(Modifier.height(2.dp))
+                EntriesRow(
+                    label = "级别标错了？提一条修正、让别人投票",
+                    accepted = false,
+                    onClick = onOpenLevelFixes,
+                )
+            }
         }
 
         Spacer(Modifier.height(14.dp))
@@ -1427,6 +1446,56 @@ private fun recommendationAccent(app: RecommendedApp): Color {
         if (value != null) return Color(0xFF000000 or value)
     }
     return Color(0xFF7A6FF0)
+}
+
+/**
+ * 与 [DescriptionFixEntry] 同一行的样子，但只承担一件事：把「级别有异议」那一页的入口指出来。
+ *
+ * 单独抽出来是因为它不带计数——级别修正的票数只在打开那一页时才问后端（应用列表页每进一次已经
+ * 四个请求了，不能再多一个），所以这一行只画一句固定的话。
+ */
+@Composable
+private fun EntriesRow(label: String, accepted: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Edit,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = scheme.primary,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+            color = scheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (accepted) {
+            Text(
+                text = "已有修正生效",
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = scheme.primary,
+        )
+    }
 }
 
 /**

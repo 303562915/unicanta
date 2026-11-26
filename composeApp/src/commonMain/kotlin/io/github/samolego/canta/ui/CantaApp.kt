@@ -62,6 +62,7 @@ import io.github.samolego.canta.data.community.ChatLiveSource
 import io.github.samolego.canta.data.community.ChatRealtimeHub
 import io.github.samolego.canta.data.community.ChatUnread
 import io.github.samolego.canta.data.community.CommunityRpc
+import io.github.samolego.canta.data.community.LevelFixRepository
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.SocialRepository
@@ -73,11 +74,8 @@ import io.github.samolego.canta.data.recommend.newAppliedSince
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.privilege_root_refused
 import io.github.samolego.canta.generated.resources.privilege_root_opened
-import io.github.samolego.canta.generated.resources.badge_recommended_name
 import io.github.samolego.canta.generated.resources.about_auto_install_paused
 import io.github.samolego.canta.generated.resources.preset_save_error
-import io.github.samolego.canta.generated.resources.select_all_enabled
-import io.github.samolego.canta.generated.resources.select_all_tip
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.generated.resources.tab_apps
 import io.github.samolego.canta.generated.resources.tab_recommend
@@ -109,6 +107,8 @@ import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.AudioWhitelistScreen
 import io.github.samolego.canta.ui.screen.DescriptionFixScreen
+import io.github.samolego.canta.ui.screen.LevelFixScreen
+import io.github.samolego.canta.ui.screen.DeletionListScreen
 import io.github.samolego.canta.ui.screen.LaunchLockScreen
 import io.github.samolego.canta.ui.screen.LogsScreen
 import io.github.samolego.canta.ui.screen.MainDialogs
@@ -170,14 +170,8 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-/** Taps on the version in settings that unlock "select all" for recommended apps. */
-private const val SECRET_TAPS = 6
-
 /** How long a page takes to slide in from, or back out to, the right edge. */
 private const val PAGE_SLIDE_MS = 300
-
-/** Taps after which the remaining count is hinted. */
-private const val SECRET_TAPS_HINT_AFTER = 3
 
 /**
  * How often the running app asks for a release again.
@@ -459,8 +453,6 @@ private fun CantaNavigation(
     }
     // The records tab shows no app list, so a preset applied from there falls back to installed.
     val selectedAppsType = AppsTab.entries[pagerState.currentPage].appsType ?: AppsType.INSTALLED
-
-    var versionTapCounter by remember { mutableIntStateOf(0) }
 
     // Send queued analytics when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
@@ -976,7 +968,8 @@ private fun CantaNavigation(
                     },
                     navigateToPage = { navController.navigate(it) },
                     closeApp = closeApp,
-                    enableSelectAll = versionTapCounter >= SECRET_TAPS,
+                    // 全选不再藏在「连点版本号」后面：它默认隐藏，勾了一个应用才出现（见 AppList）。
+                    enableSelectAll = true,
                 )
             }
             composable(route = Screen.Rules.route) {
@@ -1126,23 +1119,8 @@ private fun CantaNavigation(
                     // What the start-up read already knows, so the row can say "there is one" before
                     // the tap that checks: the dot is the guide, the check is what confirms it.
                     updateAvailable = updateAvailable,
-                    // 连点版本号：隐藏的"全选推荐应用"开关。手势挂在关于页的版本号上。
-                    onVersionTap = {
-                        versionTapCounter += 1
-                        coroutineScope.launch {
-                            when {
-                                versionTapCounter == SECRET_TAPS ->
-                                    platform.showMessage(
-                                        getString(
-                                            Res.string.select_all_enabled,
-                                            getString(Res.string.badge_recommended_name),
-                                        )
-                                    )
-                                versionTapCounter in (SECRET_TAPS_HINT_AFTER + 1)..<SECRET_TAPS ->
-                                    platform.showMessage(getString(Res.string.select_all_tip, SECRET_TAPS - versionTapCounter))
-                            }
-                        }
-                    },
+                    // 连点版本号那个隐藏手势已经不需要了：全选现在默认隐藏、勾一个应用就出现，
+                    // 所以这里不再传 onVersionTap（默认空实现），关于页照样只画版本号。
                     // 更新的那份实现与状态：这一页只画它，不再自己发请求，所以自动下载也有动画。
                     updateCenter = updateCenter,
                 )
@@ -1150,6 +1128,13 @@ private fun CantaNavigation(
             composable(route = Screen.Theme.route) {
                 ThemeScreen(
                     settingsViewModel = settingsViewModel,
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
+            composable(route = Screen.DeletionList.route) {
+                DeletionListScreen(
+                    deletionList = deps.deletionList,
+                    platform = platform,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -1311,7 +1296,12 @@ private fun CantaNavigation(
                 }
                 SettingsScreen(
                     platform = platform,
-                    onNavigateBack = { navController.navigateUp() },
+                    onNavigateBack = {
+                        // 底栏那一格直接进设置时栈上没有上一页，退回就落回应用列表。
+                        if (!navController.popBackStack()) {
+                            navController.navigateSingleTop(Screen.Main.route)
+                        }
+                    },
                     settingsViewModel = settingsViewModel,
                     deviceUsers = deviceUsers,
                     selectedUserId = selectedUserId,
@@ -1334,6 +1324,15 @@ private fun CantaNavigation(
                         }
                     },
                     onOpenTheme = { navController.navigate(Screen.Theme.route) },
+                    onOpenDeletionList = { navController.navigate(Screen.DeletionList.route) },
+                    // 设置现在是底栏那一格的落点，"我的"要能从这里再进去。
+                    onOpenMine = { navController.navigate(Screen.Mine.route) },
+                    onNavigateBack = {
+                        // 底栏进设置时没有上一页可退，退回就落回应用列表。
+                        if (!navController.popBackStack()) {
+                            navController.navigateSingleTop(Screen.Main.route)
+                        }
+                    },
                     // 救急用的文件：删掉的包还在系统分区里，恢复命令得在电脑上跑。
                     // 生成的批处理交给分享面板（发到电脑），打不开面板的构建就留在下载目录。
                     onExportRestoreScript = { mode ->
@@ -1511,6 +1510,32 @@ private fun CantaNavigation(
                     repository = communityRepository,
                     author = fixAuthor,
                     authorId = fixIdentity,
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
+            composable(route = Screen.LevelFix.route) { entry ->
+                val packageName = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains("package")) getString("package") else null }
+                        }.getOrNull()
+                    }.orEmpty()
+                var levelAuthor by remember { mutableStateOf("") }
+                var levelIdentity by remember { mutableStateOf("") }
+                LaunchedEffect(packageName) {
+                    levelAuthor = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    levelIdentity = identity.owner.ifEmpty { identity.token }
+                }
+                val levelApp = appListViewModel.apps.firstOrNull { it.packageName == packageName }
+                LevelFixScreen(
+                    packageName = packageName,
+                    appName = levelApp?.name ?: packageName,
+                    // 名单现在给的级别：从列表里那份已经叠好修正的徽标读，界面和列表页一致。
+                    publishedBadge = levelApp?.badgeInfo,
+                    repository = communityRepository?.let { LevelFixRepository(it) },
+                    author = levelAuthor,
+                    authorId = levelIdentity,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -1826,7 +1851,7 @@ private fun CantaNavigation(
                         // Nothing to point at while the queue itself is open: that page is the dot.
                         showVoteDot = newVotes && currentRoute != Screen.Recommendations.route,
                         showVoteCount = newVoteCount,
-                        // The way to a newer build: 设置 → 关于 → 检查更新, marked at its first step.
+                        // The way to a newer build: 底栏「设置」→ 关于 → 检查更新, marked at its first step.
                         showUpdateDot = updateAvailable,
                         // What the bell in the top bar counts, on the entry that now leads to the
                         // page the bell opens.
@@ -1944,6 +1969,8 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Posts.route,
     Screen.Store.route,
     Screen.Messages.route,
+    // 底栏最后一格现在直接进设置；「我的」仍然从设置页里进得来，所以两条路由都要带着底栏。
+    Screen.Settings.route,
     Screen.Mine.route,
     Screen.Presets.route,
 )
@@ -2045,10 +2072,10 @@ private fun bottomBarItems(
         BottomBarItem(
             BarKey.SETTINGS,
             FlGlyphs.settings,
-            // 字面量而不是资源键：这一格指向"我的"，开关已经搬到设置页，和"消息"那格一样
-            // 不做多语言镜像。
-            "我的",
-            route == Screen.Mine.route,
+            // 直接叫「设置」：这一格就是设置页，不再先绕一层「我的」。字面量而不是资源键，
+            // 和「消息」那格一样不做多语言镜像。
+            "设置",
+            route == Screen.Settings.route,
             dot = showUpdateDot,
         ),
     )
@@ -2066,7 +2093,7 @@ private fun onBottomBarSelect(
         BarKey.POSTS -> navController.navigateSingleTop(Screen.Posts.route)
         BarKey.STORE -> navController.navigateSingleTop(Screen.Store.route)
         BarKey.MESSAGES -> navController.navigateSingleTop(Screen.Messages.route)
-        BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Mine.route)
+        BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Settings.route)
     }
 }
 
@@ -2193,6 +2220,9 @@ private fun AppDetailRoute(
         token = appToken,
         onOpenDescriptionFixes = { pkg ->
             navController.navigate(Screen.DescriptionFix.routeForApp(pkg))
+        },
+        onOpenLevelFixes = { pkg ->
+            navController.navigate(Screen.LevelFix.routeForApp(pkg))
         },
         // A plan opened from this page's drawer: the same page the plans list opens, so the reader
         // can go back to the app they were reading about.

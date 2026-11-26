@@ -28,6 +28,13 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     /** The app's own page: version, the switches that shape how it behaves, and where it lives. */
     data object About : Screen("about")
     data object Presets : Screen("presets")
+
+    /**
+     * 删除名单：自己决定要删的包名，导出成 JSON 带走、换手机再导回来。
+     *
+     * 从 [Settings] 那一页进，不占底栏。
+     */
+    data object DeletionList : Screen("deletion-list")
     data object Rules : Screen("rules")
     data object Tweaks : Screen("tweaks")
 
@@ -193,5 +200,17 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object DescriptionFix : Screen("app/{package}/fixes") {
         /** Concrete route for [packageName]'s corrections. */
         fun routeForApp(packageName: String) = "app/$packageName/fixes"
+    }
+
+    /**
+     * 「这个包该被标成什么级别」：提案、投票，票够之后由工作流合并进名单仓库。
+     *
+     * 与 [DescriptionFix] 分开一条路由：两件事的对象不同（一个改说明、一个改徽标），
+     * 门槛不同，生效方式也不同（说明直接下发、级别要等工作流），合在一页只会让人分不清
+     * "投完了到底什么时候生效"。
+     */
+    data object LevelFix : Screen("app/{package}/level") {
+        /** Concrete route for [packageName]'s level corrections. */
+        fun routeForApp(packageName: String) = "app/$packageName/level"
     }
 }
