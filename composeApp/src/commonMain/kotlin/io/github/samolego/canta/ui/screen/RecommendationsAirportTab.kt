@@ -50,6 +50,7 @@ import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.community.COMMENT_KIND_AIRPORT
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.PlanComment
+import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
