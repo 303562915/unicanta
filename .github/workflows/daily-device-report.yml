@@ -136,10 +136,15 @@ jobs:
                         from canta_users
                        where last_seen_at >= ((now() at time zone 'Asia/Shanghai')::date - 6) at time zone 'Asia/Shanghai'
                        group by 1) a on a.day = g.day::date
+                    -- 必须先按日聚成一天一行，再开窗求累计。直接 count(*) over (order by 日期)
+                    -- 是在 canta_users 的每一行上开窗，一天有 N 个用户就有 N 行，join 回去
+                    -- 会把 7 天放大成几千行（钉钉正文被撑爆、job 直接起不来）。
                     left join (
-                      select (created_at at time zone 'Asia/Shanghai')::date as day,
-                             count(*) over (order by (created_at at time zone 'Asia/Shanghai')::date) as cum
-                        from canta_users) t on t.day = g.day::date
+                      select day, sum(reg) over (order by day) as cum
+                        from (select (created_at at time zone 'Asia/Shanghai')::date as day,
+                                     count(*) as reg
+                                from canta_users
+                               group by 1) per_day) t on t.day = g.day::date
                  ) as days
                from canta_users"
           RESPONSE=$(curl -sS --fail-with-body -X POST \
@@ -154,19 +159,25 @@ jobs:
           case "$TOTAL" in ''|null) echo "no total in response" >&2; exit 1;; esac
           case "$WITH_MODEL" in ''|null) echo "no with_model in response" >&2; exit 1;; esac
           # 7 日表：每行「MM-DD：注册 +N ｜ 累计 M ｜ 用过 K」。
-          DAYS=$(echo "$RESPONSE" | jq -r '
-            (.[0].days // [])[]
-            | (.day + "：注册 +" + (.reg | tostring)
-               + " ｜ 累计 " + (.cum | tostring)
-               + " ｜ 用过 " + (.active | tostring))' \
-            | sed 's/^/- /')
+          # 必须是 jq 一次成串（内部 join("\n")），不能写成两段管道再靠 sed 逐行加前缀：
+          # GitHub 解析输出文件时每一行都要起一个进程，7 行还能过，30 天就 30 次，
+          # 实际踩过「Argument list too long」，整个 job 在 Push to DingTalk 那步直接起不来。
+          DAYS=$(printf '%s' "$RESPONSE" | jq -r '
+            [(.[0].days // [])[]
+             | (.day + "：注册 +" + (.reg | tostring)
+                + " ｜ 累计 " + (.cum | tostring)
+                + " ｜ 用过 " + (.active | tostring))]
+            | map("- " + .) | join("\n")')
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "with_model=$WITH_MODEL" >> "$GITHUB_OUTPUT"
-          {
-            echo 'days<<__DAYS__'
-            printf '%s\n' "$DAYS"
-            echo '__DAYS__'
-          } >> "$GITHUB_OUTPUT"
+          # 多行 output 用定界符包起来；空表时不写（省得正文里冒出空的「最近 7 日」）。
+          if [ -n "$DAYS" ]; then
+            {
+              echo 'days<<__DAYS__'
+              printf '%s\n' "$DAYS"
+              echo '__DAYS__'
+            } >> "$GITHUB_OUTPUT"
+          fi
 
       # 通知跑在「🌐 Deploy download page」之后，但 GitHub Pages 的 CDN 还会慢几十秒。
       # 这里等下载页真的报出这一版再发：通知里的链接点开必须是这一版，不是上一版。
