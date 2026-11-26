@@ -320,7 +320,7 @@ class TelemetryTest {
         // 命中快照，取决于 `withTimeoutOrNull` 在测试调度器里的行为，钉死它只会让用例跟着
         // 调度细节一起红（2026-11-27 反复在这里失败）。
         assertEquals(Verdict.SAFE, s.overall!!.verdict)
-        assertTrue(paths.any { it.host == "snapshot.test" || it.contains("package_scores") })
+        assertTrue(paths.any { it.contains("package_scores") })
     }
 
     /**
