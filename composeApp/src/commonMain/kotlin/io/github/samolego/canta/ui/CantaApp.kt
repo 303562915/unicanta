@@ -1740,8 +1740,11 @@ private fun CantaNavigation(
                         chatTitle = opened
                             ?.let { row -> row.title.ifBlank { row.peerName.ifBlank { row.peer } } }
                             // 没名字的群（早期测试留下的空群）在消息页不列，但人可能从退回来的路由
-                            // 直接进到这里：给顶栏一句话，别让标题空着。
-                            .ifBlank { if (opened?.isGroup == true) OfficialGroups.UNNAMED_GROUP_LABEL else "" }
+                        // 直接进到这里：给顶栏一句话，别让标题空着。`?.let` 之后已经是非空 String，
+                        // 再挂 `?.` 会让整条链变成 String?，赋值给 chatTitle 就报 nullable receiver。
+                        .let { title ->
+                            title.ifBlank { if (opened?.isGroup == true) OfficialGroups.UNNAMED_GROUP_LABEL else "" }
+                        }
                         chatIsGroup = chatIsGroup || opened?.isGroup == true
                         chatPeer = opened?.peer.orEmpty().ifEmpty { opened?.peerName.orEmpty() }
                     }

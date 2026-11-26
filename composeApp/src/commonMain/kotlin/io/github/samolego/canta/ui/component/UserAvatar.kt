@@ -31,11 +31,9 @@ import io.github.samolego.canta.util.currentTimeMillis
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.HttpRequestPipeline
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
-import io.ktor.http.content.OutgoingContent
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -185,15 +183,12 @@ internal object AvatarLoader {
         // 2026-11-26：`Location: https://illegal.mdes.go.th/`）。跟随过去要么连不上、要么拿回一张
         // 不是图的网页，两种情况都落在「解码失败」上——于是谁也说不出这一屏为什么全是首字。
         // 不跟，3xx 就落进下面按状态码分类的那一支，日志里直接写清楚是 302。
-        // Ktor 顶层没有 `followRedirects` 这个配置口（不带引擎直接 `HttpClient {}` 时它不住在
-        // `HttpClientConfig` 上），所以自己挂一件 provider：在 `Render` 阶段把请求的跟随标志改掉，
-        // 再原样放行（`subject` 就是待发送的正文，这里一个字都不改）。
-        install("DisableRedirects") {
-            requestPipeline.intercept(HttpRequestPipeline.Render) { _ ->
-                context.followRedirects = false
-                proceedWith(subject as OutgoingContent)
-            }
-        }
+        //
+        // 开关在这里的写法有讲究：`followRedirects` 是 `HttpClientConfig` 上的属性，**只能在这里配**，
+        // 进了请求阶段就没有这个口了（`HttpRequestBuilder` 上没有它，`HttpRequestPipeline` 这个类型
+        // 在当前 Ktor 版本里也已经不存在——照旧写法会直接编译不过）。
+        followRedirects = false
+        expectSuccess = false
     }
 
     /**

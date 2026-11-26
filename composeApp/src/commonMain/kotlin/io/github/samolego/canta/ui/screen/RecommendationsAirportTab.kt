@@ -271,6 +271,7 @@ internal fun RecommendationsAirportTab(
                         AirportCard(
                             entry = entry,
                             opened = opened,
+                            detailsExpanded = detailsExpanded,
                             busy = busyKey == "airport:${entry.id}",
                             canAct = who.isNotEmpty(),
                             subscribeUrl = subscriptions[entry.id].orEmpty(),
@@ -431,6 +432,8 @@ private fun AirportCard(
     entry: CommunityAirport,
     /** 摊开了没有：摊开时多画价格、流量、速度、设备数、协议和完整介绍。 */
     opened: Boolean,
+    /** 「详情」里那几行介绍是否已展开；点「详情」带它上下翻，状态由列表那一层持有。 */
+    detailsExpanded: Boolean,
     busy: Boolean,
     canAct: Boolean,
     subscribeUrl: String,
