@@ -292,18 +292,20 @@ class TelemetryTest {
             paths += request.url.encodedPath
             val json = headersOf(HttpHeaders.ContentType, "application/json")
             when {
+                // 顺序要紧：快照地址 `.../package_scores.json` 也 contains("package_scores")，
+                // 放后面的话分支会被它抢走，快照就被当成 RPC 的返回解析成空表，
+                // 于是走回后端、`device` 变 null（2026-11-27 这两个用例 NPE 的真正原因）。
                 request.url.encodedPath.endsWith("package_scores_for") ->
                     respondError(HttpStatusCode.InternalServerError)
-                request.url.encodedPath.contains("package_scores") ->
-                    respond(
-                        """[{"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"safe","updated_at":"x"}]""",
-                        HttpStatusCode.OK, json,
-                    )
-                else -> respond(
+                request.url.host == "snapshot.test" -> respond(
                     """[{"rom":"hyperos","rom_version":-1,"scores":[
                         {"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"bootloop","updated_at":"x"}]},
                        {"rom":"hyperos","rom_version":1,"scores":[
                         {"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"breaks","updated_at":"x"}]}]""",
+                    HttpStatusCode.OK, json,
+                )
+                else -> respond(
+                    """[{"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"safe","updated_at":"x"}]""",
                     HttpStatusCode.OK, json,
                 )
             }
@@ -331,17 +333,19 @@ class TelemetryTest {
             paths += request.url.encodedPath
             val json = headersOf(HttpHeaders.ContentType, "application/json")
             when {
+                // 同 [scoresComeFromSnapshotFirst]：快照地址也 contains("package_scores")，
+                // 必须用 host 区分，否则快照被当成 RPC 的返回解析成空表。
                 request.url.encodedPath.endsWith("package_scores_for") -> respond(
                     """[{"pkg":"a.b","uninstalls":40,"small_batch":false,"verdict":"breaks","updated_at":"x"}]""",
                     HttpStatusCode.OK, json,
                 )
-                request.url.encodedPath.contains("package_scores") -> respond(
-                    """[{"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"safe","updated_at":"x"}]""",
+                request.url.host == "snapshot.test" -> respond(
+                    """[{"rom":"hyperos","rom_version":-1,"scores":[
+                        {"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"bootloop","updated_at":"x"}]}]""",
                     HttpStatusCode.OK, json,
                 )
                 else -> respond(
-                    """[{"rom":"hyperos","rom_version":-1,"scores":[
-                        {"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"bootloop","updated_at":"x"}]}]""",
+                    """[{"pkg":"a.b","uninstalls":40,"small_batch":true,"verdict":"safe","updated_at":"x"}]""",
                     HttpStatusCode.OK, json,
                 )
             }
