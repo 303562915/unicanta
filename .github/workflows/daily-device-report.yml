@@ -111,7 +111,32 @@ jobs:
           PROJECT_REF: axuhfogeovtsbxokqccf
         run: |
           set -euo pipefail
-          SQL="select count(*) as total, count(*) filter (where model is not null and model <> '') as with_model from canta_users"
+          # 累计两个数 + 最近 7 天（含今天，按北京时间切日）每天的「新增注册 / 当天用过」。
+          # 注册 = canta_users.created_at；用过 = canta_users.last_seen_at 落在当天。
+          # 一个 token 一行（identity_bind 是 upsert），所以 row 数就是人数。
+          SQL="select
+                 count(*)::int as total,
+                 count(*) filter (where model is not null and model <> '')::int as with_model,
+                 (select coalesce(json_agg(json_build_object(
+                            'day', to_char(g.day, 'MM-DD'),
+                            'reg', coalesce(r.reg, 0),
+                            'active', coalesce(a.active, 0)) order by g.day), '[]'::json)
+                    from generate_series(
+                           (now() at time zone 'Asia/Shanghai')::date - 6,
+                           (now() at time zone 'Asia/Shanghai')::date,
+                           interval '1 day') as g(day)
+                    left join (
+                      select (created_at at time zone 'Asia/Shanghai')::date as day, count(*) as reg
+                        from canta_users
+                       where created_at >= ((now() at time zone 'Asia/Shanghai')::date - 6) at time zone 'Asia/Shanghai'
+                       group by 1) r on r.day = g.day::date
+                    left join (
+                      select (last_seen_at at time zone 'Asia/Shanghai')::date as day, count(*) as active
+                        from canta_users
+                       where last_seen_at >= ((now() at time zone 'Asia/Shanghai')::date - 6) at time zone 'Asia/Shanghai'
+                       group by 1) a on a.day = g.day::date
+                 ) as days
+               from canta_users"
           RESPONSE=$(curl -sS --fail-with-body -X POST \
             "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
@@ -123,8 +148,18 @@ jobs:
           # A malformed answer must fail the job instead of pushing "null" to the group.
           case "$TOTAL" in ''|null) echo "no total in response" >&2; exit 1;; esac
           case "$WITH_MODEL" in ''|null) echo "no with_model in response" >&2; exit 1;; esac
+          # 7 日表：每行「MM-DD：注册 +N ｜ 用过 M」。窗口少一天也照发，只是短一点。
+          DAYS=$(echo "$RESPONSE" | jq -r '
+            (.[0].days // [])[]
+            | (.day + "：注册 +" + (.reg | tostring) + " ｜ 用过 " + (.active | tostring))' \
+            | sed 's/^/- /')
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "with_model=$WITH_MODEL" >> "$GITHUB_OUTPUT"
+          {
+            echo 'days<<__DAYS__'
+            printf '%s\n' "$DAYS"
+            echo '__DAYS__'
+          } >> "$GITHUB_OUTPUT"
 
       # 通知跑在「🌐 Deploy download page」之后，但 GitHub Pages 的 CDN 还会慢几十秒。
       # 这里等下载页真的报出这一版再发：通知里的链接点开必须是这一版，不是上一版。
@@ -163,6 +198,7 @@ jobs:
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           TOTAL: ${{ steps.query.outputs.total }}
           WITH_MODEL: ${{ steps.query.outputs.with_model }}
+          DAYS: ${{ steps.query.outputs.days }}
           KIND: ${{ inputs.release_kind }}
           VERSION_NAME: ${{ inputs.version_name }}
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -199,6 +235,7 @@ jobs:
             --arg stamp "$STAMP" \
             --arg total "$TOTAL" \
             --arg model "$WITH_MODEL" \
+            --arg days "${DAYS:-}" \
             --arg channel "$CHANNEL" \
             --arg ver "$VERSION_NAME" \
             --arg build "$BUILD_NUMBER" \
@@ -221,6 +258,10 @@ jobs:
             def changelog($c):
               ($c | split("\n") | map(select((. | length) > 0)) | map("- " + .) | join("\n")) as $lines
               | if $lines == "" then "" else "\n本次更新：\n" + $lines + "\n\n" end;
+            # 最近 7 日：每天新增注册 + 当天用过的人数，发版通知和日报都带。
+            def daily($d):
+              ($d | split("\n") | map(select((. | length) > 0)) | join("\n")) as $lines
+              | if $lines == "" then "" else ("\n最近 7 日：\n" + $lines + "\n\n") end;
             {
               msgtype: "markdown",
               markdown: {
@@ -233,6 +274,7 @@ jobs:
                        line("发布页"; $url) +
                        "- 图床下载页：https://cloudflare-imgbed-erh.pages.dev/file/unicanta/download/index.html\n" +
                        apkline($apk) +
+                       daily($days) +
                        "- 总人数：" + $total + "\n" +
                        "- 有型号：" + $model + "\n\n" +
                        "rr")
