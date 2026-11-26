@@ -6,9 +6,18 @@ name: 🩺 Backend watchdog
 # 30–53 秒），两小时后把连接池拖死，PostgREST 对所有请求返 5xx。当时只能等人工发现、
 # 人工重启。这个 job 把那段人工动作变成自动的：
 #
-#   1. 连续 3 次 `select 1` 都失败 → 认定数据库不可用（单次超时、冷启动抖动不算）
+#   1. 连续 4 次 `select 1` 都失败 → 认定数据库不可用（单次超时、冷启动抖动不算）
 #   2. 调管理 API 重启项目，然后每 20 秒探一次，直到 ACTIVE_HEALTHY 且查询能过
 #   3. 往钉钉发一条：自动恢复完成 / 需要人工处理
+#
+# 2026-11-26 改：checkpoint 慢**也重启**，不再只是发预警。
+#
+#   以前 `disk slow=yes` 只推一条钉钉就结束 —— 用户的原话是「你通知我有什么用？你通知我，我也
+#   没办法解决」。预警只有在能附上一个已经做完的动作时才有意义，所以现在：
+#     checkpoint write= > 30s  →  直接重启，然后发「已自动重启」的钉钉
+#   阈值取 30s（预警线是 5s）：5s 时实例还能正常服务，重启反而打断一批正常请求；到 30s 已经
+#   是事后必挂的量级（事故时是 43–148s），这时候重启只是把「必然发生的 4 小时白屏」提前解决。
+#   挨打的是重启本身（约 2 分钟不可用），不重启则是几小时不可用，这笔账很清楚。
 #
 # 粒度说明，以及 2026-11-25 的教训（重要）：
 #
@@ -109,7 +118,11 @@ jobs:
         run: |
           set -uo pipefail
           # 这次事故的真正起点：checkpoint 每次写盘要 30–53 秒（正常是毫秒级）。
-          # 它在服务还能用的时候就出现了，所以这里当作早期预警：> 5 秒就报，不必等连接池被拖死。
+          # 它在服务还能用的时候就出现了，所以这里当作早期信号。
+          #
+          # 两条线，别混：
+          #   > 5s  记进 summary，当作「正在恶化」的可观察事实，不打扰任何人；
+          #   > 30s 才算「已经进入必挂区间」，触发重启（见下面 restart-slow-disk 那步）。
           end=$(date -u +%Y-%m-%dT%H:%M:00Z)
           start=$(date -u -d '-15 minutes' +%Y-%m-%dT%H:%M:00Z)
           sql="select event_message from logs where source='postgres_logs' and event_message like '%checkpoint complete%' order by timestamp desc limit 5"
@@ -122,28 +135,74 @@ jobs:
           worst=$(echo "$resp" | jq -r '[.result[]?.event_message | capture("write=(?<w>[0-9.]+) s").w | tonumber] | max // 0' 2>/dev/null || echo 0)
           echo "最近 15 分钟 checkpoint 最慢一次：${worst}s"
           echo "worst=${worst}" >> "$GITHUB_OUTPUT"
-          if awk "BEGIN{exit !(${worst:-0} > 5)}"; then
-            echo "slow=yes" >> "$GITHUB_OUTPUT"
-            echo "### ⚠️ 存储变慢：checkpoint write=${worst}s" >> "$GITHUB_STEP_SUMMARY"
+          if awk "BEGIN{exit !(${worst:-0} > 30)}"; then
+            echo "critical=yes" >> "$GITHUB_OUTPUT"
+            echo "### 🔥 存储已到必挂区间：checkpoint write=${worst}s → 将自动重启" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "slow=no" >> "$GITHUB_OUTPUT"
+            echo "critical=no" >> "$GITHUB_OUTPUT"
+            if awk "BEGIN{exit !(${worst:-0} > 5)}"; then
+              echo "### ⚠️ 存储变慢（观察中，未达重启线）：checkpoint write=${worst}s" >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
 
-      - name: Warn about slow disk
-        if: steps.disk.outputs.slow == 'yes'
+      - name: Restart for slow disk
+        id: restart-disk
+        if: steps.disk.outputs.critical == 'yes'
+        run: |
+          set -uo pipefail
+          # 与下面那个 down/slow 的重启是两回事，不要合并：这里的触发条件是「服务还答得上，
+          # 但 checkpoint 已经 30 秒以上」——再拖下去就是连接池耗尽，重启是把必然发生的事提前做。
+          start=$(date +%s)
+          code=$(curl -sS -m 90 -o /tmp/rd.json -w '%{http_code}' -X POST \
+            "https://api.supabase.com/v1/projects/$REF/restart" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" -d '{}' || echo 000)
+          echo "restart 请求：HTTP $code"
+
+          for i in $(seq 1 24); do
+            sleep 20
+            status=$(curl -sS -m 20 -H "Authorization: Bearer $TOKEN" \
+              "https://api.supabase.com/v1/projects/$REF" | jq -r '.status // "?"')
+            qcode=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -X POST \
+              "https://api.supabase.com/v1/projects/$REF/database/query" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"query":"select 1"}' || echo 000)
+            echo "第 $i 次：status=$status query=$qcode"
+            if [ "$status" = "ACTIVE_HEALTHY" ] && { [ "$qcode" = "200" ] || [ "$qcode" = "201" ]; }; then
+              took=$(( $(date +%s) - start ))
+              echo "recovered=yes" >> "$GITHUB_OUTPUT"
+              echo "took=${took}s" >> "$GITHUB_OUTPUT"
+              echo "### ✅ 因 checkpoint 变慢自动重启，用时 ${took}s" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "recovered=no" >> "$GITHUB_OUTPUT"
+          echo "### ❌ 因 checkpoint 变慢重启后仍未恢复" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify DingTalk (slow disk restart)
+        if: always() && steps.disk.outputs.critical == 'yes'
         env:
+          RECOVERED: ${{ steps.restart-disk.outputs.recovered }}
+          TOOK: ${{ steps.restart-disk.outputs.took }}
           WORST: ${{ steps.disk.outputs.worst }}
         run: |
           set -uo pipefail
           stamp=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
-          # 正文末尾必须带机器人配的关键词 `rr`，否则钉钉按 errcode 310000 丢弃。
-          title="unicanta 后端存储变慢（还没挂，提前预警）"
-          payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg w "${WORST:-?}" \
-            '{msgtype:"markdown",markdown:{title:$t,text:("### ⚠️ "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n- checkpoint 最慢："+$w+"s（正常 < 1s，> 5s 就开始拖慢查询）\n- 建议：现在去 Dashboard 看实例状态；继续恶化会变成连接池耗尽、全站 5xx\n\nrr")}}')
+          # 只有「已经做过动作」才发钉钉。发一条只有预警、没有动作的消息对用户毫无价值
+          # （原话：「你通知我，我也没办法解决」）。
+          if [ "${RECOVERED:-}" = "yes" ]; then
+            title="unicanta 后端已自动重启（checkpoint 变慢）"
+            line="- 处理：已自动重启项目，用时 ${TOOK:-?}，服务已恢复"
+          else
+            title="unicanta 后端重启后仍未恢复，需要人工处理"
+            line="- 处理：自动重启后 8 分钟内仍未恢复 —— **这次真的要你看一眼**"
+          fi
+          payload=$(jq -n --arg t "$title" --arg s "$stamp" --arg r "$REF" --arg l "$line" --arg w "${WORST:-?}" \
+            '{msgtype:"markdown",markdown:{title:$t,text:("### "+$t+"\n\n- 时间："+$s+"\n- 项目："+$r+"\n- 触发原因：checkpoint 写盘 "+$w+"s（已进入必挂区间）\n"+$l+"\n\nrr")}}')
           resp=$(curl -sS -m 20 -X POST "$DING" -H 'Content-Type: application/json' -d "$payload" || echo '{"errcode":"curl-failed"}')
           echo "钉钉返回：$resp"
           echo "$resp" | grep -q '"errcode":0' || echo "::warning::钉钉没有接受这条消息（检查机器人关键词/签名）"
-          echo "已尝试发送慢盘预警"
 
       - name: Notify DingTalk
         if: always() && (steps.probe.outputs.state == 'down' || steps.probe.outputs.state == 'slow')
