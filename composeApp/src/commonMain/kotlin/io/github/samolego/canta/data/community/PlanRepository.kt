@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.community
 
+import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.util.currentTimeMillis
 import io.github.samolego.canta.data.recommend.AirportDetail
 import io.github.samolego.canta.data.recommend.AirportRatingResult
@@ -73,6 +74,14 @@ private const val SNAPSHOT_TIMEOUT_MS = 15_000L
  * 断网时一次刷新就是 30 秒的等待；失败后停 60 秒，期间直接走后端那条路。
  */
 private const val SNAPSHOT_RETRY_BACKOFF_MS = 60_000L
+
+/**
+ * 随包带的那一份方案快照（composeResources/files/plans_snapshot.json）。
+ *
+ * 由 db-backup.yml 在每次生成 site/db/plans.json 之后一并写进来，所以它和线上那份同源。
+ * 只在两张网络源都读不到时用它 —— 断网的人看到的应该是"某个时刻的真实社区"，不是空白。
+ */
+private const val BUNDLED_SNAPSHOT_PATH = "files/plans_snapshot.json"
 
 /** One community plan: a set of packages someone removed and confirmed by a reboot. */
 @Serializable
@@ -322,9 +331,10 @@ class PlanRepository(
      */
     suspend fun offlinePlans(): List<CommunityPlan> {
         snapshotCache?.let { return it }
-        // 刚失败过就别再试：这条现在是热路径（每次列表），不能让它反复等满超时。
+        // 刚失败过就别再去网上试：这条现在是热路径（每次列表），不能让它反复等满超时。
+        // 但**不能就此返回空** —— 那把这个"保底"自己变成了坏消息。退避期间直接读随包那份。
         if (snapshotFailedAt != 0L && currentTimeMillis() - snapshotFailedAt < SNAPSHOT_RETRY_BACKOFF_MS) {
-            return emptyList()
+            return bundledSnapshot()
         }
         for (url in listOf(snapshotMirrorUrl, snapshotUrl)) {
             if (url.isBlank()) continue
@@ -341,8 +351,33 @@ class PlanRepository(
             snapshotFailedAt = 0L
             return rows
         }
+        // 两张网都断了（没网、Pages 被墙、raw 超时）→ **用随包带的那一份**。
+        //
+        // 2026-11-26 加：前两个源都在网络上，一个断网的人（或者一个只开了内网的人）会得到空列表，
+        // 而方案列表现在是 [plansAll] / [plansFor] 的**首选**来源 —— 空列表直接等于「社区是空的」，
+        // 那是在说假话。这份 `plans_snapshot.json` 是打包时的 `site/db/plans.json`
+        // （`db-backup.yml` 每次生成时同步一份到这里），所以最坏情况下用户看到的也是
+        // 「某个时刻的真实社区」，而不是一片空白。
+        //
+        // 它是**最后**一层，不参与上面的重试节奏：读的是 APK 里的文件，没有超时、不会再失败。
         snapshotFailedAt = currentTimeMillis()
-        return emptyList()
+        return bundledSnapshot()
+    }
+
+    /**
+     * 读随包那一份方案快照；读不到就是空表（文件被删、或打包时漏了）。
+     *
+     * 单独提出来是因为它现在有两个调用点：网络两张源都失败时，以及 [SNAPSHOT_RETRY_BACKOFF_MS]
+     * 的退避窗口内。两处都必须给出「有内容」，否则保底这一层等于不存在。
+     */
+    private suspend fun bundledSnapshot(): List<CommunityPlan> {
+        snapshotCache?.let { return it }
+        val rows = runCatching {
+            parsePlans(Res.readBytes(BUNDLED_SNAPSHOT_PATH).decodeToString())
+        }.getOrDefault(emptyList())
+        // 成功读出来就进缓存：后面整个会话都不必再碰这个文件。
+        if (rows.isNotEmpty()) snapshotCache = rows
+        return rows
     }
 
     /**

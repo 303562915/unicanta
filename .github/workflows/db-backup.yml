@@ -460,6 +460,15 @@ jobs:
               json.dump(rows, f, ensure_ascii=False, indent=1, sort_keys=True)
               f.write('\n')
           print(f'site/db/plans.json: {len(rows)} verified plans')
+
+          # 同一份也放进 App 的打包资源：断网的人要靠它，见 PlanRepository.offlinePlans()
+          # 最后一层兜底。两个源都断时那份文件是唯一的内容来源，所以必须跟着一起更新，
+          # 否则装了个老版本 APK 的人会一直看到装机那天的社区。
+          bundled = 'composeApp/src/commonMain/composeResources/files/plans_snapshot.json'
+          with open(bundled, 'w', encoding='utf-8') as f:
+              json.dump(rows, f, ensure_ascii=False, separators=(',', ':'))
+              f.write('\n')
+          print(f'{bundled}: {len(rows)} verified plans')
           PY
 
       - name: 🚀 Commit & push
