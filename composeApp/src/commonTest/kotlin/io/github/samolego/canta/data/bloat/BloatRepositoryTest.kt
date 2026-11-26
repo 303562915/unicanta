@@ -43,9 +43,12 @@ class BloatRepositoryTest {
         val client = HttpClient(MockEngine { request ->
             val url = request.url.toString()
             requests += url
+            // 先取到局部变量再判空：`fixes` 是 var，Kotlin 不给它做智能转换。
+            val answer = fixes
+            val shaNow = sha
             when {
-                url == fixesUrl && fixes != null -> respond(fixes)
-                "api.github.com" in url && sha != null -> respond("""[{"sha": "$sha"}]""")
+                url == fixesUrl && answer != null -> respond(answer)
+                "api.github.com" in url && shaNow != null -> respond("""[{"sha": "$shaNow"}]""")
                 "raw.githubusercontent.com" in url && listOk -> respond(list)
                 else -> respondError(HttpStatusCode.ServiceUnavailable)
             }
