@@ -295,6 +295,26 @@ class AndroidCantaPlatform(
         pendingImage = null
         notifyPermissionLauncher = null
         pendingNotifyPermission = null
+        textFilePicker = null
+        pendingTextFile = null
+    }
+
+    /**
+     * 让用户从文件管理器里挑一个文本文件。
+     *
+     * 用户取消、超时（三分钟）或者当前没有活动可以挂选择器，都回答 null——调用方把 null 当成
+     * "没有选"，不弹错误。编码按 UTF-8 解：导出的 JSON 就是它写的。
+     */
+    override suspend fun pickTextFile(mimeTypes: List<String>): String? {
+        val launcher = textFilePicker ?: return null
+        val waiting = CompletableDeferred<String?>()
+        pendingTextFile = waiting
+        withContext(Dispatchers.Main) { launcher.launch(mimeTypes.toTypedArray()) }
+        val text = withTimeoutOrNull(180_000L) { waiting.await() }
+        if (pendingTextFile === waiting) {
+            pendingTextFile = null
+        }
+        return text
     }
 
     /**

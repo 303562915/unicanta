@@ -1,7 +1,11 @@
 package io.github.samolego.canta.core
 
 import io.github.samolego.canta.util.LogUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.awt.Desktop
+import java.awt.FileDialog
+import java.awt.Frame
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
@@ -55,6 +59,24 @@ class DesktopCantaPlatform : AdbCantaPlatform(TAG) {
     } catch (e: Exception) {
         LogUtils.e(TAG, "Could not write '$fileName' to the Downloads folder", e)
         null
+    }
+
+    /**
+     * 用 AWT 的文件对话框挑一个文本文件，读成字符串。
+     *
+     * 对话框必须在事件分发线程上开；关窗口（取消）就回答 null。
+     */
+    override suspend fun pickTextFile(mimeTypes: List<String>): String? = withContext(Dispatchers.IO) {
+        try {
+            val dialog = FileDialog(null as Frame?, "选择名单文件", FileDialog.LOAD)
+            dialog.isVisible = true
+            val directory = dialog.directory ?: return@withContext null
+            val file = dialog.file ?: return@withContext null
+            File(directory, file).takeIf { it.isFile }?.readText()
+        } catch (e: Exception) {
+            LogUtils.e(TAG, "Could not pick a text file", e)
+            null
+        }
     }
 
     /**

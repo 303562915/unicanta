@@ -148,18 +148,15 @@ fun AppList(
             if (appListModel.isLoadingBadges) {
                 LoadingBadgesIndicator()
             }
-            if (appType == AppsType.UNINSTALLED ||
-                appType == AppsType.DISABLED ||
-                enableSelectAll &&
-                appListModel.selectedFilter.badgeInfo ==
-                AppBadgeInfo.RECOMMENDED
-            ) {
+            // 全选只在「已经选了东西」之后才出现：什么都没选时那一行复选框只是挡住列表，
+            // 而且一不小心就把整屏删了。现在默认隐藏，勾一个应用才出现（[enableSelectAll] 只是
+            // 保留给调用方的口子，不再决定这一行出现与否）。
+            val visiblePackages = appList.map { it.packageName }
+            if (visiblePackages.isNotEmpty() && selectedAppList.isNotEmpty()) {
                 // Derived from the selection, and scoped to the visible apps, so it
                 // stays in sync and never clears selections on the other tab.
-                val visiblePackages = appList.map { it.packageName }
                 SelectAllOption(
-                    checked = visiblePackages.isNotEmpty() &&
-                            visiblePackages.all { it in appListModel.selectedApps },
+                    checked = visiblePackages.all { it in appListModel.selectedApps },
                     onCheckedChange = { selectAll ->
                         if (selectAll) {
                             appListModel.selectedApps.addAll(visiblePackages)

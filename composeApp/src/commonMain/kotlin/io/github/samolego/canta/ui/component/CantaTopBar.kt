@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.clear_search
-import io.github.samolego.canta.generated.resources.filter
 import io.github.samolego.canta.generated.resources.more_options
 import io.github.samolego.canta.generated.resources.search
 import io.github.samolego.canta.generated.resources.search_apps
@@ -44,7 +43,7 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlTopBar
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.colorOf
-import io.github.samolego.canta.ui.menu.FiltersMenu
+import io.github.samolego.canta.ui.menu.FilterToggleButton
 import io.github.samolego.canta.ui.menu.MoreOptionsMenu
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import org.jetbrains.compose.resources.stringResource
@@ -62,7 +61,6 @@ fun CantaTopBar(
     appListViewModel: AppListViewModel,
 ) {
     var showMoreOptionsMenu by remember { mutableStateOf(false) }
-    var showFiltersMenu by remember { mutableStateOf(false) }
     var searchActive by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
     FlTopBar(
@@ -94,22 +92,13 @@ fun CantaTopBar(
                     }
                 },
             )
-            FlBarButton(
-                glyph = FlGlyphs.filter,
-                contentDescription = stringResource(Res.string.filter),
-                selected = showFiltersMenu,
-                onClick = { showFiltersMenu = !showFiltersMenu },
-            )
+            // 一个图标、两个状态：亮=只显示系统应用，暗=显示全部。
+            FilterToggleButton(appListViewModel = appListViewModel)
             FlBarButton(
                 glyph = FlGlyphs.more,
                 contentDescription = stringResource(Res.string.more_options),
                 selected = showMoreOptionsMenu,
                 onClick = { showMoreOptionsMenu = !showMoreOptionsMenu },
-            )
-            FiltersMenu(
-                showMenu = showFiltersMenu,
-                onDismiss = { showFiltersMenu = false },
-                appListViewModel = appListViewModel,
             )
 
             MoreOptionsMenu(

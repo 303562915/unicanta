@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaHandler
 import io.github.samolego.canta.core.CantaPlatform
-import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.history.RestoreMode
@@ -115,12 +114,11 @@ fun MainScreen(
     }
 
     LaunchedEffect(pagerState) {
-        // Filters and selection are per tab: reset them when the user switches
+        // Filters and selection are per tab: reset the selection when the user switches
         // tabs. The first emission is skipped: returning from the Presets screen
         // recomposes MainScreen, and an applied preset populates the selection
         // just before that navigation.
         snapshotFlow { pagerState.currentPage }.drop(1).collect {
-            appListViewModel.selectedFilter = Filter.any
             appListViewModel.selectedApps.clear()
         }
     }

@@ -16,7 +16,6 @@ import io.github.samolego.canta.core.explainFailure
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.app.AppListSnapshotStore
-import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.app.PackageSnapshot
 import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.bloat.BloatRepository
@@ -195,18 +194,19 @@ class AppListViewModel(
     var isLoadingBadges by mutableStateOf(false)
         private set
 
-    var selectedFilter by mutableStateOf(Filter.any)
-
     val selectedAppsSorted by derivedStateOf {
         sortedList.filter { it.packageName in selectedApps }
     }
 
     private val sortedList by derivedStateOf {
-        _apps.filter { selectedFilter.shouldShow(it) }
-            .sortedWith(compareBy { it.name.lowercase() })
+        _apps.sortedWith(compareBy { it.name.lowercase() })
     }
 
-    /** The apps matching the search query and filters. */
+    /**
+     * The apps matching the search query. [onlySystem] is the whole filter now: the top bar's one
+     * button flips between "system only" (the default) and "everything", and there is no second
+     * dimension to match against.
+     */
     val appList by derivedStateOf {
         sortedList
             .filter {

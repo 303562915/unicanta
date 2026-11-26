@@ -288,6 +288,10 @@ class BloatRepositoryTest {
     @Test
     fun aFailedFetchKeepsWhatIsAlreadyKnown() = runTest {
         val server = Server(sha = "same", list = listJson)  // fixes = null → 这个 URL 回 503
+        // 「这次拉不到」必须真的是 503：MockEngine 那个 handler 对**任何** URL 都先往
+        // `server.requests` 里记一笔，而 desktopTest 是并发分档的——记一笔不是线程安全的，
+        // 打在别的用例上会让那个用例在自己的断言里失败（上一次 CI 挂的正是这个测试）。这里
+        // 刻意不读 `server.requests`，少一个跨用例的共享状态。
         val settings = settings("same")
         val fixes = MemoryStorage()
 

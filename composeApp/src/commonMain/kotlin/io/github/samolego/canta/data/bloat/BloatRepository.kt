@@ -291,26 +291,24 @@ class BloatRepository(
             return null
         }
 
-        val l10n = translationTable()
-        // A cache that does not parse counts as "no cache": the first fetch has to happen whatever
-        // the stored commit says, or a corrupt file would keep the list empty forever.
-        val cached = readCache(l10n)
-
-        // 等级修正由 [refreshCorrections] 单独核对（同一个周窗口，但它读的是另一份文件、记的是另一格
-        // 日期），这里不再顺带拉：两份文件各自能改频率，互不牵制。
-
-        // Empty when unknown (offline, rate limited, ...).
+        // 两件事分两步判，别用同一个闸门：
+        //  * 「记了核对日期」= 这一周已经核对过（不管结果如何），决定要不要发请求；
+        //  * 「手上有能用的缓存」= 决定要不要在已经是最新的时候收工。
+        // 以前把两者绑在 `cached != null` 上：缓存读不出来（坏了 / 从没下过）时明明已经是最新，
+        // 也会再下一次整张名单——而"这次核对失败"的判断是「一个包都不认识」，
+        // 「已是最新所以不下载」会被读成"离线"。两件事必须分开。
         val remoteHash = fetchLatestHash()
         if (remoteHash.isEmpty()) {
             LogUtils.w(TAG, "Couldn't check for bloat list updates; using the local list")
             return null
         }
-        if (cached != null && remoteHash == settings.latestCommitHashFlow.first()) {
+        if (remoteHash == settings.latestCommitHashFlow.first()) {
             LogUtils.i(TAG, "Bloat list is up to date (commit ${remoteHash.take(7)})")
             settings.setBloatListCheckedDay(today)
             return null
         }
 
+        val l10n = translationTable()
         val start = currentTimeMillis()
         val raw = fetchBloatList() ?: return null
         val table = corrections()
