@@ -82,6 +82,34 @@ class AudioWhitelistParseTest {
     }
 
     @Test
+    fun theLowPowerListIsReadSeparatelyFromTheSceneConfig() {
+        // K90 Pro Max 这一代没有 trackefx 名单，压外放的是低功耗清单：两份东西必须分开读，
+        // 否则这台机器会显示成「没有名单、什么都不支持」，而它其实有另一套机制。
+        val state = AudioWhitelist.parse(
+            "##LEVEL##\n" +
+                "##CFG##\n" +
+                "##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n" +
+                "##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\ttv.danmaku.bili\n" +
+                "##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\tcom.ss.android.ugc.aweme\n" +
+                "##INST##tv.danmaku.bili\n",
+        )
+        assertEquals("/odm/etc/audio/audio_lowpower_app_list.xml", state.lowPowerPath)
+        assertEquals(2, state.lowPowerPackages.size)
+        assertEquals(1, state.lowPowerInstalled)
+        assertTrue(state.hasLowPower)
+        // 场景开关那份没找到，但低功耗清单找到了：不能因为前者为空就把整页说成「不支持」。
+        assertFalse(state.supported)
+    }
+
+    @Test
+    fun aPhoneWithoutAnyLowPowerListSaysSo() {
+        val state = AudioWhitelist.parse("##LEVEL##1\n##CFG##/odm/etc/audio/trackefx_config.xml\n##LOWPOWER##\n")
+        assertFalse(state.hasLowPower)
+        assertTrue(state.lowPowerPackages.isEmpty())
+        assertTrue(state.supported)
+    }
+
+    @Test
     fun theDiagnosticLinesAreKeptVerbatim() {
         // These are what a bug report carries: the properties the ROM has and what the two global
         // settings hold. Dropping them silently would leave "no effect" undiagnosable.

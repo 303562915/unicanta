@@ -18,6 +18,20 @@ done
 done
 fi
 echo "##CFG##$CFG"
+# 低功耗外放清单：K90 Pro Max 这一代把 B 站、抖音的外放压小的是**这一份**，不是 trackefx 那套场景处理。
+# 它跟上面那份是两个机制，所以单独读、单独输出；找不到也照实报空。
+LP=
+for f in /odm/etc/audio/audio_lowpower_app_list.xml /vendor/etc/audio/audio_lowpower_app_list.xml /odm/etc/audio_lowpower_app_list.xml; do
+[ -f "$f" ] && { LP="$f"; break; }
+done
+if [ -z "$LP" ]; then
+LP=$(find /odm/etc /vendor/etc /system_ext/etc /product/etc -maxdepth 4 -iname '*lowpower*app*list*' 2>/dev/null | head -n 1)
+fi
+echo "##LOWPOWER##$LP"
+if [ -n "$LP" ]; then
+grep -aoE '"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+"' "$LP" 2>/dev/null | tr -d '"' | sort -u | sed 's|^|##LOWPOWER##'"$LP"'	|'
+grep -aoE '>[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+<' "$LP" 2>/dev/null | tr -d '><' | sort -u | sed 's|^|##LOWPOWER##'"$LP"'	|'
+fi
 if [ -n "$CFG" ]; then
 { grep -aoE '"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+"' "$CFG"; grep -aoE '>[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+<' "$CFG"; } 2>/dev/null | tr -d '"><\000' | grep -v '\.xml$' | sort -u | sed 's|^|##PKG##|'
 echo "##XMLHEAD##$(head -c 400 "$CFG" 2>/dev/null | tr -d '\000' | tr '\n' ' ')"

@@ -65,6 +65,12 @@ object AudioWhitelist {
     internal const val TAG_DIRECTORY = "##DIR##"
     internal const val TAG_FILE = "##FILE##"
 
+    /**
+     * 低功耗外放的清单（K90 Pro Max 这一类）：`/odm/etc/audio/audio_lowpower_app_list.xml` 里点名一批应用，
+     * 它们播放时系统把声音压小、压低频。和 trackefx 那套是**两条不同的机制**，K90pm 上只有这一条。
+     */
+    internal const val TAG_LOWPOWER = "##LOWPOWER##"
+
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
     suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
 
@@ -100,12 +106,25 @@ object AudioWhitelist {
         val configPath: String,
         val entries: List<Entry>,
         val diagnostics: List<String> = emptyList(),
+        /**
+         * 低功耗外放清单（`audio_lowpower_app_list.xml`）里点名的应用，以及它的路径。
+         *
+         * 只有部分机型（K90 Pro Max 这一代）有这份清单；为空表示这台机器没有这条机制。
+         */
+        val lowPowerPath: String = "",
+        val lowPowerPackages: List<Entry> = emptyList(),
     ) {
         /** The audio engine is skipping the whitelist right now. */
         val bypassed: Boolean get() = level == BYPASS
 
         /** The list is being applied: the shipped state of the ROM. */
         val active: Boolean get() = level.isNotEmpty() && !bypassed
+
+        /** 这台机器有低功耗外放清单：真正把 B 站/抖音外放压小的那条机制。 */
+        val hasLowPower: Boolean get() = lowPowerPath.isNotEmpty() || lowPowerPackages.isNotEmpty()
+
+        /** 清单里本机装着的应用数（多数行是别的机型才有的包）。 */
+        val lowPowerInstalled: Int get() = lowPowerPackages.count { it.installed }
 
         /**
          * 这台机器上有没有这份名单文件。
@@ -122,7 +141,9 @@ object AudioWhitelist {
     fun parse(output: String): State {
         var level = ""
         var config = ""
+        var lowPowerPath = ""
         val packages = LinkedHashSet<String>()
+        val lowPowerPackages = LinkedHashSet<String>()
         val installed = HashSet<String>()
         val diagnostics = ArrayList<String>()
 
@@ -131,6 +152,18 @@ object AudioWhitelist {
             when {
                 line.startsWith(TAG_LEVEL) -> level = line.removePrefix(TAG_LEVEL).trim()
                 line.startsWith(TAG_CONFIG) -> config = line.removePrefix(TAG_CONFIG).trim()
+                // 低功耗清单的行：`<路径>\t<包名>`，路径为空表示这台机器没有这份清单。
+                line.startsWith(TAG_LOWPOWER) -> {
+                    val rest = line.removePrefix(TAG_LOWPOWER).trim()
+                    // 脚本用 tab 分隔「路径 \t 包名」；没有 tab 就是只有路径、清单里没有包。
+                    val tab = rest.indexOf('\t')
+                    if (tab >= 0) {
+                        lowPowerPath = rest.substring(0, tab).trim()
+                        rest.substring(tab + 1).trim().takeIf { it.isNotEmpty() }?.let { lowPowerPackages += it }
+                    } else if (rest.contains('/')) {
+                        lowPowerPath = rest
+                    }
+                }
                 line.startsWith(TAG_PACKAGE) -> line.removePrefix(TAG_PACKAGE).trim().let {
                     if (it.isNotEmpty()) packages += it
                 }
@@ -152,7 +185,16 @@ object AudioWhitelist {
             .map { Entry(packageName = it, label = labelOf(it), installed = it in installed) }
             .sortedWith(compareBy({ !it.installed }, { it.label.lowercase() }, { it.packageName }))
 
-        return State(level = level, configPath = config, entries = entries, diagnostics = diagnostics)
+        return State(
+            level = level,
+            configPath = config,
+            entries = entries,
+            diagnostics = diagnostics,
+            lowPowerPath = lowPowerPath,
+            lowPowerPackages = lowPowerPackages
+                .map { Entry(packageName = it, label = labelOf(it), installed = it in installed) }
+                .sortedWith(compareBy({ !it.installed }, { it.label.lowercase() }, { it.packageName })),
+        )
     }
 
     /** The Chinese name for a package this build knows, the package name otherwise. */

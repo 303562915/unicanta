@@ -212,6 +212,12 @@ fun AudioWhitelistScreen(
 
             item(key = "explain") { ExplainCard() }
 
+            // K90 Pro Max 这一类：没有 trackefx 名单，但有一份低功耗外放清单，B 站/抖音的声音就是被它压的。
+            // 只读展示（文件在 /odm 只读分区，改它得 root 且系统升级会覆盖），但至少让人知道「压你的是这个」。
+            current?.takeIf { it.hasLowPower }?.let { snapshot ->
+                item(key = "lowpower") { LowPowerCard(snapshot) }
+            }
+
             if (entries.isNotEmpty()) {
                 item(key = "list-head") {
                     Column(modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 16.dp)) {
@@ -408,6 +414,90 @@ private fun ExplainCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
             )
+        }
+    }
+}
+
+/**
+ * 低功耗外放清单：K90 Pro Max 这一代真正把 B 站/抖音声音压小的东西。
+ *
+ * 只读。文件在 /odm 只读分区，只有 root 能改，而且系统升级会覆盖回来——所以这里不做按钮，
+ * 只把它「是什么、点了哪儿、本机装了哪些」摆出来，免得用户继续在这页的「解除」按钮上找答案。
+ */
+@Composable
+private fun LowPowerCard(state: AudioWhitelist.State) {
+    val scheme = MaterialTheme.colorScheme
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                text = "这台机器压外放的是「低功耗应用清单」，不是上面那个开关",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "清单文件：" + state.lowPowerPath.ifEmpty { "（没找到具体路径）" },
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Text(
+                text = "被点名的应用在播放时，系统会压低功率（声音小、低频少）。它和上面的场景开关是两条机制："
+                    + "这台机器没有 trackefx 名单，写那个开关不会改变这份清单。"
+                    + "清单在 /odm 只读分区，只有 root 能改（改完系统升级会被覆盖回原样）。",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            if (state.lowPowerPackages.isNotEmpty()) {
+                Text(
+                    text = "清单里的应用（${state.lowPowerPackages.size} 个，本机装了 ${state.lowPowerInstalled} 个）",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = scheme.onSurface,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                state.lowPowerPackages.take(20).forEach { entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = entry.label,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (entry.installed) scheme.onSurface else scheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (entry.installed) {
+                            Text(
+                                text = "已装",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = scheme.primary,
+                            )
+                        }
+                    }
+                }
+                if (state.lowPowerPackages.size > 20) {
+                    Text(
+                        text = "…还有 ${state.lowPowerPackages.size - 20} 个",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            } else {
+                Text(
+                    text = "找到了这份清单文件，但没能从里面解析出包名（格式可能是二进制，或者名字不在这里）。"
+                        + "把下面那栏诊断发给开发者，用 root 直接看这个文件更准。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
     }
 }
