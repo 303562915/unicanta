@@ -6,8 +6,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
@@ -104,6 +106,9 @@ private val CANDIDATE_ICON = 28.dp
 /** How much of the window the sheet asks for: it is meant to be a page, not a popup. */
 private const val SHEET_HEIGHT_FRACTION: Float = 0.92f
 
+/** 主题胶囊的定宽：横滑时每格一样宽，滑起来不会忽宽忽窄；标签短（「精简AI」）也不缩。 */
+private val PICK_WIDTH = 96.dp
+
 /**
  * The shorthand names these sets already go by, offered as one-tap titles.
  *
@@ -114,10 +119,14 @@ private const val SHEET_HEIGHT_FRACTION: Float = 0.92f
 private val PLAN_NAME_PRESETS = listOf("极简", "省电", "游戏", "长辈机", "干净", "日常")
 
 /**
- * 一键勾一批的主题清单：社区里实际在用的那几个说法（最精简、广告追踪、精简游戏、精简AI）。
+ * 一键勾一批的主题清单。社区里实际在用的那几个说法在最前面（最精简、广告追踪、精简游戏、精简AI），
+ * 后面补上「遥测诊断」「云同步备份」「输入法语音」——这三类是「精简」里最常见、也最容易漏的。
  *
  * 它只是「勾选」的快捷方式，不是内置方案：命中的包照样要过重启验证才进得了清单，勾上来之后
  * 也照样能在下面逐个取消。所以这里命不中就是灰的、点不动，而不是悄悄勾一堆让人以为选好了。
+ *
+ * 清单是**横向滚动**的一排（不是换行铺满）：格子多了以后换行会把候选列表往下挤，横滑则保持
+ * 一行高度，滑到右边就能看见剩下的格子。
  */
 private class PlanPick(
     val label: String,
@@ -131,32 +140,99 @@ private class PlanPick(
  *
  * 短词（`ad`、`ads`、`msa`）只认整段，长词（四个字母以上）认前缀：否则 `com.android.*` 会因为
  * 以「ad」开头被当成广告，那是把整个系统都勾进来。
+ *
+ * 厂商前缀（`miui`、`oplus`、`vivo`）不单独成为一整段的中文名——那样会连系统框架一起勾上——
+ * 所以这里只收广告 SDK 自己的词，厂商的统计组件靠 `com.xiaomi.joyose` 这类整名短语兜。
  */
 private val AD_SEGMENTS = listOf(
     "ads", "ad", "mads", "msa", "adsdk", "advert", "adcolony", "admob", "adservice",
     "applovin", "analytics", "tracker", "tracking", "umeng", "appmetrica", "doubleclick",
-    "comscore", "appsflyer", "adjust",
+    "comscore", "appsflyer", "adjust", "joyose", "marketresearch", "apprecommend",
+    "datacollect", "beacon", "statistics", "pushservice",
 )
 
 /** 游戏中心、游戏服务、游戏助手一类；`game` 是长词，所以 `gamecenter`、`gameturbo` 都算。 */
-private val GAME_SEGMENTS = listOf("game", "games", "playgames", "gameturbo", "gamecenter")
+private val GAME_SEGMENTS = listOf("game", "games", "playgames", "gameturbo", "gamecenter", "gamebooster")
 
 /** 语音助手与 AI 服务；`ai` 只认整段（否则 `mail`、`detail` 都会中）。 */
 private val AI_SEGMENTS = listOf(
     "ai", "aicr", "aivoice", "aiservice", "aiengine", "assistant", "voiceassist", "xiaoice",
-    "copilot", "gemini",
+    "copilot", "gemini", "colortv", "aiimage", "aigallery",
+)
+
+/**
+ * 遥测、诊断、日志上报一类：系统「用户体验改进计划」「匿名统计」这一类组件的名字。
+ *
+ * 和广告追踪分开放是有意为之：广告那格勾的是商业追踪 SDK，这格勾的是厂商自己把日志、崩溃、
+ * 使用数据传回服务器的服务。两类都有人要卸，但不是同一件事，混成一格会让计数说不清。
+ */
+private val TELEMETRY_SEGMENTS = listOf(
+    "telemetry", "metrics", "metric", "diag", "diagnostic", "feedback", "bugreport",
+    "logupload", "logtool", "crashreport", "analyticsengine", "dmp",
+)
+
+/** 云同步、备份、跨设备一类的服务；卸掉之后备份和云相册就走系统自带的那条。 */
+private val CLOUD_SEGMENTS = listOf(
+    "cloud", "cloudservice", "miuicloud", "cloudsync", "cloudbackup", "xcloud",
+    "finddevice", "devicelocator",
+)
+
+/** 输入法、语音识别、翻译这类「本地能力」插件；很多人只留一个输入法。 */
+private val UTILITY_SEGMENTS = listOf(
+    "inputmethod", "voicerecog", "translat", "screenreader",
 )
 
 /** 应用名里的这些词比包名更直白，中文应用尤其如此。英文的「Ad」不进这张表：它会命中 Shadow。 */
 private val AD_NAMES = listOf("广告", "统计", "追踪")
 private val GAME_NAMES = listOf("游戏", "Game")
 private val AI_NAMES = listOf("小爱", "语音助手", "AI助手", "智能助理", "智能助手")
+private val TELEMETRY_NAMES = listOf("遥测", "诊断", "日志", "反馈", "用户体验计划", "数据统计")
+private val CLOUD_NAMES = listOf("云服务", "云同步", "云备份", "云相册", "查找设备")
+private val UTILITY_NAMES = listOf("输入法", "语音", "翻译", "无障碍")
+
+/** 「云同步备份」这一格的例外名单：这些名字里带 cloud/sync，但卸了就是没设置、没账号、没输入法。 */
+private val CLOUD_KEEP_PACKAGES = listOf(
+    "com.miui.cloudservice.sysbase",
+)
+
+/** 包里明确不能碰的：卸了会起不来，或者根本不是「精简」该动的东西。 */
+private val CLOUD_KEEP_SEGMENTS = listOf("settings", "framework", "telecom", "systemui")
+
+/** 「云同步备份」那一格的排除项：名字里带 cloud，卸了却是设置/账号/输入法的底座。 */
+private fun AppInfo.isCloudKeystone(): Boolean =
+    hasSegment(CLOUD_KEEP_SEGMENTS) || hasPhrase(CLOUD_KEEP_PACKAGES)
+
+/**
+ * 分段法命不中的整名组件（小米/红米这批里最常见的那几个）。「广告追踪」那格是
+ * `com.miui.msa`（广告服务）、`com.miui.hybrid`（快应用广告位）、`AppRecommend`；
+ * 「遥测诊断」那格是 `dmregservice`（推送注册 + 数据上报）和 `com.miui.analytics`。
+ *
+ * 这些只作为**额外**命中：分段法照旧生效，别的厂商的同类组件也能被这两格挑到。
+ */
+private val XIAOMI_AD_PACKAGES = listOf(
+    "com.miui.apprecommend",
+    "com.miui.systemad",
+    "com.miui.hybrid",
+)
+
+private val XIAOMI_TELEMETRY_PACKAGES = listOf(
+    "com.xiaomi.joyose",
+    "com.miui.dmregservice",
+    "com.miui.analytics",
+    "com.miui.misightservice",
+    "com.miui.powerkeeper",
+    "com.miui.bugreport",
+)
 
 /** 包名按 `.`、`-`、`_` 分段，任一段命中就算：`com.miui.msa` 与 `com.google.android.gms.ads` 都算广告。 */
 private fun AppInfo.hasSegment(tokens: List<String>): Boolean =
     packageName.lowercase()
         .split('.', '-', '_')
         .any { segment -> tokens.any { token -> segment == token || (token.length >= 4 && segment.startsWith(token)) } }
+
+/** 整名短语：`com.xiaomi.joyose` 这种名字不会被分段法命中，单独按完整包名比对。 */
+private fun AppInfo.hasPhrase(phrases: List<String>): Boolean =
+    phrases.any { packageName.equals(it, ignoreCase = true) || packageName.startsWith("$it.", ignoreCase = true) }
 
 /** 应用名命中，和分段命中是「或」的关系。 */
 private fun AppInfo.namedLike(words: List<String>): Boolean = words.any { name.contains(it, ignoreCase = true) }
@@ -223,7 +299,7 @@ fun UploadPlanDialog(
     // preflight answered yes, and the card above says what to do when it answered no.
     val mayPublish = title.isNotBlank() && provenSelection.isNotEmpty() && !publishing && reachable == true
 
-    // 四个一键清单，按此刻可勾的包算：计数就是「点一下会勾上几个」，不点空的无名之选。每次重组
+    // 一键清单，按此刻可勾的包算：计数就是「点一下会勾上几个」，不点空的无名之选。每次重组
     // 直接重算而不是 remember：这张表跟着上面那几个 TextButton 一起变，缓存一个旧计数只会多一处
     // 要维护的状态，而候选清单本身也就是几十到几百行。
     val pickHits = listOf(
@@ -231,13 +307,24 @@ fun UploadPlanDialog(
             rules?.verdict(app.packageName, profile)?.status == SafetyStatus.SAFE
         },
         PlanPick("广告追踪", "广告 / 统计 / 追踪") { app ->
-            app.hasSegment(AD_SEGMENTS) || app.namedLike(AD_NAMES)
+            app.hasSegment(AD_SEGMENTS) || app.namedLike(AD_NAMES) ||
+                app.hasPhrase(XIAOMI_AD_PACKAGES)
         },
         PlanPick("精简游戏", "游戏中心 / 游戏服务") { app ->
             app.hasSegment(GAME_SEGMENTS) || app.namedLike(GAME_NAMES)
         },
         PlanPick("精简AI", "语音助手 / AI 服务") { app ->
             app.hasSegment(AI_SEGMENTS) || app.namedLike(AI_NAMES)
+        },
+        PlanPick("遥测诊断", "遥测 / 诊断 / 日志") { app ->
+            app.hasSegment(TELEMETRY_SEGMENTS) || app.namedLike(TELEMETRY_NAMES) ||
+                app.hasPhrase(XIAOMI_TELEMETRY_PACKAGES)
+        },
+        PlanPick("云同步备份", "云 / 备份 / 同步") { app ->
+            (app.hasSegment(CLOUD_SEGMENTS) || app.namedLike(CLOUD_NAMES)) && !app.isCloudKeystone()
+        },
+        PlanPick("输入法语音", "输入法 / 语音 / 翻译") { app ->
+            app.hasSegment(UTILITY_SEGMENTS) || app.namedLike(UTILITY_NAMES)
         },
     ).map { pick -> pick to uploadable.filter(pick.match).map { it.packageName } }
 
@@ -308,9 +395,9 @@ fun UploadPlanDialog(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         item("net") {
-                        NetCard(reachable = reachable, checking = checking, onRecheck = onRecheck)
-                    }
-                    item("state") { StateCard(gate = gate, awaiting = candidates.size - uploadable.size) }
+                            NetCard(reachable = reachable, checking = checking, onRecheck = onRecheck)
+                        }
+                        item("state") { StateCard(gate = gate, awaiting = candidates.size - uploadable.size) }
                         item("device") { DeviceCard(profile = profile, totalCount = candidates.size) }
                         item("pick") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -336,24 +423,24 @@ fun UploadPlanDialog(
                                 }
                             }
                         }
-                        // 主题清单一格：和上面的「全选 / 清空」是同一件事的四种口味，所以紧贴着那一行，
-                        // 而不是跑到标题或表单旁边去。一个都勾不上时（这批里没有那类包）整排不显示。
-                        if (pickHits.any { it.second.isNotEmpty() }) {
-                            item("picks") {
-                                PickRow(
-                                    hits = pickHits,
-                                    selected = selected,
-                                    onToggle = { packages ->
-                                        val set = packages.toSet()
-                                        // 全都勾上了点一下就整批取消：同一个胶囊第二次点是反选。
-                                        selected = if (set.all { it in selected }) {
-                                            selected.filterNot { it in set }
-                                        } else {
-                                            (selected + packages).distinct()
-                                        }
-                                    },
-                                )
-                            }
+                        item("picks") {
+                            // 主题清单：和上面的「全选 / 清空」是同一件事的几种口味，所以紧贴着那一行，
+                            // 而不是跑到标题或表单旁边去。横滑一排，滑到右边还有更多分类；有一格命得中
+                            // 就整排显示，命不中的格子灰着留着。「最精简」那格按本机规则算，规则还没读到
+                            // 或候选全都不安全时它是灰的、点不动。
+                            PickRow(
+                                hits = pickHits,
+                                selected = selected,
+                                onToggle = { packages ->
+                                    val set = packages.toSet()
+                                    // 全都勾上了点一下就整批取消：同一个胶囊第二次点是反选。
+                                    selected = if (set.all { it in selected }) {
+                                        selected.filterNot { it in set }
+                                    } else {
+                                        (selected + packages).distinct()
+                                    }
+                                },
+                            )
                         }
                         if (candidates.isEmpty()) {
                             item("empty") {
@@ -695,12 +782,15 @@ private fun DeviceCard(profile: DeviceProfile?, totalCount: Int) {
 }
 
 /**
- * 四格主题清单。每一格都自己说明挑的是什么：胶囊上写「广告追踪 · 12」，下面一行小字写「广告 /
+ * 主题清单一排。每一格都自己说明挑的是什么：胶囊上写「广告追踪 · 12」，下面一行小字写「广告 /
  * 统计 / 追踪」，点一下把这一类整批勾上或整批取消。
  *
+ * 横向滚动而不是 `FlowRow` 换行：格子从四个涨到七个以后，换行会把候选列表整体往下挤一截，
+ * 横滑则只占一行高度，往右滑就能看见剩下的。这一排是「选择更多」，不是「页面更长」。
+ *
  * 这一批里没有那一类包时，胶囊变灰、点不动——灰的那一格比一个点下去什么也不发生的按钮诚实。
+ * 一排装不下七格，所以第一格右边一定露出下一格的一半：手指自然知道还能往右滑。
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PickRow(
     hits: List<Pair<PlanPick, List<String>>>,
@@ -708,45 +798,77 @@ private fun PickRow(
     onToggle: (List<String>) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        hits.forEach { (pick, packages) ->
-            val picked = packages.isNotEmpty() && packages.all { it in selected }
-            val enabled = packages.isNotEmpty()
-            val container = when {
-                picked -> colors.primary
-                else -> colors.surfaceContainerHigh
+    val rowState = rememberLazyListState()
+    // 滑到最右就不再画渐隐：右边已经没有东西可看了，留一条影子反而像还有内容。
+    val moreToTheRight by remember {
+        derivedStateOf {
+            val info = rowState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf false
+            last < info.totalItemsCount - 1
+        }
+    }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        LazyRow(
+            state = rowState,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // 两侧留一点空白：滑到头时第一格和最后一格不贴着边，看得出这一排还能滑。
+            contentPadding = PaddingValues(horizontal = 2.dp),
+        ) {
+            items(hits.size) { index ->
+                val (pick, packages) = hits[index]
+                val picked = packages.isNotEmpty() && packages.all { it in selected }
+                val enabled = packages.isNotEmpty()
+                val container = when {
+                    picked -> colors.primary
+                    else -> colors.surfaceContainerHigh
+                }
+                val content = when {
+                    picked -> colors.onPrimary
+                    enabled -> colors.onSurface
+                    else -> colors.onSurfaceVariant.copy(alpha = 0.45f)
+                }
+                Column(
+                    modifier = Modifier
+                        .width(PICK_WIDTH)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(container)
+                        .clickable(enabled = enabled) { onToggle(packages) }
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                ) {
+                    Text(
+                        text = pick.label + (if (enabled) " · ${packages.size}" else ""),
+                        fontSize = 11.sp,
+                        fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal,
+                        color = content,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = if (enabled) pick.hint else "这一批里没有",
+                        fontSize = 8.5.sp,
+                        lineHeight = 11.sp,
+                        color = if (picked) colors.onPrimary.copy(alpha = 0.8f) else content.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            val content = when {
-                picked -> colors.onPrimary
-                enabled -> colors.onSurface
-                else -> colors.onSurfaceVariant.copy(alpha = 0.45f)
-            }
-            Column(
+        }
+        if (moreToTheRight) {
+            // 右侧渐隐：告诉手指「这儿还有格子」，比一个「更多」按钮轻，也不占一格宽度。
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(container)
-                    .clickable(enabled = enabled) { onToggle(packages) }
-                    .padding(horizontal = 9.dp, vertical = 5.dp),
-            ) {
-                Text(
-                    text = pick.label + (if (enabled) " · ${packages.size}" else ""),
-                    fontSize = 11.sp,
-                    fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal,
-                    color = content,
-                    maxLines = 1,
-                )
-                Text(
-                    text = if (enabled) pick.hint else "这一批里没有",
-                    fontSize = 8.5.sp,
-                    lineHeight = 11.sp,
-                    color = if (picked) colors.onPrimary.copy(alpha = 0.8f) else content.copy(alpha = 0.75f),
-                    maxLines = 1,
-                )
-            }
+                    .align(Alignment.CenterEnd)
+                    .width(28.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            1f to FlSurfaceLevel.Block.colorOf(colors),
+                        )
+                    ),
+            )
         }
     }
 }
