@@ -62,6 +62,8 @@ data class RankRow(
     val week: Int? = null,
     /** 再往前 7 天的净增，用来判断加速还是放缓；不够 14 天时是 null。 */
     val previous: Int? = null,
+    /** 来自 GitHub 的标签；旧缓存没有这一项时留空。 */
+    val topics: List<String> = emptyList(),
 )
 
 /** 一次刷新得到的整块数据。 */
@@ -114,6 +116,7 @@ class WeeklyRankRepository(
         val stargazers_count: Int = 0,
         val description: String? = null,
         val html_url: String = "",
+        val topics: List<String>? = null,
     )
 
     @Serializable
@@ -248,6 +251,7 @@ class WeeklyRankRepository(
                 stars = info.stars,
                 description = info.description,
                 url = info.url,
+                topics = info.topics,
                 // 本周 = 今天 − 7 天前；上期 = 7 天前 − 14 天前。两段都是 7 天，才比得出快慢。
                 week = if (latest != null && anchor7 != null && anchor7.day < latest.day) {
                     latest.stars - anchor7.stars
@@ -293,7 +297,7 @@ class WeeklyRankRepository(
 
     // ------------------------------------------------------------ GitHub
 
-    private data class Candidate(val stars: Int, val description: String, val url: String)
+    private data class Candidate(val stars: Int, val description: String, val url: String, val topics: List<String>)
 
     /**
      * 按 topic 拉候选，合成一张 `仓库全名 → 数据` 的表。
@@ -320,6 +324,7 @@ class WeeklyRankRepository(
                         stars = repo.stargazers_count,
                         description = repo.description.orEmpty(),
                         url = repo.html_url,
+                        topics = repo.topics.orEmpty(),
                     )
                 }
             }
