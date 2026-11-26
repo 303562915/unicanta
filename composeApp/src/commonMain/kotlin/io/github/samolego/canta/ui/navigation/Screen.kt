@@ -105,6 +105,23 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
         fun routeFor(id: Long) = "chat/$id"
     }
 
+    /**
+     * 同一个聊天页，但**开门那一刻就知道这是群**。
+     *
+     * 为什么需要另一条路由：聊天页写进返回栈之后，形参 `isGroup` 就定死了——它自己那一趟
+     * `conversation_detail` 回来只更新内部的 `grouped`，不会回头改形参。而从消息页进来时，路由
+     * 只带会话号，群身份要靠聊天页再去问一次 `conversations_for`，问回来之前一律当私聊：群里
+     * 别人的消息一条头像都没有，顶栏还写着「私聊」（截图里就是这个）。
+     *
+     * 消息页手上本来就有这一行（`Conversation.isGroup`），所以给它一个能把这个结论带进来的入口：
+     * 结论在**进页那一刻**就定下，不必等第二个请求。老路由 `chat/{id}` 保留给别的入口
+     * （搜索结果之外没有别的地方带得出结论），它只是少了这一份提前量。
+     */
+    data object ChatGroup : Screen("chat-group/{conversationId}") {
+        /** 群聊的具体路由：`group` 那一段就是「这是群」这个结论。 */
+        fun routeFor(id: Long) = "chat-group/$id"
+    }
+
     /** 发起群聊：挑人、起名、建一个群。不是 `group/…` 底下的一段，免得和上面的群资料抢路由。 */
     data object CreateGroup : Screen("group-new")
 

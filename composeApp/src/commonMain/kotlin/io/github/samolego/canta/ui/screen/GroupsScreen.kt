@@ -102,7 +102,7 @@ private fun groupsCacheKey(owner: String): String =
 fun GroupsScreen(
     repository: SocialRepository,
     owner: String,
-    onOpenChat: (conversationId: Long) -> Unit,
+    onOpenChat: (conversationId: Long, isGroup: Boolean) -> Unit,
     onOpenCreateGroup: () -> Unit,
     onNavigateBack: () -> Unit,
     onMessage: (String) -> Unit = {},
@@ -215,7 +215,8 @@ fun GroupsScreen(
                         modifier = Modifier.fillMaxWidth().weight(1f),
                     ) {
                         items(foldedGroups, key = { "group-${it.id}" }) { group ->
-                            GroupRow(group = group, onOpen = { onOpenChat(group.id) })
+                            // 这一页里的每一行都是群，群身份直接给出去：聊天页开门就按群画。
+                            GroupRow(group = group, onOpen = { onOpenChat(group.id, true) })
                         }
                         // 列表末尾那一句：微信「折叠的群聊」这一页也是这样收尾的，说明到这儿就是全部，
                         // 不是还没加载出来。

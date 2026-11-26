@@ -238,7 +238,14 @@ fun MessagesScreen(
     inboxUnread: Int,
     inboxPreview: String,
     onOpenInteractions: () -> Unit,
-    onOpenChat: (conversationId: Long) -> Unit,
+    /**
+     * 进某个会话。
+     *
+     * [isGroup] 是这一行**是不是群**：聊天页要靠它决定画不画别人的头像和名字。路由只带会话号，
+     * 聊天页自己还得再问一遍 `conversations_for`，问回来之前一律当私聊——群里那些人的消息
+     * 就一条头像都没有（截图里「群里没有头像」）。所以这一页手上已经有这一行了，顺手把结论带过去。
+     */
+    onOpenChat: (conversationId: Long, isGroup: Boolean) -> Unit,
     /** 发起群聊：挑人、起名、建群。 */
     onOpenCreateGroup: () -> Unit = {},
     /** 打开和某人的私聊：没有会话就先开一个（后端 dm_open 是幂等的）。 */
@@ -405,9 +412,6 @@ fun MessagesScreen(
             // 以前只看最后一句，结果「关注列表没拉到」也会让会话列表那份缓存不写——下次从聊天页
             // 退回来，内存里还是空的，于是又转一次圈。会话列表拿到就是拿到，跟另外两句无关。
             val chatsFailed = repository.lastError != null
-            val people = repository.followersOf(owner)
-            val peopleFailed = repository.lastError != null
-            val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
             if (!chatsFailed) {
                 // 按会话号 upsert 而不是整份替换：增量那一趟只回来几个会话，整份替换等于把没动静的
                 // 几十行全删掉。内容没变的行沿用原对象，刷新时那几行不会被当成新行重新组合
@@ -418,15 +422,31 @@ fun MessagesScreen(
                 conversations = sortedConversations(
                     if (since == null) chats else mergeConversations(conversations, chats),
                 )
-                if (!peopleFailed) followers = people
-                summary = counted
-                // 这一份是刚从后端拿回来的完整（或合并过的）会话列表：底栏「消息」那个数字按它重算。
-                // 下拉刷新、从聊天页回来、每 30 秒那一拍都走这里，所以底栏不必再自己去拉一份全量列表。
+                // 会话列表一到就收骨架、就写缓存，**不等后面两句**。
+                //
+                // 以前这里要等「关注列表 + 互动总数」都回来才走到下面那行 `put`：那两句慢一点
+                // （后端忙、代理抖），整页就一直顶着四个灰块，而会话其实早就到手了——截图里
+                // 「消息页一片空白」就是这么来的。关注和总数只影响靠后的两段，先让它带着上一份画。
+                loading = false
+                // 底栏「消息」那个数字按这一份列表重算。下拉刷新、从聊天页回来、每 30 秒那一拍都
+                // 走这里，所以底栏不必再自己去拉一份全量列表。
                 ChatUnread.from(conversations)
-                ConversationCache.put(owner, conversations, followers, counted)
+                // `summary` 先留上一份（内存没有时是 [InboxSummary.EMPTY]），等第三句回来再顶上，
+                // 别在这里凭空写一个 0——那会让「有多少条新互动」先闪一下 0。
+                ConversationCache.put(owner, conversations, followers, summary)
             }
             // 拉不到就说一句：空列表和后端没通在界面上长得一样，这一行是唯一的区别。
             loadError = repository.lastError
+            val people = repository.followersOf(owner)
+            val peopleFailed = repository.lastError != null
+            val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
+            if (!chatsFailed) {
+                if (!peopleFailed) followers = people
+                summary = counted
+                // 三句都回来了再写一次：这一次带的是真正的互动总数，下一趟冷启动画出来的
+                // 副标题和红点才是准的。列表原样沿用上面那一份，不会白拉一次。
+                ConversationCache.put(owner, conversations, followers, counted)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -879,7 +899,8 @@ fun MessagesScreen(
                                 // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
                                 // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
                                 if (contact.conversationId > 0L) {
-                                    onOpenChat(contact.conversationId)
+                                    // 最近联系人里只有私聊：这一格本来就是一个人一张脸。
+                                    onOpenChat(contact.conversationId, false)
                                 } else {
                                     onOpenDm(contact.key)
                                 }
@@ -911,7 +932,7 @@ fun MessagesScreen(
                                 unread = groupUnread,
                                 onClick = {
                                     val group = latestGroup
-                                    if (group != null) onOpenChat(group.id) else onMessage("还没有折叠的群聊")
+                                    if (group != null) onOpenChat(group.id, true) else onMessage("还没有折叠的群聊")
                                 },
                                 // 折叠的群不止一个时，这一行右边再给一个「全部 N 个群」的小字入口：
                                 // 这里只剩最近说话的那个群可以点，剩下的得有地方去。
@@ -938,7 +959,9 @@ fun MessagesScreen(
                                             joiningOfficial[entry.title] = false
                                             if (id != null) {
                                                 reloads++
-                                                onOpenChat(id)
+                                                // 官方群（灰度测试群、Bug 反馈）都是群：进来就把
+                                                // 群身份带上，否则第一帧按私聊画，别人的头像全没有。
+                                                onOpenChat(id, true)
                                             } else {
                                                 onMessage("没进成「${entry.title}」，检查代理后再试")
                                             }
@@ -970,7 +993,7 @@ fun MessagesScreen(
                                     // 会话就进会话；只有关注关系的人先开私聊（后端 dm_open 幂等）。
                                     val conversation = hit.conversation
                                     if (conversation != null) {
-                                        onOpenChat(conversation.id)
+                                        onOpenChat(conversation.id, conversation.isGroup)
                                     } else {
                                         onOpenDm(hit.personId)
                                     }
@@ -987,9 +1010,11 @@ fun MessagesScreen(
                                 )
                             }
                             items(messageHits, key = { "msg-${it.id}" }) { hit ->
+                                // 消息命中那条带着会话类型（后端 `conversation_kind`），照样递过去：
+                                // 从搜索结果点进群，和从列表点进去要长得一模一样。
                                 MessageHitRow(
                                     hit = hit,
-                                    onClick = { onOpenChat(hit.conversationId) },
+                                    onClick = { onOpenChat(hit.conversationId, hit.conversationKind == "group") },
                                 )
                             }
                         } else if (searchingMessages) {
@@ -1031,7 +1056,7 @@ fun MessagesScreen(
                             // 官方群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样：
                             // 以前一个灰底一个白底，同一页里两种置顶，看着像两套规则。
                             forcePinnedLook = conversation.title in OfficialGroups.titles,
-                            onOpen = { onOpenChat(conversation.id) },
+                            onOpen = { onOpenChat(conversation.id, conversation.isGroup) },
                             onTogglePin = { togglePin(conversation) },
                             onToggleMute = { toggleMute(conversation) },
                             onHide = { hideRow(conversation) },

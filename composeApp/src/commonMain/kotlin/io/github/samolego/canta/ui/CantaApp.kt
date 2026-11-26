@@ -1600,7 +1600,14 @@ private fun CantaNavigation(
                     onOpenInteractions = {
                         navController.navigate(Screen.Interactions.route) { launchSingleTop = true }
                     },
-                    onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
+                    // 消息页已经把这一行是群还是私聊告诉我们了：群走 `chat-group` 那条路由，
+                    // 聊天页开门那一刻就按群画（别人的头像、名字、群名都在），不用再等一趟
+                    // `conversations_for`。私聊照旧走 `chat/{id}`。
+                    onOpenChat = { id, isGroup ->
+                        navController.navigate(
+                            if (isGroup) Screen.ChatGroup.routeFor(id) else Screen.Chat.routeFor(id),
+                        )
+                    },
                     onOpenCreateGroup = { navController.navigate(Screen.CreateGroup.route) },
                     onOpenGroups = { navController.navigate(Screen.Groups.route) },
                     onOpenDm = { peer ->
@@ -1672,7 +1679,14 @@ private fun CantaNavigation(
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
-            composable(route = Screen.Chat.route) { entry ->
+            // 同一套聊天页挂两条路由（见 [Screen.ChatGroup]）：`chat/{id}` 是「不知道是不是群」的老入口，
+            // `chat-group/{id}` 是消息页/折叠群页/官方群把「这是群」这个结论一起带进来的入口。
+            // 两条共用下面这一整段，只有 `knownGroup` 一个初值不同——群身份一旦定下就不再等第二个请求。
+            fun chatRoute(route: String, knownGroup: Boolean) = composable(
+                route = route,
+                // 两条路由共用这一个 builder：`popUpTo` / `launchSingleTop` 之类是按条目算的，
+                // 不在这里额外声明，行为和原来那条 `composable(route = Screen.Chat.route)` 一致。
+            ) { entry ->
                 val conversationId = entry.arguments
                     ?.let { args ->
                         runCatching {
@@ -1686,7 +1700,11 @@ private fun CantaNavigation(
                 // messages is read back from the conversation list, so a group says its own name
                 // and a direct chat says the other person's instead of a generic "私聊".
                 var chatTitle by remember { mutableStateOf("") }
-                var chatIsGroup by remember { mutableStateOf(false) }
+                // 知道是群就直接按群开始：列表里那一行本来就是群，没必要先当私聊画一帧。
+                // 「知道是群就不降级」：后面问回来的那一行只有在**确认是群**时才把它写成 true，
+                // 问回来的是别的（拉取失败、列表里没有这一行）就保持原样——把群误画成私聊的代价是
+                // 别人的头像和名字全没了，比多留一帧群样式贵得多。
+                var chatIsGroup by remember { mutableStateOf(knownGroup) }
                 // 私聊对面是谁：拉黑名单里存的是身份号，所以这里要的是 peer 而不是标题。
                 var chatPeer by remember { mutableStateOf("") }
                 // 草稿按会话存：离开这一页再回来，上次没说完的话还在。读取用 StateFlow，
@@ -1704,7 +1722,7 @@ private fun CantaNavigation(
                         chatTitle = opened
                             ?.let { row -> row.title.ifBlank { row.peerName.ifBlank { row.peer } } }
                             .orEmpty()
-                        chatIsGroup = opened?.isGroup == true
+                        chatIsGroup = chatIsGroup || opened?.isGroup == true
                         chatPeer = opened?.peer.orEmpty().ifEmpty { opened?.peerName.orEmpty() }
                     }
                 }
@@ -1739,6 +1757,10 @@ private fun CantaNavigation(
                     liveSource = chatLive,
                 )
             }
+            // 两条路由共用上面那一段（见 [Screen.ChatGroup]）：`chat/{id}` 是「不知道是不是群」的老入口，
+            // `chat-group/{id}` 是消息页/折叠群页/官方群把「这是群」这个结论一起带进来的入口。
+            chatRoute(route = Screen.Chat.route, knownGroup = false)
+            chatRoute(route = Screen.ChatGroup.route, knownGroup = true)
             composable(route = Screen.CreateGroup.route) {
                 var groupIdentity by remember { mutableStateOf(Identity("")) }
                 LaunchedEffect(Unit) { groupIdentity = DeviceIdentity.current(deps.settings) }
@@ -1794,7 +1816,12 @@ private fun CantaNavigation(
                 GroupsScreen(
                     repository = socialRepository,
                     owner = groupsIdentity.owner.ifEmpty { groupsIdentity.token },
-                    onOpenChat = { id -> navController.navigate(Screen.Chat.routeFor(id)) },
+                    // 「折叠的群聊」页里全是群：走同一条带群身份的路由。
+                    onOpenChat = { id, isGroup ->
+                        navController.navigate(
+                            if (isGroup) Screen.ChatGroup.routeFor(id) else Screen.Chat.routeFor(id),
+                        )
+                    },
                     onOpenCreateGroup = { navController.navigate(Screen.CreateGroup.route) },
                     onNavigateBack = { navController.navigateUp() },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
