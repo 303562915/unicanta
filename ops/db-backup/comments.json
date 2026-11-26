@@ -4968,6 +4968,18 @@
   "target": "com.miui.yellowpage"
  },
  {
+  "author": "橘子",
+  "author_id": "12029",
+  "body": "造谣生事啊",
+  "created_at": "2026-11-26T17:09:37.285314+00:00",
+  "device_model": "REDMI K90 Pro Max",
+  "id": 760,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.0",
+  "target": "com.mobiletools.systemhelper"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "[不看]你们这个没改名字的，主页那里闪动吗？",
