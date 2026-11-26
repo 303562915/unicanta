@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -142,6 +143,98 @@ fun AppLinkCard(
             }
         }
         SettingsChevron()
+    }
+}
+
+/** 两列一行的间距，比整行卡片之间的 10dp 略窄，看起来像同一条带子上的两块。 */
+private val PairGap = 8.dp
+
+/**
+ * 把两张**文字短**的卡片摆在同一行，各占一半。设置页里「启动密码」「消息通知」这类只写一行标题的
+ * 卡片，一张占一行太费高度——一屏滚两下才看得完，而真正需要读的是大段说明，那些仍然独占一行。
+ *
+ * 几何与 [AppLinkCard] / [AppToggleCard] 对齐：左右仍然是 [AppCardInset]，卡片圆角与底色不变，
+ * 所以跳着看过去并不觉得换了一套控件。**只有标题**：两半都窄，副标题写不下就挤成省略号了。
+ */
+@Composable
+fun AppCardPair(content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppCardInset, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(PairGap),
+    ) {
+        content()
+    }
+}
+
+/**
+ * [AppCardPair] 里的一半：标题一行，右边一条通往别处的箭头。
+ *
+ * 和 [AppLinkCard] 的区别只有几何——没有自己的左右留白（外面由 [AppCardPair] 给），也没有副标题。
+ */
+@Composable
+fun AppLinkTile(
+    glyph: FlGlyph,
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(AppCardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIcon(glyph = glyph, size = 19.dp, tint = scheme.primary, fill = 0.2f)
+        Spacer(Modifier.width(9.dp))
+        Text(
+            text = title,
+            style = FlText.subheadline,
+            color = scheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        SettingsChevron()
+    }
+}
+
+/** [AppCardPair] 里的一半：标题一行，右边一个开关。 */
+@Composable
+fun AppToggleTile(
+    glyph: FlGlyph,
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(AppCardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIcon(glyph = glyph, size = 19.dp, tint = scheme.primary, fill = 0.2f)
+        Spacer(Modifier.width(9.dp))
+        Text(
+            text = title,
+            style = FlText.subheadline,
+            color = scheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(6.dp))
+        SettingsSwitch(checked)
     }
 }
 

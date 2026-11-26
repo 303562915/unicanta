@@ -139,6 +139,8 @@ fun cantaAppDependencies(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         isEnabled = { settings.analyticsEnabledFlow.first() },
     )
+    // 记录只有一份：页面读它、删除名单也从它取包名。新建第二个实例会让两份内存状态各自漂移。
+    val history = OperationLogStore(storage(StoredData.OPERATION_LOG), platform)
     return CantaAppDependencies(
         handler = cantaHandler,
         settings = settings,
@@ -162,8 +164,14 @@ fun cantaAppDependencies(
         packageTelemetry = PackageTelemetry(cantaHandler, telemetry, settings),
         notes = AppNoteStore(storage(StoredData.APP_NOTES)),
         planCache = PlanCache(storage(StoredData.PLAN_CACHE)),
-        history = OperationLogStore(storage(StoredData.OPERATION_LOG), platform),
-        deletionList = DeletionListStore(storage(StoredData.DELETION_LIST), platform),
+        history = history,
+        deletionList = DeletionListStore(
+            storage(StoredData.DELETION_LIST),
+            platform,
+            // 「已经删掉的」这个问题的答案在卸载记录里，不在新造的一份清单里。
+            // 用上面那一个实例：两份内存状态各写各的会漂移。
+            history,
+        ),
         postDrafts = PostDraftStore(storage(StoredData.POST_DRAFTS)),
         postReads = PostReadStore(storage(StoredData.POST_READS)),
         appListSnapshot = AppListSnapshotStore(storage(StoredData.APP_LIST)),

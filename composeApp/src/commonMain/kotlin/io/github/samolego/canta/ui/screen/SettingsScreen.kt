@@ -81,6 +81,9 @@ import io.github.samolego.canta.generated.resources.theme_mode_system
 import io.github.samolego.canta.ui.component.AppBarSlotsCard
 import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
+import io.github.samolego.canta.ui.component.AppCardPair
+import io.github.samolego.canta.ui.component.AppLinkTile
+import io.github.samolego.canta.ui.component.AppToggleTile
 import io.github.samolego.canta.ui.component.AppLinkCard
 import io.github.samolego.canta.ui.component.AppToggleCard
 import io.github.samolego.canta.ui.component.CantaDialog
@@ -272,16 +275,6 @@ fun SettingsScreen(
                 onCheckedChange = settingsViewModel::saveHideSuccessDialog,
             )
             Spacer(Modifier.height(CardGap))
-            // 应用列表里点一个包去哪：出厂是直接开它的详情页，关掉这个开关就退回弹小窗。
-            // 放在第一页而不是「高级设置」里，因为这是每次点列表都会遇到的事。
-            AppToggleCard(
-                glyph = FlGlyphs.appsList,
-                title = "点击应用打开详情页",
-                checked = !appTapOpensDialog,
-                onCheckedChange = { openPage -> settingsViewModel.saveAppTapOpensDialog(!openPage) },
-                subtitle = "关掉就还是弹小窗",
-            )
-            Spacer(Modifier.height(CardGap))
             // 生物识别那条：真正的开关由系统校验的回调决定，被取消就什么也不改。
             AppToggleCard(
                 glyph = FlGlyphs.lock,
@@ -319,71 +312,84 @@ fun SettingsScreen(
             Spacer(Modifier.height(CardGap))
 
             // 安全页顶部的名字与机型照片：两者都是装饰，机型串有些人不想露在外面，
-            // 所以合成一个开关，出厂关着。
-            AppToggleCard(
-                glyph = FlGlyphs.iconTile,
-                title = "显示机型与照片",
-                checked = showDevicePhoto,
-                onCheckedChange = settingsViewModel::saveShowDevicePhoto,
-            )
+            // 所以合成一个开关，出厂关着。第二格是列表里点一个包去哪——都只有一行标题。
+            AppCardPair {
+                AppToggleTile(
+                    glyph = FlGlyphs.iconTile,
+                    title = "显示机型与照片",
+                    checked = showDevicePhoto,
+                    onCheckedChange = settingsViewModel::saveShowDevicePhoto,
+                )
+                AppToggleTile(
+                    glyph = FlGlyphs.appsList,
+                    title = "点应用开详情页",
+                    checked = !appTapOpensDialog,
+                    onCheckedChange = { openPage ->
+                        settingsViewModel.saveAppTapOpensDialog(!openPage)
+                    },
+                )
+            }
             Spacer(Modifier.height(CardGap))
 
             // 启动问题：一道生日挡在一切前面，给那些递到别人手里会被乱点的手
-            // 机用。没设置之前是关着的，只在这里设。
-            AppLinkCard(
-                glyph = FlGlyphs.lock,
-                title = "启动密码",
-                subtitle = activeGate?.let { "${it.question.label} · 已开启" }
-                    ?: "未设置 · 设置后打开软件要先答一个生日",
-                onClick = { gateDialogShown = true },
-            )
-            Spacer(Modifier.height(CardGap))
-
-            // 有人发消息来的时候要不要在系统通知栏弹一条。
-            //
-            // 出厂是开的（proto 里存的是"静音"），但打开这个开关的同时得把系统权限要到：
-            // Android 13 起那是运行时权限，没有它 NotificationManagerCompat 会把通知静默
-            // 丢掉，开关看着是开的、却什么都不弹。拒绝了就把开关退回去，不留一个说谎的勾。
-            AppToggleCard(
-                glyph = FlGlyphs.send,
-                title = "消息通知",
-                checked = !muteChatNotices,
-                onCheckedChange = { wantOn ->
-                    when {
-                        !wantOn -> settingsViewModel.saveMuteChatNotices(true)
-                        // 早就有了权限（Android 12 及以下，或者之前点过允许）：直接开，不打扰。
-                        platform.canNotify() -> settingsViewModel.saveMuteChatNotices(false)
-                        else -> scope.launch {
-                            if (platform.requestNotifyPermission()) {
-                                settingsViewModel.saveMuteChatNotices(false)
-                            } else {
-                                platform.showMessage("没有通知权限，系统不会显示消息提醒")
+            // 机用。没设置之前是关着的，只在这里设。第二格是消息通知——两者都只写一行标题，
+            // 并排摆比一上一行省一半高度。
+            AppCardPair {
+                AppLinkTile(
+                    glyph = FlGlyphs.lock,
+                    title = "启动密码",
+                    onClick = { gateDialogShown = true },
+                )
+                AppToggleTile(
+                    glyph = FlGlyphs.send,
+                    title = "消息通知",
+                    checked = !muteChatNotices,
+                    onCheckedChange = { wantOn ->
+                        when {
+                            !wantOn -> settingsViewModel.saveMuteChatNotices(true)
+                            // 早就有了权限（Android 12 及以下，或者之前点过允许）：直接开，不打扰。
+                            platform.canNotify() -> settingsViewModel.saveMuteChatNotices(false)
+                            else -> scope.launch {
+                                if (platform.requestNotifyPermission()) {
+                                    settingsViewModel.saveMuteChatNotices(false)
+                                } else {
+                                    platform.showMessage("没有通知权限，系统不会显示消息提醒")
+                                }
                             }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
+            // 生日那道锁设了什么，单独一行说清楚：并排的格子太窄，写不下「已开启 / 未设置」。
+            if (activeGate != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "${activeGate.question.label} · 已开启",
+                    style = FlText.caption2,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = AppCardInset + 2.dp),
+                )
+            }
             Spacer(Modifier.height(CardGap))
 
             // 撤回卸载的最后一条线：删掉的包其实还在系统分区里，install-existing 能把标记取消，
             // 但那条命令只能在电脑上通过 adb 打。这里生成一个批处理发出去，双击就跑：
             // 可以先按记录恢复，也可以不看记录、一键恢复全部已卸载的包。
-            AppLinkCard(
-                glyph = FlGlyphs.send,
-                title = "导出恢复脚本",
-                subtitle = "最近删除的包名 / 一键恢复全部已卸载的包，发到电脑上双击运行",
-                onClick = { restoreDialogShown = true },
-            )
-            Spacer(Modifier.height(CardGap))
-
-            // 删除名单：自己决定要删的包名，导出一份 JSON 带走，换手机再导回来。
-            // 和上面那份恢复脚本是两件事：那个是"救我这次删的"，这个是"我一直想删的清单"。
-            AppLinkCard(
-                glyph = FlGlyphs.importFile,
-                title = "删除名单（导入 / 导出）",
-                subtitle = "把自己删掉的包名导成 JSON，换机或重装后再导回来",
-                onClick = onOpenDeletionList,
-            )
+            //
+            // 旁边那格是删除名单：那是我删过的包名清单，导出 JSON 带走、换机再导回来。
+            // 两件事一起做，所以并排放，各占一半。
+            AppCardPair {
+                AppLinkTile(
+                    glyph = FlGlyphs.send,
+                    title = "恢复脚本",
+                    onClick = { restoreDialogShown = true },
+                )
+                AppLinkTile(
+                    glyph = FlGlyphs.importFile,
+                    title = "删除名单",
+                    onClick = onOpenDeletionList,
+                )
+            }
             Spacer(Modifier.height(CardGap))
 
             // 高级设置：地址和危险开关收在折叠里，平时看不见，免得一页里全是需要读的句子。

@@ -2,9 +2,10 @@ package io.github.samolego.canta.data.app
 
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.AppBlobStorage
+import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.packages.isValidPackageName
-import kotlinx.serialization.json.JsonObject as SerializationJsonObject
 import io.github.samolego.canta.util.LogUtils
+import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,17 +24,22 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlin.time.Clock
+import kotlinx.serialization.json.JsonObject as SerializationJsonObject
+
+/** 名单的排序：不分大小写，同一份名单在两台手机上排出来一样。 */
+private val PACKAGE_ORDER: Comparator<String> = compareBy { it.lowercase() }
 
 /**
- * 删除名单：本机记录的那些"我自己决定要删掉"的包名。
+ * 删除名单：**真的被删掉、到现在还没装回来**的那些包名。
  *
- * 它不是一条操作记录（那是 [io.github.samolego.canta.data.history.OperationLogStore] 的事），
- * 而是一份可以被带走、也可以被带回来的清单：导出成 JSON 留着自己保管，换手机或者重装之后
- * 再导进来。所以这里只做两件事——在原地维护这份名单，以及把它和 JSON 互相翻译。
+ * 它没有自己的一份清单——真相在 [OperationLogStore] 的卸载记录里。这里做的是：
+ * 把记录读成"这台手机现在缺哪些包"，再把它写成一份可以被带走、也可以被带回来的 JSON。
+ * 导出 → 换手机/重装 → 导入，这样下一台手机上就知道上一台删过什么。
  *
- * 文件是**纯 JSON**（没有 BOM、没有 CSV）：导出之后可以直接打开读、可以手改一行再导回来。
- * 格式：
+ * 为什么不再自己存一份：自己存的那份永远是空的——没人会去手动往里面加包名，导出来就是零。
+ * 记录本来就在，而且每次卸载都在写。
+ *
+ * 文件是纯 JSON：
  * ```
  * {
  *   "name": "我的删除名单",
@@ -47,6 +53,8 @@ import kotlin.time.Clock
 class DeletionListStore(
     private val storage: AppBlobStorage,
     private val platform: CantaPlatform,
+    /** 记录的来源；「已经删掉的」全部由它回答。 */
+    private val history: OperationLogStore,
 ) {
 
     companion object {
@@ -75,10 +83,27 @@ class DeletionListStore(
 
     private val _packages = MutableStateFlow<List<String>>(emptyList())
 
-    /** 名单，按名字排好（大小写不敏感），给界面直接画。 */
-    val packages: StateFlow<List<String>> = _packages.asStateFlow()
+    /**
+     * 上一台手机上留下来、这一台还没有的包（导入进来的那些）。真正"已删除"的名单在
+     * [current] 里，那是记录算出来的，不落盘。
+     */
+    val imported: StateFlow<List<String>> = _packages.asStateFlow()
 
-    /** 读一次落盘的那份；每个入口都先调它。 */
+    /**
+     * 现在导出的会是哪些包：记录里删了、到现在还没装回来的那些，加上导入进来、这台还没有的。
+     *
+     * 顺序按包名排，重复的并掉。
+     */
+    suspend fun current(): List<String> {
+        ensureReady()
+        val removed = runCatching { history.recentlyRemovedPackages() }.getOrDefault(emptyList())
+        return (removed + _packages.value)
+            .filter(::isValidPackageName)
+            .distinct()
+            .sortedWith(PACKAGE_ORDER)
+    }
+
+    /** 读一次导入进来的那份；每个入口都先调它。 */
     suspend fun ensureReady() {
         mutex.withLock {
             if (loaded) return@withLock
@@ -87,31 +112,19 @@ class DeletionListStore(
                     _packages.value = json.decodeFromString(ListSerializer(String.serializer()), text)
                         .filter(::isValidPackageName)
                         .distinct()
-                        .sortedWith(String.CASE_INSENSITIVE_ORDER)
+                        .sortedWith(PACKAGE_ORDER)
                 }
-            }.onFailure { LogUtils.e(TAG, "Could not read the deletion list", it) }
+            }.onFailure { LogUtils.e(TAG, "Could not read the imported deletion list", it) }
             loaded = true
         }
     }
 
-    /** 整份改写。写进去的会是排好序、去重、只留合法包名的那一份。 */
-    suspend fun replace(packages: List<String>) {
-        ensureReady()
-        val next = packages.filter(::isValidPackageName)
-            .distinct()
-            .sortedWith(String.CASE_INSENSITIVE_ORDER)
-        mutex.withLock {
-            _packages.value = next
-            persist(next)
-        }
-    }
-
-    /** 加进去（已有的不动）；返回真正新增的条数。 */
+    /** 加进来（已有的不动）；返回真正新增的条数。 */
     suspend fun addAll(packages: List<String>): Int {
         ensureReady()
         val before = _packages.value.toSet()
         val merged = (before + packages.filter(::isValidPackageName))
-            .sortedWith(String.CASE_INSENSITIVE_ORDER)
+            .sortedWith(PACKAGE_ORDER)
         mutex.withLock {
             _packages.value = merged
             persist(merged)
@@ -119,7 +132,7 @@ class DeletionListStore(
         return merged.size - before.size
     }
 
-    /** 从名单里划掉；返回划掉了几个。 */
+    /** 把导入进来的那部分划掉；返回划掉了几个。记录里那份名单不受影响。 */
     suspend fun remove(packages: Collection<String>): Int {
         ensureReady()
         val gone = packages.toSet()
@@ -132,7 +145,7 @@ class DeletionListStore(
         return before.size - next.size
     }
 
-    /** 全清；返回清掉了几个。 */
+    /** 清掉导入进来的那部分；返回清掉了几个。 */
     suspend fun clear(): Int {
         ensureReady()
         val count = _packages.value.size
@@ -145,14 +158,14 @@ class DeletionListStore(
 
     /** 导出用的 JSON 文本；[name] 只写进文件里，不落盘。 */
     suspend fun exportJson(name: String = DEFAULT_NAME): String {
-        ensureReady()
+        val packages = current()
         val body = buildJsonObject {
             put("name", name)
-            put("exportedAt", Clock.System.now().toEpochMilliseconds())
+            put("exportedAt", currentTimeMillis())
             put(
                 KEY,
                 buildJsonArray {
-                    _packages.value.forEach { add(JsonPrimitive(it)) }
+                    packages.forEach { add(JsonPrimitive(it)) }
                 },
             )
         }
@@ -160,11 +173,12 @@ class DeletionListStore(
     }
 
     /**
-     * 导出并交给分享面板（没有面板的构建落在下载目录）；返回一句给用户看的话。
+     * 导出并交给分享面板（没有面板的构建落在下载目录）。
      *
      * 两件事都要说清楚：面板开没开、文件里写了几个包名——只回「已导出」，人不知道该去哪点。
      */
     suspend fun shareJson(name: String = DEFAULT_NAME): DeletionListExport {
+        val packages = current()
         val content = exportJson(name)
         val shared = runCatching { platform.shareFile(FILE_NAME, content, JSON_MIME) }
             .getOrDefault(false)
@@ -174,7 +188,7 @@ class DeletionListStore(
             runCatching { platform.exportLog(FILE_NAME, content) }.getOrNull()
         }
         return DeletionListExport(
-            packages = _packages.value.size,
+            packages = packages.size,
             shared = shared,
             path = path,
         )
@@ -183,8 +197,8 @@ class DeletionListStore(
     /**
      * 把用户挑回来的文本读成一份名单。
      *
-     * 结果里 [DeletionListImport.accepted] 是按顺序去重之后的合法包名，
-     * [DeletionListImport.rejected] 是被丢掉的条数——后者大于 0 时要告诉用户，别悄悄少几条。
+     * [DeletionListImport.accepted] 是按顺序去重之后的合法包名，[DeletionListImport.rejected]
+     * 是被丢掉的条数——后者大于 0 时要告诉用户，别悄悄少几条。
      * 文本不是 JSON 时回答 null（调用方据此说「这份文件读不懂」）。
      */
     fun parse(text: String): DeletionListImport? {
@@ -192,10 +206,9 @@ class DeletionListStore(
         val elements = when (root) {
             is JsonArray -> root.jsonArray
             is SerializationJsonObject -> {
-                val array = root[KEY]?.jsonArray
+                root[KEY]?.jsonArray
                     ?: root[LEGACY_KEY]?.jsonArray
                     ?: return null
-                array
             }
 
             else -> return null
@@ -204,13 +217,13 @@ class DeletionListStore(
             runCatching { element.jsonPrimitive.content }.getOrNull()
                 ?: runCatching { element.jsonObject["packageName"]?.jsonPrimitive?.content }.getOrNull()
         }
-        val accepted = raw.filter(::isValidPackageName)
-            .distinct()
-            .sortedWith(String.CASE_INSENSITIVE_ORDER)
+        // 被丢掉的条数：原始条数减去留下来的条数（不合法的和重复的都算）。
+        val distinctRaw = raw.filter(::isValidPackageName).distinct()
+        val accepted = distinctRaw.sortedWith(PACKAGE_ORDER)
         val name = (root as? SerializationJsonObject)?.get("name")?.jsonPrimitive?.content.orEmpty()
         return DeletionListImport(
             accepted = accepted,
-            rejected = raw.size - accepted.size,
+            rejected = raw.size - distinctRaw.size,
             name = name.ifBlank { DEFAULT_NAME },
         )
     }
@@ -218,7 +231,7 @@ class DeletionListStore(
     private suspend fun persist(list: List<String>) = withContext(Dispatchers.Default) {
         runCatching {
             storage.write(json.encodeToString(ListSerializer(String.serializer()), list).encodeToByteArray())
-        }.onFailure { LogUtils.e(TAG, "Could not store the deletion list", it) }
+        }.onFailure { LogUtils.e(TAG, "Could not store the imported deletion list", it) }
         Unit
     }
 }
