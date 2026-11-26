@@ -54,6 +54,10 @@ node_modules/
 # Script caches
 __pycache__/
 
+# Local-only worker configs that embed a PAT (cron-job.org / uptime pingers).
+# Keep the machine-local copy; never ship the token.
+/ops/cron-job-org-*.json
+
 # Session handoff notes (local working memory)
 /.dsh-handoff*.md
 
