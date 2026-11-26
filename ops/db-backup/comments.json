@@ -4380,6 +4380,54 @@
   "target": "11"
  },
  {
+  "author": "我是你爹",
+  "author_id": "10362",
+  "body": "卸载这个，手机更加丝滑流畅",
+  "created_at": "2026-11-26T10:21:17.067566+00:00",
+  "device_model": "REDMI K90",
+  "id": 572,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.24",
+  "target": "android"
+ },
+ {
+  "author": "我是你爹",
+  "author_id": "10362",
+  "body": "没用的系统组件，删了它会让手机运行内存更多",
+  "created_at": "2026-11-26T10:22:03.505851+00:00",
+  "device_model": "REDMI K90",
+  "id": 573,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.24",
+  "target": "com.google.android.webview"
+ },
+ {
+  "author": "我是你爹",
+  "author_id": "10362",
+  "body": "没用的组件，可以删除",
+  "created_at": "2026-11-26T10:22:36.269267+00:00",
+  "device_model": "REDMI K90",
+  "id": 574,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.24",
+  "target": "com.miui.micloudsync"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "这个可以卸吗",
+  "created_at": "2026-11-26T10:23:15.47903+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 575,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.android.providers.media.module"
+ },
+ {
   "author": "#10239",
   "author_id": "10239",
   "body": "应用程序扩展服务就是给小米系统自带的键盘提供键盘底栏的工具。\n卸载只会让底栏消失，对于日常使用无影响\n已知的重大影响:在澎湃OS4以下的系统升级该应用会让包括系统桌面、系统设置等系统应用全部崩溃，ADB同意弹窗无法同意",
@@ -4414,6 +4462,30 @@
   "parent_id": 59,
   "system_name": "HyperOS 3",
   "target": "com.mobiletools.systemhelper"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "卸载之后输密码解不开桌面",
+  "created_at": "2026-11-26T10:38:17.141074+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 605,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.android.se"
+ },
+ {
+  "author": "我是你爹",
+  "author_id": "10362",
+  "body": "没用的玩意，",
+  "created_at": "2026-11-26T10:44:42.289969+00:00",
+  "device_model": "REDMI K90",
+  "id": 606,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.24",
+  "target": "com.android.location.fused"
  },
  {
   "author": "开发者",
