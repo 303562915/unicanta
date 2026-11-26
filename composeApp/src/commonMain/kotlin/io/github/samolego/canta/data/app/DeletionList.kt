@@ -192,8 +192,8 @@ class DeletionListStore(
         return count
     }
 
-    /** 导出用的 JSON 文本。 */
-    fun exportJson(plan: DeletionPlan): String {
+    /** 备份用的 JSON 文本。 */
+    fun backupJson(plan: DeletionPlan): String {
         val body = buildJsonObject {
             put("name", plan.name)
             put("exportedAt", currentTimeMillis())
@@ -208,13 +208,22 @@ class DeletionListStore(
     }
 
     /**
-     * 导出一个方案并让**用户自己挑位置**（系统「存储到」界面）；取消返回 path = null，
+     * 备份一个方案到**用户自己挑的位置**（系统「存储到」界面）；取消返回 path = null，
      * 不写任何文件。
      */
     suspend fun savePlanAs(plan: DeletionPlan): DeletionListExport {
-        val content = exportJson(plan)
+        val content = backupJson(plan)
         val picked = runCatching { platform.saveFileAs(FILE_NAME, content, JSON_MIME) }.getOrNull()
         return DeletionListExport(packages = plan.packages.size, path = picked)
+    }
+
+    /**
+     * 备份并通过系统的分享面板送出去（微信文件传输助手、QQ、邮件、U 盘……）；
+     * 分享面板打开返回 true，没打开（桌面 / 网页构建）返回 false。
+     */
+    suspend fun sharePlanAs(plan: DeletionPlan): Boolean {
+        val content = backupJson(plan)
+        return runCatching { platform.shareFile(FILE_NAME, content, JSON_MIME) }.getOrDefault(false)
     }
 
     /**
