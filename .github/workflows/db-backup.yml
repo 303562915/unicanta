@@ -33,8 +33,10 @@ name: 🗃️ Community DB backup
 
 on:
   schedule:
-    # 每天一次，06:17 UTC ≈ 14:17 Asia/Shanghai：避开日报（01:00）和名单同步（周一 03:17）。
-    - cron: "17 6 * * *"
+    # 仓库自带的定时：每小时一次（GitHub 的 schedule 会静默丢触发，所以这只是兜底，
+    # 真正的准点由外部 cron 打 workflow_dispatch；见 ops/ 下的说明）。
+    # 15 分钟一次**不放在这里**：GitHub schedule 有最小间隔限制且丢触发概率更高。
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -226,6 +228,7 @@ jobs:
           done
 
       - name: 🧾 Write meta and the human list
+        id: content
         env:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
@@ -260,6 +263,70 @@ jobs:
               except Exception:
                   previous[t] = 0
 
+          # ---------------------------------------------------------------------------------
+          # 「内容没变就不提交」：15 分钟一次调度时，六张表绝大多数轮次是同一个指纹，只有
+          # exported_at 在变。照旧提交就会一天堆 96 个只改时间戳的 commit，历史彻底没法读。
+          #
+          # 判据只看**数据本身**：这次六张表的指纹串，和上一版 _meta.json 里记的那串比。
+          # 一样 → 写进 GITHUB_OUTPUT 并退出，不碰任何文件（连 _meta.json 都不改）。
+          # 不一样 → 正常写 meta 与 LATEST.md，后面的提交步骤会把这一份推上去。
+          #
+          # 特殊情形：仓库里还没有 _meta.json（第一次跑），或者上一版没有 digests 字段
+          # （老格式），一律当作「变了」，保证第一次一定能落地。
+          # ---------------------------------------------------------------------------------
+          digest_fingerprint = '|'.join(f'{t}:{digests[t]}' for t in tables)
+          old_fingerprint = ''
+          try:
+              old_meta = json.loads(subprocess.run(
+                  ['git', 'show', f'HEAD:{out}/_meta.json'],
+                  capture_output=True, check=True
+              ).stdout)
+              old_digests = old_meta.get('digests') or {}
+              if old_digests:
+                  old_fingerprint = '|'.join(
+                      f'{t}:{old_digests.get(t, "")}' for t in tables)
+          except Exception:
+              old_fingerprint = ''
+
+          # 客户端快照也参与判断：只有票数变化时 plans.json 会变，而 plans 表本身没变。
+          snapshot_path = 'site/db/plans.json'
+          try:
+              old_snapshot = subprocess.run(
+                  ['git', 'show', f'HEAD:{snapshot_path}'], capture_output=True, check=True
+              ).stdout
+              old_snapshot_sha = hashlib.sha256(old_snapshot).hexdigest()
+          except Exception:
+              old_snapshot_sha = ''
+          try:
+              new_snapshot_sha = hashlib.sha256(
+                  open(snapshot_path, 'rb').read()).hexdigest()
+          except Exception:
+              new_snapshot_sha = ''
+
+          content_changed = (
+              old_fingerprint == ''                      # 没有上一版，或有但缺 digests
+              or old_fingerprint != digest_fingerprint    # 数据变了
+              or (old_snapshot_sha and old_snapshot_sha != new_snapshot_sha)
+          )
+
+          changed_tables = [t for t in tables
+                            if not old_fingerprint
+                            or f':{digests[t]}' not in old_fingerprint
+                            or old_fingerprint.split('|')[[f'{x}:' for x in tables].index(f'{t}:')]
+                               != f'{t}:{digests[t]}']
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+              f.write(f'changed={"true" if content_changed else "false"}\n')
+              f.write(f'changed_tables={",".join(changed_tables)}\n')
+              f.write(f'fingerprint={digest_fingerprint}\n')
+
+          if not content_changed:
+              print('内容未变（六张表指纹与上一版一致），不写 meta、不提交。')
+              print(f'fingerprint={digest_fingerprint}')
+              raise SystemExit(0)
+
+          print(f'指纹有变化，写文件。变了的是：{changed_tables or "全量（首次或旧格式）"}')
+
           meta = {
               '_about': 'User-contributed community content, exported from the Supabase project by '
                         '.github/workflows/db-backup.yml. Identity, device and telemetry tables are '
@@ -286,7 +353,11 @@ jobs:
           lines = [
               '# 社区数据库备份',
               '',
-              f'最近一次导出：{meta["exported_at"]}　（每天 06:17 UTC 由 `db-backup.yml` 自动跑）',
+              f'最近一次导出：{meta["exported_at"]}',
+              '',
+              '调度：仓库自带 `schedule`（见 `db-backup.yml`）或外部 cron 打 '
+              '`workflow_dispatch`。**内容没变时不写文件、不提交**——所以这里的「最近一次导出」'
+              '指的是「最近一次内容真的变了」。',
               '',
               '只含用户贡献的社区内容；身份表、设备表、遥测表不在里面（见工作流头部说明）。',
               '',
@@ -303,15 +374,18 @@ jobs:
               '否则作者会显示成编号）。这一步是手工的，别在 CI 里做。',
               '',
           ]
-          with open(f'{out}/LATEST.md', 'w', encoding='utf-8') as f:
-              f.write('\n'.join(lines))
           print('\n'.join(lines))
           PY
 
       - name: 📦 Also drop a client snapshot
+        id: snapshot
+        if: ${{ steps.content.outputs.changed == 'true' || inputs.dry_run }}
         # 客户端也能直接读的那一份：和 plan_public_snapshot() 的返回**同形状**（列名一致），
         # 所以「后端连不上时先读 GitHub，再接后端」在客户端只需要一个 parser。
         # 放在 site/db/ 下，pages.yml 会一起发到 gh-pages：国内走 Pages 比 raw.githubusercontent 稳。
+        #
+        # 上一步说「内容没变」时这一步整个跳过：新文件会覆盖工作区里那份旧的，
+        # 那样 `git add` 就会看到一个只差格式的脏文件，等于把「不提交」又绕开了。
         run: |
           set -euo pipefail
           mkdir -p site/db
@@ -357,15 +431,20 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
+          if [ "${{ steps.content.outputs.changed }}" != "true" ]; then
+            echo "内容未变（六张表指纹一致、客户端快照也没变），本轮不提交。"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$OUT_DIR" site/db
           if git diff --cached --quiet; then
-            echo "和上一版一样（内容没变），不提交。"
+            echo "要提交的内容和上一版一样，跳过。"
             exit 0
           fi
           COUNTS=$(jq -r '.tables | to_entries | map("\(.key)=\(.value)") | join(" ")' "$OUT_DIR/_meta.json")
-          git commit -m "chore(db-backup): 社区内容快照 ${COUNTS}"
+          CHANGED="${{ steps.content.outputs.changed_tables }}"
+          git commit -m "chore(db-backup): 社区内容快照 ${COUNTS}${CHANGED:+（变化：$CHANGED）}"
           git push origin HEAD:master
 
       - name: 📦 Also keep it as an artifact

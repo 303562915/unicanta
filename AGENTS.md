@@ -69,7 +69,7 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | `group-release-notice.yml` 📣 Group release notice | 仅 `workflow_call`（**只被 `pages.yml` 调**） | 下载页部署完成后用 `sender='ai'`（群聊AI）在内测灰度群插一条公告：版本、提交、本次更新、下载页、APK 直链、校验和；同时推 `last_message_at` | — |
 | `bug-inbox.yml` 🐞 Bug inbox | `workflow_dispatch`（`conversation_id` / `limit` / `since_id`） | 读 Bug 反馈群的消息（JSON 打日志 + run summary），供 AI 整理问题；见第 13 节 | — |
 | `bootstrap-bug-group.yml` 🐞 | `workflow_dispatch` | 一次性/幂等：建「UniCanta Bug 反馈」群并生成邀请码（已跑过，重复跑只会把群号与邀请码再打一遍） | — |
-| `db-backup.yml` 🗃️ Community DB backup | 每天 06:17 UTC + `workflow_dispatch` | 把**用户贡献的社区内容**导出成 JSON 提交进仓库，并给客户端发一份快照；见**第 16 节** | `db-backup`（14 天）+ 仓库里的 `ops/db-backup/`、`site/db/plans.json` |
+| `db-backup.yml` 🗃️ Community DB backup | 每小时 17 分（UTC，兜底）+ `workflow_dispatch`；实际准点由外部 cron 打 dispatch | 把**用户贡献的社区内容**导出成 JSON 提交进仓库，并给客户端发一份快照；**内容没变不提交**；见**第 16 节** | `db-backup`（14 天）+ 仓库里的 `ops/db-backup/`、`site/db/plans.json` |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |
 
 > 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`）
@@ -772,8 +772,28 @@ body `{"ref":"master"}`，成功返回 204）。它**不解决根因**。
 ## 16. 社区数据库备份：定时进 GitHub + 客户端离线快照（2026-11-26 落地）
 
 用户要求「把我们数据库方案定时上传到 GitHub，减小用户损失」。落地成 **`db-backup.yml`（🗃️ Community DB backup）**，
-现在 GitHub 上已注册、状态 `active`，每天 **06:17 UTC（北京时间 14:17）** 自动跑一次，也可 `workflow_dispatch` 手动触发
-（带 `dry_run` 只看形状不提交）。
+现在 GitHub 上已注册、状态 `active`。
+
+**调度（2026-11-26 定稿）**：
+
+- 仓库自带 `schedule: - cron: "17 * * * *"`（每小时 17 分，UTC）只作**兜底**——GitHub 的 schedule 会静默丢触发。
+- **真正的准点由外部 cron 打 dispatch**：15 分钟一次，`POST /repos/303562915/unicanta/actions/workflows/db-backup.yml/dispatches`
+  + body `{"ref":"master"}`（204 = 已接受）。cron-job.org 之类的服务按这个配。
+- **15 分钟一次必须配合下面的「内容没变不提交」**，否则一天会堆 96 个只改时间戳的 commit。
+
+### 16.0 内容没变就不提交（2026-11-26 改）
+
+判断只看**数据本身**：六张表各自的 sha256 指纹（对排序后的 JSON 算）拼成一串，和上一版 `_meta.json` 里记的那串比。
+一样 → 这一步直接退出，**连 `_meta.json` 和 `LATEST.md` 都不写**，后面的客户端快照步骤也整个跳过（`if:` 挂在
+`steps.content.outputs.changed`），提交步骤再挡一次。所以：
+
+- 「今天没有新 commit」= **数据确实没变**，不是没跑。
+- `LATEST.md` 里的「最近一次导出」= **最近一次内容真的变了**的时间点。
+- 提交信息会带变化的那几张表（`（变化：plan_votes,comments）`），一眼能看出这轮动了什么。
+- 第一次跑、或上一版 `_meta.json` 缺 `digests` 字段（老格式）→ 一律当作「变了」，保证第一次能落地。
+
+**改这里前必须知道**：`site/db/plans.json` 那一步会**覆盖工作区里的文件**。如果内容没变仍让它跑，
+`git add` 就会看到一个只差格式的脏文件，等于把「不提交」又绕开了。所以它的 `if:` 条件不是装饰。
 
 ### 16.1 它导出什么
 
