@@ -1379,6 +1379,9 @@ class AndroidCantaPlatform(
             // in place, which is read as "又弹安装，还没装上".
             if (!attempt.succeeded && wasReplacedSince(startedAt)) {
                 LogUtils.i(TAG, "pm install reported a failure but this app was replaced anyway: ${attempt.failure}")
+                // 这种情况屏幕上一定有"××装不上"的 toast（可能三四条），但包其实已经换掉了。
+                // 不补这一句，用户会以为安装失败了：必须明说"已经装上了"。
+                withContext(Dispatchers.Main) { showMessage("其实已经装上了（pm 被切断，包已替换）") }
                 InstallAttempt.Success
             } else {
                 attempt
@@ -1426,6 +1429,20 @@ class AndroidCantaPlatform(
             withContext(Dispatchers.Main) { showMessage(message) }
         }
 
+        /**
+         * 「走哪条通道装上的」。
+         *
+         * 之前只有失败才弹 toast，成功那条一声不响：用户在屏幕上看到的是一串 "××装不上"，
+         * 然后对话框突然没了 —— 读起来像"报了一堆错但不知道到底装没装"。第一条通道就成了不说话，
+         * 反而是"下载目录被 avc denied 挡掉、最后走临时目录装上"这种情形最容易引起误会。
+         * 只有前面的通道失败过才补这一句（一次就成的普通情况不用重复说"装好了"）。
+         */
+        suspend fun announceSuccess(channel: String) {
+            if (attempts.isEmpty()) return
+            LogUtils.i(TAG, "installed through $channel after: ${attempts.keys.joinToString()}")
+            toast("$channel 装上了（前面 ${attempts.size} 条通道没成）")
+        }
+
         suspend fun tryChannel(channel: String, install: suspend () -> String?): Boolean {
             // A channel that throws is a channel that failed: an out-of-memory base64 push or a
             // runtime that dies mid-call must become one report line, not an aborted batch.
@@ -1451,6 +1468,7 @@ class AndroidCantaPlatform(
                 onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
                 runInstall(file.absolutePath)
             }) {
+            announceSuccess("Shizuku·应用目录")
             file.delete()
             return@withContext InstallAttempt.Success
         }
@@ -1466,6 +1484,7 @@ class AndroidCantaPlatform(
             }
             runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
             if (installed) {
+                announceSuccess("Shizuku·下载目录")
                 file.delete()
                 return@withContext InstallAttempt.Success
             }
@@ -1473,6 +1492,7 @@ class AndroidCantaPlatform(
 
         // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
         if (tryChannel("Shizuku·临时目录") { installViaTmp(file, onStage) }) {
+            announceSuccess("Shizuku·临时目录")
             file.delete()
             return@withContext InstallAttempt.Success
         }
@@ -1492,6 +1512,7 @@ class AndroidCantaPlatform(
                     onStage(InstallStage.ROOT, INSTALL_PROGRESS_UNKNOWN)
                     installAsRoot(file.absolutePath)
                 }) {
+                announceSuccess("root")
                 file.delete()
                 return@withContext InstallAttempt.Success
             }
