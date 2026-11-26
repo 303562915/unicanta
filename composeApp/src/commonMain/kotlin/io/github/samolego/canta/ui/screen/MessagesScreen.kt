@@ -88,7 +88,7 @@ import io.github.samolego.canta.data.community.OfficialGroups
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialPerson
 import io.github.samolego.canta.data.community.SocialRepository
-import io.github.samolego.canta.ui.component.AuthorLabel
+
 import io.github.samolego.canta.ui.component.UnreadBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.GroupAvatarView
@@ -330,14 +330,13 @@ fun MessagesScreen(
     var searchError by remember { mutableStateOf<String?>(null) }
     // 「全部标为已读」是一次网络调用：点完就把协程交出去，界面不等它。
     val scope = rememberCoroutineScope()
-    // 官方群（灰度测试群、Bug 反馈群）：**不再自动加入**，也不再在消息页上显示。
+    // 官方群（灰度测试群、Bug 反馈群）：**不自动加入、也不固定占一行**。
     //
-    // 以前这里会静默 `group_invite_join` 一遍，把这两行变成「可点」的入口。现在那两个群注册
-    // 时就已经在后端把人塞进去了（`canta_users_auto_join` 触发器），再补一次只是多两次请求；
-    // 而那一行本来就不该占在消息页上——见 [DefaultHiddenRows]。
+    // 以前这里会静默 `group_invite_join` 一遍，把这两行变成「可点」的入口；其实注册时后端就已经
+    // 把人塞进去了（`canta_users_auto_join` 触发器），再补一次只是多两次请求。
     //
-    // 真的要点进去看，从顶栏左上角那个图标的长按菜单里恢复这一行（恢复的是"显示"，不是入群：人
-    // 本来就在群里），点那一行才会走 [openOfficial] 的加入 / 进入分支。
+    // 现在这两行按"有没有消息"自然出现：说过话的当普通会话排在列表里，一条都没说过的不占位
+    // （见 [isSilentOfficialGroup]）。要进去看，从顶栏左上角那个图标的长按菜单里点群名。
 
     /** 正在加入哪个官方群（按群名记）：挡住连点，也把那一行的小字换成「正在加入…」。 */
     val joiningOfficial = remember { mutableStateMapOf<String, Boolean>() }
@@ -704,53 +703,33 @@ fun MessagesScreen(
     // 所以在画的时候过滤：取消拉黑那一刻这一行会当场回来，不必等一次重新拉取。
     val reachableConversations = conversations.filterNot { it.blockedBy(blockedPeers) }
     // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
-    // 官方群（灰度测试群、Bug 反馈群）默认不出现：它们由 [DefaultHiddenRows] 直接挡住，不来自会话
-    // 列表，也不靠后端那边藏——见下面 `officialRows`。
-    /**
-     * 这一页当前不画的那几行：本机名单（上层落盘）**加上**默认藏起来的官方群。
-     *
-     * 为什么两个取并集而不是"默认值只在没写过时生效"：官方群是注册时自动加入的，列表里每一趟都会
-     * 回到这儿，默认值一旦失效就意味着「每次开 App 又冒出来两行」——正是要被解决的这件事。并集
-     * 只在一种情况下有可见差别：用户在旧版本里恢复过、又升级到这一版，那两行会再消失一次，
-     * 长按左上角图标随时能拿回来（见顶栏那个菜单）。
-     */
-    val effectiveHidden = hiddenRows + DefaultHiddenRows
-    val showInboxEntry = inboxRowKey !in effectiveHidden
+    //
+    // 官方群（灰度测试群、Bug 反馈群）**是按"有没有东西可看"自然显示的**，跟抖音一样：
+    //
+    // - 注册时后端就把人塞进这两个群（`canta_users_auto_join`），所以"默认就在群里"这件事不需要
+    //   在界面上占一行——那不是入口，是事实。
+    // - 因此这里只保留**有消息的**官方群（或者没收过消息但确实有未读的）：它已经在会话列表里，
+    //   就按会话行的样子排在自然的位置上，带最后一句、时间、红点。
+    // - 一条消息都没有的官方群不占位：摆一行「点一下加入」等于请人点进一个空群。
+    //
+    // `hiddenRows` 只记本人手动删掉的（长按那一行删的），默认空。
+    val showInboxEntry = inboxRowKey !in hiddenRows
 
-    /**
-     * 已经删掉的那几行，按 [effectiveHidden] 里的键过滤：官方群记群名（[officialRowKey]），
-     * 其余会话记会话号（[conversationRowKey]）。
-     *
-     * 官方群那两个在名单里时连会话行一起剔掉，所以「删了就不显示」跟有没有网、缓存里那一份
-     * 是新的还是旧的都无关；恢复时把键拿掉，下一帧就回来。
-     */
     val visibleConversations = reachableConversations
         .filterNot { it.isFoldedGroup() }
         // 没名字的群（早期测试留下的空群，`title = ''`）一律不列：见 [OfficialGroups.isVisibleInList]。
         .filter { OfficialGroups.isVisibleInList(it) }
-        // 已经在列表里的官方群要剔掉：它由下面 `officialRows` 自己画，再列一遍就是同一个群占两处。
-        .filterNot { it.kind == "group" && it.title in OfficialGroups.titles }
-        // 本人删掉的那一行同样不列：它的键也在名单里。
-        .filterNot { conversationRowKey(it.id) in effectiveHidden }
-    // 已经在群里的官方群：那一行直接进这个会话，不必再走一次加入。
-    val joinedOfficial = conversations.filter {
-        it.kind == "group" && it.title in OfficialGroups.titles
-    }
-    // 消息页最上面那几行，按 [OfficialGroups.entries] 的顺序：进了群的按会话行画（最后一句、时间、
-    // 未读数、长按菜单都有），没进的画成「点一下加入」的入口行。
-    //
-    // **默认一行都不显示**：这两个群注册时就被塞进去了，没人要它们在消息页占两格。要进群看，从
-    // 顶栏左上角那个图标的长按菜单里恢复回来——长按那一行删掉的是"显示"，不是退群。
-    val officialRows = OfficialGroups.entries
-        .filterNot { officialRowKey(it.title) in effectiveHidden }
-        .map { entry ->
-            entry to joinedOfficial.firstOrNull { it.title == entry.title }
-        }
+        // 官方群如果**有内容**（说过话、有未读），就留在列表里按会话行画；空的不留。
+        .filterNot { it.isSilentOfficialGroup() }
+        // 本人手动删掉的那一行不列。
+        .filterNot { conversationRowKey(it.id) in hiddenRows }
+    // 一条消息都没有的官方群不占位：人默认就在群里，那就不是"入口"，摆一行等于请人点进空群。
+    // 有最后一句、或者有未读的，才当作一条正常会话留下（由下面 `visibleConversations` 画）。
     // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
     // 没名字的群同样剔掉：折叠栏也不该冒出「空白群」这一行。
     val foldedGroups = conversations
         .filter { it.isFoldedGroup() && OfficialGroups.isVisibleInList(it) }
-        .filterNot { conversationRowKey(it.id) in effectiveHidden }
+        .filterNot { conversationRowKey(it.id) in hiddenRows }
     // 搜索仍能找到折叠的群：主列表不列它是为了别占地方，人是特意去找它的时候得找得到。
     val latestGroup = foldedGroups.maxByOrNull { it.lastAt }
     val groupUnread = foldedGroups.sumOf { it.unread }
@@ -838,12 +817,23 @@ fun MessagesScreen(
             onToggleContacts = {
                 MessagesPanelState.contactsExpanded = !MessagesPanelState.contactsExpanded
             },
-            // 互动消息那一行删了、或者某个官方群被删了，恢复入口都在左上角那个图标的长按菜单里：
+            // 顶栏那个长按菜单里「官方群」列表：一条消息都没有的官方群不占列表的行，但人还是能进去看
+            // （群一直都在，注册时后端就把人放进去了）。已经在列表里的那些不必重复画一份。
+            hiddenOfficialGroups = OfficialGroups.entries.filter { entry ->
+                conversations.none { it.kind == "group" && it.title == entry.title && !it.isSilentOfficialGroup() }
+            },
+            onOpenOfficialGroup = { entry ->
+                openOfficial(
+                    entry,
+                    conversations.firstOrNull { it.kind == "group" && it.title == entry.title },
+                )
+            },
+            // 互动消息那一行或者某个官方群被本人删掉后，恢复入口都在左上角那个图标的长按菜单里：
             // 删是「长按列表行」做的，恢复要有一个看得见的地方。名单顺序就是菜单里的顺序。
             restorableRows = buildList {
                 if (!showInboxEntry) add(inboxRestoreLabel)
                 OfficialGroups.entries.forEach { entry ->
-                    if (officialRowKey(entry.title) in effectiveHidden) add(entry.title)
+                    if (officialRowKey(entry.title) in hiddenRows) add(entry.title)
                 }
             },
             onRestoreRow = { label ->
@@ -936,30 +926,12 @@ fun MessagesScreen(
             // 顶栏钉在顶上：不管怎么拽都不动它。
             topBar()
 
-            // 下拉刷新的锚点：「互动消息」那一行（含它上面那条分界线）。这一行也钉住，往下才让位。
+            // 下拉刷新的锚点就是「互动消息」这条分界线：**这一行本身属于列表**，跟在它下面那些行
+            // 一样跟手。手指按在它上面往下拽（从这条线开始拉）就是刷新；按在它上面的顶栏不动。
             //
-            // 这一行同时也是**内容**：删掉之后（长按删除）它就不在这儿占位了，那时锚点换成下面那块
-            // 列表本身，下拉照样能用。
-            //
-            // 这条分界线就是「从这里往下拉」的那条：手指按在它下面的列表上拽，才是刷新；按在它上面
-            // （标题、放大镜、联系人排、这一行）拽，什么都不动。
-            if (showInboxEntry) {
-                MessageEntryRow(
-                    glyph = FlGlyphs.send,
-                    circle = UnreadRed,
-                    title = "互动消息",
-                    subtitle = inboxPreview.ifBlank { inboxLine(summary) },
-                    unread = inboxUnread,
-                    onClick = onOpenInteractions,
-                    // 长按删除：这一行不再显示；恢复的入口在顶栏左上角那个图标的长按菜单里。
-                    onLongClick = {
-                        onHideRow(inboxRowKey, true)
-                        onMessage("互动消息已删除，长按左上角图标可以恢复")
-                    },
-                )
-            }
+            // 以前这一行被放在列表外面，于是按在它上面下拉什么都不发生——正是"拉不动"的原因。
 
-            // 指示器落在这一块顶端：锚点下面空出来的那一截里，而不是盖在顶栏上。
+            // 指示器落在这一块顶端：拽下来之后空出来的那一截里，而不是盖在顶栏上。
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 MessagesRefreshIndicator(
                     refreshing = refreshing,
@@ -970,8 +942,8 @@ fun MessagesScreen(
                 )
 
                 if (loading) {
-                    // 这一支**不画骨架**：一串空卡片看起来像「消息页什么都没有」，而这一页默认一行
-                    // 都不画（两个官方群默认不显示）。剩下的会话安静地等第一趟请求回来。
+                    // 这一支**不画骨架**：一串空卡片看起来像「消息页什么都没有」。真正空手时才走到这里，
+                    // 屏幕上就一个顶栏，安安静静等第一趟请求回来（缓存里有东西时不会进来）。
                     //
                     // 这一块就是下拉的那一块：加载中被人拽一下，也跟着下来、松手一起回去。
                     Column(
@@ -982,25 +954,15 @@ fun MessagesScreen(
                             // 底下让出一条：最后一行不该压在悬浮底栏上（和列表那一支对齐）。
                             .padding(bottom = 96.dp),
                     ) {
-                        // 加载中什么都不画：没有骨架，也没有那两个群。屏幕上就是顶栏 + 互动消息
-                        // 那一行，剩下的等第一趟请求回来——**缓存里已经有会话时不会走到这里**
+                        // 加载中什么都不画（没有骨架，也没有那两个空群）：屏幕上就是顶栏 + 互动消息那一行，
+                        // 剩下的等第一趟请求回来——**缓存里已经有会话时不会走到这里**
                         // （见 `loading` 的初值与下面那条 `if`）。
-                        officialRows.forEach { (entry, joined) ->
-                            OfficialGroupEntryRow(
-                                entry = entry,
-                                joined = joined != null,
-                                joining = joiningOfficial[entry.title] == true,
-                                onClick = { openOfficial(entry, joined) },
-                            )
-                        }
                     }
                 } else {
-                    // 锚点下面这一块就是列表：联系人那一排、折叠群入口、官方群、会话行都在这里。
-                    //
-                    // 它从「互动消息」下面那条分界线开始，所以下拉手势**只从这儿往下拉才生效**：
-                    // 顶栏和互动消息那一行留在上面的 Column 里，钉在原地。
-                    //
-                    // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那一段。
+                    // 锚点下面这一块就是列表：互动消息那一行、联系人那一排、折叠群入口、会话行都在这里，
+            // 整块跟着手指走。从「互动消息」这条分界线往下拉就是刷新（见那一行的说明）。
+            //
+            // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那一段。
                     val messagesListState = rememberRememberedListState("messages")
                     LazyColumn(
                         modifier = Modifier
@@ -1016,6 +978,26 @@ fun MessagesScreen(
                         // 现在整页就是这条列表，得自己让出来，否则最后一行会压在悬浮底栏和导航栏上。
                         contentPadding = PaddingValues(bottom = 96.dp),
                     ) {
+                        // 第一项就是「互动消息」那一行（含它上面那条分界线）：它必须在这条列表里，
+                        // 按在它上面往下拽才走这条列表的嵌套滚动、才是刷新。删掉之后整行不画，那时
+                        // 从下面第一行开始拉照样能刷新。
+                        if (showInboxEntry) {
+                            item(key = "entry-inbox") {
+                                MessageEntryRow(
+                                    glyph = FlGlyphs.send,
+                                    circle = UnreadRed,
+                                    title = "互动消息",
+                                    subtitle = inboxPreview.ifBlank { inboxLine(summary) },
+                                    unread = inboxUnread,
+                                    onClick = onOpenInteractions,
+                                    // 长按删除：这一行不再显示；恢复的入口在顶栏左上角那个图标的长按菜单里。
+                                    onLongClick = {
+                                        onHideRow(inboxRowKey, true)
+                                        onMessage("互动消息已删除，长按左上角图标可以恢复")
+                                    },
+                                )
+                            }
+                        }
                         loadError?.let { reason ->
                             item(key = "load-error") {
                                 Text(
@@ -1091,41 +1073,8 @@ fun MessagesScreen(
                             )
                         }
                     }
-                    // 官方群（灰度测试群、Bug 反馈群）在消息页最上面：它不来自会话列表，由那份常量
-                    // 画出来，所以「没进群」的人和「已进群」的人看到的都是这两行。已进群的按会话行画：
-                    // 最后一句、时间、未读数、长按菜单（置顶 / 免打扰 / 不显示…）全都有；没进群的
-                    // 画成「点一下加入」的入口行。**不写人数**——官方群的人数不该摆在谁都能看见的地方。
-                    officialRows.forEach { (entry, joined) ->
-                        if (joined != null) {
-                            item(key = "official-${joined.id}") {
-                                ConversationRow(
-                                    conversation = joined,
-                                    // 群里不管谁，彼此都不是「互相关注」那一对：灰标只对私聊有意义。
-                                    mutual = false,
-                                    blocked = false,
-                                    // 官方群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样。
-                                    forcePinnedLook = true,
-                                    onOpen = { onOpenChat(joined.id, true) },
-                                    onTogglePin = { togglePin(joined) },
-                                    onToggleMute = { toggleMute(joined) },
-                                    // 「不显示」也记进本机名单：这两个群是自动加入的，后端每趟都会
-                                    // 把它们带回来，只靠 conversation_hide 藏不住。
-                                    onHide = { hideRow(joined) },
-                                    onToggleBlock = { toggleBlock(joined) },
-                                    onDelete = { deleteRow(joined) },
-                                )
-                            }
-                        } else {
-                            item(key = "entry-official-${entry.title}") {
-                                OfficialGroupEntryRow(
-                                    entry = entry,
-                                    joined = false,
-                                    joining = joiningOfficial[entry.title] == true,
-                                    onClick = { openOfficial(entry, null) },
-                                )
-                            }
-                        }
-                    }
+                    // 官方群不在这儿单独列：有内容的已经进了 `visibleConversations`，按普通会话行
+                    // 排自然的位置（最后一句、时间、红点，长按菜单一样有）。一条消息都没有的不占位。
                 }
                 when {
                     // 有搜索词时列表只剩命中的人、会话与消息；三段都空才说一句，不留一块空白。
@@ -1248,6 +1197,15 @@ private fun MessagesTopBar(
     restorableRows: List<String> = emptyList(),
     /** 恢复某一行：传它的名字，键由页面那一层拼。 */
     onRestoreRow: (String) -> Unit = {},
+    /**
+     * 不在消息页上占行的官方群（默认都在这儿）。
+     *
+     * 它们不显示行，但**不是消失**：群还在，消息还在，点这里直接进去。以前只有「恢复显示」一条路，
+     * 那等于为了看一次群先把它摆回消息页，看完还得再删一遍。
+     */
+    hiddenOfficialGroups: List<OfficialGroupEntry> = emptyList(),
+    /** 进某个官方群（已在群里就直接进会话，没进就先幂等加入）。 */
+    onOpenOfficialGroup: (OfficialGroupEntry) -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
     val searchFocusRequester = remember { FocusRequester() }
@@ -1302,6 +1260,19 @@ private fun MessagesTopBar(
                             FlGlyphIcon(glyph = FlGlyphs.eyeOff, size = 16.dp, tint = scheme.onSurfaceVariant)
                         },
                     )
+                    // 不在消息页占行的官方群：直接点进去，不必先把它摆回列表。
+                    hiddenOfficialGroups.forEach { entry ->
+                        ConversationMenuItem(
+                            label = entry.title,
+                            onClick = {
+                                menuOpen = false
+                                onOpenOfficialGroup(entry)
+                            },
+                            leadingIcon = {
+                                FlGlyphIcon(glyph = FlGlyphs.appsList, size = 16.dp, tint = scheme.onSurfaceVariant)
+                            },
+                        )
+                    }
                     // 删掉的那几行在这儿才能回来：长按列表行删的，恢复也放在一处，不再各摆一个按钮。
                     restorableRows.forEach { row ->
                         ConversationMenuItem(
@@ -1525,17 +1496,6 @@ private const val inboxRowKey: String = "entry:inbox"
 private const val inboxRestoreLabel: String = "互动消息"
 
 /**
- * 消息页默认藏起来的那几行。
- *
- * 官方群（灰度测试群、Bug 反馈群）是**注册时自动加入**的，没人要它们在消息页占两格；名单里本来就
- * 带着它们时，这一页的第一帧（以及后端还没回来的那一屏）一行都不画，不用等第一趟刷新落地才消失。
- *
- * 只在这一页读一次：真正落盘的那份名单由上层（设置）维护，用户删 / 恢复之后它才是权威。
- */
-private val DefaultHiddenRows: Set<String> =
-    OfficialGroups.entries.mapTo(mutableSetOf()) { officialRowKey(it.title) }
-
-/**
  * 这一行是不是拉黑过的那个人的私聊。
  *
  * 群聊一律不算：群不是一个人，拉黑无从谈起，名单里也不可能出现群。命中身份号或今天用的名字
@@ -1553,6 +1513,16 @@ private fun Conversation.blockedBy(blocked: Set<String>): Boolean =
  * 字段的会话一律按「没折叠」处理——老会话不会莫名其妙被收进折叠。
  */
 private fun Conversation.isFoldedGroup(): Boolean = isGroup && folded
+
+/**
+ * 一个官方群是不是"还没说过话"的那一个。
+ *
+ * 那两个群（灰度测试群、Bug 反馈群）注册时后端就自动把人放进去了，所以"我在群里"不需要在消息页
+ * 上占一行——有消息才是一条会话。这里判的就是"有没有东西可看"：最后一句空着、也没有未读，就算
+ * 安静。静音的群照样算，静音只是"别响"，不是"没有消息"。
+ */
+private fun Conversation.isSilentOfficialGroup(): Boolean =
+    isGroup && title in OfficialGroups.titles && lastBody.isBlank() && unread <= 0 && lastAt.isBlank()
 
 /**
  * 会话列表的排法：置顶的永远在最前，其余按最后一条的时间倒序。
@@ -2018,74 +1988,6 @@ private fun NoFriendsCell() {
 }
 
 /**
- * 一个官方群那一行：钉在消息页最上面，**不管进没进群**都画（没进的那一行点一下走
- * `group_invite_join` 加入再进去，进过的由调用方改成会话行来画）。
- *
- * 它由 [OfficialGroups] 那份常量长出来，不来自会话列表——没进群的人列表里根本没有这个会话。
- * 骨架那一支、以及列表里「还没加入」的那一行都用它。
- *
- * **不写人数**：官方群的人数不该摆在谁都能看见的地方。
- */
-@Composable
-private fun OfficialGroupEntryRow(
-    entry: OfficialGroupEntry,
-    joined: Boolean,
-    joining: Boolean,
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(scheme.surface)
-            .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
-            .clickable(
-                enabled = !joining,
-                onClickLabel = if (joined) "进入${entry.title}" else "加入${entry.title}",
-                onClick = onClick,
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        InitialAvatar(label = entry.badge)
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            // 会话标题就是对方的名字（群聊是群名）：没改名的显示占位条 + 红点。
-            AuthorLabel(
-                name = entry.title,
-                style = FlText.subheadline,
-                color = scheme.onSurface,
-                maxLines = 1,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = when {
-                    joining -> "正在加入…"
-                    joined -> entry.tagline
-                    else -> "官方群 · 点一下加入"
-                },
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = if (joined) "进入" else "加入",
-            style = FlText.caption2,
-            fontWeight = FlText.emphasized,
-            color = Color.White,
-            maxLines = 1,
-            modifier = Modifier
-                .clip(RoundedCornerShape(percent = 50))
-                .background(if (joined) scheme.outline else scheme.primary)
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-        )
-    }
-}
-
-/**
  * 整块的一行入口：左边一个色圆里放图标，中间标题与副标题，右边未读数。
  *
  * 互动消息和折叠的群聊共用这一个形状，只是圆底的颜色和图标不同——两行看起来是一对，
@@ -2425,26 +2327,6 @@ private fun MutualFollowTag() {
             .background(scheme.surfaceContainerHighest)
             .padding(horizontal = 4.dp, vertical = 1.dp),
     )
-}
-
-/** 头像：名字首字画圆。没有名字（连编号都没有）就画一个问号，不留一个空圆。 */
-@Composable
-private fun InitialAvatar(label: String) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .background(scheme.primary.copy(alpha = 0.15f), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label.take(1).ifEmpty { "?" },
-            style = FlText.subheadline,
-            fontWeight = FlText.emphasized,
-            color = scheme.primary,
-            maxLines = 1,
-        )
-    }
 }
 
 /**
