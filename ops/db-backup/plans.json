@@ -5885,7 +5885,7 @@
   "rebooted_at": "2026-11-26T13:53:55.72984+00:00",
   "rom": "realmeui",
   "rom_build": "",
-  "rom_version": 17,
+  "rom_version": 7,
   "sdk": 37,
   "title": "真我Neo8"
  },
@@ -6271,9 +6271,9 @@
   ],
   "reboot_verified": true,
   "rebooted_at": "2026-11-21T05:21:57.970011+00:00",
-  "rom": "stock",
+  "rom": "hyperos",
   "rom_build": "OS3.0.307.0.WNCCNXM",
-  "rom_version": 0,
+  "rom_version": 3,
   "sdk": 36,
   "title": "老米 14"
  },
