@@ -1296,12 +1296,7 @@ private fun CantaNavigation(
                 }
                 SettingsScreen(
                     platform = platform,
-                    onNavigateBack = {
-                        // 底栏那一格直接进设置时栈上没有上一页，退回就落回应用列表。
-                        if (!navController.popBackStack()) {
-                            navController.navigateSingleTop(Screen.Main.route)
-                        }
-                    },
+                    onNavigateBack = { navController.navigateUp() },
                     settingsViewModel = settingsViewModel,
                     deviceUsers = deviceUsers,
                     selectedUserId = selectedUserId,
@@ -1325,8 +1320,6 @@ private fun CantaNavigation(
                     },
                     onOpenTheme = { navController.navigate(Screen.Theme.route) },
                     onOpenDeletionList = { navController.navigate(Screen.DeletionList.route) },
-                    // 设置现在是底栏那一格的落点，"我的"要能从这里再进去。
-                    onOpenMine = { navController.navigate(Screen.Mine.route) },
                     // 救急用的文件：删掉的包还在系统分区里，恢复命令得在电脑上跑。
                     // 生成的批处理交给分享面板（发到电脑），打不开面板的构建就留在下载目录。
                     onExportRestoreScript = { mode ->
@@ -1963,8 +1956,7 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Posts.route,
     Screen.Store.route,
     Screen.Messages.route,
-    // 底栏最后一格现在直接进设置；「我的」仍然从设置页里进得来，所以两条路由都要带着底栏。
-    Screen.Settings.route,
+    // 底栏最后一格是「我的」；设置页从它里面进，设置页本身不是底栏的一格。
     Screen.Mine.route,
     Screen.Presets.route,
 )
@@ -2066,10 +2058,10 @@ private fun bottomBarItems(
         BottomBarItem(
             BarKey.SETTINGS,
             FlGlyphs.settings,
-            // 直接叫「设置」：这一格就是设置页，不再先绕一层「我的」。字面量而不是资源键，
-            // 和「消息」那格一样不做多语言镜像。
-            "设置",
-            route == Screen.Settings.route,
+            // 这一格是「我的」：身份、我上传过的方案、以及进设置那一行。设置页本身**不**占底栏，
+            // 从「我的」里进——用户要的是"别在右上角菜单里翻设置"，不是"设置顶掉我的"。
+            "我的",
+            route == Screen.Mine.route,
             dot = showUpdateDot,
         ),
     )
@@ -2087,7 +2079,7 @@ private fun onBottomBarSelect(
         BarKey.POSTS -> navController.navigateSingleTop(Screen.Posts.route)
         BarKey.STORE -> navController.navigateSingleTop(Screen.Store.route)
         BarKey.MESSAGES -> navController.navigateSingleTop(Screen.Messages.route)
-        BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Settings.route)
+        BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Mine.route)
     }
 }
 
