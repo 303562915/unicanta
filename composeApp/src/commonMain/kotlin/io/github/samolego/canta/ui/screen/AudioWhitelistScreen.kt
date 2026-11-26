@@ -81,6 +81,9 @@ fun AudioWhitelistScreen(
      * 用户点「解除」或「恢复」之后调，报的是操作**之后**的状态。读取本身平时不上报（不然每开一次
      * 页面就写一行，数据里全是「有人打开过」），只有一个例外：「本机没有名单文件」这个结论第一次
      * 读出来时报一行——那是我们自己机器上永远看不到、而反馈里最多的一种。
+     *
+     * 恢复失败也要报，而且必须报：属性写成 -1 之后如果再也改不回来，这台机器就一直是「解除了」的样子，
+     * 而我们从没在那台机器上看到过它的屏幕。
      */
     fun report(
         stage: String,
@@ -494,7 +497,10 @@ private fun DiagnosticsCard(lines: List<String>, onCopy: () -> Unit) {
 private fun codeOf(result: TweakRun?, failure: String?): String {
     if (result == null) return failure?.take(60).orEmpty()
     result.failure?.let { return it.name.uppercase() }
-    val known = listOf("STATE_FAIL", "SET_FAIL", "TIMEOUT", "RESTORE_FAIL", "RESTORE_SET_FAIL", "RESTORE_NO_KEY")
+    val known = listOf(
+        "STATE_FAIL", "SET_FAIL", "TIMEOUT",
+        "RESTORE_FAIL", "RESTORE_SET_FAIL", "RESTORE_NO_KEY", "RESTORE_DELETE_FAIL",
+    )
     result.output.lineSequence().forEach { line ->
         known.firstOrNull { it in line }?.let { return it }
     }
