@@ -196,13 +196,19 @@ private const val PAGE_SLIDE_MS = 300
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 300_000L
 
 /**
- * 连不上后端时的提示，多久重新确认一次「现在是真断了吗」。
+ * 已经确认断了之后，问「好了没有」的退避间隔：第一次 30 秒，之后翻倍，封顶 5 分钟。
  *
  * 提示本身由事实驱动（[BackendHealth.networkTrouble]，确认探测连着两次没答上来才置 true），不是
- * 靠 `isVpnActive()` 硬判。开着提示的这段时间里隔一分钟探一次：人可能已经出去把 VPN 打开了，
- * 回来一看提示还挂着，那就是在说假话。
+ * 靠 `isVpnActive()` 硬判。人可能已经出去把 VPN 打开了，所以不能完全不问；
+ * 但后端 503 的时候也不能催 —— 每次探测自己就是三发请求（HEAD + GET 兜底），
+ * 而后端越不稳、这个 effect 被状态变化重启得越勤，就是它 2026-11-26 那天占到全部请求 33% 的原因。
+ *
+ * 退避到 5 分钟的代价只是一条提示晚几分钟消失；换回来的是后端在恢复期不再被自己的客户端捶。
+ * 真正的恢复信号来自**任何一个真实请求**成功（打开页面、发消息、切 tab 都会 answer 一次），
+ * 那条路会先调 `reportReachable()`，不等这里。
  */
-private const val BACKEND_PROBE_INTERVAL_MILLIS = 60_000L
+private const val BACKEND_PROBE_FIRST_DELAY_MILLIS = 30_000L
+private const val BACKEND_PROBE_MAX_DELAY_MILLIS = 300_000L
 
 /**
  * 提示出现之前，确认探测要连着几次都没答上来，以及两次之间留多久。
@@ -688,8 +694,19 @@ private fun CantaNavigation(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { backendProbeTick++ }
     val backendTrouble by BackendHealth.networkTrouble.collectAsStateWithLifecycle()
     val backendSuspicion by BackendHealth.suspicion.collectAsStateWithLifecycle()
-    // 只有"可疑"或"提示已挂着"时才花这份钱：确认断了之后一分钟一次 HEAD 问"好了没有"，
+    // 只有"可疑"或"提示已挂着"时才花这份钱：确认断了之后按**指数退避**问"好了没有"，
     // 别的时候一次都不探（启动那一次除外，它建立的是"这台手机现在通"这个事实）。
+    //
+    // 为什么从「固定 60 秒」改成退避（2026-11-26 实测教训）：
+    //   后端 503 的时候，这个 effect 的 key 里有 `backendTrouble` / `backendSuspicion`，
+    //   而每次探测结果都会改 `BackendHealth`，状态一变就把 effect 重启一遍 ——
+    //   于是「后端越不稳，探测越频繁」，把 60 秒一次的礼貌询问变成了几十秒内连发
+    //   一串 `HEAD /rpc/`（实测 30 分钟内 186 次，占全部请求的 33%，而且全被 503）。
+    //   后端本来就在喘，再被自己的客户端持续捶，是正反馈。
+    //
+    //   现在：第一次 30 秒，之后 60 / 120 / 240 / 300 封顶。一次都没答上来就继续按 300 秒
+    //   等着，不去催。链路恢复的那一刻，任何一个真实请求（打开页面、发消息、切 tab）
+    //   都会先 answer 一次，`reportReachable()` 由那条路触发，不靠这里死等。
     LaunchedEffect(backendTrouble, backendSuspicion, backendProbeTick, appVisible) {
         if (!appVisible) return@LaunchedEffect
         // 还没确认断：要连着两次都没答上来才算；已经确认断了：这一次只是在问"好了没有"。
@@ -706,12 +723,14 @@ private fun CantaNavigation(
         }
         // 连 attempts 次都没答上来：到这一步才认账，提示这时才出现。
         BackendHealth.confirmUnreachable()
+        var wait = BACKEND_PROBE_FIRST_DELAY_MILLIS
         while (true) {
-            delay(BACKEND_PROBE_INTERVAL_MILLIS)
+            delay(wait)
             if (communityRepository.isReachable()) {
                 BackendHealth.reportReachable()
                 break
             }
+            wait = (wait * 2).coerceAtMost(BACKEND_PROBE_MAX_DELAY_MILLIS)
         }
     }
 

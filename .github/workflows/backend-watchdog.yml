@@ -83,23 +83,29 @@ jobs:
         id: restart
         if: steps.probe.outputs.state == 'down' || steps.probe.outputs.state == 'slow'
         run: |
-          set -uo pipefail
+          # 关键：关掉 errexit（GitHub 的 bash 默认 -e）。重启期间
+          # `GET /projects/$REF` 返回的不是 JSON，jq 非零退出会把整个 job 杀掉 ——
+          # 那样重启发出去了却没人等它恢复、也没人发钉钉（2026-11-26 16:00 就是这么卡的）。
+          set +e -uo pipefail
           start=$(date +%s)
           code=$(curl -sS -m 90 -o /tmp/r.json -w '%{http_code}' -X POST \
             "https://api.supabase.com/v1/projects/$REF/restart" \
             -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" -d '{}' || echo 000)
-          echo "restart 请求：HTTP $code"
+            -H "Content-Type: application/json" -d '{}' || true)
+          echo "restart 请求：HTTP ${code:-000}"
 
-          for i in $(seq 1 24); do
-            sleep 20
-            status=$(curl -sS -m 20 -H "Authorization: Bearer $TOKEN" \
-              "https://api.supabase.com/v1/projects/$REF" | jq -r '.status // "?"')
+          for i in $(seq 1 30); do
+            sleep 15
+            body=$(curl -sS -m 20 -H "Authorization: Bearer $TOKEN" \
+              "https://api.supabase.com/v1/projects/$REF" 2>/dev/null || true)
+            status=$(printf '%s' "$body" | jq -r '.status // "?"' 2>/dev/null || true)
+            [ -n "${status:-}" ] || status="?"
             qcode=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -X POST \
               "https://api.supabase.com/v1/projects/$REF/database/query" \
               -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
-              -d '{"query":"select 1"}' || echo 000)
+              -d '{"query":"select 1"}' 2>/dev/null || true)
+            [ -n "${qcode:-}" ] || qcode="000"
             echo "第 $i 次：status=$status query=$qcode"
             if [ "$status" = "ACTIVE_HEALTHY" ] && { [ "$qcode" = "200" ] || [ "$qcode" = "201" ]; }; then
               took=$(( $(date +%s) - start ))
@@ -149,25 +155,34 @@ jobs:
         id: restart-disk
         if: steps.disk.outputs.critical == 'yes'
         run: |
-          set -uo pipefail
-          # 与下面那个 down/slow 的重启是两回事，不要合并：这里的触发条件是「服务还答得上，
-          # 但 checkpoint 已经 30 秒以上」——再拖下去就是连接池耗尽，重启是把必然发生的事提前做。
+          # GitHub 的 `shell: bash -e` 默认开着 -e（errexit）。实例重启期间
+          # `GET /projects/$REF` 返回的不是 JSON（是 HTML 或空），`jq` 会非零退出，
+          # `-e` 于是**立刻杀掉整个 job** —— 2026-11-26 16:00 那次就是这样：重启发出去了
+          # （HTTP 200），但等待循环一次都没跑、钉钉也没发，实例停在 RESTARTING 没人管。
+          # 所以这里显式关掉 errexit，并给每一条探测单独兜底：这一层的错误全都只表示
+          # 「还没好，继续等」，不该让 job 失败。
+          set +e -uo pipefail
           start=$(date +%s)
           code=$(curl -sS -m 90 -o /tmp/rd.json -w '%{http_code}' -X POST \
             "https://api.supabase.com/v1/projects/$REF/restart" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" -d '{}' || echo 000)
-          echo "restart 请求：HTTP $code"
+          echo "restart 请求：HTTP ${code:-000}"
 
-          for i in $(seq 1 24); do
-            sleep 20
-            status=$(curl -sS -m 20 -H "Authorization: Bearer $TOKEN" \
-              "https://api.supabase.com/v1/projects/$REF" | jq -r '.status // "?"')
+          for i in $(seq 1 30); do
+            sleep 15
+            # 拿不到 JSON（重启中）时 status 记成 "?"，jq 的失败用 || true 吞掉；
+            # 命令替换里的失败也不会因为 pipefail 冒出去。
+            body=$(curl -sS -m 20 -H "Authorization: Bearer $TOKEN" \
+              "https://api.supabase.com/v1/projects/$REF" 2>/dev/null || true)
+            status=$(printf '%s' "$body" | jq -r '.status // "?"' 2>/dev/null || true)
+            [ -n "${status:-}" ] || status="?"
             qcode=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -X POST \
               "https://api.supabase.com/v1/projects/$REF/database/query" \
               -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
-              -d '{"query":"select 1"}' || echo 000)
+              -d '{"query":"select 1"}' 2>/dev/null || true)
+            [ -n "${qcode:-}" ] || qcode="000"
             echo "第 $i 次：status=$status query=$qcode"
             if [ "$status" = "ACTIVE_HEALTHY" ] && { [ "$qcode" = "200" ] || [ "$qcode" = "201" ]; }; then
               took=$(( $(date +%s) - start ))
