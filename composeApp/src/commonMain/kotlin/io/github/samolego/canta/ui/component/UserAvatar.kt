@@ -190,18 +190,35 @@ internal object AvatarLoader {
      */
     private val inFlight = mutableMapOf<String, Deferred<ByteArray?>>()
 
+    /**
+     * 服务器明确说「这个地址没有图」的那些地址（404/403/410）。
+     *
+     * 和 [inFlight] 一样只在 IO 侧读写，用同一个作用域。存在的理由：调用方要分清
+     * 「这个人没设过头像」和「这次网络没通」——前者值得记一笔十分钟别再来问，
+     * 后者记了就等于一次代理抖动让一整屏头像消失十分钟。
+     */
+    private val missing = mutableMapOf<String, Boolean>()
+
+    /** 上一次 [load] 的结果是不是「服务器明确说没有这张图」。 */
+    fun wasMissing(url: String): Boolean = missing[url.trim()] == true
+
     /** 共享下载用的后台作用域：某个头像滚出屏幕、等待被取消，不该把别人的那一份也掐掉。 */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     suspend fun load(url: String): ImageBitmap? {
-        val bytes = bytesOf(url) ?: return null
-        return runCatching { bytes.decodeToImageBitmap() }.getOrNull()
+        val key = url.trim()
+        val bytes = bytesOf(key) ?: return null
+        return runCatching { bytes.decodeToImageBitmap() }
+            .onSuccess { missing.remove(key) }
+            .getOrNull()
     }
 
     private suspend fun bytesOf(url: String): ByteArray? {
         inFlight[url]?.let { return it.await() }
         val job = scope.async(start = CoroutineStart.LAZY) {
             val result = fetch(url)
+            // 失败也清掉：这个地址下次还能再问。以前只清成功的，一个地址在 `inFlight` 里
+            // 留着失败的 Deferred 时，后面的 `await()` 会一直拿到那个 null。
             inFlight.remove(url)
             result
         }
@@ -213,6 +230,11 @@ internal object AvatarLoader {
         runCatching {
             val response = client.get(url) { header(HttpHeaders.UserAgent, USER_AGENT) }
             if (!response.status.isSuccess()) {
+                // 4xx = 这个地址本来就没有图（没设过头像的占多数），记下来别反复问；
+                // 5xx / 超时 / 断流 = 这一次没成，**不记**——那种记账会让一次代理抖动
+                // 变成「一屏人全都没头像」十分钟。
+                val code = response.status.value
+                if (code in 400..499) missing[url] = true else missing.remove(url)
                 null
             } else {
                 response.body<ByteArray>().takeIf { it.isNotEmpty() }
@@ -278,7 +300,11 @@ fun UserAvatar(
             cacheAvatar(key, loaded)
             bitmap = loaded
         } else {
-            rememberAvatarMiss(key)
+            // **网络失败不记成「这个人没头像」**：以前这里无条件记一笔，于是一次代理抖动就等于
+            // 这个人十分钟没有头像——而没设过头像的人（404）和没网上的人在该记的账上是两回事。
+            // 只有**服务器明确回了 4xx**（这个人确实没有头像/没权限）才记；超时、断流、解码失败
+            // 一律当成「这次没取到」，下次进页面/下一屏还会再试。
+            if (AvatarLoader.wasMissing(key)) rememberAvatarMiss(key)
         }
     }
 

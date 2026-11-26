@@ -2143,12 +2143,14 @@ private fun ChatBubble(
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
-        // 私聊里对方不画头像（截图上就是干净的）；群里谁发言谁有自己的一张头像，
-        // 身份是 message.sender，点了进那个人的主页。
+        // 别人的消息**一律留一块头像位**（用户要求，2026-11-26）：以前这里挂的是 `showSender`，
+        // 也就是「是群聊，而且不是我发的」两个条件都成立才画。私聊不画、拿不到 sender 不画、
+        // 群身份没判出来也不画——一行消息左边空一块，看着就是"头像丢了"，还找不到原因。
         //
-        // 自己这一侧的头像现在**私聊也画**（用户要求：消息页那一张脸和这儿要一致）；
-        // 群里规则不变，免得每条消息两边各贴一张。
-        if (!mine && showSender) {
+        // 现在不判群：只要不是我发的，左边就固定摆一张 32 的圆——有照片就是照片，没设过就是
+        // 名字首字（[ChatRowAvatar] → [UserAvatar] 的两态）。位置永远在，不会因为某个字段空了
+        // 而整块消失。
+        if (!mine) {
             ChatRowAvatar(
                 label = message.label,
                 url = personAvatarUrl(message.sender),
@@ -2156,6 +2158,7 @@ private fun ChatBubble(
                 // 长按头像 = 在这个人的话上直接 @ 他。只有群聊会传进来（私聊 @ 没有意义）。
                 onLongClick = onAvatarLongPress,
             )
+            // 这一格固定 8dp：头像有没有下下来都不变，消息正文的左边线保持对齐。
             Spacer(Modifier.width(8.dp))
         }
         // 头像只挂在自己这一侧：截图里对方那条是干净的（没有头像也没有昵称），
