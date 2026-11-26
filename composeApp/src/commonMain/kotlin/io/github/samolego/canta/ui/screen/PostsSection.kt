@@ -111,6 +111,7 @@ import io.github.samolego.canta.ui.component.parseHexColor
 import io.github.samolego.canta.ui.component.readableBrandColor
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.rememberRememberedListState
+import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -652,6 +653,14 @@ internal fun PostsScreen(
     val searchFocus = remember { FocusRequester() }
     /** 正在编辑的那篇草稿的本地 id；空串表示没在编辑。 */
     var editorId by remember { mutableStateOf("") }
+    /**
+     * 正在**改**的那条已发布帖子的 id；0 表示这次是新建。
+     *
+     * 和 [editorId] 是两回事：那个是本地草稿的键（盘上的文件），这个是后端那一行。
+     * 新建时它是 0，发布走 `post_add`；>0 时发布走 `post_update`，而且**不存草稿** ——
+     * 改的是线上那条，草稿在这里没有意义（中途退出就该放弃改动，回详情看原样）。
+     */
+    var editingPostId by remember { mutableStateOf(0L) }
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     /** 分类：空串表示没选。候选见 [POST_CATEGORIES]，后端原样存。 */
@@ -792,8 +801,11 @@ internal fun PostsScreen(
      *
      * 分类与标签也进键里：只改分类、只加一个标签，同样是"手停下来就该记住"的改动。
      */
-    LaunchedEffect(composing, editorId, title, body, category, tags, tagInput) {
+    LaunchedEffect(composing, editorId, editingPostId, title, body, category, tags, tagInput) {
         if (!composing) return@LaunchedEffect
+        // 改帖不存草稿：改的是线上那条，写盘只会留下一条"看起来像新帖、其实是旧内容"的草稿，
+        // 下次点「草稿」进来还以为自己在起草一篇新的。
+        if (editingPostId > 0L) return@LaunchedEffect
         val draftStore = drafts ?: return@LaunchedEffect
         val id = editorId
         if (id.isEmpty() || who.isEmpty()) return@LaunchedEffect
@@ -816,12 +828,18 @@ internal fun PostsScreen(
         draftList = draftStore.drafts(who)
     }
 
-    /** 打开编辑器：[draft] 为 null 就是一篇新的（本地新 id，空标题空正文、没选分类、没标签）。 */
+    /**
+     * 打开编辑器：[draft] 为 null 就是一篇新的（本地新 id，空标题空正文、没选分类、没标签）。
+     *
+     * 无论从哪条路进来，都先把 [editingPostId] 归零 —— 上一次改帖留下的 id 如果忘了清，
+     * 接着点「写新帖」就会把新写的内容写进上一条帖子里。
+     */
     val openEditor: (PostDraft?) -> Unit = edit@{ draft ->
         if (!canWrite) {
             platform.showMessage("还没认出身份，帖子记不上")
             return@edit
         }
+        editingPostId = 0L
         editorId = draft?.id?.takeIf { it.isNotEmpty() } ?: currentTimeMillis().toString()
         title = draft?.title.orEmpty()
         body = draft?.body.orEmpty()
@@ -831,6 +849,37 @@ internal fun PostsScreen(
         savedAt = draft?.updatedAt ?: 0L
         editorError = null
         // 从草稿或「写帖子」进来时不让上一次留下的选择器挡在编辑器前面。
+        sharePickerOpen = false
+        composing = true
+    }
+
+    /**
+     * 改一条**已经发出去的**帖子：把它的标题/正文/分类/标签回填进编辑器，发布时走 `post_update`。
+     *
+     * 与 [openEditor] 的区别只有三处：不让 [onOpenCompose] 把它导到独立那一页（那一页是"写新的"，
+     * 没有帖子 id 可带）、不产生本地草稿（改的是线上那条，中途退出就该丢掉改动）、
+     * 发布走 update 而不是 add。
+     */
+    val editPost: (CommunityPost) -> Unit = edit@{ post ->
+        if (!canWrite) {
+            platform.showMessage("还没认出身份，改不了")
+            return@edit
+        }
+        if (authorId.isBlank() || post.authorId != authorId) {
+            platform.showMessage("只有作者本人能改")
+            return@edit
+        }
+        editingPostId = post.id
+        // 本地草稿 id 给一个不会被"发布成功后删草稿"删掉的临时值：这次编辑不存草稿，
+        // 但自动保存那条 LaunchedEffect 仍然会跑，得让它有一条自己的键而不去覆盖任何真草稿。
+        editorId = "edit-${post.id}"
+        title = post.title
+        body = post.body
+        category = post.category
+        tags = post.tags
+        tagInput = ""
+        savedAt = 0L
+        editorError = null
         sharePickerOpen = false
         composing = true
     }
@@ -847,8 +896,17 @@ internal fun PostsScreen(
         if (navigate != null) navigate(draft) else openEditor(draft)
     }
 
-    /** 取消：有内容就存成草稿并说一声；空的一次什么都不留。 */
+    /** 取消：有内容就存成草稿并说一声；空的一次什么都不留。改帖时一律不存草稿。 */
     val cancelEditor: () -> Unit = cancel@{
+        // 改帖：退出就是放弃这次改动，原帖一个字不动，也不留草稿（见 [editPost]）。
+        if (editingPostId > 0L) {
+            composing = false
+            editingPostId = 0L
+            editorId = ""
+            platform.showMessage("已放弃修改")
+            onEditorClosed?.invoke()
+            return@cancel
+        }
         val draftStore = drafts
         val hasText = title.isNotBlank() || body.isNotBlank()
         if (!hasText) {
@@ -880,7 +938,10 @@ internal fun PostsScreen(
         onEditorClosed?.invoke()
     }
 
-    /** 发布：成功后删草稿、关编辑器、刷新列表；失败就把后端那句话摆在编辑器里。 */
+    /**
+     * 发布：新建走 `post_add`，改帖走 `post_update`；成功后关编辑器、刷新列表，
+     * 失败就把后端那句话摆在编辑器里。
+     */
     val publish: () -> Unit = pub@{
         val current = store
         // 名字/头像没设完：帖子也是发言，按钮已经是灰的，这里挡住回车那条路。
@@ -899,11 +960,41 @@ internal fun PostsScreen(
             return@pub
         }
         val draftId = editorId
+        val editing = editingPostId
         // 输入框里那半截标签也一起发上去：写完了没按逗号的那一个，人也当它是标签。
         val finalTags = tagsWithPending(tags, tagInput)
         posting = true
         editorError = null
         scope.launch {
+            if (editing > 0L) {
+                val done = current.update(editing, cleanTitle, body, author, category, finalTags)
+                posting = false
+                // 这一趟回来时人可能已经离开编辑态了（按了返回 / 又写了别的）：
+                // 那就只把结果说一声，不去清别人的状态，也不再弹一次页。
+                // 判断照自动保存那条的守卫写法（见上面那条 LaunchedEffect）。
+                if (!composing || editingPostId != editing) {
+                    platform.showMessage(if (done) "已保存修改" else (current.reason ?: "没改上"))
+                    return@launch
+                }
+                if (!done) {
+                    editorError = current.reason ?: "没改上：检查一下网络再试"
+                    return@launch
+                }
+                // 改完回详情那条帖子：人刚编辑过它，接着要看的是它自己的样子，不是列表。
+                composing = false
+                editingPostId = 0L
+                editorId = ""
+                title = ""
+                body = ""
+                category = ""
+                tags = emptyList()
+                tagInput = ""
+                savedAt = 0L
+                reloadKey++
+                platform.showMessage("已保存修改")
+                onEditorClosed?.invoke()
+                return@launch
+            }
             val id = current.add(cleanTitle, body, author, category, finalTags)
             posting = false
             if (id == null) {
@@ -911,6 +1002,7 @@ internal fun PostsScreen(
                 return@launch
             }
             composing = false
+            editingPostId = 0L
             editorId = ""
             title = ""
             body = ""
@@ -1022,6 +1114,17 @@ internal fun PostsScreen(
      * "点错了返回"丢掉半篇。
      */
     val leave: () -> Unit = leave@{
+        // 改帖：退回上一层就是放弃这次修改。这里必须**一起清掉 editingPostId** ——
+        // 只清 composing 的话，残留的 id 会让下一次「写新帖」的发布误走 `post_update`，
+        // 把新写的内容写进上一条帖子里。
+        if (composing && editingPostId > 0L) {
+            composing = false
+            editingPostId = 0L
+            editorId = ""
+            platform.showMessage("已放弃修改")
+            onNavigateBack?.invoke()
+            return@leave
+        }
         if (composing && who.isNotEmpty() && (title.isNotBlank() || body.isNotBlank())) {
             drafts?.save(
                 who,
@@ -1182,16 +1285,36 @@ internal fun PostsScreen(
                     actions = {
                         val open = thread?.post
                         if (canDeleteOpen && open != null) {
-                            TextButton(
-                                enabled = busyKey == null,
+                            // 「编辑」「删除」用 44dp 圆图标而不是文字按钮：`FlTopBar` 的标题吃
+                            // `weight(1f)`，而 TextButton 有 58dp 最小宽度，两颗就是 124dp，
+                            // 360dp 屏上标题只剩 148dp（八个字）就被省略了。图标按钮一颗 44dp，
+                            // 两颗 96dp，而且形状和左边那颗返回键是同一套。
+                            //
+                            // 锁住的帖子不给改（后端 `post_update` 也会拒），按钮直接置灰。
+                            FlBarButton(
+                                glyph = FlGlyphs.edit,
+                                contentDescription = "编辑",
+                                onClick = { editPost(open) },
+                                size = 40.dp,
+                                iconSize = 20.dp,
+                                enabled = busyKey == null && !open.locked,
+                            )
+                            FlBarButton(
+                                glyph = FlGlyphs.delete,
+                                contentDescription = "删除",
                                 onClick = { confirmTarget = open },
-                            ) { Text(if (busyKey == "delete:${open.id}") "正在删…" else "删除") }
+                                size = 40.dp,
+                                iconSize = 20.dp,
+                                enabled = busyKey == null,
+                            )
                         }
                     },
                 )
 
                 composing -> ScreenTopBar(
-                    title = "创建话题",
+                    // 改帖时标题写「编辑话题」，新建写「创建话题」：同一个编辑器两种语义，
+                    // 顶栏是唯一能一眼看出"我是在改还是在新写"的地方。
+                    title = if (editingPostId > 0L) "编辑话题" else "创建话题",
                     onNavigateBack = cancelEditor,
                     actions = {
                         // 预览切换留在这里而不是正文上面：写的时候看不到它，看一眼才点。
@@ -1199,6 +1322,7 @@ internal fun PostsScreen(
                             Text(if (previewing) "改文字" else "预览")
                         }
                         // 圆形纸飞机发送（fluxdo 的 ComposerSubmitButton：40dp 正圆，图标 21dp）。
+                        // 改帖时这颗按钮的含义是"保存修改"，仍然是同一个位置、同一个形状。
                         PublishCircleButton(
                             busy = posting,
                             enabled = canWrite && !posting && setupGate.ready,

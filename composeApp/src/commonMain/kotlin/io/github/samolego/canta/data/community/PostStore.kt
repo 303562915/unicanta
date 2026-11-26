@@ -242,6 +242,46 @@ class PostStore(private val rpc: CommunityRpc) {
         return answer["ok"]?.jsonPrimitive?.booleanOrNull == true
     }
 
+    /**
+     * 改一帖：只有作者本人能改，成功 true，其余 false，理由在 [lastError]。
+     *
+     * 与 [add] 的差别：署名可以改（[author] 会写回 `author` 列），但**身份码不动** ——
+     * 帖子还是那个人写的。分类与标签同样原样发上去，归整由 `post_update` 做，规则和
+     * `post_add` 一致（trim、每个 20 字、去重、最多 5 个）。
+     *
+     * 锁住的帖子后端会拒绝（`locked`），理由会回到 [lastError]，页面照实显示。
+     */
+    suspend fun update(
+        id: Long,
+        title: String,
+        body: String,
+        author: String,
+        category: String = "",
+        tags: List<String> = emptyList(),
+    ): Boolean {
+        lastError = null
+        if (id <= 0L) return false
+        // 标题空就在这里说清，别让它退到调用方的"检查一下网络"——那是另一件事。
+        if (title.isBlank()) {
+            lastError = "标题不能空"
+            return false
+        }
+        val proof = rpc.token()
+        val payload = buildJsonObject {
+            put("p_id", id)
+            put("p_title", title.trim())
+            put("p_body", body)
+            put("p_author", author)
+            put("p_category", category.trim())
+            putJsonArray("p_tags") { tags.forEach { tag -> add(JsonPrimitive(tag)) } }
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc.post("post_update", payload) ?: return false
+        val answer = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return false
+        answer["error"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let { lastError = it }
+        return answer["ok"]?.jsonPrimitive?.booleanOrNull == true
+    }
+
     // ---------------------------------------------------------------- 解析
 
     /** 一行帖子：字段缺了就退回默认值，老回答仍然画得出来。 */
