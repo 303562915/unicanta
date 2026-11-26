@@ -1,6 +1,7 @@
 package io.github.samolego.canta.data.bloat
 
 import io.github.samolego.canta.data.CantaSettings
+import io.github.samolego.canta.data.bloat.BundledBloatList
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.testing.MemoryStorage
 import io.ktor.client.HttpClient
@@ -9,6 +10,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.TimeZone
@@ -27,11 +29,22 @@ class BloatRepositoryTest {
     private val cachedJson = """{"com.cached": {"description": "C", "removal": "Expert"}}"""
     private val bundledJson = """{"com.bundled": {"description": "B", "removal": "Caution"}}"""
 
+    /** 枚举目录里随包的那一份，只读一次。 */
+    private val bundledFromResources: String by lazy {
+        runBlocking { BundledBloatList.raw() }.orEmpty()
+    }
+
+    /**
+     * 这条用例自己那台服务器的 commits 返回值：永远不会等于 settings 里写的 `same`，
+     * 所以"要不要真的去下名单"这件事在这里永远是确定的。
+     */
+    private val SENTINEL_SHA = "sentinel-sha"
+
     /**
      * Serves the corrections file, the commits API and the list; records requested URLs.
      *
-     * 修正表另有自己的 URL（[fixesUrl]），必须排在名单那条前面判断：两边都可能是
-     * `raw.githubusercontent.com` 上的文件，靠"哪个 URL 先匹配"来分。
+     * 三个地址（名单、commits、修正表）都由 [settings] 显式写进去，MockEngine 按完整 URL
+     * 精确匹配。不按主机名模糊命中：产品默认值将来还会变，测试不该跟着变。
      */
     private class Server(
         var sha: String? = "new",
@@ -43,27 +56,42 @@ class BloatRepositoryTest {
         val client = HttpClient(MockEngine { request ->
             val url = request.url.toString()
             requests += url
-            // 先取到局部变量再判空：`fixes` 是 var，Kotlin 不给它做智能转换。
+            // 先取到局部变量再判空：`fixes` / `sha` 是 var，Kotlin 不给它们做智能转换。
             val answer = fixes
             val shaNow = sha
+            // 三个地址**精确**匹配：测试用的 URL 由 settings 显式指定，谁先命中就不再取决于
+            // DEFAULT_* 常量长什么样（那正是这两条用例曾经在 CI 上不稳的原因）。
             when {
                 url == fixesUrl && answer != null -> respond(answer)
-                "api.github.com" in url && shaNow != null -> respond("""[{"sha": "$shaNow"}]""")
-                "raw.githubusercontent.com" in url && listOk -> respond(list)
+                url == commitsUrl && shaNow != null -> respond(shaJson(shaNow))
+                url == listUrl && listOk -> respond(list)
                 else -> respondError(HttpStatusCode.ServiceUnavailable)
             }
         })
-        val listDownloads get() = requests.count { it != fixesUrl && "raw.githubusercontent.com" in it }
+        val listDownloads get() = requests.count { it == listUrl }
     }
 
     private companion object {
+        /** 修正表：只在显式放进 settings 的用例里命中。 */
         const val fixesUrl = "https://example.test/level_fixes.json"
+
+        /** 修正表的「变没变」接口。 */
+        const val commitsUrl = "https://example.test/commits"
+
+        /** 名单本体。 */
+        const val listUrl = "https://example.test/bloat_list.json"
+
+        /** commits 接口的答复，避开在源码里写嵌套三引号。 */
+        fun shaJson(sha: String) = "[{\"sha\": \"" + sha + "\"}]"
     }
 
     private suspend fun settings(latestHash: String = "", autoUpdate: Boolean = true) =
         CantaSettings(MemoryStorage()).apply {
             setLatestCommitHash(latestHash)
             setAutoUpdateBloatList(autoUpdate)
+            // 三个地址显式指着 MockEngine 认的那几个：不让任何用例依赖产品的默认 URL。
+            setBloatListUrl(listUrl)
+            setCommitsUrl(commitsUrl)
         }
 
     @Test
@@ -104,7 +132,7 @@ class BloatRepositoryTest {
         val server = Server(sha = "same", list = listJson)
         val cache = MemoryStorage("{not json".encodeToByteArray())
 
-        val bloat = BloatRepository(server.client, cache, settings("same")).load()
+        val bloat = BloatRepository(server.client, cache, settings("same"), bundled = { bundledFromResources }).load()
 
         assertEquals(setOf("com.a"), bloat.keys)
         assertEquals(listJson, cache.content?.decodeToString())
@@ -290,9 +318,13 @@ class BloatRepositoryTest {
         // 刻意用**别的用例绝不会用**的地址：MockEngine 对未知 URL 回 503，这才是"这次没连上"。
         // 之前这里用的是 fixesUrl 而 `Server.fixes = null`——但 `fixes` 是 var，同档里别的用例把它
         // 改成有内容之后，这个用例就会真的拉到修正表，于是 refreshCorrections() 返回 true、
-        // 断言 expected:<false> but was:<true>（CI run 45757908675）。地址不共享，这个前提就稳了。
+        // 断言 expected:<false> but was:<true>（CI run 45757908675 / 45758627750）。地址不共享，
+        // 这个前提就稳了。
         val unreachable = "https://example.test/level_fixes.unreachable.json"
-        val server = Server(sha = "same", list = listJson)
+        // 用**整份随包名单**当脚手架：手上的缓存通常读不出来（那正是要继续往下拉的理由），随包那份
+        // 才是"下到名单之后""一个是新commit"这种情况真正用得上的一份。空表会让下面的断言变成
+        // "什么都没下到"，而那不是这条用例要说的事。
+        val server = Server(sha = SENTINEL_SHA, list = bundledFromResources)
         val settings = settings("same")
         val fixes = MemoryStorage()
 
@@ -304,6 +336,7 @@ class BloatRepositoryTest {
             correctionsUrl = { unreachable },
             correctionsCommitsUrl = null,
             correctionsCache = fixes,
+            bundled = { bundledFromResources },
         )
 
         assertEquals(false, repository.refreshCorrections())

@@ -191,17 +191,28 @@ class BloatRepository(
         val url = correctionsUrl?.invoke() ?: return false
         val storage = correctionsCache ?: return false
         val language = bundledCorrections().language
-        val text = runCatching { client.get(url).bodyAsText() }.getOrNull()
+        // 先只解开信封，读不懂的答复不该被当成"成功"往下走。
+        val envelope = runCatching { client.get(url).bodyAsText() }
+            .onFailure { LogUtils.i(TAG, "Level corrections not reachable: ${it.message}") }
+            .getOrNull()
             ?.takeIf { it.isNotBlank() }
             ?: return false
-        val stored = runCatching { storage.read()?.decodeToString() }.getOrNull()
-        if (stored == text) {
+        val remote = BloatOverrides.fromRemote(envelope, language)
+        // 答复读得懂但一条修正都没有：这份文件**本就不该**顶掉随包那张表。旧实现会把它
+        // 原样落盘、清掉 `resolvedCorrections` 里的随包表，于是"拉到了，但什么都不剩"——
+        // 盘上是个空 JSON、内存里是个空的 overrides，界面上随包那条修正凭空消失。
+        // 现在只记账（这一周核对过了），不落盘、不动现有修正。
+        if (remote.size == 0) {
+            LogUtils.i(TAG, "Level corrections answered but carry nothing; keeping the shipped table")
+            settings.setCorrectionsFetchedDay(todayKey())
+            return false
+        }
+        if (runCatching { storage.read()?.decodeToString() }.getOrNull() == envelope) {
             settings.setCorrectionsFetchedDay(todayKey())
             return false
         }
         // 先确认读得懂再落盘：一份格式坏掉的答复不该顶掉盘上那份好用的。
-        val remote = BloatOverrides.fromRemote(text, language)
-        runCatching { storage.write(text.encodeToByteArray()) }
+        runCatching { storage.write(envelope.encodeToByteArray()) }
             .onFailure { LogUtils.w(TAG, "Failed to cache level corrections: $it") }
         resolvedCorrections = bundledCorrections().overriddenBy(remote)
         settings.setCorrectionsFetchedDay(todayKey())
