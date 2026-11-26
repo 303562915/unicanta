@@ -708,12 +708,25 @@ fun MessagesScreen(
     //
     // - 注册时后端就把人塞进这两个群（`canta_users_auto_join`），所以"默认就在群里"这件事不需要
     //   在界面上占一行——那不是入口，是事实。
-    // - 因此这里只保留**有消息的**官方群（或者没收过消息但确实有未读的）：它已经在会话列表里，
-    //   就按会话行的样子排在自然的位置上，带最后一句、时间、红点。
+    // - 因此这里只保留**有消息的**官方群（说过话、或者确实有未读的）：它已经在会话列表里，就按
+    //   会话行的样子排在自然的位置上，带最后一句、时间、红点。
     // - 一条消息都没有的官方群不占位：摆一行「点一下加入」等于请人点进一个空群。
     //
     // `hiddenRows` 只记本人手动删掉的（长按那一行删的），默认空。
-    val showInboxEntry = inboxRowKey !in hiddenRows
+
+    /**
+     * 互动消息这一行显不显示。
+     *
+     * 两条规则合起来：
+     * - **有未读时一定显示**：删了它却还有新互动，等于把"有人回复我"这件事藏起来，红点也没处可看。
+     *   手动删掉的状态先压住，读完之后自然回到他自己选的那样。
+     * - 没有未读时，按本人手动删掉的状态说话（[hiddenRows]）。
+     */
+    val showInboxEntry = inboxRowKey !in hiddenRows || inboxUnread > 0
+    // 互动消息这一行的置顶 / 免打扰也是"这一页怎么摆"，同样落在本机名单里（本机设置），
+    // 不占后端字段——它不是一条会话，后端没有它的行可改。
+    val inboxPinned = inboxPinKey in hiddenRows
+    val inboxMuted = inboxMuteKey in hiddenRows
 
     val visibleConversations = reachableConversations
         .filterNot { it.isFoldedGroup() }
@@ -740,6 +753,51 @@ fun MessagesScreen(
     val searching = searchActive && keyword.isNotEmpty()
     // 搜索仍能找到折叠的群：主列表不列它是为了别占地方，人是特意去找它的时候得找得到。
     val hits = if (searching) searchHitsOf(reachableConversations, followers, keyword) else emptyList()
+
+    /**
+     * 互动消息这一行的长按菜单：和会话行同一套语气——置顶、免打扰、不显示、删除。
+     *
+     * 两条不同：
+     * - **有未读时不给"不显示 / 删除"**：那一行正挂着人等着看的东西，删了它等于把提示藏起来。
+     *   已经有未读的时候菜单里只有置顶和免打扰，读完之后再删才说得通。
+     * - 这里的"删"只动这一行的显示（[inboxRowKey]），不动互动消息本身：内容、未读数都还在，
+     *   恢复入口在顶栏左上角那个图标的长按菜单里。
+     */
+    val inboxMenu: List<MessageEntryAction> = buildList {
+        add(
+            MessageEntryAction(
+                label = if (inboxPinned) "取消置顶" else "置顶",
+                glyph = FlGlyphs.pin,
+            ) { onHideRow(inboxPinKey, !inboxPinned) },
+        )
+        add(
+            MessageEntryAction(
+                label = if (inboxMuted) "取消免打扰" else "设为免打扰",
+                glyph = FlGlyphs.eyeOff,
+            ) { onHideRow(inboxMuteKey, !inboxMuted) },
+        )
+        if (inboxUnread <= 0) {
+            add(
+                MessageEntryAction(
+                    label = "不显示",
+                    glyph = FlGlyphs.eyeOff,
+                ) {
+                    onHideRow(inboxRowKey, true)
+                    onMessage("互动消息已隐藏，长按左上角图标可以恢复")
+                },
+            )
+            add(
+                MessageEntryAction(
+                    label = "删除",
+                    glyph = FlGlyphs.delete,
+                    danger = true,
+                ) {
+                    onHideRow(inboxRowKey, true)
+                    onMessage("互动消息已删除，长按左上角图标可以恢复")
+                },
+            )
+        }
+    }
 
     // 消息搜索要问后端，所以按输入停顿去抖：每敲一个字就发一次请求，既费额度又会让结果乱跳。
     // 300ms 是"还在打字"和"打完了"之间的常用分界。
@@ -989,12 +1047,12 @@ fun MessagesScreen(
                                     title = "互动消息",
                                     subtitle = inboxPreview.ifBlank { inboxLine(summary) },
                                     unread = inboxUnread,
+                                    // 有未读时这一行**不消失**：删了它，等于把"有人回复我"这件事藏起来。
+                                    // 置顶 / 免打扰照旧生效（那两件事跟未读无关）。菜单见下面的 `inboxMenu`。
+                                    pinned = inboxPinned,
+                                    muted = inboxMuted,
                                     onClick = onOpenInteractions,
-                                    // 长按删除：这一行不再显示；恢复的入口在顶栏左上角那个图标的长按菜单里。
-                                    onLongClick = {
-                                        onHideRow(inboxRowKey, true)
-                                        onMessage("互动消息已删除，长按左上角图标可以恢复")
-                                    },
+                                    menu = inboxMenu,
                                 )
                             }
                         }
@@ -1491,6 +1549,15 @@ private fun officialRowKey(title: String): String = "o:$title"
 
 /** 互动消息那一行：键只在这台手机上用，和 [conversationRowKey] 同一套前缀。 */
 private const val inboxRowKey: String = "entry:inbox"
+
+/**
+ * 互动消息那一行的「置顶」与「免打扰」各占一个键，和显示 / 隐藏（[inboxRowKey]）分开记。
+ *
+ * 为什么不复用 [inboxRowKey]：那一格已经表示"这一行现在显示不显示"，置顶和免打扰是另外两件
+ * 互不相干的事，挤在同一个槽里，取消免打扰就会把它顺便变回"显示"。
+ */
+private const val inboxPinKey: String = "entry:inbox:pin"
+private const val inboxMuteKey: String = "entry:inbox:mute"
 
 /** 互动消息那一行在恢复菜单里叫什么；恢复时靠它和群名区分开。 */
 private const val inboxRestoreLabel: String = "互动消息"
@@ -2004,57 +2071,127 @@ private fun MessageEntryRow(
     onClick: () -> Unit,
     /** 标题行右端、未读数左边的额外入口；不需要的行走默认的空 lambda。 */
     trailing: @Composable () -> Unit = {},
+    /** 置顶：只靠底色区别，和会话行同一套（[PinnedTintAlpha]）。 */
+    pinned: Boolean = false,
+    /** 免打扰：右边只画一个划掉的铃 + 红点，不写数字。 */
+    muted: Boolean = false,
     /**
-     * 长按这一行做什么。现在只有「互动消息」给了它（删掉这一行）；折叠的群聊那一行走默认的空，
-     * 免得长按出一件跟群本身无关的事。
+     * 长按弹出的菜单条目：每条自带文案、图标与动作。
+     *
+     * 空表示这一行长按没有菜单（折叠的群聊那一行就是这样——长按出一件跟群本身无关的事只会误触）。
      */
-    onLongClick: (() -> Unit)? = null,
+    menu: List<MessageEntryAction> = emptyList(),
 ) {
     val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(scheme.surface)
-            .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
-            .combinedClickable(
-                onClickLabel = title,
-                onLongClickLabel = if (onLongClick != null) "删除这一行" else null,
-                onLongClick = onLongClick,
-                onClick = onClick,
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier.size(44.dp).background(circle, CircleShape),
-            contentAlignment = Alignment.Center,
+    var menuOpen by remember { mutableStateOf(false) }
+    // 菜单锚在这一行上：用 Box 包一层，DropdownMenu 才能贴着这一行的边上弹出来。
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (pinned) {
+                        scheme.primary.copy(alpha = PinnedTintAlpha).compositeOver(scheme.surface)
+                    } else {
+                        scheme.surface
+                    },
+                )
+                .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
+                .combinedClickable(
+                    onClickLabel = title,
+                    onLongClickLabel = if (menu.isNotEmpty()) "更多操作" else null,
+                    onLongClick = if (menu.isNotEmpty()) ({ menuOpen = true }) else null,
+                    onClick = onClick,
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            FlGlyphIcon(glyph = glyph, size = 22.dp, tint = Color.White)
+            Box(
+                modifier = Modifier.size(44.dp).background(circle, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                FlGlyphIcon(glyph = glyph, size = 22.dp, tint = Color.White)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = FlText.subheadline,
+                    fontWeight = FlText.emphasized,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            trailing()
+            // 静音的行照会话行那样：只画划掉的铃 + 一个红点，不写数字。
+            if (muted) {
+                Icon(
+                    imageVector = Icons.Default.NotificationsOff,
+                    contentDescription = "已设为免打扰",
+                    modifier = Modifier.size(12.dp),
+                    tint = scheme.outline,
+                )
+                if (unread > 0) {
+                    Spacer(Modifier.width(4.dp))
+                    UnreadDot(size = 8.dp)
+                }
+            } else {
+                UnreadBadge(count = unread)
+            }
         }
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = FlText.subheadline,
-                fontWeight = FlText.emphasized,
-                color = scheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+            // 宽度定死：默认宽度跟着内容走，几条长短不一，弹出来会一条比一条窄。
+            modifier = Modifier.align(Alignment.TopEnd).width(ConversationMenuWidth),
+        ) {
+            menu.forEach { action ->
+                ConversationMenuItem(
+                    label = action.label,
+                    danger = action.danger,
+                    leadingIcon = {
+                        MenuGlyph(
+                            glyph = action.glyph,
+                            tint = if (action.danger) scheme.error else scheme.onSurfaceVariant,
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        action.onSelect()
+                    },
+                )
+            }
         }
-        Spacer(Modifier.width(8.dp))
-        trailing()
-        // 时间只留给有时间的行（会话列表）：这两行是入口，没有「最后一条」可言。
-        UnreadBadge(count = unread)
     }
+}
+
+/**
+ * 一行入口的长按菜单条目。
+ *
+ * 用数据而不是 lambda 列表：菜单里的图标颜色、危险色、点击后关菜单，这三件事每条都要，写成数据
+ * 之后调用方只关心「这一条叫什么、点了干什么」，不必每次重复一遍。
+ */
+private class MessageEntryAction(
+    val label: String,
+    val glyph: FlGlyph,
+    val danger: Boolean = false,
+    val onSelect: () -> Unit,
+)
+
+/** [MessageEntryAction] 里的图标：用 FlGlyph 画成 16dp，和会话长按菜单同一套观感。 */
+@Composable
+private fun MenuGlyph(glyph: FlGlyph, tint: Color) {
+    FlGlyphIcon(glyph = glyph, size = 16.dp, tint = tint)
 }
 
 /**
