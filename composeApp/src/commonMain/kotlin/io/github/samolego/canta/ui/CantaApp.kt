@@ -970,9 +970,6 @@ private fun CantaNavigation(
                     appListViewModel = appListViewModel,
                     settingsViewModel = settingsViewModel,
                     history = deps.history,
-                    // 预设入口已从应用页撤掉（设置页里另有入口），这里不再有编辑态。
-                    presetEditMode = false,
-                    onPresetEditFinish = {},
                     navigateToPage = { navController.navigate(it) },
                     closeApp = closeApp,
                     // 全选不再藏在「连点版本号」后面：它默认隐藏，勾了一个应用才出现（见 AppList）。

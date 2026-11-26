@@ -27,7 +27,6 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
 
     /** The app's own page: version, the switches that shape how it behaves, and where it lives. */
     data object About : Screen("about")
-    data object Presets : Screen("presets")
 
     /**
      * 卸载记录：一份份「方案」——本机的卸载记录算一份，导入进来的每一份各算一份。

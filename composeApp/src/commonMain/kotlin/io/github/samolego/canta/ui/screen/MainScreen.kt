@@ -55,7 +55,6 @@ import io.github.samolego.canta.ui.component.CantaTopBar
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
-import io.github.samolego.canta.ui.component.fab.PresetEditFAB
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.dialog.AppListPermissionDialog
 import io.github.samolego.canta.ui.dialog.DeviceChooserDialog
@@ -89,9 +88,6 @@ fun MainScreen(
     settingsViewModel: SettingsViewModel,
     /** The uninstall/restore log shown by the middle records tab. */
     history: OperationLogStore,
-    /** 预设编辑态：为 true 时 FAB 换成「完成」按钮。预设页已从应用页撤掉，正常路径下恒为 false。 */
-    presetEditMode: Boolean,
-    onPresetEditFinish: () -> Unit,
     navigateToPage: (route: String) -> Unit,
     closeApp: () -> Unit,
     enableSelectAll: Boolean,
@@ -102,7 +98,7 @@ fun MainScreen(
     // The records tab's switch: whether the log is dropped the next time the app opens after a reboot.
     val clearRecordsAfterBoot by settingsViewModel.clearRecordsAfterBoot.collectAsStateWithLifecycle()
 
-    // Pager state is hoisted to CantaNavigation so preset-applying knows the tab.
+    // Pager state is hoisted to CantaNavigation so a page opened elsewhere knows the tab.
     val currentTab = AppsTab.entries[pagerState.currentPage]
     val selectedAppsType = currentTab.appsType
 
@@ -116,9 +112,8 @@ fun MainScreen(
 
     LaunchedEffect(pagerState) {
         // Filters and selection are per tab: reset the selection when the user switches
-        // tabs. The first emission is skipped: returning from the Presets screen
-        // recomposes MainScreen, and an applied preset populates the selection
-        // just before that navigation.
+        // tabs. The first emission is skipped, so a selection set just before coming back
+        // to this page is not cleared.
         snapshotFlow { pagerState.currentPage }.drop(1).collect {
             appListViewModel.selectedApps.clear()
         }
@@ -266,9 +261,7 @@ fun MainScreen(
 @Composable
 private fun MainFab(
     visible: Boolean,
-    presetEditMode: Boolean,
     appsType: AppsType?,
-    onPresetEditFinish: () -> Unit,
     onClick: () -> Unit,
 ) {
     AnimatedVisibility(
@@ -278,10 +271,6 @@ private fun MainFab(
         // which is the dismissal the dialogs use.
         exit = fadeOut()
     ) {
-        if (presetEditMode) {
-            PresetEditFAB(onPresetEditFinish = onPresetEditFinish)
-            return@AnimatedVisibility
-        }
         appsType ?: return@AnimatedVisibility
         FloatingActionButton(
             containerColor = when (appsType) {
