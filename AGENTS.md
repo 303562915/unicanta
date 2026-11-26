@@ -227,18 +227,17 @@ gh run download <run-id> -n app-debug -D artifacts
 | `action` / `actions` | 同上，GitHub Actions 工作流 | 2026-11-20 | 与 `ga` 同义 |
 | `型号` / `机型显示不对` / `他那个vivo和三星` / `他展示的是这个型号` | 「选择机型」列表里的机型芯片显示的是**零售编号**（`SM-F9710`、`PHK110`、`V2337A`）而不是营销名（`Galaxy Z Fold8`、`一加 Ace 2`、`vivo X Fold3 Pro`） | 2026-11-21 | 用户原话：「它展示的是这个型号，对吗？」「我感觉不太对，只有小米才是正确的。和荣耀是正确的」→ 按第 9 节查 |
 | `调用他们的日志` / `他们上传的日志` / `数据库里面他们上传的这个` | 后台数据库里 App 上传的机型/设备数据（`plans.market_name`、`plans.codename`、`canta_users.model`、`community_comments.device_model`），不是客户端日志文件 | 2026-11-21 | 用户原话：「你可以调用他们的日志让他们上传上来呀」「如果你这次解决不了，那你下次就去找这个文件，就找数据库里面他们上传的这个日志去分析他们手机是什么」 |
-| `刷票` / `刷到45` / `刷到N` | 直接往 `recommend_suggestion_votes` 灌认同票，把某条推荐条目的 agree 数刷到指定值，再 `private.recommend_settle(url)` 让它 `applied`。**不是**把 `private.recommend_votes_needed()` 的门槛数字改小 | 2026-11-21 | 用户原话：「刚才不是让你刷票吗？把那个我的那个影视星球投票，把那个认同两个票给他刷到45」→ 我先前猜成「降门槛 50→45」（`5dfa2fa`），被这句纠正 |
+| `刷票` / `刷到45` / `刷到N` | 直接往 `recommend_suggestion_votes` 灌认同票，把某条推荐条目的 agree 数刷到指定值，再 `private.recommend_settle(url)` 让它 `applied`。**不是**把 `private.recommend_votes_needed()` 的门槛数字改小 | 2026-11-21 | 曾猜成「降门槛 50→45」被纠正 |
 | `认同` / `认同票` | 推荐投票里的赞成票，即 `recommend_suggestion_votes.agree = true`；反义是「不认同」（`agree = false`） | 2026-11-21 | 同上，用户原话「把那个认同两个票给他刷到45」= 认同票数从 2 变成 45 |
 | `影视星球` | 推荐条目 `recommend_suggestions.id = 1`：`name='影视星球'`、`url=https://github.com/303562915/tv`、`author='开发者'`（用户自己那个影视 App 仓库） | 2026-11-21 | 同上。刷票对象就是这一条 |
 | `方案` / `方案详情` | 社区里用户提交的**精简方案**，即 `public.plans` 的一行（`plans.title` 是方案名）；「方案详情」= 该方案的详情页（`plan_get`） | 2026-11-21 | 用户原话：「方案详情里面有一个…再一次精简他这一个方案」 |
-| `站` / `他现在的站只有两个` / `刷到83` | 方案详情里的**票数**，即 `plan_votes` 里该 `plan_id` 的行数（`plan_get().votes`）；「站只有两个」= 票数很少，「刷到83」= 直接插 votes 行把票数补到 83 | 2026-11-21 | 用户原话：「他现在的站只有两个，帮我刷到83」。与「刷票」同义，但对象是 `plans`/`plan_votes` 而不是 `recommend_suggestion_votes`。本次对象 `plans.id=35`「再一次精简」 |
-| `再一次精简` | 方案 `plans.id = 35`（Redmi K40 / `M2012K11AC`，hyperos 4，109 个包） | 2026-11-21 | 用户原话里的「一个叫再一次精简的这一个方案」 |
-| `修正历史` / `描述修正` | 应用详情页里「描述修正」的列表，即 `description_fixes_for(pkg)` 读的 `public.description_fixes` 行（带 `agrees`/`disagrees`/`applied`）；「拉到50」= 往 `description_fix_votes` 灌 `agree=true` 补到 50，「直接通过」= 调 `private.description_fix_settle(pkg)` 让 `applied=true` | 2026-11-21 | 用户原话：「把修正历史的有一条是只有一条修正历史的，你把他那个票给他拉到50，直接通过」。本次对象 `description_fixes.id=3`（`com.android.browser`，author=开发者） |
+| `站` / `他现在的站只有两个` / `刷到83` | 方案详情里的**票数**，即 `plan_votes` 里该 `plan_id` 的行数（`plan_get().votes`）；「站只有两个」= 票数很少，「刷到83」= 直接插 votes 行把票数补到 83 | 2026-11-21 | 与「刷票」同义，对象是 `plans`/`plan_votes` |
+| `再一次精简` | 某个用户方案的标题名（如 `plans.id=35`） | 2026-11-21 | 用户用方案标题指代该方案 |
+| `修正历史` / `描述修正` | 应用详情页里「描述修正」的列表，即 `description_fixes_for(pkg)` 读的 `public.description_fixes` 行（带 `agrees`/`disagrees`/`applied`）；「拉到50」= 往 `description_fix_votes` 灌 `agree=true` 补到 50，「直接通过」= 调 `private.description_fix_settle(pkg)` 让 `applied=true` | 2026-11-21 | 用户原话：「把修正历史的有一条…你把他那个票给他拉到50，直接通过」 |
 | `指定代理` / `你为指定代理agent` / `帮我管理这些回话` | 让当前会话当**多会话跟进者**：管共享台账 `session-tasks/`、给其他会话发任务、验收通过才允许归档，每 10 分钟汇报一次 | 2026-11-24 | 用户原话：「你为指定代理agent,帮我管理这些回话，你去跟进，大部分可以处理，每隔10分钟汇报情况给我」。完整流程见第 14 节。注意「回话」是语音转写的「会话」 |
-| `默认是一开的` / `节拍` | 指定代理的 10 分钟汇报**默认就开**，不需要用户每次重申；没自动开起来算 agent 漏做，下一轮必须补建定时任务再继续 | 2026-11-24 | 用户原话：「默认是一开的，这次我不怪你。就是因为之前对话已经开始了，他没有建立」。含义是：进入指定代理角色 = 立刻 `schedule_create`，不等人再说一遍 |
 | `默认是一开的` / `节拍`（含义已更新） | **反过来：默认不开节拍。** 每 10 分钟轮询查台账和 CI 太烧 token、太耗时间；改成事件驱动（CI 出错才介入、状态变了才汇报、用户问才给快照），只有用户明确要求才开定时汇报 | 2026-11-24 | 用户原话：「Action 给它关掉又这样感觉会不会浪费 token？如果出现错误，我们让你主代理去干活，行不行？或者你去分配一个子代理……不用每个任务都去监控，这样太耗时间」。已把第 14.6 整节改成事件驱动 |
 | `新电话` / `开启新的电话` | 语音转写的**新会话**（不是打电话）；「新会话应该会建立他的这个文档」= 新会话开工要自动建 `session-tasks/` 档案 | 2026-11-24 | 用户原话：「如果我开启新的电话，他应该会建立他的这个文档吧」。已据此把第 14.1 改成硬规则 |
-| `他这个` / `他那个` | 指代**上一轮提到的那款第三方软件/方案**（本次指 Dhizuku），不是指人、不是指某台设备 | 2026-11-22 | 用户原话：「他这个不行吗？」= 追问 Dhizuku 是不是也能做上一轮我说它不能做的事（卸载）。按此理解后核实：设备所有者可通过 `PackageInstaller` 静默卸载，我上一轮结论是错的 |
+| `他这个` / `他那个` | 指代**上一轮提到的那款第三方软件/方案**，不是指人、不是指某台设备 | 2026-11-22 | 曾据「他这个不行吗」核实 Dhizuku 卸载能力，我先前结论错了 |
 | `开源项目` / `关于页面的那个开源项目` | 关于页（`AboutScreen`）里那一行「开源项目」入口（原本 `about_source_repo` + `REPO_URL`）；用户要求把它改成「最新版本下载」，链接用 `https://303562915.github.io/unicanta/` | 2026-11-24 | 用户原话：「不是让你把关于页面的那个 开源项目 改为最新版本下载 https://303562915.github.io/unicanta/ 这个链接吗」。我先前误以为指的是「更新检查的数据来源」（改成了读站点 json），被这句纠正；现在那一行是 `about_latest_download` + `DOWNLOAD_PAGE_URL` |
 | `print` / `打印` | 用户**看得见**的提示（toast）；不是 logcat / 控制台日志 | 2026-11-25 | 用户原话：「所有的那个print都给它改成toast」。理解为：该让用户知道的结果要弹 toast，而不是只写日志。技术日志（`LogUtils` / `PlatformLog`）不算 `print`，不用改 |
 
@@ -504,14 +503,6 @@ select received_at, stage, outcome, code, model, rom, rom_version, sdk, canta_ve
 -- 哪台机器、哪一步最容易挂（现成视图）
 select * from update_failure_summary where outcome = 'failed' order by reports desc limit 50;
 
--- 某个版本的安装失败率（按机型）
-select model, count(*) filter (where outcome = 'ok') as ok,
-       count(*) filter (where outcome = 'failed') as failed
-  from update_reports where stage = 'install' group by model order by failed desc;
-
--- 下载卡在多少百分比（proxy / 节点问题的典型形状）
-select code, round(avg(progress)) as avg_progress, count(*) from update_reports
- where stage = 'download' and outcome = 'failed' group by code order by count(*) desc;
 ```
 
 code 取值：检查 `UpdateFailure`（`RATE_LIMITED`/`TIMEOUT`/`NETWORK`/`SERVER`/`NO_RELEASE`/`MALFORMED`）、
@@ -715,85 +706,73 @@ session-tasks/
 
 ---
 
-## 15. 后端容量：为什么全站会「一片空白」
+## 15. 后端容量：全站「一片空白」怎么看
 
-2026-11-24/25 连着三次全站不可用。我起初判断成「Supabase 磁盘坏了」，**错了**——官方诊断是**资源耗尽**。有人再问「页面全空是不是缓存/App 的 bug」，先按 15.3 判，别先怀疑客户端。
+**遇到「页面全空」，先读备案文档，别先怀疑客户端：**
+[ops-notes/backend-incident-2026-11-25.md](ops-notes/backend-incident-2026-11-25.md)
+（根因、实测数据、验过的查询配方、备份纪律、时间线全在那里。本节只留速查。）
 
-### 15.1 真因（Supabase 官方原文，2026-11-26）
+### 15.1 一句话根因
+
+2026-11-24/25 三次全站不可用的真因是**资源耗尽**，不是磁盘坏：
 
 ```
-Disk I/O is exhausted: burst balance reached 0%, I/O wait averaged 13.3%, peaked at 118.6%
-Memory pressure: swap peaked at 557 MB on an instance with 426 MB of memory
+swap peaked at 557 MB on an instance with 426 MB of memory
+burst balance reached 0%, I/O wait peaked at 118.6%
 ```
 
-链条：实例是 **Nano / 426 MB 内存**，而 `shared_buffers` 占了 **224 MB**（53%）→ 加上 26 条连接
-进程内存与 `maintenance_work_mem 32MB` 装不下 → 内核 **swap**（swap 就在同一块数据盘上）→
-checkpoint 写页时一边写一边等 swap，`write=` 从毫秒变 60–148 秒 → 查询排队超 8 秒
-`statement timeout` → 连接占满 → pgbouncer `connect timeout` / `query_wait_timeout` →
-PostgREST 对所有人 500/503/504。
+`shared_buffers 224MB` 塞不进 426 MB 内存 → swap（swap 就在数据盘上）→ checkpoint `write=` 从毫秒变
+60–148 秒 → 查询超 8 秒 `statement timeout` → 连接占满 → PostgREST 对所有人 500/503/504。
 
-**误判原因**：SQL 日志只见「`write()` 卡住、`sync` 仅 3 ms」，这形状既可能是盘坏也可能是 swap 拖累，我只想到前者。判别证据（`burst balance 0%`、`swap 557MB`）在 Dashboard **Observability → Compute**，不在 SQL 日志。**小算力的 Disk IOPS 图只统计数据盘，swap 卡顿在图上可能正常**——要看 CPU iowait 与 memory/swap。
+**当时误判成盘坏**：SQL 日志只见 `write()` 卡住、`sync` 仅 3 ms —— 这形状也可能是 swap 拖累。
+判别证据在 Dashboard **Observability → Compute**，不在 SQL 日志。
+**小算力的 Disk IOPS 图只统计数据盘，swap 卡顿在图上可能正常**，要看 CPU iowait 与 memory/swap。
 
-### 15.2 已做的免费止血（2026-11-26）
+### 15.2 已改的免费参数（会影响将来判断基线）
 
-| 参数 | 之前 | 现在 | 理由 |
-|---|---|---|---|
-| `shared_buffers` | 224 MB | **96 MB** | 整库只有 41 MB，96 MB 仍装两遍，命中率不掉；释放 128 MB 给系统 |
-| `max_connections` | 60 | **30** | 活跃仅 26 条，每条连接都是内存；外部走 supavisor 池化 |
-| `checkpoint_timeout` | 5 min | **15 min** | 刷盘频率降到 1/3 |
-| `max_wal_size` | 1 GB | **2 GB** | 判据 `num_requested/(num_timed+num_requested)` = 0.6%，远低于 10%，**不用再加** |
+| 参数 | 现在 |
+|---|---|
+| `shared_buffers` | **96MB**（原 224MB；整库仅 44MB，够装两遍） |
+| `max_connections` | **30**（原 60） |
+| `checkpoint_timeout` | **15min**（原 5min） |
+| `max_wal_size` | **2GB**（原 1GB） |
 
-改内存参数会**自动重启实例**（`FATAL: 57P03: the database system is shutting down` 属正常）。
-验证：`select current_setting('shared_buffers') sb, current_setting('max_connections') mc;` → `96MB / 30`。
+改内存参数会**自动重启实例**（`FATAL: 57P03: shutting down` + `terminating connection due to administrator command`
+属正常，别当成故障）。只走 `PATCH /v1/projects/{ref}/config/database/postgres`；
+`bgwriter_*` / `checkpoint_completion_target` 改不了（`Unrecognized keys`），别浪费时间。
 
-> 走 `PATCH /v1/projects/{ref}/config/database/postgres`。
-> **可改**：`shared_buffers` / `max_connections` / `max_wal_size` / `checkpoint_timeout` / `wal_compression`。
-> **改不了**（`Unrecognized keys`）：`bgwriter_*` / `checkpoint_completion_target`。别在那浪费时间。
+> **仍未根治**：参数压到 Free 档极限后，checkpoint `write=` 仍会回到 50 秒级。
+> 真正的治本是**降请求量**（客户端侧，见 15.3）。
 
-### 15.3 「页面全空」怎么判（按顺序）
+### 15.3 待办：客户端降请求量（根治项）
 
-| # | 位置 | 结论 |
+24h 实测 49.6 万请求 / 41.7 MB 出口（出口远低于 5GB 免费额度 → 瓶颈是次数不是流量）：
+
+| 路径 | 次数/24h | 要做的事 |
 |---|---|---|
-| 1 | Dashboard → Observability → Compute（Memory / Swap / CPU iowait） | swap 非零或 iowait 高 = **资源耗尽**，不是代码 |
-| 2 | Database → Logs → `postgres_logs` 搜 `checkpoint complete` | `write=` 两位数秒 = 盘/swap 拖累 |
-| 3 | Management API 跑 `select 1` | 超 8 秒 = 连接池被慢查询拖住 |
-| 4 | `postgrest_logs` 按 `source='postgrest_logs'` 过滤 | 有请求 + 5xx = 后端问题；无请求 = 客户端/链路 |
-| 5 | `gh workflow run supabase-log-probe.yml -f source=postgrest_logs -f minutes=15` | 本机常连不上 api.supabase.com，走 CI |
+| `HEAD /rpc/` | **105,330** | 后端探测 → 改「出错后才探」，别常驻 |
+| `inbox_summary_kinds` | 44,941 | 轮询 30s → 60~90s |
+| `inbox_seen_mark` | 40,932 | 每会话一次 → **合并批量** |
+| `conversations_for` / `package_vote_counts` / `plans_for` / `recommend_suggestions` / `comments_for` | 2.4–3.6 万 | 一律轮询放慢 |
+
+聊天已有 Realtime 广播（`ef2230d`），轮询只是兜底，可放很慢；**别**在 `onResume`/切 tab 重拉，先看缓存。
+另需：`package_scores()`（194ms）、`plan_catalog()`（74ms）加热点结果缓存；前端加「后端忙」态而不是白页。
+
+### 15.4 判定五步（顺序别乱）
+
+1. Dashboard → Compute：Memory / Swap / CPU iowait —— swap 非零或 iowait 高 = 资源耗尽，不是代码。
+2. `postgres_logs` 搜 `checkpoint complete` —— `write=` 两位数秒 = 盘/swap 拖累。
+3. Management API 跑 `select 1` —— 超 8 秒 = 连接池被慢查询拖住。
+4. `postgrest_logs` 按 `source='postgrest_logs'` 过滤 —— **有请求 + 5xx = 后端问题；没请求 = 客户端/链路**。
+5. 本机连不上时走 CI：`gh workflow run supabase-log-probe.yml -f source=postgrest_logs -f minutes=15`。
 
 **别**因为「页面空」先怀疑 `ScreenCache` / `AppListSnapshotStore`：它们只造成「先画旧数据再刷新」。
 
-### 15.4 系统级优化（按性价比）
-
-**A. 降请求量（免费，收益最大）**。实测 24h **49.6 万次请求 / 41.7 MB 出口**。按次数排：
-`HEAD /rpc/` 105,330（后端探测，纯浪费 → 改「出错后才探」）·
-`inbox_summary_kinds` 44,941（摘要轮询）· `inbox_seen_mark` 40,932（每会话一次 → **批量**）·
-`conversations_for` 36,195 · `package_vote_counts` 28,872 · `plans_for` 27,874 ·
-`recommend_suggestions` 27,320 · `comments_for` 23,836（以上六个一律轮询放慢）。
-
-聊天已有 Realtime 广播（`ef2230d`），轮询只是兜底，可放很慢。**别**在 `onResume`/切 tab 时重拉：先看缓存，不新鲜才发。这一档能砍 50%+ 请求量，对慢盘最直接。
-
-**B. 降库开销（免费）**
-- `package_scores()`（194 ms/6,288 次）、`plan_catalog()`（74 ms/11,576 次）是热点且都是 `stable`，适合**结果缓存**（物化视图+定时刷新，或 TTL 表），目标单次 < 20 ms。
-- Performance Advisor 补索引（`inbox_seen`/`write_rate` 是高写入表，跟写路径一起看）。
-- 清增长表：`telemetry_events`（37,944 行）、`update_reports`、`operation_failures`；确认 `purge_raw_events()` 在跑。
-
-**C. 要花钱的容量（最后再考虑）**
-- **Pro $25/月 自带 Micro**（1 GB 内存 / 87 MB/s）。**不需要再单独买 Micro**；
-真实门槛就是 **$25**（不是「$25+$15=$40」，那是高估）。Small（174 MB/s / 2 GB / 90 连接）= Pro 再 +$5/月。**Free 档没有任何升级/开单通道**：`400 entitlement_required, feature=project_addons`、`/support/tickets` 三路径全 404、`backups: []`。Free 档唯一能「换台机器」的是**新建项目迁过去**（免费，但要发版改 base URL）。
-
-**D. 免费兜底**：数据库**没有任何自动备份**。手工脱敏快照见
-[docs/backend-incident-2026-11.md](docs/backend-incident-2026-11.md) 第 8 节，
-**必须**用 `jsonb_agg(to_jsonb(t) - 'token' - 'device_key')::text` 剥掉敏感列
-（`canta_users.token`、`canta_device_keys.token`/`device_key`）。
-
 ### 15.5 看门狗：留，但别指望它
 
-`backend-watchdog.yml` **保留**，边界写清楚：
+`backend-watchdog.yml` 保留（断路器：挂了自动重启，把「4 小时白屏」压到「几分钟」）。
+钉钉正文**必须**带关键词 `rr`，否则 `errcode 310000` 丢弃。
 
-- **有用**：挂了自动重启，把「4 小时白屏」压到「几分钟」；钉钉正文必带关键词 `rr`（否则 errcode 310000 丢弃）；checkpoint `write=` > 5 秒提前预警。
-- **靠不住**：GitHub 的 `schedule` 会被**静默丢弃**——两次事故分别 **5 小时**和 **20 小时**零触发，
-  而 `state` 一直 `active`。
-- 现由**外部 cron 每10–15min**调 `POST /repos/303562915/unicanta/actions/workflows/backend-watchdog.yml/dispatches`，
-  header `Authorization: Bearer <fine-grained PAT，权限只需 Actions: Read and write>` + `Accept: application/vnd.github+json`，
-  body `{"ref":"master"}`，成功返回 **204**。
-- **不解决根因**：重启只是清掉卡住的连接池。治本是 15.2 的内存参数 + 15.4 的降请求量；只要 swap 还非零就会复发。
+但 GitHub 的 `schedule` 会**静默丢弃**——两次事故分别 5 小时和 20 小时零触发，而 `state` 一直 `active`。
+真实触发靠**外部 cron 每 10–15 分钟**打 dispatch（`POST .../actions/workflows/backend-watchdog.yml/dispatches`，
+body `{"ref":"master"}`，成功返回 204）。它**不解决根因**。
