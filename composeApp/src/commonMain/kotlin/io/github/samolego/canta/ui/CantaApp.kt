@@ -1125,6 +1125,8 @@ private fun CantaNavigation(
                 WeeklyRankScreen(
                     repository = deps.weeklyRank,
                     onNavigateBack = { navController.navigateUp() },
+                    // 点一行就打开那个仓库的 GitHub 页面；地址来自 Search 返回的 html_url。
+                    onOpenRepo = { url -> if (url.isNotBlank()) platform.openUrl(url) },
                 )
             }
             composable(route = Screen.Store.route) {

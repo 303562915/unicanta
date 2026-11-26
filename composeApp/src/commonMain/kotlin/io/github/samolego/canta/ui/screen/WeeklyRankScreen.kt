@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -44,7 +45,6 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -195,6 +195,8 @@ internal fun WeeklyRankTeaserCard(
 internal fun WeeklyRankScreen(
     repository: WeeklyRankRepository,
     onNavigateBack: () -> Unit,
+    /** 点一行榜单时去哪：由调用方给出打开浏览器的方式（见 CantaPlatform.openUrl）。 */
+    onOpenRepo: (String) -> Unit = {},
 ) {
     var board by remember(repository) { mutableStateOf(repository.cachedBoard()) }
     var loading by remember { mutableStateOf(true) }
@@ -272,7 +274,12 @@ internal fun WeeklyRankScreen(
             }
 
             itemsIndexed(rows, key = { _, row -> "repo:${row.repo}" }) { index, row ->
-                RankPosterRow(rank = index + 1, row = row, hasWeekly = hasWeekly)
+                RankPosterRow(
+                    rank = index + 1,
+                    row = row,
+                    hasWeekly = hasWeekly,
+                    onOpen = { onOpenRepo(row.url) },
+                )
             }
 
             item(key = "rules") {
@@ -493,7 +500,12 @@ private fun RankHeaderStat(value: String, label: String, tint: Color) {
 
 /** 榜单的一行：名次牌 / 仓库名与说明 / 分类标签 / 本周净增与上期。 */
 @Composable
-private fun RankPosterRow(rank: Int, row: RankRow, hasWeekly: Boolean) {
+private fun RankPosterRow(
+    rank: Int,
+    row: RankRow,
+    hasWeekly: Boolean,
+    onOpen: () -> Unit,
+) {
     val shape = RoundedCornerShape(9.dp)
     val topic = row.topics.firstOrNull { it == "ai-agent" || it == "llm" }
         ?: row.topics.firstOrNull { it.isNotBlank() }
@@ -518,7 +530,14 @@ private fun RankPosterRow(rank: Int, row: RankRow, hasWeekly: Boolean) {
         modifier = Modifier
             .widthIn(max = 760.dp)
             .fillMaxWidth()
-            .background(if (rank % 2 == 0) Color(0xFF1B212B) else Color(0xFF141E21), shape)
+            .clip(shape)
+            .clickable(
+                enabled = row.url.isNotBlank(),
+                role = Role.Button,
+                onClickLabel = "在浏览器打开 ${row.repo}",
+                onClick = onOpen,
+            )
+            .background(if (rank % 2 == 0) Color(0xFF1B212B) else Color(0xFF141E21))
             .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         val fontScale = LocalDensity.current.fontScale
