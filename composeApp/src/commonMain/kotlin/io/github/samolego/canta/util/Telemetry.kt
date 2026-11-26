@@ -325,11 +325,24 @@ class Telemetry(
     private val scope: CoroutineScope,
     private val isEnabled: suspend () -> Boolean,
     /**
-     * 包分数快照的两个源（Pages 优先）。传空串表示这一趟不读快照，直接问后端——
-     * 量「后端那条路」的测试与「某个部署没发布快照」都走这条。
+     * 包分数快照的两个源（Pages 优先）。**两个都传空串＝这一趟完全不读快照**，直接问后端：
+     * 量「后端那条路」的测试、以及「某个部署还没发布快照」，走的都是这条。
+     *
+     * 注意「完全不读」包括**随包内置那一份**：它也是一个快照源（`BUNDLED_SCORES_PATH`），
+     * 里面同样有 hyperos/rom_version 行。只关网络源而不关它，快照仍然会命中，`fetchScores`
+     * 就不再问 `package_scores_for` —— 这正是 2026-11-27 那四个 `TelemetryTest` 用例
+     * NPE 的原因（`s.device` 变成 null）。
      */
     private val scoresSnapshotUrl: String = SCORES_SNAPSHOT_URL,
     private val scoresSnapshotMirrorUrl: String = SCORES_SNAPSHOT_MIRROR_URL,
+    /**
+     * 网络源都读不到时，要不要退回**随包内置**那份快照（`BUNDLED_SCORES_PATH`）。
+     *
+     * 默认要：断网时它比什么都没有强。但**测试里关掉**——那份文件是真实数据（1.1 MB，
+     * 里面真有 hyperos/rom_version 行），开着就等于让测试的 mock 之外多出一个内容来源，
+     * `fetchScores` 会在该问后端的时候直接命中内置快照，用例量到的东西全变。
+     */
+    private val allowBundledSnapshot: Boolean = true,
 ) {
     private companion object {
         const val TAG = "Telemetry"
@@ -622,6 +635,10 @@ class Telemetry(
      */
     private suspend fun deviceScoresFromSnapshot(device: DeviceContext): SnapshotScores {
         val rom = device.rom.lowercase()
+        // 两个网络源都是空串 ⇒ 调用方明确说了「这一趟不读快照」，那内置那份也算快照，一起跳过。
+        // 不这么判的话，传了两个空串仍然会命中随包文件，`fetchScores` 就不再问
+        // `package_scores_for`（见构造参数上那段注释）。
+        if (scoresSnapshotUrl.isBlank() && scoresSnapshotMirrorUrl.isBlank()) return SnapshotScores.Empty
         snapshotGroups?.get(rom)?.let { return SnapshotScores(it) }
         return snapshotLock.withLock {
             // 等锁的这段时间里，别的调用可能已经把这台设备的 ROM 拉下来了。
@@ -650,6 +667,8 @@ class Telemetry(
                 return@withLock SnapshotScores(fetched[rom].orEmpty())
             }
             if (inBackoff) return@withLock SnapshotScores.Empty
+            // 调用方说不要内置那份（测试）：网络源已经全试过了，这里到此为止。
+            if (!allowBundledSnapshot) return@withLock SnapshotScores.Empty
             snapshotFailedAt = currentTimeMillis()
             val bundled = runCatching {
                 parseScoresRows(Res.readBytes(BUNDLED_SCORES_PATH).decodeToString())

@@ -40,8 +40,12 @@ class TelemetryTest {
      * 这一组测试量的是**后端**那条路（哪几个 RPC、body 长什么样），所以把快照两个源置空：
      * 传空串等于「这个部署没发布快照」，读快照那一步直接跳过，和加快照之前的行为一致。
      * 快照自己的行为由 [scoresComeFromSnapshotFirst] 那几个用例管。
+     *
+     * `allowBundledSnapshot = false` 同样要紧：随包那份 `package_scores_snapshot.json` 是
+     * 真实数据，里面本来就有 hyperos/rom_version 行，不关掉它，`fetchScores` 会在该问后端的
+     * 时候命中内置快照，`s.device` 就成了 null（2026-11-27 这四个用例就是这么 NPE 的）。
      */
-    private val noSnapshot = Pair("", "")
+    private val noSnapshot = Triple("", "", false)
 
     /** The payload shape of protocol drafts without a device; only used for the fixed PoW vector. */
     private val powPayload =
@@ -176,7 +180,7 @@ class TelemetryTest {
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val t = Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second)
+        val t = Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second, noSnapshot.third)
         val s = assertNotNull(t.fetchScores(device))["a.b"]!!
         assertEquals(Verdict.SAFE, s.overall!!.verdict)
         assertEquals(Verdict.BOOTLOOP, s.device!!.verdict)
@@ -204,7 +208,7 @@ class TelemetryTest {
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val s = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second).fetchScores(device))["a.b"]!!
+        val s = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second, noSnapshot.third).fetchScores(device))["a.b"]!!
         assertNull(s.family)
         assertNull(s.device)
         assertEquals(Verdict.SAFE, s.verdict)
@@ -267,14 +271,14 @@ class TelemetryTest {
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val scores = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second).fetchScores())
+        val scores = assertNotNull(Telemetry(HttpClient(engine), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second, noSnapshot.third).fetchScores())
         assertEquals(Verdict.SAFE, scores["a.b"]!!.overall!!.verdict)
         assertEquals(Verdict.UNKNOWN, scores["c.d"]!!.overall!!.verdict)
         assertTrue(scores["c.d"]!!.overall!!.smallBatch)
         assertFalse(scores["a.b"]!!.overall!!.smallBatch)
 
         val failing = MockEngine { respondError(HttpStatusCode.BadRequest) }
-        assertNull(Telemetry(HttpClient(failing), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second).fetchScores())
+        assertNull(Telemetry(HttpClient(failing), "web", CoroutineScope(Job()), { true }, noSnapshot.first, noSnapshot.second, noSnapshot.third).fetchScores())
     }
 
     /**
@@ -306,7 +310,7 @@ class TelemetryTest {
         }
         val t = Telemetry(
             HttpClient(engine), "web", CoroutineScope(Job()), { true },
-            "https://snapshot.test/package_scores.json", "",
+            "https://snapshot.test/package_scores.json", "", false,
         )
         val s = assertNotNull(t.fetchScores(device))["a.b"]!!
         assertEquals(Verdict.BREAKS, s.device!!.verdict)
@@ -344,7 +348,7 @@ class TelemetryTest {
         }
         val t = Telemetry(
             HttpClient(engine), "web", CoroutineScope(Job()), { true },
-            "https://snapshot.test/package_scores.json", "",
+            "https://snapshot.test/package_scores.json", "", false,
         )
         val s = assertNotNull(t.fetchScores(device))["a.b"]!!
         assertEquals(Verdict.BREAKS, s.device!!.verdict)
@@ -373,7 +377,7 @@ class TelemetryTest {
         }
         val t = Telemetry(
             HttpClient(engine), "web", CoroutineScope(Job()), { true },
-            "https://snapshot.test/package_scores.json", "",
+            "https://snapshot.test/package_scores.json", "", false,
         )
         val s = assertNotNull(t.fetchScores(device))["a.b"]!!
         assertEquals(Verdict.BREAKS, s.device!!.verdict)
