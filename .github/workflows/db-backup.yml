@@ -197,6 +197,47 @@ jobs:
                            'created_at', l.created_at
                          ) as x
                     from level_fixes l
+                ) s), '[]'::jsonb),
+            'package_scores', coalesce((
+              select jsonb_agg(x order by x->>'rom', (x->>'rom_version')::int)
+                from (
+                  select jsonb_build_object(
+                           'rom', a.rom,
+                           'rom_version', a.rom_version,
+                           'scores', a.scores
+                         ) as x
+                    from (
+                      -- 口径与 public.package_scores_for() 逐字对齐（两行合并：-1 是整个家族）。
+                      -- 客户端读 GitHub 快照，所以这里算的东西必须和后端那个函数算的一样，
+                      -- 否则「有网看快照 / 断网看后端」会给出互相矛盾的建议。
+                      select d.rom,
+                             d.rom_version,
+                             jsonb_agg(jsonb_build_object(
+                                 'pkg', d.pkg,
+                                 'uninstalls', d.uninstalls,
+                                 'small_batch', d.small_batch,
+                                 'verdict', public.verdict_of(d.uninstalls, d.survived,
+                                                              d.reinstalled, d.restored),
+                                 'updated_at', d.updated_at
+                               ) order by d.pkg) as scores
+                        from (
+                          select a.rom,
+                                 case when g.family then -1 else a.rom_version end as rom_version,
+                                 a.pkg,
+                                 sum(a.uninstalls)::bigint           as uninstalls,
+                                 sum(a.survived)::bigint              as survived,
+                                 sum(a.reinstalled)::bigint           as reinstalled,
+                                 sum(a.restored)::bigint              as restored,
+                                 sum(a.small_batch_uninstalls)::bigint as small_batch_uninstalls,
+                                 max(a.updated_at)                    as updated_at
+                            from public.telemetry_package_aggregate a
+                            cross join (values (false), (true)) as g(family)
+                           group by a.rom,
+                                    case when g.family then -1 else a.rom_version end,
+                                    a.pkg
+                        ) d
+                       group by d.rom, d.rom_version
+                    ) a
                 ) s), '[]'::jsonb)
           ) as dump
           SQL
@@ -260,6 +301,13 @@ jobs:
                   return None
 
           counts, digests, previous = {}, {}, {}
+          # 三份**派生快照**也进同一个「变没变」判断，名字按文件叫（顶层三个数组）。
+          #   plans               -> site/db/plans.json
+          #   package_scores       -> site/db/package_scores.json（按 rom / rom_version 聚合）
+          #   package_scores_rows  -> 上面那份展开成的行，APK 内置保底
+          # 以前只有 plans.json 单独参与判断，是因为「只有票数变化时 plans.json 会变，
+          # 而 plans 表本身没变」。package_scores 是同一个道理：它由只增不减的计数算出来。
+          fields = ['plans', 'package_scores', 'package_scores_rows']
           for t in tables:
               path = f'{out}/{t}.json'
               rows = load(path)
@@ -287,8 +335,14 @@ jobs:
           # 特殊情形：仓库里还没有 _meta.json（第一次跑），或者上一版没有 digests 字段
           # （老格式），一律当作「变了」，保证第一次一定能落地。
           # ---------------------------------------------------------------------------------
-          digest_fingerprint = '|'.join(f'{t}:{digests[t]}' for t in tables)
+          # 指纹只管「六张表内容变没变」——提交信息里的「变化：…」就是从它算的。
+          fingerprint = '|'.join(f'{t}:{digests[t]}' for t in tables)
           old_fingerprint = ''
+          # 那一串**拼出来**的、要写进新 _meta.json 的指纹：六张表，外加下面这三份派生快照。
+          # 写成同一个字段而不是新开一个字段，是为了让「老仓库里没有这个字段」这条老规则
+          # （= 当作变了，保证第一次一定能落地）直接覆盖到新加的这三份：
+          # 升级当天的第一轮若只看见了新字段的一半，会漏掉一份从没生成过的快照。
+          digest_fields = [f'{t}:{digests[t]}' for t in fields]
           try:
               old_meta = json.loads(subprocess.run(
                   ['git', 'show', f'HEAD:{out}/_meta.json'],
@@ -297,36 +351,41 @@ jobs:
               old_digests = old_meta.get('digests') or {}
               if old_digests:
                   old_fingerprint = '|'.join(
-                      f'{t}:{old_digests.get(t, "")}' for t in tables)
+                      f'{t}:{old_digests.get(t, "")}' for t in tables + fields)
           except Exception:
               old_fingerprint = ''
 
-          # 客户端快照也参与判断：只有票数变化时 plans.json 会变，而 plans 表本身没变。
-          snapshot_path = 'site/db/plans.json'
-          try:
-              old_snapshot = subprocess.run(
-                  ['git', 'show', f'HEAD:{snapshot_path}'], capture_output=True, check=True
-              ).stdout
-              old_snapshot_sha = hashlib.sha256(old_snapshot).hexdigest()
-          except Exception:
-              old_snapshot_sha = ''
-          try:
-              new_snapshot_sha = hashlib.sha256(
-                  open(snapshot_path, 'rb').read()).hexdigest()
-          except Exception:
-              new_snapshot_sha = ''
+          # 客户端快照也参与判断：只有票数变化时 plans.json 会变，而 plans 表本身没变；
+          # package_scores.json 由只增不减的计数算出来，同理。两份都按文件内容比 sha。
+          snapshot_shas = {}
+          for name, path in (('plans', 'site/db/plans.json'),
+                             ('package_scores', 'site/db/package_scores.json')):
+              try:
+                  old = subprocess.run(
+                      ['git', 'show', f'HEAD:{path}'], capture_output=True, check=True
+                  ).stdout
+                  before = hashlib.sha256(old).hexdigest()
+              except Exception:
+                  before = ''
+              try:
+                  after = hashlib.sha256(open(path, 'rb').read()).hexdigest()
+              except Exception:
+                  after = ''
+              snapshot_shas[name] = (before, after)
 
           content_changed = (
               old_fingerprint == ''                      # 没有上一版，或有但缺 digests
               or old_fingerprint != digest_fingerprint    # 数据变了
-              or (old_snapshot_sha and old_snapshot_sha != new_snapshot_sha)
+              or any(before and before != after for before, after in snapshot_shas.values())
           )
 
-          changed_tables = [t for t in tables
-                            if not old_fingerprint
-                            or f':{digests[t]}' not in old_fingerprint
-                            or old_fingerprint.split('|')[[f'{x}:' for x in tables].index(f'{t}:')]
-                               != f'{t}:{digests[t]}']
+          # 「变化：…」只列六张表：提交信息要短，而且派生快照改动的起因本来就在这几张表里。
+          # 表被清空成 [] 时它的指纹（空表的 sha）会出现在老指纹里，所以还要看条数。
+          def changed_table(t):
+              if not old_fingerprint or f'{t}:{digests[t]}' not in old_fingerprint:
+                  return True
+              return old_meta.get('tables', {}).get(t) != counts[t]
+          changed_tables = [t for t in tables if changed_table(t)]
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
               f.write(f'changed={"true" if content_changed else "false"}\n')
@@ -406,6 +465,7 @@ jobs:
           import json
 
           src = json.load(open('/tmp/dump.json', encoding='utf-8'))
+          dump = json.load(open('/tmp/dump.json', encoding='utf-8'))
 
           # 先把两个计数汇总成字典再拼行。
           #
@@ -469,6 +529,70 @@ jobs:
               json.dump(rows, f, ensure_ascii=False, separators=(',', ':'))
               f.write('\n')
           print(f'{bundled}: {len(rows)} verified plans')
+
+          # ---- 推荐条目（recommend_suggestions）----
+          #
+          # 这个接口实测 81,858 个数据块 / 524 次调用，是「还能搬的」里排第三的。
+          # 它的 SQL 里 `p_voter` **只影响 `mine` 一个字段**（我投过没），
+          # 其余（条目内容、agrees、disagrees、applied、needed、share）对所有人一样。
+          # 而 `needed` / `share` 是两个固定门槛（45 票、80%），客户端已经写死了同样的默认值
+          # （`SuggestedApp.VOTES_NEEDED` / `SHARE_NEEDED`），所以整份列表可以直接快照。
+          #
+          # `mine` 不入快照：它是「这台手机」的状态，客户端本来就该自己回答（见 suggestedApps）。
+          recs = []
+          for r in src.get('recommendations', []):
+              recs.append({
+                  'id': r.get('id'),
+                  'name': r.get('name') or '',
+                  'url': r.get('url') or '',
+                  'category': r.get('category') or '',
+                  'summary': r.get('summary') or '',
+                  'license': r.get('license') or '',
+                  'author': r.get('author') or '',
+                  'author_id': str(r.get('author_id') or ''),
+                  'created_at': r.get('created_at'),
+                  'applied': bool(r.get('applied')),
+                  'agrees': r.get('agree') or 0,
+                  'disagrees': r.get('disagree') or 0,
+              })
+          # 与后端同一个排序：先 applied，再 agree 多的，最后按创建时间。
+          recs.sort(key=lambda x: (not x['applied'], -x['agrees'], x['created_at'] or ''))
+
+          with open('site/db/recommendations.json', 'w', encoding='utf-8') as f:
+              json.dump(recs, f, ensure_ascii=False, indent=1, sort_keys=True)
+              f.write('\n')
+          print(f'site/db/recommendations.json: {len(recs)} entries')
+
+          recs_bundled = 'composeApp/src/commonMain/composeResources/files/recommendations_snapshot.json'
+          with open(recs_bundled, 'w', encoding='utf-8') as f:
+              json.dump(recs, f, ensure_ascii=False, separators=(',', ':'))
+              f.write('\n')
+          print(f'{recs_bundled}: {len(recs)} entries')
+
+          # ---- 包的安全分数（package_scores_for）----
+          #
+          # 这个函数是**只读、不带身份**的：同一个 ROM 上所有人拿到同一份数据，所以适合快照。
+          # 实测 377,695 个数据块，是「还能搬的」里的第二大（最大的 conversations_for 要身份，搬不了）。
+          # 客户端要回答的问题只是「这个 ROM 上这个包安不安全」——本地按 rom + rom_version 筛。
+          #
+          # 两层形状，故意不做成一层：
+          #   site/db/package_scores.json —— [{"rom","rom_version","scores":[...]}]
+          #     给客户端按 rom 查；rom_version = -1 是整个家族（后端也是这个约定）。
+          #   package_scores_snapshot.json —— 同一份内容展开成扁平行
+          #     给「APK 内置、连 GitHub 都读不到」那层：那层直接按 rom/rom_version 过滤即可，
+          #     不必再依赖任何分组结构。
+          groups = src.get('package_scores') or []
+          with open('site/db/package_scores.json', 'w', encoding='utf-8') as f:
+              json.dump(groups, f, ensure_ascii=False, indent=1, sort_keys=True)
+              f.write('\n')
+          flat = [dict(row, rom=g['rom'], rom_version=g['rom_version'])
+                  for g in groups for row in (g.get('scores') or [])]
+          scores_bundled = 'composeApp/src/commonMain/composeResources/files/package_scores_snapshot.json'
+          with open(scores_bundled, 'w', encoding='utf-8') as f:
+              json.dump(flat, f, ensure_ascii=False, separators=(',', ':'))
+              f.write('\n')
+          print(f'site/db/package_scores.json: {len(groups)} rom groups, {len(flat)} rows')
+          print(f'{scores_bundled}: {len(flat)} rows')
           PY
 
       - name: 🚀 Commit & push
@@ -476,12 +600,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ steps.content.outputs.changed }}" != "true" ]; then
-            echo "内容未变（六张表指纹一致、客户端快照也没变），本轮不提交。"
+            echo "内容未变（六张表指纹一致，客户端快照也没变），本轮不提交。"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$OUT_DIR" site/db
+          git add "$OUT_DIR" site/db composeApp/src/commonMain/composeResources/files
           if git diff --cached --quiet; then
             echo "要提交的内容和上一版一样，跳过。"
             exit 0

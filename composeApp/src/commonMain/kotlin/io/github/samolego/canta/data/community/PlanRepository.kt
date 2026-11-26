@@ -64,6 +64,16 @@ const val PAGES_SNAPSHOT_URL = "https://303562915.github.io/unicanta/db/plans.js
 const val GITHUB_SNAPSHOT_URL =
     "https://raw.githubusercontent.com/303562915/unicanta/master/site/db/plans.json"
 
+/**
+ * 推荐条目快照的两个地址：同一份 `db-backup.yml` 生成，只是文件名换成 `recommendations.json`。
+ *
+ * 条目内容、赞成/反对数对所有人都一样（`p_voter` 在 SQL 里只影响 `mine`），
+ * 所以它和方案列表一样可以从 GitHub 读，见 [suggestedApps]。
+ */
+const val PAGES_SUGGESTIONS_URL = "https://303562915.github.io/unicanta/db/recommendations.json"
+const val GITHUB_SUGGESTIONS_URL =
+    "https://raw.githubusercontent.com/303562915/unicanta/master/site/db/recommendations.json"
+
 /** 快照最多等这么久；它是兜底，不该比一次正常请求还慢。 */
 private const val SNAPSHOT_TIMEOUT_MS = 15_000L
 
@@ -82,6 +92,9 @@ private const val SNAPSHOT_RETRY_BACKOFF_MS = 60_000L
  * 只在两张网络源都读不到时用它 —— 断网的人看到的应该是"某个时刻的真实社区"，不是空白。
  */
 private const val BUNDLED_SNAPSHOT_PATH = "files/plans_snapshot.json"
+
+/** 随包带的推荐条目快照；与 [BUNDLED_SNAPSHOT_PATH] 同样的用途和生成方式。 */
+private const val BUNDLED_SUGGESTIONS_PATH = "files/recommendations_snapshot.json"
 
 /** One community plan: a set of packages someone removed and confirmed by a reboot. */
 @Serializable
@@ -320,6 +333,9 @@ class PlanRepository(
     private val persistSnapshot: (suspend (List<CommunityPlan>) -> Unit)? = null,
     /** 读回 [persistSnapshot] 存下的那一份；null 表示没有或读不出来。 */
     private val loadPersisted: (suspend () -> List<CommunityPlan>)? = null,
+    /** 推荐条目快照的 URL（Pages / raw），与方案快照同一套生成方式，只是文件名不同。 */
+    private val suggestionUrl: String = GITHUB_SUGGESTIONS_URL,
+    private val suggestionMirrorUrl: String = PAGES_SUGGESTIONS_URL,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -718,11 +734,37 @@ class PlanRepository(
      * same list came back with a working phone, which is the question a reader actually has. The
      * set is compared by content, so two uploads with the packages in a different order match.
      *
-     * Empty when the backend cannot be reached or predates the call — the page then shows the
+     * ## 纯本地算（2026-11-27 改成不再发请求）
+     *
+     * `plan_device_coverage` 的 SQL 只有一句话：把 `plans` 里 `is_test = false`、`packages` 去重
+     * 排序后**等于**这个集合的行拿出来，按
+     * `(brand, model, market_name, rom, rom_version, only_build, sdk)` 分组数 `count(*)`，
+     * 按 `verified desc, model asc` 排前 `p_limit`（夹在 1..20）。它**不读身份参数**、不加任何
+     * 客户端拿不到的字段；唯一的"额外知识"是 `private.only_build(model, rom, rom_version)` ——
+     * 那是「同一型号同一 ROM 主版本下没有歧义时的那一个 build」，纯粹由 `plans` 自己的行推出来，
+     * 见 [coverageBuild]。
+     *
+     * 这份行集合正是 `site/db/plans.json` 那份快照（[offlinePlans]）的来源：`db-backup.yml`
+     * 往里导的就是 `plans` 里重新启动验证过的行，`brand / model / market_name / rom /
+     * rom_version / rom_build / sdk / packages` 逐列都在。所以「这些包在别的机型上被卸载过吗」
+     * 在本地就是一次过滤 + 聚合：**不联网、不算错**。
+     *
+     * 唯一的等价性前提是「快照里装的就是全部非测试方案」：本是 151 行、`reboot_verified` 全真、
+     * 快照 148 行（少的三行是绝大快照导出后几分钟才传的），也就是说快照漏掉的最多只有比快照更新的
+     * 那几条。所以仍然保留一次后端回退：快照为空（没网、没打过包那层也没读出来）时才问库，
+     * 拿到结果后不再缓存 —— 不致于让这条路径变成每次都要往返一次。
+     *
+     * Empty when neither the snapshot nor the backend answers — the page then shows the
      * uploader's device alone, as before.
      */
     suspend fun deviceCoverage(packages: List<String>, limit: Int = 5): List<DeviceCoverage> {
         if (packages.isEmpty()) return emptyList()
+        // 后端那句 `limit greatest(1, least(coalesce(p_limit, 5), 20))`，本地照抄同一个尺子。
+        val capped = limit.coerceIn(1, 20)
+
+        val snapshot = offlinePlans()
+        if (snapshot.isNotEmpty()) return coverageFrom(snapshot, packages, capped)
+
         val body = buildJsonObject {
             putJsonArray("p_packages") { packages.forEach { add(JsonPrimitive(it)) } }
             put("p_limit", limit)
@@ -746,6 +788,102 @@ class PlanRepository(
             }
         }.getOrNull().orEmpty()
     }
+
+    /**
+     * `plan_device_coverage` 的本地版：在 [all] 里找包集合**完全相同**的方案，按机型+build+SDK 聚合。
+     *
+     * 与 SQL 逐步对齐（每一条都不能省）：
+     *  - `is_test = false`、`packages is not null`：测试方案不算，没写包的跳过；
+     *  - 集合比较：两边都去重排序后比 —— 顺序无关、重复包不影响（SQL 用的也是
+     *    `array_agg(distinct ... order by ...)` 再相等）；
+     *  - 分组键带上 `market_name` / `sdk`：同一台机器如果两条方案填了不同的名字或不同的 SDK，
+     *    后端会算成两行，这里也一样；
+     *  - `rom_build` 走 [coverageBuild]，不是简单取 `p.rom_build`；
+     *  - 排序 `verified desc, model asc`：`model` 用字典序（SQL 的 `asc` 是库排序规则，
+     *    对 `23127PN0CC` 这种型号，与 `compareTo` 一致）。
+     */
+    private fun coverageFrom(
+        all: List<CommunityPlan>,
+        packages: List<String>,
+        limit: Int,
+    ): List<DeviceCoverage> {
+        val mine = packages.filter { it.isNotBlank() }.distinct().sorted()
+        if (mine.isEmpty()) return emptyList()
+        val wanted = mine.toSet()
+
+        val matching = all.filter { plan ->
+            !plan.isTest && plan.packages.isNotEmpty() && plan.packages.toSet() == wanted
+        }
+        if (matching.isEmpty()) return emptyList()
+
+        // `only_build` 看的是**整张** plans 表（那是快照的全部来源），所以用 all，而不是 matching。
+        val rows = matching.groupBy { plan ->
+            CoverageKey(
+                brand = plan.brand,
+                model = plan.model,
+                marketName = plan.marketName,
+                rom = plan.rom,
+                romVersion = plan.romVersion,
+                build = coverageBuild(plan, all),
+                sdk = plan.sdk,
+            )
+        }.map { (key, plans) ->
+            DeviceCoverage(
+                brand = key.brand,
+                model = key.model,
+                marketName = key.marketName,
+                rom = key.rom,
+                romVersion = key.romVersion,
+                romBuild = key.build,
+                sdk = key.sdk,
+                verified = plans.size,
+            )
+        }
+
+        return rows.sortedWith(
+            compareByDescending<DeviceCoverage> { it.verified }.thenBy { it.model },
+        ).take(limit)
+    }
+
+    /**
+     * `private.only_build(model, rom, rom_version)` 的本地复刻。
+     *
+     * 后端那句的意思是：在**同型号、同 ROM、同主版本**的所有行里，如果位数最多的那个 build
+     * （数字段最多的，如 `OS4.0.5.0.XAFCNXM` 比 `OS4.0` 多）是**唯一**的，就用它；有多个并列
+     * （或者一个都没有）就返回空串。调用方再 `coalesce(..., p.rom_build, '')` 回退到这一行自己的 build。
+     *
+     * 为什么要它：同一个机型同一主版本下，有的行填了完整 build、有的没填，页面要靠这条把它们
+     * 归到同一个 build 上显。**型号/ROM 的比较用 `lower()`**（后端口径），所以这里也忽略大小写。
+     *
+     * 代价是每个被聚合的行扫一遍 [all]；方案量级是百来条，可忽略。
+     */
+    private fun coverageBuild(plan: CommunityPlan, all: List<CommunityPlan>): String {
+        val known = all.asSequence()
+            .filter { it.romBuild.isNotBlank() }
+            .filter { it.model.equals(plan.model, ignoreCase = true) }
+            .filter { it.rom == plan.rom && it.romVersion == plan.romVersion }
+            .map { it.romBuild }
+            .distinct()
+            .toList()
+        if (known.isNotEmpty()) {
+            val segmentsOf = { build: String -> Regex("[0-9]+").findAll(build).count() }
+            val most = known.maxOf { segmentsOf(it) }
+            val winners = known.filter { segmentsOf(it) == most }
+            if (winners.size == 1) return winners.single()
+        }
+        return plan.romBuild
+    }
+
+    /** 后端 `group by` 的那一组列，原样本地当键用。 */
+    private data class CoverageKey(
+        val brand: String,
+        val model: String,
+        val marketName: String,
+        val rom: String,
+        val romVersion: Int,
+        val build: String,
+        val sdk: Int,
+    )
 
     /**
      * Every model the community has plans for, one row per build, with how many plans and people
@@ -1623,18 +1761,75 @@ class PlanRepository(
 
     /**
      * Every app the community proposed for the recommendations page, accepted ones first — null
-     * when the backend cannot be reached (or does not carry the function yet, where the page shows
-     * the shipped catalog alone and says nothing about proposals).
+     * when nothing could be read (no snapshot yet **and** the backend is unreachable).
      *
      * [viewer] is the identity whose votes are marked, so the page lights up the side this install
      * already picked.
+     *
+     * ## 2026-11-26：内容走快照，`mine` 仍然只有后端能回答
+     *
+     * 这个接口实测 81,858 个数据块 / 524 次调用。它的 SQL 里 `p_voter` **只影响 `mine`
+     * 一个字段** —— 条目内容、`agrees`、`disagrees`、`applied` 对所有人一样。
+     *
+     * 但 `mine` **不能**省：页面靠它把「认同 / 不认同」点亮（`RecommendationsScreen` 直接读
+     * `app.mine`），而它取决于这台手机投过什么，快照里没有、也不该有。
+     *
+     * 所以这里**仍然调一次 rpc** —— 换来的是「内容不用等后端」：快照先给出一份完整的列表，
+     * rpc 回来后只把 `mine` 贴上去。快照读不到时，rpc 的整份结果照旧直接用（老路径不变）。
+     *
+     * **注意**：这不是「省掉一次请求」，而是让这一页在后端慢/挂的时候**仍然有内容**。
+     * 真要省调用次数，得让客户端自己记住投过什么 —— 那是另一个改动，别在这里顺手做。
      */
     suspend fun suggestedApps(viewer: String = ""): List<SuggestedApp>? {
+        val snapshot = offlineSuggestions()
         val body = buildJsonObject { put("p_voter", viewer) }.toString()
-        val text = rpc("recommend_suggestions", body) ?: return null
-        return runCatching {
-            json.parseToJsonElement(text).jsonArray.map(::parseSuggestedApp)
-        }.getOrNull()
+        val text = rpc("recommend_suggestions", body)
+        val live = text?.let { answered ->
+            runCatching {
+                json.parseToJsonElement(answered).jsonArray.map(::parseSuggestedApp)
+            }.getOrNull()
+        }
+
+        // 后端答了就以它为准：它同时带着内容与 mine，是完整答案。
+        if (live != null) return live
+        // 后端没答：用快照的内容，`mine` 一律留空（页面于是四个按钮都不点亮，但条目、票数都在）。
+        return snapshot
+    }
+
+    /**
+     * 读推荐条目的快照；读不到就是 null（调用方接着走 rpc）。
+     *
+     * 解析出来是 `SuggestedApp` 但 `mine` 一律留空：快照是全社区共用的一份，
+     * 里面**不该**、也**不能**带上"这台手机投过没"。谁投过由客户端自己的本地状态叠加。
+     */
+    private suspend fun offlineSuggestions(): List<SuggestedApp>? {
+        suggestionCache?.let { return it }
+        for (url in listOf(suggestionMirrorUrl, suggestionUrl)) {
+            if (url.isBlank()) continue
+            val text = runCatching {
+                withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) {
+                    val response = client.get(url)
+                    if (response.status.isSuccess()) response.bodyAsText() else null
+                }
+            }.getOrNull() ?: continue
+            val rows = runCatching {
+                json.parseToJsonElement(text).jsonArray.map(::parseSuggestedApp)
+            }.getOrDefault(emptyList())
+            if (rows.isEmpty()) continue
+            suggestionCache = rows
+            return rows
+        }
+        // 网络不通 → 随包那份（装机那天的社区）。
+        val bundled = runCatching {
+            json.parseToJsonElement(
+                Res.readBytes(BUNDLED_SUGGESTIONS_PATH).decodeToString(),
+            ).jsonArray.map(::parseSuggestedApp)
+        }.getOrDefault(emptyList())
+        if (bundled.isNotEmpty()) {
+            suggestionCache = bundled
+            return bundled
+        }
+        return null
     }
 
     /**
