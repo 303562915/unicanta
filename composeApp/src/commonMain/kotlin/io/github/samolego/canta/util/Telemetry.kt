@@ -689,8 +689,15 @@ class Telemetry(
     }
 }
 
+/**
+ * RPC（`package_scores` / `package_scores_for`）的一行数组 → 包名到分数的表。
+ *
+ * 用显式 `map {}` 再 `toMap()`，不靠 `associateBy(...).mapValues { }` 的类型推断：
+ * 后者在 Kotlin 里会因为 `associateBy` 的第二个类型参数被推断成 `Map<String, SnapshotScoreRow>`
+ * 而让整条表达式报 return type mismatch（2026-11-27 CI 就是这么红的）。
+ */
 internal fun parseScores(json: String): Map<String, PackageScore> =
-    parseScoresRows(json).associateBy { it.score.pkg }.mapValues { (_, row) -> row.score }
+    parseScoresRows(json).map { it.score.pkg to it.score }.toMap()
 
 /**
  * 一份 JSON 数组行 → 分数行。快照与 `package_scores_for` 的返回**同形状**（列名一致），
