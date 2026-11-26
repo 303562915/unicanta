@@ -267,6 +267,15 @@ fun MessagesScreen(
     /** 拉黑 / 取消拉黑某个人；落盘是上层的事，这里只把动作交出去。 */
     onBlockPeer: (peer: String, blocked: Boolean) -> Unit = { _, _ -> },
     /**
+     * 本人在这一页上删掉（「不显示」）的那几行：官方群记群名，其余会话记会话号。
+     *
+     * 这两个官方群是**注册时就自动加入**的，后端每趟刷新都会把会话行带回来；只在前端过滤等于
+     * 「藏一帧」，重进又冒出来。所以名单由上层落盘，这一页只管读和改，见 [hiddenMessageRowsOf]。
+     */
+    hiddenRows: Set<String> = emptySet(),
+    /** 删掉 / 恢复一行；同样交给上层落盘（[hiddenMessageRowsOf] 拼出来的那个键）。 */
+    onHideRow: (key: String, hidden: Boolean) -> Unit = { _, _ -> },
+    /**
      * 系统没给通知权限：页顶摆一条「当前无法接收朋友的消息提醒」。
      *
      * 判定在上层（`CantaPlatform.canNotify()`），这一页只按结果画——通知这条链路只在 Android
@@ -540,9 +549,27 @@ fun MessagesScreen(
     /**
      * 长按菜单里的几条动作：免打扰、置顶、不显示、拉黑、删除。
      *
-     * 都是「先发一次请求，再把结果落到本地列表上」：等下一次 30 秒刷新太慢，人点了看不到变化
+     * 都是「先发一次请求，再把结果落到本地列表上」：等下一次轮询太慢，人点了看不到变化
      * 就会以为没生效。会话行由 [sortedConversations] 统一重排，置顶的那一行才会当场跳到最上面。
+     *
+     * 「不显示」和「删除」在本机还多走一步：把这一行记进 [onHideRow] 那份名单，见 [rememberHidden]。
      */
+    /**
+     * 把一行记进「本人删掉了」的本机名单（[onHideRow] 交出去落盘）。
+     *
+     * 官方群记群名，其余会话记会话号——这两个键就是列表过滤时用的同一个（[officialRowKey] /
+     * [conversationRowKey]）。后端那边藏不藏得住是另一回事：官方群是注册时自动加入的，每趟刷新
+     * 都会被带回来，所以这一页永远以本机名单为准。
+     */
+    val rememberHidden: (Conversation) -> Unit = { conversation ->
+        val key = if (conversation.kind == "group" && conversation.title in OfficialGroups.titles) {
+            officialRowKey(conversation.title)
+        } else {
+            conversationRowKey(conversation.id)
+        }
+        onHideRow(key, true)
+    }
+
     val togglePin: (Conversation) -> Unit = { conversation ->
         scope.launch {
             val pin = !conversation.pinned
@@ -563,8 +590,13 @@ fun MessagesScreen(
         scope.launch {
             if (repository.hideConversation(owner, conversation.id)) {
                 commitConversations(conversations.filterNot { it.id == conversation.id })
+                rememberHidden(conversation)
             } else {
-                onMessage("没成功，检查代理后再试")
+                // 后端没通也让它不再出现：本机名单才是这一行的判据（官方群每趟都会被带回来）。
+                // 但要说实话——只是「这台手机不显示了」。
+                rememberHidden(conversation)
+                commitConversations(conversations.filterNot { it.id == conversation.id })
+                onMessage("已在本机不显示，没能同步到后端")
             }
         }
     }
@@ -578,11 +610,12 @@ fun MessagesScreen(
     val deleteRow: (Conversation) -> Unit = { conversation ->
         scope.launch {
             val cleared = repository.clearHistory(owner, conversation.id)
-            if (cleared != null && repository.hideConversation(owner, conversation.id)) {
-                commitConversations(conversations.filterNot { it.id == conversation.id })
-            } else {
-                onMessage("没成功，检查代理后再试")
-            }
+            val hidden = repository.hideConversation(owner, conversation.id)
+            // 本机名单先落：删了就不显示这件事不该取决于后端是不是通。后端两步都成才是真正的
+            // 「清空并藏掉」；有一部落下就如实说一句，别让人以为历史也清了。
+            rememberHidden(conversation)
+            commitConversations(conversations.filterNot { it.id == conversation.id })
+            if (cleared == null || !hidden) onMessage("已在本机删掉，没能同步到后端")
         }
     }
 
@@ -664,26 +697,53 @@ fun MessagesScreen(
     // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
     // 官方群（灰度测试群、Bug 反馈群）排在最前：它们就是「置顶」。它们**不来自**会话列表，
     // 由 [OfficialGroups] 那份常量画出来（见下面 `officialRows`），所以没进群的人也看得到这两行。
+    /**
+     * 这一页当前不画的那几行：本机名单（上层落盘）**加上**默认藏起来的官方群。
+     *
+     * 为什么两个取并集而不是"默认值只在没写过时生效"：官方群是注册时自动加入的，列表里每一趟都会
+     * 回到这儿，默认值一旦失效就意味着「每次开 App 又冒出来两行」——正是要被解决的这件事。并集
+     * 只在一种情况下有可见差别：用户在旧版本里恢复过、又升级到这一版，那两行会再消失一次，
+     * 长按左上角图标随时能拿回来（见顶栏那个菜单）。
+     */
+    val effectiveHidden = hiddenRows + DefaultHiddenRows
+    val showInboxEntry = inboxRowKey !in effectiveHidden
+
+    /**
+     * 已经删掉的那几行，按 [effectiveHidden] 里的键过滤：官方群记群名（[officialRowKey]），
+     * 其余会话记会话号（[conversationRowKey]）。
+     *
+     * 官方群那两个在名单里时连会话行一起剔掉，所以「删了就不显示」跟有没有网、缓存里那一份
+     * 是新的还是旧的都无关；恢复时把键拿掉，下一帧就回来。
+     */
     val visibleConversations = reachableConversations
         .filterNot { it.isFoldedGroup() }
         // 没名字的群（早期测试留下的空群，`title = ''`）一律不列：见 [OfficialGroups.isVisibleInList]。
         .filter { OfficialGroups.isVisibleInList(it) }
         // 已经在列表里的官方群要剔掉：它由下面 `officialRows` 自己画，再列一遍就是同一个群占两处。
         .filterNot { it.kind == "group" && it.title in OfficialGroups.titles }
+        // 本人删掉的那一行同样不列：它的键也在名单里。
+        .filterNot { conversationRowKey(it.id) in effectiveHidden }
     // 已经在群里的官方群：那一行直接进这个会话，不必再走一次加入。
     val joinedOfficial = conversations.filter {
         it.kind == "group" && it.title in OfficialGroups.titles
     }
-    // 消息页最上面那两行，按 [OfficialGroups.entries] 的顺序：进了群的按会话行画（最后一句、时间、
+    // 消息页最上面那几行，按 [OfficialGroups.entries] 的顺序：进了群的按会话行画（最后一句、时间、
     // 未读数、长按菜单都有），没进的画成「点一下加入」的入口行。
-    val officialRows = OfficialGroups.entries.map { entry ->
-        entry to joinedOfficial.firstOrNull { it.title == entry.title }
-    }
-    val anyJoinedOfficial = joinedOfficial.isNotEmpty()
+    //
+    // **默认一行都不显示**：这两个群注册时就被塞进去了，没人要它们在消息页占两格。要进群看，从
+    // 顶栏左上角那个图标的长按菜单里恢复回来——长按那一行删掉的是"显示"，不是退群。
+    val officialRows = OfficialGroups.entries
+        .filterNot { officialRowKey(it.title) in effectiveHidden }
+        .map { entry ->
+            entry to joinedOfficial.firstOrNull { it.title == entry.title }
+        }
+    val joinedOfficialVisible = joinedOfficial.any { officialRowKey(it.title) !in effectiveHidden }
     // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
     // 没名字的群同样剔掉：折叠栏也不该冒出「空白群」这一行。
-    val foldedGroups = conversations.filter { it.isFoldedGroup() && OfficialGroups.isVisibleInList(it) }
-    // 折叠的群聊那一行只亮「最近说过话的那个群」：它的最后一句就是这个入口的预览。
+    val foldedGroups = conversations
+        .filter { it.isFoldedGroup() && OfficialGroups.isVisibleInList(it) }
+        .filterNot { conversationRowKey(it.id) in effectiveHidden }
+    // 搜索仍能找到折叠的群：主列表不列它是为了别占地方，人是特意去找它的时候得找得到。
     val latestGroup = foldedGroups.maxByOrNull { it.lastAt }
     val groupUnread = foldedGroups.sumOf { it.unread }
     val mutual = mutualKeysOf(followers)
@@ -770,6 +830,21 @@ fun MessagesScreen(
             onToggleContacts = {
                 MessagesPanelState.contactsExpanded = !MessagesPanelState.contactsExpanded
             },
+            // 互动消息那一行删了、或者某个官方群被删了，恢复入口都在左上角那个图标的长按菜单里：
+            // 删是「长按列表行」做的，恢复要有一个看得见的地方。名单顺序就是菜单里的顺序。
+            restorableRows = buildList {
+                if (!showInboxEntry) add(inboxRestoreLabel)
+                OfficialGroups.entries.forEach { entry ->
+                    if (officialRowKey(entry.title) in effectiveHidden) add(entry.title)
+                }
+            },
+            onRestoreRow = { label ->
+                onHideRow(
+                    if (label == inboxRestoreLabel) inboxRowKey else officialRowKey(label),
+                    false,
+                )
+                onMessage("已恢复「$label」")
+            },
             onMarkAllRead = {
                 scope.launch {
                     repository.markAllConversationsRead(owner)
@@ -786,16 +861,14 @@ fun MessagesScreen(
         )
     }
 
-    // 下拉刷新：跟手的是整页（连顶栏一起），不是屏幕顶上冒出来的一个图标。
+    // 下拉刷新：只从「互动消息」那一行下面那条分界线往下拉才动，顶栏和那一行**钉在原地**。
     //
-    // **位移自己管**：M3 `PullToRefreshBox` 的 `distanceFraction` 只保证"拽的时候有值"，松手之后的
-    // 动画跑在它自己的指示器上，我们照着把内容下移的那一截就会一直留在那儿——就是"不回弹"。
-    //
-    // 现在是一个普通状态 `dragPx`：拖动时直接加减（不走协程，所以不会和回弹动画互相取消），松手时
-    // 用 `animate` 把它推到 0，或者推到刷新的那一档并停住。松手一定有个结论，不会留在半空。
+    // 以前是整页跟手，连标题一起往下让——手指按在顶栏、放大镜或最近联系人上都能拽动整页，
+    // 于是"我在最上面往下拉"看起来像是把标题也拖走了。现在顶栏留在原处，让位的是分界线
+    // 下面那一块（联系人排、互动消息下面的列表）。
     var dragPx by remember { mutableFloatStateOf(0f) }
     val travelPx = with(LocalDensity.current) { PullRefreshTravel.toPx() }
-    // 当前该把整页推开多少：刷新期间停在刷新那一档，其余时间跟着手指。
+    // 当前该把列表推开多少：刷新期间停在刷新那一档，其余时间跟着手指。
     val shownPx = if (refreshing) travelPx else dragPx
 
     val pullConnection = remember(travelPx) {
@@ -809,7 +882,7 @@ fun MessagesScreen(
                 return Offset(0f, -used)
             }
 
-            // 列表已经到顶、还继续往下拽：吃掉这一截，变成整页的位移（最多一整段）。
+            // 列表已经到顶、还继续往下拽：吃掉这一截，变成列表的位移（最多一整段）。
             override fun onPostScroll(
                 consumed: Offset,
                 available: Offset,
@@ -837,7 +910,7 @@ fun MessagesScreen(
         }
     }
 
-    // 刷新结束（`refreshing` 在加载那一趟的 finally 里落下）就把整页还回原位。
+    // 刷新结束（`refreshing` 在加载那一趟的 finally 里落下）就把列表还回原位。
     LaunchedEffect(refreshing) {
         if (!refreshing && dragPx > 0f) {
             animate(initialValue = dragPx, targetValue = 0f) { value, _ -> dragPx = value }
@@ -847,132 +920,144 @@ fun MessagesScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .nestedScroll(pullConnection),
+            // 嵌套滚动只挂在**列表那一块**上（见下）：挂在整页上，顶栏那一截也算进了下拉手势，
+            // 手指按在最上面往下拽照样能把整页拖走。
+            .background(scheme.surface),
     ) {
-        // 指示器浮在页面顶上：整页被推开之后它落在空出来的那一截里。
-        MessagesRefreshIndicator(
-            refreshing = refreshing,
-            fraction = if (refreshing) 1f else (dragPx / travelPx).coerceIn(0f, 1f),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .zIndex(1f),
-        )
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 顶栏钉在顶上：不管怎么拽都不动它。
+            topBar()
 
-        if (loading) {
-            // 这一支**不画骨架**：一串空卡片看起来像「消息页什么都没有」，而这一页永远有两行官方群
-            // 可以点。先画顶栏，再画那两行入口（没加入时点一下就走 `group_invite_join`），剩下的会话
-            // 安静地等第一趟请求回来。
+            // 下拉刷新的锚点：「互动消息」那一行（含它上面那条分界线）。这一行也钉住，往下才让位。
             //
-            // 用 Column 排是必要的：外层的 Box 里还有那个浮着的刷新指示器，两个 fillMaxSize 的子节点
-            // 会叠在一起，入口行会被顶栏盖掉。
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // 和列表那一支同一个位移：加载中被人拽一下，整页也跟着下来、松手一起回去。
-                    .offset { IntOffset(0, shownPx.roundToInt()) },
-            ) {
-                topBar()
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        // 底下让出一条：最后一行不该压在悬浮底栏上（和列表那一支的 contentPadding 对齐）。
-                        .padding(bottom = 96.dp),
-                ) {
-                    officialRows.forEach { (entry, joined) ->
-                        OfficialGroupEntryRow(
-                            entry = entry,
-                            joined = joined != null,
-                            joining = joiningOfficial[entry.title] == true,
-                            onClick = { openOfficial(entry, joined) },
-                        )
-                    }
-                }
+            // 这一行同时也是**内容**：删掉之后（长按删除）它就不在这儿占位了，那时锚点换成下面那块
+            // 列表本身，下拉照样能用。
+            //
+            // 这条分界线就是「从这里往下拉」的那条：手指按在它下面的列表上拽，才是刷新；按在它上面
+            // （标题、放大镜、联系人排、这一行）拽，什么都不动。
+            if (showInboxEntry) {
+                MessageEntryRow(
+                    glyph = FlGlyphs.send,
+                    circle = UnreadRed,
+                    title = "互动消息",
+                    subtitle = inboxPreview.ifBlank { inboxLine(summary) },
+                    unread = inboxUnread,
+                    onClick = onOpenInteractions,
+                    // 长按删除：这一行不再显示；恢复的入口在顶栏左上角那个图标的长按菜单里。
+                    onLongClick = {
+                        onHideRow(inboxRowKey, true)
+                        onMessage("互动消息已删除，长按左上角图标可以恢复")
+                    },
+                )
             }
-        } else {
-            // 整页一条列表：顶栏、联系人那一排、几个入口行、会话行都在同一个 LazyColumn 里。
-            //
-            // 顶栏做成列表的第一项（吸顶 `stickyHeader`），有两个好处：
-            // 1. 手指按在标题、放大镜、头像排上往下拽，事件走的就是这条列表的嵌套滚动，整页一起下来；
-            //    顶栏留在 Scaffold 的 topBar 里时那一块没有滚动容器，拽它什么都不发生。
-            // 2. 往上滚动时它还钉在顶上，和原来固定头部看到的是同一个东西。
-            // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那一段。
-            val messagesListState = rememberRememberedListState("messages")
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // 整页跟手：拽下来多少，列表就整体往下让多少；松手由 `dragPx` 的动画回 0（或停在
-                    // 刷新那一档，刷新完再回 0）。
-                    .offset { IntOffset(0, shownPx.roundToInt()) }
-                    // 点列表空白：收起搜索框的焦点与输入法（搜索框自己那条 × 才关掉搜索）。
-                    .dismissInputOnTap(),
-                state = messagesListState,
-                // 底下让出一条：这一页以前挂在 Scaffold 里，系统导航栏那条占位是 Scaffold 给的；
-                // 现在整页就是这条列表，得自己让出来，否则最后一行会压在悬浮底栏和导航栏上。
-                contentPadding = PaddingValues(bottom = 96.dp),
-            ) {
-                stickyHeader(key = "top-bar") { topBar() }
-                loadError?.let { reason ->
-                    item(key = "load-error") {
-                        Text(
-                            text = "后端没有返回消息：$reason",
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            color = scheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-                        )
-                    }
-                }
-                // 搜索失败：结果区还是上一次那一份（比空白有用），原因只占这一行。只在搜索开着时
-                // 画——收起搜索之后它还挂在那儿，人就会以为列表本身出了问题。
-                searchError?.let { reason ->
-                    if (searching) {
-                        item(key = "search-error") {
-                            Text(
-                                text = "搜索没有更新：$reason",
-                                fontSize = 10.sp,
-                                lineHeight = 13.sp,
-                                color = scheme.error,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+
+            // 指示器落在这一块顶端：锚点下面空出来的那一截里，而不是盖在顶栏上。
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                MessagesRefreshIndicator(
+                    refreshing = refreshing,
+                    fraction = if (refreshing) 1f else (dragPx / travelPx).coerceIn(0f, 1f),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(1f),
+                )
+
+                if (loading) {
+                    // 这一支**不画骨架**：一串空卡片看起来像「消息页什么都没有」，而这一页默认一行
+                    // 都不画（两个官方群默认不显示）。剩下的会话安静地等第一趟请求回来。
+                    //
+                    // 这一块就是下拉的那一块：加载中被人拽一下，也跟着下来、松手一起回去。
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .nestedScroll(pullConnection)
+                            .offset { IntOffset(0, shownPx.roundToInt()) }
+                            // 底下让出一条：最后一行不该压在悬浮底栏上（和列表那一支对齐）。
+                            .padding(bottom = 96.dp),
+                    ) {
+                        officialRows.forEach { (entry, joined) ->
+                            OfficialGroupEntryRow(
+                                entry = entry,
+                                joined = joined != null,
+                                joining = joiningOfficial[entry.title] == true,
+                                onClick = { openOfficial(entry, joined) },
                             )
                         }
                     }
-                }
-                // 「当前无法接收朋友的消息提醒」：系统没给通知权限时才有这一条。抖音那条是提醒
-                // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
-                if (noticesBlocked) {
-                    item(key = "notices") { NoticeBanner(onOpen = onEnableNotices) }
-                }
-                // 最近联系人那一排由顶栏左上角那个按钮展开 / 收起（见 [MessagesPanelState]）：
-                // 收起之后这一整格不画，列表直接从事务入口开始，省下的正是一排头像的高度。
-                if (MessagesPanelState.contactsExpanded) {
-                    item(key = "contacts") {
-                        RecentContactsRow(
-                            contacts = recentContacts,
-                            onTapContact = { contact ->
-                                // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
-                                // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
-                                if (contact.conversationId > 0L) {
-                                    // 最近联系人里只有私聊：这一格本来就是一个人一张脸。
-                                    onOpenChat(contact.conversationId, false)
-                                } else {
-                                    onOpenDm(contact.key)
+                } else {
+                    // 锚点下面这一块就是列表：联系人那一排、折叠群入口、官方群、会话行都在这里。
+                    //
+                    // 它从「互动消息」下面那条分界线开始，所以下拉手势**只从这儿往下拉才生效**：
+                    // 顶栏和互动消息那一行留在上面的 Column 里，钉在原地。
+                    //
+                    // 位置带记忆（见 [rememberRememberedListState]）：冷启动再进来还停在原来那一段。
+                    val messagesListState = rememberRememberedListState("messages")
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            // 跟手：拽下来多少，列表就整体往下让多少；松手由 `dragPx` 的动画回 0（或停在
+                            // 刷新那一档，刷新完再回 0）。
+                            .nestedScroll(pullConnection)
+                            .offset { IntOffset(0, shownPx.roundToInt()) }
+                            // 点列表空白：收起搜索框的焦点与输入法（搜索框自己那条 × 才关掉搜索）。
+                            .dismissInputOnTap(),
+                        state = messagesListState,
+                        // 底下让出一条：这一页以前挂在 Scaffold 里，系统导航栏那条占位是 Scaffold 给的；
+                        // 现在整页就是这条列表，得自己让出来，否则最后一行会压在悬浮底栏和导航栏上。
+                        contentPadding = PaddingValues(bottom = 96.dp),
+                    ) {
+                        loadError?.let { reason ->
+                            item(key = "load-error") {
+                                Text(
+                                    text = "后端没有返回消息：$reason",
+                                    fontSize = 10.sp,
+                                    lineHeight = 13.sp,
+                                    color = scheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                        // 搜索失败：结果区还是上一次那一份（比空白有用），原因只占这一行。只在搜索开着时
+                        // 画——收起搜索之后它还挂在那儿，人就会以为列表本身出了问题。
+                        searchError?.let { reason ->
+                            if (searching) {
+                                item(key = "search-error") {
+                                    Text(
+                                        text = "搜索没有更新：$reason",
+                                        fontSize = 10.sp,
+                                        lineHeight = 13.sp,
+                                        color = scheme.error,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                                    )
                                 }
-                            },
-                        )
-                    }
-                }
-                // 搜索时把两行整块的入口收起来：它们不是搜索结果，留着只会把答案往下挤。
-                if (!searching) {
-                    item(key = "entry-inbox") {
-                        MessageEntryRow(
-                            glyph = FlGlyphs.send,
-                            circle = UnreadRed,
-                            title = "互动消息",
-                            subtitle = inboxPreview.ifBlank { inboxLine(summary) },
-                            unread = inboxUnread,
-                            onClick = onOpenInteractions,
-                        )
-                    }
+                            }
+                        }
+                        // 「当前无法接收朋友的消息提醒」：系统没给通知权限时才有这一条。抖音那条是提醒
+                        // 用户去开；这里点一下就是申请权限——不开也不会假装能收。
+                        if (noticesBlocked) {
+                            item(key = "notices") { NoticeBanner(onOpen = onEnableNotices) }
+                        }
+                        // 最近联系人那一排由顶栏左上角那个按钮展开 / 收起（见 [MessagesPanelState]）：
+                        // 收起之后这一整格不画，列表直接从入口行开始，省下的正是一排头像的高度。
+                        if (MessagesPanelState.contactsExpanded) {
+                            item(key = "contacts") {
+                                RecentContactsRow(
+                                    contacts = recentContacts,
+                                    onTapContact = { contact ->
+                                        // 有关会话就进去；只有关注关系的，开一个私聊再进去——那一格点下去就是
+                                        // "和这个人说话"，弹一句"还没聊过"等于让用户自己去别处找入口。
+                                        if (contact.conversationId > 0L) {
+                                            // 最近联系人里只有私聊：这一格本来就是一个人一张脸。
+                                            onOpenChat(contact.conversationId, false)
+                                        } else {
+                                            onOpenDm(contact.key)
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        // 搜索时把入口行收起来：它们不是搜索结果，留着只会把答案往下挤。
+                        // （互动消息那一行不在这儿：它钉在上面，见锚点。）
+                        if (!searching) {
                     // 一个折叠的群都没有时这一行整块不画：入口里没有内容，摆一个「还没有群聊」
                     // 在那儿等于请人点进一个空页面。折叠是人在群设置里自己开的，不是自动的。
                     if (foldedGroups.isNotEmpty()) {
@@ -1012,6 +1097,8 @@ fun MessagesScreen(
                                     onOpen = { onOpenChat(joined.id, true) },
                                     onTogglePin = { togglePin(joined) },
                                     onToggleMute = { toggleMute(joined) },
+                                    // 「不显示」也记进本机名单：这两个群是自动加入的，后端每趟都会
+                                    // 把它们带回来，只靠 conversation_hide 藏不住。
                                     onHide = { hideRow(joined) },
                                     onToggleBlock = { toggleBlock(joined) },
                                     onDelete = { deleteRow(joined) },
@@ -1086,7 +1173,7 @@ fun MessagesScreen(
                         }
                     }
 
-                    visibleConversations.isEmpty() && !anyJoinedOfficial ->
+                    visibleConversations.isEmpty() && !joinedOfficialVisible ->
                         item(key = "no-chats") {
                             Box(
                                 modifier = Modifier
@@ -1122,6 +1209,8 @@ fun MessagesScreen(
                         )
                     }
                 }
+                    }
+                }
             }
         }
     }
@@ -1135,14 +1224,15 @@ fun MessagesScreen(
  * （[FlTopBarHeight]、20.dp 边距、[FlText.headline]）。
  *
  * 左上角那个图标**不是菜单**：轻点是展开 / 收起最近联系人那一排
- * （[MessagesPanelState.contactsExpanded]），长按是「全部标为已读」。原来那个三项下拉菜单
- * （全部标为已读 / 折叠的群聊 / 发起群聊）整个拿掉了——发起群聊在右上角本来就有一个入口，
- * 折叠的群聊那一行右边也有「全部 N 个群」，同一个动作摆两处只多一层要点开的东西。
+ * （[MessagesPanelState.contactsExpanded]），长按点开一个小菜单，里面是「全部标为已读」，
+ * 以及这一页上被删掉的那几行（互动消息、官方群）的**恢复入口**——删掉是长按列表行做的，
+ * 恢复得有一个看得见的地方，否则删了就再也找不回来。原来那个三项下拉菜单不含恢复，
+ * 折叠的群聊在列表里本来就有入口，发起群聊在右上角也有。
  *
  * 放大镜把一条搜索框放到这一行下面（[MessagesSearchField]），右边跟一个收起用的叉。
  *
- * 底色不透明是有原因的：这一行现在是列表里的吸顶项（见 `MessagesScreen` 里的 `stickyHeader`），
- * 往上滚时会直接压在会话行上面，透明的话下面的字会透出来。
+ * 底色不透明是有原因的：这一行钉在页面顶上（见 `MessagesScreen` 里的 `topBar()`），列表从它下面那块
+ * 滚上来时不该透出下面的字。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1157,9 +1247,15 @@ private fun MessagesTopBar(
     contactsExpanded: Boolean,
     onToggleContacts: () -> Unit,
     onMarkAllRead: () -> Unit,
+    /** 这一页上被本人删掉、可以恢复的行名；空表示都还在。 */
+    restorableRows: List<String> = emptyList(),
+    /** 恢复某一行：传它的名字，键由页面那一层拼。 */
+    onRestoreRow: (String) -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
     val searchFocusRequester = remember { FocusRequester() }
+    // 左上角那个图标的长按菜单：锚在图标上，用 Box 包一层才贴得住。
+    var menuOpen by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1170,27 +1266,59 @@ private fun MessagesTopBar(
         Box(
             modifier = Modifier.fillMaxWidth().height(FlTopBarHeight).padding(horizontal = 20.dp),
         ) {
-            // 左上角：一个图标管两件事。轻点展开 / 收起最近联系人那一排，长按「全部标为已读」。
-            // 这里不再弹下拉菜单，所以也不需要包一层 Box 去贴按钮定位。
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .combinedClickable(
-                        role = Role.Button,
-                        onClickLabel = if (contactsExpanded) "收起最近联系人" else "展开最近联系人",
-                        onLongClickLabel = "全部标为已读",
-                        onLongClick = onMarkAllRead,
-                        onClick = onToggleContacts,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                FlGlyphIcon(
-                    glyph = FlGlyphs.more,
-                    size = 20.dp,
-                    tint = scheme.onSurface,
-                )
+            // 左上角：一个图标管两件事。轻点展开 / 收起最近联系人那一排，长按弹菜单。
+            Box(modifier = Modifier.align(Alignment.CenterStart)) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            role = Role.Button,
+                            onClickLabel = if (contactsExpanded) "收起最近联系人" else "展开最近联系人",
+                            onLongClickLabel = "更多",
+                            onLongClick = {
+                                menuOpen = true
+                                // 长按在这里顺手把「全部标为已读」也交出去，见下面那条菜单项。
+                            },
+                            onClick = onToggleContacts,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FlGlyphIcon(
+                        glyph = FlGlyphs.more,
+                        size = 20.dp,
+                        tint = scheme.onSurface,
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                    modifier = Modifier.width(ConversationMenuWidth),
+                ) {
+                    ConversationMenuItem(
+                        label = "全部标为已读",
+                        onClick = {
+                            menuOpen = false
+                            onMarkAllRead()
+                        },
+                        leadingIcon = {
+                            FlGlyphIcon(glyph = FlGlyphs.eyeOff, size = 16.dp, tint = scheme.onSurfaceVariant)
+                        },
+                    )
+                    // 删掉的那几行在这儿才能回来：长按列表行删的，恢复也放在一处，不再各摆一个按钮。
+                    restorableRows.forEach { row ->
+                        ConversationMenuItem(
+                            label = "恢复「$row」",
+                            onClick = {
+                                menuOpen = false
+                                onRestoreRow(row)
+                            },
+                            leadingIcon = {
+                                FlGlyphIcon(glyph = FlGlyphs.pin, size = 16.dp, tint = scheme.onSurfaceVariant)
+                            },
+                        )
+                    }
+                }
             }
             Text(
                 text = "消息",
@@ -1382,6 +1510,33 @@ private data class RecentContact(
 
 /** 会话行在列表里的 key：会话号本身就是唯一的。 */
 private fun Conversation.conversationKey(): String = "conversation-$id"
+
+/**
+ * 「本人删掉的那一行」在本机名单里的键。
+ *
+ * 会话用 `c:<会话号>`、官方群用 `o:<群名>`、整块的「互动消息」入口用 [inboxRowKey]。
+ * 带前缀是必要的：官方群名和会话号都只是普通字符串，不加前缀迟早会撞在一个槽里。
+ */
+private fun conversationRowKey(id: Long): String = "c:$id"
+
+private fun officialRowKey(title: String): String = "o:$title"
+
+/** 互动消息那一行：键只在这台手机上用，和 [conversationRowKey] 同一套前缀。 */
+private const val inboxRowKey: String = "entry:inbox"
+
+/** 互动消息那一行在恢复菜单里叫什么；恢复时靠它和群名区分开。 */
+private const val inboxRestoreLabel: String = "互动消息"
+
+/**
+ * 消息页默认藏起来的那几行。
+ *
+ * 官方群（灰度测试群、Bug 反馈群）是**注册时自动加入**的，没人要它们在消息页占两格；名单里本来就
+ * 带着它们时，这一页的第一帧（以及后端还没回来的那一屏）一行都不画，不用等第一趟刷新落地才消失。
+ *
+ * 只在这一页读一次：真正落盘的那份名单由上层（设置）维护，用户删 / 恢复之后它才是权威。
+ */
+private val DefaultHiddenRows: Set<String> =
+    OfficialGroups.entries.mapTo(mutableSetOf()) { officialRowKey(it.title) }
 
 /**
  * 这一行是不是拉黑过的那个人的私聊。
@@ -1939,6 +2094,7 @@ private fun OfficialGroupEntryRow(
  * 互动消息和折叠的群聊共用这一个形状，只是圆底的颜色和图标不同——两行看起来是一对，
  * 读起来也就能一眼分出「别人对我做了什么」和「几个人的群」。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageEntryRow(
     glyph: FlGlyph,
@@ -1949,6 +2105,11 @@ private fun MessageEntryRow(
     onClick: () -> Unit,
     /** 标题行右端、未读数左边的额外入口；不需要的行走默认的空 lambda。 */
     trailing: @Composable () -> Unit = {},
+    /**
+     * 长按这一行做什么。现在只有「互动消息」给了它（删掉这一行）；折叠的群聊那一行走默认的空，
+     * 免得长按出一件跟群本身无关的事。
+     */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -1956,7 +2117,12 @@ private fun MessageEntryRow(
             .fillMaxWidth()
             .background(scheme.surface)
             .bottomHairline(scheme.outlineVariant.copy(alpha = 0.6f))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClickLabel = title,
+                onLongClickLabel = if (onLongClick != null) "删除这一行" else null,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

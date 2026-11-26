@@ -1601,6 +1601,8 @@ private fun CantaNavigation(
                 // 拉黑名单是本机记录（后端没有这个接口），来源只有设置里那一份；消息页据此把
                 // 这些人的私聊从列表里滤掉。用 StateFlow，所以在别处改了这一页也会跟着刷新。
                 val blockedPeers by settingsViewModel.blockedPeers.collectAsStateWithLifecycle()
+                // 消息页上本人删掉的那几行（官方群名 / 会话号）：落盘，所以断网、重进、重启都一样不显示。
+                val hiddenMessageRows by settingsViewModel.hiddenMessageRows.collectAsStateWithLifecycle()
                 LaunchedEffect(Unit) {
                     messagesName = DeviceIdentity.displayName(deps.settings)
                     messagesIdentity = DeviceIdentity.current(deps.settings)
@@ -1645,6 +1647,8 @@ private fun CantaNavigation(
                     onBlockPeer = { peer, blocked ->
                         settingsViewModel.saveBlockedPeer(peer, blocked)
                     },
+                    hiddenRows = hiddenMessageRows,
+                    onHideRow = { key, hidden -> settingsViewModel.saveMessageRowHidden(key, hidden) },
                     // 系统没给通知权限时，页顶摆一条「当前无法接收朋友的消息提醒」，点它申请权限。
                     // 只在真能申请通知的平台上摆（Android）；桌面端 `canRequestNotify` 为 false，
                     // 摆一条点不开的提示等于骗人。

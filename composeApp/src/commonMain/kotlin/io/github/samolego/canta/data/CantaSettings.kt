@@ -191,6 +191,14 @@ class CantaSettings(storage: AppBlobStorage) {
      */
     val blockedPeersFlow: Flow<List<String>> = field { it.blockedPeers }
 
+    /**
+     * 消息页上本人删掉（「不显示」）的那几行：官方群记群名，其余会话记会话号。
+     *
+     * 只影响这一页的列表，不动消息、不动成员：删是一个看得见的动作，不是退出群。见
+     * [AppSettingsProto.hiddenMessageRows]。
+     */
+    val hiddenMessageRowsFlow: Flow<List<String>> = field { it.hiddenMessageRows }
+
     /** This install's identity token; empty until the plans page has created one. */
     val identityTokenFlow: Flow<String> = field { it.identityToken }
 
@@ -358,5 +366,19 @@ class CantaSettings(storage: AppBlobStorage) {
     /** Adds [packages] to the restore suspects, keeping the list short and ordered. */
     suspend fun addRestoreSuspects(packages: List<String>) = update {
         it.copy(restoreSuspects = (it.restoreSuspects + packages).distinct().takeLast(MAX_RESTORE_SUSPECTS))
+    }
+
+    /**
+     * 删掉 / 恢复消息页上的一行：官方群传群名，其余会话传会话号（[rowKey] 负责拼）。
+     *
+     * 单条写而不是"读出整份再写回"：两行几乎同时删掉时，读→改→写会丢掉其中一条。
+     */
+    suspend fun setMessageRowHidden(key: String, hidden: Boolean) {
+        val id = key.trim()
+        if (id.isEmpty()) return
+        update { current ->
+            val next = if (hidden) current.hiddenMessageRows + id else current.hiddenMessageRows - id
+            current.copy(hiddenMessageRows = next.map { it.trim() }.filter { it.isNotEmpty() }.distinct())
+        }
     }
 }

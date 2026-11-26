@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.proto.AppSettingsProto
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.IdentitySetup
@@ -216,6 +217,10 @@ class SettingsViewModel(
     val blockedPeers: StateFlow<Set<String>> =
         settingsStore.blockedPeersFlow.map { peers -> peers.toSet() }.state(emptySet<String>())
 
+    /** 消息页上本人删掉的那几行（官方群名 / 会话号）；见 [AppSettingsProto.hiddenMessageRows]。 */
+    val hiddenMessageRows: StateFlow<Set<String>> =
+        settingsStore.hiddenMessageRowsFlow.map { rows -> rows.toSet() }.state(emptySet<String>())
+
     /**
      * 安全页顶部机型胶囊是不是点过了。出厂是没点过（`false`），点一次就永久停止呼吸提示。
      */
@@ -345,6 +350,9 @@ class SettingsViewModel(
 
     /** 拉黑或取消拉黑一个人；后端没有这个接口，落的是本机设置里的那份名单。 */
     fun saveBlockedPeer(peer: String, blocked: Boolean) = save { setBlockedPeer(peer, blocked) }
+
+    /** 消息页上删掉 / 恢复一行（官方群传群名，其余会话传会话号）。 */
+    fun saveMessageRowHidden(key: String, hidden: Boolean) = save { setMessageRowHidden(key, hidden) }
 
     /**
      * 记下换好的头像直链（传空串就是清掉，界面回到首字母圆）。
