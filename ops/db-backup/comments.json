@@ -4764,6 +4764,30 @@
   "target": "com.xiaomi.registration"
  },
  {
+  "author": "大大怪",
+  "author_id": "10970",
+  "body": "卸载有可能会有系统bug",
+  "created_at": "2026-11-26T12:44:18.118036+00:00",
+  "device_model": "Redmi K70E",
+  "id": 686,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.305",
+  "target": "com.miui.misound"
+ },
+ {
+  "author": "TiAmo",
+  "author_id": "12822",
+  "body": "删了无法切换5G/4G，VOLTE失效，而且无法拨打和接听电话。",
+  "created_at": "2026-11-26T12:44:29.915785+00:00",
+  "device_model": "一加 15",
+  "id": 687,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "Android",
+  "target": "com.android.carrierconfig"
+ },
+ {
   "author": "#10267",
   "author_id": "10267",
   "body": "删了没副作用",
