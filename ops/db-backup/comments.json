@@ -4872,6 +4872,18 @@
   "target": "com.mobiletools.systemhelper"
  },
  {
+  "author": "elias",
+  "author_id": "10003",
+  "body": "小米手机不要删，一样。就是这个罪魁祸首",
+  "created_at": "2026-11-26T15:00:23.404299+00:00",
+  "device_model": "Redmi K70",
+  "id": 723,
+  "kind": "app",
+  "parent_id": 125,
+  "system_name": "HyperOS 3.0.308",
+  "target": "com.android.htmlviewer"
+ },
+ {
   "author": "#10147",
   "author_id": "10147",
   "body": "另外一个软件是哪个？可以把话说全吗😂",
@@ -4906,6 +4918,18 @@
   "parent_id": 44,
   "system_name": "HyperOS 4",
   "target": "com.miui.analytics"
+ },
+ {
+  "author": "fsr",
+  "author_id": "12063",
+  "body": "卸载后不能用小布自动指令…",
+  "created_at": "2026-11-26T15:04:49.250931+00:00",
+  "device_model": "真我Neo8",
+  "id": 756,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "Android",
+  "target": "com.oplus.metis"
  },
  {
   "author": "西瓜太好吃了",

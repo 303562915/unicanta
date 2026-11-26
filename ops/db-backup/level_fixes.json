@@ -15,5 +15,22 @@
   "pkg": "com.xiaomi.aiservice",
   "removal": "Recommended",
   "superseded_at": null
+ },
+ {
+  "agrees": 1,
+  "applied": false,
+  "applied_at": null,
+  "author": "elias",
+  "author_id": "10003",
+  "created_at": "2026-11-26T14:58:43.225415+00:00",
+  "disagrees": 0,
+  "id": 36,
+  "notes": {
+   "en": "不要卸载",
+   "zh": "不要卸载"
+  },
+  "pkg": "com.android.htmlviewer",
+  "removal": "Unsafe",
+  "superseded_at": null
  }
 ]
