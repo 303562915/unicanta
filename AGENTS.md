@@ -435,7 +435,7 @@ simple query protocol 下把它们当**一个隐式事务**执行——中途任
 | 位置 | 干什么 |
 |---|---|
 | `ui/screen/AboutScreen.kt` | 关于页的更新卡片、下载/安装的调用方、进度条与阶段文字 |
-| `ui/screen/UpdateChecker.kt` | 查发布（API 失败退到 release 页面）、`UpdateState` 状态机、`downloadRelease*` |
+| `ui/screen/UpdateChecker.kt` | 查发布（API 失败退到 release 页）、`UpdateState` 状态机、`downloadRelease*` |
 | `core/CantaPlatform.kt` | `downloadUpdate` / `installUpdate(path, onStage)` / `requestInstall`，`InstallStage` 枚举 |
 | `androidMain/.../AndroidCantaPlatform.kt` | 真正的下载（断点续传、三次重试）与 `pm install` 四条通道 |
 | `util/UpdateReport.kt` + `util/PackageTelemetry.recordUpdate` | 上报载荷与发送入口 |
@@ -712,3 +712,88 @@ session-tasks/
 - 指定代理**不改**其他会话正在改的代码，避免并发覆盖；它只发指令 + 维护台账。
 - 被跟进会话必须在**自己档案**里写证据，不写等于没做，指定代理按未完成处理。
 - 台账不进 `docs/`，避免触发 `docs.yml` / `pages.yml` 的站点构建。
+
+---
+
+## 15. 后端容量：为什么全站会「一片空白」
+
+2026-11-24/25 连着三次全站不可用。我起初判断成「Supabase 磁盘坏了」，**错了**——官方诊断是**资源耗尽**。有人再问「页面全空是不是缓存/App 的 bug」，先按 15.3 判，别先怀疑客户端。
+
+### 15.1 真因（Supabase 官方原文，2026-11-26）
+
+```
+Disk I/O is exhausted: burst balance reached 0%, I/O wait averaged 13.3%, peaked at 118.6%
+Memory pressure: swap peaked at 557 MB on an instance with 426 MB of memory
+```
+
+链条：实例是 **Nano / 426 MB 内存**，而 `shared_buffers` 占了 **224 MB**（53%）→ 加上 26 条连接
+进程内存与 `maintenance_work_mem 32MB` 装不下 → 内核 **swap**（swap 就在同一块数据盘上）→
+checkpoint 写页时一边写一边等 swap，`write=` 从毫秒变 60–148 秒 → 查询排队超 8 秒
+`statement timeout` → 连接占满 → pgbouncer `connect timeout` / `query_wait_timeout` →
+PostgREST 对所有人 500/503/504。
+
+**误判原因**：SQL 日志只见「`write()` 卡住、`sync` 仅 3 ms」，这形状既可能是盘坏也可能是 swap 拖累，我只想到前者。判别证据（`burst balance 0%`、`swap 557MB`）在 Dashboard **Observability → Compute**，不在 SQL 日志。**小算力的 Disk IOPS 图只统计数据盘，swap 卡顿在图上可能正常**——要看 CPU iowait 与 memory/swap。
+
+### 15.2 已做的免费止血（2026-11-26）
+
+| 参数 | 之前 | 现在 | 理由 |
+|---|---|---|---|
+| `shared_buffers` | 224 MB | **96 MB** | 整库只有 41 MB，96 MB 仍装两遍，命中率不掉；释放 128 MB 给系统 |
+| `max_connections` | 60 | **30** | 活跃仅 26 条，每条连接都是内存；外部走 supavisor 池化 |
+| `checkpoint_timeout` | 5 min | **15 min** | 刷盘频率降到 1/3 |
+| `max_wal_size` | 1 GB | **2 GB** | 判据 `num_requested/(num_timed+num_requested)` = 0.6%，远低于 10%，**不用再加** |
+
+改内存参数会**自动重启实例**（`FATAL: 57P03: the database system is shutting down` 属正常）。
+验证：`select current_setting('shared_buffers') sb, current_setting('max_connections') mc;` → `96MB / 30`。
+
+> 走 `PATCH /v1/projects/{ref}/config/database/postgres`。
+> **可改**：`shared_buffers` / `max_connections` / `max_wal_size` / `checkpoint_timeout` / `wal_compression`。
+> **改不了**（`Unrecognized keys`）：`bgwriter_*` / `checkpoint_completion_target`。别在那浪费时间。
+
+### 15.3 「页面全空」怎么判（按顺序）
+
+| # | 位置 | 结论 |
+|---|---|---|
+| 1 | Dashboard → Observability → Compute（Memory / Swap / CPU iowait） | swap 非零或 iowait 高 = **资源耗尽**，不是代码 |
+| 2 | Database → Logs → `postgres_logs` 搜 `checkpoint complete` | `write=` 两位数秒 = 盘/swap 拖累 |
+| 3 | Management API 跑 `select 1` | 超 8 秒 = 连接池被慢查询拖住 |
+| 4 | `postgrest_logs` 按 `source='postgrest_logs'` 过滤 | 有请求 + 5xx = 后端问题；无请求 = 客户端/链路 |
+| 5 | `gh workflow run supabase-log-probe.yml -f source=postgrest_logs -f minutes=15` | 本机常连不上 api.supabase.com，走 CI |
+
+**别**因为「页面空」先怀疑 `ScreenCache` / `AppListSnapshotStore`：它们只造成「先画旧数据再刷新」。
+
+### 15.4 系统级优化（按性价比）
+
+**A. 降请求量（免费，收益最大）**。实测 24h **49.6 万次请求 / 41.7 MB 出口**。按次数排：
+`HEAD /rpc/` 105,330（后端探测，纯浪费 → 改「出错后才探」）·
+`inbox_summary_kinds` 44,941（摘要轮询）· `inbox_seen_mark` 40,932（每会话一次 → **批量**）·
+`conversations_for` 36,195 · `package_vote_counts` 28,872 · `plans_for` 27,874 ·
+`recommend_suggestions` 27,320 · `comments_for` 23,836（以上六个一律轮询放慢）。
+
+聊天已有 Realtime 广播（`ef2230d`），轮询只是兜底，可放很慢。**别**在 `onResume`/切 tab 时重拉：先看缓存，不新鲜才发。这一档能砍 50%+ 请求量，对慢盘最直接。
+
+**B. 降库开销（免费）**
+- `package_scores()`（194 ms/6,288 次）、`plan_catalog()`（74 ms/11,576 次）是热点且都是 `stable`，适合**结果缓存**（物化视图+定时刷新，或 TTL 表），目标单次 < 20 ms。
+- Performance Advisor 补索引（`inbox_seen`/`write_rate` 是高写入表，跟写路径一起看）。
+- 清增长表：`telemetry_events`（37,944 行）、`update_reports`、`operation_failures`；确认 `purge_raw_events()` 在跑。
+
+**C. 要花钱的容量（最后再考虑）**
+- **Pro $25/月 自带 Micro**（1 GB 内存 / 87 MB/s）。**不需要再单独买 Micro**；
+真实门槛就是 **$25**（不是「$25+$15=$40」，那是高估）。Small（174 MB/s / 2 GB / 90 连接）= Pro 再 +$5/月。**Free 档没有任何升级/开单通道**：`400 entitlement_required, feature=project_addons`、`/support/tickets` 三路径全 404、`backups: []`。Free 档唯一能「换台机器」的是**新建项目迁过去**（免费，但要发版改 base URL）。
+
+**D. 免费兜底**：数据库**没有任何自动备份**。手工脱敏快照见
+[docs/backend-incident-2026-11.md](docs/backend-incident-2026-11.md) 第 8 节，
+**必须**用 `jsonb_agg(to_jsonb(t) - 'token' - 'device_key')::text` 剥掉敏感列
+（`canta_users.token`、`canta_device_keys.token`/`device_key`）。
+
+### 15.5 看门狗：留，但别指望它
+
+`backend-watchdog.yml` **保留**，边界写清楚：
+
+- **有用**：挂了自动重启，把「4 小时白屏」压到「几分钟」；钉钉正文必带关键词 `rr`（否则 errcode 310000 丢弃）；checkpoint `write=` > 5 秒提前预警。
+- **靠不住**：GitHub 的 `schedule` 会被**静默丢弃**——两次事故分别 **5 小时**和 **20 小时**零触发，
+  而 `state` 一直 `active`。
+- 现由**外部 cron 每10–15min**调 `POST /repos/303562915/unicanta/actions/workflows/backend-watchdog.yml/dispatches`，
+  header `Authorization: Bearer <fine-grained PAT，权限只需 Actions: Read and write>` + `Accept: application/vnd.github+json`，
+  body `{"ref":"master"}`，成功返回 **204**。
+- **不解决根因**：重启只是清掉卡住的连接池。治本是 15.2 的内存参数 + 15.4 的降请求量；只要 swap 还非零就会复发。
