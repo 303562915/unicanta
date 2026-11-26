@@ -1327,12 +1327,6 @@ private fun CantaNavigation(
                     onOpenDeletionList = { navController.navigate(Screen.DeletionList.route) },
                     // 设置现在是底栏那一格的落点，"我的"要能从这里再进去。
                     onOpenMine = { navController.navigate(Screen.Mine.route) },
-                    onNavigateBack = {
-                        // 底栏进设置时没有上一页可退，退回就落回应用列表。
-                        if (!navController.popBackStack()) {
-                            navController.navigateSingleTop(Screen.Main.route)
-                        }
-                    },
                     // 救急用的文件：删掉的包还在系统分区里，恢复命令得在电脑上跑。
                     // 生成的批处理交给分享面板（发到电脑），打不开面板的构建就留在下载目录。
                     onExportRestoreScript = { mode ->
@@ -1533,7 +1527,7 @@ private fun CantaNavigation(
                     appName = levelApp?.name ?: packageName,
                     // 名单现在给的级别：从列表里那份已经叠好修正的徽标读，界面和列表页一致。
                     publishedBadge = levelApp?.badgeInfo,
-                    repository = communityRepository?.let { LevelFixRepository(it) },
+                    repository = LevelFixRepository(communityRepository),
                     author = levelAuthor,
                     authorId = levelIdentity,
                     onNavigateBack = { navController.navigateUp() },

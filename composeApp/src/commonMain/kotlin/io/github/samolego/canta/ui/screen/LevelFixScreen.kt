@@ -69,7 +69,7 @@ fun LevelFixScreen(
     appName: String,
     /** 名单现在给的级别；null = 这个包不在名单里，页面只能说"没有可改的"。 */
     publishedBadge: AppBadgeInfo?,
-    repository: LevelFixRepository?,
+    repository: LevelFixRepository,
     /** 本机签名用的显示名。 */
     author: String = "",
     /** 本机身份号：「我提的」「一人一票」都按它算。 */
@@ -79,7 +79,7 @@ fun LevelFixScreen(
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
     var fixes by remember(packageName) {
-        mutableStateOf(repository?.cachedLevelFixes(packageName).orEmpty())
+        mutableStateOf(repository.cachedLevelFixes(packageName))
     }
     var loading by remember(packageName) { mutableStateOf(fixes.isEmpty()) }
     var reloads by remember { mutableIntStateOf(0) }
@@ -92,7 +92,7 @@ fun LevelFixScreen(
 
     LaunchedEffect(packageName, authorId, reloads) {
         if (fixes.isEmpty()) loading = true
-        val fetched = repository?.fixes(packageName, authorId)
+        val fetched = repository.fixes(packageName, authorId)
         if (fetched == null) {
             loadError = "没拉到最新的一版（网络或后端没通）"
         } else {
@@ -107,7 +107,7 @@ fun LevelFixScreen(
     val chosenFix = fixes.firstOrNull { !it.superseded && !it.applied }
 
     fun submit() {
-        if (repository == null || sending) return
+        if (sending) return
         val removal = chosen.ifEmpty { mine?.removal.orEmpty() }
         if (removal.isEmpty()) return
         sending = true
@@ -126,7 +126,7 @@ fun LevelFixScreen(
     }
 
     fun vote(fix: LevelFix, agree: Boolean) {
-        if (repository == null || votingId != 0L) return
+        if (votingId != 0L) return
         votingId = fix.id
         scope.launch {
             val answer = repository.vote(fix.id, authorId, agree)
@@ -165,7 +165,7 @@ fun LevelFixScreen(
             item {
                 Card {
                     Text(
-                        text = "名单现在标的是",
+                        text = "$appName · 名单现在标的是",
                         style = FlText.caption2.copy(fontWeight = FlText.emphasized),
                         color = scheme.onSurfaceVariant,
                     )

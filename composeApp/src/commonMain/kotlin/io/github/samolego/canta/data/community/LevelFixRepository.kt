@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.community
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -9,7 +10,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.parseToJsonElement
 import kotlinx.serialization.json.put
 
 /**
@@ -20,6 +20,12 @@ import kotlinx.serialization.json.put
  * 列表上那一行只读**本地缓存**（[cachedLevelFixes]），联网只在进「级别修正」页时发生。
  */
 class LevelFixRepository(private val repository: PlanRepository) {
+
+    /**
+     * `Json.parseToJsonElement` 的接收者：序列化 1.6 起顶层扩展 `parseToJsonElement` 已移除，
+     * 只能走实例（`PlanRepository` 里也是这么用的）。
+     */
+    private val JSON = Json { ignoreUnknownKeys = true }
 
     /**
      * 这个包的级别修正，通过的排前面；null = 这次没问到（断网、后端还没有这个函数）。
@@ -34,7 +40,7 @@ class LevelFixRepository(private val repository: PlanRepository) {
         }.toString()
         val text = repository.levelFixesFor(body) ?: return null
         return runCatching {
-            val element = parseToJsonElement(text)
+            val element = JSON.parseToJsonElement(text)
             if (element is JsonNull) emptyList()
             else element.jsonArray.map(::parseLevelFix)
         }.getOrNull()
@@ -77,7 +83,7 @@ class LevelFixRepository(private val repository: PlanRepository) {
         }.toString()
         val text = repository.addLevelFix(payload) ?: return null
         return runCatching {
-            parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
+            JSON.parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
         }.getOrNull()
     }
 
@@ -93,7 +99,7 @@ class LevelFixRepository(private val repository: PlanRepository) {
         }.toString()
         val text = repository.voteLevelFix(payload) ?: return null
         return runCatching {
-            val o = parseToJsonElement(text).jsonObject
+            val o = JSON.parseToJsonElement(text).jsonObject
             LevelFixVote(
                 agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
