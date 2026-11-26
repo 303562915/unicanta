@@ -103,7 +103,8 @@ fun MainScreen(
     val selectedAppsType = currentTab.appsType
 
     // What Canta itself removed: the uninstalled list is everything with no install for this user,
-    // and only the log can tell the two apart (see NeverInstalledBadge).
+    // and only the log can tell the two apart. 那一格现在叫「未安装」，所以这件事不再逐行显示
+    // （见 [NeverInstalledBadge]），这个集合留着给需要它的清单用。
     val log by history.records.collectAsStateWithLifecycle()
     val uninstalledByCanta = remember(log) {
         log.filter { it.kind == OperationKind.UNINSTALL && it.success }

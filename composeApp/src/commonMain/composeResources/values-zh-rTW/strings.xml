@@ -18,7 +18,7 @@
     <string name="device_android_too_old">此裝置執行的 Android 版本低於 9，Canta 不支援此版本。</string>
     <string name="helper_unavailable">無法在裝置上設定 Canta 輔助程式。請確認裝置已連線並完成授權，然後再試一次。</string>
     <string name="tab_installed">已安裝的應用程式</string>
-    <string name="tab_uninstalled">已解除安裝的應用程式</string>
+    <string name="tab_uninstalled">未安裝的應用程式</string>
     <string name="cannot_uninstall_canta">想動 Canta？沒門！</string>
     <string name="device_unreachable">無法連線至裝置。請確認裝置已連線並完成授權。</string>
     <string name="app_size">大小：%1$s</string>

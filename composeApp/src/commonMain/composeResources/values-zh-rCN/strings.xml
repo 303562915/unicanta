@@ -20,7 +20,7 @@
     <string name="helper_unavailable">没能在设备上装好 Canta 的助手。请确认设备已连接并已授权，然后重试。</string>
     <string name="tab_installed">已安装</string>
     <string name="tab_records">记录</string>
-    <string name="tab_uninstalled">已卸载</string>
+    <string name="tab_uninstalled">未安装</string>
     <string name="tab_disabled">已停用</string>
     <string name="records_action_uninstall">卸载</string>
     <string name="records_action_reinstall">恢复</string>

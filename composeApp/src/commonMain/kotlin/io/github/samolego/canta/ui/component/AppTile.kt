@@ -72,8 +72,14 @@ fun AppTile(
      */
     onCopyPackage: (() -> Unit)? = null,
     showBorder: Boolean = isSelected,
-    /** On the uninstalled list: whether the ROM never installed this for the user, instead of Canta removing it. */
+    /**
+     * 这行所属的清单是不是「未安装」那一格。原来它决定要不要贴「本来没装」那枚徽标，那一枚已经去掉
+     * （标签页自己就叫「未安装」，逐行重复是噪音），这个参数留着只为不打破调用方签名。
+     */
+    @Suppress("UNUSED_PARAMETER")
     neverInstalled: Boolean = false,
+    /** 勾选框能不能点。已选清单里的那些行一律不可点，见 [SelectedAppTile]。 */
+    selectable: Boolean = true,
     checkedColor: Color = MaterialTheme.colorScheme.primary,
     checkedBackgroundColor: Color = MaterialTheme.colorScheme.primaryContainer.copy(
         alpha = 0.2f
@@ -170,9 +176,9 @@ fun AppTile(
                     if (appInfo.isDisabled) {
                         DisabledBadge()
                     }
-                    if (neverInstalled) {
-                        NeverInstalledBadge()
-                    }
+                    // 「本来没装」不再画：它原来只出现在「已卸载」这一格，而那一格现在就叫
+                    // 「未安装」，一行一行重复标签页的名字只是噪音。这个参数留着是因为
+                    // 调用方还在用它算这件事，哪天有别的清单需要才接回来。
                     if (appInfo.packageName == CANTA_PACKAGE_NAME) {
                         CantaBadge()
                     }
@@ -181,7 +187,9 @@ fun AppTile(
             Checkbox(
                 checked = isSelected,
                 onCheckedChange = onCheckChanged,
-                enabled = enabled,
+                // 一行同时有「点不动」和「选不中」两种状态：unsafe 应用不可动（enabled），
+                // 已选清单里的勾选框不可点（selectable）。两个都得过，少一个都有反例。
+                enabled = enabled && selectable,
                 modifier = Modifier.size(40.dp),
                 colors =
                         CheckboxDefaults.colors(
@@ -202,7 +210,7 @@ fun SelectedAppTile(
     onOpen: () -> Unit,
     /** Same meaning as in [AppTile]: tapping the package name copies it. */
     onCopyPackage: (() -> Unit)? = null,
-    /** Same meaning as in [AppTile]: the ROM never installed it, Canta did not remove it. */
+    /** Same meaning as in [AppTile]. */
     neverInstalled: Boolean = false,
 ) {
     AppTile(
@@ -214,6 +222,9 @@ fun SelectedAppTile(
         onCheckChanged = onCheckChanged,
         onOpen = onOpen,
         onCopyPackage = onCopyPackage,
+        // 已选清单只是那一份选择的一份画法，它自己不是用来改选择的：点这里行会开应用详情，
+        // 勾选框不画成可点（见 [selectable]）。要取消某个包，用清单上方那个「清除」按钮。
+        selectable = false,
         neverInstalled = neverInstalled,
         checkedColor = MaterialTheme.colorScheme.error,
         checkedBackgroundColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),

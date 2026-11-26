@@ -79,10 +79,10 @@ fun AppList(
     @Suppress("UNUSED_PARAMETER")
     enableSelectAll: Boolean = false,
     /**
-     * Packages Canta itself uninstalled, from the records tab's log. Everything else on the
-     * uninstalled list is a package this phone never installed for the user — the AOSP installer a
-     * vendor replaced, a vault this build does not use — and saying so is what keeps a reader from
-     * believing they removed it (see [NeverInstalledBadge]).
+     * Packages Canta itself uninstalled, from the records tab's log. Everything else on this list is
+     * a package the phone never installed for the user — the AOSP installer a vendor replaced, a
+     * vault this build does not use. 只在别的清单要用这件事时才有意义：这一格已经叫「未安装」，
+     * 逐行再贴一枚「本来没装」是重复（见 [NeverInstalledBadge]）。
      */
     uninstalledByCanta: Set<String> = emptySet(),
     /**
@@ -192,7 +192,11 @@ fun AppList(
                                 ) {
                                     Button(
                                         onClick = {
-                                            selectedAppList.forEach { appListModel.selectedApps.remove(it.packageName) }
+                                            // 清的是整个选择，不只是本页看得见的那些：这张清单只是
+                                            // 那一份集合的画法，按它自己的行数清会留下别的页勾的包，
+                                            // 界面看着「清空了」而动作按钮照样亮着。按钮点着的那一刻
+                                            // 集合已经清空，所以它上面数的行数是准的。
+                                            appListModel.selectedApps.clear()
                                         }
                                     ) {
                                         Text(

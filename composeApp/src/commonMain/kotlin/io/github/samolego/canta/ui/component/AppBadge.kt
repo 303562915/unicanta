@@ -62,7 +62,10 @@ fun DisabledBadge() {
  * ROMs ship components they do not use — the AOSP `com.android.packageinstaller` next to the
  * vendor's own installer, `com.android.privatespace` on a build with its own vault — and every
  * one of those lands on the uninstalled list, because that list is "no install for this user".
- * Without the badge a reader is told they removed something they never touched.
+ *
+ * 这一枚只在「已卸载」这一格画；那一格现在叫「未安装」，整页说的就是「这台机器上没有它」，
+ * 再给每一行贴一枚「本来没装」等于每行重复一遍标签页的名字，读到的人只看见一排灰块。
+ * 标签页改了名之后这里不画，只有别的列表（例如安全规则里那张跨页的清单）要看这件事时才用得上它。
  */
 @Composable
 fun NeverInstalledBadge() {
