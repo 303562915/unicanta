@@ -62,6 +62,7 @@ import androidx.compose.material.icons.outlined.Title
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.MaterialTheme
+import io.github.samolego.canta.ui.fl.isDark
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -112,7 +113,11 @@ import io.github.samolego.canta.ui.component.MiniMarkdown
 import io.github.samolego.canta.ui.component.PostAvatar
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.fallbackBrandColor
 import io.github.samolego.canta.ui.component.isDefaultAuthorName
+import io.github.samolego.canta.ui.component.metaTint
+import io.github.samolego.canta.ui.component.parseHexColor
+import io.github.samolego.canta.ui.component.readableBrandColor
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.rememberRememberedListState
 import io.github.samolego.canta.ui.fl.FlGlyph
@@ -1201,6 +1206,10 @@ else -> Column {
                     // 一次都没读过（全新装上）时不画点：满屏都是点等于没有提示。
                     reads != null && reads.hasHistory() && reads.isUnread(post.id, post.comments)
                 },
+                readOf = { post ->
+                    // "全读完"= 读且没有新回复；一次都没读过的帖子不算（那一档是"未读"）。
+                    reads != null && reads.hasHistory() && !reads.isUnread(post.id, post.comments)
+                },
                 savedOf = { post -> reads?.isSaved(post.id) == true },
                 savedTotal = reads?.savedIds()?.size ?: 0,
                 onLongPress = { post ->
@@ -1284,12 +1293,6 @@ else -> Column {
 }
 
 /**
- * 列表：筛选栏（口径 + 分类 + 搜索）和帖子卡片。
- *
- * [shown] 是已经在上面算好的口径（分类/搜索/排序），这里只负责画；点一条交给 [onOpen]。
- * 之所以把口径在外面算：筛选改动不该触发一次网络请求，也不该重置列表滚动位置。
- */
-/**
  * 首页那根搜索胶囊，逐项照 fluxdo 的 `widgets/common/search_capsule.dart`：
  *
  * - 高 **40dp**（固定），圆角 **20**（胶囊）
@@ -1315,7 +1318,7 @@ private fun SearchCapsule(
         singleLine = true,
         textStyle = TextStyle(color = scheme.onSurface, fontSize = 14.sp),
         cursorBrush = SolidColor(scheme.primary),
-        modifier = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
+        modifier = (if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier)
             .height(40.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(scheme.surfaceContainerHighest.copy(alpha = 0.5f)),
@@ -1374,6 +1377,8 @@ private fun PostListPane(
     freshCount: Int,
     /** 这条帖子现在算不算没看过 / 有新回复（见 [PostReadStore.isUnread]）。 */
     unreadOf: (CommunityPost) -> Boolean,
+    /** 这条帖子是不是"已经全读完了"：标题与元信息在那一档统一退灰（`topic_card.dart` 的 isFullyRead）。 */
+    readOf: (CommunityPost) -> Boolean,
     /** 这条帖子是不是收起来了。 */
     savedOf: (CommunityPost) -> Boolean,
     /** 收藏一共几条（不一定都在已加载的列表里，空态文案要区分这两件事）。 */
@@ -1489,6 +1494,7 @@ private fun PostListPane(
                             post = post,
                             mine = authorId.isNotBlank() && post.authorId == authorId,
                             unread = unreadOf(post),
+                            read = readOf(post),
                             saved = savedOf(post),
                             onClick = { onOpen(post) },
                             onLongClick = { onLongPress(post) },
@@ -1554,6 +1560,7 @@ private fun PostListPane(
                     post = post,
                     mine = authorId.isNotBlank() && post.authorId == authorId,
                     unread = unreadOf(post),
+                    read = readOf(post),
                     saved = savedOf(post),
                     onClick = { onOpen(post) },
                     onLongClick = { onLongPress(post) },
@@ -1624,12 +1631,28 @@ private fun PostCard(
     post: CommunityPost,
     mine: Boolean,
     unread: Boolean,
+    read: Boolean,
     saved: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val stamp = relativeStamp(post.createdAt)
+    // 三档颜色，照 `topic_card.dart:288-293`：
+    //   未读       标题 onSurface             元信息 onSurfaceVariant ×0.8
+    //   读过没读完 标题 onSurfaceVariant×0.75  元信息 onSurfaceVariant ×0.8
+    //   全读完     标题 onSurfaceVariant×0.75  元信息 onSurfaceVariant ×0.6
+    val titleColor = if (read) {
+        metaTint(scheme.onSurfaceVariant, 0.75f)
+    } else {
+        scheme.onSurface
+    }
+    // 时间那一格：未读用主色（和标题右端那个点呼应），其余跟着元信息色走。
+    val timeColor = if (unread) {
+        scheme.primary
+    } else {
+        metaTint(scheme.onSurfaceVariant, if (read) 0.6f else 0.8f)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1656,15 +1679,16 @@ private fun PostCard(
                 Spacer(modifier = Modifier.width(4.dp))
             }
             if (post.locked) {
-                FlGlyphIcon(glyph = FlGlyphs.lock, size = 13.dp, tint = scheme.outline)
+                FlGlyphIcon(glyph = FlGlyphs.lock, size = 13.dp, tint = titleColor.copy(alpha = 0.6f))
                 Spacer(modifier = Modifier.width(4.dp))
             }
             Text(
                 text = post.title.ifBlank { "（无标题）" },
                 // 15sp / 行高 1.3：与 `TopicCardStyle.titleFontSize` 的默认值同一个数。
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
-                fontWeight = FontWeight.Medium,
-                color = scheme.onSurface,
+                // 读完的帖子退一档：w600 → w500（`topic_card.dart:313`）
+                fontWeight = if (read) FontWeight.Medium else FontWeight.SemiBold,
+                color = titleColor,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -1703,7 +1727,12 @@ private fun PostCard(
                     AuthorLabel(
                         name = post.author.ifBlank { "匿名" },
                         style = MaterialTheme.typography.labelLarge,
-                        color = scheme.onSurface,
+                        // 读过就退灰加轻；未读用实色（`topic_card.dart:822-829`）
+                        color = if (read) {
+                            metaTint(scheme.onSurfaceVariant, 0.75f)
+                        } else {
+                            metaTint(scheme.onSurface, 0.85f)
+                        },
                         maxLines = 1,
                         modifier = Modifier.weight(1f, fill = false),
                     )
@@ -1724,7 +1753,7 @@ private fun PostCard(
                         Text(
                             text = stamp,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (unread) scheme.primary else scheme.onSurfaceVariant,
+                            color = timeColor,
                             maxLines = 1,
                         )
                     }
@@ -1738,6 +1767,9 @@ private fun PostCard(
                         category = post.category,
                         tags = post.tags,
                         maxTags = 2,
+                        // 全读完时整行退灰：fluxdo 是 0.55（`topic_card.dart:851`）。
+                        dim = if (read) 0.55f else 1f,
+                        categoryColor = post.categoryColor,
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -2130,7 +2162,7 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (post.category.isNotBlank()) {
-                    CategoryPill(category = post.category)
+                    CategoryPill(category = post.category, colorHex = post.categoryColor)
                 }
                 post.tags.forEach { tag -> TagPill(tag = tag) }
             }
@@ -2187,7 +2219,7 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
                 Text(
                     text = "$readMinutes 分钟阅读",
                     style = MaterialTheme.typography.labelSmall,
-                    color = scheme.outline,
+                    color = metaTint(scheme.onSurfaceVariant, 0.8f),
                 )
             }
         }
@@ -2222,15 +2254,15 @@ private fun ThreadMetaDivider() {
     Text(
         text = "·",
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.outline,
+        color = metaTint(MaterialTheme.colorScheme.onSurfaceVariant, 0.5f),
         modifier = Modifier.padding(horizontal = 6.dp),
     )
 }
 
-/** 分类标签：一小块颜色 + 分类名，浅底圆角。 */
+/** 分类标签：一小块颜色 + 分类名，浅底圆角。颜色与列表里的色块同一个来源（后端下发 / 兜底 / 可读化）。 */
 @Composable
-private fun CategoryPill(category: String) {
-    val color = categoryColorOf(category)
+private fun CategoryPill(category: String, colorHex: String = "") {
+    val color = categoryColorOf(category = category, hex = colorHex)
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
@@ -2542,7 +2574,7 @@ private fun PostEditorPane(
             Text(
                 text = "${title.length}/$POST_TITLE_LIMIT",
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.outline,
+                color = metaTint(scheme.onSurfaceVariant, 0.6f),
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.End,
             )
@@ -2591,7 +2623,7 @@ private fun PostEditorPane(
             Text(
                 text = "${body.length}/$POST_BODY_LIMIT",
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.outline,
+                color = metaTint(scheme.onSurfaceVariant, 0.6f),
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.End,
             )
@@ -2816,11 +2848,17 @@ private fun PostMetaChips(
     tags: List<String>,
     modifier: Modifier = Modifier,
     maxTags: Int = 3,
+    /** 这一行的退灰系数：全部读完后传 0.55（`topic_card.dart:851` 的 `opacityFactor`）。 */
+    dim: Float = 1f,
+    /** 后端下发的分类色（`#RRGGBB`）；空串就退回按名字哈希取兜底色。 */
+    categoryColor: String = "",
 ) {
     if (category.isBlank() && tags.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
     val shown = tags.take(maxTags)
     val hidden = tags.size - shown.size
+    // 元信息小字统一走预乘过的次要色：0.8（未读）/ 0.6（全读完），再叠这行的 dim。
+    val metaColor = metaTint(scheme.onSurfaceVariant, 0.8f * dim)
     Row(
         modifier = modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2828,19 +2866,19 @@ private fun PostMetaChips(
     ) {
         if (category.isNotBlank()) {
             // 分类：一个小色块 + 名字（Discourse 的样子）。色块让"这帖属于哪一类"变成一眼可见的
-            // 颜色，而不是要读一遍中文；同一个分类永远同一个颜色（按名字哈希）。
+            // 颜色；颜色优先用后端下发的那一格（见 [categoryTint]），没有才按名字哈希兜底。
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .size(7.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(categoryColorOf(category)),
+                        .background(categoryTint(category, categoryColor, dim)),
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = category,
                     style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
+                    color = metaColor,
                     maxLines = 1,
                 )
             }
@@ -2849,7 +2887,7 @@ private fun PostMetaChips(
             Text(
                 text = "#$tag",
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.outline,
+                color = metaColor,
                 maxLines = 1,
             )
         }
@@ -2857,7 +2895,7 @@ private fun PostMetaChips(
             Text(
                 text = "+$hidden",
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.outline,
+                color = metaColor,
                 maxLines = 1,
             )
         }
@@ -2865,10 +2903,12 @@ private fun PostMetaChips(
 }
 
 /**
- * 分类的颜色：按名字哈希从一组固定色里挑。
+ * 分类色**兜底**用的色板：只在后端没下发 `category_color` 时才用到。
  *
- * 固定色板而不是主题色：分类是个**标签**，颜色要能跨主题、跨页面认出同一个（换深色模式不该
- * 从绿变紫）。这套色取自 Discourse 的分类徽章。
+ * 为什么不拿它当正路：fluxdo 那边的分类色是 Discourse **下发给每个分类自己的那一格**
+ * （`ColorUtils.parseHex` → `ColorUtils.themed`，见 `lib/utils/color_utils.dart`），
+ * 按名字哈希是猜的——同名的分类在不同站是不同颜色，同站的不同分类也可能撞到同一个哈希槽。
+ * 所以有 `#RRGGBB` 就用那个，没有才落到这张表。
  */
 private val CATEGORY_COLORS = listOf(
     Color(0xFF25A6E8), // 公告 / 蓝
@@ -2879,13 +2919,31 @@ private val CATEGORY_COLORS = listOf(
     Color(0xFF3FA9A0), // 求助 / 青
 )
 
-/** 同包里的分类侧栏（`PostsDrawer.kt`）也用它：抽屉里那颗色点必须和卡片上的分类色同一个。 */
-internal fun categoryColorOf(category: String): Color {
-    // 先取模再取绝对值：`hashCode()` 可能是 `Int.MIN_VALUE`（确实存在这样的字符串），
-    // 对它取 abs 仍是负数，直接当下标会越界崩掉整页。
-    val index = abs(category.hashCode() % CATEGORY_COLORS.size)
-    return CATEGORY_COLORS[index]
+/**
+ * 一个分类的显示色：后端给了 `#RRGGBB` 就用它，否则按名字哈希从兜底色板取一个。
+ *
+ * 两条路之后都过一遍 [readableOnCurrentTheme]：品牌色只调明度，保证深色/亮色主题下都看得清，
+ * 色相不变（同一个分类换主题还是那个颜色）。[dim] 是"全读完"的退灰（fluxdo 是 0.55）。
+ *
+ * 同包里的分类侧栏（`PostsDrawer.kt`）也用它：抽屉里那颗色点必须和卡片上的分类色同一个。
+ */
+@Composable
+internal fun categoryColorOf(category: String, hex: String = "", dim: Float = 1f): Color {
+    val dark = MaterialTheme.colorScheme.isDark
+    val base = parseHexColor(hex)
+        ?: fallbackBrandColor(category, CATEGORY_COLORS)
+    val readable = readableBrandColor(base, dark)
+    return if (dim == 1f) readable else readable.copy(alpha = readable.alpha * dim)
 }
+
+/**
+ * 列表/详情里那个分类色块：[categoryColorOf] 的简写，接的是帖子自己的 `categoryColor` 字段。
+ *
+ * 非 composable 的调用方（比如抽屉里的 `remember`）直接调 [categoryColorOf]。
+ */
+@Composable
+private fun categoryTint(category: String, hex: String, dim: Float): Color =
+    categoryColorOf(category = category, hex = hex, dim = dim)
 
 /** 「草稿 N 篇 · 继续编辑」那一行：点它接着写最新那篇。 */
 @Composable

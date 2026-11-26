@@ -47,6 +47,13 @@ data class CommunityPost(
      * 画 chip 时对不上候选的照样能画出来（画原文）。
      */
     val category: String = "",
+    /**
+     * 分类色：`#RRGGBB`，由后端随帖子一起下发（Discourse 的分类都有自己的一格颜色）。
+     *
+     * 空串表示这一行没带色——老部署的 `posts_list` 不返回它，或者这个分类本来就没配色。
+     * 页面这时退回按分类名哈希取兜底色（见 `categoryTint`），所以空的也能画。
+     */
+    val categoryColor: String = "",
     /** 标签，最多 5 个、每个最多 20 字（后端归整过）。老回答没有这一项时是空表。 */
     val tags: List<String> = emptyList(),
 )
