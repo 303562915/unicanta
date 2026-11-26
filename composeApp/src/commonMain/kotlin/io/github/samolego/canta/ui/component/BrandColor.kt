@@ -47,7 +47,9 @@ internal fun fallbackBrandColor(seed: String, palette: List<Color>): Color {
  * @param dark 当前是不是深色主题（`MaterialTheme.colorScheme.isDark`）
  */
 internal fun readableBrandColor(base: Color, dark: Boolean): Color {
-    if (base.isUnspecified || base.alpha <= 0f) return base
+    // 未指定色（`Color.Unspecified`）的 alpha 是 NaN，`NaN <= 0f` 为 false 会漏过去，
+    // 所以这里显式判一次：没给颜色就原样透传，别加工出一个 NaN 色。
+    if (base.alpha.isNaN() || base.alpha <= 0f) return base
     val h = base.hue() // 0..360
     val s = base.saturationHsl() // 0..1
     val l = base.lightnessHsl() // 0..1
