@@ -54,8 +54,18 @@ import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.util.BeijingTime
 import kotlinx.coroutines.delay
 
-/** 页面开着时多久重拉一次群聊：没有推送通道，只能靠这一行让列表跟上别人的动作。 */
-private const val GroupsPollMs: Long = 15_000L
+/**
+ * 页面开着时多久重拉一次群聊：没有推送通道，只能靠这一行让列表跟上别人的动作。
+ *
+ * 60 秒，不是 15 秒。这一页只画「有哪些群、几个成员、最后一条消息」——那三样东西在 15 秒里
+ * 基本不变，人眼看不出 15 秒和 60 秒的差别，但后端承受的差别是四倍。这个数字按实测调的：
+ * 2026-11-26 那次全站白屏的根因是免费档 426 MB 内存被 swap 拖死（见 ops-notes 备案），
+ * 而 `conversations_for` 是 24 小时 3.6 万次调用里的主力之一，降频是唯一不花钱的解法。
+ *
+ * **不要为了"感觉更实时"把它调回去。** 真要即时，就得开推送频道，而那要额外一条
+ * WebSocket —— 免费档 Realtime 并发只有 200，比轮询更容易出事。
+ */
+private const val GroupsPollMs: Long = 60_000L
 
 /**
  * 这一屏上一次画出来的群列表，整份进 [ScreenCache]。

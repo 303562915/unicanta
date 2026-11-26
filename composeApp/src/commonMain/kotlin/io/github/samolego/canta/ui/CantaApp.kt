@@ -180,11 +180,18 @@ private const val PAGE_SLIDE_MS = 300
 private const val SECRET_TAPS_HINT_AFTER = 3
 
 /**
- * How often the running app asks for a release again. One poll is a single HTML read of the
- * release page and no GitHub API quota, so half a minute costs nothing; it runs only while the app
- * is on screen, because a check the person cannot see the result of is just traffic.
+ * How often the running app asks for a release again.
+ *
+ * Five minutes, not thirty seconds. The loop already stops itself the moment it finds a newer
+ * build (or a build that already failed to install), so this number only decides how long a person
+ * waits *after opening the app* before a new release is noticed — and five minutes is still far
+ * inside the window where they are looking at the app. Thirty seconds meant up to 120 release-page
+ * reads an hour per device for a file that changes once a day at most; that is pure traffic, and on
+ * the free backend instance it competes with the queries that actually draw the screen.
+ *
+ * The About page keeps its own explicit "check now", so anyone impatient has a button.
  */
-private const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
+private const val UPDATE_CHECK_INTERVAL_MILLIS = 300_000L
 
 /**
  * 连不上后端时的提示，多久重新确认一次「现在是真断了吗」。
@@ -756,10 +763,16 @@ private fun CantaNavigation(
     var countTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { countTick++ }
     // 一直停在这一页也要跟上：别的手机在这期间发来消息，红点和底栏的数字不该等到切页才动。
-    // 60 秒一次，只在带着这几个数字的页面上跑（下面那个 effect 会自己筛）。
+    // 三分钟一次（原来一分钟），只在带着这几个数字的页面上跑（下面那个 effect 会自己筛）。
+    //
+    // 为什么放到三分钟还能接受：这一拍每跑一次都要拉一份**完整会话列表**才能算出未读数
+    // （`conversationsFor(owner).sumOf { it.unread }`），是所有轮询里单价最高的一趟。
+    // 而红点本身不是通知——晚两三分钟亮起来，没人会以为消息丢了；切页、回前台、读完消息
+    // 这三个动作都会立刻把它推准（`countTick` 与 `ChatUnread` 那几条路）。反过来，若真要
+    // 「秒级红点」，就得给每个用户常开一条 WebSocket，那比轮询更容易压垮免费档实例。
     LaunchedEffect(Unit) {
         while (true) {
-            delay(60_000L)
+            delay(180_000L)
             countTick++
         }
     }
