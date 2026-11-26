@@ -74,6 +74,19 @@ const val PAGES_SUGGESTIONS_URL = "https://303562915.github.io/unicanta/db/recom
 const val GITHUB_SUGGESTIONS_URL =
     "https://raw.githubusercontent.com/303562915/unicanta/master/site/db/recommendations.json"
 
+/**
+ * 包的安全分数（`package_scores_for`）快照的两个地址。
+ *
+ * 那个函数是只读的、**不接受身份参数**：同一个 ROM 上所有人拿到同一份数据，所以整份表适合搬进
+ * 仓库。实测 377,695 个数据块（第二大，最大的是 `conversations_for` 但它要身份，搬不了）。
+ * 内容是 `[{"rom","rom_version","scores":[...]}]`，`rom_version = -1` 是整个家族。
+ *
+ * 客户端先在这里按 rom / rom_version 本地筛，筛不出来才问后端（见 Telemetry.fetchScores）。
+ */
+const val PAGES_SCORES_URL = "https://303562915.github.io/unicanta/db/package_scores.json"
+const val GITHUB_SCORES_URL =
+    "https://raw.githubusercontent.com/303562915/unicanta/master/site/db/package_scores.json"
+
 /** 快照最多等这么久；它是兜底，不该比一次正常请求还慢。 */
 private const val SNAPSHOT_TIMEOUT_MS = 15_000L
 
@@ -341,6 +354,10 @@ class PlanRepository(
 
     /** 快照读成功过一次就记着，别每次断网都重新拉一遍几百 KB。 */
     private var snapshotCache: List<CommunityPlan>? = null
+
+    /** 推荐条目快照读成功一次的缓存；与 [snapshotCache] 同样的理由（一份几十 KB，别反复拉）。 */
+    @Volatile
+    private var suggestionCache: List<SuggestedApp>? = null
 
     /**
      * 上一次「两个源都读不到」的时间（单调递增的本机时钟）。
