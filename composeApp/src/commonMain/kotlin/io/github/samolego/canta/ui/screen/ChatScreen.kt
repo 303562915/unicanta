@@ -2142,7 +2142,7 @@ private fun ChatBubble(
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
-        /** 私聊里对方不画头像（截图上就是干净的）；群里谁发言谁有自己的一张头像，
+        // 私聊里对方不画头像（截图上就是干净的）；群里谁发言谁有自己的一张头像，
         // 身份是 message.sender，点了进那个人的主页。
         //
         // 自己这一侧的头像现在**私聊也画**（用户要求：消息页那一张脸和这儿要一致）；
