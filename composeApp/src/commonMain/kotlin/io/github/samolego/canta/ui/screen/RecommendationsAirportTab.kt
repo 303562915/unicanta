@@ -48,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.community.PlanRepository
-import io.github.samolego.canta.data.recommend.AirportDetail
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
@@ -146,9 +145,9 @@ internal fun RecommendationsAirportTab(
     var airportError by remember { mutableStateOf<String?>(null) }
     /** 正在向 airport-head 之后追加的那一页位置：首页 10 条，往下划一页给 `pageSize` 条。 */
     var visiblePages by remember { mutableIntStateOf(1) }
-    /** 摊开看的那一条：点名字或「详情」打开，点同一个再关。 */
+    /** 摊开看的那一条：点名字或「详情」弹出详情，点外面 / 取消关掉。 */
     var openedId by remember { mutableStateOf<Long?>(null) }
-    /** 摊开时再点一次「详情」才展开完整介绍，列表里那两行字已经够长了。 */
+    /** 详情里的完整介绍：默认只摆一行，点「展开介绍」再整个摊开。 */
     var detailsExpanded by remember { mutableStateOf(false) }
 
     // 每次拿到新的一屏就写回外层：切走再回来先画它，而不是从空列表开始转圈。
@@ -296,20 +295,16 @@ internal fun RecommendationsAirportTab(
                     }
 
                     items(airports.take(visiblePages * AirportPageSize), key = { "airport-${it.id}" }) { entry ->
-                        val opened = openedId == entry.id
                         AirportCard(
                             entry = entry,
-                            opened = opened,
-                            detailsExpanded = detailsExpanded,
                             busy = busyKey == "airport:${entry.id}",
                             canAct = who.isNotEmpty(),
                             subscribeUrl = subscriptions[entry.id].orEmpty(),
                             inset = 16.dp,
-                            onToggleOpen = {
+                            onOpenDetail = {
                                 detailsExpanded = false
-                                openedId = if (opened) null else entry.id
+                                openedId = entry.id
                             },
-                            onToggleNote = { detailsExpanded = !detailsExpanded },
                             onVote = { agree -> vote(entry, agree) },
                             onRate = { stars -> rate(entry, stars) },
                             onSubscribe = { subscription(entry) },
@@ -378,6 +373,27 @@ internal fun RecommendationsAirportTab(
                 }
             },
             setupGate = setupGate,
+        )
+    }
+
+    // 详情是**另一层弹窗**，不是卡片自己变高：卡片里多出几行会顶开整条列表，人刚点过的那一条
+    // 会被挤走。弹窗盖在原位，关掉回到同一个滚动位置。
+    val opened = airports.firstOrNull { it.id == openedId }
+    if (opened != null) {
+        AirportDetailDialog(
+            entry = opened,
+            busy = busyKey == "airport:${opened.id}",
+            canAct = who.isNotEmpty(),
+            subscribeUrl = subscriptions[opened.id].orEmpty(),
+            noteExpanded = detailsExpanded,
+            onToggleNote = { detailsExpanded = !detailsExpanded },
+            onDismiss = { openedId = null },
+            onVote = { agree -> vote(opened, agree) },
+            onRate = { stars -> rate(opened, stars) },
+            onSubscribe = { subscription(opened) },
+            onOpenUrl = {
+                if (opened.url.isNotBlank()) platform.openUrl(opened.url)
+            },
         )
     }
 
@@ -467,16 +483,11 @@ private fun Note(text: String, inset: Dp) {
 @Composable
 private fun AirportCard(
     entry: CommunityAirport,
-    /** 摊开了没有：摊开时多画价格、流量、速度、设备数、协议和完整介绍。 */
-    opened: Boolean,
-    /** 「详情」里那几行介绍是否已展开；点「详情」带它上下翻，状态由列表那一层持有。 */
-    detailsExpanded: Boolean,
     busy: Boolean,
     canAct: Boolean,
     subscribeUrl: String,
     inset: Dp,
-    onToggleOpen: () -> Unit,
-    onToggleNote: () -> Unit,
+    onOpenDetail: () -> Unit,
     onVote: (Boolean) -> Unit,
     onRate: (Int) -> Unit,
     onSubscribe: () -> Unit,
@@ -518,7 +529,7 @@ private fun AirportCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .weight(1f, fill = false)
-                            .clickable(role = Role.Button, onClick = onToggleOpen),
+                            .clickable(role = Role.Button, onClick = onOpenDetail),
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
@@ -543,8 +554,8 @@ private fun AirportCard(
                         text = entry.summary,
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
-                        // 摊开之后不再截断：这时候人点开就是为了看完整的那段话。
-                        maxLines = if (opened) Int.MAX_VALUE else 2,
+                        // 卡片只放两行：完整的那段话在详情弹窗里。
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -607,26 +618,17 @@ private fun AirportCard(
                 )
             } else {
                 Text(
-                    text = if (opened) "收起" else "详情",
+                    text = "详情",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = scheme.primary,
                     modifier = Modifier
                         .clip(RoundedCornerShape(percent = 50))
                         .background(scheme.primary.copy(alpha = 0.10f))
-                        .clickable(role = Role.Button, onClick = onToggleOpen)
+                        .clickable(role = Role.Button, onClick = onOpenDetail)
                         .padding(horizontal = 9.dp, vertical = 3.dp),
                 )
             }
-        }
-
-        // 摊开的那几格：价格、流量、速度、设备数、协议。全空的就不画，免得一片"未填"。
-        if (opened && !entry.detail.isEmpty) {
-            AirportDetailBlock(
-                detail = entry.detail,
-                expanded = detailsExpanded,
-                onToggleNote = onToggleNote,
-            )
         }
 
         if (subscribeUrl.isNotEmpty()) {
@@ -647,68 +649,238 @@ private fun AirportCard(
 }
 
 /**
- * 摊开之后那几格：一行两列，右边是原文不是数字——"1.5"离开"¥ / 月"就没有意义。
+ * 一条机场的详情弹窗：名字、类型、评分、票、价格流量速度设备协议、完整介绍，以及投票 / 打分 /
+ * 取订阅 / 开官网。
  *
- * 有完整介绍时再给一行「展开介绍 / 收起介绍」：第一屏只放一行，点开才把那段话整个摆出来。
+ * 为什么是弹窗而不是卡片自己变高：卡片里多出来的几行会把整条列表顶开，刚点过的那一条被挤走；
+ * 弹窗盖在原位，关掉还是同一个滚动位置。
+ *
+ * 右列一律是原文——`¥1.5 / 月`、`100GB/月`、`不限速`。数字离开单位就没有意义，这一层只负责
+ * 排版，不负责再拼一遍。
  */
 @Composable
-private fun AirportDetailBlock(
-    detail: AirportDetail,
-    expanded: Boolean,
+private fun AirportDetailDialog(
+    entry: CommunityAirport,
+    busy: Boolean,
+    canAct: Boolean,
+    subscribeUrl: String,
+    noteExpanded: Boolean,
     onToggleNote: () -> Unit,
+    onDismiss: () -> Unit,
+    onVote: (Boolean) -> Unit,
+    onRate: (Int) -> Unit,
+    onSubscribe: () -> Unit,
+    onOpenUrl: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
-            .padding(horizontal = 9.dp, vertical = 7.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = entry.name,
+        widthFraction = WIDE_DIALOG_WIDTH,
+        // 自己滚：里面既要放得下长介绍，又要随时回一句「先投票才取订阅」，不能靠撑高窗口。
+        scrollable = true,
+        buttons = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+            if (entry.url.isNotBlank()) {
+                Button(onClick = onOpenUrl) { Text("打开官网") }
+            }
+        },
     ) {
-        listOf(
-            "价格" to detail.price,
-            "流量" to detail.traffic,
-            "速度" to detail.speed,
-            "设备数" to detail.devices,
-            "协议" to detail.protocols,
-        ).filter { it.second.isNotBlank() }.forEach { (label, value) ->
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(AirportTileSize)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(scheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
-                    text = label,
+                    text = entry.tileMark,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.primary,
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = entry.metaLine.ifEmpty { "还没人评" },
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.onSurfaceVariant,
-                    modifier = Modifier.width(52.dp),
                 )
+                if (entry.author.isNotBlank()) {
+                    Text(
+                        text = "由 ${entry.author} 分享",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                text = entry.kindLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSecondaryContainer,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(scheme.secondaryContainer)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+
+        // 价格到协议：一行一条，缺哪条少哪条，不写"未填"。
+        val rows = listOf(
+            "价格" to entry.detail.price,
+            "流量" to entry.detail.traffic,
+            "速度" to entry.detail.speed,
+            "设备数" to entry.detail.devices,
+            "协议" to entry.detail.protocols,
+            "官网" to entry.url,
+        ).filter { it.second.isNotBlank() }
+        if (rows.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                rows.forEach { (label, value) ->
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                            modifier = Modifier.width(56.dp),
+                        )
+                        Text(
+                            text = value,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = scheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+
+        if (entry.summary.isNotBlank() || entry.detail.note.isNotBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "介绍",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.primary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            if (entry.summary.isNotBlank()) {
                 Text(
-                    text = value,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    text = entry.summary,
+                    style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurface,
-                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (entry.detail.note.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = entry.detail.note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = if (noteExpanded) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (noteExpanded || entry.detail.note.length > 40) {
+                    TextButton(onClick = onToggleNote) {
+                        Text(if (noteExpanded) "收起" else "展开全文")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "这条值不值得看",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.primary,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            VotePill(
+                label = "认同",
+                count = entry.agrees,
+                selected = entry.mine == true,
+                color = AirportAgree,
+                enabled = canAct && !busy,
+                onClick = { onVote(true) },
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            VotePill(
+                label = "不认同",
+                count = entry.disagrees,
+                selected = entry.mine == false,
+                color = AirportDisagree,
+                enabled = canAct && !busy,
+                onClick = { onVote(false) },
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            if (!canAct) {
+                Text(
+                    text = "认不出身份，只能看",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
                 )
             }
         }
-        if (detail.note.isNotBlank()) {
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StarRow(myStars = entry.myStars, enabled = canAct && !busy, onRate = onRate)
+            if (entry.ratingCount > 0) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "${entry.starsText} · ${entry.ratingCount} 人评分",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        if (entry.hasSubscription) {
+            Spacer(modifier = Modifier.height(10.dp))
+            if (subscribeUrl.isNotEmpty()) {
+                Text(
+                    text = subscribeUrl,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
             Text(
-                text = detail.note,
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
-                maxLines = if (expanded) Int.MAX_VALUE else 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Text(
-                text = if (expanded) "收起介绍" else "展开介绍",
+                text = if (subscribeUrl.isNotEmpty()) "复制订阅链接" else "取订阅链接",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = scheme.primary,
                 modifier = Modifier
                     .clip(RoundedCornerShape(percent = 50))
-                    .clickable(role = Role.Button, onClick = onToggleNote)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                    .background(scheme.primary.copy(alpha = 0.10f))
+                    .clickable(role = Role.Button, onClick = onSubscribe)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "订阅链接只给投过票、打过分的人：票是入场券，这就是投票在这里的实际作用。",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
     }
 }
 
