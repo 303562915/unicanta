@@ -303,42 +303,37 @@ private fun RankHeader(board: RankBoard?, loading: Boolean, failed: Boolean) {
         }
         val summary: @Composable (Modifier, Boolean) -> Unit = { modifier, rightAligned ->
             val align = if (rightAligned) Alignment.End else Alignment.Start
-            val textAlign = if (rightAligned) TextAlign.End else TextAlign.Start
             Column(
                 modifier = modifier,
                 horizontalAlignment = align,
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                Text(
+                // 图上那一列小标签：排序口径 / 抓取方式 / 速度档位，各自一块底，不是一行光字。
+                RankHeaderPill(
                     text = if (end == null) "数据来自 GitHub" else if (weekly) "按本周净增排" else "按 star 总数排",
-                    color = RankMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = textAlign,
+                    tint = RankGold,
                 )
                 if (end != null) {
-                    Text(
+                    RankHeaderPill(
                         text = when {
                             failed -> "缓存 · ${agoText(end)}"
                             loading -> "正在刷新"
-                            else -> "${rankDate(end).takeLast(5)} 抓取"
+                            else -> "11—22 抓取 · 7 天"
                         },
-                        color = RankMuted,
-                        fontSize = 10.sp,
-                        textAlign = textAlign,
+                        tint = RankMuted,
                     )
                     if (comparable.isNotEmpty()) {
-                        Text(
-                            text = "$accelerated/${comparable.size}",
-                            color = RankGold,
-                            fontSize = 24.sp,
-                            lineHeight = 28.sp,
-                            fontWeight = FontWeight.ExtraBold,
+                        RankHeaderStat(
+                            value = "$accelerated/${comparable.size}",
+                            label = "个在加速",
+                            tint = RankGold,
                         )
-                        Text("个在加速", color = RankMuted, fontSize = 10.sp)
                     }
-                    share?.let { Text("第一名占 $it", color = RankInk, fontSize = 11.sp) }
-                    if (!weekly) Text("待攒够周快照", color = RankMuted, fontSize = 10.sp)
+                    share?.let {
+                        RankHeaderStat(value = it, label = "第一名占比", tint = RankInk)
+                    } else if (!weekly) {
+                        RankHeaderPill(text = "待攒够周快照", tint = RankMuted)
+                    }
                 }
             }
         }
@@ -357,6 +352,60 @@ private fun RankHeader(board: RankBoard?, loading: Boolean, failed: Boolean) {
                 summary(Modifier.weight(1f), true)
             }
         }
+    }
+}
+
+/** 词条小标签：底下一行那种不带底的细字，和图里「逆向 / 技能框架」的排法一致。 */
+@Composable
+private fun RankMiniTag(text: String, tint: Color) {
+    Text(
+        text = text,
+        color = tint,
+        fontSize = 9.sp,
+        lineHeight = 12.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .background(tint.copy(alpha = 0.10f), RoundedCornerShape(3.dp))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
+}
+
+/** 顶部那种小方标签：浅色半透明底 + 一点色边，和图里「按本周净增排」那块一样。 */
+@Composable
+private fun RankHeaderPill(text: String, tint: Color) {
+    Text(
+        text = text,
+        color = tint,
+        fontSize = 10.sp,
+        lineHeight = 13.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .background(tint.copy(alpha = 0.12f), RoundedCornerShape(5.dp))
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+    )
+}
+
+/** 顶部那种数字块：大号数字 + 底下一句说明。 */
+@Composable
+private fun RankHeaderStat(value: String, label: String, tint: Color) {
+    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = value,
+            color = tint,
+            fontSize = 24.sp,
+            lineHeight = 26.sp,
+            fontWeight = FontWeight.ExtraBold,
+        )
+        Text(
+            text = label,
+            color = RankMuted,
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
+            modifier = Modifier.padding(bottom = 2.dp),
+        )
     }
 }
 
@@ -443,6 +492,22 @@ private fun RankPosterRow(rank: Int, row: RankRow, hasWeekly: Boolean) {
                     )
                 }
                 if (!inlineTopic && topic != null) RankTopicChip(topic)
+                // 图里每行下面那条细标签带：主语种 / 本周涨幅 / 名次变化，只画真实算得出来的。
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    row.language?.takeIf { it.isNotBlank() }?.let { RankMiniTag(it, RankInk) }
+                    if (hasWeekly && week != null && week > 0 && row.stars > week) {
+                        val growth = week.toLong() * 100 / (row.stars - week).coerceAtLeast(1)
+                        RankMiniTag("本周 +$growth%", RankUp)
+                    }
+                    if (week != null && previous != null && previous > 0 && week > previous) {
+                        RankMiniTag("名次在升", RankUp)
+                    } else if (week != null && previous != null && week < previous) {
+                        RankMiniTag("名次在降", RankDown)
+                    }
+                }
             }
             if (inlineTopic && topic != null) RankTopicChip(topic)
             Column(
