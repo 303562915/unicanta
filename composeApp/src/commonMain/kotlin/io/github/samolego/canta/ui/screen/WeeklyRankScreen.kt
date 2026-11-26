@@ -61,22 +61,22 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 /** 海报上那支黄：名次前三位、净增数和分区标签都用它。 */
-private val RankGold = Color(0xFFFFD60A)
+private val RankGold = Color(0xFFE0A400)
 
 /** 海报底色与三层文字：浅色主题下也是这块深色面板，因为整页就是一张海报。 */
-private val RankBackground = Color(0xFF12181B)
-private val RankInk = Color(0xFFDDE4EA)
-private val RankMuted = Color(0xFFA2AFBC)
+private val RankBackground = Color(0xFFFCFBFA)
+private val RankInk = Color(0xFF1B1F24)
+private val RankMuted = Color(0xFF6B7280)
 
 /** 涨、跌各自一句颜色；「持平」用 [RankMuted]。 */
-private val RankUp = Color(0xFF9FE7B7)
-private val RankDown = Color(0xFFFFA69E)
+private val RankUp = Color(0xFF1E9E5A)
+private val RankDown = Color(0xFFD93A2B)
 
 /** 分类标签的四种主色，按 GitHub topic 分。 */
-private val ChipAgent = Color(0xFFFFD60A)
-private val ChipModel = Color(0xFF89C9F6)
-private val ChipAi = Color(0xFF9AE6B0)
-private val ChipOther = Color(0xFFD1B5F5)
+private val ChipAgent = Color(0xFFB07C00)
+private val ChipModel = Color(0xFF1F6FA8)
+private val ChipAi = Color(0xFF1E8E56)
+private val ChipOther = Color(0xFF7B52C4)
 
 /** 周榜口径里「一周」的长度；只用来画日期区间，不参与算数。 */
 private const val WEEK_MS = 604_800_000L
@@ -225,7 +225,7 @@ internal fun WeeklyRankScreen(
                 .padding(padding)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xFF242518), RankBackground, Color(0xFF1B222B)),
+                        listOf(Color(0xFFF7F4EA), RankBackground, Color(0xFFF2F4F7)),
                     ),
                 ),
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp),
@@ -551,13 +551,13 @@ private fun RankPosterRow(
             Box(
                 modifier = Modifier
                     .width(if (tight) 25.dp else 29.dp)
-                    .background(if (rank <= 3) RankGold else Color(0xFF2B3640), RoundedCornerShape(6.dp))
+                    .background(if (rank <= 3) RankGold else Color(0xFFE9E7E2), RoundedCornerShape(6.dp))
                     .padding(vertical = 3.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "$rank",
-                    color = if (rank <= 3) RankBackground else Color(0xFFCCD5DE),
+                    color = if (rank <= 3) RankBackground else Color(0xFF3A4048),
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 17.sp,
                     lineHeight = 20.sp,
@@ -676,7 +676,7 @@ private fun RankTopicChip(topic: String) {
     }
     Text(
         text = label,
-        color = RankBackground,
+        color = Color(0xFFFFFFFF),
         fontSize = 9.sp,
         lineHeight = 12.sp,
         fontWeight = FontWeight.Bold,

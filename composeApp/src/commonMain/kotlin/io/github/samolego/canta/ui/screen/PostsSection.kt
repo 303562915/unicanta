@@ -402,35 +402,50 @@ private fun PostsFab(
     onRefresh: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    // 展开进度：0 = 收起（圆 + primaryContainer），1 = 展开（方形继续用 primary）。
+    // 数值照 fluxdo 的 `M3eFabMenuButton`（`packages/m3e_ui/lib/src/m3e_fab_menu.dart:94-129`）：
+    //   - **56×56**，收起态圆角 **16**、展开态是**正圆**
+    //   - 底色 `primaryContainer` → 展开渐变成 `primary`，前景 `onPrimaryContainer` → `onPrimary`
+    //   - 图标 **24**，展开时收到 **20**，并且从 ＋ 换成 ×
+    //   - 菜单项间距 **4**（原来 10，太散）
+    //   - 菜单项本身是 `primaryContainer` 的胶囊，**图标在右**、文字在左，内边距 24/8
+    //   - 弹出时从 0.2 缩放到 1（淡入）
+    val expand = animateFloatAsState(
+        targetValue = if (open) 1f else 0f,
+        animationSpec = tween(durationMillis = 240),
+        label = "posts-fab-expand",
+    )
+    val tint = expand.value
+    val fill = androidx.compose.ui.graphics.lerp(scheme.primaryContainer, scheme.primary, tint)
+    val ink = androidx.compose.ui.graphics.lerp(scheme.onPrimaryContainer, scheme.onPrimary, tint)
+    // 圆角 16 → 正圆（28 = 56/2），跟着进度插值。
+    val corner = RoundedCornerShape((16f + (28f - 16f) * tint).dp)
+
     Column(horizontalAlignment = Alignment.End) {
         if (open) {
             FabAction(icon = Icons.Outlined.Refresh, label = "刷新", onClick = onRefresh)
-            Spacer(modifier = Modifier.height(10.dp))
             if (canWrite) {
                 FabAction(
                     icon = Icons.Outlined.Drafts,
                     label = if (draftCount > 0) "草稿 ($draftCount)" else "草稿",
                     onClick = onDrafts,
                 )
-                Spacer(modifier = Modifier.height(10.dp))
                 FabAction(icon = Icons.Outlined.Edit, label = "写新帖", onClick = onNewPost)
-                Spacer(modifier = Modifier.height(14.dp))
             }
         }
         Box(
             modifier = Modifier
                 .size(56.dp)
-                .clip(CircleShape)
-                // 底色 surfaceContainerHigh：比页面高一档，不抢卡片，也不像 primary 那样刺眼。
-                .background(scheme.surfaceContainerHigh)
+                .clip(corner)
+                .background(fill)
                 .clickable(role = Role.Button, onClickLabel = if (open) "收起" else "发帖", onClick = onToggle),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = if (open) Icons.Outlined.Close else Icons.Outlined.Add,
                 contentDescription = if (open) "收起" else "发帖",
-                modifier = Modifier.size(24.dp),
-                tint = scheme.onSurface,
+                modifier = Modifier.size((24f - 4f * tint).dp),
+                tint = ink,
             )
         }
     }
@@ -443,23 +458,25 @@ private fun FabAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(scheme.surfaceContainerHigh)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(start = 14.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+            // 菜单项：`primaryContainer` 胶囊、**图标在右、文字在左**、内边距 24/8（照
+            // `M3eFabMenuItem` 的 `iconAlignment: end`），与那颗展开成 primary 的 FAB 是同一族颜色。
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+            .background(scheme.primaryContainer)
+        .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = scheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = scheme.onSurface,
+            color = scheme.onPrimaryContainer,
             maxLines = 1,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = scheme.onPrimaryContainer,
         )
     }
 }
@@ -1541,17 +1558,8 @@ private fun PostListPane(
                     }
                 }
 
-                item(key = "posts-head") {
-                    PostSectionHeader(
-                        label = when {
-                            board == PostBoard.Mine -> "我发的"
-                            board == PostBoard.Hot -> "热门"
-                            category.isNotBlank() -> category
-                            else -> "帖子"
-                        },
-                        count = normalShown.size,
-                    )
-                }
+                // 列表里**没有**区块标题行：fluxdo 首页从第一张卡片直接开始，口径只写在顶栏「最新」那里。
+                // （上一版这里还有一行「帖子 · N」，用户点名不要，删掉。）
 
                 if (error != null) {
                     item(key = "posts-error") { PostNote(text = error) }
@@ -1618,16 +1626,8 @@ private fun PostListPane(
                     }
                 }
 
-                item(key = "posts-foot") {
-                    PostNote(
-                        text = if (canWrite) {
-                            "帖子只经后端读写：认不出身份就发不出去，也删不了别人的帖子。" +
-                                "手停下来 700 毫秒存一次本地草稿，发出去成功之后才删。"
-                        } else {
-                            "现在只能看：还没认出身份，写帖子会提示重新进一次社区页。"
-                        },
-                    )
-                }
+                // 列表末尾**不留**那行说明文字（「帖子只经后端读写…」/「现在只能看…」）：
+                // 它不是内容，只是开发笔记，每屏最底下白占一段。身份没就绪这件事由 FAB 自己提示。
             }
         }
     }
