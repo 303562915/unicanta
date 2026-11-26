@@ -176,6 +176,7 @@ jobs:
           packages = data.setdefault('packages', {})
           allowed = {'Recommended', 'Advanced', 'Expert', 'Unsafe', 'System'}
           published_ids = []
+          merged_any = False
 
           # ---- 投票通过的（数据库那条腿）
           rows = json.loads(os.environ.get('VOTE_ROWS') or '[]')
@@ -200,6 +201,7 @@ jobs:
               }
               if row.get('id'):
                   published_ids.append(int(row['id']))
+              merged_any = True
               print(f'merged by vote: {pkg} -> {removal}')
 
           # ---- issue 那条腿
@@ -218,7 +220,15 @@ jobs:
                   'issue': issue,
                   'notes': {'zh': note, 'en': note},
               }
+              merged_any = True
               print(f'merged by issue: {pkg} -> {entry_in["proposed"]}')
+
+          # 一条都没合并就别动文件。以前 version/updated 是无条件改的，于是"没有新修正"也会
+          # 产生一个只把 version 加一的提交（012e1ed 就是这样），`git diff --cached --quiet`
+          # 那个"没变化就不提交"的闸门永远不生效。
+          if not merged_any:
+              print('没有任何新修正，文件保持原样。')
+              sys.exit(0)
 
           data['version'] = int(data.get('version', 1)) + 1
           data['updated'] = datetime.date.today().isoformat()
