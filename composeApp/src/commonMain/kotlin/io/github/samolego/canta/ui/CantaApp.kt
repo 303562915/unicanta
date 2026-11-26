@@ -96,6 +96,7 @@ import io.github.samolego.canta.ui.component.FloatingPillBar
 import io.github.samolego.canta.ui.component.ScrollToTop
 import io.github.samolego.canta.ui.component.ThemeToastHost
 import io.github.samolego.canta.ui.component.dockScroll
+import io.github.samolego.canta.ui.component.personAvatarUrl
 import io.github.samolego.canta.ui.component.rememberDockVisibility
 import io.github.samolego.canta.ui.fl.FlAccent
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -321,8 +322,13 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     // 身份预热：商城、消息、我的方案这些按身份查快照的页面，第一帧就要知道「这是谁」。
     // 不预热的话，`DeviceIdentity.current()` 得等某个页面自己把设置读完，那一帧只能先画加载圈。
     // 只读一次，失败（设置还没落盘）就当没有，各页面自己的读取照旧。
+    //
+    // `writtenIdentity` 是这份预热的**结果**：下面那张"我的头像"要用它兜底（见 `shownAvatarUrl`），
+    // 而 `LaunchedEffect` 的块里读不到外面要用的值，所以这里存进 state 而不是丢掉。
+    var writtenIdentity by remember { mutableStateOf(Identity("")) }
     LaunchedEffect(deps) {
-        runCatching { DeviceIdentity.current(deps.settings) }
+        writtenIdentity = runCatching { DeviceIdentity.current(deps.settings) }
+            .getOrDefault(Identity(""))
     }
     val settingsViewModel: SettingsViewModel = viewModel {
         SettingsViewModel(
@@ -479,8 +485,19 @@ private fun CantaNavigation(
     val updateChannel by settingsViewModel.updateChannel.collectAsStateWithLifecycle()
     val skippedAutoInstall by settingsViewModel.skippedAutoInstallVersion.collectAsStateWithLifecycle()
     // 自己设的头像直链：个人页和「我的」那张身份卡都读它，所以在这里收一次，
-    // 换完头像两处一起变（空串 = 没设过，两处都画首字母圆）。
+    // 换完头像两处一起变。空串 = 本机没有记录（没设过，或者刚清完应用数据），
+    // 这时**不能**直接画首字母——真正的地址由下面的 [shownAvatarUrl] 按身份号推出来。
     val myAvatarUrl by settingsViewModel.avatarUrl.collectAsStateWithLifecycle()
+    // 这张照片的地址：存着就用存着的，存着的是空串（从没设过，或者刚清完应用数据）就按身份号
+    // 从图床推出来（见 `personAvatarUrl`）。为什么非要推：后端没有头像列，图床上的对象名是固定的
+    // `unicanta/头像/<身份号>.jpg`，所以**这个人有没有头像，图床自己答得上来**；设置里那条直链
+    // 只是本机的一个缓存。以前只读那条缓存，清一次数据就把自己那张照片弄丢了——头像明明还在图床上。
+    // 真没设过的人这条地址是 404，`UserAvatar` 会记一笔并退回名字首字，代价只是多一次询问。
+    // 身份号是异步读的（`writtenIdentity` 是上面那次预热存下来的结果），读到之后这一串才有意义。
+    // 用 getter 不用 `remember`：它只由 `myAvatarUrl` 与 `writtenIdentity` 算出来，两者都是 State，
+    // 每次重组顺着算一遍就是最新的，不必再多开一层。
+    val shownAvatarUrl: String
+        get() = myAvatarUrl.trim().ifEmpty { personAvatarUrl(writtenIdentity.owner) }
     val updateClient = remember { HttpClient() }
     /**
      * 更新只接线一次：启动时那条自动下载和「关于」页的手点，用的是同一份实现、同一个状态。
@@ -1163,7 +1180,8 @@ private fun CantaNavigation(
                     onOpenAbout = { navController.navigate(Screen.About.route) },
                     // 身份卡点一下进个人主页：改名与换头像都在那一页。
                     onOpenProfile = { navController.navigate(Screen.Profile.route) },
-                    avatarUrl = myAvatarUrl,
+                    // 兜底过的地址（存着为空就按身份号推），清完应用数据这张卡也不会退回首字。
+                    avatarUrl = shownAvatarUrl,
                     unreadReplies = unreadReplies,
                     // Same dot as the bar's: the about page behind this row is where updates live.
                     updateAvailable = updateAvailable,
@@ -1197,7 +1215,9 @@ private fun CantaNavigation(
                     repository = socialRepository,
                     owner = profileIdentity.owner,
                     userName = myName,
-                    avatarUrl = myAvatarUrl,
+                    // 这张照片在「我的」页和这个头像上是同一张，兜底也在同一处做：
+                    // 存着的直链为空时按身份号推图床地址（理由见上面那道闸）。
+                    avatarUrl = shownAvatarUrl,
                     planCount = profilePlanCount,
                     commentCount = profileCommentCount,
                     onSaveName = { name -> settingsViewModel.saveUserName(name) },

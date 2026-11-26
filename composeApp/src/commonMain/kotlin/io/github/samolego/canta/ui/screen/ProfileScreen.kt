@@ -29,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,7 @@ import io.github.samolego.canta.ui.component.SettingsGroup
 import io.github.samolego.canta.ui.component.SettingsItem
 import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.component.cacheAvatar
+import io.github.samolego.canta.ui.component.personAvatarUrl
 import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -132,11 +134,23 @@ fun ProfileScreen(
     var hint by remember { mutableStateOf<String?>(null) }
     var showRename by rememberSaveable { mutableStateOf(false) }
     // 换完头像要当场看见新的那张：上层把直链写进设置、再从 flow 传回来要绕一圈，
-    // 这里先拿上传的结果画，等新值到了 remember(avatarUrl) 自然对齐。
+    // 这里先拿上传的结果画，等新值到了 `remember(avatarUrl)` 自然对齐。
+    // 清完应用数据后这里收到的是空串，靠下面那条 `LaunchedEffect` 按身份号补。
     var shownAvatar by remember(avatarUrl) { mutableStateOf(avatarUrl) }
     // 换过头像就 +1：直链不变（覆盖式上传），但 `UserAvatar` 里记着的那张位图得重新读一次缓存，
     // 否则同一趟里换第二张时画出来的还是上一张。被 `key()` 用来重建那一个头像。
     var avatarVersion by remember { mutableStateOf(0) }
+    // 身份号是异步传进来的：刚进这一页那几帧 [owner] 还是空串。这时收到的 [avatarUrl] 若也是空串
+    // （清完应用数据就是这个样子），上面那次 `remember` 记下的就是空值，得等身份号到了补一次——
+    // 按它推出图床地址（见 [personAvatarUrl]）。推出来的那条就是这台机器自己的头像
+    // （后端没有头像列，图床对象名固定是 `<身份号>.jpg`），所以这不是"猜"，是同一条地址的另一种拼法。
+    // 补完之后 +1 一次版本号，让 `UserAvatar` 重建成「再读一次缓存」，否则它会拿着上一份缓存不请求。
+    LaunchedEffect(owner) {
+        if (owner.isNotBlank() && shownAvatar.isBlank()) {
+            shownAvatar = personAvatarUrl(owner)
+            avatarVersion += 1
+        }
+    }
     // 已经选好、正等着摆裁剪框的那张图：原图字节（下刀用）与缩过的位图（摆框用）。
     var cropTarget by remember { mutableStateOf<AvatarCropSource?>(null) }
 
