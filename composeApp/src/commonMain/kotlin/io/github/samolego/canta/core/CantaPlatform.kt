@@ -173,6 +173,14 @@ interface CantaPlatform {
     fun shareFile(fileName: String, content: String, mimeType: String = "text/plain"): Boolean = false
 
     /**
+     * 让用户从文件管理器里挑一个文本文件，返回它的内容（UTF-8）。取消、超时、打不开都回答 null。
+     *
+     * 用在「导入名单」这类回到设备上的文件：导出的 JSON 由用户自己保管、自己再挑回来。
+     * 桌面端用 AWT 的文件对话框，网页与测试这些没有文件系统的目标沿用默认实现回答 null。
+     */
+    suspend fun pickTextFile(mimeTypes: List<String> = listOf("application/json", "text/plain")): String? = null
+
+    /**
      * A stable, hashed identifier of this device, used only to hand a reinstall its old identity
      * back: the identity token itself is random and stays the secret, this is just the lookup key.
      *

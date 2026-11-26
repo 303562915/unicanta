@@ -55,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -224,6 +225,18 @@ private const val ChatPollFallbackMs: Long = 10_000L
 
 /** 增量拉取一次最多带回多少条新消息；一次真到 50 条以上的情况，下一条轮询会接着拉。 */
 private const val ChatNewLimit = 50
+
+/**
+ * 首屏落底补几次。
+ *
+ * 一进群要看见最新那条，而第一次 `scrollToItem` 往往落在半截：列表还没量完高度。补三轮
+ * （立刻 + 两帧之后 + 再 60ms）足够盖住「首屏 + 紧随其后的一页增量 + 输入栏/导航区把视口
+ * 压矮」这几种情况，又不至于在用户已经开始往上翻时还拽回来。
+ */
+private const val FirstPaintScrollPasses = 3
+
+/** 首屏每一轮落底之间等多久（毫秒）。 */
+private const val FirstPaintScrollPassMs: Long = 60L
 
 /**
  * 首屏补差一页问多少条。
@@ -550,6 +563,14 @@ fun ChatScreen(
     /** 首屏已经落到底了没有：没落过底之前不往上翻页，否则一进页面就白拉一页历史。 */
     var settled by remember { mutableStateOf(false) }
     /**
+     * 首屏那几轮"落到底"补完了没有。
+     *
+     * 和 [settled] 不是一件事：[settled] 管的是「能不能往上翻历史」，它只要求列表已经跳到尾巴
+     * 一次；这里管的是「首屏的尺寸已经安定」，补完之前允许反复把视图落回最新那条（见下面那个
+     * 首屏落底的 effect），补完之后只在真来了新消息时才落底。
+     */
+    var firstPaintDone by remember(conversationId) { mutableStateOf(false) }
+    /**
      * 上一次整页核对是什么时候。[refreshTail] 按**时间**决定要不要顺带整页拉一次。
      *
      * 为什么不是按轮数：两档轮询间隔差五倍（无实时通道 2 秒、有实时通道 10 秒），按 30 轮算就是
@@ -599,6 +620,7 @@ fun ChatScreen(
         detail = null
         tailId = null
         settled = false
+        firstPaintDone = false
         lastFullAt = 0L
         // 补差从哪儿往后问：手上最后一条，以及盘上记的尾巴，取小的那个。
         // 盘上那个可能比屏幕上最后一条更新（最新几条是分享卡片 / 名片，落不了盘），按它补会把中间
@@ -783,10 +805,35 @@ fun ChatScreen(
         val last = messages.lastOrNull() ?: return@LaunchedEffect
         if (last.id != tailId) {
             tailId = last.id
+            // 首屏不算「新消息」：那时列表可能还没量出高度，`scrollToItem` 落不到位，停在半屏
+            // 中间看着像"只读到一半"。首屏交给下面的「首屏落底」那一段，按最终尺寸再落一次。
+            if (firstPaintDone) listState.scrollToItem(messages.size - 1)
+        } else if (!firstPaintDone) {
+            // 首屏（消息数量没变）：还是落一次底，只是这里先给一个初值。
             listState.scrollToItem(messages.size - 1)
         }
         // 首屏（或新消息）已经落到底：从现在起，滚到顶才算"要翻历史"。
         settled = true
+    }
+
+    /**
+     * 进来就看见最新那条（群聊最常说的「一进群就该在底部」）。
+     *
+     * 上面那个 effect 在首屏只能落一次：列表这时还没测高完，落到的位置和最终的布局差一截；
+     * 而且首屏之后紧接着可能来一页增量、或者视口变高（上面的输入栏、下面的导航区），都要重落。
+     * 所以首屏专门补三轮：立刻、下一帧、再下一帧各落一次，然后把 [firstPaintDone] 置真，
+     * 之后一律只在"来了新消息"时落底，不再劫持用户往上翻的位置。
+     */
+    LaunchedEffect(conversationId, messages.isNotEmpty()) {
+        if (firstPaintDone || messages.isEmpty()) return@LaunchedEffect
+        repeat(FirstPaintScrollPasses) { pass ->
+            listState.scrollToItem(messages.size - 1)
+            if (pass < FirstPaintScrollPasses - 1) {
+                withFrameNanos { }
+                delay(FirstPaintScrollPassMs)
+            }
+        }
+        firstPaintDone = true
     }
 
     // 视口会变矮：键盘弹起、输入框从 40dp 长到 120dp、表情/更多面板拉开、快捷表情条出现。
@@ -1328,6 +1375,10 @@ fun ChatScreen(
                                         myLabel = userName.ifBlank { "我" },
                                         // 自己那张头像：换了头像之后同一个 URL 就是新图（覆盖式上传）。
                                         myAvatarUrl = personAvatarUrl(owner),
+                                        // 右边那张头像的配色：和聊天页其它话题一致的主色实底 + 白字。
+                                        // 与左边别人的「淡主色底 + 主色字」形成对照，两边一眼分得开。
+                                        myAvatarBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                        myAvatarLetterColor = Color.White,
                                         // 群聊里别人的气泡要说清是谁：一对一的对方不用说，页面标题就是名字。
                                         showSender = grouped && message.sender != owner,
                                         // 点头像看那个人的主页：自己那条不画头像，这个回调也就不给。
@@ -1911,6 +1962,10 @@ private fun ChatRowAvatar(
      * 放长按是因为点击已经被「看主页」占了；两个手势同一块区域，长按不会误触。
      */
     onLongClick: (() -> Unit)? = null,
+    /** 首字圆的底色；null 就跟着主题主色走（[UserAvatar] 的默认）。 */
+    background: Color? = null,
+    /** 首字那个字的颜色；底色是实心主色时用白色。 */
+    letterColor: Color = Color.White,
 ) {
     val circle = Modifier
         .size(32.dp)
@@ -1927,7 +1982,7 @@ private fun ChatRowAvatar(
     }
     Box(modifier = shape, contentAlignment = Alignment.Center) {
         // 图没到、或者根本没有头像时，这层自己画首字母圆，所以加载过程不会出现一个空洞。
-        UserAvatar(name = label, url = url, size = 32.dp)
+        UserAvatar(name = label, url = url, size = 32.dp, background = background, letterColor = letterColor)
     }
 }
 
@@ -1973,6 +2028,15 @@ private fun ChatBubble(
     myLabel: String = "我",
     /** 我自己那张头像的直链；空串就是首字母圆。由调用点按 owner 拼好递进来。 */
     myAvatarUrl: String = "",
+    /**
+     * 右侧这张头像的**配色**（底色 + 首字颜色），由调用点按同一套主题变量递进来。
+     *
+     * 没设过头像的人占多数，这时这一行的观感就完全取决于这两格颜色。自己这一侧和左侧别人的气泡
+     * 各用各的：左边是主题主色的淡底 + 主色字（与消息列表那 44dp 的头像同一套），右边是主色实底
+     * + 白字——两边看起来像"两个人"而不是两个灰圆。
+     */
+    myAvatarBackground: Color? = null,
+    myAvatarLetterColor: Color = Color.White,
     showSender: Boolean,
     onAvatarClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
@@ -2285,6 +2349,8 @@ private fun ChatBubble(
                 label = myLabel,
                 url = myAvatarUrl,
                 onClick = onMyAvatarClick,
+                background = myAvatarBackground,
+                letterColor = myAvatarLetterColor,
             )
         }
     }

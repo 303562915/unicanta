@@ -204,6 +204,12 @@ class AndroidCantaPlatform(
     /** 通知权限的申请器；和相册挑选器一样，只能在 [attachActivity] 里注册。 */
     private var notifyPermissionLauncher: ActivityResultLauncher<String>? = null
 
+    /** 文件挑选器（导入名单用）：同样只能在 [attachActivity] 里注册。 */
+    private var textFilePicker: ActivityResultLauncher<Array<String>>? = null
+
+    /** 正在等哪一次挑文件的结果；同一时刻只会有一个。 */
+    private var pendingTextFile: CompletableDeferred<String?>? = null
+
     /** 正在等哪一次权限申请的结果；同一时刻只会有一个。 */
     private var pendingNotifyPermission: CompletableDeferred<Boolean>? = null
 
@@ -259,6 +265,23 @@ class AndroidCantaPlatform(
             val waiting = pendingNotifyPermission
             pendingNotifyPermission = null
             waiting?.complete(granted)
+        }
+        // 导入名单：系统文件选择器挑一个 json/txt，读成字符串交回去。
+        textFilePicker = activity.registerForActivityResult(
+            ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            val waiting = pendingTextFile
+            pendingTextFile = null
+            if (uri == null) {
+                waiting?.complete(null)
+            } else {
+                val text = runCatching {
+                    activity.contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.readBytes().decodeToString()
+                    }
+                }.getOrNull()
+                waiting?.complete(text)
+            }
         }
     }
 

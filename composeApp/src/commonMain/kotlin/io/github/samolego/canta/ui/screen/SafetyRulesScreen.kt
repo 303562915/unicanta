@@ -104,6 +104,8 @@ import io.github.samolego.canta.ui.component.PlanScopeBar
 import io.github.samolego.canta.ui.component.PlanScopeDialog
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.label
+import io.github.samolego.canta.ui.component.planScopeOfStored
+import io.github.samolego.canta.ui.component.toStoredValue
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
 import io.github.samolego.canta.ui.dialog.UploadPlanDialog
@@ -185,6 +187,13 @@ fun SafetyRulesScreen(
     repository: PlanRepository? = null,
     /** The plans this phone saw last time; null keeps the page network-only. */
     planCache: PlanCache? = null,
+    /**
+     * 把「选择机型」的选择写回设置的那条路；不传就只有页面内的记忆（返回即丢失）。
+     *
+     * 用回调而不是直接收一个 SettingsViewModel：这一页在测试与网页版里都不需要整个 view model，
+     * 只需要一个"记住它"的动作。
+     */
+    onScopeRemember: (String) -> Unit = {},
     onNavigateBack: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -194,6 +203,12 @@ fun SafetyRulesScreen(
     // phone's own list is often empty, and an empty ranking says nothing useful about what the
     // community removes. A chip in the picker narrows it to this phone or to another model.
     var planScope by remember { mutableStateOf<PlanScope>(PlanScope.All) }
+    // 上次挑的机型存在设置里（见 AppSettingsProto.planScope）：这一页是二级页，去应用详情再返回
+    // 会重新组合，只放在 `remember` 里就变回「全部机型」——群里说的「记不住本机机型，返回就成了
+    // 全部机型」正是这个。目录到了之后再把存的那串还原成具体机型。
+    // 先认下"存过什么"，还原只在目录到位后做一次：目录是异步来的，早还原只能落空。
+    val storedScope by settings.planScopeFlow.collectAsStateWithLifecycle(initialValue = "")
+    var scopeRestored by remember { mutableStateOf(false) }
     // Every model the backend has plans for, with the counts its chips print.
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
     var catalogLoading by remember { mutableStateOf(true) }
@@ -311,6 +326,13 @@ fun SafetyRulesScreen(
         catalogLoading = true
         catalog = repo.catalog()?.toCatalogModels().orEmpty()
         catalogLoading = false
+    }
+
+    // 目录到手后，把上次挑的机型还原一次。只在第一份目录上做，之后刷新目录不再覆盖用户当下的选择。
+    LaunchedEffect(catalog, scopeRestored) {
+        if (scopeRestored || catalog.isEmpty()) return@LaunchedEffect
+        scopeRestored = true
+        if (storedScope.isNotBlank()) planScope = planScopeOfStored(storedScope, catalog)
     }
 
     LaunchedEffect(profile, reloads, planScope, identity) {
@@ -491,6 +513,8 @@ fun SafetyRulesScreen(
             loading = true
             notice = null
             planScope = picked
+            // 写进设置：离开这一页再回来还是这台机器（见上面的 storedScope）。
+            onScopeRemember(picked.toStoredValue())
         }
     }
     val opened = planScope as? PlanScope.Other
@@ -800,6 +824,7 @@ fun SafetyRulesScreen(
                             plans = emptyList()
                             loading = true
                             planScope = PlanScope.ThisPhone
+                            onScopeRemember(PlanScope.ThisPhone.toStoredValue())
                         }
                     }
                 }

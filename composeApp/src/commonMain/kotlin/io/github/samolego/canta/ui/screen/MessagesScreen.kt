@@ -91,6 +91,7 @@ import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.ui.component.AuthorLabel
 import io.github.samolego.canta.ui.component.UnreadBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
+import io.github.samolego.canta.ui.component.GroupAvatarView
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.UnreadDot
 import io.github.samolego.canta.ui.component.bottomHairline
@@ -1967,14 +1968,29 @@ private fun ConversationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {
-                PersonAvatar(
-                    name = conversation.label,
-                    // 私聊才有人可以设头像；群聊的 peer 是空串，落回群名首字。
-                    owner = conversation.peer,
-                    size = 44.dp,
-                    background = scheme.primary.copy(alpha = 0.15f),
-                    letterColor = scheme.primary,
-                )
+                // 群聊也要和聊天页一样：设过群头像就那张图，没设过就成员拼图——两处同一个组件。
+                // 这里没有成员名单（列表页不各自去拉成员表），所以拼图那块只有群名首字在中间，
+                // 方块底和圆角跟顶栏那个群头像是同一套，一眼认得是同一个群。
+                // 尺寸给 52：拼图那块看上去比同直径的一张脸小一圈，按 44 的行高放大到观感一致
+                // （见 GroupGridAvatar 的 systemSize）。
+                if (conversation.isGroup) {
+                    GroupAvatarView(
+                        name = conversation.label,
+                        conversationId = conversation.id,
+                        members = emptyList(),
+                        size = 52.dp,
+                        systemSize = 44.dp,
+                    )
+                } else {
+                    PersonAvatar(
+                        name = conversation.label,
+                        // 私聊才有人可以设头像；群聊的 peer 是空串，落回群名首字。
+                        owner = conversation.peer,
+                        size = 44.dp,
+                        background = scheme.primary.copy(alpha = 0.15f),
+                        letterColor = scheme.primary,
+                    )
+                }
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {

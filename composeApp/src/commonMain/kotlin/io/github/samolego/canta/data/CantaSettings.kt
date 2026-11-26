@@ -145,6 +145,13 @@ class CantaSettings(storage: AppBlobStorage) {
     val qqGroupSeenFlow: Flow<Boolean> = field { it.qqGroupSeen }
     /** 安全页顶部机型胶囊是不是点过了；点过就不再呼吸，见 [AppSettingsProto.scopeHintSeen]。 */
     val scopeHintSeenFlow: Flow<Boolean> = field { it.scopeHintSeen }
+    /**
+     * 上次「选择机型」里挑的那台机器，空串 = 全部机型。
+     *
+     * 界面一侧自己解析成 `型号|版本`（见 `PlanScope`），这一层只管原样存取：它不需要知道
+     * 那串东西怎么摆，换个存法也不必改设置代码。
+     */
+    val planScopeFlow: Flow<String> = field { it.planScope }
 
     /**
      * 各会话没发出去的草稿，已经是解好的 `会话号 -> 正文`，最近写的在最后。
@@ -246,6 +253,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setQqGroupSeen(seen: Boolean) = update { it.copy(qqGroupSeen = seen) }
     /** 记下顶部机型胶囊点过了，呼吸提示停掉。 */
     suspend fun setScopeHintSeen(seen: Boolean) = update { it.copy(scopeHintSeen = seen) }
+    /** 记下「选择机型」挑的是哪一台；空串 = 全部机型。 */
+    suspend fun setPlanScope(scope: String) = update { it.copy(planScope = scope.trim()) }
 
     /**
      * 记下（或清掉）一个会话的草稿。[text] 空串等于删除这一条。

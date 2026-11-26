@@ -315,6 +315,14 @@ class SettingsViewModel(
     fun saveScopeHintSeen(seen: Boolean) = save { setScopeHintSeen(seen) }
 
     /**
+     * 记下「选择机型」挑的是哪一台（空串 = 全部机型）。
+     *
+     * 走 viewModel 而不是页面自己起协程：和 [saveScopeHintSeen] 同一条路，页面销毁不会把这次写入
+     * 半路掐掉——"返回就变回全部机型"正是页面级状态被销毁的结果。
+     */
+    fun savePlanScope(scope: String) = save { setPlanScope(scope) }
+
+    /**
      * Renames this install: the value is stored at once, so the page and the next review use it
      * even offline, and written to the backend so the same token gets it back anywhere.
      */

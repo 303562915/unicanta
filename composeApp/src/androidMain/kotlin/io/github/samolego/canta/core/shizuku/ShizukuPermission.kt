@@ -81,17 +81,22 @@ object ShizukuPermission {
     }
 
     fun privilegeStatus(packageManager: PackageManager): PrivilegeStatus {
+        // 熟人的 fork（Stellar / Sui）先判：它们复用同一个 binder，系统里查不到"正在运行"以外的
+        // 证据。
         if (isSui || isCantaAuthorized()) {
             return PrivilegeStatus.ACTIVE
         }
-        if (!runtimeInstalled(packageManager)) {
-            return PrivilegeStatus.NOT_AVAILABLE
+        // 然后是 binder 本身：**谁是管理器不重要**。群里提的 AXManager、改过包名的分支，走的都是
+        // 同一套 API；只要 binder 在，这台机器上就有能用的运行时，只差授权。
+        if (Shizuku.pingBinder() && !Shizuku.isPreV11()) {
+            return PrivilegeStatus.NOT_AUTHORIZED
         }
-        return if (Shizuku.pingBinder() && !Shizuku.isPreV11()) {
-            PrivilegeStatus.NOT_AUTHORIZED
-        } else {
-            // Installed but the service isn't up; either manager counts, they are interchangeable.
+        // 「装没装」不能只看两个包名（原 [runtimeInstalled] 的做法）：包名一栏为空不代表没装。
+        // binder 不在时判不出「装了没起」还是「根本没装」，就给一句两端都成立的话。
+        return if (runtimeInstalled(packageManager)) {
             PrivilegeStatus.NOT_RUNNING
+        } else {
+            PrivilegeStatus.NOT_AVAILABLE
         }
     }
 
@@ -116,6 +121,6 @@ object ShizukuPermission {
         PrivilegeStatus.ACTIVE -> "Shizuku 在运行，但这次调用没答上来"
         PrivilegeStatus.NOT_AUTHORIZED -> "Canta 还没被 Shizuku 授权"
         PrivilegeStatus.NOT_RUNNING -> "Shizuku 没在运行"
-        PrivilegeStatus.NOT_AVAILABLE -> "这台手机没装 Shizuku"
+        PrivilegeStatus.NOT_AVAILABLE -> "没找到 Shizuku 服务：装一个 Shizuku / Stellar，或用同样 API 的管理器（如 AXManager）"
     }
 }

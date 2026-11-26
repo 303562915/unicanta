@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
@@ -36,6 +37,17 @@ fun GroupGridAvatar(
     members: List<ConversationMember>,
     size: Dp,
     modifier: Modifier = Modifier,
+    /**
+     * 「消息列表里那一行头像有多大」。拼图的视觉重量靠它对齐：
+     *
+     * 会话列表的每一列（未读角标、时间、静音标）都按 [PersonAvatar] 那个直径的比例摆，而拼图
+     * 几列方块叠起来看上去比同直径的一张脸小一圈——直接同一尺寸摆进去，群头像会明显"缩水"。
+     * 所以拼图按 [systemSize] 反推一个更大的外框，让**观感**与同尺寸的个人头像一致。
+     *
+     * 传 0 或与 [size] 相同表示"按 [size] 本来该有的样子画"（群聊顶栏、群资料页那种没有相邻头像的
+     * 地方，不需要对齐谁）。
+     */
+    systemSize: Dp = size,
 ) {
     val people = members
         .filter { it.owner.isNotEmpty() && it.owner != AiSender }
@@ -55,10 +67,13 @@ fun GroupGridAvatar(
         )
         return
     }
-    val cell = size / columns
+    // 观感对齐：拼图外框按 systemSize 放大一点（见 [systemSize] 的说明），但没有它的调用点
+    // （systemSize == size）保持原样，顶栏和群资料页的尺寸不受影响。
+    val extent = remember(size, systemSize, columns) { gridExtent(size, systemSize, columns) }
+    val cell = extent / columns
     // 外框一点点圆角、格子本身是方的：和微信那种"一块方图"是同一个观感。
     val cellShape = RoundedCornerShape(cell * 0.06f)
-    Column(modifier = modifier.size(size).clip(RoundedCornerShape(size * 0.22f))) {
+    Column(modifier = modifier.size(extent).clip(RoundedCornerShape(extent * 0.22f))) {
         for (row in 0 until columns) {
             Row {
                 for (column in 0 until columns) {
@@ -79,6 +94,22 @@ fun GroupGridAvatar(
             }
         }
     }
+}
+
+/**
+ * 拼图该画多大，才能和同直径的个人头像看起来一样大。
+ *
+ * 一张圆脸铺满 [size] × [size]；而 n×n 的方格里，每个格子中心落着一张 `extent/n` 的圆脸，
+ * 加上格子间的空隙，整块的"墨迹"大约只占 `extent × (2n-1)/n`。取两者相等：
+ * `extent × (2n-1)/n = size` → `extent = size × n / (2n-1)`。2 列放大 1/3，3 列放大 1/5。
+ *
+ * 只放大到 [systemSize] 为止：调用方说好了这一行就占那么大，画出去会把相邻的列挤走。
+ */
+private fun gridExtent(size: Dp, systemSize: Dp, columns: Int): Dp {
+    if (systemSize.value <= 0f || systemSize == size || columns <= 1) return size
+    val scale = columns.toFloat() / (2 * columns - 1)
+    val grown = size * scale
+    return if (grown > systemSize) systemSize else grown
 }
 
 /** 九宫格最多画几格。 */

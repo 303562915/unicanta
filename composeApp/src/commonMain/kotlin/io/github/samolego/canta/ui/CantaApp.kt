@@ -991,6 +991,8 @@ private fun CantaNavigation(
                     // right after a reboot is not empty while the request is in flight.
                     repository = communityRepository,
                     planCache = deps.planCache,
+                    // 记住「选择机型」挑的那台：这一页是二级页，返回再进来不该变回全部机型。
+                    onScopeRemember = { value -> settingsViewModel.savePlanScope(value) },
                     onNavigateBack = { navController.navigateUp() },
                 )
             }

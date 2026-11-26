@@ -286,6 +286,14 @@ data class AppSettingsProto(
      * 各自变。见 `BloatRepository.refreshCorrections()`。
      */
     @ProtoNumber(48) val correctionsFetchedDay: String = "",
+    /**
+     * 上次在「选择机型」里挑的那台机器（`型号|版本` 或 `型号|`），留空就是「全部机型」这个默认范围。
+     *
+     * 为什么必须落盘：手机型号那一格是"这台手机"的属性，用户挑别的机型看方案，是这个**人**的选择。
+     * 以前它只是页面里的 `remember`，离开安全规则页（去应用详情再返回）就重置成全部机型，看起来像
+     * 「记不住本机机型」。存下来之后，返回还是那一台，点「全部机型」才会清空。
+     */
+    @ProtoNumber(49) val planScope: String = "",
 )
 
 /**

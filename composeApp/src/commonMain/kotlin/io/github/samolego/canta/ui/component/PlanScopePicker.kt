@@ -91,6 +91,40 @@ fun PlanScope.label(ownLabel: String): String = when (this) {
     is PlanScope.Other -> model.label
 }
 
+/**
+ * 存进设置的写法：`型号 | 版本`；全部机型是空串，本机是 `|`（型号与版本都空）。
+ *
+ * 只存「型号」和「版本」两段字符串，不存整个 [CatalogModel]：目录随时会重建（后端一变它就变），
+ * 反解时再按型号去目录里找回那一条，找不到就当成没有被选过——不为了一个记忆值让页面崩。
+ */
+private const val SCOPE_SEPARATOR = "|"
+
+fun PlanScope.toStoredValue(): String = when (this) {
+    PlanScope.All -> ""
+    PlanScope.ThisPhone -> SCOPE_SEPARATOR
+    is PlanScope.Other -> model.model + SCOPE_SEPARATOR + (build?.key ?: "")
+}
+
+/**
+ * 把 [toStoredValue] 存下来的那串东西还原成范围；认不出来（存的是别的写法、目录里没这台机器）
+ * 就回答 [PlanScope.All]，与「没选过」同一个结果。
+ *
+ * 版本那一段存的是 [CatalogBuild.key]（`rom/版本号/build`）：同一个型号的不同系统版本各有自己的
+ * 方案，只存一个版本数字会把两个 build 混成一条。
+ */
+fun planScopeOfStored(stored: String, models: List<CatalogModel>): PlanScope {
+    val raw = stored.trim()
+    if (raw.isEmpty()) return PlanScope.All
+    if (raw == SCOPE_SEPARATOR) return PlanScope.ThisPhone
+    val split = raw.indexOf(SCOPE_SEPARATOR)
+    if (split < 0) return PlanScope.All
+    val model = models.firstOrNull { it.model == raw.substring(0, split) } ?: return PlanScope.All
+    val key = raw.substring(split + 1)
+    if (key.isEmpty()) return PlanScope.Other(model)
+    val build = model.builds.firstOrNull { it.key == key } ?: return PlanScope.Other(model)
+    return PlanScope.Other(model, build)
+}
+
 /** The build part of the scope: only another model has a separate build chip. */
 fun PlanScope.buildLabel(): String? = when (this) {
     PlanScope.All -> null
