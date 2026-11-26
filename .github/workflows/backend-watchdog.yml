@@ -14,10 +14,12 @@ name: 🩺 Backend watchdog
 #
 #   以前 `disk slow=yes` 只推一条钉钉就结束 —— 用户的原话是「你通知我有什么用？你通知我，我也
 #   没办法解决」。预警只有在能附上一个已经做完的动作时才有意义，所以现在：
-#     checkpoint write= > 30s  →  直接重启，然后发「已自动重启」的钉钉
-#   阈值取 30s（预警线是 5s）：5s 时实例还能正常服务，重启反而打断一批正常请求；到 30s 已经
-#   是事后必挂的量级（事故时是 43–148s），这时候重启只是把「必然发生的 4 小时白屏」提前解决。
-#   挨打的是重启本身（约 2 分钟不可用），不重启则是几小时不可用，这笔账很清楚。
+#     checkpoint write= > 120s  →  直接重启，然后发「已自动重启」的钉钉
+#
+#   **阈值是 120s，不是 30s。** 同一天先按 30s 上线过，被实测数据否掉了：重启后 checkpoint
+#   稳定回到 60–85 秒，于是变成每 30 分钟重启一次的死循环（当天 14 次），而那种幅度是 Nano 档
+#   磁盘突发余额 0% 的物理极限 —— 重启一秒也换不回来。现在只在这一天真越过历史最差值时才打断，
+#   把「每半小时必断 4 分钟」换成「慢但不停」。细节见 Check disk latency 那步的注释。
 #
 # 粒度说明，以及 2026-11-25 的教训（重要）：
 #
@@ -123,12 +125,24 @@ jobs:
         if: steps.probe.outputs.state == 'ok'
         run: |
           set -uo pipefail
-          # 这次事故的真正起点：checkpoint 每次写盘要 30–53 秒（正常是毫秒级）。
+          # 这次事故的真正起点：checkpoint 每次写盘要 30–148 秒（正常是毫秒级）。
           # 它在服务还能用的时候就出现了，所以这里当作早期信号。
           #
           # 两条线，别混：
-          #   > 5s  记进 summary，当作「正在恶化」的可观察事实，不打扰任何人；
-          #   > 30s 才算「已经进入必挂区间」，触发重启（见下面 restart-slow-disk 那步）。
+          #   > 5s   记进 summary，当作「正在恶化」的可观察事实，不打扰任何人；
+          #   > 120s 才算「已经进入必挂区间」，触发重启（见下面 restart-slow-disk 那步）。
+          #
+          # **2026-11-26 把重启线从 30s 提到 120s。** 原来定 30s 时以为这是偶发劣化，
+          # 重启一次就好；实测一整天的数据否掉这个假设：每次重启后 checkpoint 稳定回到
+          # 60–85 秒（14 次：60/63/64/65/66/67/68/70/71/71/73/76/84/85），于是**每 30 分钟
+          # 重启一次，循环不止**。Supabase 支持确认根因是「磁盘突发余额 0%、swap 涨到 557 MB
+          # 而实例只有 426 MB」—— 那是 Nano 档的物理极限，重启换不来哪怕一秒的改善。
+          #
+          # 那么重启就只剩坏处：每次约 4 分钟不可用，还打断了正在跑的请求。60–85 秒虽然慢，
+          # 服务是**能用**的。所以把线提到 120s：只在这一天真的越过历史最差值时才打断它，
+          # 把「每半小时必断 4 分钟」换成「慢但不停」。
+          #
+          # 真正该做的事在客户端侧（降请求量）和实例档位（升 Micro），不是这里。
           end=$(date -u +%Y-%m-%dT%H:%M:00Z)
           start=$(date -u -d '-15 minutes' +%Y-%m-%dT%H:%M:00Z)
           sql="select event_message from logs where source='postgres_logs' and event_message like '%checkpoint complete%' order by timestamp desc limit 5"
@@ -141,13 +155,13 @@ jobs:
           worst=$(echo "$resp" | jq -r '[.result[]?.event_message | capture("write=(?<w>[0-9.]+) s").w | tonumber] | max // 0' 2>/dev/null || echo 0)
           echo "最近 15 分钟 checkpoint 最慢一次：${worst}s"
           echo "worst=${worst}" >> "$GITHUB_OUTPUT"
-          if awk "BEGIN{exit !(${worst:-0} > 30)}"; then
+          if awk "BEGIN{exit !(${worst:-0} > 120)}"; then
             echo "critical=yes" >> "$GITHUB_OUTPUT"
             echo "### 🔥 存储已到必挂区间：checkpoint write=${worst}s → 将自动重启" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "critical=no" >> "$GITHUB_OUTPUT"
             if awk "BEGIN{exit !(${worst:-0} > 5)}"; then
-              echo "### ⚠️ 存储变慢（观察中，未达重启线）：checkpoint write=${worst}s" >> "$GITHUB_STEP_SUMMARY"
+              echo "### ⚠️ 存储变慢（观察中，未达重启线 120s）：checkpoint write=${worst}s" >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
 
