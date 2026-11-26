@@ -53,6 +53,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 
 /** Green for "这条修正说得对", the same pass colour the vote bar uses. */
