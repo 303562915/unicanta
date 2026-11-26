@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,21 +33,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaPlatform
-import io.github.samolego.canta.data.app.DeletionListExport
 import io.github.samolego.canta.data.app.DeletionListImport
 import io.github.samolego.canta.data.app.DeletionListStore
+import io.github.samolego.canta.data.app.DeletionPlan
+import io.github.samolego.canta.data.app.LOCAL_PLAN_ID
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.cancel
 import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
-import io.github.samolego.canta.ui.component.AppCardPair
-import io.github.samolego.canta.ui.component.AppLinkCard
-import io.github.samolego.canta.ui.component.AppLinkTile
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.SettingsChevron
+import io.github.samolego.canta.ui.fl.FlBarButton
+import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
@@ -54,54 +57,118 @@ import io.github.samolego.canta.ui.fl.colorOf
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
-/** 列表里每一行的高度观感，与设置页那些卡片一致。 */
-private val RowGap = 6.dp
-
 /**
- * 「删除名单」页：这台手机上**已经删掉、还没装回来**的那些包名。
+ * 「卸载记录」页：所有能整份装回来的**方案**。
  *
- * 名单不在这里编辑——它是卸载记录算出来的，删一个包就多一条。这一页做四件事：
- * 导出到用户自己挑的位置、把别处导出的 JSON 导进来、把导进来的那部分清掉，
- * 以及**点一条直接装回来**（不用再去「未安装」页里把它找出来）。
+ * 一条方案 = 一份名单：最上面那份是**本机的卸载记录**（删了还没装回来的包，实时算），
+ * 下面是**导入进来的**每一份（导一次就留一份，可以并存）。点一条进去看它包含哪些包，
+ * 在里面既可以逐个装回，也可以整份装回。
+ *
+ * 导入放在右上角，因为它是"文件进来"，和页面内容是并列的动作，不该占着列表的位置。
  */
 @Composable
 fun DeletionListScreen(
     deletionList: DeletionListStore,
     platform: CantaPlatform,
     onNavigateBack: () -> Unit,
-    /**
-     * 点一条就恢复，返回成功的条数。和「未安装」页那一下是同一个动作，所以调用方直接把
-     * AppListViewModel 那条路接进来即可。
-     */
+    /** 装回一个包，返回成功的条数。 */
     onRestore: suspend (String) -> Int = { 0 },
 ) {
-    val imported by deletionList.imported.collectAsStateWithLifecycle()
+    val importedPlans by deletionList.importedPlans.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    /** 记录算出来的「已删除」。 */
-    var removed by remember { mutableStateOf(emptyList<String>()) }
-    /** 导进来、还没落地的那一份；非空就弹确认框。 */
+    var local by remember { mutableStateOf<DeletionPlan?>(null) }
+    var openPlan by remember { mutableStateOf<DeletionPlan?>(null) }
     var pendingImport by remember { mutableStateOf<DeletionListImport?>(null) }
-    var clearArmed by remember { mutableStateOf(false) }
-    /** 最近一次导出落到哪里：导完显示在下面，文件管理器里找不到时这就是答案。 */
-    var lastExport by remember { mutableStateOf<DeletionListExport?>(null) }
-    /** 正在装回来的那个包。恢复是逐个跑的，第二个点下去要知道第一个还没完。 */
-    var restoring by remember { mutableStateOf<String?>(null) }
+    var lastExport by remember { mutableStateOf<String?>(null) }
 
-    // 记录是唯一的事实来源：进这一页、以及导入 / 清空 / 恢复之后都重算一遍。
-    suspend fun reload() {
+    suspend fun reload() { local = deletionList.localPlan() }
+    LaunchedEffect(Unit) {
         deletionList.ensureReady()
-        removed = deletionList.current()
+        reload()
     }
 
-    LaunchedEffect(Unit) { reload() }
+    // 点开的那一条也要跟着记录刷新：装回一个之后，它这一份就少一条。
+    LaunchedEffect(openPlan?.id) {
+        openPlan?.let { opened ->
+            openPlan = if (opened.id == LOCAL_PLAN_ID) {
+                deletionList.localPlan()
+            } else {
+                deletionList.plan(opened.id)
+            }
+        }
+    }
 
-    val all = remember(removed, imported) {
-        (removed + imported).distinct().sortedBy { it.lowercase() }
+    openPlan?.let { plan ->
+        DeletionPlanDetail(
+            plan = plan,
+            onBack = { openPlan = null },
+            onRestoreOne = { pkg ->
+                scope.launch {
+                    val done = onRestore(pkg)
+                    openPlan = if (plan.id == LOCAL_PLAN_ID) {
+                        deletionList.localPlan()
+                    } else {
+                        deletionList.plan(plan.id)
+                    }
+                    platform.showMessage(if (done > 0) "已装回 $pkg" else "没能装回 $pkg")
+                }
+            },
+            onRestoreAll = {
+                scope.launch {
+                    val targets = plan.packages
+                    var done = 0
+                    targets.forEach { pkg -> done += onRestore(pkg) }
+                    openPlan = if (plan.id == LOCAL_PLAN_ID) {
+                        deletionList.localPlan()
+                    } else {
+                        deletionList.plan(plan.id)
+                    }
+                    platform.showMessage("整份恢复：成功 $done / ${targets.size}")
+                }
+            },
+            onExport = {
+                scope.launch {
+                    val exported = deletionList.savePlanAs(plan)
+                    if (exported.path != null) {
+                        lastExport = exported.path
+                        platform.showMessage("已保存到 ${exported.path}")
+                    }
+                }
+            },
+        )
+        return
+    }
+
+    val plans = buildList {
+        local?.let { add(it) }
+        addAll(importedPlans)
     }
 
     Scaffold(
         topBar = {
-            ScreenTopBar(title = "删除名单", onNavigateBack = onNavigateBack)
+            ScreenTopBar(
+                title = "卸载记录",
+                onNavigateBack = onNavigateBack,
+                actions = {
+                    // 导入在右上角：它是"把别处那份带进来"，不是列表本身的一部分。
+                    FlBarButton(
+                        glyph = FlGlyphs.importFile,
+                        contentDescription = "导入方案",
+                        onClick = {
+                            scope.launch {
+                                val text = platform.pickTextFile()
+                                if (text == null) return@launch
+                                val parsed = deletionList.parse(text)
+                                if (parsed == null) {
+                                    platform.showMessage("这份文件读不懂：要的是导出时那份 JSON")
+                                } else {
+                                    pendingImport = parsed
+                                }
+                            }
+                        },
+                    )
+                },
+            )
         },
     ) { padding ->
         Column(
@@ -111,42 +178,30 @@ fun DeletionListScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(top = 6.dp, bottom = 28.dp),
         ) {
-            // 导出 / 导入并排：两个都是"文件进出"，字数也短。
-            AppCardPair {
-                AppLinkTile(
-                    glyph = FlGlyphs.send,
-                    title = "导出名单",
-                    onClick = {
-                        scope.launch {
-                            // 位置由用户在系统界面里挑；取消就什么都不写、什么都不弹。
-                            val exported = deletionList.saveJsonAs()
-                            if (exported.path != null) {
-                                lastExport = exported
-                                platform.showMessage("已保存到 ${exported.path}")
-                            }
-                        }
-                    },
+            Text(
+                text = "点一份方案看它删了哪些包",
+                style = FlText.caption2,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = AppCardInset + 2.dp, vertical = 4.dp),
+            )
+            plans.forEach { plan ->
+                PlanRow(
+                    plan = plan,
+                    onClick = { openPlan = plan },
                 )
-                AppLinkTile(
-                    glyph = FlGlyphs.importFile,
-                    title = "导入名单",
-                    onClick = {
-                        scope.launch {
-                            val text = platform.pickTextFile()
-                            // 取消不是失败，什么都不说。
-                            if (text == null) return@launch
-                            val parsed = deletionList.parse(text)
-                            if (parsed == null) {
-                                platform.showMessage("这份文件读不懂：要的是导出时那份 JSON")
-                            } else {
-                                pendingImport = parsed
-                            }
-                        }
-                    },
+                Spacer(Modifier.height(6.dp))
+            }
+            if (plans.all { it.packages.isEmpty() }) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "还没有卸载过应用。卸载之后它的包会出现在「本机卸载记录」里。",
+                    style = FlText.footnote,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = AppCardInset + 10.dp),
                 )
             }
-            // 上一次导到哪儿了。
-            lastExport?.path?.let { where ->
+            lastExport?.let { where ->
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = "上次导出：$where",
                     style = FlText.caption2,
@@ -155,80 +210,6 @@ fun DeletionListScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = AppCardInset + 2.dp),
                 )
-            }
-            Spacer(Modifier.height(10.dp))
-
-            if (imported.isNotEmpty()) {
-                AppLinkCard(
-                    glyph = FlGlyphs.delete,
-                    title = if (clearArmed) "再点一次清空导入的名单" else "清空导入的名单",
-                    subtitle = "只清导进来的那部分，不动应用与卸载记录",
-                    onClick = {
-                        if (clearArmed) {
-                            clearArmed = false
-                            scope.launch {
-                                val gone = deletionList.clear()
-                                reload()
-                                platform.showMessage("已清空 $gone 个导入的包名")
-                            }
-                        } else {
-                            clearArmed = true
-                        }
-                    },
-                )
-                Spacer(Modifier.height(10.dp))
-            }
-
-            if (all.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 40.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "还没有删过东西。卸载一个应用，它的包名就会出现在这里。",
-                        style = FlText.footnote,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else {
-                Text(
-                    text = "点一条就能装回来",
-                    style = FlText.caption2,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = AppCardInset + 2.dp, vertical = 4.dp),
-                )
-                // 行数不会很大，但超过一屏要能滚，所以放进定高的 LazyColumn。
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().height((all.size.coerceAtMost(12) * 44).dp),
-                    verticalArrangement = Arrangement.spacedBy(RowGap),
-                ) {
-                    items(all, key = { it }) { packageName ->
-                        PackageRow(
-                            packageName = packageName,
-                            // 只有这台手机真删过的才装得回来；导入进来的那些是别的手机的记录。
-                            restoreable = packageName in removed,
-                            importedOnly = packageName in imported && packageName !in removed,
-                            busy = restoring == packageName,
-                            onRestore = {
-                                if (restoring == null && packageName in removed) {
-                                    restoring = packageName
-                                    scope.launch {
-                                        val done = onRestore(packageName)
-                                        restoring = null
-                                        reload()
-                                        platform.showMessage(
-                                            if (done > 0) {
-                                                "已装回 $packageName"
-                                            } else {
-                                                "没能装回 $packageName"
-                                            }
-                                        )
-                                    }
-                                }
-                            },
-                        )
-                    }
-                }
             }
         }
     }
@@ -240,13 +221,11 @@ fun DeletionListScreen(
             onConfirm = {
                 pendingImport = null
                 scope.launch {
-                    val added = deletionList.addAll(parsed.accepted)
-                    val skipped = parsed.rejected
-                    reload()
+                    val plan = deletionList.importAsPlan(parsed)
                     platform.showMessage(
                         buildString {
-                            append("导入完成：新增 $added 个")
-                            if (skipped > 0) append("，丢掉 $skipped 条看不懂的")
+                            append("已导入「${plan.name}」：${plan.packages.size} 个包")
+                            if (parsed.rejected > 0) append("，丢掉 ${parsed.rejected} 条看不懂的")
                         }
                     )
                 }
@@ -255,20 +234,9 @@ fun DeletionListScreen(
     }
 }
 
-/**
- * 名单里的一行：包名在左，右边是它的状态。
- *
- * 这一台真删过的那条**整行可点**，点一下就是装回来；导入进来的那些只标「导入」，不可点——
- * 它们是别的手机上的记录，这台手机没有对应的卸载动作可以撤销。
- */
+/** 一份方案：名字、有多少条、从哪来；点进去看包。 */
 @Composable
-private fun PackageRow(
-    packageName: String,
-    restoreable: Boolean,
-    importedOnly: Boolean,
-    busy: Boolean,
-    onRestore: () -> Unit,
-) {
+private fun PlanRow(plan: DeletionPlan, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -276,28 +244,156 @@ private fun PackageRow(
             .padding(horizontal = AppCardInset)
             .clip(RoundedCornerShape(AppCardCorner))
             .background(FlSurfaceLevel.Card.colorOf(scheme))
-            .then(if (restoreable && !busy) Modifier.clickable(onClick = onRestore) else Modifier)
+            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = packageName,
-            style = FlText.subheadline,
-            color = if (restoreable) scheme.onSurface else scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(8.dp))
-        when {
-            busy -> Text(text = "恢复中…", style = FlText.caption2, color = scheme.primary)
-            importedOnly -> Text(text = "导入", style = FlText.caption2, color = scheme.primary)
-            restoreable -> Text(text = "装回", style = FlText.caption2, color = scheme.primary)
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(scheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            FlGlyphIcon(
+                glyph = if (plan.origin == DeletionPlan.Origin.LOCAL) FlGlyphs.appsList else FlGlyphs.importFile,
+                size = 18.dp,
+                tint = scheme.primary,
+            )
+        }
+        Spacer(Modifier.width(11.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = plan.name,
+                style = FlText.subheadline,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = buildString {
+                    append("${plan.packages.size} 个包")
+                    if (plan.origin == DeletionPlan.Origin.IMPORTED) append(" · 导入")
+                },
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        SettingsChevron()
+    }
+}
+
+/** 一份方案的详情：包列表，每条可点装回；顶部两个整份动作。 */
+@Composable
+private fun DeletionPlanDetail(
+    plan: DeletionPlan,
+    onBack: () -> Unit,
+    onRestoreOne: (String) -> Unit,
+    onRestoreAll: () -> Unit,
+    onExport: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Scaffold(
+        topBar = {
+            ScreenTopBar(
+                title = plan.name,
+                onNavigateBack = onBack,
+                actions = {
+                    FlBarButton(
+                        glyph = FlGlyphs.send,
+                        contentDescription = "导出这份方案",
+                        onClick = onExport,
+                    )
+                },
+            )
+        },
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = AppCardInset, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DetailAction(
+                    label = "整份恢复",
+                    enabled = plan.packages.isNotEmpty(),
+                    onClick = onRestoreAll,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (plan.packages.isEmpty()) {
+                Text(
+                    text = "这一份是空的。",
+                    style = FlText.footnote,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = AppCardInset + 10.dp, vertical = 20.dp),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = AppCardInset,
+                        end = AppCardInset,
+                        top = 4.dp,
+                        bottom = 24.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(plan.packages, key = { it }) { pkg ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(AppCardCorner))
+                                .background(FlSurfaceLevel.Card.colorOf(scheme))
+                                .clickable { onRestoreOne(pkg) }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = pkg,
+                                style = FlText.subheadline,
+                                color = scheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(text = "装回", style = FlText.caption2, color = scheme.primary)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/** 导入前先说清会加进来多少条、丢掉多少条，别让人点一个不知道结果的确认。 */
+/** 详情页顶部那个整份动作按钮。 */
+@Composable
+private fun DetailAction(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (enabled) scheme.primary else scheme.surfaceContainerHigh)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = FlText.subheadline,
+            color = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** 导入前先说清会加进来多少条、丢掉多少条。 */
 @Composable
 private fun ImportConfirmDialog(
     parsed: DeletionListImport,
@@ -315,7 +411,7 @@ private fun ImportConfirmDialog(
         },
     ) {
         Column {
-            Text("这份文件有 ${parsed.accepted.size} 个包名，会加进现有名单。")
+            Text("这份文件有 ${parsed.accepted.size} 个包名，会存成一份新方案。")
             if (parsed.rejected > 0) {
                 Spacer(Modifier.height(6.dp))
                 Text(

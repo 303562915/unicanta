@@ -30,9 +30,9 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Presets : Screen("presets")
 
     /**
-     * 删除名单：自己决定要删的包名，导出成 JSON 带走、换手机再导回来。
+     * 卸载记录：一份份「方案」——本机的卸载记录算一份，导入进来的每一份各算一份。
      *
-     * 从 [Settings] 那一页进，不占底栏。
+     * 可以导出、导入、点开看包含哪些包、整份装回来。从 [Settings] 那一页进，不占底栏。
      */
     data object DeletionList : Screen("deletion-list")
     data object Rules : Screen("rules")

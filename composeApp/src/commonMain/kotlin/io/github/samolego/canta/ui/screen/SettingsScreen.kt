@@ -124,7 +124,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     /** 打开主题页：配色与深浅色在那页里选，这里只写当前值。 */
     onOpenTheme: () -> Unit = {},
-    /** 打开删除名单页：导出一份 JSON、再导回来（见 [DeletionListScreen]）。 */
+    /** 打开卸载记录页：一份份方案，导出 JSON、导入、整份装回来（见 [DeletionListScreen]）。 */
     onOpenDeletionList: () -> Unit = {},
     /**
      * 现在实际生效的是哪一种特权运行时，以及走到哪一步。读 handler 而不是记着：
@@ -381,7 +381,7 @@ fun SettingsScreen(
             // 但那条命令只能在电脑上通过 adb 打。这里生成一个批处理发出去，双击就跑：
             // 可以先按记录恢复，也可以不看记录、一键恢复全部已卸载的包。
             //
-            // 旁边那格是删除名单：那是我删过的包名清单，导出 JSON 带走、换机再导回来。
+            // 旁边那格是卸载记录：删过的包名按「方案」攒着，一份份导出、导入、整份装回来。
             // 两件事一起做，所以并排放，各占一半。
             AppCardPair {
                 AppLinkTile(
@@ -391,7 +391,7 @@ fun SettingsScreen(
                 )
                 AppLinkTile(
                     glyph = FlGlyphs.importFile,
-                    title = "删除名单",
+                    title = "卸载记录",
                     onClick = onOpenDeletionList,
                 )
             }

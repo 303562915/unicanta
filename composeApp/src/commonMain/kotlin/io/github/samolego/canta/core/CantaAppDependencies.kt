@@ -50,7 +50,7 @@ class CantaAppDependencies(
     val planCache: PlanCache,
     /** What was uninstalled and put back, and when; mirrored to a CSV in the download folder. */
     val history: OperationLogStore,
-    /** 删除名单：自己决定要删的包名，导出 JSON 带走、再导回来（见 [DeletionListStore]）。 */
+    /** 卸载记录与导入进来的「方案」：本机那份现算，导入的每份各存一份（见 [DeletionListStore]）。 */
     val deletionList: DeletionListStore,
     /** 帖子草稿：写在本机、按身份分开，发出去成功才删（见 [PostDraftStore]）。 */
     val postDrafts: PostDraftStore,
@@ -83,7 +83,7 @@ object StoredData {
     /** The uninstall/restore log behind the records tab: see [OperationLogStore]. */
     const val OPERATION_LOG = "operation_log.json"
 
-    /** 删除名单（见 [DeletionListStore]）：换手机时靠导出/导入那份 JSON 带走。 */
+    /** 卸载记录 / 导入进来的方案（见 [DeletionListStore]）：换手机时靠导出、导入那份 JSON 带走。 */
     const val DELETION_LIST = "deletion_list.json"
 
     /** The last plans lists the ranking/plans page loaded — this phone's and every model's: see [PlanCache]. */
