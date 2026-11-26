@@ -120,6 +120,7 @@ jobs:
                  (select coalesce(json_agg(json_build_object(
                             'day', to_char(g.day, 'MM-DD'),
                             'reg', coalesce(r.reg, 0),
+                            'cum', coalesce(t.cum, 0),
                             'active', coalesce(a.active, 0)) order by g.day), '[]'::json)
                     from generate_series(
                            (now() at time zone 'Asia/Shanghai')::date - 6,
@@ -135,6 +136,10 @@ jobs:
                         from canta_users
                        where last_seen_at >= ((now() at time zone 'Asia/Shanghai')::date - 6) at time zone 'Asia/Shanghai'
                        group by 1) a on a.day = g.day::date
+                    left join (
+                      select (created_at at time zone 'Asia/Shanghai')::date as day,
+                             count(*) over (order by (created_at at time zone 'Asia/Shanghai')::date) as cum
+                        from canta_users) t on t.day = g.day::date
                  ) as days
                from canta_users"
           RESPONSE=$(curl -sS --fail-with-body -X POST \
@@ -148,10 +153,12 @@ jobs:
           # A malformed answer must fail the job instead of pushing "null" to the group.
           case "$TOTAL" in ''|null) echo "no total in response" >&2; exit 1;; esac
           case "$WITH_MODEL" in ''|null) echo "no with_model in response" >&2; exit 1;; esac
-          # 7 日表：每行「MM-DD：注册 +N ｜ 用过 M」。窗口少一天也照发，只是短一点。
+          # 7 日表：每行「MM-DD：注册 +N ｜ 累计 M ｜ 用过 K」。
           DAYS=$(echo "$RESPONSE" | jq -r '
             (.[0].days // [])[]
-            | (.day + "：注册 +" + (.reg | tostring) + " ｜ 用过 " + (.active | tostring))' \
+            | (.day + "：注册 +" + (.reg | tostring)
+               + " ｜ 累计 " + (.cum | tostring)
+               + " ｜ 用过 " + (.active | tostring))' \
             | sed 's/^/- /')
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "with_model=$WITH_MODEL" >> "$GITHUB_OUTPUT"
