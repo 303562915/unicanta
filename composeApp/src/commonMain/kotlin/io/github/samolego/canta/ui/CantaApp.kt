@@ -494,10 +494,18 @@ private fun CantaNavigation(
     // 只是本机的一个缓存。以前只读那条缓存，清一次数据就把自己那张照片弄丢了——头像明明还在图床上。
     // 真没设过的人这条地址是 404，`UserAvatar` 会记一笔并退回名字首字，代价只是多一次询问。
     // 身份号是异步读的（`writtenIdentity` 是上面那次预热存下来的结果），读到之后这一串才有意义。
-    // 用 getter 不用 `remember`：它只由 `myAvatarUrl` 与 `writtenIdentity` 算出来，两者都是 State，
-    // 每次重组顺着算一遍就是最新的，不必再多开一层。
-    val shownAvatarUrl: String
-        get() = myAvatarUrl.trim().ifEmpty { personAvatarUrl(writtenIdentity.owner) }
+    //
+    // 注意这里必须是**局部变量的普通赋值**（`remember` 里算出值），
+    // 不能写成 `val x: String get() = ...`：自定义 getter 只允许出现在类/对象的成员上，
+    // 写在 Composable 函数体里编译器给的是
+    // 「Unresolved reference 'get'」+「Variable expected」+ 下游两处
+    // 「Variable 'shownAvatarUrl' must be initialized」——2026-11-26 开发版就是这么红的。
+    //
+    // 用 `remember` 而不是每次重组现算：`personAvatarUrl(...)` 会拼字符串，
+    // 两个输入（`myAvatarUrl`、`writtenIdentity`）都是 State，变了才该重算。
+    val shownAvatarUrl: String = remember(myAvatarUrl, writtenIdentity) {
+        myAvatarUrl.trim().ifEmpty { personAvatarUrl(writtenIdentity.owner) }
+    }
     val updateClient = remember { HttpClient() }
     /**
      * 更新只接线一次：启动时那条自动下载和「关于」页的手点，用的是同一份实现、同一个状态。
