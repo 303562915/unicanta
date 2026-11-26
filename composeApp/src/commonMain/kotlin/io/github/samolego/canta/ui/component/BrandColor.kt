@@ -47,7 +47,7 @@ internal fun fallbackBrandColor(seed: String, palette: List<Color>): Color {
  * @param dark 当前是不是深色主题（`MaterialTheme.colorScheme.isDark`）
  */
 internal fun readableBrandColor(base: Color, dark: Boolean): Color {
-    if (base.alpha <= 0f) return base
+    if (base.isUnspecified || base.alpha <= 0f) return base
     val h = base.hue() // 0..360
     val s = base.saturationHsl() // 0..1
     val l = base.lightnessHsl() // 0..1

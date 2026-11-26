@@ -262,6 +262,9 @@ class PostStore(private val rpc: CommunityRpc) {
             mineLike = o["mine_like"]?.jsonPrimitive?.booleanOrNull == true,
             mine = o["mine"]?.jsonPrimitive?.booleanOrNull == true,
             category = o["category"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            // 分类色：Discourse 那边每个分类自带一格 `#RRGGBB`。老部署不返回这个键，
+            // 读不到就落空串，页面退回按名字哈希的兜底色（见 `categoryColorOf`）。
+            categoryColor = o["category_color"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             // 后端发的是 `to_jsonb(tags)`，也就是 JSON 数组。老部署没有这个键、或者哪天形状变了，
             // 都退回空表：`as? JsonArray` 不抛，整条列表也就不会因为一个字段变 null。
             tags = (o["tags"] as? JsonArray)

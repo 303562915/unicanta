@@ -113,6 +113,13 @@ internal fun PostCategoryDrawer(
     onDismiss: () -> Unit,
     onPickCategory: (String) -> Unit,
     onPickTag: (String) -> Unit,
+    /**
+     * 分类名 → 后端下发的颜色（`#RRGGBB`）。查不到就用按名字哈希的兜底色。
+     *
+     * 必须有这一项：卡片与详情页上的分类色块用的是下发的 hex，侧栏只按名字哈希的话，
+     * 同一个分类在两处颜色不同，看起来像两个分类。
+     */
+    categoryColors: Map<String, String> = emptyMap(),
 ) {
     val scheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -257,7 +264,8 @@ internal fun PostCategoryDrawer(
                         }
                     }
                     items(categories) { name ->
-                        val accent = categoryColorOf(name)
+                        // 与卡片、详情页同一个取色来源：先看下发的 hex，没有才落哈希兜底。
+                        val accent = categoryColorOf(category = name, hex = categoryColors[name].orEmpty())
                         DrawerRow(
                             accent = accent,
                             label = name,

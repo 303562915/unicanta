@@ -133,7 +133,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
-import kotlin.math.abs
 
 /** 一页拉多少条。后端把 `p_limit` 夹在 1..50，这里取一屏够看的数。 */
 private const val POSTS_PAGE = 20
@@ -997,6 +996,22 @@ internal fun PostsScreen(
     }
 
     /**
+     * 分类名 → 后端下发的颜色（`#RRGGBB`），给侧栏用。
+     *
+     * 不给的话，侧栏那颗色点只能按名字哈希兜底，而卡片上是下发的色：同一个分类在两个地方
+     * 长得不一样，看着像两个分类。同一分类出现在多条帖子上时取第一条带色的。
+     */
+    val drawerCategoryColors = remember(posts) {
+        val map = LinkedHashMap<String, String>()
+        posts.forEach { post ->
+            val name = post.category.trim()
+            val hex = post.categoryColor.trim()
+            if (name.isNotEmpty() && hex.isNotEmpty() && name !in map) map[name] = hex
+        }
+        map
+    }
+
+    /**
      * 打开的那条帖子旁边能去的地方：同分类、不是它自己，按热闹程度取三条。
      *
      * 从已经拉到手的列表里挑，不额外发请求——帖子详情页底部"还能看点什么"是个顺手的出口，
@@ -1250,6 +1265,8 @@ else -> Column {
             PostCategoryDrawer(
                 open = drawerOpen,
                 categories = drawerCategories,
+                // 分类名 → 下发色：侧栏那颗色点要和卡片、详情页用同一个来源。
+                categoryColors = drawerCategoryColors,
                 category = categoryPick,
                 tags = drawerTags,
                 tag = tagPick,
@@ -1727,9 +1744,9 @@ private fun PostCard(
                     AuthorLabel(
                         name = post.author.ifBlank { "匿名" },
                         style = MaterialTheme.typography.labelLarge,
-                        // 读过就退灰加轻；未读用实色（`topic_card.dart:822-829`）
+                        // 读过就跟着元信息色退灰，未读提亮到 onSurface×0.85（`topic_card.dart:825-827`）
                         color = if (read) {
-                            metaTint(scheme.onSurfaceVariant, 0.75f)
+                            metaTint(scheme.onSurfaceVariant, 0.6f)
                         } else {
                             metaTint(scheme.onSurface, 0.85f)
                         },
@@ -2219,7 +2236,7 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
                 Text(
                     text = "$readMinutes 分钟阅读",
                     style = MaterialTheme.typography.labelSmall,
-                    color = metaTint(scheme.onSurfaceVariant, 0.8f),
+                    color = scheme.outline,
                 )
             }
         }
@@ -2254,7 +2271,7 @@ private fun ThreadMetaDivider() {
     Text(
         text = "·",
         style = MaterialTheme.typography.labelSmall,
-        color = metaTint(MaterialTheme.colorScheme.onSurfaceVariant, 0.5f),
+        color = MaterialTheme.colorScheme.outline,
         modifier = Modifier.padding(horizontal = 6.dp),
     )
 }
@@ -2574,7 +2591,7 @@ private fun PostEditorPane(
             Text(
                 text = "${title.length}/$POST_TITLE_LIMIT",
                 style = MaterialTheme.typography.labelSmall,
-                color = metaTint(scheme.onSurfaceVariant, 0.6f),
+                color = scheme.outline,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.End,
             )
@@ -2623,7 +2640,7 @@ private fun PostEditorPane(
             Text(
                 text = "${body.length}/$POST_BODY_LIMIT",
                 style = MaterialTheme.typography.labelSmall,
-                color = metaTint(scheme.onSurfaceVariant, 0.6f),
+                color = scheme.outline,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.End,
             )
@@ -2857,8 +2874,14 @@ private fun PostMetaChips(
     val scheme = MaterialTheme.colorScheme
     val shown = tags.take(maxTags)
     val hidden = tags.size - shown.size
-    // 元信息小字统一走预乘过的次要色：0.8（未读）/ 0.6（全读完），再叠这行的 dim。
-    val metaColor = metaTint(scheme.onSurfaceVariant, 0.8f * dim)
+    // 元信息小字：未读 0.8；全读完是 **0.6 × 0.55 两层**（`topic_card.dart:850-851`：
+    // metaColor 先取 0.6，再乘 `opacityFactor = 0.55`）。两档不能拿同一个 0.8 当底去乘 dim，
+    // 那会把已读档算成 0.44，比 fluxdo 亮一截。
+    val metaColor = if (dim < 1f) {
+        metaTint(scheme.onSurfaceVariant, 0.6f * dim)
+    } else {
+        metaTint(scheme.onSurfaceVariant, 0.8f)
+    }
     Row(
         modifier = modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
