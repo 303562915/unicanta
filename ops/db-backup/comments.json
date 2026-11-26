@@ -4932,6 +4932,30 @@
   "target": "com.android.location.fused"
  },
  {
+  "author": "橘子",
+  "author_id": "12029",
+  "body": "垃圾玩意，必须卸载",
+  "created_at": "2026-11-26T17:08:49.296878+00:00",
+  "device_model": "REDMI K90 Pro Max",
+  "id": 758,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.0",
+  "target": "com.google.android.gms.location.history"
+ },
+ {
+  "author": "橘子",
+  "author_id": "12029",
+  "body": "听风就是雨的太多了",
+  "created_at": "2026-11-26T17:09:13.537586+00:00",
+  "device_model": "REDMI K90 Pro Max",
+  "id": 759,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.0",
+  "target": "com.xiaomi.registration"
+ },
+ {
   "author": "西瓜太好吃了",
   "author_id": "10148",
   "body": "删了就没来电标记了建议不要卸载",
