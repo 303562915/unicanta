@@ -295,7 +295,12 @@ fun MessagesScreen(
     // 第一帧的 `owner` 是空串，按它查必然查不到。这台设备的身份是它自己生成的，
     // 缓存里通常只有一份，拿它顶上是对的。
     val cached = remember { ConversationCache.get(owner) ?: ConversationCache.getRecent() }
-    var loading by remember { mutableStateOf(cached == null) }
+    // `loading` 只看「手上有没有东西可画」，不看「第一趟请求回来没有」：缓存里已经有会话时，
+    // 断网也照样立刻画出来（见下面那份 `cached`），不再顶着加载态等一个永远不会成功的请求。
+    // 真正空手时才走加载态，那一段只画顶栏和互动消息那一行，不画那两个群。
+    var loading by remember {
+        mutableStateOf(cached == null || cached.conversations.isEmpty())
+    }
     var conversations by remember {
         mutableStateOf(sortedConversations(cached?.conversations.orEmpty()))
     }
@@ -325,23 +330,17 @@ fun MessagesScreen(
     var searchError by remember { mutableStateOf<String?>(null) }
     // 「全部标为已读」是一次网络调用：点完就把协程交出去，界面不等它。
     val scope = rememberCoroutineScope()
-    /** 正在加入哪个官方群（按群名记）：挡住连点，也把那一行的小字换成「加入中…」。 */
-    val joiningOfficial = remember { mutableStateMapOf<String, Boolean>() }
-    // 官方群（灰度测试群、Bug 反馈群）一律自动加入，而且**不进主列表**：它们是消息页上唯一要显示
-    // 的那几行，列表里的普通会话照旧。
+    // 官方群（灰度测试群、Bug 反馈群）：**不再自动加入**，也不再在消息页上显示。
     //
-    // 加入是静默的：注册时后端触发器已经把新人塞进这两个群，这里只是给「没被塞进去的」那部分
-    // （老账号、触发器上线前注册的）补一次，幂等接口点多少次都返回同一个会话号。失败不报错、
-    // 每台机器只试一次——这一趟只是为了让那两行变得可点，点进去那一刻还会再走一次同样的加入。
-    var officialAuthed by remember { mutableStateOf(false) }
-    LaunchedEffect(owner) {
-        if (owner.isEmpty() || officialAuthed) return@LaunchedEffect
-        officialAuthed = true
-        OfficialGroups.entries.forEach { entry ->
-            runCatching { repository.joinByInvite(owner, entry.inviteCode) }
-        }
-        if (!loadBusy) reloads++
-    }
+    // 以前这里会静默 `group_invite_join` 一遍，把这两行变成「可点」的入口。现在那两个群注册
+    // 时就已经在后端把人塞进去了（`canta_users_auto_join` 触发器），再补一次只是多两次请求；
+    // 而那一行本来就不该占在消息页上——见 [DefaultHiddenRows]。
+    //
+    // 真的要点进去看，从顶栏左上角那个图标的长按菜单里恢复这一行（恢复的是"显示"，不是入群：人
+    // 本来就在群里），点那一行才会走 [openOfficial] 的加入 / 进入分支。
+
+    /** 正在加入哪个官方群（按群名记）：挡住连点，也把那一行的小字换成「正在加入…」。 */
+    val joiningOfficial = remember { mutableStateMapOf<String, Boolean>() }
     // 这一页此刻在不在前台。切到后台时轮询必须停：这一页离开屏幕不会被销毁（导航栈里还活着），
     // 以前那个 `while (true)` 照转，夜里 4–5 千次/小时的基线就是它——没人在看的时候在问后端。
     //
@@ -437,11 +436,15 @@ fun MessagesScreen(
             // 轮询那一趟带 since（本地列表里最新的那个最后活跃时间），后端只回有动静的会话。
             // 列表还是空的（第一次装、刚清过缓存）时 since 是 null，那就是全量。
             val chats = repository.conversationsFor(owner, since)
-            // 逐句判成败：three 个请求共用一个 `lastError`，最后一句的结果会盖掉前面的。
+            // 逐句判成败：三个请求共用一个 `lastError`，最后一句的结果会盖掉前面的。
             // 以前只看最后一句，结果「关注列表没拉到」也会让会话列表那份缓存不写——下次从聊天页
             // 退回来，内存里还是空的，于是又转一次圈。会话列表拿到就是拿到，跟另外两句无关。
             val chatsFailed = repository.lastError != null
-            if (!chatsFailed) {
+            // 一句话看出这一趟是不是「请求成功但一端会话都没给」：那一份不能盖掉缓存和现有列表，
+            // 否则断网 / 后端 500 之后的一段空响会把上次那份聊天记录直接抹掉，再重进就真的一片空白。
+            // 第一次装、真的一条都没有时列表本来就是空的，这条判断不动它。
+            val keepLocal = chatsFailed || (chats.isEmpty() && conversations.isNotEmpty())
+            if (!keepLocal) {
                 // 按会话号 upsert 而不是整份替换：增量那一趟只回来几个会话，整份替换等于把没动静的
                 // 几十行全删掉。内容没变的行沿用原对象，刷新时那几行不会被当成新行重新组合
                 // （长按菜单开着、手指正按着的时候尤其要紧）。
@@ -463,9 +466,15 @@ fun MessagesScreen(
                 // `summary` 先留上一份（内存没有时是 [InboxSummary.EMPTY]），等第三句回来再顶上，
                 // 别在这里凭空写一个 0——那会让「有多少条新互动」先闪一下 0。
                 ConversationCache.put(owner, conversations, followers, summary)
+            } else {
+                // 这一趟没新东西（没网 / 后端忙 / 回了一句空）：手上这份**原样留着**，缓存也不动。
+                // 骨架照样放下——已经没在等了，屏幕上该有的那些聊天记录就在这儿。
+                loading = false
             }
             // 拉不到就说一句：空列表和后端没通在界面上长得一样，这一行是唯一的区别。
-            loadError = repository.lastError
+            // 这一行只写在真正空手的时候：本地缓存里已经有会话时，屏幕上那些聊天记录就是答案，
+            // 头顶再挂一句「后端没有返回消息」只会让人以为列表不可信（那本来就是缓存）。
+            loadError = if (conversations.isEmpty()) repository.lastError else null
             val people = repository.followersOf(owner)
             val peopleFailed = repository.lastError != null
             val counted = planRepository.inboxSummary(owner, token) ?: InboxSummary.EMPTY
@@ -474,7 +483,7 @@ fun MessagesScreen(
                 summary = counted
                 // 三句都回来了再写一次：这一次带的是真正的互动总数，下一趟冷启动画出来的
                 // 副标题和红点才是准的。列表原样沿用上面那一份，不会白拉一次。
-                ConversationCache.put(owner, conversations, followers, counted)
+                if (conversations.isNotEmpty()) ConversationCache.put(owner, conversations, followers, counted)
             }
         } catch (e: CancellationException) {
             throw e
@@ -695,8 +704,8 @@ fun MessagesScreen(
     // 所以在画的时候过滤：取消拉黑那一刻这一行会当场回来，不必等一次重新拉取。
     val reachableConversations = conversations.filterNot { it.blockedBy(blockedPeers) }
     // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
-    // 官方群（灰度测试群、Bug 反馈群）排在最前：它们就是「置顶」。它们**不来自**会话列表，
-    // 由 [OfficialGroups] 那份常量画出来（见下面 `officialRows`），所以没进群的人也看得到这两行。
+    // 官方群（灰度测试群、Bug 反馈群）默认不出现：它们由 [DefaultHiddenRows] 直接挡住，不来自会话
+    // 列表，也不靠后端那边藏——见下面 `officialRows`。
     /**
      * 这一页当前不画的那几行：本机名单（上层落盘）**加上**默认藏起来的官方群。
      *
@@ -737,7 +746,6 @@ fun MessagesScreen(
         .map { entry ->
             entry to joinedOfficial.firstOrNull { it.title == entry.title }
         }
-    val joinedOfficialVisible = joinedOfficial.any { officialRowKey(it.title) !in effectiveHidden }
     // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
     // 没名字的群同样剔掉：折叠栏也不该冒出「空白群」这一行。
     val foldedGroups = conversations
@@ -974,6 +982,9 @@ fun MessagesScreen(
                             // 底下让出一条：最后一行不该压在悬浮底栏上（和列表那一支对齐）。
                             .padding(bottom = 96.dp),
                     ) {
+                        // 加载中什么都不画：没有骨架，也没有那两个群。屏幕上就是顶栏 + 互动消息
+                        // 那一行，剩下的等第一趟请求回来——**缓存里已经有会话时不会走到这里**
+                        // （见 `loading` 的初值与下面那条 `if`）。
                         officialRows.forEach { (entry, joined) ->
                             OfficialGroupEntryRow(
                                 entry = entry,
@@ -1173,22 +1184,8 @@ fun MessagesScreen(
                         }
                     }
 
-                    visibleConversations.isEmpty() && !joinedOfficialVisible ->
-                        item(key = "no-chats") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp, vertical = 60.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "还没有私聊，去方案页找人聊聊",
-                                    style = FlText.footnote,
-                                    color = scheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-
+                    // 一条私聊都没有时**什么都不画**：没有人要在这里读一句「还没有私聊，去方案页
+                    // 找人聊聊」——那是在教人去哪儿，不是在告诉人什么。空着就空着。
                     else -> items(visibleConversations, key = { it.conversationKey() }) { conversation ->
                         ConversationRow(
                             conversation = conversation,
