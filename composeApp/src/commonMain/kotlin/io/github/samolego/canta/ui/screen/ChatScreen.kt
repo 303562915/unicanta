@@ -1757,7 +1757,7 @@ private fun ChatTopBar(
     isGroup: Boolean,
     memberCount: Int,
     peerOwner: String,
-    /** 群成员名单：群聊顶栏那个头像要拼九宫格（见 [GroupGridAvatar]）；私聊传空。 */
+    /** 群成员名单：已经不再参与画头像（见 [GroupAvatarView]），留着只是为了不改调用点。 */
     groupMembers: List<ConversationMember> = emptyList(),
     /** 会话号：群头像按它推图床地址（设过群头像就显示那张图）。 */
     conversationId: Long = 0L,
@@ -1925,9 +1925,9 @@ private fun ChatHeaderAvatar(
     title: String,
     isGroup: Boolean,
     peerOwner: String = "",
-    /** 群成员名单：群聊用它拼九宫格，私聊传空。 */
+    /** 群成员名单：已经不再参与画头像（见 [GroupAvatarView]），留着只是为了不改调用点。 */
     groupMembers: List<ConversationMember> = emptyList(),
-    /** 会话号：群头像按它推图床地址——设过群头像就显示那张图，没设过是拼图。 */
+    /** 会话号：群头像按它推图床地址——设过群头像就显示那张图，没设过是群名首字。 */
     conversationId: Long = 0L,
     onClick: (() -> Unit)? = null,
 ) {
@@ -1940,7 +1940,7 @@ private fun ChatHeaderAvatar(
             onClick = onClick,
         )
     }
-    // 群聊：设过群头像就是那张图，没设过是成员拼图（见 [GroupAvatarView]）。
+    // 群聊：设过群头像就是那张图，没设过就是群名首字方块（见 [GroupAvatarView]）。
     if (isGroup) {
         GroupAvatarView(
             name = title.ifBlank { chatInitial(title = title, isGroup = true) },
@@ -1951,6 +1951,7 @@ private fun ChatHeaderAvatar(
         )
         return
     }
+    // 私聊：对面那个人自己的头像，和消息页那一行是同一张脸。
     PersonAvatar(
         name = title.ifBlank { chatInitial(title = title, isGroup = false) },
         owner = peerOwner,
@@ -2850,29 +2851,23 @@ private fun ChatNewMessagesPill(count: Int, onClick: () -> Unit) {
 /** 输入框上面那排「点一下就发」的表情：一排小图，点了立刻发一条，不进输入框。 */
 @Composable
 private fun ChatStickerStrip(onPick: (Emotion) -> Unit) {
-    val scheme = MaterialTheme.colorScheme
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         items(ChatQuickStickers) { key ->
             val emotion = emotionOf(key) ?: return@items
-            Box(
+            // 表情本身就是头像大小的图，别再套一个灰圆底：底下那份底色让一整排看起来像一排按钮，
+            // 而且表情的边缘（透明的部分）会被那块灰补成圆的，图案显得又小又糊。直接画图。
+            Image(
+                painter = painterResource(emotion.resource),
+                contentDescription = emotion.name,
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(scheme.surfaceContainerHigh)
+                    .size(32.dp)
                     .clickable(onClickLabel = emotion.name) { onPick(emotion) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painterResource(emotion.resource),
-                    contentDescription = emotion.name,
-                    modifier = Modifier.size(28.dp),
-                )
-            }
+            )
         }
     }
 }
@@ -3382,7 +3377,7 @@ private fun BlockedComposerBar() {
  * 名字/头像还没设过时的输入区：一行说明，没有输入框。
  *
  * 和 [BlockedComposerBar] 同一个形状，用系统报错色：这不是"对方不想理你"，是"你还差一步"，
- * 所以这句话要说清去哪一步（见 `IdentitySetup.prompt`）。
+ * 所以这句话要说清去哪一步（见 [io.github.samolego.canta.util.IdentitySetup] 的 `prompt`）。
  */
 @Composable
 private fun GateComposerBar(hint: String) {

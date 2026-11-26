@@ -245,7 +245,7 @@ fun UserAvatar(
     letterColor: Color = Color.White,
     /** 首字那个字的样式：大圆传大样式，见 [LetterAvatar]。 */
     letterStyle: TextStyle? = null,
-    /** 外形：默认圆形；群头像九宫格里传方形（见 [GroupGridAvatar]）。 */
+    /** 外形：默认圆形；群头像传方形圆角（见 [GroupAvatarView]）。 */
     shape: Shape = CircleShape,
 ) {
     val key = url.trim()

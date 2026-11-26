@@ -1968,18 +1968,14 @@ private fun ConversationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {
-                // 群聊也要和聊天页一样：设过群头像就那张图，没设过就成员拼图——两处同一个组件。
-                // 这里没有成员名单（列表页不各自去拉成员表），所以拼图那块只有群名首字在中间，
-                // 方块底和圆角跟顶栏那个群头像是同一套，一眼认得是同一个群。
-                // 尺寸给 52：拼图那块看上去比同直径的一张脸小一圈，按 44 的行高放大到观感一致
-                // （见 GroupGridAvatar 的 systemSize）。
+                // 群聊和聊天页顶栏同一个组件：设过群头像就那张图，没设过就是群名首字方块。
+                // 两处尺寸给一样（44），同一个群在两页上长得一模一样，不再一边拼九宫格一边画首字。
                 if (conversation.isGroup) {
                     GroupAvatarView(
                         name = conversation.label,
                         conversationId = conversation.id,
                         members = emptyList(),
-                        size = 52.dp,
-                        systemSize = 44.dp,
+                        size = 44.dp,
                     )
                 } else {
                     PersonAvatar(

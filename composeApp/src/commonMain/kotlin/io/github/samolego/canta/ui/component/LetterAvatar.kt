@@ -39,7 +39,7 @@ fun LetterAvatar(
      * 传一个更大的样式，否则字会缩在圆的中间一小块。
      */
     letterStyle: TextStyle? = null,
-    /** 外形：默认圆形；群头像九宫格里传方形（见 [GroupGridAvatar]）。 */
+    /** 外形：默认圆形；群头像传方形圆角（见 [GroupAvatarView]）。 */
     shape: Shape = CircleShape,
 ) {
     Box(

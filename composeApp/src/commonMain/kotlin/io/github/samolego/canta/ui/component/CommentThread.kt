@@ -964,7 +964,7 @@ fun CommentComposer(
      *
      * 非空就是"现在不许发"：发送键灰掉、输入框只读、这句话摆在输入栏上面；空串（默认）等于不设闸，
      * 老调用方一行不用改。判断本身在 [io.github.samolego.canta.util.IdentitySetup] 里，页面只把结果
-     * 那句话递进来——见 `IdentitySetupGate`。
+     * 那句话递进来。
      */
     gateHint: String = "",
 ) {    val colors = MaterialTheme.colorScheme
