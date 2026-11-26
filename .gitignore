@@ -49,6 +49,11 @@ node_modules/
 # Working copies made before a risky edit
 /backups/
 
+# Scratch output from image/OCR probing at the repo root (.tmp-*.png/.jpg/.py): never shipped.
+/.tmp-*
+# Script caches
+__pycache__/
+
 # Session handoff notes (local working memory)
 /.dsh-handoff*.md
 

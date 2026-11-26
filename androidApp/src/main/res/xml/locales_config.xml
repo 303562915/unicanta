@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Per-app language list (API 33+ shows it under Settings -> Apps -> UniCanta -> Language).
+
+    It has to exist, and it has to be spelled exactly as the resource folders are: the manifest
+    points at @xml/locales_config, and an application that declares a localeConfig the system
+    cannot resolve does not fall back to the device language for the interface — the Chinese
+    translations (values-zh-rCN / values-zh-rTW, which every Compose Multiplatform string here
+    has) then never get picked, and the screens stay English even on a Chinese phone.
+
+    Kept to the two languages the UI is actually finished in. Adding one here without its
+    values-xx-rYY folder is the same bug this file fixes; add both together.
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="zh-CN"/>
+    <locale android:name="zh-TW"/>
+</locale-config>

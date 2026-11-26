@@ -641,6 +641,10 @@ private fun CantaNavigation(
 
     LaunchedEffect(autoInstallUpdates, updateChannel, skippedAutoInstall) {
         if (!autoInstallUpdates || updateChannel == null) return@LaunchedEffect
+        // 自动下载只属于开发版通道：稳定版的人要的是「有新版本就点一下红点，别替我下」。
+        // 这条守门必须在循环**外面**，而且 `updateChannel` 已经是这个 effect 的 key —— 换了通道
+        // 就重新进一次，不会出现"还按上一次的通道往下跑"。
+        if (updateChannel != "dev") return@LaunchedEffect
         // F-Droid signs its own builds; downloading this repo's APK over one of them cannot work.
         if (platform.isInstalledFromFdroid()) return@LaunchedEffect
 

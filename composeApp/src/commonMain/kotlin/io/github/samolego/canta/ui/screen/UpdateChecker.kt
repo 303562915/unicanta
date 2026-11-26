@@ -489,10 +489,13 @@ private fun classifyFailure(e: Throwable): UpdateFailure {
 }
 
 internal fun UpdateRelease.isNewerThanInstalled(): Boolean {
+    // 版本号说了算。稳定版与开发版共用同一个 version_name、同时发版，所以 4.3.9 的开发版装上之后，
+    // 再给这台机器推一次 4.3.9 的稳定版没有意义，弹出来的只是同一版贴的另一张标签。
     if (isNewerVersion(version, BuildInfo.VERSION_NAME)) return true
     if (isNewerVersion(BuildInfo.VERSION_NAME, version)) return false
     return if (tag == DEVELOPMENT_TAG) buildNumber > BuildInfo.DEVELOPMENT_BUILD_NUMBER
-    else BuildInfo.DEVELOPMENT_BUILD_NUMBER > 0
+    // 同一个版本号：已经跑着开发版的人选「稳定版」，不该被要求"更新"成同版本号的稳定包。
+    else BuildInfo.DEVELOPMENT_BUILD_NUMBER <= 0
 }
 
 /**
