@@ -279,7 +279,7 @@ private fun PostsToolbar(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(48.dp)
-            .background(if (background.alpha > 0f) background else FlSurfaceLevel.Page.colorOf(scheme)),
+            .background(background),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(modifier = Modifier.width(8.dp))
@@ -1107,8 +1107,10 @@ else -> Column {
                             onOpenFilters = { filterMenuOpen = true },
                             // 开源周榜：入口搬到顶栏右上角（列表里那条 40dp 横条删掉了）。
                             onOpenWeeklyRank = if (weeklyRank != null) onOpenWeeklyRank else null,
-                            // 顶栏与页面同色：两者都取 Page 这一级，栏不再比背景浅一层/深一层。
-                            background = FlSurfaceLevel.Page.colorOf(MaterialTheme.colorScheme),
+                            // 顶栏与**页面**同色：Scaffold 的默认底色是 `colorScheme.surface`（主题的页面底色），
+// 而不是 `FlSurfaceLevel.Page`（那是 `surfaceContainer`，浅色主题下比页面亮一档，栏就会
+// 显出一条比正文底色浅的带子）。所以这里传 `surface`，不传 Page。
+                            background = MaterialTheme.colorScheme.surface,
                         )
                         DropdownMenu(
                             expanded = filterMenuOpen,
@@ -1280,8 +1282,6 @@ else -> Column {
                 },
                 onLoadMore = loadMore,
                 onOpen = openThread,
-                weeklyRank = weeklyRank,
-                onOpenWeeklyRank = onOpenWeeklyRank,
                 onOpenDraft = { openEditor(it) },
                 onDeleteDraft = { discardDraft(it) },
                 onWrite = { openEditor(null) },
@@ -1441,10 +1441,6 @@ private fun PostListPane(
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onOpen: (CommunityPost) -> Unit,
-    /** 周榜数据层：卡片上的前三名读它盘上那一份；null 时与 [onOpenWeeklyRank] 一起决定不画卡片。 */
-    weeklyRank: WeeklyRankRepository? = null,
-    /** 顶上那张周榜卡片的去处；null 时不画那张卡片。 */
-    onOpenWeeklyRank: (() -> Unit)? = null,
     onOpenDraft: (PostDraft) -> Unit,
     onDeleteDraft: (PostDraft) -> Unit,
     onWrite: () -> Unit,
@@ -1478,7 +1474,7 @@ private fun PostListPane(
             )
 
             // 分类 chips 行**不要**：分类入口只有顶栏那颗 ☰（打开侧栏）。不要再把它摆到搜索下面，
-                    // 也不要在列表里插「帖子 · N」那种统计行。
+            // 也不要在列表里插「帖子 · N」那种统计行。
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
