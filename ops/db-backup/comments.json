@@ -4932,6 +4932,18 @@
   "target": "com.oplus.metis"
  },
  {
+  "author": "#14970",
+  "author_id": "14970",
+  "body": "这个怎么删？",
+  "created_at": "2026-11-26T16:06:36.222908+00:00",
+  "device_model": "SM-S9280",
+  "id": 757,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "One UI 8.5",
+  "target": "com.android.location.fused"
+ },
+ {
   "author": "西瓜太好吃了",
   "author_id": "10148",
   "body": "删了就没来电标记了建议不要卸载",

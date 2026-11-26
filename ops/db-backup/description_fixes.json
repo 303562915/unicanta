@@ -48,6 +48,18 @@
   "pkg": "com.coloros.ocs.opencapabilityservice"
  },
  {
+  "agrees": 1,
+  "applied": false,
+  "author": "3344125806",
+  "author_id": "12515",
+  "body": "这是一个努比亚/红魔手机系统内置的「AI 画面识别引擎」后台服务组件（包名 cn.nubia.gamelab），不带界面、无法直接打开，专门给游戏空间、红魔姬 AI 助手提供「看懂游戏画面」的能力。",
+  "created_at": "2026-11-26T16:23:08.94098+00:00",
+  "disagrees": 0,
+  "id": 14,
+  "note": "",
+  "pkg": "cn.nubia.gamelab"
+ },
+ {
   "agrees": 50,
   "applied": true,
   "author": "开发者",
