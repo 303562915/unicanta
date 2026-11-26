@@ -1,16 +1,16 @@
 # 社区数据库备份
 
-最近一次导出：2026-11-26T08:47:32Z　（每天 06:17 UTC 由 `db-backup.yml` 自动跑）
+最近一次导出：2026-11-26T09:35:46Z　（每天 06:17 UTC 由 `db-backup.yml` 自动跑）
 
 只含用户贡献的社区内容；身份表、设备表、遥测表不在里面（见工作流头部说明）。
 
 | 表 | 条数 | 上一次 | 变化 | 指纹 |
 | --- | ---: | ---: | ---: | --- |
-| 方案 plans | 137 | 0 | +137 | `584b0665dd91b16b` |
-| 方案点赞 plan_votes | 4410 | 0 | +4410 | `385ce96959c95b93` |
-| 评论 community_comments | 397 | 0 | +397 | `4f21ba8442364daa` |
-| 推荐条 recommend_suggestions | 28 | 0 | +28 | `d7144b9622bdcb65` |
-| 描述修正 description_fixes | 10 | 0 | +10 | `872573e65f439e0d` |
+| 方案 plans | 138 | 137 | +1 | `67923b6832e9ba61` |
+| 方案点赞 plan_votes | 4411 | 4410 | +1 | `ac93f75cb7bd5c8f` |
+| 评论 community_comments | 398 | 397 | +1 | `479339d87975c550` |
+| 推荐条 recommend_suggestions | 28 | 28 | — | `396833ece3400e78` |
+| 描述修正 description_fixes | 10 | 10 | — | `872573e65f439e0d` |
 | 档位修正 level_fixes | 0 | 0 | — | `4f53cda18c2baa0c` |
 
 恢复：把对应 JSON 读回库里的那张表（`plans` 需要先补齐 `owner` 对应的 `canta_users` 行，

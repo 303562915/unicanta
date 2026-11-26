@@ -5194,6 +5194,38 @@
   "title": "日常"
  },
  {
+  "brand": "Xiaomi",
+  "codename": "rothko",
+  "created_at": "2026-11-26T09:12:59.230427+00:00",
+  "id": 197,
+  "is_test": false,
+  "market_name": "Redmi K70 Ultra",
+  "model": "2407FRK8EC",
+  "note": "",
+  "owner": "14296",
+  "packages": [
+   "com.mobiletools.systemhelper",
+   "com.miui.hybrid",
+   "com.miui.dmregservice",
+   "com.xiaomi.registration",
+   "com.android.browser",
+   "com.miui.analytics",
+   "com.miui.daemon",
+   "com.miui.misightservice",
+   "com.android.packageinstaller",
+   "com.bsp.catchlog",
+   "com.xiaomi.gamecenter.sdk.service",
+   "com.xiaomi.macro"
+  ],
+  "reboot_verified": true,
+  "rebooted_at": "2026-11-26T09:12:58.679757+00:00",
+  "rom": "hyperos",
+  "rom_build": "OS3.0.308.0.WNNCNXM",
+  "rom_version": 3,
+  "sdk": 36,
+  "title": "比较稳定的"
+ },
+ {
   "brand": "HONOR",
   "codename": "HNLGE",
   "created_at": "2026-11-20T13:20:35.601308+00:00",
