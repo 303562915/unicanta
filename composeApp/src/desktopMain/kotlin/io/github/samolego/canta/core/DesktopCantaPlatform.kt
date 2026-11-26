@@ -80,6 +80,26 @@ class DesktopCantaPlatform : AdbCantaPlatform(TAG) {
     }
 
     /**
+     * 用 AWT 的保存对话框让用户挑位置，再把内容写进去；取消回答 null。
+     */
+    override suspend fun saveFileAs(fileName: String, content: String, mimeType: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val dialog = FileDialog(null as Frame?, "保存名单", FileDialog.SAVE)
+                dialog.file = fileName
+                dialog.isVisible = true
+                val directory = dialog.directory ?: return@withContext null
+                val name = dialog.file ?: return@withContext null
+                val file = File(directory, name)
+                file.writeText(content)
+                file.absolutePath
+            } catch (e: Exception) {
+                LogUtils.e(TAG, "Could not save '$fileName'", e)
+                null
+            }
+        }
+
+    /**
      * The desktop has no equivalent of `ANDROID_ID`: an identity scoped to this machine and user
      * is the best available. Unlike Android this does survive a reinstall, which is what the
      * lookup key is for.

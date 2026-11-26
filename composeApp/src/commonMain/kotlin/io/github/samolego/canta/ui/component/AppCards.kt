@@ -180,6 +180,8 @@ fun RowScope.AppLinkTile(
     title: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 一行小字（当前取值之类）；写不下会省略，所以只放短的。 */
+    subtitle: String = "",
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -193,14 +195,24 @@ fun RowScope.AppLinkTile(
     ) {
         FlGlyphIcon(glyph = glyph, size = 19.dp, tint = scheme.primary, fill = 0.2f)
         Spacer(Modifier.width(9.dp))
-        Text(
-            text = title,
-            style = FlText.subheadline,
-            color = scheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = FlText.subheadline,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         SettingsChevron()
     }
 }

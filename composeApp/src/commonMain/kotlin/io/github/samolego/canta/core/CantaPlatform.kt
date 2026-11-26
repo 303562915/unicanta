@@ -181,6 +181,20 @@ interface CantaPlatform {
     suspend fun pickTextFile(mimeTypes: List<String> = listOf("application/json", "text/plain")): String? = null
 
     /**
+     * 让用户自己挑保存位置，把 [content] 写成 [fileName]；返回写到哪里（给用户看的一句话），
+     * 取消、超时或者平台没有这个能力都回答 null。
+     *
+     * 和 [exportLog] 的区别就是"位置由谁定"：那个写死在 `Download/Canta/`，这个拉起系统的
+     * 「存储到」界面（Android 是 SAF 的 `ACTION_CREATE_DOCUMENT`，桌面是 AWT 的保存对话框），
+     * 用户想放哪就放哪——U 盘、网盘挂载、别的文件夹都行。
+     */
+    suspend fun saveFileAs(
+        fileName: String,
+        content: String,
+        mimeType: String = "application/json",
+    ): String? = null
+
+    /**
      * A stable, hashed identifier of this device, used only to hand a reinstall its old identity
      * back: the identity token itself is random and stays the secret, this is just the lookup key.
      *

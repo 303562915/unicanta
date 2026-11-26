@@ -173,25 +173,13 @@ class DeletionListStore(
     }
 
     /**
-     * 导出并交给分享面板（没有面板的构建落在下载目录）。
-     *
-     * 两件事都要说清楚：面板开没开、文件里写了几个包名——只回「已导出」，人不知道该去哪点。
+     * 导出到用户挑的位置；取消（或者平台没有这个界面）返回 path = null，不写任何文件。
      */
-    suspend fun shareJson(name: String = DEFAULT_NAME): DeletionListExport {
+    suspend fun saveJsonAs(name: String = DEFAULT_NAME): DeletionListExport {
         val packages = current()
         val content = exportJson(name)
-        val shared = runCatching { platform.shareFile(FILE_NAME, content, JSON_MIME) }
-            .getOrDefault(false)
-        val path = if (shared) {
-            null
-        } else {
-            runCatching { platform.exportLog(FILE_NAME, content) }.getOrNull()
-        }
-        return DeletionListExport(
-            packages = packages.size,
-            shared = shared,
-            path = path,
-        )
+        val picked = runCatching { platform.saveFileAs(FILE_NAME, content, JSON_MIME) }.getOrNull()
+        return DeletionListExport(packages = packages.size, path = picked)
     }
 
     /**
@@ -248,7 +236,11 @@ data class DeletionListImport(
 
 /** 导出之后对用户说的那一句。 */
 data class DeletionListExport(
+    /** 文件里写了几个包名。 */
     val packages: Int,
-    val shared: Boolean,
+    /**
+     * 文件落到了哪里（用户挑的那个位置）。null = 用户取消了，或者这个平台没有「存储到」界面，
+     * 两种情况都没有写出任何文件。
+     */
     val path: String?,
 )

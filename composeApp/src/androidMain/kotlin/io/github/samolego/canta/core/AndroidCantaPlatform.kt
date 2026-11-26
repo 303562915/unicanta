@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
 import android.widget.Toast
@@ -97,6 +98,9 @@ class AndroidCantaPlatform(
 
         /** One channel's error line in the install report: the cause, not the whole `pm` dump. */
         private const val INSTALL_ERROR_CHARS = 160
+
+        /** 「存储到」界面的默认类型：名单是 JSON，但用户常把它改名成 .txt，所以按纯文本给。 */
+        private const val SAVE_MIME = "text/plain"
 
         /** Suffix of the file that records the SHA-256 of a downloaded APK, next to the APK. */
         private const val HASH_SUFFIX = ".sha256"
@@ -210,6 +214,12 @@ class AndroidCantaPlatform(
     /** 正在等哪一次挑文件的结果；同一时刻只会有一个。 */
     private var pendingTextFile: CompletableDeferred<String?>? = null
 
+    /** 「保存到」挑选器（导出到用户选的位置用）：同样只能在 [attachActivity] 里注册。 */
+    private var saveFileLauncher: ActivityResultLauncher<String>? = null
+
+    /** 正在等哪一次保存的结果；同一时刻只会有一个。 */
+    private var pendingSaveFile: CompletableDeferred<String?>? = null
+
     /** 正在等哪一次权限申请的结果；同一时刻只会有一个。 */
     private var pendingNotifyPermission: CompletableDeferred<Boolean>? = null
 
@@ -283,7 +293,38 @@ class AndroidCantaPlatform(
                 waiting?.complete(text)
             }
         }
+        // 导出名单 / 恢复脚本：系统的「存储到」界面，用户自己决定放哪里（U 盘、网盘挂载、
+        // 随便哪个文件夹），而不是只能落在 Download/Canta 里。
+        saveFileLauncher = activity.registerForActivityResult(
+            ActivityResultContracts.CreateDocument(SAVE_MIME),
+        ) { uri ->
+            val waiting = pendingSaveFile
+            pendingSaveFile = null
+            if (uri == null) {
+                waiting?.complete(null)
+            } else {
+                val where = runCatching {
+                    activity.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(pendingSaveContent.toByteArray())
+                    }
+                    displayNameOf(uri)
+                }.getOrNull()
+                pendingSaveContent = ""
+                waiting?.complete(where)
+            }
+        }
     }
+
+    /** 正在写的正文；SAF 的回调不带内容，只能从这一格取。写完就清空。 */
+    private var pendingSaveContent: String = ""
+
+    /** 「Download/Canta/canta-deletion-list.json」这种给人看的落点。 */
+    private fun displayNameOf(uri: Uri): String = runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+        } ?: uri.lastPathSegment ?: uri.toString()
+    }.getOrDefault(uri.toString())
 
     /** Detach the activity when it is destroyed. */
     fun detachActivity(activity: FragmentActivity) {
@@ -297,6 +338,32 @@ class AndroidCantaPlatform(
         pendingNotifyPermission = null
         textFilePicker = null
         pendingTextFile = null
+        saveFileLauncher = null
+        pendingSaveFile = null
+        pendingSaveContent = ""
+    }
+
+    /**
+     * 让用户自己挑保存位置。取消、超时（三分钟）或没有活动可挂界面都回答 null。
+     *
+     * 拉起的是系统的「存储到」界面（SAF），所以位置由用户定：U 盘、网盘挂载、任意文件夹。
+     */
+    override suspend fun saveFileAs(
+        fileName: String,
+        content: String,
+        mimeType: String,
+    ): String? {
+        val launcher = saveFileLauncher ?: return null
+        val waiting = CompletableDeferred<String?>()
+        pendingSaveFile = waiting
+        pendingSaveContent = content
+        withContext(Dispatchers.Main) { launcher.launch(fileName) }
+        val where = withTimeoutOrNull(180_000L) { waiting.await() }
+        if (pendingSaveFile === waiting) {
+            pendingSaveFile = null
+            pendingSaveContent = ""
+        }
+        return where
     }
 
     /**

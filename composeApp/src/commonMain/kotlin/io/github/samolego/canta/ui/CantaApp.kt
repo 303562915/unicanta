@@ -67,6 +67,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.unreadSince
+import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.RestoreMode
 import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.data.recommend.hasNewApplied
@@ -155,6 +156,7 @@ import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.CrashReportStore
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.IdentitySetup
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.util.currentTimeMillis
@@ -420,6 +422,10 @@ private fun CantaNavigation(
 ) {
     val handler = deps.handler
     val platform = deps.platform
+
+    // 名字 + 头像设过了没有：没设过就发不了言（评论、方案评论、修正、群聊发言都读这一份）。
+    // 在这里读一次，各页共用——每页自己 `collectAsState` 也行，但那样漏接一处就是一个能被发帖的漏洞。
+    val setupGate by settingsViewModel.identitySetup.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
     val coroutineScope = rememberCoroutineScope()
@@ -1038,6 +1044,8 @@ private fun CantaNavigation(
                             newVoteCount = 0
                         }
                     },
+                    // 名字/头像没设完：推荐能看能投，但提交不了新条目。
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.Posts.route) {
@@ -1073,6 +1081,8 @@ private fun CantaNavigation(
                     weeklyRank = deps.weeklyRank,
                     onOpenWeeklyRank = { navController.navigate(Screen.WeeklyRank.route) },
                     // 底栏一级页面：不给返回箭头，离开靠点底栏别的格。
+                    // 名字/头像没设完：帖子能写能存草稿，但发不出去（按钮灰掉 + 说一句为什么）。
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.WeeklyRank.route) {
@@ -1103,6 +1113,8 @@ private fun CantaNavigation(
                     cdk = cdkStore,
                     author = storeAuthor,
                     authorId = storeIdentity,
+                    // 名字/头像没设完：能看能买能兑换，但上不了架。
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.Logs.route) {
@@ -1136,6 +1148,13 @@ private fun CantaNavigation(
                     deletionList = deps.deletionList,
                     platform = platform,
                     onNavigateBack = { navController.navigateUp() },
+                    // 点一条就装回来：走的是「未安装」页那同一条路，不是另写一套恢复流程。
+                    onRestore = { packageName ->
+                        appListViewModel.applyPackages(
+                            packageNames = listOf(packageName),
+                            kind = OperationKind.REINSTALL,
+                        )
+                    },
                 )
             }
             composable(route = Screen.Mine.route) {
@@ -1195,6 +1214,8 @@ private fun CantaNavigation(
                         platform.compressAvatar(bytes, crop, ImageBed.AVATAR_MAX_BYTES)
                     },
                     onNavigateBack = { navController.navigateUp() },
+                    // 没设名字/头像就发不了言，这一页是设它们的地方。
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.Settings.route) {
@@ -1372,6 +1393,7 @@ private fun CantaNavigation(
                     communityRepository = communityRepository,
                     appListViewModel = appListViewModel,
                     platform = platform,
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.PlanDetail.route) { entry ->
@@ -1393,6 +1415,7 @@ private fun CantaNavigation(
                     communityRepository = communityRepository,
                     appListViewModel = appListViewModel,
                     platform = platform,
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.AppComment.route) { entry ->
@@ -1416,6 +1439,7 @@ private fun CantaNavigation(
                     appListViewModel = appListViewModel,
                     platform = platform,
                     mainViewModel = mainViewModel,
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.AppDetail.route) { entry ->
@@ -1437,6 +1461,7 @@ private fun CantaNavigation(
                     appListViewModel = appListViewModel,
                     platform = platform,
                     mainViewModel = mainViewModel,
+                    setupGate = setupGate,
                 )
             }
             composable(route = Screen.Uploader.route) { entry ->
@@ -1497,6 +1522,8 @@ private fun CantaNavigation(
                     repository = communityRepository,
                     author = fixAuthor,
                     authorId = fixIdentity,
+                    // 没设名字/头像就发不了新修正：页面据此把发送键灰掉。
+                    setupGate = setupGate,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -1523,6 +1550,8 @@ private fun CantaNavigation(
                     repository = LevelFixRepository(communityRepository),
                     author = levelAuthor,
                     authorId = levelIdentity,
+                    // 没设名字/头像就提不了新修正（投票仍然可以）：发送键据此灰掉。
+                    setupGate = setupGate,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -1704,6 +1733,8 @@ private fun CantaNavigation(
                     onDraftPersist = { text -> settingsViewModel.saveChatDraft(conversationId, text) },
                     // 拉黑只对私聊有意义：群里没有"那个人"，群不受本机名单影响。
                     blocked = !chatIsGroup && chatPeer.isNotEmpty() && chatPeer in chatBlockedPeers,
+                    // 名字/头像没设过：发不了言，输入栏整条换成一行说明。
+                    setupGate = setupGate,
                     // 实时：对方一发就到，不再等轮询那一下。
                     liveSource = chatLive,
                 )
@@ -2105,6 +2136,8 @@ private fun PlanDetailRoute(
     communityRepository: PlanRepository,
     appListViewModel: AppListViewModel,
     platform: CantaPlatform,
+    /** 名字与头像设过了没有：没设过这一页的评论发不出去。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     var planProfile by remember { mutableStateOf<DeviceProfile?>(null) }
     // Comments are posted under this install's own code: no account, no login.
@@ -2157,6 +2190,7 @@ private fun PlanDetailRoute(
         // 方案详情里那些「点一下说一句」的小提示（比如卡片角上「卸得太多」的披带）：走平台的
         // toast，和别处的提示同一套。
         onMessage = { line -> platform.showMessage(line) },
+        setupGate = setupGate,
     )
 }
 
@@ -2177,6 +2211,8 @@ private fun AppDetailRoute(
     appListViewModel: AppListViewModel,
     platform: CantaPlatform,
     mainViewModel: MainViewModel,
+    /** 名字与头像设过了没有：没设过这一页的评论发不出去。 */
+    setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
     var appProfile by remember { mutableStateOf<DeviceProfile?>(null) }
     var appAuthor by remember { mutableStateOf("") }
@@ -2218,6 +2254,8 @@ private fun AppDetailRoute(
         // 提示因此和列表页是同一套代码，而不是这一页自己另写一遍。
         onUninstall = { mainViewModel.uninstallPackage(packageName) },
         onReinstall = { mainViewModel.reinstallPackage(packageName) },
+        // 名字/头像没设过：这一页收不了评论，发送键灰掉并说一句为什么。
+        setupGate = setupGate,
     )
     // 上面那两个动作的弹窗由主屏用的那份实现来画：同一个 dialog 状态，同样的措辞。
     MainDialogs(

@@ -254,28 +254,42 @@ fun SettingsScreen(
                 Spacer(Modifier.height(CardGap))
             }
 
-            AppToggleCard(
-                glyph = FlGlyphs.cloudDownload,
-                title = stringResource(Res.string.auto_update_bloat_list),
-                checked = autoUpdateBloatList,
-                onCheckedChange = settingsViewModel::saveAutoUpdateBloatList,
-            )
+            // 前两个开关并排：标题都短，一上一行纯浪费高度。
+            AppCardPair {
+                AppToggleTile(
+                    glyph = FlGlyphs.cloudDownload,
+                    title = stringResource(Res.string.auto_update_bloat_list),
+                    checked = autoUpdateBloatList,
+                    onCheckedChange = settingsViewModel::saveAutoUpdateBloatList,
+                )
+                AppToggleTile(
+                    glyph = FlGlyphs.warning,
+                    title = stringResource(Res.string.confirm_uninstall),
+                    checked = confirmBeforeUninstall,
+                    onCheckedChange = settingsViewModel::saveConfirmBeforeUninstall,
+                )
+            }
             Spacer(Modifier.height(CardGap))
-            AppToggleCard(
-                glyph = FlGlyphs.warning,
-                title = stringResource(Res.string.confirm_uninstall),
-                checked = confirmBeforeUninstall,
-                onCheckedChange = settingsViewModel::saveConfirmBeforeUninstall,
-            )
+            // 这两个也并排：一个是"删完别弹成功框"，一个是"点包名先看详情"，都只有一个标题。
+            AppCardPair {
+                AppToggleTile(
+                    glyph = FlGlyphs.check,
+                    title = stringResource(Res.string.hide_success_dialog),
+                    checked = hideSuccessDialog,
+                    onCheckedChange = settingsViewModel::saveHideSuccessDialog,
+                )
+                // 配色和深浅色在主题页里选；这一格只说现在用的是哪一套，点开那页。
+                AppLinkTile(
+                    glyph = FlGlyphs.settings,
+                    title = stringResource(Res.string.settings_group_theme),
+                    subtitle = "${FlAccent.ofArgb(themeAccent).label} · $themeModeLabel",
+                    onClick = onOpenTheme,
+                )
+            }
             Spacer(Modifier.height(CardGap))
-            AppToggleCard(
-                glyph = FlGlyphs.check,
-                title = stringResource(Res.string.hide_success_dialog),
-                checked = hideSuccessDialog,
-                onCheckedChange = settingsViewModel::saveHideSuccessDialog,
-            )
-            Spacer(Modifier.height(CardGap))
+
             // 生物识别那条：真正的开关由系统校验的回调决定，被取消就什么也不改。
+            // 它带一句说明，独占一行——半宽写不下这句，挤成省略号反而更糟。
             AppToggleCard(
                 glyph = FlGlyphs.lock,
                 title = stringResource(Res.string.require_auth_setting),
@@ -286,15 +300,6 @@ fun SettingsScreen(
                     }
                 },
                 subtitle = stringResource(Res.string.require_auth_setting_desc),
-            )
-            Spacer(Modifier.height(CardGap))
-
-            // 配色和深浅色在主题页里选；这张卡只说现在用的是哪一套，点开那页。
-            AppLinkCard(
-                glyph = FlGlyphs.settings,
-                title = stringResource(Res.string.settings_group_theme),
-                subtitle = "${FlAccent.ofArgb(themeAccent).label} · $themeModeLabel",
-                onClick = onOpenTheme,
             )
             Spacer(Modifier.height(CardGap))
 
