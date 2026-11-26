@@ -76,6 +76,17 @@ enum class AppBadgeInfo(
             SYSTEM -> Res.string.badge_system_description
         }
 
+    /**
+     * 名单里给这一档用的**正式写法**：`Recommended` / `Advanced` / `Expert` / `Unsafe` / `System`。
+     *
+     * 别把它和枚举名搞混：枚举是 `RECOMMENDED`（全大写），而 UAD 名单、我们自己的
+     * `bloat_overrides.json` / `level_fixes.json`、以及数据库 `level_fixes.removal` 的约束
+     * 用的都是首字母大写的这一套。级别修正页曾经把 `name` 直接发给后端，于是被约束拒掉、
+     * 后端安静返回 null，用户只看到「没能提交」（2026-11-26）。
+     */
+    val listName: String
+        get() = name.lowercase().replaceFirstChar { it.uppercase() }
+
     companion object {
         /** The UAD list carries the enum name, so this stays keyed on it, not on the wording. */
         fun byNameIgnoreCaseOrNull(input: String): AppBadgeInfo? {

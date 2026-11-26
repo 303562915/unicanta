@@ -231,12 +231,12 @@ fun LevelFixScreen(
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             LEVELS.forEach { level ->
-                                val picked = (chosen.ifEmpty { mine?.removal.orEmpty() }) == level.name
+                                val picked = (chosen.ifEmpty { mine?.removal.orEmpty() }) == level.listName
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(percent = 50))
                                         .background(if (picked) scheme.primary else scheme.surfaceContainerHighest)
-                                        .clickable { chosen = level.name }
+                                        .clickable { chosen = level.listName }
                                         .padding(horizontal = 12.dp, vertical = 7.dp),
                                 ) {
                                     Text(
