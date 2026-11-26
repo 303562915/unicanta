@@ -690,7 +690,7 @@ class Telemetry(
 }
 
 internal fun parseScores(json: String): Map<String, PackageScore> =
-    parseScoresRows(json).associateBy { it.score.pkg }
+    parseScoresRows(json).associateBy { it.score.pkg }.mapValues { (_, row) -> row.score }
 
 /**
  * 一份 JSON 数组行 → 分数行。快照与 `package_scores_for` 的返回**同形状**（列名一致），
