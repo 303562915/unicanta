@@ -395,6 +395,7 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
                         chatLive,
                         cdkStore = cdkStore,
                         postStore = postStore,
+                        writtenIdentity = writtenIdentity,
                     )
                     // The lock is a cover rather than a replacement. Drawn over the pages, it
                     // keeps their state and their side effects — the telemetry flush on the way
@@ -428,6 +429,14 @@ private fun CantaNavigation(
      */
     cdkStore: CdkStore,
     postStore: PostStore,
+    /**
+     * 预热出来的身份，给「我的头像」兜底用（见那边的 `shownAvatarUrl`）。
+     *
+     * 必须当参数传进来，理由与上面 [cdkStore] 那条注释一样：`writtenIdentity` 是
+     * [CantaApp] 里的局部 `var`，这个函数看不到它。2026-11-26 那版就是直接在这里写
+     * `writtenIdentity.owner`，于是 `Unresolved reference 'writtenIdentity'`，开发版连红两次。
+     */
+    writtenIdentity: Identity,
 ) {
     val handler = deps.handler
     val platform = deps.platform
