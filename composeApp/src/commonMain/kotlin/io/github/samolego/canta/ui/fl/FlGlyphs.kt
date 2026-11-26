@@ -167,6 +167,180 @@ object FlGlyphs {
         ),
     )
 
+    // ---- 编辑器工具组（「创建话题」底部工具栏）----
+    //
+    // FlClash 原版没有这几个：它是代理客户端，不带写作工具。这里按同一套语言补——
+    // 24×24 网格、中心线、`GlyphRole.Line` 给主笔画，视觉内框落在 4–20 之间，
+    // 和 [code]（3..21）、[add]（5..19）是同一档，16dp 缩放下笔画不至于糊在一起。
+    //
+    // 只用折线和圆拼，不用 [GlyphPathData] 的曲线：这几个形状在 16dp 下笔画只有 ~1.3px，
+    // 曲线细节会丢掉，直线段反而更清楚。
+
+    /** 粗体：一笔 B —— 竖干 + 上下两个瓣（上瓣窄、下瓣宽）。 */
+    val bold = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(GlyphVertex(8f, 4.8f, 0f), GlyphVertex(8f, 19.2f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(8f, 4.8f, 0f),
+                    GlyphVertex(13.4f, 4.8f, 1.8f),
+                    GlyphVertex(15.2f, 6.8f, 1.6f),
+                    GlyphVertex(13.4f, 9f, 1.8f),
+                    GlyphVertex(8f, 9f, 0f),
+                ),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(8f, 9f, 0f),
+                    GlyphVertex(14.2f, 9f, 1.8f),
+                    GlyphVertex(16.2f, 12.2f, 1.8f),
+                    GlyphVertex(14.2f, 15.2f, 1.8f),
+                    GlyphVertex(8f, 15.2f, 0f),
+                ),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /** 斜体：一条右上斜的干 + 上下两道平头。 */
+    val italic = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(GlyphVertex(15.4f, 5.2f, 0.6f), GlyphVertex(10.6f, 18.8f, 0.6f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(9f, 5.2f, 0f), GlyphVertex(15.4f, 5.2f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(8.6f, 18.8f, 0f), GlyphVertex(15f, 18.8f, 0f)),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /**
+     * 标题（H1）：极简的 H（两竖 + 一横梁）+ 右侧一个小 1。
+     *
+     * 不画字母 'H' 的完整轮廓：16dp 下横梁只剩一点几个像素，画成完整字母会糊成方框。
+     */
+    val heading = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(GlyphVertex(6f, 5.2f, 0f), GlyphVertex(6f, 18.8f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(12.4f, 5.2f, 0f), GlyphVertex(12.4f, 18.8f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(6f, 12f, 0f), GlyphVertex(12.4f, 12f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(17.6f, 18.4f, 0f),
+                    GlyphVertex(17.6f, 6.8f, 1.4f),
+                    GlyphVertex(15.8f, 8.8f, 0f),
+                ),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /** 无序列表：左侧三颗实心点 + 右侧三根短线。点的读法是"列表符号"。 */
+    val bulletList = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphCircle(5.4f, 7f, 1.15f, role = GlyphRole.Detail, solid = true),
+            GlyphCircle(5.4f, 12f, 1.15f, role = GlyphRole.Detail, solid = true),
+            GlyphCircle(5.4f, 17f, 1.15f, role = GlyphRole.Detail, solid = true),
+            GlyphPolyline(
+                listOf(GlyphVertex(9.4f, 7f, 0f), GlyphVertex(19.4f, 7f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(9.4f, 12f, 0f), GlyphVertex(19.4f, 12f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(9.4f, 17f, 0f), GlyphVertex(19.4f, 17f, 0f)),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /** 引用：左边一根竖条（两端圆角）+ 右边两道横杠。Markdown 的 `>` 就是这两件事。 */
+    val quote = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(GlyphVertex(4.6f, 5.6f, 1.2f), GlyphVertex(4.6f, 18.4f, 1.2f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(8.6f, 8.4f, 0f), GlyphVertex(19.4f, 8.4f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(8.6f, 15.6f, 0f), GlyphVertex(19.4f, 15.6f, 0f)),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /**
+     * 草稿：一个信封轮廓 + 中间一道 V。
+     *
+     * FlClash 原版没有信封（它不发消息），而底栏「消息」用的是 [send]；
+     * 草稿这一格要的是"还没发出去的东西"，所以画的是信封而不是纸飞机。
+     */
+    val drafts = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            // 外框必须是 `GlyphRole.Line`，不能留默认的 `Body`：`drawBody` 在 `fill <= 0f` 时
+            // 直接 return（见 Glyph.kt），而 `FlGlyphIcon` 默认就是 `fill = 0f` —— 留 Body 的话
+            // 这个图标画出来只剩中间那道 V，像个孤零零的 "^"。
+            GlyphBox(3.2f, 5.2f, 20.8f, 18.8f, 2.2f, role = GlyphRole.Line),
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(4f, 6.6f, 0.4f),
+                    GlyphVertex(12f, 12.8f, 0.4f),
+                    GlyphVertex(20f, 6.6f, 0.4f),
+                ),
+                role = GlyphRole.Detail,
+            ),
+        ),
+    )
+
+    /** 向上：与 [arrowBack] 同构，转 90°。「查看 N 个新话题」横幅用。 */
+    val arrowUpward = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(GlyphVertex(12f, 19f, 0f), GlyphVertex(12f, 5f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(5.5f, 11.5f, 0f),
+                    GlyphVertex(12f, 5f, 0.4f),
+                    GlyphVertex(18.5f, 11.5f, 0f),
+                ),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
     val toggle = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -442,7 +443,9 @@ private fun PostsFab(
     // 摘掉了，`exit` 规格根本轮不到执行——按下去会"啪"地消失。
     Column(
         horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        // 收起态不能留 4dp：三个 AnimatedVisibility 收起后高度归零，但 `spacedBy` 算的是
+        // "孩子之间"，于是 FAB 上方永远空出两格 4dp 的缝。展开时才上间距。
+        verticalArrangement = if (open) Arrangement.spacedBy(4.dp) else Arrangement.Top,
     ) {
         // 弹出：每项从 0.2 缩放到 1 并淡入，收起时反向（`m3e_fab_menu.dart` 的 `_buildItem`）。
         FabAction(
@@ -2801,10 +2804,12 @@ private fun PostEditorPane(
                 .background(FlSurfaceLevel.Block.colorOf(scheme)),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            // 属性条**不横滚**：`DropdownMenu` 的 popup 只在 `expanded` 变化时算一次屏幕坐标，
+// 外层套 `horizontalScroll` 的话，滚动之后菜单还钉在原处、跟手走不了。三个胶囊
+// （选择分类 / + 标签 / 分享方案）在正常宽度下放得下，超出时让文字自己省略。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2928,12 +2933,19 @@ private fun ComposerPill(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 属性条不再横滚（见调用点注释），所以文字要自己收：分类名、标签计数都不会太长，
+        // 但"分享方案"这一格在超窄屏上仍可能把邻居挤出去，省略号比换行好。
+        //
+        // **不能给 weight**：这颗胶囊在 `Row` 里是被父级按内容量出来的，没有有界宽度时
+        // `weight` 会算成 0，文字直接消失。用 `widthIn(max = …)` 兜一个上限，超了才省略。
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = if (accent) FontWeight.SemiBold else FontWeight.Normal,
             color = if (accent) scheme.primary else scheme.onSurfaceVariant,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 140.dp),
         )
         if (dropdown) {
             Spacer(modifier = Modifier.width(2.dp))
