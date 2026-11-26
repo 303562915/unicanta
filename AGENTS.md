@@ -69,6 +69,7 @@ Gradle 模块：`:composeApp`（共享 UI/逻辑）、`:androidApp`、`:desktopA
 | `group-release-notice.yml` 📣 Group release notice | 仅 `workflow_call`（**只被 `pages.yml` 调**） | 下载页部署完成后用 `sender='ai'`（群聊AI）在内测灰度群插一条公告：版本、提交、本次更新、下载页、APK 直链、校验和；同时推 `last_message_at` | — |
 | `bug-inbox.yml` 🐞 Bug inbox | `workflow_dispatch`（`conversation_id` / `limit` / `since_id`） | 读 Bug 反馈群的消息（JSON 打日志 + run summary），供 AI 整理问题；见第 13 节 | — |
 | `bootstrap-bug-group.yml` 🐞 | `workflow_dispatch` | 一次性/幂等：建「UniCanta Bug 反馈」群并生成邀请码（已跑过，重复跑只会把群号与邀请码再打一遍） | — |
+| `db-backup.yml` 🗃️ Community DB backup | 每天 06:17 UTC + `workflow_dispatch` | 把**用户贡献的社区内容**导出成 JSON 提交进仓库，并给客户端发一份快照；见**第 16 节** | `db-backup`（14 天）+ 仓库里的 `ops/db-backup/`、`site/db/plans.json` |
 | `crowdin_escapes.yml` 🧹 | `push` 到 `l10n_master` | 清 Crowdin 转义后自动提交推送 | — |
 
 > 数据库那一侧（`server/supabase/**`、`server/test/**`、`server/README.md`）
@@ -765,3 +766,63 @@ burst balance reached 0%, I/O wait peaked at 118.6%
 但 GitHub 的 `schedule` 会**静默丢弃**——两次事故分别 5 小时和 20 小时零触发，而 `state` 一直 `active`。
 真实触发靠**外部 cron 每 10–15 分钟**打 dispatch（`POST .../actions/workflows/backend-watchdog.yml/dispatches`，
 body `{"ref":"master"}`，成功返回 204）。它**不解决根因**。
+
+---
+
+## 16. 社区数据库备份：定时进 GitHub + 客户端离线快照（2026-11-26 落地）
+
+用户要求「把我们数据库方案定时上传到 GitHub，减小用户损失」。落地成 **`db-backup.yml`（🗃️ Community DB backup）**，
+现在 GitHub 上已注册、状态 `active`，每天 **06:17 UTC（北京时间 14:17）** 自动跑一次，也可 `workflow_dispatch` 手动触发
+（带 `dry_run` 只看形状不提交）。
+
+### 16.1 它导出什么
+
+只导**用户贡献的社区内容**，六个文件，一个表一个（diff 才读得懂）：
+
+| 文件 | 表 | 内容 |
+|---|---|---|
+| `ops/db-backup/plans.json` | `plans` | 方案：标题、备注、包列表、机型、ROM/版本/build、sdk、owner（身份编号）、验证状态 |
+| `ops/db-backup/plan_votes.json` | `plan_votes` | 方案点赞（`plan_id` + `voter` + 时间） |
+| `ops/db-backup/comments.json` | `community_comments` | 评论：kind/target/parent、作者编号、机型、正文 |
+| `ops/db-backup/recommendations.json` | `recommend_suggestions` | 推荐条 + 赞成/反对数 |
+| `ops/db-backup/description_fixes.json` | `description_fixes` | 描述修正 + 赞成/反对数 |
+| `ops/db-backup/level_fixes.json` | `level_fixes` | 档位修正提案 + 票数 |
+
+另有两份汇总：`ops/db-backup/_meta.json`（导出时间、project ref、各表条数、sha256 前 16 位指纹、上一版条数）、
+`ops/db-backup/LATEST.md`（人看的清单：时间、条数、比上次多了多少）。
+
+### 16.2 客户端读的那一份
+
+`site/db/plans.json` —— **只含重启验证通过的方案**，列名与 `plans_for` / `plans_all` 的返回一致、点赞已算好、
+按点赞排序。`pages.yml` 会把它随全站发到 gh-pages，所以两个地址都可用：
+
+- `https://303562915.github.io/unicanta/db/plans.json`（Pages，国内 CDN，首选）
+- `https://raw.githubusercontent.com/303562915/unicanta/master/site/db/plans.json`（raw）
+
+客户端接线在 `PlanRepository`：`offlinePlans()` 先 Pages 再 raw、15 秒超时、读到一次就缓存。
+调用点两处——`plansAll()`（`lastFailureWasNetwork` 为真时退回快照）与 `plansFor()`（按型号 + ROM + 主版本本地筛）。
+**兜底不改写 `lastError` / `lastFailureWasNetwork`**：后端挂了仍旧如实报"没通"，快照只负责"还有内容可看"。
+写操作（上传/投票/评论）没有兜底，那本来就得连库。
+
+### 16.3 隐私红线（改这个工作流前必读）
+
+仓库是 **public**，所以：
+
+1. **只按白名单导**：`canta_users`、`canta_device_keys`、`update_reports`、`operation_failures`、`inbox_seen`、
+   `messages`、`point_*`、`private.*` 一律**不导**——里面是 token、IP、设备指纹、失败明细、私聊内容。
+2. 方案 `owner` 与评论 `author` 是**身份编号**（`canta_users.id`），不是 `token`；token 在 `canta_users.token`，那张表永不导出。
+   由于名字表不导出，离线快照里 `owner_name` 是空串，卡片只显示 `#10000` 这种编号——这是有意的取舍。
+3. 新增一张表先想清楚"它能不能公开"，再决定要不要加进白名单。
+4. 恢复是**手工**的（把 JSON 读回对应表），别在 CI 里写自动恢复。
+
+### 16.4 排查
+
+```bash
+gh run list --workflow db-backup.yml --limit 3        # 最近几次
+gh run view <id> --log-failed                         # 失败就看这条
+```
+
+- 常见失败：`SUPABASE_ACCESS_TOKEN` 失效、Management API 超时（第 15 节那套资源耗尽的余波）、
+  某张表被改名/加列导致 SQL 报 `column ... does not exist`。
+- 内容没变时它**不提交**（`git diff --cached --quiet` 直接退出），所以「今天没有新 commit」不等于「没跑」。
+- Actions artifact `db-backup` 保留 14 天，仓库文件被改坏时可以从那儿捞回来。
