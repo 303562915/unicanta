@@ -16,6 +16,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
 
@@ -46,11 +47,25 @@ class ShizukuShell private constructor(private val context: Context) {
         /**
          * 绑几次。实测的形状是：Shizuku 的用户服务第一次常常起不来（进程被杀、管理器刚启动），
          * 隔一秒再绑一次就好了。只绑一次的话这一次安装就白等，然后退到系统安装器。
+         *
+         * 3 轮：多出的那一轮是给「权限被拒 → 重新申请授权」留的。管理器弹出确认框、用户点允许、
+         * 服务端重建 ClientRecord 需要时间，2 轮会在用户刚点上之前就放弃。
          */
-        private const val BIND_ROUNDS = 2
+        private const val BIND_ROUNDS = 3
 
         /** 两次绑定之间等多久；先 unbind 再 bind，否则 Shizuku 会当成同一次未完成的请求。 */
         private const val BIND_RETRY_DELAY_MS = 1_000L
+
+        /** 重新申请 Shizuku 授权时用的请求码，与 `ShizukuPermission` 里那个不冲突即可。 */
+        private const val PERMISSION_REQUEST_CODE = 0xCA07B
+
+        /**
+         * 弹出授权确认后给用户多久去点。
+         *
+         * 不给这段等待就是白弹一次框：下一轮 `bindUserService` 会在用户点之前发出，服务端仍然
+         * 认为 Canta 没授权，这次的安装就以"还是没授权"收场。
+         */
+        private const val PERMISSION_PROMPT_WAIT_MS = 6_000L
 
         /**
          * 一次脚本调用最多等多久。`binder.transact` 是阻塞调用、没有自己的超时：Shizuku 那边
@@ -129,10 +144,18 @@ class ShizukuShell private constructor(private val context: Context) {
             // 把「为什么没绑上」原样带出去：这句话会进安装失败的 detail / update_reports，
             // 下次不用再让人读屏幕，报告本身就写着是权限、版本还是进程起不来。
             val alive = runtimeAlive()
+            // 权限被拒时不能说成 Timeout（"没有响应"）：那是「再等等它自己就好」，而这一种
+            // 只有用户去管理器里给 Canta 授权才能好。归成 NoPrivilege，上层才会走
+            // 「Canta 还没被 Shizuku 授权」那句，也才会记得试 root 通道。
+            val denied = isPermissionDenial(lastBindDenied)
             return TweakRun(
                 ok = false,
                 output = lastBindError.ifBlank { shizukuState() },
-                failure = if (alive) TweakFailure.Timeout else TweakFailure.NoPrivilege,
+                failure = when {
+                    denied -> TweakFailure.NoPrivilege
+                    alive -> TweakFailure.Timeout
+                    else -> TweakFailure.NoPrivilege
+                },
             )
         }
         // 在单独的 scope 上等：超时之后这次调用就此作废，不会再挂着界面。
@@ -164,6 +187,10 @@ class ShizukuShell private constructor(private val context: Context) {
     @Volatile
     private var lastBindError: String = ""
 
+    /** 上一次绑定失败是不是「Shizuku 说 Canta 没被授权」那个异常。 */
+    @Volatile
+    private var lastBindDenied: Throwable? = null
+
     /** Starts [ShellUserService] if it is not running yet; null when it cannot be started. */
     private suspend fun bind(): IBinder? = bindLock.withLock {
         binder?.let { return@withLock it }
@@ -187,14 +214,38 @@ class ShizukuShell private constructor(private val context: Context) {
             try {
                 val started = runCatching { Shizuku.bindUserService(args, connection) }
                 if (started.isFailure) {
-                    lastBindError = "bindUserService 失败：${started.exceptionOrNull()?.message ?: started.exceptionOrNull()}"
-                    LogUtils.w(TAG, "Could not start the shell service: ${started.exceptionOrNull()}")
+                    val why = started.exceptionOrNull()
+                    lastBindDenied = if (isPermissionDenial(why)) why else null
+                    lastBindError = if (isPermissionDenial(why)) {
+                        // 不许说成"没有响应"：这句话会进 toast 和 update_reports.detail，而它描述的
+                        // 是完全不同的动作（去管理器里给 Canta 授权），说错方向用户永远修不好。
+                        "Canta 还没被 Shizuku 授权（${why?.message ?: why}）"
+                    } else {
+                        "bindUserService 失败：${why?.message ?: why}"
+                    }
+                    LogUtils.w(TAG, "Could not start the shell service: $why")
+                    // 「requires permission」不是"服务起不来"，是 Shizuku 认为 Canta 没被授权：
+                    // 服务端 `enforceCallingPermission("addUserService")` 查到 `clientRecord.allowed=false`
+                    // 就抛这句。这个 allowed 只在 attachApplication 那一刻从配置里读一次，Canta 后来
+                    // 在管理器里获得授权，也不会自动同步到已经 attach 的 ClientRecord 上 —— 所以必须
+                    // 主动重新走一次授权确认，让服务端重建这个 ClientRecord，而不是傻等重试。
+                    if (isPermissionDenial(why)) {
+                        // 让界面的授权状态也回到「未授权」：否则用户在设置里看到的是"已授权"，
+                        // 却怎么也装不上，这是最难自查的一种状态。
+                        runCatching { ShizukuPermission.noteServerDenied() }
+                        // 弹框之后不能立刻重绑：用户还在看管理器的确认框，这一刻服务端仍然认为
+                        // Canta 没授权。给它一段真的等待时间，用户点完"允许"再重试才有意义。
+                        requestPermissionAgain()
+                        delay(PERMISSION_PROMPT_WAIT_MS)
+                        if (!runtimeAlive()) return@withLock null
+                    }
                     continue
                 }
                 val bound = withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
                 if (bound != null) {
                     binder = bound
                     lastBindError = ""
+                    lastBindDenied = null
                     return@withLock bound
                 }
                 lastBindError = "用户服务 ${BIND_TIMEOUT_MS / 1000} 秒内没连上（第 ${round + 1} 轮）"
@@ -212,6 +263,57 @@ class ShizukuShell private constructor(private val context: Context) {
     /** Whether Shizuku's binder is there and Canta is allowed to use it. */
     private fun runtimeAlive(): Boolean =
         runCatching { Shizuku.pingBinder() && Shizuku.getUid() != -1 }.getOrDefault(false)
+
+    /**
+     * 「Shizuku 说 Canta 没被授权」的那句异常。
+     *
+     * 服务端 `enforceCallingPermission("addUserService")` 在 `clientRecord.allowed == false` 时抛
+     * `SecurityException("Permission Denial: addUserService from pid=… requires permission")`。
+     * 这与「用户没开 Shizuku」「管理器版本太老」是不同的两件事，处理方式也不同：这一种只需要
+     * 在管理器里把 Canta 的授权重新确认一次。
+     */
+    private fun isPermissionDenial(e: Throwable?): Boolean {
+        if (e == null) return false
+        val text = (e.message ?: e.toString()).lowercase()
+        return "requires permission" in text || "permission denial" in text
+    }
+
+    /**
+     * 重新走一次授权确认，逼 Shizuku 重建这个 ClientRecord。
+     *
+     * `clientRecord.allowed` 是 `attachApplication` 那一刻从配置里读的快照，之后在管理器里点
+     * 允许**不会**同步到已 attach 的 ClientRecord 上；而 API 的 `checkSelfPermission()` 又会缓存
+     * 第一次拿到的 GRANTED。于是界面上写着"已授权"，`addUserService` 却一直被拒 —— 线上报告里
+     * `ping=true` 却 `requires permission` 正是这个形状。这里先清缓存再申请一次，让服务端把
+     * `allowed` 重新算出来；申请走的是同一个回调，用户看到的是管理器弹出的一次确认框。
+     */
+    private suspend fun requestPermissionAgain() {
+        // `requestPermission` 会弹管理器界面，必须在主线程；这里在 IO 线程的 bind() 里。
+        withContext(Dispatchers.Main) {
+            runCatching {
+                // API 说已授权而服务端说没有：正是快照过期，必须再申请一次。
+                val granted = runCatching {
+                    Shizuku.checkSelfPermission()
+                }.getOrDefault(android.content.pm.PackageManager.PERMISSION_DENIED)
+                if (granted == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    LogUtils.w(TAG, "Shizuku 说已授权但 addUserService 被拒，重新申请授权")
+                }
+                // 这个请求码上的结果要有人接：否则用户点了"允许"，Canta 这边的"被拒"标记
+                // 永远不会清掉，界面会一直显示未授权，下一次还是要重新申请。
+                val listener = object : Shizuku.OnRequestPermissionResultListener {
+                    override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
+                        if (requestCode != PERMISSION_REQUEST_CODE) return
+                        Shizuku.removeRequestPermissionResultListener(this)
+                        if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            ShizukuPermission.clearDenial()
+                        }
+                    }
+                }
+                Shizuku.addRequestPermissionResultListener(listener)
+                Shizuku.requestPermission(PERMISSION_REQUEST_CODE)
+            }.onFailure { LogUtils.w(TAG, "Re-requesting the Shizuku permission failed: $it") }
+        }
+    }
 
     private fun transact(remote: IBinder, script: String): TweakRun {
         val data = Parcel.obtain()

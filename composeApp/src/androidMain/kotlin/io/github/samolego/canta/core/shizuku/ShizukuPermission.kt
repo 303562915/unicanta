@@ -24,6 +24,16 @@ object ShizukuPermission {
     @Volatile
     private var binderStatus = Shizuku.pingBinder()
 
+    /**
+     * 本进程里服务端曾经说过「Canta 没被授权」。
+     *
+     * `checkSelfPermission()` 的返回值会被 API 缓存成常量（拿到一次 GRANTED 就永远返回 GRANTED），
+     * 而服务端判权限用的是 attach 时的快照。设置这个标记后 [privilegeStatus] 不再信那个缓存，
+     * 界面会老实显示"未授权"，[requestShizukuPermission] 也会真的去申请。
+     */
+    @Volatile
+    private var lastDenialSeen = false
+
     init {
         Shizuku.addBinderDeadListener { binderStatus = false }
         Shizuku.addBinderReceivedListener { binderStatus = true }
@@ -60,6 +70,8 @@ object ShizukuPermission {
                     if (requestCode != SHIZUKU_CODE) return
                     // One-shot: otherwise listeners pile up and old callbacks re-fire.
                     Shizuku.removeRequestPermissionResultListener(this)
+                    // 用户这次真的点了允许：清掉"被拒"标记，让状态回到最新，否则会一直显示未授权。
+                    if (grantResult == PackageManager.PERMISSION_GRANTED) clearDenial()
                     onPermissionResult(grantResult)
                 }
             }
@@ -68,8 +80,17 @@ object ShizukuPermission {
         }
     }
 
+    /**
+     * 运行时能答话吗（binder 在、且不是 pre-v11）。
+     *
+     * **这里不再看 `shouldShowRequestPermissionRationale()`**。那个方法回答的是「授权对话框该不该
+     * 先解释一句」，被当成「不可用」是错的：真机上出现过 rationale 返回 true（用户上次点了"以后"、
+     * 或管理器把它记成了未决定），于是 [isCantaAuthorized] 直接 false —— 界面说"没授权"，
+     * 而服务端那边 Canta 其实 attach 着、只是 `clientRecord.allowed=false`。
+     * 这条误判会连累 `requestShizukuPermission` 根本不发请求，用户点多少次授权都没反应。
+     */
     private fun checkRequirements(): Boolean {
-        return binderStatus && !Shizuku.isPreV11() && !Shizuku.shouldShowRequestPermissionRationale()
+        return binderStatus && !Shizuku.isPreV11()
     }
 
     private fun isPermissionGranted(): Boolean {
@@ -77,7 +98,15 @@ object ShizukuPermission {
     }
 
     fun isCantaAuthorized(): Boolean {
+        // 被服务端拒过就不再信 API 那个缓存值（见 [lastDenialSeen]）：这种状态下说"已授权"会让
+        // 用户以为什么都好，实际每一步调用都失败。
+        if (lastDenialSeen && !isSui) return false
         return checkRequirements() && isPermissionGranted()
+    }
+
+    /** 授权确认走完之后，清掉"被拒"标记，让界面按最新状态显示。 */
+    fun clearDenial() {
+        lastDenialSeen = false
     }
 
     fun privilegeStatus(packageManager: PackageManager): PrivilegeStatus {
@@ -98,6 +127,21 @@ object ShizukuPermission {
         } else {
             PrivilegeStatus.NOT_AVAILABLE
         }
+    }
+
+    /**
+     * 记录一次「服务端把 Canta 的调用按未授权拒了」。
+     *
+     * 由 [ShizukuShell] 在 `addUserService` 抛 `requires permission` 时调用。标记只在本进程有效，
+     * 进程重启后会用最新状态重新判 —— 那正是我们想要的，因为重启后 ClientRecord 也重建了。
+     */
+    fun noteServerDenied() {
+        lastDenialSeen = true
+    }
+
+    /** 授权确认走完之后，清掉"被拒"标记，让界面按最新状态显示。 */
+    fun clearDenial() {
+        lastDenialSeen = false
     }
 
     /** Whether either manager is on this phone: the original, or a fork that speaks its API. */
