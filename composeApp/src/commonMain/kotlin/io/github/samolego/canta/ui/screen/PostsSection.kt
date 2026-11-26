@@ -81,6 +81,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
@@ -662,7 +664,15 @@ internal fun PostsScreen(
      */
     var editingPostId by remember { mutableStateOf(0L) }
     var title by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
+    /**
+     * 正文：`TextFieldValue` 而不是 `String`。
+     *
+     * 差别只有一个，但很要命：**游标位置**。工具栏那七个 Markdown 按钮要插在"我正在写的地方"，
+     * 而 `String` 里没有这个概念，上一版只能往末尾追加，人得自己把那段搬上去。
+     *
+     * 落盘与发文时一律取 `body.text`（草稿存储仍是 `String`，见 [PostDraft]）。
+     */
+    var body by remember { mutableStateOf(TextFieldValue("")) }
     /** 分类：空串表示没选。候选见 [POST_CATEGORIES]，后端原样存。 */
     var category by remember { mutableStateOf("") }
     /** 已经成形的标签（chip）。 */
@@ -800,8 +810,11 @@ internal fun PostsScreen(
      * 协程可能还没被取消，照旧写下去就等于把刚发出去的帖子又存成了草稿。
      *
      * 分类与标签也进键里：只改分类、只加一个标签，同样是"手停下来就该记住"的改动。
+     *
+     * 键里用 `body.text` 而不是 `body` 本身：`TextFieldValue` 每次**光标移动**都会变成新实例，
+     * 直接进键就等于"点一下正文也重新计时并写一次盘"——手没动，草稿却被反复覆盖。
      */
-    LaunchedEffect(composing, editorId, editingPostId, title, body, category, tags, tagInput) {
+    LaunchedEffect(composing, editorId, editingPostId, title, body.text, category, tags, tagInput) {
         if (!composing) return@LaunchedEffect
         // 改帖不存草稿：改的是线上那条，写盘只会留下一条"看起来像新帖、其实是旧内容"的草稿，
         // 下次点「草稿」进来还以为自己在起草一篇新的。
@@ -809,7 +822,7 @@ internal fun PostsScreen(
         val draftStore = drafts ?: return@LaunchedEffect
         val id = editorId
         if (id.isEmpty() || who.isEmpty()) return@LaunchedEffect
-        if (title.isBlank() && body.isBlank()) return@LaunchedEffect
+        if (title.isBlank() && body.text.isBlank()) return@LaunchedEffect
         delay(AUTOSAVE_DELAY_MS)
         if (!composing || editorId != id) return@LaunchedEffect
         val stamp = currentTimeMillis()
@@ -818,7 +831,7 @@ internal fun PostsScreen(
             PostDraft(
                 id = id,
                 title = title,
-                body = body,
+                body = body.text,
                 category = category,
                 tags = tagsWithPending(tags, tagInput),
                 updatedAt = stamp,
@@ -842,7 +855,7 @@ internal fun PostsScreen(
         editingPostId = 0L
         editorId = draft?.id?.takeIf { it.isNotEmpty() } ?: currentTimeMillis().toString()
         title = draft?.title.orEmpty()
-        body = draft?.body.orEmpty()
+        body = TextFieldValue(draft?.body.orEmpty())
         category = draft?.category.orEmpty()
         tags = draft?.tags.orEmpty()
         tagInput = ""
@@ -874,7 +887,7 @@ internal fun PostsScreen(
         // 但自动保存那条 LaunchedEffect 仍然会跑，得让它有一条自己的键而不去覆盖任何真草稿。
         editorId = "edit-${post.id}"
         title = post.title
-        body = post.body
+        body = TextFieldValue(post.body)
         category = post.category
         tags = post.tags
         tagInput = ""
@@ -908,7 +921,7 @@ internal fun PostsScreen(
             return@cancel
         }
         val draftStore = drafts
-        val hasText = title.isNotBlank() || body.isNotBlank()
+        val hasText = title.isNotBlank() || body.text.isNotBlank()
         if (!hasText) {
             draftStore?.delete(who, editorId)
             draftList = draftStore?.drafts(who).orEmpty()
@@ -925,7 +938,7 @@ internal fun PostsScreen(
                 PostDraft(
                     id = editorId,
                     title = title,
-                    body = body,
+                    body = body.text,
                     category = category,
                     tags = tagsWithPending(tags, tagInput),
                     updatedAt = currentTimeMillis(),
@@ -967,7 +980,7 @@ internal fun PostsScreen(
         editorError = null
         scope.launch {
             if (editing > 0L) {
-                val done = current.update(editing, cleanTitle, body, author, category, finalTags)
+                val done = current.update(editing, cleanTitle, body.text, author, category, finalTags)
                 posting = false
                 // 这一趟回来时人可能已经离开编辑态了（按了返回 / 又写了别的）：
                 // 那就只把结果说一声，不去清别人的状态，也不再弹一次页。
@@ -985,7 +998,7 @@ internal fun PostsScreen(
                 editingPostId = 0L
                 editorId = ""
                 title = ""
-                body = ""
+                body = TextFieldValue("")
                 category = ""
                 tags = emptyList()
                 tagInput = ""
@@ -995,7 +1008,7 @@ internal fun PostsScreen(
                 onEditorClosed?.invoke()
                 return@launch
             }
-            val id = current.add(cleanTitle, body, author, category, finalTags)
+            val id = current.add(cleanTitle, body.text, author, category, finalTags)
             posting = false
             if (id == null) {
                 editorError = current.reason ?: "没发出去：检查一下网络再试"
@@ -1005,7 +1018,7 @@ internal fun PostsScreen(
             editingPostId = 0L
             editorId = ""
             title = ""
-            body = ""
+            body = TextFieldValue("")
             category = ""
             tags = emptyList()
             tagInput = ""
@@ -1027,7 +1040,7 @@ internal fun PostsScreen(
             composing = false
             editorId = ""
             title = ""
-            body = ""
+            body = TextFieldValue("")
             category = ""
             tags = emptyList()
             tagInput = ""
@@ -1125,13 +1138,13 @@ internal fun PostsScreen(
             onNavigateBack?.invoke()
             return@leave
         }
-        if (composing && who.isNotEmpty() && (title.isNotBlank() || body.isNotBlank())) {
+        if (composing && who.isNotEmpty() && (title.isNotBlank() || body.text.isNotBlank())) {
             drafts?.save(
                 who,
                 PostDraft(
                     id = editorId,
                     title = title,
-                    body = body,
+                    body = body.text,
                     category = category,
                     tags = tagsWithPending(tags, tagInput),
                     updatedAt = currentTimeMillis(),
@@ -1448,7 +1461,39 @@ else -> Column {
                 error = editorError,
                 previewing = previewing,
                 onTitleChange = { title = it.take(POST_TITLE_LIMIT) },
-                onBodyChange = { body = it.take(POST_BODY_LIMIT) },
+                // 截断时要同时收 游标 的范围，否则超长那一刻 selection 会落在文本外面，
+                // Compose 1.7+ 会直接抛 IndexOutOfBounds。
+                onBodyChange = { next ->
+                    body = if (next.text.length <= POST_BODY_LIMIT) {
+                        next
+                    } else {
+                        // 截断时 Composition 必须跟着收窄：`copy` 不传 composition 会沿用原来的范围，
+                        // 而它可能落在截短后的文本之外 —— TextField 内部拿它去 subSequence 就会越界。
+                        // 收成 Collapsed（组字区为空）等于"这一下不算组字"，输入法会重新来一次。
+                        //
+                        // `take` 是按 Char 截的，可能切在代理对中间（emoji、少数字）：
+                        // 末尾落在高位代理上就往回退一位，别造出孤立 surrogate。
+                        val kept = next.text.take(POST_BODY_LIMIT).let { text ->
+                            if (text.isNotEmpty() && text.last().isHighSurrogate()) text.dropLast(1) else text
+                        }
+                        val composition = next.composition
+                            ?.let { c ->
+                                TextRange(
+                                    c.min.coerceIn(0, kept.length),
+                                    c.max.coerceIn(0, kept.length),
+                                )
+                            }
+                            ?.takeIf { it.min != it.max }
+                        next.copy(
+                            text = kept,
+                            selection = TextRange(
+                                next.selection.start.coerceIn(0, kept.length),
+                                next.selection.end.coerceIn(0, kept.length),
+                            ),
+                            composition = composition,
+                        )
+                    }
+                },
                 onCategoryChange = { category = it },
                 onTagInputChange = onTagInputChange,
                 onRemoveTag = { tag -> tags = tags - tag },
@@ -1563,10 +1608,23 @@ else -> Column {
             error = shareError,
             onDismiss = { sharePickerOpen = false },
             onPick = { plan ->
-                // 与正文里那排 Markdown 模板同一条路：只能往末尾追加（String 值拿不到游标）。
-                val glue = if (body.isBlank() || body.endsWith("\n")) "" else "\n\n"
-                body = (body + glue + ShareCode.message(plan.id, plan.title, plan.deviceLabel))
-                    .take(POST_BODY_LIMIT)
+                // 与正文里那排 Markdown 模板同一条路：插在光标处，不是往末尾追加。
+                // 前面空一行（光标不在行尾时补）是为了让分享码自成一段——它是一整块引用。
+                val share = ShareCode.message(plan.id, plan.title, plan.deviceLabel)
+                val at = body.selection.min
+                val head = body.text.take(at)
+                val glue = if (head.isEmpty() || head.endsWith("\n\n")) {
+                    ""
+                } else if (head.endsWith("\n")) {
+                    "\n"
+                } else {
+                    "\n\n"
+                }
+                val next = body.text.replaceRange(at, at, glue + share)
+                if (next.length <= POST_BODY_LIMIT) {
+                    val caret = at + glue.length + share.length
+                    body = body.copy(text = next, selection = TextRange(caret, caret))
+                }
                 sharePickerOpen = false
             },
         )
@@ -2779,7 +2837,8 @@ private fun PublishCircleButton(busy: Boolean, enabled: Boolean, onClick: () -> 
 @Composable
 private fun PostEditorPane(
     title: String,
-    body: String,
+    /** 正文带游标：工具栏那七个 Markdown 按钮要插在"正在写的地方"，见 [insertMarkdown]。 */
+    body: TextFieldValue,
     category: String,
     tags: List<String>,
     tagInput: String,
@@ -2787,7 +2846,7 @@ private fun PostEditorPane(
     error: String?,
     previewing: Boolean,
     onTitleChange: (String) -> Unit,
-    onBodyChange: (String) -> Unit,
+    onBodyChange: (TextFieldValue) -> Unit,
     onCategoryChange: (String) -> Unit,
     onTagInputChange: (String) -> Unit,
     onRemoveTag: (String) -> Unit,
@@ -2870,7 +2929,7 @@ private fun PostEditorPane(
                         .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
                         .padding(10.dp),
                 ) {
-                    if (body.isBlank()) {
+                    if (body.text.isBlank()) {
                         Text(
                             text = "（没有正文）",
                             style = MaterialTheme.typography.labelSmall,
@@ -2878,7 +2937,7 @@ private fun PostEditorPane(
                         )
                     } else {
                         MiniMarkdown(
-                            text = body,
+                            text = body.text,
                             baseStyle = MaterialTheme.typography.bodyMedium,
                             color = scheme.onSurface,
                         )
@@ -2903,7 +2962,7 @@ private fun PostEditorPane(
                 )
             }
             Text(
-                text = "${body.length}/$POST_BODY_LIMIT",
+                text = "${body.text.length}/$POST_BODY_LIMIT",
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.outline,
                 modifier = Modifier.fillMaxWidth(),
@@ -3026,8 +3085,8 @@ private fun PostEditorPane(
             ) {
                 EDITOR_TOOLS.forEach { tool ->
                     EditorToolButton(tool = tool) {
-                        val glue = if (body.isBlank() || body.endsWith("\n")) "" else "\n"
-                        onBodyChange((body + glue + tool.snippet).take(POST_BODY_LIMIT))
+                        // 插在光标处 / 包住选中那一段，不再往末尾追加（见 [insertMarkdown]）。
+                        onBodyChange(insertMarkdown(body, tool.snippet, POST_BODY_LIMIT))
                     }
                 }
             }
@@ -3658,6 +3717,107 @@ private fun draftClock(updatedAt: Long): String {
 /** 标签的分隔符：中文逗号、英文逗号、顿号、分号、空格、换行都算。 */
 private fun isTagSeparator(ch: Char): Boolean =
     ch == ',' || ch == '，' || ch == '、' || ch == ';' || ch == '；' || ch == ' ' || ch == '\n'
+
+/**
+ * 把一段 Markdown 模板插进正文：有选中就**包住选中那一段**，没有就插在光标处。
+ *
+ * 这是工具栏那七个按钮真正的行为。以前只能往末尾追加，因为正文是 `String` 拿不到游标；
+ * 现在正文是 `TextFieldValue`，游标位置一直在手上。
+ *
+ * 规则：
+ * - **有选中**：`选中的字` → 例如粗体变成 `**选中的字**`，并保持这段仍被选中（这样连点两次
+ *   粗体就是取消，符合所有人对工具栏的预期）。
+ * - **没选中**：插入模板并把游标放在"该接着写的地方" —— `**粗体**` 里两个星号中间，
+ *   `> 引用` 的末尾，`[文字](https://)` 的"文字"两个字上。
+ * - 总长仍受 [limit] 约束：超了就**不插**，原地不动。截断会把 `**` 截成半个，正文就坏了。
+ *
+ * @param template 模板原文，模板里那一段文字用来定位"该选哪儿"。
+ */
+private fun insertMarkdown(
+    value: TextFieldValue,
+    template: String,
+    limit: Int,
+): TextFieldValue {
+    val text = value.text
+    val start = value.selection.min
+    val end = value.selection.max
+    // 选中的范围里已经就是这个模板包的（例如已经是 `**粗体**`）：取消掉这层。
+    val selected = text.substring(start, end)
+    // 模板的"包装形态"：星号、反引号、括号这类成对的东西，以及只有前缀的那几种。
+    val wrapped = unwrapTemplate(selected)
+    if (wrapped != null) {
+        val next = text.replaceRange(start, end, wrapped.first)
+        // 解开也是变短，但仍守一次上限：凑巧超了就不动。
+        if (next.length > limit) return value
+        // 解开后保持选中的长度由 [unwrapTemplate] 给出（内文自己的长度），
+        // 不是"整段"——这样连点两次粗体是在同一个选中的字上反复开关。
+        return value.copy(
+            text = next,
+            selection = TextRange(start, start + wrapped.second),
+        )
+    }
+    // 没选中：插入模板，并把选区落在"该接着写的地方"。
+    val next = text.replaceRange(start, end, template)
+    if (next.length > limit) return value
+    // 链接模板选中"文字"两个字：那是要替换的占位符，选中它就能直接打字覆盖，
+    // 不用先手动删掉。
+    val focus = focusRangeFor(template)
+    return value.copy(
+        text = next,
+        selection = TextRange(start + focus.first, start + focus.second),
+    )
+}
+
+/**
+ * 选中内容已经带着 Markdown 记号时，返回解开后的文字与它应保持的选中长度；否则 null。
+ *
+ * `**粗体**` 的包裹对是 `**`+`**`，`[文字](https://)` 的是 `[`+`](https://)`。
+ * 只处理这七种工具栏模板的形状，不求通用 —— 通用化就要解析 Markdown，那是另一件事。
+ *
+ * 不需要知道是哪一颗按钮：判断全靠"选中的这段字自己长什么样"。所以在 `**x**` 上点斜体
+ * 也会把它解成 `x`（`*` 也是它的前缀），这是可接受的——人看到的是"星号没了"。
+ */
+private fun unwrapTemplate(selected: String): Pair<String, Int>? {
+    if (selected.isEmpty()) return null
+    // 三列：前缀、后缀、这套模板是不是"只有前缀"（`## ` / `- ` / `> ` 那种）。
+    val pairs = listOf(
+        Triple("**", "**", false),
+        Triple("*", "*", false),
+        Triple("`", "`", false),
+        Triple("[", "](https://)", false),
+        Triple("## ", "", true),
+        Triple("- ", "", true),
+        Triple("> ", "", true),
+    )
+    pairs.forEach { (prefix, suffix, prefixOnly) ->
+        if (!selected.startsWith(prefix)) return@forEach
+        if (!prefixOnly && !selected.endsWith(suffix)) return@forEach
+        if (selected.length <= prefix.length + suffix.length) return@forEach
+        val inner = selected.substring(prefix.length, selected.length - suffix.length)
+        // 第二个值 = 解开后该保持选中的长度（就是内文自己的长度）。
+        return inner to inner.length
+    }
+    return null
+}
+
+/**
+ * 模板插进去之后，选区该落在哪：**相对模板开头**的 (起点, 终点) 字符偏移。
+ *
+ * 相等 = 光标停在那儿；不等 = 那段被选中（链接的"文字"两个字）。
+ * 不用 `IntRange`：空区间要写成 `2..1`，读起来像倒着数。
+ */
+private fun focusRangeFor(template: String): Pair<Int, Int> = when (template) {
+    // `**粗体**`：落在两个 `*` 之后、`粗` 之前。
+    "**粗体**" -> 2 to 2
+    "*斜体*" -> 1 to 1
+    "`代码`" -> 1 to 1
+    "## 小标题" -> 3 to 3
+    "- 一项" -> 2 to 2
+    "> 引用" -> 2 to 2
+    // `[文字](https://)`：选中"文字"两个字（偏移 1、2）。
+    "[文字](https://)" -> 1 to 3
+    else -> template.length to template.length
+}
 
 /**
  * 把输入框里还没被分隔符切开的那一截并进标签表，规则与输入时一致（去空、20 字、不重复、最多 5 个），
