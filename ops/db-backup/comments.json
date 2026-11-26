@@ -4716,6 +4716,18 @@
   "target": "com.android.notes"
  },
  {
+  "author": "默默闪",
+  "author_id": "12072",
+  "body": "安卓企业设备托管配置OEM附属包\n专门给公司/企业批量管理手机用：企业扫码初始化设备、远程管控、工作资料（工作空间）部署。\n个人日常使用完全用不到。\n \n✅ 精简判断\n \n普通个人用户，可以冻结，不会影响手机正常功能。\n冻结后果：无法设置企业设备所有者、无法部署企业工作资料。咱们个人用户基本碰不到这个功能。",
+  "created_at": "2026-11-26T11:54:55.695169+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 653,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.308",
+  "target": "com.android.managedprovisioning.overlay"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "推荐啥",
