@@ -292,14 +292,18 @@ private fun PlanRow(plan: DeletionPlan, onClick: () -> Unit, onExport: () -> Uni
             )
         }
         // 导出按钮单独一块点击区：点它只导出，不会顺带把这一行当成"点进去"。
-        FlBarButton(
-            glyph = FlGlyphs.send,
-            contentDescription = "导出「${plan.name}」",
-            size = 36.dp,
-            iconSize = 18.dp,
-            filled = false,
-            onClick = onExport,
+        // 写成带文字的胶囊而不是一个光秃秃的小图标：只画图标时人根本认不出这里是导出。
+        Text(
+            text = "导出",
+            style = FlText.caption1,
+            color = scheme.primary,
+            modifier = Modifier
+                .clip(RoundedCornerShape(percent = 50))
+                .background(scheme.primary.copy(alpha = 0.12f))
+                .clickable(onClick = onExport)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
         )
+        Spacer(Modifier.width(6.dp))
         SettingsChevron()
     }
 }
@@ -319,17 +323,11 @@ private fun DeletionPlanDetail(
             ScreenTopBar(
                 title = plan.name,
                 onNavigateBack = onBack,
-                actions = {
-                    FlBarButton(
-                        glyph = FlGlyphs.send,
-                        contentDescription = "导出这份方案",
-                        onClick = onExport,
-                    )
-                },
             )
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // 两个整份动作并排：左边恢复，右边导出。都写文字，不用图标猜。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -341,6 +339,13 @@ private fun DeletionPlanDetail(
                     enabled = plan.packages.isNotEmpty(),
                     onClick = onRestoreAll,
                     modifier = Modifier.weight(1f),
+                )
+                DetailAction(
+                    label = "导出这份",
+                    enabled = plan.packages.isNotEmpty(),
+                    onClick = onExport,
+                    modifier = Modifier.weight(1f),
+                    secondary = true,
                 )
             }
             if (plan.packages.isEmpty()) {
@@ -389,19 +394,30 @@ private fun DeletionPlanDetail(
     }
 }
 
-/** 详情页顶部那个整份动作按钮。 */
+/** 详情页顶部那两个整份动作之一。[secondary] 画成淡底主色字，用来区分主次。 */
 @Composable
 private fun DetailAction(
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    secondary: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val background = when {
+        !enabled -> scheme.surfaceContainerHigh
+        secondary -> scheme.primary.copy(alpha = 0.12f)
+        else -> scheme.primary
+    }
+    val foreground = when {
+        !enabled -> scheme.onSurfaceVariant
+        secondary -> scheme.primary
+        else -> scheme.onPrimary
+    }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(percent = 50))
-            .background(if (enabled) scheme.primary else scheme.surfaceContainerHigh)
+            .background(background)
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(vertical = 11.dp),
         contentAlignment = Alignment.Center,
@@ -409,7 +425,7 @@ private fun DetailAction(
         Text(
             text = label,
             style = FlText.subheadline,
-            color = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
+            color = foreground,
         )
     }
 }
