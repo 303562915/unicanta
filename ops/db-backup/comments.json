@@ -4992,6 +4992,18 @@
   "target": "com.android.devicelockcontroller"
  },
  {
+  "author": "我是你爹",
+  "author_id": "10362",
+  "body": "用chrome",
+  "created_at": "2026-11-26T17:23:54.566151+00:00",
+  "device_model": "REDMI K90",
+  "id": 762,
+  "kind": "app",
+  "parent_id": 63,
+  "system_name": "HyperOS 3.0.24",
+  "target": "com.android.browser"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "[不看]你们这个没改名字的，主页那里闪动吗？",
