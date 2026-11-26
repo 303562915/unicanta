@@ -287,38 +287,30 @@ class BloatRepositoryTest {
     /** 拉取失败：手上那张随包的表照旧生效，不因为这次没连上就退回上游的分级。 */
     @Test
     fun aFailedFetchKeepsWhatIsAlreadyKnown() = runTest {
-        val server = Server(sha = "same", list = listJson)  // fixes = null → 这个 URL 回 503
-        // 「这次拉不到」必须真的是 503：MockEngine 那个 handler 对**任何** URL 都先往
-        // `server.requests` 里记一笔，而 desktopTest 是并发分档的——记一笔不是线程安全的，
-        // 打在别的用例上会让那个用例在自己的断言里失败（上一次 CI 挂的正是这个测试）。这里
-        // 刻意不读 `server.requests`，少一个跨用例的共享状态。
+        // 刻意用**别的用例绝不会用**的地址：MockEngine 对未知 URL 回 503，这才是"这次没连上"。
+        // 之前这里用的是 fixesUrl 而 `Server.fixes = null`——但 `fixes` 是 var，同档里别的用例把它
+        // 改成有内容之后，这个用例就会真的拉到修正表，于是 refreshCorrections() 返回 true、
+        // 断言 expected:<false> but was:<true>（CI run 45757908675）。地址不共享，这个前提就稳了。
+        val unreachable = "https://example.test/level_fixes.unreachable.json"
+        val server = Server(sha = "same", list = listJson)
         val settings = settings("same")
         val fixes = MemoryStorage()
 
-        // 拉一次就够：拉不到（MockEngine 对未知 URL 回 503）不该在盘上留东西，也不该算用掉这一周。
-        val pulled = BloatRepository(
-            server.client,
-            MemoryStorage(cachedJson.encodeToByteArray()),
-            settings,
-            overrides = { correctionsBundled() },
-            correctionsUrl = { fixesUrl },
-            correctionsCommitsUrl = null,
-            correctionsCache = fixes,
-        )
-        assertEquals(false, pulled.refreshCorrections())
-        assertNull(fixes.content)
-        assertEquals("", settings.correctionsFetchedDayFlow.first())
-
-        // 接着走一遍正常的读取路径；刻意不碰 server.requests：那个 list 在并发档位下会被别的测试动。
         val repository = BloatRepository(
             server.client,
             MemoryStorage(cachedJson.encodeToByteArray()),
             settings,
             overrides = { correctionsBundled() },
-            correctionsUrl = { fixesUrl },
+            correctionsUrl = { unreachable },
             correctionsCommitsUrl = null,
             correctionsCache = fixes,
         )
+
+        assertEquals(false, repository.refreshCorrections())
+        assertNull(fixes.content)
+        // 没拉到东西不算用掉这一周的那次核对：下次启动还会再试。
+        assertEquals("", settings.correctionsFetchedDayFlow.first())
+        // 界面上仍是我们随包那张表（Recommended）：没联网就不会凭空多出一条修正。
         assertEquals(AppBadgeInfo.RECOMMENDED, repository.local().getValue("com.cached").badgeInfo)
     }
 
