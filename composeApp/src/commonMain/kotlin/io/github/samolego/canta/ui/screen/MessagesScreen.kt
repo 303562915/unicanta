@@ -313,6 +313,21 @@ fun MessagesScreen(
     val scope = rememberCoroutineScope()
     /** 正在加入哪个官方群（按群名记）：挡住连点，也把那一行的小字换成「加入中…」。 */
     val joiningOfficial = remember { mutableStateMapOf<String, Boolean>() }
+    // 官方群（灰度测试群、Bug 反馈群）一律自动加入，而且**不进主列表**：它们是消息页上唯一要显示
+    // 的那几行，列表里的普通会话照旧。
+    //
+    // 加入是静默的：注册时后端触发器已经把新人塞进这两个群，这里只是给「没被塞进去的」那部分
+    // （老账号、触发器上线前注册的）补一次，幂等接口点多少次都返回同一个会话号。失败不报错、
+    // 每台机器只试一次——这一趟只是为了让那两行变得可点，点进去那一刻还会再走一次同样的加入。
+    var officialAuthed by remember { mutableStateOf(false) }
+    LaunchedEffect(owner) {
+        if (owner.isEmpty() || officialAuthed) return@LaunchedEffect
+        officialAuthed = true
+        OfficialGroups.entries.forEach { entry ->
+            runCatching { repository.joinByInvite(owner, entry.inviteCode) }
+        }
+        if (!loadBusy) reloads++
+    }
     // 这一页此刻在不在前台。切到后台时轮询必须停：这一页离开屏幕不会被销毁（导航栈里还活着），
     // 以前那个 `while (true)` 照转，夜里 4–5 千次/小时的基线就是它——没人在看的时候在问后端。
     //
@@ -611,24 +626,53 @@ fun MessagesScreen(
         }
     }
 
+    /**
+     * 点官方群那一行：已经在群里就直接进会话，还没进的就先静默加入（`group_invite_join` 幂等），
+     * 拿到会话号再进去。
+     *
+     * [joined] 是这个群在本页列表里的那一行，null 表示「没加入 / 列表里还没回来」。列表还没回来时
+     * 也照样走一次加入：接口幂等，本来就在群里它会返回同一个会话号，不会变成「进不去」。
+     */
+    val openOfficial: (OfficialGroupEntry, Conversation?) -> Unit = { entry, joined ->
+        if (joined != null) {
+            onOpenChat(joined.id, true)
+        } else if (joiningOfficial[entry.title] != true) {
+            scope.launch {
+                joiningOfficial[entry.title] = true
+                val id = repository.joinByInvite(owner, entry.inviteCode)
+                joiningOfficial[entry.title] = false
+                if (id != null) {
+                    reloads++
+                    // 官方群都是群：进来就把群身份带上，否则第一帧按私聊画，别人的头像全没有。
+                    onOpenChat(id, true)
+                } else {
+                    onMessage("没进成「${entry.title}」，检查代理后再试")
+                }
+            }
+        }
+    }
+
     val scheme = MaterialTheme.colorScheme
     // 拉黑过的人的私聊不上列表。会话列表本身没变（后端没有拉黑接口，也没地方"变"），
     // 所以在画的时候过滤：取消拉黑那一刻这一行会当场回来，不必等一次重新拉取。
     val reachableConversations = conversations.filterNot { it.blockedBy(blockedPeers) }
     // 折叠过的群不进主列表：它已经在下面那一行「折叠的群聊」后面了，再列一遍等于同一个群占两处。
-    // 官方群（灰度测试群、Bug 反馈群）排在列表最前：它们就是「置顶」，不依赖后端那一列，
-    // 也不会因为本地没点过置顶就沉下去。各自按 [OfficialGroups.entries] 的顺序排，其余保持原顺序。
+    // 官方群（灰度测试群、Bug 反馈群）排在最前：它们就是「置顶」。它们**不来自**会话列表，
+    // 由 [OfficialGroups] 那份常量画出来（见下面 `officialRows`），所以没进群的人也看得到这两行。
     val visibleConversations = reachableConversations
         .filterNot { it.isFoldedGroup() }
-        .sortedBy { OfficialGroups.rankOf(it.title) }
-    // 已经在群里的官方群：上面那一行点下去直接进这个会话，不必再走一次加入。
+        // 已经在列表里的官方群要剔掉：它由下面 `officialRows` 自己画，再列一遍就是同一个群占两处。
+        .filterNot { it.kind == "group" && it.title in OfficialGroups.titles }
+    // 已经在群里的官方群：那一行直接进这个会话，不必再走一次加入。
     val joinedOfficial = conversations.filter {
         it.kind == "group" && it.title in OfficialGroups.titles
     }
-    // 还没加入的官方群，各画一行入口。
-    val notJoinedOfficial = OfficialGroups.entries.filterNot { entry ->
-        joinedOfficial.any { it.title == entry.title }
+    // 消息页最上面那两行，按 [OfficialGroups.entries] 的顺序：进了群的按会话行画（最后一句、时间、
+    // 未读数、长按菜单都有），没进的画成「点一下加入」的入口行。
+    val officialRows = OfficialGroups.entries.map { entry ->
+        entry to joinedOfficial.firstOrNull { it.title == entry.title }
     }
+    val anyJoinedOfficial = joinedOfficial.isNotEmpty()
     // 「折叠的群聊」只收折叠了的群。聊天还在，只是平时不用看——这是折叠的意思。
     val foldedGroups = conversations.filter { it.isFoldedGroup() }
     // 折叠的群聊那一行只亮「最近说过话的那个群」：它的最后一句就是这个入口的预览。
@@ -805,32 +849,31 @@ fun MessagesScreen(
         )
 
         if (loading) {
-            // 骨架这一支没有列表，顶栏照样画：否则首屏只有四个灰块，连页名和菜单都不在。
+            // 这一支**不画骨架**：一串空卡片看起来像「消息页什么都没有」，而这一页永远有两行官方群
+            // 可以点。先画顶栏，再画那两行入口（没加入时点一下就走 `group_invite_join`），剩下的会话
+            // 安静地等第一趟请求回来。
+            //
             // 用 Column 排是必要的：外层的 Box 里还有那个浮着的刷新指示器，两个 fillMaxSize 的子节点
-            // 会叠在一起，骨架那四个灰块会直接盖住顶栏。
+            // 会叠在一起，入口行会被顶栏盖掉。
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    // 和列表那一支同一个位移：加载中被人拽一下，骨架也跟着下来、松手一起回去。
+                    // 和列表那一支同一个位移：加载中被人拽一下，整页也跟着下来、松手一起回去。
                     .offset { IntOffset(0, shownPx.roundToInt()) },
             ) {
                 topBar()
-                // 只有「内存没有、盘上也没有」才走到这里（第一次装、或者那份解不出来）。
-                // 画骨架而不是转圈：转圈看起来像卡住，骨架至少说明「马上会出现一列会话」。
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 底下让出一条：骨架卡片不该压在悬浮底栏上（和列表那一支的 contentPadding 对齐）。
-                        .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                        // 底下让出一条：最后一行不该压在悬浮底栏上（和列表那一支的 contentPadding 对齐）。
+                        .padding(bottom = 96.dp),
                 ) {
-                    repeat(4) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(scheme.surfaceContainer),
+                    officialRows.forEach { (entry, joined) ->
+                        OfficialGroupEntryRow(
+                            entry = entry,
+                            joined = joined != null,
+                            joining = joiningOfficial[entry.title] == true,
+                            onClick = { openOfficial(entry, joined) },
                         )
                     }
                 }
@@ -942,33 +985,37 @@ fun MessagesScreen(
                             )
                         }
                     }
-                    // 还没进群的人才需要这一行：进了群的，它就在下面的列表里排在最前面（那才是"置顶"）。
-                    // 也不写人数——官方群的人数不该摆在谁都能看见的地方。
-                    notJoinedOfficial.forEach { entry ->
-                        item(key = "entry-official-${entry.title}") {
-                            OfficialGroupRow(
-                                entry = entry,
-                                joined = false,
-                                joining = joiningOfficial[entry.title] == true,
-                                onClick = {
-                                    if (joiningOfficial[entry.title] != true) {
-                                        scope.launch {
-                                            joiningOfficial[entry.title] = true
-                                            // 后端幂等：点两次、或者其实早就在群里，都返回同一个会话号。
-                                            val id = repository.joinByInvite(owner, entry.inviteCode)
-                                            joiningOfficial[entry.title] = false
-                                            if (id != null) {
-                                                reloads++
-                                                // 官方群（灰度测试群、Bug 反馈）都是群：进来就把
-                                                // 群身份带上，否则第一帧按私聊画，别人的头像全没有。
-                                                onOpenChat(id, true)
-                                            } else {
-                                                onMessage("没进成「${entry.title}」，检查代理后再试")
-                                            }
-                                        }
-                                    }
-                                },
-                            )
+                    // 官方群（灰度测试群、Bug 反馈群）在消息页最上面：它不来自会话列表，由那份常量
+                    // 画出来，所以「没进群」的人和「已进群」的人看到的都是这两行。已进群的按会话行画：
+                    // 最后一句、时间、未读数、长按菜单（置顶 / 免打扰 / 不显示…）全都有；没进群的
+                    // 画成「点一下加入」的入口行。**不写人数**——官方群的人数不该摆在谁都能看见的地方。
+                    officialRows.forEach { (entry, joined) ->
+                        if (joined != null) {
+                            item(key = "official-${joined.id}") {
+                                ConversationRow(
+                                    conversation = joined,
+                                    // 群里不管谁，彼此都不是「互相关注」那一对：灰标只对私聊有意义。
+                                    mutual = false,
+                                    blocked = false,
+                                    // 官方群也是「钉在最上面」的一行，就该跟手动置顶那行长得一样。
+                                    forcePinnedLook = true,
+                                    onOpen = { onOpenChat(joined.id, true) },
+                                    onTogglePin = { togglePin(joined) },
+                                    onToggleMute = { toggleMute(joined) },
+                                    onHide = { hideRow(joined) },
+                                    onToggleBlock = { toggleBlock(joined) },
+                                    onDelete = { deleteRow(joined) },
+                                )
+                            }
+                        } else {
+                            item(key = "entry-official-${entry.title}") {
+                                OfficialGroupEntryRow(
+                                    entry = entry,
+                                    joined = false,
+                                    joining = joiningOfficial[entry.title] == true,
+                                    onClick = { openOfficial(entry, null) },
+                                )
+                            }
                         }
                     }
                 }
@@ -1029,7 +1076,7 @@ fun MessagesScreen(
                         }
                     }
 
-                    visibleConversations.isEmpty() ->
+                    visibleConversations.isEmpty() && !anyJoinedOfficial ->
                         item(key = "no-chats") {
                             Box(
                                 modifier = Modifier
@@ -1807,15 +1854,16 @@ private fun NoFriendsCell() {
 }
 
 /**
- * 一个官方群那一行，钉在消息页最上面。
+ * 一个官方群那一行：钉在消息页最上面，**不管进没进群**都画（没进的那一行点一下走
+ * `group_invite_join` 加入再进去，进过的由调用方改成会话行来画）。
  *
- * 它和会话行长得像，但不是会话行：没进群的人列表里根本没有这个会话，所以它由 [OfficialGroups]
- * 那份常量长出来，点一下走 `group_invite_join`（幂等）加入再进去；已经在群里就直接进去。
+ * 它由 [OfficialGroups] 那份常量长出来，不来自会话列表——没进群的人列表里根本没有这个会话。
+ * 骨架那一支、以及列表里「还没加入」的那一行都用它。
  *
  * **不写人数**：官方群的人数不该摆在谁都能看见的地方。
  */
 @Composable
-private fun OfficialGroupRow(
+private fun OfficialGroupEntryRow(
     entry: OfficialGroupEntry,
     joined: Boolean,
     joining: Boolean,
