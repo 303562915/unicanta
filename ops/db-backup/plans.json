@@ -5522,6 +5522,30 @@
   "title": "已卸载"
  },
  {
+  "brand": "OPPO",
+  "codename": "OP5E11L1",
+  "created_at": "2026-11-26T13:14:13.742833+00:00",
+  "id": 233,
+  "is_test": false,
+  "market_name": "OPPO Find X9 Pro",
+  "model": "PLG110",
+  "note": "",
+  "owner": "14509",
+  "packages": [
+   "com.oppo.ctautoregist",
+   "com.mobiletools.systemhelper",
+   "com.sohu.inputmethod.sogouoem",
+   "com.coloros.digitalwellbeing"
+  ],
+  "reboot_verified": true,
+  "rebooted_at": "2026-11-26T13:14:13.894911+00:00",
+  "rom": "stock",
+  "rom_build": "",
+  "rom_version": 0,
+  "sdk": 36,
+  "title": "无所谓都可删"
+ },
+ {
   "brand": "Xiaomi",
   "codename": "pudding",
   "created_at": "2026-11-20T14:52:01.107443+00:00",
