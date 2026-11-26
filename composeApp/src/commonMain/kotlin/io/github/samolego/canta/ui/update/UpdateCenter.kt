@@ -426,6 +426,13 @@ internal class UpdateCenter(
             }
             val elapsed = startedAt.elapsedNow().inWholeMilliseconds
             val failure = attempt.failure
+            // 「环境没就绪」时下一次该等多久；0 表示不再自动试、落到旧兜底。
+            // 只在真的失败时才去记一笔：装成功了不该消耗重试额度。
+            val retryWait = if (failure != null && attempt.retryable) {
+                noteNotReady(ready.version)
+            } else {
+                0L
+            }
             if (failure == null) {
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_INSTALL,
@@ -441,7 +448,7 @@ internal class UpdateCenter(
                 platform.exitApp()
                 // 桌面 / 网页版里 exitApp 不会真的结束进程：把闸门放开，手动重试还能用。
                 installing = false
-            } else if (attempt.retryable && noteNotReady(ready.version)) {
+            } else if (attempt.retryable && retryWait > 0L) {
                 // 环境没就绪：这个包本身没问题。记一条之后把卡片退回「已下载」，隔一会儿自己再来
                 // 一次 —— 绝大多数情况是 App 先起来了、Shizuku 的用户服务还在绑。
                 //
@@ -463,7 +470,7 @@ internal class UpdateCenter(
                 state = UpdateState.ReadyToInstall(ready.version, ready.path)
                 installing = false
                 scope.launch {
-                    delay(INSTALL_NOT_READY_RETRY_DELAY_MILLIS)
+                    delay(retryWait)
                     // 这中间用户可能自己点了「以后再说」，也可能换了渠道：只在这张卡片还停在
                     // 「已下载」时才续上，不抢别人的状态。
                     if (state is UpdateState.ReadyToInstall) install(ready)
@@ -509,19 +516,20 @@ internal class UpdateCenter(
     }
 
     /**
-     * 记一次「环境没就绪」的重试，回答还剩几次。
+     * 记一次「环境没就绪」的重试，回答**下一次该等多久**（毫秒）；0 表示不再自动试了。
      *
-     * 上限存在的理由：Shizuku 真的没装、真的没授权时，无限重试就是无限弹「正在安装」。到上限之后
-     * 走旧的兜底（交给系统安装器 + 不再自动装这一版），和以前一样，只是多等了一两轮。
+     * 返回等待时长而不是布尔，是因为节奏要递增：Shizuku 没起来时越等越久才有意义
+     * （20 → 30 → 60 → 120 秒）。上限的理由见 [INSTALL_NOT_READY_RETRY_DELAYS_MILLIS]。
      */
-    private fun noteNotReady(version: String): Boolean {
+    private fun noteNotReady(version: String): Long {
         if (notReadyVersion != version) {
             notReadyVersion = version
             notReadyRetries = 0
         }
-        if (notReadyRetries >= INSTALL_NOT_READY_RETRIES) return false
+        if (notReadyRetries >= INSTALL_NOT_READY_RETRY_DELAYS_MILLIS.size) return 0L
+        val wait = INSTALL_NOT_READY_RETRY_DELAYS_MILLIS[notReadyRetries]
         notReadyRetries += 1
-        return true
+        return wait
     }
 
     private suspend fun channel(): UpdateChannel =
@@ -556,11 +564,21 @@ private const val SLOW_STALL_SECONDS = 12
 /**
  * 「运行时没就绪」这一版最多自己再试几次，以及两次之间等多久。
  *
- * 20 秒是照着 Shizuku 用户服务起来的节奏定的：管理器刚被系统拉起来时，第一次绑定常常超时，隔十几秒
- * 再绑就好。次数给 2：够救回启动那一次，又不会让「真的没装 Shizuku」的手机一直停在「正在安装」。
+ * 次数与节奏都是照线上 `NOT_READY` 的实测分布定的（2026-11-26，近 24 小时 311 次失败中
+ * 295 次是这两类）：
+ *
+ *   - **215 次「Shizuku 装了但没在运行」**：人先开了 Canta、再去开 Shizuku 是最常见的顺序，
+ *     原来总共只等 40 秒（2 次 × 20 秒），足够救启动那一拍，不够等人真的去点一下管理器。
+ *   - **209 次「装了、在跑，但用户服务绑不上」**：管理器刚被系统拉起时第一次绑定常常超时，
+ *     隔十几秒再绑就好；这一类的恢复窗口也在半分钟以上。
+ *
+ * 所以改成**四次、递增**（20 → 30 → 60 → 120 秒，合计约 3.5 分钟）。上限仍然存在：
+ * 真的没装 Shizuku 的手机（66 次）不该一直停在「正在安装」，那 66 次里绝大多数会很快用掉
+ * 这四次并落到旧兜底（交给系统安装器 + 不再自动装这一版），行为不变。
+ *
+ * **不要把它调成无限**：那正是当初加这个上限要挡的东西。
  */
-private const val INSTALL_NOT_READY_RETRIES = 2
-private const val INSTALL_NOT_READY_RETRY_DELAY_MILLIS = 20_000L
+private val INSTALL_NOT_READY_RETRY_DELAYS_MILLIS = longArrayOf(20_000L, 30_000L, 60_000L, 120_000L)
 
 /**
  * 关于页两次「进来就自己查一次」之间至少隔多久。
