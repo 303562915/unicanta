@@ -26,13 +26,16 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import io.github.samolego.canta.data.community.AiSender
 import io.github.samolego.canta.data.imagebed.ImageBed
+import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.currentTimeMillis
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpRequestPipeline
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import io.ktor.http.content.OutgoingContent
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -176,10 +179,44 @@ internal fun cacheAvatar(url: String, bitmap: ImageBitmap) {
  */
 internal object AvatarLoader {
 
-    private val client = HttpClient { install(HttpTimeout) { requestTimeoutMillis = 9_000 } }
+    private val client = HttpClient {
+        install(HttpTimeout) { requestTimeoutMillis = 9_000 }
+        // **不跟随重定向**。图床被劫持/被墙时回的不是 4xx，而是一条 `302` 指向别的域名（实测
+        // 2026-11-26：`Location: https://illegal.mdes.go.th/`）。跟随过去要么连不上、要么拿回一张
+        // 不是图的网页，两种情况都落在「解码失败」上——于是谁也说不出这一屏为什么全是首字。
+        // 不跟，3xx 就落进下面按状态码分类的那一支，日志里直接写清楚是 302。
+        // Ktor 顶层没有 `followRedirects` 这个配置口（不带引擎直接 `HttpClient {}` 时它不住在
+        // `HttpClientConfig` 上），所以自己挂一件 provider：在 `Render` 阶段把请求的跟随标志改掉，
+        // 再原样放行（`subject` 就是待发送的正文，这里一个字都不改）。
+        install("DisableRedirects") {
+            requestPipeline.intercept(HttpRequestPipeline.Render) { _ ->
+                context.followRedirects = false
+                proceedWith(subject as OutgoingContent)
+            }
+        }
+    }
+
+    /**
+     * 图床根地址。**只认这一个域名的图**：图床被劫持时回的是 `302` 指向别的站点，跟着走就是去下别人的
+     * 网页；而且那条跳转本身可能就是钓鱼/广告。头像只从自己那台图床取，别的地址一律当「这次没拿到」。
+     *
+     * 反过来说，这也就把"劫持"这件事变成一句能查的话：图床域名背后回 200 但字节不是图，日志里是解码失败。
+     */
+    private const val IMAGE_BED_HOST = "cloudflare-imgbed-erh.pages.dev"
+
+    /** [url] 是不是我们自己那台图床上的地址。 */
+    private fun isOwnImageBed(url: String): Boolean {
+        val rest = url.trim().removePrefix("https://").removePrefix("http://")
+        val host = rest.substringBefore('/').substringBefore('?')
+        return host.equals(IMAGE_BED_HOST, ignoreCase = true) ||
+            host.equals("www.$IMAGE_BED_HOST", ignoreCase = true)
+    }
 
     /** 说清楚是谁在要这张图；图床不挑，但请求里有个像样的 UA 总比拼一个空串好查。 */
     private const val USER_AGENT = "Canta/4.3 (avatar; https://github.com/303562915/unicanta)"
+
+    /** 写日志用的标签：头像取不到时那一行会进「日志」页，从此不用靠问人屏幕上画的是什么。 */
+    private const val AVATAR_TAG = "Avatar"
 
     /**
      * 正在下载的地址 → 那一趟下载。
@@ -210,6 +247,7 @@ internal object AvatarLoader {
         val bytes = bytesOf(key) ?: return null
         return runCatching { bytes.decodeToImageBitmap() }
             .onSuccess { missing.remove(key) }
+            .onFailure { LogUtils.w(AVATAR_TAG, "头像不是图（${bytes.size} 字节）：$key") }
             .getOrNull()
     }
 
@@ -227,17 +265,26 @@ internal object AvatarLoader {
     }
 
     private suspend fun fetch(url: String): ByteArray? = withTimeoutOrNull(12_000) {
+        // 只从自己那台图床取图：别的地址（被人改成跳转目标的直链、共享进来的外链）不问。
+        if (!isOwnImageBed(url)) {
+            LogUtils.w(AVATAR_TAG, "头像地址不在自家图床上，跳过：$url")
+            return@withTimeoutOrNull null
+        }
         runCatching {
+            // 跟随重定向在 client 那边已经关掉（见 `DisableRedirects`），所以 3xx 会原样回到这里。
             val response = client.get(url) { header(HttpHeaders.UserAgent, USER_AGENT) }
             if (!response.status.isSuccess()) {
                 // 4xx = 这个地址本来就没有图（没设过头像的占多数），记下来别反复问；
-                // 5xx / 超时 / 断流 = 这一次没成，**不记**——那种记账会让一次代理抖动
-                // 变成「一屏人全都没头像」十分钟。
+                // 3xx（关掉了跟随，所以能看见它）= 图床把这张图指到别处去了，**不是**"这人没头像"，
+                // 更不能记那一笔；5xx / 超时 / 断流 = 这一次没成，同样不记。
                 val code = response.status.value
                 if (code in 400..499) missing[url] = true else missing.remove(url)
+                LogUtils.w(AVATAR_TAG, "头像没取到 $code：$url")
                 null
             } else {
-                response.body<ByteArray>().takeIf { it.isNotEmpty() }
+                val bytes = response.body<ByteArray>().takeIf { it.isNotEmpty() }
+                if (bytes == null) LogUtils.w(AVATAR_TAG, "头像是空响应：$url")
+                bytes
             }
         }.getOrNull()
     }
