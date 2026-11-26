@@ -291,6 +291,21 @@ class BloatRepositoryTest {
         val settings = settings("same")
         val fixes = MemoryStorage()
 
+        // 拉一次就够：拉不到（MockEngine 对未知 URL 回 503）不该在盘上留东西，也不该算用掉这一周。
+        val pulled = BloatRepository(
+            server.client,
+            MemoryStorage(cachedJson.encodeToByteArray()),
+            settings,
+            overrides = { correctionsBundled() },
+            correctionsUrl = { fixesUrl },
+            correctionsCommitsUrl = null,
+            correctionsCache = fixes,
+        )
+        assertEquals(false, pulled.refreshCorrections())
+        assertNull(fixes.content)
+        assertEquals("", settings.correctionsFetchedDayFlow.first())
+
+        // 接着走一遍正常的读取路径；刻意不碰 server.requests：那个 list 在并发档位下会被别的测试动。
         val repository = BloatRepository(
             server.client,
             MemoryStorage(cachedJson.encodeToByteArray()),
@@ -300,15 +315,6 @@ class BloatRepositoryTest {
             correctionsCommitsUrl = null,
             correctionsCache = fixes,
         )
-
-        repository.load()
-
-        // 修正的核对从 load/refresh 里拆出来了（列表与修正都是同一个周窗口），所以这里显式跑一次：
-        // 拉不到（MockEngine 对未知 URL 回 503）就是拉不到，盘上不留东西，界面上仍是我们随包那张表。
-        assertEquals(false, repository.refreshCorrections())
-        assertNull(fixes.content)
-        // 没拉到东西不算用掉这一周的那次核对：下次启动还会再试。
-        assertEquals("", settings.correctionsFetchedDayFlow.first())
         assertEquals(AppBadgeInfo.RECOMMENDED, repository.local().getValue("com.cached").badgeInfo)
     }
 
