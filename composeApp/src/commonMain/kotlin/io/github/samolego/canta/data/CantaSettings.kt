@@ -6,6 +6,7 @@ import io.github.samolego.canta.data.proto.AppSettingsProto
 import io.github.samolego.canta.data.proto.PendingUninstallProto
 import io.github.samolego.canta.data.proto.ProtoBlobStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
@@ -242,6 +243,53 @@ class CantaSettings(storage: AppBlobStorage) {
      */
     suspend fun setSkippedAutoInstallVersion(version: String) =
         update { it.copy(skippedAutoInstallVersion = version.trim()) }
+
+    /**
+     * 这一版自动安装已经失败过几次（跨进程）。
+     *
+     * 读法容忍任何垃圾内容：这段字符串只是本机的一份计数，读坏了就当没失败过，绝不能因为一个
+     * 解析异常让更新卡片整张画不出来。见 [AppSettingsProto.installFailureCounts]。
+     */
+    suspend fun installFailureCount(version: String): Int {
+        val stored = field { it.installFailureCounts }.first()
+        return stored.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { row ->
+                val at = row.indexOf('\r')
+                if (at <= 0) null else row.take(at) to row.drop(at + 1).toIntOrNull()
+            }
+            .firstOrNull { (label, _) -> label == version }
+            ?.second ?: 0
+    }
+
+    /** 把这一版失败次数加一。调用方不需要返回值：接下来该不该再试由 [installFailureCount] 决定。 */
+    suspend fun bumpInstallFailureCount(version: String) = update { proto ->
+        val rows = proto.installFailureCounts.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { row ->
+                val at = row.indexOf('\r')
+                if (at <= 0) null else row.take(at) to (row.drop(at + 1).toIntOrNull() ?: 0)
+            }
+            .toMutableList()
+        val index = rows.indexOfFirst { (label, _) -> label == version }
+        val next = if (index >= 0) rows[index].second + 1 else 1
+        if (index >= 0) rows[index] = version to next else rows.add(version to next)
+        // 只留最近 4 个版本：这台手机不会再回去装更早的版本，留下来的只有噪音。
+        val kept = rows.takeLast(4).joinToString("\n") { (label, times) -> "$label\r$times" }
+        proto.copy(installFailureCounts = kept)
+    }
+
+    /** 版本装成功就清掉它的失败计数（成功之后再留着只会在下一次误伤）。 */
+    suspend fun clearInstallFailureCount(version: String) = update { proto ->
+        val kept = proto.installFailureCounts.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .filterNot { row -> row.substringBefore('\r') == version }
+            .joinToString("\n")
+        proto.copy(installFailureCounts = kept)
+    }
     suspend fun setThemeAccent(argb: Int) = update { it.copy(themeAccent = argb) }
     suspend fun setThemeMode(mode: Int) = update { it.copy(themeMode = mode.coerceIn(0, 2)) }
     /** Remembers that the "no VPN" reminder must never come back; see [AppSettingsProto.hideVpnNotice]. */

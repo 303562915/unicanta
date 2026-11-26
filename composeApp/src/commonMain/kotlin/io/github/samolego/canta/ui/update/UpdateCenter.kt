@@ -229,13 +229,20 @@ internal class UpdateCenter(
                 version = label,
                 elapsedMs = startedAt.elapsedNow().inWholeMilliseconds,
             )
+            // 这一版已经失败过几次（跨进程），以及上次自动安装失败的那一版。
+            // 两个值都在 `when` 之前读：分支体里再挂起会让判断阅读起来很绕。
+            val skipped = settings.skippedAutoInstallVersionFlow.first()
+            val failures = settings.installFailureCount(label)
             when {
                 !found.isNewerThanInstalled() -> state = UpdateState.Latest
                 // 检测到新版本就**直接下**。以前这里还要过一遍「自动下载更新包」开关：关掉它的机器
                 // 点一次检查，只得到一张「点击前往下载」的卡片，还得再点一次——"检测到了却不下载"
                 // 就是那么来的。现在那个开关只管**启动后要不要自己查**（后台轮询），查到了就下。
                 // 例外：上次自动安装失败过的这一版，再下一遍只会再失败一次，留成手点。
-                label == settings.skippedAutoInstallVersionFlow.first() ->
+                label == skipped -> state = UpdateState.Available(label, found)
+                // 这一版已经因为「运行时没就绪」失败够多次了：包本身在本地还剩着，再下载一遍
+                // 只是同一份字节、同一个结果。停在「可以下载」，让用户明确点一下再决定。
+                failures >= INSTALL_NOT_READY_RETRY_DELAYS_MILLIS.size ->
                     state = UpdateState.Available(label, found)
                 else -> startDownload(found, auto = true)
             }
@@ -434,6 +441,8 @@ internal class UpdateCenter(
                 0L
             }
             if (failure == null) {
+                // 装上了：这一版的失败计数立刻清掉，别留到下一次误伤。
+                settings.clearInstallFailureCount(ready.version)
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_INSTALL,
                     outcome = UpdateReport.OUTCOME_OK,
@@ -481,6 +490,14 @@ internal class UpdateCenter(
                 // stops the next launch from downloading it again and showing the same endless
                 // "正在安装" — the About page keeps the manual retry.
                 settings.setSkippedAutoInstallVersion(ready.version)
+                // 落盘记一笔失败：`UpdateCenter` 是每次启动新建的，只有把次数存下来，第二次
+                // 打开才不会再白等 3.5 分钟、再失败、再退出。见 [AppSettingsProto.installFailureCounts]。
+                settings.bumpInstallFailureCount(ready.version)
+                // 「装不上」这一版**已经把包装好了**，再下载一遍只是同一份字节。
+                // 以前这里只记一版就完事，但手点「检查更新」还会再下、再装、再失败：
+                // 线上实测一台机器同一版本下载 41 次、安装失败 19 次，屏幕上就是「一直下、
+                // 一直退出、以为装好了、还是原来那个」。所以失败之后不再回到「可以下载」那张
+                // 卡片，而是停在「已下载，去点安装」——包在本地，主动权交给用户。
                 if (platform.requestInstall(ready.path)) {
                     telemetry?.recordUpdate(
                         stage = UpdateReport.STAGE_HANDOFF,
@@ -520,14 +537,20 @@ internal class UpdateCenter(
      *
      * 返回等待时长而不是布尔，是因为节奏要递增：Shizuku 没起来时越等越久才有意义
      * （20 → 30 → 60 → 120 秒）。上限的理由见 [INSTALL_NOT_READY_RETRY_DELAYS_MILLIS]。
+     *
+     * **额度要跨进程算**：这一条以前只在内存里数，而「装不上」那条路最后一步恰恰是让 Canta
+     * 退出（交给系统安装器）——用户再打开，内存计数器又是 0，于是再等 3.5 分钟、再失败、再退出。
+     * 线上实测同一台机器同一版本下载 41 次。现在先读落盘的次数，再决定这一轮还等不等。
      */
-    private fun noteNotReady(version: String): Long {
+    private suspend fun noteNotReady(version: String): Long {
         if (notReadyVersion != version) {
             notReadyVersion = version
             notReadyRetries = 0
         }
-        if (notReadyRetries >= INSTALL_NOT_READY_RETRY_DELAYS_MILLIS.size) return 0L
-        val wait = INSTALL_NOT_READY_RETRY_DELAYS_MILLIS[notReadyRetries]
+        // 这一次启动里已经等过几轮 + 之前几次启动累计失败过几次，两边都不能超。
+        val used = settings.installFailureCount(version) + notReadyRetries
+        if (used >= INSTALL_NOT_READY_RETRY_DELAYS_MILLIS.size) return 0L
+        val wait = INSTALL_NOT_READY_RETRY_DELAYS_MILLIS[used]
         notReadyRetries += 1
         return wait
     }

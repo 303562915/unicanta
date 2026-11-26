@@ -305,6 +305,18 @@ data class AppSettingsProto(
      * `OfficialGroups` 的常量画出来的——它本来就只有名字。
      */
     @ProtoNumber(50) val hiddenMessageRows: List<String> = emptyList(),
+    /**
+     * 自动安装失败过几次，按版本记：`版本标签\r次数`，多个版本用 `\n` 分隔；空串 = 一次都没失败过。
+     *
+     * 为什么必须落盘：`UpdateCenter` 里那个重试计数器是**进程内**的，App 一退出就归零。而
+     * 「装不上」这条路最后一步是把包交给系统安装器并让 Canta 退出——用户再打开 Canta，计数器
+     * 又是满的，于是再重试 4 次、再失败、再退出。线上实测同一台机器同一版本下载 41 次、安装
+     * 失败 19 次，屏幕上就是「一直在下、一直退出、以为装好了、打开还是旧的」。
+     *
+     * 存在这里之后，一次启动最多重试一轮，第二轮的额度不会再被刷新；次数用尽就永久停在
+     * 「包在本地，去点安装」，直到版本号真的变了。
+     */
+    @ProtoNumber(51) val installFailureCounts: String = "",
 )
 
 /**

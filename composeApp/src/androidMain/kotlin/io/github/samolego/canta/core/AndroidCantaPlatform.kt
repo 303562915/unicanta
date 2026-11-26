@@ -1505,8 +1505,13 @@ class AndroidCantaPlatform(
         // Magisk, KernelSU and APatch mount `su` where a plain file check cannot see it, and the
         // stricter check here is why a phone that uninstalls system apps through root still got
         // "这台手机没有 su" from its own updater.
+        // 「这台手机没有 su」不算一条**失败尝试**，只算"这条路没得走"。以前它被塞进 attempts，
+        // 结果两个副作用：① 它参与下面 `all { looksLikeRuntimeNotReady }` 的投票，把"pm 真的拒绝
+        // 了这个包"的批次误判成"运行时没就绪"，于是无限重试；② 报告里多一条与本次失败无关的行。
+        // 现在只写在最后那份报告里，不参与判定。
+        val rootSkipped: String
         if (!rootMayBeAvailable(context.packageManager)) {
-            attempts["root"] = "这台手机没有 su"
+            rootSkipped = "root：这台手机没有 su"
         } else if (attempts.values.any { looksLikeAccessProblem(it) }) {
             if (tryChannel("root") {
                     onStage(InstallStage.ROOT, INSTALL_PROGRESS_UNKNOWN)
@@ -1516,13 +1521,15 @@ class AndroidCantaPlatform(
                 file.delete()
                 return@withContext InstallAttempt.Success
             }
+            rootSkipped = ""
         } else {
-            attempts["root"] = "没试：上面的失败不是权限或路径问题"
+            rootSkipped = "root：没试：上面的失败不是权限或路径问题"
         }
 
         // The APK stays on disk on purpose: the caller's last move is the system installer, which
         // reads this file. The report is one line per route, in the order they were tried.
-        val report = attempts.entries.joinToString("\n") { (channel, error) -> "$channel：$error" }
+        val report = (attempts.entries.map { (channel, error) -> "$channel：$error" } +
+            listOfNotNull(rootSkipped.ifBlank { null })).joinToString("\n")
         // "这一次运行时根本没就绪" 与 "这个包 pm 不接受" 是两件事：前者重试可能就好，后者重试只会
         // 得到同一句话。每一条通道的失败都只是"运行时不在"，才算前者。
         if (attempts.isNotEmpty() && attempts.values.all { looksLikeRuntimeNotReady(it) }) {
@@ -1550,6 +1557,13 @@ class AndroidCantaPlatform(
             "shizuku", "permission", "denied", "eacces", "consider using a file",
             "unable to open", "failed to open", "no such file", "not found",
             "没有输出", "没运行", "没授权", "没有响应", "服务异常", "通道异常",
+            // 这几句是 Shizuku 侧的「没就绪 / 没授权」原话（见 ShizukuPermission.refusalText
+            // 与 ShizukuShell）。少了它们，"Shizuku 没在运行" 会被判成「不是权限问题」，
+            // 于是台账里那句 `root：没试：上面的失败不是权限或路径问题` 直接跳过 root ——
+            // 一台明明能用 root 的手机，只能眼看着装不上。
+            "这台手机没装 shizuku", "没找到 shizuku", "这台手机没有 su",
+            "没被 shizuku 授权", "shizuku 没在运行", "没答上来", "没有可用的 shizuku",
+            "binder haven't been received", "adduserservice", "requires permission",
         ).any { it in text }
     }
 
@@ -1560,11 +1574,17 @@ class AndroidCantaPlatform(
      * 交给系统安装器吧". Every string here is one this file produces when no `pm install` ever ran.
      */
     private fun looksLikeRuntimeNotReady(error: String): Boolean {
-        if ("install_failed" in error.lowercase()) return false
+        val text = error.lowercase()
+        if ("install_failed" in text) return false
         return listOf(
             "没在运行", "没被 shizuku 授权", "没有响应", "没答上来", "服务异常", "通道异常",
             "没有可用的 shizuku", "没装 shizuku", "这台手机没有 su", "root 没有授予", "root 会话",
-        ).any { it in error.lowercase() }
+            // Shizuku 服务端那句 `Permission Denial: addUserService … requires permission`
+            // 描述的是「授权状态没同步」，不是「这个包 pm 不接受」：重试一轮（ShizukuShell 会顺手
+            // 重新申请一次授权）有意义，不该直接甩给系统安装器。
+            "requires permission", "adduserservice", "binder haven't been received",
+            "canta 还没被 shizuku 授权",
+        ).any { it in text }
     }
 
     /**

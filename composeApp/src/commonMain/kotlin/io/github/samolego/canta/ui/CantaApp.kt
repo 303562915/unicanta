@@ -664,6 +664,8 @@ private fun CantaNavigation(
         // page needs for a clean answer. A failing poll says nothing, because the next one is the
         // retry; a poll that found a build stops the loop, since asking again cannot make the APK
         // that is already here fresher.
+        // 已经提醒过「自动装不上」的版本：只 toast 一次，别每轮轮询都说一遍。
+        val warnedSkipped = mutableSetOf<String>()
         while (true) {
             if (appVisible) {
                 // 读法只有一份（UpdateCenter.poll）：读发布页、失败吞掉；关于页也用同一份状态。
@@ -674,11 +676,18 @@ private fun CantaNavigation(
                     // another "正在安装" would be the loop this mark exists to break: say it once,
                     // point at the page that can still do it by hand, and stop asking.
                     if (label == skippedAutoInstall) {
-                        // 这一版自动装过、没装上：只说一句 toast，别在底部再压一条横幅。
-                        coroutineScope.launch {
-                            platform.showMessage(getString(Res.string.about_auto_install_paused, label))
+                        // 这一版自动装过、没装上：说一句就够，别在底部再压一条横幅。
+                        // **但不能 `return`**：那会让这个 LaunchedEffect 整轮结束，之后整个会话
+                        // 都不再查更新——用户装不上这一版，就再也收不到"下一版已经好了"的提示，
+                        // 只能自己隔几天点一次关于页。这里说完继续轮询，下一版会正常下载。
+                        if (!warnedSkipped.contains(label)) {
+                            warnedSkipped += label
+                            coroutineScope.launch {
+                                platform.showMessage(getString(Res.string.about_auto_install_paused, label))
+                            }
                         }
-                        return@LaunchedEffect
+                        delay(UPDATE_CHECK_INTERVAL_MILLIS)
+                        continue
                     }
                     // 下载、进度、安装、留痕全在 UpdateCenter 里：它只 toast 一句「正在下载」，
                     // 并且把状态写给关于页，所以那里也看得到进度条。
