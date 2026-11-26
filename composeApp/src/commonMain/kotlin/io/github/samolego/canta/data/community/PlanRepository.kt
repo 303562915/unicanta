@@ -1958,6 +1958,24 @@ class PlanRepository(
      *
      * An older backend has no per-kind function at all, so this falls back to `inbox_summary` there:
      * four counts off one cursor, and all four positions move together — exactly today's behaviour.
+     *
+     * ## 「读到哪儿了」只存在本机，不回写后端（2026-11-26 改）
+     *
+     * 以前这里在拿到摘要后**紧接着调一次 `inbox_seen_mark`**，把游标写回服务器，理由是
+     * 「换台手机重装后能接着读」。那个理由是错的：
+     *
+     *   1. 服务器该存的是**消息本身**，不是每台设备读到了第几条。存游标把 3,071 个用户 ×
+     *      4 个栏位铺成 12,284 行 / 1.4 MB，每次还要 `on conflict do update` 重写一遍。
+     *   2. 因为它紧跟在每次计数后面，「查未读」和「写游标」变成 1:1：实测 24 小时
+     *      44,941 次 `inbox_summary_kinds` → 40,932 次 `inbox_seen_mark`。
+     *   3. 压的是那台 426 MB 的免费实例 —— 多这一份写，就是 checkpoint 被拖慢的一份料。
+     *
+     * 本地本来就有完整的一份（[io.github.samolego.canta.data.notes.AppNoteStore] 的
+     * `_inboxSeenCursors`，随设置落盘），红点、未读数、四栏各自的游标全都来自那里。
+     * 换手机重装从零开始计红点，这是**正确的**行为：新设备就是没读过。
+     *
+     * **别再把 `inbox_seen_mark` 加回来。** 真要跨设备同步，那是另一个决定，
+     * 得先算它对这台实例的写入成本，而不是顺手跟在每次计数后面。
      */
     suspend fun inboxSummary(owner: String, token: String = "", seenAt: String = ""): InboxSummary? {
         if (owner.isEmpty() && token.isEmpty()) return null
@@ -1972,8 +1990,10 @@ class PlanRepository(
             put("p_seen_plan_heart", held[InboxKind.PLAN_HEART])
         }.toString()
         rpc("inbox_summary_kinds", body)?.let { text ->
-            val (summary, next) = parseKindSummary(text, held, served) ?: return null
-            rememberCursors(owner, token, held, next)
+            // 只要摘要。游标（读到哪儿了）不再回写后端 —— 那是本机的事，见上面 inboxSummary 的注释。
+            // 之前这里紧跟着一次 `inbox_seen_mark`，让「查未读」和「写游标」变成 1:1 配对，
+            // 24 小时 40,932 次，全砸在同一台 426 MB 的实例上。
+            val (summary, _) = parseKindSummary(text, held, served) ?: return null
             return summary
         }
         if (!functionMissing) return null
@@ -2035,38 +2055,6 @@ class PlanRepository(
             checkedAt = InboxCursors.of(o["checked_at"]?.jsonPrimitive?.contentOrNull.orEmpty()).encode(),
         )
     }.getOrNull()
-
-    /**
-     * 游标不再写回后端。**这是 2026-11-26 的修正，改之前每天有 4 万次 `inbox_seen_mark`。**
-     *
-     * 原来的理由写着「换一台手机重装后，能从这个账号上次读到的地方继续」。那个理由是错的：
-     *
-     *   1. **「我读到哪了」是本机的事**，跟聊天记录不是一类东西。服务器该存的是消息本身，
-     *      不是每台设备读到了第几条。存这个把 3071 个用户 × 4 个栏位铺成了 12,284 行 /
-     *      1.4 MB，每次还要 `on conflict do update` 写一遍。
-     *   2. 这一趟**发生在每次查未读的后面**（[inboxSummary] 里紧跟着就是这里），
-     *      于是「查未读」和「写游标」永远 1:1 配对：实测 44,941 次摘要 → 40,932 次写回，
-     *      而这些写里绝大多数根本没改变任何东西（服务端每次回一个全新的 `checked_at`，
-     *      `movedFrom` 的判空因此从不生效）。
-     *   3. 载重的是那台 426 MB 的免费实例：多这一份写，就是 checkpoint 被拖慢的一份料。
-     *
-     * 本地已经完整存了一份（[io.github.samolego.canta.data.notes.AppNoteStore] 的
-     * `_inboxSeenCursors`，随设置一起落盘），红点、未读数、四栏各自的游标全部来自那里。
-     * 换手机重装会从零开始计红点——这是**正确的**行为：新设备就是没读过，
-     * 而翻一遍历史也只是把已经读过的消息再数一次，不影响任何消息本身。
-     *
-     * 因此这个函数保留成 no-op 而不是删掉调用点：`inboxSummary` 的返回路径不需要知道
-     * 「要不要写回」这件事，将来真要恢复服务端同步，改这一处就够。
-     */
-    @Suppress("UNUSED_PARAMETER")
-    private suspend fun rememberCursors(
-        owner: String,
-        token: String,
-        before: InboxCursors,
-        after: InboxCursors,
-    ) {
-        // 故意什么都不做。见上面的注释：游标属于本机。
-    }
 }
 
 @Suppress("unused")
