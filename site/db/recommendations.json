@@ -70,7 +70,7 @@
   "url": "https://github.com/RikkaApps/Shizuku"
  },
  {
-  "agrees": 37,
+  "agrees": 38,
   "applied": false,
   "author": "开发者",
   "author_id": "official",
@@ -336,6 +336,20 @@
   "url": "https://github.com/wxxsfxyzm/InstallerX-Revived"
  },
  {
+  "agrees": 6,
+  "applied": false,
+  "author": "#12149",
+  "author_id": "12149",
+  "category": "privacy",
+  "created_at": "2026-11-25T06:32:32.874785+00:00",
+  "disagrees": 0,
+  "id": 28,
+  "license": "",
+  "name": "啾米",
+  "summary": "一个adb权限运行的监控软件，可观察手机所有软件的行为，包括联网数据去向，包括系统组件，系统模块，可卸载内置应用，组件，所有数据在本地监控。",
+  "url": "https://github.com/ybblab/Jiumi"
+ },
+ {
   "agrees": 5,
   "applied": false,
   "author": "沫沫",
@@ -348,20 +362,6 @@
   "name": "AppOpsNext",
   "summary": "系统App权限控制管理应用",
   "url": "https://github.com/1zumiii/AppOpsNext"
- },
- {
-  "agrees": 5,
-  "applied": false,
-  "author": "#12149",
-  "author_id": "12149",
-  "category": "privacy",
-  "created_at": "2026-11-25T06:32:32.874785+00:00",
-  "disagrees": 0,
-  "id": 28,
-  "license": "",
-  "name": "啾米",
-  "summary": "一个adb权限运行的监控软件，可观察手机所有软件的行为，包括联网数据去向，包括系统组件，系统模块，可卸载内置应用，组件，所有数据在本地监控。",
-  "url": "https://github.com/ybblab/Jiumi"
  },
  {
   "agrees": 1,
