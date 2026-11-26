@@ -38,22 +38,34 @@ if [ "$HAVE_STATE" = "0" ] && [ -n "$CFG" ]; then VAL=1; fi
 # 空值 = 删属性。云控调试项只能下发 propertySet，所以先试 setprop 1 之外的路径：直接删。
 if [ -z "$VAL" ]; then
 echo "按「删掉这条属性」恢复…"
-settings put global debug_audio_cloud '{"propertyDelete":[{"name":"speaker_scene_restore","key":"'"$P"'"}]}' 2>/dev/null
+# 一条条试，每试一条就回读一次。顺序是从「不需要 root」到「一定要 root」：
+#   1) 云控下发空值：有的 ROM 把空值当删除；
+#   2) su 跑 setprop 空串：persist 属性在多数机型上这样就变回「未设置」；
+#   3) su 删掉 settings 里那条：有的 ROM 场景值其实存在 settings，setprop 删不掉。
+# 注意 setprop 删不掉 persist 属性就是删不掉——**不再假装成功**：全试完还留着 -1，
+# 就明说「这台机器上删不掉」，给用户可复制的命令，别再自动写 1 把一个假状态盖过去。
+settings put global debug_audio_cloud '{"propertySet":[{"name":"speaker_scene_restore","versionCode":"1","secret":false,"key":"'"$P"'","value":""}]}' 2>/dev/null
 settings put global test_audio_cloud "restore_del_$(date +%s)"
-echo "已触发云控刷新，等属性消失（最多 12 秒）…"
+echo "已触发云控刷新（空值），等属性消失（最多 12 秒）…"
 i=0
 while [ "$i" -lt 12 ]; do sleep 1; if [ -z "$(getprop "$P")" ]; then break; fi; i=$((i+1)); done
 settings delete global debug_audio_cloud >/dev/null 2>&1
 settings delete global test_audio_cloud >/dev/null 2>&1
-if [ -z "$(getprop "$P")" ]; then echo "已恢复：$P 已删掉，回到这台机器出厂的样子"; exit 0; fi
+if [ -z "$(getprop "$P")" ]; then echo "已恢复：$P 已消失，回到这台机器出厂的样子"; exit 0; fi
 if [ "$(id -u)" != "0" ] && command -v su >/dev/null 2>&1; then
-echo "云控没接上，改用 root 删属性…"
-su -c "settings delete global $P; setprop $P ''" </dev/null >/dev/null 2>&1
-if [ -z "$(getprop "$P")" ]; then echo "已恢复（root 删属性）：$P 不存在"; exit 0; fi
+echo "云控没接上，改用 root 把属性写成空…"
+su -c "setprop $P ''" </dev/null >/dev/null 2>&1
+if [ -z "$(getprop "$P")" ]; then echo "已恢复（root 写空）：$P 不存在"; exit 0; fi
+echo "root 写空没成，再试删 settings 里那条…"
+su -c "settings delete global $P" </dev/null >/dev/null 2>&1
+if [ -z "$(getprop "$P")" ]; then echo "已恢复（root 删 settings）：$P 不存在"; exit 0; fi
 fi
 echo "删不掉 RESTORE_DELETE_FAIL：$P 仍然是 $(getprop "$P")"
-echo "这种情况写回 1 也能让名单重新生效，正在改用 1…"
-VAL=1
+echo "这台机器上这条属性删不掉：persist 属性写在 /data/property，只有改完重启才可能回落成默认。"
+echo "手工最后一步（Termux 里跑，要 root）："
+echo "  su -c \"setprop $P ''\"; su -c reboot"
+echo "**没有**替你写回 1：这台机器本来没有这条属性，写 1 是凭空造一条；需要 1 的话自己点「解除」再「恢复」或按上面手工做。"
+exit 1
 fi
 PL='{"propertySet":[{"name":"speaker_scene_restore","versionCode":"1","secret":false,"key":"'"$P"'","value":"'"$VAL"'"}]}'
 settings put global debug_audio_cloud "$PL"

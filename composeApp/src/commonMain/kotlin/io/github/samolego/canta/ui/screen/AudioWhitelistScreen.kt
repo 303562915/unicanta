@@ -202,6 +202,11 @@ fun AudioWhitelistScreen(
                     onBypass = { run("解除", bypass) },
                     onRestore = { run("恢复", restore) },
                     onRefresh = { scope.launch { refresh() } },
+                    onCopyManual = {
+                        clipboard.setText(
+                            AnnotatedString("su -c \"setprop ${AudioWhitelist.PROP} ''\"\nsu -c reboot"),
+                        )
+                    },
                 )
             }
 
@@ -286,6 +291,8 @@ private fun StatusCard(
     onBypass: () -> Unit,
     onRestore: () -> Unit,
     onRefresh: () -> Unit,
+    /** 删不掉那条属性时，把手工命令放进剪贴板。 */
+    onCopyManual: () -> Unit,
 ) {
     val headline = when {
         failure != null -> "读不到状态"
@@ -324,9 +331,12 @@ private fun StatusCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
             )
+            // 不把 Restore 当成成功：RESTORE_DELETE_FAIL 表示这条属性删不掉，
+            // 机器上还留着一条本不该存在的值；写成「成功」只会让人以为已经回到出厂。
+            val restoreStuck = failure?.contains("RESTORE_DELETE_FAIL") == true
             if (failure != null) {
                 Text(
-                    text = failure,
+                    text = if (restoreStuck) "这条属性在这台机器上删不掉，还留着：$failure" else failure,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -355,6 +365,20 @@ private fun StatusCard(
                 TextButton(onClick = onBypass, enabled = canBypass && busy == null) { Text("解除") }
                 TextButton(onClick = onRestore, enabled = canRestore && busy == null) { Text("恢复") }
                 TextButton(onClick = onRefresh, enabled = busy == null) { Text("重新读取") }
+            }
+            // 删不掉那条属性时，把最后一步交给用户自己跑：这一步要 root，而且得重启才可能回落。
+            if (failure?.contains("RESTORE_DELETE_FAIL") == true) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                    Text(
+                        text = "手工最后一步（Termux，要 root）：su -c \"setprop ${AudioWhitelist.PROP} ''\" 然后 su -c reboot",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onCopyManual) { Text("复制") }
+                }
             }
         }
     }
