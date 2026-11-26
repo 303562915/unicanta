@@ -2988,18 +2988,6 @@
   "target": "com.android.adservices.api"
  },
  {
-  "author": "大大怪",
-  "author_id": "10970",
-  "body": "这东西们删吗？",
-  "created_at": "2026-11-25T11:59:34.273932+00:00",
-  "device_model": "Redmi K70E",
-  "id": 347,
-  "kind": "app",
-  "parent_id": null,
-  "system_name": "HyperOS 3.0.305",
-  "target": "com.miui.phrase"
- },
- {
   "author": "#13672",
   "author_id": "13672",
   "body": "意思就是不能删？",
