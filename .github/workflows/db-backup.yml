@@ -394,18 +394,40 @@ jobs:
 
           src = json.load(open('/tmp/dump.json', encoding='utf-8'))
 
+          # 先把两个计数汇总成字典再拼行。
+          #
+          # 原来写的是 `sum(1 for v in plan_votes if ...)` 塞在每行里 ——
+          # 那是 142 行 × 4398 条点赞 ≈ 62 万次字符串比较，而且加评论数会再翻一遍。
+          # 一次 group-by 之后每行只是查字典，源码也跟着短了。
+          vote_count = {}
+          for v in src.get('plan_votes', []):
+              k = str(v.get('plan_id'))
+              vote_count[k] = vote_count.get(k, 0) + 1
+
+          # 只算方案评论（kind = 'plan'），与 RPC 里那句
+          # `count(*) from community_comments where kind='plan' and target=p.id` 同一个口径。
+          comment_count = {}
+          for c in src.get('comments', []):
+              if c.get('kind') != 'plan':
+                  continue
+              k = str(c.get('target'))
+              comment_count[k] = comment_count.get(k, 0) + 1
+
           # 和 RPC 的返回列对齐：客户端 parsePlans 读的就是这些键。
           rows = []
           for p in src.get('plans', []):
               if not p.get('reboot_verified'):
                   continue
+              pid = str(p['id'])
               rows.append({
                   'id': p['id'],
                   'title': p['title'],
                   'note': p.get('note') or '',
                   'packages': p.get('packages') or [],
-                  'votes': sum(1 for v in src.get('plan_votes', [])
-                               if str(v.get('plan_id')) == str(p['id'])),
+                  'votes': vote_count.get(pid, 0),
+                  # 客户端优先读这份快照后，评论数必须在这里就算好 ——
+                  # 少了它卡片上的评论角标会一直是 0（plans_all 是后端算的，快照没人算）。
+                  'comments': comment_count.get(pid, 0),
                   'created_at': p.get('created_at'),
                   'rebooted_at': p.get('rebooted_at'),
                   'owner': p.get('owner') or '',

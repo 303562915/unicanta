@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.community
 
+import io.github.samolego.canta.util.currentTimeMillis
 import io.github.samolego.canta.data.recommend.AirportDetail
 import io.github.samolego.canta.data.recommend.AirportRatingResult
 import io.github.samolego.canta.data.recommend.AirportSubscription
@@ -64,6 +65,14 @@ const val GITHUB_SNAPSHOT_URL =
 
 /** 快照最多等这么久；它是兜底，不该比一次正常请求还慢。 */
 private const val SNAPSHOT_TIMEOUT_MS = 15_000L
+
+/**
+ * 快照读失败之后，多久之内不再重试。
+ *
+ * 这条现在是「每次列方案都会走」的热路径（见 [offlinePlans]）。两个源各 15 秒超时，
+ * 断网时一次刷新就是 30 秒的等待；失败后停 60 秒，期间直接走后端那条路。
+ */
+private const val SNAPSHOT_RETRY_BACKOFF_MS = 60_000L
 
 /** One community plan: a set of packages someone removed and confirmed by a reboot. */
 @Serializable
@@ -294,13 +303,29 @@ class PlanRepository(
     private var snapshotCache: List<CommunityPlan>? = null
 
     /**
+     * 上一次「两个源都读不到」的时间（单调递增的本机时钟）。
+     *
+     * 2026-11-26 加：快照从「兜底」变成了 [plansAll] / [plansFor] 的**首选来源**，于是它从
+     * 「后端挂了才走」变成「每次列表都要走」。Cache 只在**成功**时填，读失败就会反复重来 ——
+     * 而这里两轮各 15 秒超时，真要断网，一次列表刷新就要卡 30 秒。
+     *
+     * 所以失败之后 [SNAPSHOT_RETRY_BACKOFF_MS] 内直接返回空（调用方于是走后端那条路），
+     * 不再重试。用单调时钟而不是墙上时间：用户改系统时间不该影响这里的判断。
+     */
+    private var snapshotFailedAt: Long = 0L
+
+    /**
      * 读离线快照：先 Pages，再 raw；两个都不通就是空。
      *
-     * 失败不出声（不写 [lastError] / [lastFailureWasNetwork]）：这一趟是**兜底**，兜不住的时候
-     * 调用方看到的就是"后端没通"，和调用前一样，不该被兜底本身的失败改写成另一种错误。
+     * 失败不出声（不写 [lastError] / [lastFailureWasNetwork]）：这一趟是**内容来源**，
+     * 不是一次业务请求，它失败时调用方看到的是「这边没有，去问后端」，不该被改写成另一种错误。
      */
     suspend fun offlinePlans(): List<CommunityPlan> {
         snapshotCache?.let { return it }
+        // 刚失败过就别再试：这条现在是热路径（每次列表），不能让它反复等满超时。
+        if (snapshotFailedAt != 0L && currentTimeMillis() - snapshotFailedAt < SNAPSHOT_RETRY_BACKOFF_MS) {
+            return emptyList()
+        }
         for (url in listOf(snapshotMirrorUrl, snapshotUrl)) {
             if (url.isBlank()) continue
             val text = runCatching {
@@ -313,8 +338,10 @@ class PlanRepository(
             // 解析出一个空表多半是文件被写坏了：那也算没读到，接着试下一个源。
             if (rows.isEmpty()) continue
             snapshotCache = rows
+            snapshotFailedAt = 0L
             return rows
         }
+        snapshotFailedAt = currentTimeMillis()
         return emptyList()
     }
 
@@ -467,6 +494,31 @@ class PlanRepository(
     /** Verified plans for [profile], most liked first; empty on any failure. */
     suspend fun plansFor(profile: DeviceProfile?): List<CommunityPlan> {
         profile ?: return emptyList()
+
+        // **先在 GitHub 快照里本地筛**，筛不出来才问后端。方向与 [plansAll] 同一个理由：
+        // `plans_for` 实测 88 次调用读掉 12,192 个数据块，而它要回答的问题只是
+        // 「哪些方案是给这台机型的」——快照里 model / rom / rom_version / rom_build 都在，
+        // 在本地过滤是纯内存操作，一次网络往返都不用。
+        //
+        // 尺子与后端那句 `where model = ... and rom = ... and rom_version = ...` 对齐：
+        // 型号、ROM、主版本三项相同即算。**不能**加上 romBuild 做硬过滤 ——
+        // 那会让刚打了一个点更新的人看到空页面（后端也只是把它排前面，不排除）。
+        val snapshot = offlinePlans()
+        if (snapshot.isNotEmpty()) {
+            val mine = snapshot.filter { plan ->
+                plan.model.equals(profile.model, ignoreCase = true) &&
+                    plan.rom.equals(profile.rom, ignoreCase = true) &&
+                    plan.romVersion == profile.romVersion
+            }
+            // 排序照后端：**同一个 build 的排前面**（`p_rom_build` 的作用就是这个），
+            // 然后才是票数多的在前。不能反过来——先按票数排的话，同一 build 的那几条
+            // 会被票数更高的别的 build 挤到后面，"这台机器实测过"就看不出来了。
+            return mine.sortedWith(
+                compareByDescending<CommunityPlan> { it.romBuild.equals(profile.romBuild, ignoreCase = true) }
+                    .thenByDescending { it.votes },
+            )
+        }
+
         val build = profile.romBuild
         val body = buildJsonObject {
             put("p_model", profile.model)
@@ -490,15 +542,6 @@ class PlanRepository(
                 put("p_rom_version", profile.romVersion)
             }.toString()
             rpc("plans_for", legacy)?.let { return parsePlans(it) }
-        }
-        // 后端整个不通（不是"这台机型没有方案"）→ 用 GitHub 快照按同一把尺子本地筛：
-        // 型号相同、ROM 与主版本相同。离线快照里有 market_name / rom_build，够画卡片。
-        if (lastFailureWasNetwork) {
-            return offlinePlans().filter { plan ->
-                plan.model.equals(profile.model, ignoreCase = true) &&
-                    plan.rom.equals(profile.rom, ignoreCase = true) &&
-                    plan.romVersion == profile.romVersion
-            }
         }
         return emptyList()
     }
@@ -569,11 +612,23 @@ class PlanRepository(
      */
     suspend fun plansAll(limit: Int = 200): List<CommunityPlan>? {
         if (limit <= 0) return emptyList()
+        // **先读 GitHub 上的快照**，不通才问后端。这是 2026-11-26 调换的方向，
+        // 原来反着来（先问后端，网络失败才读快照），代价是每台手机每次都打一次
+        // `plans_all` —— 实测 90 次调用读掉 596,253 个数据块（约 4.6 GB），
+        // 而那台免费实例只有 426 MB 内存、磁盘突发余额 0%。方案列表是**所有人看同一份**的
+        // 只读内容，没有理由让每台手机各自去库里算一遍。
+        //
+        // 快照由 `db-backup.yml` 定时生成（`site/db/plans.json`，字段与 `plans_all` 返回逐列对齐，
+        // 点赞与评论数都已算好），Pages 的流量额度对它来说远远够用。
+        //
+        // 代价只有一个：别人刚发的方案最多晚一轮（15–60 分钟）才出现在这里。这是**可以接受**的
+        // ——这一趟只负责"有哪些方案、各多少票"，自己的投票在本地先更新、后台再同步。
+        val snapshot = offlinePlans()
+        if (snapshot.isNotEmpty()) return snapshot.take(limit)
+
+        // 快照读不到（没发布过 / 两个源都断）：退回后端，然后再退回"没有"。
         val body = buildJsonObject { put("p_limit", limit) }.toString()
         rpc("plans_all", body)?.let { return parsePlans(it) }
-        // 后端没答（挂掉 / 这台手机连不上）→ 退回 GitHub 上的离线快照，按同一个上限截断。
-        // `lastFailureWasNetwork` 留着不动：调用方据此知道"这一次是网络问题"，兜底不掩盖它。
-        if (lastFailureWasNetwork) return offlinePlans().take(limit).ifEmpty { null }
         return null
     }
 
