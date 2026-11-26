@@ -179,7 +179,7 @@ fun DeletionListScreen(
                 .padding(top = 6.dp, bottom = 28.dp),
         ) {
             Text(
-                text = "点一份方案看它删了哪些包",
+                text = "点一份方案看它删了哪些包；每行右边的 ↑ 直接导出这一份",
                 style = FlText.caption2,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = AppCardInset + 2.dp, vertical = 4.dp),
@@ -188,6 +188,18 @@ fun DeletionListScreen(
                 PlanRow(
                     plan = plan,
                     onClick = { openPlan = plan },
+                    // 每一行自己带一个导出：列表页就能直接导，不用先点进去。
+                    onExport = {
+                        scope.launch {
+                            val exported = deletionList.savePlanAs(plan)
+                            if (exported.path != null) {
+                                lastExport = exported.path
+                                platform.showMessage("已保存到 ${exported.path}")
+                            } else {
+                                platform.showMessage("已取消，没有导出任何文件")
+                            }
+                        }
+                    },
                 )
                 Spacer(Modifier.height(6.dp))
             }
@@ -234,9 +246,9 @@ fun DeletionListScreen(
     }
 }
 
-/** 一份方案：名字、有多少条、从哪来；点进去看包。 */
+/** 一份方案：名字、有多少条、从哪来；点进去看包，右边的 ↑ 直接导出这一份。 */
 @Composable
-private fun PlanRow(plan: DeletionPlan, onClick: () -> Unit) {
+private fun PlanRow(plan: DeletionPlan, onClick: () -> Unit, onExport: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -279,6 +291,15 @@ private fun PlanRow(plan: DeletionPlan, onClick: () -> Unit) {
                 color = scheme.onSurfaceVariant,
             )
         }
+        // 导出按钮单独一块点击区：点它只导出，不会顺带把这一行当成"点进去"。
+        FlBarButton(
+            glyph = FlGlyphs.send,
+            contentDescription = "导出「${plan.name}」",
+            size = 36.dp,
+            iconSize = 18.dp,
+            filled = false,
+            onClick = onExport,
+        )
         SettingsChevron()
     }
 }
