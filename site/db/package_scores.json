@@ -10125,14 +10125,14 @@
     "pkg": "com.android.wallpaperbackup",
     "small_batch": false,
     "uninstalls": 51,
-    "updated_at": "2026-11-26T17:02:24.412577+00:00",
+    "updated_at": "2026-11-26T17:03:36.893753+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.android.wallpapercropper",
     "small_batch": false,
     "uninstalls": 47,
-    "updated_at": "2026-11-26T17:02:09.175972+00:00",
+    "updated_at": "2026-11-26T17:03:36.893753+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -10698,8 +10698,8 @@
    {
     "pkg": "com.miui.analytics",
     "small_batch": false,
-    "uninstalls": 402,
-    "updated_at": "2026-11-26T16:35:51.217815+00:00",
+    "uninstalls": 403,
+    "updated_at": "2026-11-26T17:05:14.530087+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -10748,7 +10748,7 @@
     "pkg": "com.miui.carlink",
     "small_batch": false,
     "uninstalls": 314,
-    "updated_at": "2026-11-26T16:50:30.331402+00:00",
+    "updated_at": "2026-11-26T17:05:04.34676+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11168,7 +11168,7 @@
     "pkg": "com.miui.vsimcore",
     "small_batch": false,
     "uninstalls": 154,
-    "updated_at": "2026-11-26T17:00:35.846275+00:00",
+    "updated_at": "2026-11-26T17:03:36.893753+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11209,8 +11209,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 548,
-    "updated_at": "2026-11-26T16:58:59.266013+00:00",
+    "uninstalls": 549,
+    "updated_at": "2026-11-26T17:05:14.530087+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11595,7 +11595,7 @@
     "pkg": "com.xiaomi.aiasst.service",
     "small_batch": false,
     "uninstalls": 303,
-    "updated_at": "2026-11-26T16:50:30.331402+00:00",
+    "updated_at": "2026-11-26T17:05:04.34676+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11832,8 +11832,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 362,
-    "updated_at": "2026-11-26T16:51:25.930795+00:00",
+    "uninstalls": 363,
+    "updated_at": "2026-11-26T17:05:28.776729+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14735,14 +14735,14 @@
     "pkg": "com.android.wallpaperbackup",
     "small_batch": false,
     "uninstalls": 10,
-    "updated_at": "2026-11-26T17:02:24.412577+00:00",
+    "updated_at": "2026-11-26T17:03:36.893753+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.android.wallpapercropper",
     "small_batch": false,
     "uninstalls": 9,
-    "updated_at": "2026-11-26T17:02:09.175972+00:00",
+    "updated_at": "2026-11-26T17:03:36.893753+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15491,7 +15491,7 @@
     "pkg": "com.miui.vsimcore",
     "small_batch": false,
     "uninstalls": 26,
-    "updated_at": "2026-11-26T17:00:35.846275+00:00",
+    "updated_at": "2026-11-26T17:03:36.893753+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17064,8 +17064,8 @@
    {
     "pkg": "com.miui.analytics",
     "small_batch": false,
-    "uninstalls": 280,
-    "updated_at": "2026-11-26T15:38:44.751222+00:00",
+    "uninstalls": 281,
+    "updated_at": "2026-11-26T17:05:14.530087+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17107,7 +17107,7 @@
     "pkg": "com.miui.carlink",
     "small_batch": false,
     "uninstalls": 231,
-    "updated_at": "2026-11-26T16:50:30.331402+00:00",
+    "updated_at": "2026-11-26T17:05:04.34676+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17421,8 +17421,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": false,
-    "uninstalls": 392,
-    "updated_at": "2026-11-26T16:58:59.266013+00:00",
+    "uninstalls": 393,
+    "updated_at": "2026-11-26T17:05:14.530087+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17723,7 +17723,7 @@
     "pkg": "com.xiaomi.aiasst.service",
     "small_batch": false,
     "uninstalls": 197,
-    "updated_at": "2026-11-26T16:50:30.331402+00:00",
+    "updated_at": "2026-11-26T17:05:04.34676+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17946,8 +17946,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 252,
-    "updated_at": "2026-11-26T16:51:25.930795+00:00",
+    "uninstalls": 253,
+    "updated_at": "2026-11-26T17:05:28.776729+00:00",
     "verdict": "BREAKS"
    },
    {
