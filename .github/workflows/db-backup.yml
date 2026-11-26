@@ -20,9 +20,22 @@ name: 🗃️ Community DB backup
 #   LATEST.md  —— 一眼能看懂的清单：导出时间、条数、比上次增了多少
 #
 #   site/db/plans.json —— **客户端也能直接读的那一份**：只含重启验证通过的方案，列名与
-#   `plans_for` / `plans_all` 的返回一致，点赞已算好，按点赞排序。pages.yml 会把它一起发到
-#   gh-pages，于是国内网络下 `https://303562915.github.io/unicanta/db/plans.json` 比
-#   raw.githubusercontent 稳。后端整个挂掉时，社区方案至少还能从这儿读出来。
+#   `plans_for` / `plans_all` 的返回一致，点赞与评论数都已算好，按点赞排序。pages.yml 会把它一起
+#   发到 gh-pages，于是国内网络下 `https://303562915.github.io/unicanta/db/plans.json` 比
+#   raw.githubusercontent 稳。
+#
+#   2026-11-26 起它不只是兜底：客户端 `plansAll` / `plansFor` **优先读这份快照**，读不到才查库。
+#   原因是实测 `plans_all` 90 次调用读掉 596,253 个数据块（约 4.6 GB），而那台免费实例只有
+#   426 MB 内存、磁盘突发余额 0%。方案列表是所有人看同一份的只读内容，不该让每台手机各自
+#   去库里算一遍。**这份快照的鲜度因此直接决定列表的鲜度**，外部 cron 已提到 5 分钟一次。
+#
+# 频率与成本（2026-11-26 定）：
+#   * 每次导出读约 1.4 MB / 5,016 行，相对上面那 4.6 GB 是 1/37，5 分钟一次一天也只多读 403 MB，
+#     对实例可以忽略。
+#   * 仓库是 **public**，Actions 对公开仓库**分钟数不计费**，所以 5 分钟一次不会产生账单；
+#     私有仓库才有每月 2,000 分钟的额度，不要把这个规则套错。
+#   * 数据库重启期间这一趟必然失败（`Database is possibly not accessible`），那是预期的，
+#     下一次就补上；**不要**为它加重试或改判失败语义。
 #
 # 隐私红线（改动时别破）：
 #   1. 只按下面的白名单列导出；新增一张表先想清楚它能不能公开。
@@ -35,7 +48,7 @@ on:
   schedule:
     # 仓库自带的定时：每小时一次（GitHub 的 schedule 会静默丢触发，所以这只是兜底，
     # 真正的准点由外部 cron 打 workflow_dispatch；见 ops/ 下的说明）。
-    # 15 分钟一次**不放在这里**：GitHub schedule 有最小间隔限制且丢触发概率更高。
+    # 高频**不放在这里**：GitHub schedule 有最小间隔限制且丢触发概率更高。
     - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
