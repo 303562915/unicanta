@@ -38,6 +38,7 @@ import org.jetbrains.compose.resources.stringResource
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.community.LevelFix
 import io.github.samolego.canta.data.community.LevelFixRepository
+import io.github.samolego.canta.data.community.LevelFixResult
 import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
@@ -121,15 +122,17 @@ fun LevelFixScreen(
         sending = true
         notice = null
         scope.launch {
-            val id = repository.propose(packageName, removal, note.trim(), author, authorId)
-            sending = false
-            if (id == null) {
-                notice = "没能提交：检查网络，或换一个档位再试"
-            } else {
-                notice = "已提交。别人可以投票；票数够了会由工作流合并进名单"
-                note = ""
-                reloads++
+            when (val result = repository.propose(packageName, removal, note.trim(), author, authorId)) {
+                is LevelFixResult.Ok -> {
+                    notice = "已提交。别人可以投票；票数够了会由工作流合并进名单"
+                    note = ""
+                    reloads++
+                }
+                // 原因原样显示：网络没通 / 后端拒绝的原话 / 档位不合法，必须是三种不同的字，
+                // 否则用户看到的永远是"没能提交"，我们这边也只能靠猜。
+                is LevelFixResult.Failed -> notice = "没能提交：${result.reason}"
             }
+            sending = false
         }
     }
 
@@ -137,14 +140,18 @@ fun LevelFixScreen(
         if (votingId != 0L) return
         votingId = fix.id
         scope.launch {
-            val answer = repository.vote(fix.id, authorId, agree)
-            votingId = 0L
-            notice = when {
-                answer == null -> "投票没成功，稍后再试"
-                answer.applied -> "这条已通过，等待合并进名单（一周内生效）"
-                else -> null
+            when (val result = repository.vote(fix.id, authorId, agree)) {
+                is LevelFixResult.Ok -> {
+                    notice = if (result.value.applied) {
+                        "这条已通过，等待合并进名单（一周内生效）"
+                    } else {
+                        null
+                    }
+                    reloads++
+                }
+                is LevelFixResult.Failed -> notice = "投票没成功：${result.reason}"
             }
-            if (answer != null) reloads++
+            votingId = 0L
         }
     }
 

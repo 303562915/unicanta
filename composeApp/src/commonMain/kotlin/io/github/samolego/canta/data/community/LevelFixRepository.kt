@@ -62,7 +62,8 @@ class LevelFixRepository(private val repository: PlanRepository) {
     /**
      * 提一条级别修正，签 [author]、算在 [authorId] 名下。同一个包同一个人已有一条悬空提案时是改写它。
      *
-     * 返回提案 id；null = 后端没接受（档位不在名单那五个里、被限速、没身份）。
+     * 失败时带原因（[LevelFixResult.Failed]）：网络没通、被限速、档位不合法、后端没有这个函数，
+     * 这四种在页面上必须能分开说，否则只剩一句"没能提交"什么都查不出来。
      */
     suspend fun propose(
         packageName: String,
@@ -70,8 +71,9 @@ class LevelFixRepository(private val repository: PlanRepository) {
         note: String = "",
         author: String = "",
         authorId: String = "",
-    ): Long? {
-        if (packageName.isEmpty() || removal.isEmpty()) return null
+    ): LevelFixResult<Long> {
+        if (packageName.isEmpty()) return LevelFixResult.Failed("没有包名", network = false)
+        if (removal.isEmpty()) return LevelFixResult.Failed("还没选档位", network = false)
         val proof = repository.callerTokenForLevelFix()
         val payload = buildJsonObject {
             put("p_pkg", packageName)
@@ -81,15 +83,22 @@ class LevelFixRepository(private val repository: PlanRepository) {
             put("p_author_id", authorId)
             if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
-        val text = repository.addLevelFix(payload) ?: return null
-        return runCatching {
+        val text = repository.addLevelFix(payload) ?: return repository.failureReason()
+        val id = runCatching {
             JSON.parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
         }.getOrNull()
+        // 后端对"档位不在名单那五个里"这类是**安静返回 null**，不是报错：这一句也要说清。
+        return if (id == null) {
+            LevelFixResult.Failed("后端没接受这条（档位不合法或被限速）", network = false)
+        } else {
+            LevelFixResult.Ok(id)
+        }
     }
 
     /** 给提案 [id] 投 [agree]（true = 确实该这么改），返回投完之后的计数。 */
-    suspend fun vote(id: Long, voter: String, agree: Boolean): LevelFixVote? {
-        if (id <= 0L || voter.isEmpty()) return null
+    suspend fun vote(id: Long, voter: String, agree: Boolean): LevelFixResult<LevelFixVote> {
+        if (id <= 0L) return LevelFixResult.Failed("这条提案没有 id", network = false)
+        if (voter.isEmpty()) return LevelFixResult.Failed("本机还没有身份", network = false)
         val proof = repository.callerTokenForLevelFix()
         val payload = buildJsonObject {
             put("p_id", id)
@@ -97,8 +106,8 @@ class LevelFixRepository(private val repository: PlanRepository) {
             put("p_agree", agree)
             if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
-        val text = repository.voteLevelFix(payload) ?: return null
-        return runCatching {
+        val text = repository.voteLevelFix(payload) ?: return repository.failureReason()
+        val vote = runCatching {
             val o = JSON.parseToJsonElement(text).jsonObject
             LevelFixVote(
                 agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
@@ -107,6 +116,11 @@ class LevelFixRepository(private val repository: PlanRepository) {
                 needed = o["needed"]?.jsonPrimitive?.longOrNull?.toInt() ?: LevelFix.VOTES_NEEDED,
             )
         }.getOrNull()
+        return if (vote == null) {
+            LevelFixResult.Failed("后端没接受这一票", network = false)
+        } else {
+            LevelFixResult.Ok(vote)
+        }
     }
 
     /** 一行 [fixes] 的答复；每个字段都可缺省，老答复照样读得懂。 */
