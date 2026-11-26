@@ -440,7 +440,7 @@
   "reboot_verified": true,
   "rebooted_at": "2026-11-24T10:17:07.622565+00:00",
   "rom": "hyperos",
-  "rom_build": "OS4.0",
+  "rom_build": "OS4.0.6.0.XPCCNXM",
   "rom_version": 4,
   "sdk": 37,
   "title": "小米17"

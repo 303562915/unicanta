@@ -4788,6 +4788,18 @@
   "target": "com.android.carrierconfig"
  },
  {
+  "author": "小宰",
+  "author_id": "13650",
+  "body": "提示：删了这个，没法和YOYO拍照问打配合扫WiFi共享二维码连接WiFi",
+  "created_at": "2026-11-26T13:35:05.810434+00:00",
+  "device_model": "荣耀Magic8",
+  "id": 688,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "MagicOS 11.0.0",
+  "target": "com.hihonor.magicvoice"
+ },
+ {
   "author": "#10267",
   "author_id": "10267",
   "body": "删了没副作用",
