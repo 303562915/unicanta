@@ -1,0 +1,378 @@
+name: 🗃️ Community DB backup
+
+# 把社区那一侧**用户真正贡献的内容**定时导出一份，提交进仓库。
+#
+# 为什么要有它：plans（方案）、community_comments（评论）、recommend_suggestions（推荐）、
+# description_fixes（描述修正）、level_fixes（档位修正）这些表是用户一条条攒出来的，库里丢了
+# 就是永久损失——代码可以重编，这些写不回来。Supabase 免费档的自动备份只是短周期，不能当存档。
+#
+# 只导"该留的"，不导"不该进公开仓库的"（仓库是 public，这一点决定了下面这份名单）：
+#   * 不含 canta_users / canta_device_keys / update_reports / operation_failures 等身份、设备、
+#     遥测表——里面是 token、ip、机型与失败明细，导出来等于把用户的设备指纹公开。
+#   * plans.owner 是身份编号（canta_users.id），不是名字；名字走 owner_name 关联，这里只留编号，
+#     方案内容本身对社区可见（客户端本来就能读到全部方案）。
+#   * 评论作者同样只留编号（author），不留昵称之外的任何东西。
+#
+# 落点 ops/db-backup/（不是 backups/：那个是本地目录，被 gitignore 了）：
+#   plans.json / plan_votes.json / comments.json / recommendations.json /
+#   description_fixes.json / level_fixes.json
+#   _meta.json —— 导出的时间、库的 ref、各表条数与指纹（sha256 前 16 位）、和上一版比的变化
+#   LATEST.md  —— 一眼能看懂的清单：导出时间、条数、比上次增了多少
+#
+#   site/db/plans.json —— **客户端也能直接读的那一份**：只含重启验证通过的方案，列名与
+#   `plans_for` / `plans_all` 的返回一致，点赞已算好，按点赞排序。pages.yml 会把它一起发到
+#   gh-pages，于是国内网络下 `https://303562915.github.io/unicanta/db/plans.json` 比
+#   raw.githubusercontent 稳。后端整个挂掉时，社区方案至少还能从这儿读出来。
+#
+# 隐私红线（改动时别破）：
+#   1. 只按下面的白名单列导出；新增一张表先想清楚它能不能公开。
+#   2. 任何"谁能看到什么"的判断都不在 SQL 里做——导出的是全量，公开性由这张白名单保证。
+#   3. 评论正文里用户自己写的 @、链接照样在（客户端本来就看得到），不是这次新增的暴露面。
+#   4. 方案与评论的 `owner` / `author` 字段是**身份编号**（canta_users.id），不是 token：
+#      token 在 canta_users.token 里，那张表永远不导。
+
+on:
+  schedule:
+    # 每天一次，06:17 UTC ≈ 14:17 Asia/Shanghai：避开日报（01:00）和名单同步（周一 03:17）。
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "只跑导出、不提交（看形状用）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+env:
+  OUT_DIR: ops/db-backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          # 完整历史：用 git 里上一版 JSON 算"比上次多了多少"，浅克隆会拿不到。
+          fetch-depth: 0
+
+      # ---------------------------------------------------------------- 导出
+      # 走 Management API，和 apply-sql.yml / bloat-corrections.yml 同一条路子：
+      # 仓库里只有 SUPABASE_ACCESS_TOKEN，没有 service key。
+      # 一整段 SQL 一次发出去（simple query protocol 下是隐式事务），回的是一个 JSON 对象。
+      - name: 📤 Dump the community tables
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: axuhfogeovtsbxokqccf
+        run: |
+          set -euo pipefail
+          SQL=$(cat <<'SQL'
+          select jsonb_build_object(
+            'plans', coalesce((
+              select jsonb_agg(x order by x->>'id')
+                from (
+                  select jsonb_build_object(
+                           'id', p.id,
+                           'title', p.title,
+                           'note', p.note,
+                           'packages', to_jsonb(p.packages),
+                           'brand', p.brand,
+                           'model', p.model,
+                           'market_name', p.market_name,
+                           'codename', p.codename,
+                           'rom', p.rom,
+                           'rom_version', p.rom_version,
+                           'rom_build', p.rom_build,
+                           'sdk', p.sdk,
+                           'owner', p.owner,
+                           'is_test', p.is_test,
+                           'reboot_verified', p.reboot_verified,
+                           'rebooted_at', p.rebooted_at,
+                           'created_at', p.created_at
+                         ) as x
+                    from plans p
+                ) s), '[]'::jsonb),
+            'plan_votes', coalesce((
+              select jsonb_agg(jsonb_build_object('plan_id', v.plan_id, 'voter', v.voter,
+                                                  'created_at', v.created_at)
+                               order by v.plan_id, v.created_at)
+                from plan_votes v
+            ), '[]'::jsonb),
+            'comments', coalesce((
+              select jsonb_agg(x order by x->>'id')
+                from (
+                  select jsonb_build_object(
+                           'id', c.id,
+                           'kind', c.kind,
+                           'target', c.target,
+                           'parent_id', c.parent_id,
+                           'author', c.author,
+                           'author_id', c.author_id,
+                           'device_model', c.device_model,
+                           'system_name', c.system_name,
+                           'body', c.body,
+                           'created_at', c.created_at
+                         ) as x
+                    from community_comments c
+                ) s), '[]'::jsonb),
+            'recommendations', coalesce((
+              select jsonb_agg(x order by x->>'id')
+                from (
+                  select jsonb_build_object(
+                           'id', r.id,
+                           'name', r.name,
+                           'url', r.url,
+                           'category', r.category,
+                           'summary', r.summary,
+                           'license', r.license,
+                           'author', r.author,
+                           'author_id', r.author_id,
+                           'agree', (select count(*) from recommend_suggestion_votes v
+                                      where v.suggestion_id = r.id and v.agree),
+                           'disagree', (select count(*) from recommend_suggestion_votes v
+                                        where v.suggestion_id = r.id and not v.agree),
+                           'applied', r.applied,
+                           'created_at', r.created_at
+                         ) as x
+                    from recommend_suggestions r
+                ) s), '[]'::jsonb),
+            'description_fixes', coalesce((
+              select jsonb_agg(x order by x->>'id')
+                from (
+                  select jsonb_build_object(
+                           'id', f.id,
+                           'pkg', f.pkg,
+                           'body', f.body,
+                           'note', f.note,
+                           'author', f.author,
+                           'author_id', f.author_id,
+                           'agrees', (select count(*) from description_fix_votes v
+                                       where v.fix_id = f.id and v.agree),
+                           'disagrees', (select count(*) from description_fix_votes v
+                                          where v.fix_id = f.id and not v.agree),
+                           'applied', f.applied,
+                           'created_at', f.created_at
+                         ) as x
+                    from description_fixes f
+                ) s), '[]'::jsonb),
+            'level_fixes', coalesce((
+              select jsonb_agg(x order by x->>'id')
+                from (
+                  select jsonb_build_object(
+                           'id', l.id,
+                           'pkg', l.pkg,
+                           'removal', l.removal,
+                           'notes', l.notes,
+                           'author', l.author,
+                           'author_id', l.author_id,
+                           'agrees', (select count(*) from level_fix_votes v
+                                       where v.fix_id = l.id and v.agree),
+                           'disagrees', (select count(*) from level_fix_votes v
+                                          where v.fix_id = l.id and not v.agree),
+                           'applied', l.applied,
+                           'applied_at', l.applied_at,
+                           'superseded_at', l.superseded_at,
+                           'created_at', l.created_at
+                         ) as x
+                    from level_fixes l
+                ) s), '[]'::jsonb)
+          ) as dump
+          SQL
+          )
+
+          echo "--- querying ---"
+          set +e
+          RESP=$(printf '%s' "$SQL" | jq -Rs '{query: .}' | curl -sS --fail-with-body -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @- 2>&1)
+          CODE=$?
+          set -e
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error::导出失败：$RESP"
+            exit 1
+          fi
+          # Management API 回的是 [{dump: {...}}]；把 dump 摘出来写成一份原始对象。
+          echo "$RESP" | jq -e '.[0].dump' > /tmp/dump.json
+          echo "--- sizes ---"
+          jq -r '"plans=\(.plans|length) plan_votes=\(.plan_votes|length) comments=\(.comments|length) recommendations=\(.recommendations|length) description_fixes=\(.description_fixes|length) level_fixes=\(.level_fixes|length)"' /tmp/dump.json
+
+      # ---------------------------------------------------------------- 落地
+      # 一张表一个文件：diff 才读得懂，出事故也只回滚得动那一份。
+      - name: 📝 Split into files
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          for name in plans plan_votes comments recommendations description_fixes level_fixes; do
+            jq --arg n "$name" '.[$n]' /tmp/dump.json > "$OUT_DIR/$name.json.tmp"
+            python3 - "$OUT_DIR/$name.json.tmp" "$OUT_DIR/$name.json" <<'PY'
+          import json, sys
+          src, dst = sys.argv[1], sys.argv[2]
+          data = json.load(open(src, encoding='utf-8'))
+          with open(dst, 'w', encoding='utf-8') as f:
+              json.dump(data, f, ensure_ascii=False, indent=1, sort_keys=True)
+              f.write('\n')
+          print(f'{dst}: {len(data)} rows')
+          PY
+            rm -f "$OUT_DIR/$name.json.tmp"
+          done
+
+      - name: 🧾 Write meta and the human list
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, hashlib, subprocess, datetime
+
+          out = os.environ['OUT_DIR']
+          tables = ['plans', 'plan_votes', 'comments', 'recommendations',
+                    'description_fixes', 'level_fixes']
+
+          def load(path):
+              try:
+                  return json.load(open(path, encoding='utf-8'))
+              except Exception:
+                  return None
+
+          counts, digests, previous = {}, {}, {}
+          for t in tables:
+              path = f'{out}/{t}.json'
+              rows = load(path)
+              counts[t] = len(rows) if rows is not None else 0
+              digests[t] = hashlib.sha256(
+                  json.dumps(rows, ensure_ascii=False, sort_keys=True).encode('utf-8')
+              ).hexdigest()[:16]
+              # 上一版来自 git（工作区里这份已经被这一次覆盖），拿不到就当作 0。
+              try:
+                  raw = subprocess.run(
+                      ['git', 'show', f'HEAD:{path}'], capture_output=True, check=True
+                  ).stdout
+                  previous[t] = len(json.loads(raw))
+              except Exception:
+                  previous[t] = 0
+
+          meta = {
+              '_about': 'User-contributed community content, exported from the Supabase project by '
+                        '.github/workflows/db-backup.yml. Identity, device and telemetry tables are '
+                        'deliberately excluded — see the workflow header for the exact list.',
+              'project_ref': os.environ.get('PROJECT_REF', 'axuhfogeovtsbxokqccf'),
+              'exported_at': datetime.datetime.now(datetime.timezone.utc)
+                                      .isoformat(timespec='seconds').replace('+00:00', 'Z'),
+              'tables': counts,
+              'digests': digests,
+              'previous_counts': previous,
+          }
+          with open(f'{out}/_meta.json', 'w', encoding='utf-8') as f:
+              json.dump(meta, f, ensure_ascii=False, indent=2)
+              f.write('\n')
+
+          labels = {
+              'plans': '方案 plans',
+              'plan_votes': '方案点赞 plan_votes',
+              'comments': '评论 community_comments',
+              'recommendations': '推荐条 recommend_suggestions',
+              'description_fixes': '描述修正 description_fixes',
+              'level_fixes': '档位修正 level_fixes',
+          }
+          lines = [
+              '# 社区数据库备份',
+              '',
+              f'最近一次导出：{meta["exported_at"]}　（每天 06:17 UTC 由 `db-backup.yml` 自动跑）',
+              '',
+              '只含用户贡献的社区内容；身份表、设备表、遥测表不在里面（见工作流头部说明）。',
+              '',
+              '| 表 | 条数 | 上一次 | 变化 | 指纹 |',
+              '| --- | ---: | ---: | ---: | --- |',
+          ]
+          for t in tables:
+              delta = counts[t] - previous[t]
+              sign = f'+{delta}' if delta > 0 else ('—' if delta == 0 else str(delta))
+              lines.append(f'| {labels[t]} | {counts[t]} | {previous[t]} | {sign} | `{digests[t]}` |')
+          lines += [
+              '',
+              '恢复：把对应 JSON 读回库里的那张表（`plans` 需要先补齐 `owner` 对应的 `canta_users` 行，',
+              '否则作者会显示成编号）。这一步是手工的，别在 CI 里做。',
+              '',
+          ]
+          with open(f'{out}/LATEST.md', 'w', encoding='utf-8') as f:
+              f.write('\n'.join(lines))
+          print('\n'.join(lines))
+          PY
+
+      - name: 📦 Also drop a client snapshot
+        # 客户端也能直接读的那一份：和 plan_public_snapshot() 的返回**同形状**（列名一致），
+        # 所以「后端连不上时先读 GitHub，再接后端」在客户端只需要一个 parser。
+        # 放在 site/db/ 下，pages.yml 会一起发到 gh-pages：国内走 Pages 比 raw.githubusercontent 稳。
+        run: |
+          set -euo pipefail
+          mkdir -p site/db
+          python3 - <<'PY'
+          import json
+
+          src = json.load(open('/tmp/dump.json', encoding='utf-8'))
+
+          # 和 RPC 的返回列对齐：客户端 parsePlans 读的就是这些键。
+          rows = []
+          for p in src.get('plans', []):
+              if not p.get('reboot_verified'):
+                  continue
+              rows.append({
+                  'id': p['id'],
+                  'title': p['title'],
+                  'note': p.get('note') or '',
+                  'packages': p.get('packages') or [],
+                  'votes': sum(1 for v in src.get('plan_votes', [])
+                               if str(v.get('plan_id')) == str(p['id'])),
+                  'created_at': p.get('created_at'),
+                  'rebooted_at': p.get('rebooted_at'),
+                  'owner': p.get('owner') or '',
+                  'is_test': p.get('is_test') or False,
+                  'owner_name': '',
+                  'brand': p.get('brand') or '',
+                  'model': p.get('model') or '',
+                  'market_name': p.get('market_name') or '',
+                  'rom': p.get('rom') or '',
+                  'rom_version': p.get('rom_version') or 0,
+                  'rom_build': p.get('rom_build') or '',
+                  'sdk': p.get('sdk') or 0,
+              })
+          rows.sort(key=lambda r: (-r['votes'], r['id']))
+
+          with open('site/db/plans.json', 'w', encoding='utf-8') as f:
+              json.dump(rows, f, ensure_ascii=False, indent=1, sort_keys=True)
+              f.write('\n')
+          print(f'site/db/plans.json: {len(rows)} verified plans')
+          PY
+
+      - name: 🚀 Commit & push
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$OUT_DIR" site/db
+          if git diff --cached --quiet; then
+            echo "和上一版一样（内容没变），不提交。"
+            exit 0
+          fi
+          COUNTS=$(jq -r '.tables | to_entries | map("\(.key)=\(.value)") | join(" ")' "$OUT_DIR/_meta.json")
+          git commit -m "chore(db-backup): 社区内容快照 ${COUNTS}"
+          git push origin HEAD:master
+
+      - name: 📦 Also keep it as an artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup
+          path: ${{ env.OUT_DIR }}
+          retention-days: 14
+          if-no-files-found: ignore
