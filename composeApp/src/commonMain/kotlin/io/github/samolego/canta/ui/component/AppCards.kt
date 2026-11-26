@@ -172,9 +172,10 @@ fun AppCardPair(content: @Composable RowScope.() -> Unit) {
  * [AppCardPair] 里的一半：标题一行，右边一条通往别处的箭头。
  *
  * 和 [AppLinkCard] 的区别只有几何——没有自己的左右留白（外面由 [AppCardPair] 给），也没有副标题。
+ * 写成 [RowScope] 扩展是因为它要用 `weight(1f)` 跟另一半平分宽度，而 weight 只在 Row 里成立。
  */
 @Composable
-fun AppLinkTile(
+fun RowScope.AppLinkTile(
     glyph: FlGlyph,
     title: String,
     onClick: () -> Unit,
@@ -204,9 +205,9 @@ fun AppLinkTile(
     }
 }
 
-/** [AppCardPair] 里的一半：标题一行，右边一个开关。 */
+/** [AppCardPair] 里的一半：标题一行，右边一个开关。同样是 [RowScope] 扩展，理由同上。 */
 @Composable
-fun AppToggleTile(
+fun RowScope.AppToggleTile(
     glyph: FlGlyph,
     title: String,
     checked: Boolean,
