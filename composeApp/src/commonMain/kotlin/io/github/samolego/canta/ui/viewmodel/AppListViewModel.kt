@@ -16,6 +16,7 @@ import io.github.samolego.canta.core.explainFailure
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.app.AppListSnapshotStore
+import io.github.samolego.canta.data.app.Filter
 import io.github.samolego.canta.data.app.PackageSnapshot
 import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.bloat.BloatRepository
@@ -198,18 +199,27 @@ class AppListViewModel(
     var isLoadingBadges by mutableStateOf(false)
         private set
 
+    /**
+     * 按危险级别 / 用户应用这些**分类**筛。默认 [Filter.any]（不筛）。
+     *
+     * 它和 [onlySystem] 是两个维度，同时生效：前者按徽标挑，后者按"是否系统应用"挑。
+     */
+    var selectedFilter by mutableStateOf(Filter.any)
+
     val selectedAppsSorted by derivedStateOf {
         sortedList.filter { it.packageName in selectedApps }
     }
 
     private val sortedList by derivedStateOf {
-        _apps.sortedWith(compareBy { it.name.lowercase() })
+        _apps.filter { selectedFilter.shouldShow(it) }
+            .sortedWith(compareBy { it.name.lowercase() })
     }
 
     /**
-     * The apps matching the search query. [onlySystem] is the whole filter now: the top bar's one
-     * button flips between "system only" (the default) and "everything", and there is no second
-     * dimension to match against.
+     * The apps matching the search query, the category filter and the system switch.
+     *
+     * 顶栏那个按钮先管「只看系统 / 全部」，再点一次换成按分类筛（推荐卸载、进阶、专家、
+     * 有风险、未分类）；两者可以同时生效，[Filter.any] 加上"全部"就是最宽的列表。
      */
     val appList by derivedStateOf {
         sortedList
