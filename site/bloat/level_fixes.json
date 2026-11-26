@@ -1,6 +1,6 @@
 {
   "about": "Removal-level corrections for the package list, published here so a fix reaches every phone within a week without a release. Same shape as the bundled files/bloat_overrides.json: packages -> {removal, notes{lang}, source, issue}. source=maintainer means we wrote it after confirming on real hardware; source=community means it came in through the level-correction issue form and bloat-corrections.yml checked it. The app lays this file over the bundled table, so an entry here wins.",
-  "version": 2,
+  "version": 3,
   "updated": "2026-11-26",
   "packages": {
     "com.qualcomm.location": {
