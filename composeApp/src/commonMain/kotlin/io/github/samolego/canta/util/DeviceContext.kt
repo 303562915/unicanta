@@ -106,6 +106,8 @@ fun romName(rom: String): String = when (rom) {
     "emui" -> "EMUI"
     "oxygenos" -> "OxygenOS"
     "nothingos" -> "Nothing OS"
+    "flyme" -> "Flyme"
+    "myos" -> "MyOS"
     else -> "Android"
 }
 
@@ -190,6 +192,10 @@ val DEVICE_PROP_KEYS: Set<String> = setOf(
     "ro.build.version.oneui",
     "ro.build.version.realmeui",
     "ro.build.version.opporom",
+    // ColorOS 6 以后 OPPO 实机上报的是这个键，`opporom` 多半是空的；一加/realme 共用同一套
+    // oplus 前缀。少了它，那些机器一路落到 `ctx("stock", 0)`，界面上就只剩「Android」。
+    "ro.build.version.oplusrom",
+    "ro.build.version.oplusrom.display",
     "ro.vivo.os.version",
     "ro.vivo.os.name",
     "ro.build.version.magic",
@@ -197,6 +203,17 @@ val DEVICE_PROP_KEYS: Set<String> = setOf(
     "ro.oxygen.version",
     "ro.rom.version",
     "ro.build.nothing.version",
+    // 魅族 Flyme，以及努比亚/红魔 MyOS（键名是固定字面量，与机器名无关）。
+    "ro.build.display.id",
+    "ro.flyme.version",
+    "ro.build.flyme.version",
+    "ro.flyme.public.version",
+    "ro.build.version.myos",
+    "ro.myos.version",
+    "ro.nubia.os.version",
+    // 兜底：所有 ROM 都有，至少能把 Android 版本说出来。
+    "ro.build.version.release",
+    "ro.system.build.version.release",
 )
 
 /**
@@ -297,10 +314,13 @@ val ROM_BUILD_PROP_KEYS: List<String> = listOf(
     "ro.build.version.oneui",
     "ro.build.version.realmeui",
     "ro.build.version.opporom",
+    "ro.build.version.oplusrom",
     "ro.vivo.os.version",
     "ro.build.version.magic",
     "ro.build.version.emui",
     "ro.oxygen.version",
+    "ro.flyme.version",
+    "ro.build.version.myos",
     "ro.build.nothing.version",
 )
 
@@ -319,7 +339,16 @@ fun deviceContextOf(props: Map<String, String>): DeviceContext {
     }
     prop("ro.build.version.oneui")?.let { v -> v.toIntOrNull()?.let { return ctx("oneui", it / 10000) } }
     prop("ro.build.version.realmeui")?.let { return ctx("realmeui", leadingNumber(it)) }
+    // ColorOS 6 以后 `ro.build.version.opporom` 多半是空的，实机只报 `ro.build.version.oplusrom`；
+    // 一加的 OxygenOS 装在 ColorOS 底座上，报的也是 oplus 那个键，所以先看 OxygenOS 自己的键。
+    prop("ro.build.version.oplusrom")?.let { value ->
+        val oxygen =
+            prop("ro.oxygen.version") != null ||
+                prop("ro.rom.version")?.contains("oxygen", ignoreCase = true) == true
+        return ctx(if (oxygen) "oxygenos" else "coloros", leadingNumber(value))
+    }
     prop("ro.build.version.opporom")?.let { return ctx("coloros", leadingNumber(it)) }
+    prop("ro.build.version.oplusrom.display")?.let { return ctx("coloros", leadingNumber(it)) }
     prop("ro.vivo.os.version")?.let {
         val rom = if (prop("ro.vivo.os.name")?.contains("origin", ignoreCase = true) == true) "originos" else "funtouch"
         return ctx(rom, leadingNumber(it))
@@ -329,6 +358,30 @@ fun deviceContextOf(props: Map<String, String>): DeviceContext {
     prop("ro.oxygen.version")?.let { return ctx("oxygenos", leadingNumber(it)) }
     prop("ro.rom.version")?.takeIf { it.contains("oxygenos", ignoreCase = true) }
         ?.let { return ctx("oxygenos", leadingNumber(it)) }
+    // 魅族 Flyme：`ro.build.display.id` 形如「Flyme OS 8.2.0.0A」，没有数字前缀，取第一段数字。
+    flymeVersion { prop(it) }?.let { return ctx("flyme", leadingNumber(it)) }
+    // 努比亚 / 红魔 MyOS：`ro.build.display.id` 形如「RedMagic OS 10.0.1」。
+    myosVersion { prop(it) }?.let { return ctx("myos", leadingNumber(it)) }
     prop("ro.build.nothing.version")?.let { return ctx("nothingos", leadingNumber(it)) }
-    return ctx("stock", 0)
+    // 兜底：既没有 ROM 键（努比亚、部分定制机），也至少把 Android 版本说出来，别一律 0。
+    val release = prop("ro.build.version.release") ?: prop("ro.system.build.version.release")
+    return ctx("stock", leadingNumber(release))
+}
+
+/** Flyme's own version string, from the dedicated keys or the `display.id` line, or null. */
+private fun flymeVersion(prop: (String) -> String?): String? {
+    prop("ro.flyme.version")?.let { return it }
+    prop("ro.build.flyme.version")?.let { return it }
+    prop("ro.flyme.public.version")?.let { return it }
+    val display = prop("ro.build.display.id") ?: return null
+    return display.takeIf { it.contains("flyme", ignoreCase = true) }
+}
+
+/** MyOS / RedMagic OS's own version string, from the dedicated keys or the `display.id` line, or null. */
+private fun myosVersion(prop: (String) -> String?): String? {
+    prop("ro.build.version.myos")?.let { return it }
+    prop("ro.myos.version")?.let { return it }
+    prop("ro.nubia.os.version")?.let { return it }
+    val display = prop("ro.build.display.id") ?: return null
+    return display.takeIf { it.contains("myos", ignoreCase = true) || it.contains("redmagic", ignoreCase = true) }
 }

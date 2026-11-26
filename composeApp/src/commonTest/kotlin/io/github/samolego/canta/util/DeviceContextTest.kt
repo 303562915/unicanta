@@ -53,6 +53,28 @@ class DeviceContextTest {
     }
 
     @Test
+    fun oppoOneplusRealmeMeizuNubiaAreNotReportedAsAndroid() {
+        // ColorOS 6 以后 `opporom` 是空的，实机只报 oplus 那个键——以前这条链落到 stock，界面上是
+        // 「Android」，版本 0。
+        assertEquals("coloros" to 16, rom("ro.build.version.oplusrom" to "V16.0.3"))
+        assertEquals("coloros" to 15, rom("ro.build.version.oplusrom" to "V15.0.0", "ro.build.version.opporom" to ""))
+        // 一加：OxygenOS 坐在 ColorOS 底座上，同一个 oplus 键，但氧气自己的键在就认氧气。
+        assertEquals(
+            "oxygenos" to 16,
+            rom("ro.build.version.oplusrom" to "V16.0.0", "ro.oxygen.version" to "16.0"),
+        )
+        // 魅族 Flyme：只有 `display.id` 这一行可读。
+        assertEquals("flyme" to 8, rom("ro.build.display.id" to "Flyme OS 8.2.0.0A"))
+        assertEquals("flyme" to 10, rom("ro.flyme.version" to "10.5.0.1A"))
+        // 努比亚 / 红魔 MyOS。
+        assertEquals("myos" to 10, rom("ro.build.display.id" to "RedMagic OS 10.0.1"))
+        assertEquals("myos" to 3, rom("ro.build.version.myos" to "MyOS 3.0"))
+        // 一个 ROM 键都读不到时，至少把 Android 版本报出来，而不是 0。
+        assertEquals("stock" to 16, rom("ro.build.version.release" to "16"))
+        assertEquals("stock" to 0, rom("ro.build.version.release" to ""))
+    }
+
+    @Test
     fun getpropParsingKeepsOnlyKnownKeys() {
         val out = """
             [ro.product.manufacturer]: [Xiaomi]
