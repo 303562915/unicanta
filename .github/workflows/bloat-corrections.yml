@@ -70,7 +70,7 @@ jobs:
           # 函数不存在（迁移还没推）时返回空数组，不是错误 —— 这时按"没有投票结果"跳过。
           SQL="select coalesce(public.level_fix_pending(), '[]'::jsonb) as rows"
           set +e
-          RESP=$(jq -Rs '{query: .}' <<< "$SQL" | curl -sS --fail-with-body -X POST \
+          RESP=$(printf '%s' "$SQL" | jq -Rs '{query: .}' | curl -sS --fail-with-body -X POST \
             "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
@@ -78,9 +78,16 @@ jobs:
           CODE=$?
           set -e
           if [ "$CODE" -ne 0 ]; then
-            echo "::warning::查 level_fix_pending() 失败（多半是迁移还没推），本轮只走 issue 那条腿：$RESP"
-            echo "rows=[]" >> "$GITHUB_OUTPUT"
-            exit 0
+            # 失败要分清是哪一种：「函数不存在」= 迁移还没推，那是可以降级的；其余（请求本身坏了、
+            # token 失效）必须变红。混成一句"多半是迁移还没推"会把真实错误当预期状态吞掉
+            # —— run 45769061574 就这么静悄悄跳过了数据库那条腿。
+            if echo "$RESP" | grep -q 'does not exist'; then
+              echo "::warning::数据库还没有 level_fix_pending()（迁移未推），本轮只走 issue 那条腿。"
+              echo "rows=[]" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::查 level_fix_pending() 失败：$RESP"
+            exit 1
           fi
           echo "--- pending ---"
           echo "$RESP"
@@ -244,7 +251,7 @@ jobs:
           set -euo pipefail
           IDS=$(cat /tmp/published_ids.json)
           SQL="select public.level_fix_mark_published('$IDS'::bigint[]) as marked"
-          jq -Rs '{query: .}' <<< "$SQL" | curl -fsS --fail-with-body -X POST \
+          printf '%s' "$SQL" | jq -Rs '{query: .}' | curl -fsS --fail-with-body -X POST \
             "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
