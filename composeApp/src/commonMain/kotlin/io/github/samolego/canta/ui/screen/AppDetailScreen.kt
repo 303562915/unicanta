@@ -140,6 +140,8 @@ private data class AppDetailSnapshot(
     val comments: List<PlanComment>,
     val fixes: List<DescriptionFix>,
     val relatedPlans: List<CommunityPlan>,
+    /** 全社区（不分机型）收了这个包的方案：抽屉的第二部分。 */
+    val widerPlans: List<CommunityPlan> = emptyList(),
 )
 
 /**
@@ -177,6 +179,9 @@ private data class AppDetailCacheEntry(
     val at: Long = 0L,
     val plans: List<CommunityPlan>? = null,
     val plansAt: Long = 0L,
+    /** 全社区（不分机型）那一批：和本机型分开记，两趟请求互相不覆盖。 */
+    val widerPlans: List<CommunityPlan>? = null,
+    val widerAt: Long = 0L,
 )
 
 /**
@@ -216,6 +221,10 @@ private object AppDetailCache {
     fun freshPlans(tag: String): List<CommunityPlan>? =
         records[tag]?.takeIf { it.plans != null && isFresh(it.plansAt) }?.plans
 
+    /** 全社区那一批；同样只在问成功过时才有值。 */
+    fun freshWiderPlans(tag: String): List<CommunityPlan>? =
+        records[tag]?.takeIf { it.widerPlans != null && isFresh(it.widerAt) }?.widerPlans
+
     /**
      * 把这一次真的拿到的组写进缓存；传 null 的组保持上一条里的值（第一次就是空着）。
      *
@@ -244,6 +253,8 @@ private object AppDetailCache {
             at = if (touched) currentTimeMillis() else (previous?.at ?: 0L),
             plans = previous?.plans,
             plansAt = previous?.plansAt ?: 0L,
+            widerPlans = previous?.widerPlans,
+            widerAt = previous?.widerAt ?: 0L,
         )
         trim()
     }
@@ -259,6 +270,25 @@ private object AppDetailCache {
             at = previous?.at ?: 0L,
             plans = plans,
             plansAt = currentTimeMillis(),
+            widerPlans = previous?.widerPlans,
+            widerAt = previous?.widerAt ?: 0L,
+        )
+        trim()
+    }
+
+    /** 全社区那一批也单独写，理由同上：它和本机型是两次独立的请求。 */
+    fun putWiderPlans(tag: String, plans: List<CommunityPlan>) {
+        val previous = records[tag]
+        records[tag] = AppDetailCacheEntry(
+            votes = previous?.votes,
+            mine = previous?.mine,
+            comments = previous?.comments,
+            fixes = previous?.fixes,
+            at = previous?.at ?: 0L,
+            plans = previous?.plans,
+            plansAt = previous?.plansAt ?: 0L,
+            widerPlans = plans,
+            widerAt = currentTimeMillis(),
         )
         trim()
     }
@@ -269,7 +299,9 @@ private object AppDetailCache {
     /** 条数上限：挤掉「最后一次更新」最早的那一条，浏览过的一堆长尾包名不会一直占着内存。 */
     private fun trim() {
         while (records.size > MAX_ENTRIES) {
-            val oldest = records.entries.minByOrNull { maxOf(it.value.at, it.value.plansAt) } ?: return
+            val oldest = records.entries.minByOrNull {
+                maxOf(it.value.at, it.value.plansAt, it.value.widerAt)
+            } ?: return
             records.remove(oldest.key)
         }
     }
@@ -403,6 +435,12 @@ fun AppDetailScreen(
      * step a reader takes after one green vote. Loaded with the page so the drawer opens instantly.
      */
     var relatedPlans by remember(packageName) { mutableStateOf(cached?.relatedPlans.orEmpty()) }
+    /**
+     * 全社区里收了这个包的方案，不分机型。本机型那一批只有「同一台手机」的方案，对大多数人来说是空的；
+     * 别人用老机型、别的 ROM 写的方案照样能抄（包名和顺序都在）。所以抽屉分两层：本机型在上，全社区在下。
+     */
+    var widerPlans by remember(packageName) { mutableStateOf(cached?.widerPlans.orEmpty()) }
+    var widerLoading by remember(packageName) { mutableStateOf(false) }
     var relatedLoading by remember(packageName) { mutableStateOf(false) }
     /** Whether the related-plans drawer is out; it closes on the scrim, on the ×, and on a tap on a plan. */
     var drawerOpen by remember(packageName) { mutableStateOf(false) }
@@ -422,6 +460,7 @@ fun AppDetailScreen(
                 comments = comments,
                 fixes = descriptionFixes,
                 relatedPlans = relatedPlans,
+                widerPlans = widerPlans,
             ),
         )
     }
@@ -435,26 +474,42 @@ fun AppDetailScreen(
 
     LaunchedEffect(packageName, profile, repository) {
         val repo = repository ?: return@LaunchedEffect
-        // 抽屉里的方案也是「每打开一次就走一次网络」，和下面那四个查询同样按 60 秒算：抽屉的角标
-        // 只是「有几个方案收了这个应用」，一分钟内不会有人去核那个数字。
+        // 两批分开取：本机型（`plansFor`，按型号 + ROM + 版本匹配）与全社区（`plansForPackage`，
+        // 不看机型）。本机型那批为空是常态——社区里同一台手机的方案很少——所以抽屉不能只画这一层，
+        // 否则大多数人打开都看到「还没有这样的方案」，而这个包其实早被别的机型写进去过很多次。
         val warmPlans = AppDetailCache.freshPlans(cacheTag)
-        if (warmPlans != null) {
+        val warmWider = AppDetailCache.freshWiderPlans(cacheTag)
+        if (warmPlans != null && warmWider != null) {
             relatedPlans = warmPlans
+            widerPlans = warmWider
             return@LaunchedEffect
         }
         // 有缓存就别点亮「正在读」：抽屉一打开先看到上一次的数字，刷新在背后发生。
-        if (relatedPlans.isEmpty()) relatedLoading = true
-        // The plans come back for this model and build only, which is the scope the drawer claims:
-        // a plan for another phone would put a set on screen that was never proven here.
-        val fresh = repo.plansFor(profile).filter { packageName in it.packages }
-        // 失败时**不覆盖**：`plansFor` 拉挂了给的也是空列表，照着它画就等于因为一次断网把抽屉
-        // 清空，而空抽屉写的是「本机型还没有这样的方案」——一句凭空的结论。
-        if (repo.lastError == null && !repo.lastFailureWasNetwork) {
-            relatedPlans = fresh
-            AppDetailCache.putPlans(cacheTag, fresh)
-            saveToCache()
+        if (warmPlans == null && relatedPlans.isEmpty()) relatedLoading = true
+        if (warmWider == null && widerPlans.isEmpty()) widerLoading = true
+        if (warmPlans == null) {
+            // The plans come back for this model and build only, which is the scope the first
+            // section claims: a plan for another phone would put a set on screen that was never
+            // proven here.
+            val fresh = repo.plansFor(profile).filter { packageName in it.packages }
+            // 失败时**不覆盖**：`plansFor` 拉挂了给的也是空列表，照着它画就等于因为一次断网把抽屉
+            // 清空，而空抽屉写的是「本机型还没有这样的方案」——一句凭空的结论。
+            if (repo.lastError == null && !repo.lastFailureWasNetwork) {
+                relatedPlans = fresh
+                AppDetailCache.putPlans(cacheTag, fresh)
+            }
+            relatedLoading = false
         }
-        relatedLoading = false
+        if (warmWider == null) {
+            val wider = repo.plansForPackage(packageName)?.filter { it.id !in relatedPlans.map { p -> p.id } }
+            // 同一套「失败不覆盖」：断网时保留上一次的名单，不画成「全社区都没有」。
+            if (wider != null && repo.lastError == null && !repo.lastFailureWasNetwork) {
+                widerPlans = wider
+                AppDetailCache.putWiderPlans(cacheTag, wider)
+            }
+            widerLoading = false
+        }
+        saveToCache()
     }
 
     LaunchedEffect(packageName) {
@@ -890,10 +945,11 @@ fun AppDetailScreen(
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
-                        if (relatedPlans.isNotEmpty()) {
+                        val planTotal = relatedPlans.size + widerPlans.size
+                        if (planTotal > 0) {
                             Spacer(Modifier.width(3.dp))
                             Text(
-                                text = "${relatedPlans.size}",
+                                text = "$planTotal",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -924,7 +980,9 @@ fun AppDetailScreen(
             ) {
                 RelatedPlansPanel(
                     plans = relatedPlans,
+                    widerPlans = widerPlans,
                     loading = relatedLoading,
+                    widerLoading = widerLoading,
                     onOpenPlan = { id ->
                         drawerOpen = false
                         onOpenPlan(id)
@@ -1731,11 +1789,14 @@ private fun formatSize(bytes: Long): String {
 @Composable
 private fun RelatedPlansPanel(
     plans: List<CommunityPlan>,
+    widerPlans: List<CommunityPlan>,
     loading: Boolean,
+    widerLoading: Boolean,
     onOpenPlan: (Long) -> Unit,
     onClose: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val total = plans.size + widerPlans.size
     Surface(
         modifier = Modifier
             .fillMaxHeight()
@@ -1766,13 +1827,12 @@ private fun RelatedPlansPanel(
                         color = scheme.onSurface,
                     )
                     Text(
-                        // What the list is scoped to, said out loud: these plans are this phone's
-                        // model and build, so an empty drawer means "nobody here yet", never
-                        // "nobody anywhere".
+                        // 两层的数都说出来：本机型 0、全社区 37 的时候，读者该看到的正是这一句，
+                        // 而不是「本机型还没有这样的方案」那一句像结论的话。
                         text = when {
-                            loading -> "正在读这一机型的方案…"
-                            plans.isEmpty() -> "本机型还没有这样的方案"
-                            else -> "本机型共 ${plans.size} 个"
+                            loading && widerLoading -> "正在读…"
+                            total == 0 && !loading && !widerLoading -> "还没有人把它写进方案"
+                            else -> "本机型 ${plans.size} 个 · 全社区 ${widerPlans.size} 个"
                         },
                         style = FlText.caption2,
                         color = scheme.onSurfaceVariant,
@@ -1787,27 +1847,55 @@ private fun RelatedPlansPanel(
                     )
                 }
             }
-            if (!loading && plans.isEmpty()) {
-                Text(
-                    text = "还没有人把它写进方案。用「社区」页上传一个精简方案，别人在这个应用的页面上" +
-                        "就能看到它被谁去掉过。",
-                    style = FlText.caption1,
-                    color = scheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(plans, key = { it.id }) { plan ->
+                item("mine-header") {
+                    SectionLabel(
+                        title = "本机型",
+                        hint = if (plans.isEmpty()) {
+                            if (loading) "正在读这一机型的方案…" else "这台手机上还没有人写过"
+                        } else {
+                            "同一台手机、同一个版本"
+                        },
+                    )
+                }
+                items(plans, key = { "mine-${it.id}" }) { plan ->
                     RelatedPlanRow(plan = plan, onOpen = { onOpenPlan(plan.id) })
+                }
+                item("wider-header") {
+                    SectionLabel(
+                        title = "全社区",
+                        hint = if (widerPlans.isEmpty()) {
+                            if (widerLoading) "正在读全社区的方案…" else "别的机型也没有写过"
+                        } else {
+                            "别的机型写的，包名和顺序照样能抄"
+                        },
+                    )
+                }
+                items(widerPlans, key = { "wider-${it.id}" }) { plan ->
+                    RelatedPlanRow(plan = plan, showDevice = true, onOpen = { onOpenPlan(plan.id) })
                 }
             }
         }
     }
 }
 
+/** 抽屉里两层之间的分隔标题：说清这一批是按什么筛出来的。 */
+@Composable
+private fun SectionLabel(title: String, hint: String) {
+    val scheme = MaterialTheme.colorScheme
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, top = 12.dp, bottom = 4.dp)) {
+        Text(
+            text = title,
+            style = FlText.caption1.copy(fontWeight = FontWeight.SemiBold),
+            color = scheme.onSurface,
+        )
+        Text(text = hint, style = FlText.caption2, color = scheme.outline)
+    }
+}
+
 /** One plan in the drawer: its name, and the numbers that say whether it is worth opening. */
 @Composable
-private fun RelatedPlanRow(plan: CommunityPlan, onOpen: () -> Unit) {
+private fun RelatedPlanRow(plan: CommunityPlan, showDevice: Boolean = false, onOpen: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
@@ -1839,6 +1927,12 @@ private fun RelatedPlanRow(plan: CommunityPlan, onOpen: () -> Unit) {
                 append("${plan.packages.size} 包 · 点赞 ${plan.votes} · ${plan.comments} 评论")
                 val author = plan.authorName
                 if (author.isNotEmpty()) append(" · @$author")
+                // 全社区那一批要写出是哪台手机：同一份包在一台老机型上验证过，拿到本机型上是参考，
+                // 不是承诺，读者得能看见这个差别。
+                if (showDevice) {
+                    val device = plan.deviceLabel
+                    if (device.isNotBlank()) append(" · $device")
+                }
             },
             style = FlText.caption2,
             color = scheme.outline,

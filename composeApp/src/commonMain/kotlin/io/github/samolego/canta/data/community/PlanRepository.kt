@@ -513,6 +513,21 @@ class PlanRepository(
     }
 
     /**
+     * 全社区里收了这个包的方案，不分机型：应用详情页右上角那个抽屉的第二部分。
+     *
+     * 「本机型」那一趟只回答「这台手机上有没有人证明过这个包能卸」，而应用页真正想问的是
+     * 「别人怎么卸的」——老机型、别的 ROM、甚至同品牌另一台，里面的包名和顺序照样能抄。
+     * 所以本机型为空时不能画成「还没有人写过」，那是凭空的结论。按点赞排序，等点赞时才按时间。
+     */
+    suspend fun plansForPackage(packageName: String, limit: Int = 200): List<CommunityPlan>? {
+        if (packageName.isBlank()) return null
+        // 没有「按包名查方案」的后端函数时，退成拉全量再在本地筛：社区方案量级还不大，
+        // 一次 200 条已经把「谁收了这个包」覆盖得差不多了。
+        plansAll(limit)?.let { all -> return all.filter { packageName in it.packages } }
+        return null
+    }
+
+    /**
      * The phones this exact set of packages was reboot-proven on, most-proven first.
      *
      * A plan page says which device *the uploader* held; this says whether anyone else with the
