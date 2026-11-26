@@ -250,7 +250,11 @@ internal fun AboutScreen(
                     title = stringResource(Res.string.about_auto_install_retry),
                     subtitle = stringResource(Res.string.about_auto_install_retry_hint, skippedAutoInstall),
                     onClick = {
+                        // 手点「重新尝试」= 用户的明确意图，两个闸门都要放开：skip 标记，以及
+                        // 那个跨进程累计的失败次数（只清前一个的话，check() 还会因为次数用尽而
+                        // 拒绝自动下载，点了半天还是"可以下载"）。
                         settingsViewModel.saveSkippedAutoInstallVersion("")
+                        settingsViewModel.clearInstallFailureCount(skippedAutoInstall)
                         updateCenter.check()
                     },
                 )

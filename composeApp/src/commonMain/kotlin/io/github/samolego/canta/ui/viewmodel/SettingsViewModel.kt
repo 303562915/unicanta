@@ -313,6 +313,16 @@ class SettingsViewModel(
     fun saveConfirmBeforeInstall(confirm: Boolean) = save { setConfirmBeforeInstall(confirm) }
     /** Records that the automatic install of [version] failed; empty clears the mark. */
     fun saveSkippedAutoInstallVersion(version: String) = save { setSkippedAutoInstallVersion(version) }
+
+    /**
+     * 清掉某一版的安装失败次数。
+     *
+     * 用户明确点「重新尝试自动更新」时一起清：那个计数是跨进程的自动重试闸门，只清 skip 标记
+     * 而不清它，`check()` 仍然会因为次数用尽而拒绝自动下载，那一下点击就没有效果。
+     */
+    fun clearInstallFailureCount(version: String) = save {
+        if (version.isNotBlank()) this.clearInstallFailureCount(version)
+    }
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
     fun saveThemeAccent(argb: Int) = save { setThemeAccent(argb) }
     fun saveThemeMode(mode: Int) = save { setThemeMode(mode) }

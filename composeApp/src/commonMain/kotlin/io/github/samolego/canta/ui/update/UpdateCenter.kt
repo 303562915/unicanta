@@ -19,6 +19,7 @@ import io.github.samolego.canta.generated.resources.about_download_too_slow
 import io.github.samolego.canta.generated.resources.about_install_done
 import io.github.samolego.canta.generated.resources.about_install_handoff
 import io.github.samolego.canta.generated.resources.about_install_failed
+import io.github.samolego.canta.generated.resources.about_install_kept_local
 import io.github.samolego.canta.generated.resources.about_install_refused
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_update_download_toast
@@ -523,9 +524,11 @@ internal class UpdateCenter(
                         elapsedMs = elapsed,
                     )
                     // 逐条的 pm 原文只进 update_reports（上面的 detail）；屏幕上只留一句人话。
-                    val refused = getString(Res.string.about_install_refused)
+                    // 这句要说清"包已经在手机里"：四条通道全失败之后最容易发生的误解，就是
+                    // 以为还得再去下一遍——线上那台下载 41 次的机器就是这么来的。
+                    val refused = getString(Res.string.about_install_kept_local, ready.version)
                     state = UpdateState.FailedWith(refused)
-                    platform.showMessage(refused)
+                    platform.showMessage(getString(Res.string.about_install_refused))
                 }
                 installing = false
             }
