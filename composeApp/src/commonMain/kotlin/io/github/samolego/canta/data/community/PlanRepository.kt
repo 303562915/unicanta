@@ -52,6 +52,18 @@ private const val RPC_TIMEOUT_MS = 30_000L
 /** How long the preflight waits for any answer at all: a phone with no route must be told quickly. */
 private const val PROBE_TIMEOUT_MS = 6_000L
 
+/**
+ * 离线快照的默认地址（两份）：`db-backup.yml` 每天导出的 `site/db/plans.json`。
+ *
+ * Pages 那份走 GitHub 的国内 CDN，raw 那份直连 GitHub——两个都失效才算真读不到。
+ */
+const val PAGES_SNAPSHOT_URL = "https://303562915.github.io/unicanta/db/plans.json"
+const val GITHUB_SNAPSHOT_URL =
+    "https://raw.githubusercontent.com/303562915/unicanta/master/site/db/plans.json"
+
+/** 快照最多等这么久；它是兜底，不该比一次正常请求还慢。 */
+private const val SNAPSHOT_TIMEOUT_MS = 15_000L
+
 /** One community plan: a set of packages someone removed and confirmed by a reboot. */
 @Serializable
 data class CommunityPlan(
@@ -262,8 +274,48 @@ class PlanRepository(
      * [delete] / [setNote] / [deleteComment] 那几条本来就把 token 当必填参数收，不受这个默认值影响。
      */
     private val identityToken: suspend () -> String = { "" },
+/**
+     * 后端整个不通时，社区方案从 GitHub 读。
+     *
+     * `.github/workflows/db-backup.yml` 每天把"重启验证通过的方案"导成 `site/db/plans.json`，形如
+     * `plans_for` / `plans_all` 的返回行（点赞已算好、按点赞排序）。后端挂掉（2026-11-24 那三次
+     * 全站空白）或者这台手机根本连不上 Supabase 时，社区至少还能看着这份离线快照。
+     *
+     * 只覆盖"读方案"这一条：上传、投票、评论都得写库，离线快照不假装能写。
+     */
+    private val snapshotUrl: String = GITHUB_SNAPSHOT_URL,
+    /** 同一份快照的备用源：Pages 走国内 CDN，raw 走 GitHub，总有一个先通。 */
+    private val snapshotMirrorUrl: String = PAGES_SNAPSHOT_URL,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** 快照读成功过一次就记着，别每次断网都重新拉一遍几百 KB。 */
+    private var snapshotCache: List<CommunityPlan>? = null
+
+    /**
+     * 读离线快照：先 Pages，再 raw；两个都不通就是空。
+     *
+     * 失败不出声（不写 [lastError] / [lastFailureWasNetwork]）：这一趟是**兜底**，兜不住的时候
+     * 调用方看到的就是"后端没通"，和调用前一样，不该被兜底本身的失败改写成另一种错误。
+     */
+    suspend fun offlinePlans(): List<CommunityPlan> {
+        snapshotCache?.let { return it }
+        for (url in listOf(snapshotMirrorUrl, snapshotUrl)) {
+            if (url.isBlank()) continue
+            val text = runCatching {
+                withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) {
+                    val response = client.get(url)
+                    if (response.status.isSuccess()) response.bodyAsText() else null
+                }
+            }.getOrNull() ?: continue
+            val rows = parsePlans(text)
+            // 解析出一个空表多半是文件被写坏了：那也算没读到，接着试下一个源。
+            if (rows.isEmpty()) continue
+            snapshotCache = rows
+            return rows
+        }
+        return emptyList()
+    }
 
     /**
      * 这一次写调用要带上的凭据；取不到就是空串。
@@ -438,6 +490,15 @@ class PlanRepository(
             }.toString()
             rpc("plans_for", legacy)?.let { return parsePlans(it) }
         }
+        // 后端整个不通（不是"这台机型没有方案"）→ 用 GitHub 快照按同一把尺子本地筛：
+        // 型号相同、ROM 与主版本相同。离线快照里有 market_name / rom_build，够画卡片。
+        if (lastFailureWasNetwork) {
+            return offlinePlans().filter { plan ->
+                plan.model.equals(profile.model, ignoreCase = true) &&
+                    plan.rom.equals(profile.rom, ignoreCase = true) &&
+                    plan.romVersion == profile.romVersion
+            }
+        }
         return emptyList()
     }
 
@@ -509,6 +570,9 @@ class PlanRepository(
         if (limit <= 0) return emptyList()
         val body = buildJsonObject { put("p_limit", limit) }.toString()
         rpc("plans_all", body)?.let { return parsePlans(it) }
+        // 后端没答（挂掉 / 这台手机连不上）→ 退回 GitHub 上的离线快照，按同一个上限截断。
+        // `lastFailureWasNetwork` 留着不动：调用方据此知道"这一次是网络问题"，兜底不掩盖它。
+        if (lastFailureWasNetwork) return offlinePlans().take(limit).ifEmpty { null }
         return null
     }
 
@@ -522,7 +586,8 @@ class PlanRepository(
     suspend fun plansForPackage(packageName: String, limit: Int = 200): List<CommunityPlan>? {
         if (packageName.isBlank()) return null
         // 没有「按包名查方案」的后端函数时，退成拉全量再在本地筛：社区方案量级还不大，
-        // 一次 200 条已经把「谁收了这个包」覆盖得差不多了。
+        // 一次 200 条已经把「谁收了这个包」覆盖得差不多了。后端不通时 `plansAll` 自己会退回
+        // GitHub 快照，所以这一条在没有网、或者后端整个挂掉的时候照样有内容。
         plansAll(limit)?.let { all -> return all.filter { packageName in it.packages } }
         return null
     }
@@ -1972,34 +2037,35 @@ class PlanRepository(
     }.getOrNull()
 
     /**
-     * Writes the tabs that moved back to the backend, so a reinstall on another phone starts where
-     * this one stopped instead of counting the whole history again.
+     * 游标不再写回后端。**这是 2026-11-26 的修正，改之前每天有 4 万次 `inbox_seen_mark`。**
      *
-     * A failure here is not a failure of the count: the positions are already in the answer this
-     * call returned, the device keeps moving forward, and the next count writes them again. The
-     * error state is restored, because it belongs to the count the caller is about to read.
+     * 原来的理由写着「换一台手机重装后，能从这个账号上次读到的地方继续」。那个理由是错的：
+     *
+     *   1. **「我读到哪了」是本机的事**，跟聊天记录不是一类东西。服务器该存的是消息本身，
+     *      不是每台设备读到了第几条。存这个把 3071 个用户 × 4 个栏位铺成了 12,284 行 /
+     *      1.4 MB，每次还要 `on conflict do update` 写一遍。
+     *   2. 这一趟**发生在每次查未读的后面**（[inboxSummary] 里紧跟着就是这里），
+     *      于是「查未读」和「写游标」永远 1:1 配对：实测 44,941 次摘要 → 40,932 次写回，
+     *      而这些写里绝大多数根本没改变任何东西（服务端每次回一个全新的 `checked_at`，
+     *      `movedFrom` 的判空因此从不生效）。
+     *   3. 载重的是那台 426 MB 的免费实例：多这一份写，就是 checkpoint 被拖慢的一份料。
+     *
+     * 本地已经完整存了一份（[io.github.samolego.canta.data.notes.AppNoteStore] 的
+     * `_inboxSeenCursors`，随设置一起落盘），红点、未读数、四栏各自的游标全部来自那里。
+     * 换手机重装会从零开始计红点——这是**正确的**行为：新设备就是没读过，
+     * 而翻一遍历史也只是把已经读过的消息再数一次，不影响任何消息本身。
+     *
+     * 因此这个函数保留成 no-op 而不是删掉调用点：`inboxSummary` 的返回路径不需要知道
+     * 「要不要写回」这件事，将来真要恢复服务端同步，改这一处就够。
      */
+    @Suppress("UNUSED_PARAMETER")
     private suspend fun rememberCursors(
         owner: String,
         token: String,
         before: InboxCursors,
         after: InboxCursors,
     ) {
-        val moved = after.movedFrom(before)
-        if (moved.isEmpty()) return
-        val body = buildJsonObject {
-            put("p_owner", owner)
-            put("p_token", token)
-            InboxKind.entries.forEach { kind ->
-                val name = "p_seen_" + kind.wire
-                put(name, if (kind in moved) after[kind] else "")
-            }
-        }.toString()
-        val errorBefore = lastError
-        val networkBefore = lastFailureWasNetwork
-        runCatching { rpc("inbox_seen_mark", body) }
-        lastError = errorBefore
-        lastFailureWasNetwork = networkBefore
+        // 故意什么都不做。见上面的注释：游标属于本机。
     }
 }
 
