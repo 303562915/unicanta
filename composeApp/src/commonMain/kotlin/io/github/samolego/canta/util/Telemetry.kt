@@ -34,6 +34,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
@@ -739,23 +740,8 @@ internal fun parseScores(json: String): Map<String, PackageScore> =
  */
 internal fun parseScoresRows(json: String): List<SnapshotScoreRow> =
     Json.parseToJsonElement(json).jsonArray.mapNotNull { element ->
-        val o = element.jsonObject
-        val pkg = o["pkg"]?.jsonPrimitive?.content ?: return@mapNotNull null
-        SnapshotScoreRow(
-            rom = o["rom"]?.jsonPrimitive?.content.orEmpty(),
-            romVersion = o["rom_version"]?.jsonPrimitive?.intOrNull ?: 0,
-            score = PackageScore(
-                pkg = pkg,
-                uninstalls = o["uninstalls"]?.jsonPrimitive?.intOrNull ?: 0,
-                smallBatch = o["small_batch"]?.jsonPrimitive?.booleanOrNull ?: false,
-                verdict = Verdict.parse(o["verdict"]?.jsonPrimitive?.content),
-                updatedAt = o["updated_at"]?.jsonPrimitive?.content,
-                mainRom = (o["main_rom"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content,
-                mainRomShare = o["main_rom_share"]?.jsonPrimitive?.doubleOrNull,
-                mainVersion = o["main_version"]?.jsonPrimitive?.intOrNull,
-                mainVersionShare = o["main_version_share"]?.jsonPrimitive?.doubleOrNull,
-            ),
-        )
+        // 与分组格式共用同一支行解析器：两种文件里列名必须解释得一模一样。
+        parseScoreRow(element as? JsonObject ?: return@mapNotNull null)
     }
 
 /** 快照里的一行：哪个 ROM、哪个版本、这个包的分数。 */
@@ -776,10 +762,37 @@ internal fun parseScoresSnapshot(text: String): Map<String, Map<Int, Map<String,
         val version = o["rom_version"]?.jsonPrimitive?.intOrNull ?: return@fold acc
         if (rom.isBlank()) return@fold acc
         val scores = (o["scores"] as? JsonArray).orEmpty().mapNotNull { row ->
-            val e = row as? JsonObject ?: return@mapNotNull null
-            parseScoresRows("[$e]").firstOrNull()
+            // 直接把这一行交给行解析器，**不再拼 `"[$row]"` 再解析一遍**：
+            // 拼接再解析等于把已经解析过的 JSON 序列化又反序列化一次，既慢又容易在
+            // 内容里出现括号/引号时出问题（2026-11-27 那个用例就是这么漏掉整组的）。
+            parseScoreRow(row as? JsonObject ?: return@mapNotNull null)
         }.associate { it.score.pkg to it.score }
         if (scores.isNotEmpty()) acc[rom] = acc[rom].orEmpty() + (version to scores)
         acc
     }
+}
+
+/**
+ * 一行 `{"pkg":…,"uninstalls":…,"verdict":…}` → [SnapshotScoreRow]；读不出 pkg 就是 null。
+ *
+ * `parseScoresRows`（一整个数组）与 `parseScoresSnapshot`（分组里的一行）共用这一支，
+ * 保证两种文件格式的列名解释完全一致。
+ */
+internal fun parseScoreRow(o: JsonObject): SnapshotScoreRow? {
+    val pkg = o["pkg"]?.jsonPrimitive?.contentOrNull ?: return null
+    return SnapshotScoreRow(
+        rom = o["rom"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+        romVersion = o["rom_version"]?.jsonPrimitive?.intOrNull ?: 0,
+        score = PackageScore(
+            pkg = pkg,
+            uninstalls = o["uninstalls"]?.jsonPrimitive?.intOrNull ?: 0,
+            smallBatch = o["small_batch"]?.jsonPrimitive?.booleanOrNull ?: false,
+            verdict = Verdict.parse(o["verdict"]?.jsonPrimitive?.contentOrNull),
+            updatedAt = o["updated_at"]?.jsonPrimitive?.contentOrNull,
+            mainRom = (o["main_rom"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull,
+            mainRomShare = o["main_rom_share"]?.jsonPrimitive?.doubleOrNull,
+            mainVersion = o["main_version"]?.jsonPrimitive?.intOrNull,
+            mainVersionShare = o["main_version_share"]?.jsonPrimitive?.doubleOrNull,
+        ),
+    )
 }
