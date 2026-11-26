@@ -1,0 +1,122 @@
+[
+ {
+  "agrees": 0,
+  "applied": false,
+  "author": "#12829",
+  "author_id": "12829",
+  "body": "中国移动 新通话（原5G新通话）",
+  "created_at": "2026-11-24T12:20:30.909924+00:00",
+  "disagrees": 0,
+  "id": 10,
+  "note": "",
+  "pkg": "com.newcall"
+ },
+ {
+  "agrees": 1,
+  "applied": false,
+  "author": "fsr",
+  "author_id": "12063",
+  "body": "用于car+车联投屏",
+  "created_at": "2026-11-25T13:57:36.625153+00:00",
+  "disagrees": 0,
+  "id": 11,
+  "note": "",
+  "pkg": "com.coloros.mapcom.frame"
+ },
+ {
+  "agrees": 0,
+  "applied": false,
+  "author": "#13650",
+  "author_id": "13650",
+  "body": "AndroidAuto相对于安卓官方Google推出的类似苹果carplay车机服务",
+  "created_at": "2026-11-26T07:45:25.858952+00:00",
+  "disagrees": 0,
+  "id": 12,
+  "note": "",
+  "pkg": "com.google.android.projection.gearhead"
+ },
+ {
+  "agrees": 50,
+  "applied": true,
+  "author": "开发者",
+  "author_id": "10003",
+  "body": "官方的可以直接用via替代，无脑卸载",
+  "created_at": "2026-11-20T08:26:39.328865+00:00",
+  "disagrees": 0,
+  "id": 3,
+  "note": "",
+  "pkg": "com.android.browser"
+ },
+ {
+  "agrees": 8,
+  "applied": false,
+  "author": "#10239",
+  "author_id": "10239",
+  "body": "SystemHelper是中国联通要求手机厂商内置的终端管理组件，要求在软件管理中不可见并且明文上传以下个人信息至联通服务器\n· 设备标识：IMEI、IMSI、ICCID。\n· 位置信息：精确经纬度、基站参数、Wi-Fi BSSID。\n· 应用画像：已安装应用列表、过去24小时各应用的前台使用时长、启动次数及逐应用流量明细。\n受影响的用户包含所有使用中国运营商的用户，无论是中国移动还是中国电信还是中国广电",
+  "created_at": "2026-11-20T13:36:41.022096+00:00",
+  "disagrees": 0,
+  "id": 4,
+  "note": "",
+  "pkg": "com.mobiletools.systemhelper"
+ },
+ {
+  "agrees": 0,
+  "applied": false,
+  "author": "听风说你",
+  "author_id": "10049",
+  "body": "卸载之后可能会导致部分APP开屏时间延长，卡几秒白屏。",
+  "created_at": "2026-11-20T14:20:51.140423+00:00",
+  "disagrees": 0,
+  "id": 5,
+  "note": "",
+  "pkg": "com.miui.systemAdSolution"
+ },
+ {
+  "agrees": 1,
+  "applied": false,
+  "author": "沫沫",
+  "author_id": "10840",
+  "body": "com.hihonor.medialibrary  是荣耀手机（MagicOS 系统）的预置系统组件，对应的是荣耀媒体信息库（Media Library）。",
+  "created_at": "2026-11-23T21:19:05.210399+00:00",
+  "disagrees": 0,
+  "id": 6,
+  "note": "",
+  "pkg": "com.hihonor.medialibrary"
+ },
+ {
+  "agrees": 1,
+  "applied": false,
+  "author": "沫沫",
+  "author_id": "10840",
+  "body": "com.hihonor.handoff  是荣耀手机（MagicOS 系统）的预置系统组件，对应的是荣耀设备互传与应用接续服务（Handover / Handoff）。",
+  "created_at": "2026-11-23T21:20:45.121327+00:00",
+  "disagrees": 0,
+  "id": 7,
+  "note": "",
+  "pkg": "com.hihonor.handoff"
+ },
+ {
+  "agrees": 1,
+  "applied": false,
+  "author": "沫沫",
+  "author_id": "10840",
+  "body": "com.hihonor.contactscamcard  是荣耀手机（MagicOS 系统）的预置系统组件，对应的是联系人名片识别与骚扰拦截服务（Contacts CamCard）。",
+  "created_at": "2026-11-23T21:21:57.266327+00:00",
+  "disagrees": 0,
+  "id": 8,
+  "note": "",
+  "pkg": "com.hihonor.contactscamcard"
+ },
+ {
+  "agrees": 1,
+  "applied": false,
+  "author": "秋海棠之泪",
+  "author_id": "10177",
+  "body": "删除后会锁全局120刷新率，但可能锁游戏触控采样率。",
+  "created_at": "2026-11-24T05:38:32.05124+00:00",
+  "disagrees": 0,
+  "id": 9,
+  "note": "",
+  "pkg": "com.vivo.gamewatch"
+ }
+]
