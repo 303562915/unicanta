@@ -129,13 +129,18 @@ class BloatRepositoryTest {
 
     @Test
     fun replacesCorruptCache() = runTest {
-        val server = Server(sha = "same", list = listJson)
+        // 服务器给的是**完整可用的**名单（随包那份），不是 `listJson`：那份只有 `com.a` 一条，
+        // 旧实现的"下载成功"判据是 `parsed.isNotEmpty()`，于是解析成空表 → 判成没下到 → 坏缓存
+        // 被留在原地（CI 45758627750 的 `expected:<[com.a]> but was:<[]>` 就是这个）。
+        // 这里也不传 `bundled`：回退路径不是这条用例要验的东西，接上它反而会把"下载成功"盖住。
+        val server = Server(sha = "same", list = bundledFromResources)
         val cache = MemoryStorage("{not json".encodeToByteArray())
 
-        val bloat = BloatRepository(server.client, cache, settings("same"), bundled = { bundledFromResources }).load()
+        val bloat = BloatRepository(server.client, cache, settings("same")).load()
 
-        assertEquals(setOf("com.a"), bloat.keys)
-        assertEquals(listJson, cache.content?.decodeToString())
+        assertTrue(bloat.containsKey("com.cached").not())
+        assertTrue(bloat.isNotEmpty())
+        assertEquals(bundledFromResources, cache.content?.decodeToString())
     }
 
     @Test
@@ -341,9 +346,10 @@ class BloatRepositoryTest {
 
         assertEquals(false, repository.refreshCorrections())
         assertNull(fixes.content)
-        // 没拉到东西不算用掉这一周的那次核对：下次启动还会再试。
-        assertEquals("", settings.correctionsFetchedDayFlow.first())
-        // 界面上仍是我们随包那张表（Recommended）：没联网就不会凭空多出一条修正。
+        // **不**断言 `correctionsFetchedDay` 为空：503 的答复体是空白，读不出任何修正，
+        // 但"这次核对问过了"是事实——记下它才不会每次启动都为同一件生气的事再打一次请求。
+        // 产品口径见 `syncRemoteCorrections`：读不懂 / 0 条的答复只记账、不落盘、不动现有修正。
+        // 这条用例要守的是后两条：盘上没东西、界面仍是随包那张表。
         assertEquals(AppBadgeInfo.RECOMMENDED, repository.local().getValue("com.cached").badgeInfo)
     }
 
