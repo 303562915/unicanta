@@ -298,7 +298,14 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     // token 时才采信。**顺序不能反**：这一条依赖服务端已经推过 20261123110000 那个迁移，先发客户端
     // 会在旧库上报 "function ... does not exist"。
     val communityRepository = remember {
-        PlanRepository(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) })
+        PlanRepository(
+            HttpClient(),
+            identityToken = { DeviceIdentity.ensure(deps.settings) },
+            // 快照读到之后落盘、断网时读回来：`PlanCache` 本来就在存「上次看到的方案」，
+            // 这里只是把它接到快照那条路上。见 PlanRepository.offlinePlans 的兜底顺序。
+            persistSnapshot = { rows -> deps.planCache.writeAll(rows) },
+            loadPersisted = { deps.planCache.readAll() },
+        )
     }
     // Direct messages, groups and follows: their own calls, against the same backend.
     val socialRepository = remember {

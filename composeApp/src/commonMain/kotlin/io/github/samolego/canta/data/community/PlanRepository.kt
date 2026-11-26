@@ -305,6 +305,21 @@ class PlanRepository(
     private val snapshotUrl: String = GITHUB_SNAPSHOT_URL,
     /** 同一份快照的备用源：Pages 走国内 CDN，raw 走 GitHub，总有一个先通。 */
     private val snapshotMirrorUrl: String = PAGES_SNAPSHOT_URL,
+    /**
+     * 快照读到之后落盘的那一处；null 表示不落盘（测试、或接线的人还没接）。
+     *
+     * 2026-11-26 加。三个源的分工现在是：
+     *   ① Pages / ② raw —— 有网时最新；
+     *   ③ APK 内置 —— 断网时是**装机那天**的社区；
+     *   ④ 这一处 —— 断网时是**上次联网时**的社区，比 ③ 新。
+     *
+     * ③ 和 ④ 的差别就是「装完机一直没网」和「昨天还联过网」：后者才是一个人真正会遇到的场景。
+     * 落盘复用既有的 `PlanCache`（`StoredData.PLAN_CACHE`，本来就在存「上次看到的方案」），
+     * 所以这里只传两个挂起函数，不把整个仓储和数据层绑在一起。
+     */
+    private val persistSnapshot: (suspend (List<CommunityPlan>) -> Unit)? = null,
+    /** 读回 [persistSnapshot] 存下的那一份；null 表示没有或读不出来。 */
+    private val loadPersisted: (suspend () -> List<CommunityPlan>)? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -332,8 +347,14 @@ class PlanRepository(
     suspend fun offlinePlans(): List<CommunityPlan> {
         snapshotCache?.let { return it }
         // 刚失败过就别再去网上试：这条现在是热路径（每次列表），不能让它反复等满超时。
-        // 但**不能就此返回空** —— 那把这个"保底"自己变成了坏消息。退避期间直接读随包那份。
+        // 但**不能就此返回空** —— 那把这个"保底"自己变成了坏消息。退避期间读本地：
+        // 先磁盘（上次联网那份），再 APK 内置（打包那份）。
         if (snapshotFailedAt != 0L && currentTimeMillis() - snapshotFailedAt < SNAPSHOT_RETRY_BACKOFF_MS) {
+            val persisted = runCatching { loadPersisted?.invoke() }.getOrNull().orEmpty()
+            if (persisted.isNotEmpty()) {
+                snapshotCache = persisted
+                return persisted
+            }
             return bundledSnapshot()
         }
         for (url in listOf(snapshotMirrorUrl, snapshotUrl)) {
@@ -349,18 +370,25 @@ class PlanRepository(
             if (rows.isEmpty()) continue
             snapshotCache = rows
             snapshotFailedAt = 0L
+            // 同时落盘：下次断网时读的就是这一份（比 APK 内置那份新）。
+            // 失败吞掉 —— 存不进去不该让这次成功的读取变成失败。
+            runCatching { persistSnapshot?.invoke(rows) }
             return rows
         }
-        // 两张网都断了（没网、Pages 被墙、raw 超时）→ **用随包带的那一份**。
+        // 两张网都断了（没网、Pages 被墙、raw 超时）→ 先用**上次联网时落盘的那一份**。
         //
-        // 2026-11-26 加：前两个源都在网络上，一个断网的人（或者一个只开了内网的人）会得到空列表，
-        // 而方案列表现在是 [plansAll] / [plansFor] 的**首选**来源 —— 空列表直接等于「社区是空的」，
-        // 那是在说假话。这份 `plans_snapshot.json` 是打包时的 `site/db/plans.json`
-        // （`db-backup.yml` 每次生成时同步一份到这里），所以最坏情况下用户看到的也是
-        // 「某个时刻的真实社区」，而不是一片空白。
+        // 2026-11-26 加：前两个源都在网络上，一个断网的人（或者一个只开了内网的人）会得到
+        // 空列表，而方案列表现在是 [plansAll] / [plansFor] 的**首选**来源 —— 空列表直接等于
+        // 「社区是空的」，那是在说假话。
         //
-        // 它是**最后**一层，不参与上面的重试节奏：读的是 APK 里的文件，没有超时、不会再失败。
+        // 顺序是「磁盘 → APK 内置」而不是反过来：磁盘那份是这个手机上**最近一次**看到的社区，
+        // 内置那份是**打包那天**的。只有在从来没联网成功过（磁盘是空的）时才退回内置。
         snapshotFailedAt = currentTimeMillis()
+        val persisted = runCatching { loadPersisted?.invoke() }.getOrNull().orEmpty()
+        if (persisted.isNotEmpty()) {
+            snapshotCache = persisted
+            return persisted
+        }
         return bundledSnapshot()
     }
 
