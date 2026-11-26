@@ -2,8 +2,8 @@ package io.github.samolego.canta.data.app
 
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.AppBlobStorage
+import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.OperationLogStore
-import io.github.samolego.canta.packages.isValidPackageName
 import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
@@ -13,289 +13,247 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.JsonObject as SerializationJsonObject
-
-/** 包名的排序：不分大小写，同一份名单在两台手机上排出来一样。 */
-private val PACKAGE_ORDER: Comparator<String> = compareBy { it.lowercase() }
 
 /**
- * 一个「方案」：一次导入进来的那份名单，或者这台手机自己的卸载记录。
+ * 「卸载记录」页背后的备份仓库。
  *
- * 用户嘴里的"方案"就是这个：一份可以被带走、也可以在另一台手机上整份装回来的包名清单。
- * [origin] 区分它从哪来——本机的记录（[Origin.LOCAL]）还是别的手机导进来的（[Origin.IMPORTED]）。
- */
-@Serializable
-data class DeletionPlan(
-    /** 判重与删除用；导入时生成，本机那份固定为 [LOCAL_PLAN_ID]。 */
-    val id: String,
-    val name: String,
-    /** 生成 / 导入的那一刻（epoch 毫秒），列表按它倒序。 */
-    val createdAt: Long,
-    val origin: Origin,
-    /** 包名，已去重、已排序。 */
-    val packages: List<String>,
-) {
-    enum class Origin { LOCAL, IMPORTED }
-}
-
-/** 本机那份方案的固定 id：它由卸载记录实时算出来，不落盘。 */
-const val LOCAL_PLAN_ID = "local"
-
-/**
- * 卸载记录与导入进来的方案。
+ * 用户嘴里的"备份"就是这里的一份 [DeletionBackup]：**点备份那一刻**，这台手机的两份名单
+ * ——卸载名单（删了还没装回来的）和冻结名单（现在停用的）——一起存成一份，可以重命名、
+ * 可以分享出去、可以再导入进来、可以照它整份恢复。
  *
- * 两件事分开看：
- *  1. **本机删了什么** —— 由 [OperationLogStore] 实时算（[localPlan]），不落盘、不会为空。
- *  2. **别处导进来的方案** —— 每一次导入都留下一个 [DeletionPlan]，可以并存多份，点开看包，
- *     也可以整份恢复。
+ * 与旧版的区别：旧版是"本机卸了哪些包"实时算一份、导入的每份各占一行；现在本机那一份只是
+ * 列表顶上的"当前状态"（不落盘、不能删），下面全是**点过备份的那些时刻**。恢复只认备份里的
+ * 那两份名单，不再现算，所以"备份时删了什么"和"现在删了什么"能分开看。
  *
- * 导出的文件就是其中一个方案的 JSON：
- * ```
- * { "name": "...", "exportedAt": 1780000000000, "packages": ["a", "b"] }
- * ```
- * 导入时容忍三种形状：上面这种对象、直接是数组的 `["pkg"]`、以及旧版只写 `apps` 的对象。
+ * 落盘的就是备份列表本身（[DeletionBackupCodec.Blob]），换手机靠导出 / 导入那份 JSON。
  */
 class DeletionListStore(
     private val storage: AppBlobStorage,
     private val platform: CantaPlatform,
-    /** 记录的来源：「本机删了什么」全部由它回答。 */
+    /** 卸载名单的来源：Canta 删掉、到现在还没装回来的包由它回答。 */
     private val history: OperationLogStore,
 ) {
 
     companion object {
         private const val TAG = "DeletionList"
 
-        /** 分享面板 / 下载目录里那一份的名字。 */
-        const val FILE_NAME = "canta-uninstall-list.json"
-
-        /** 导出文件的默认名字，也是导入时缺 `name` 之后的名字。 */
-        const val DEFAULT_NAME = "我的卸载方案"
+        /** 分享面板 / 存到手机时那一份的名字（备份名会替换掉这里的默认值）。 */
+        const val FILE_NAME = "canta-backup.json"
 
         private const val JSON_MIME = "application/json"
-
-        /** 旧版预设导出用的键：同样是一串包名，所以一并认。 */
-        private const val LEGACY_KEY = "apps"
-        private const val KEY = "packages"
-    }
-
-    private val json = Json {
-        prettyPrint = true
-        ignoreUnknownKeys = true
     }
 
     private val mutex = Mutex()
     private var loaded = false
 
-    private val _plans = MutableStateFlow<List<DeletionPlan>>(emptyList())
+    private val _backups = MutableStateFlow<List<DeletionBackup>>(emptyList())
 
-    /** 导入进来的方案，最新的在前。本机那份不在里面（它是算出来的）。 */
-    val importedPlans: StateFlow<List<DeletionPlan>> = _plans.asStateFlow()
+    /** 点过的备份，最新的在前。 */
+    val backups: StateFlow<List<DeletionBackup>> = _backups.asStateFlow()
 
-    /** 读一次落盘的那份。 */
+    /** 读一次落盘的那一份。 */
     suspend fun ensureReady() {
         mutex.withLock {
             if (loaded) return@withLock
             runCatching {
                 storage.read()?.decodeToString()?.let { text ->
-                    // 只落导入进来的方案；本机那份每次现算，不占盘。
-                    _plans.value = json.decodeFromString(PlanBlob.serializer(), text)
-                        .plans
-                        .filter { it.packages.isNotEmpty() }
+                    _backups.value = DeletionBackupCodec.decodeBlob(text)
+                        .filter { it.total > 0 }
                         .sortedByDescending { it.createdAt }
                 }
-            }.onFailure { LogUtils.e(TAG, "Could not read the imported plans", it) }
+            }.onFailure { LogUtils.e(TAG, "Could not read the backups", it) }
             loaded = true
         }
     }
 
     /**
-     * 本机那份：「删了、到现在还没装回来」的包，由记录实时算出来。
+     * **点备份**：按现在这一刻的两份名单做一份备份。
      *
-     * 名字里带个数，因为用户看列表时最想知道的就是"这一份有多少条"。
+     * [uninstall] / [frozen] 由调用方从应用列表里挑好（那边才知道每一个包现在到底在不在、
+     * 是不是被停用），这里只负责去重、排序、起名、落盘。
      */
-    suspend fun localPlan(): DeletionPlan {
-        val removed = runCatching { history.recentlyRemovedPackages() }.getOrDefault(emptyList())
-        val packages = removed.filter(::isValidPackageName).distinct().sortedWith(PACKAGE_ORDER)
-        return DeletionPlan(
-            id = LOCAL_PLAN_ID,
-            name = "本机卸载记录",
-            createdAt = 0L,
-            origin = DeletionPlan.Origin.LOCAL,
-            packages = packages,
-        )
-    }
-
-    /** 所有方案：本机那份在最前，随后是导入进来的（新→旧）。 */
-    suspend fun plans(): List<DeletionPlan> {
+    suspend fun createBackup(
+        uninstall: List<BackupApp>,
+        frozen: List<BackupApp>,
+        device: String = "",
+    ): DeletionBackup {
         ensureReady()
-        return listOf(localPlan()) + _plans.value
-    }
-
-    /** 按 id 取一份方案；本机那份现算，导入的从内存取。 */
-    suspend fun plan(id: String): DeletionPlan? =
-        if (id == LOCAL_PLAN_ID) localPlan() else plans().firstOrNull { it.id == id }
-
-    /**
-     * 把导入进来的文本存成一个**新方案**，不动已有的。
-     *
-     * 同名时后面加「(2)」这类后缀，免得列表里两行一模一样分不清。
-     */
-    suspend fun importAsPlan(parsed: DeletionListImport): DeletionPlan {
-        ensureReady()
-        val unique = uniqueName(parsed.name)
-        val plan = DeletionPlan(
-            id = "import-" + currentTimeMillis() + "-" + (0..999).random(),
-            name = unique,
-            createdAt = currentTimeMillis(),
-            origin = DeletionPlan.Origin.IMPORTED,
-            packages = parsed.accepted.sortedWith(PACKAGE_ORDER),
+        val at = currentTimeMillis()
+        // 同一个包两边都有时只算冻结：它还在这台手机上，只是被停了。
+        val frozenKeys = frozen.mapTo(HashSet()) { it.packageName.lowercase() }
+        val backup = DeletionBackup(
+            id = "backup-" + at + "-" + (0..999).random(),
+            name = uniqueName(DeletionBackup.defaultName(at)),
+            createdAt = at,
+            uninstall = uninstall
+                .filter { it.packageName.lowercase() !in frozenKeys }
+                .distinctBy { it.packageName.lowercase() }
+                .sortedWith(compareBy(BACKUP_ORDER) { it.packageName }),
+            frozen = frozen
+                .distinctBy { it.packageName.lowercase() }
+                .sortedWith(compareBy(BACKUP_ORDER) { it.packageName }),
+            device = device,
         )
-        val next = (listOf(plan) + _plans.value).sortedByDescending { it.createdAt }
+        val next = (listOf(backup) + _backups.value).sortedByDescending { it.createdAt }
         mutex.withLock {
-            _plans.value = next
+            _backups.value = next
             persist(next)
         }
-        return plan
+        LogUtils.i(TAG, "Backed up ${backup.uninstall.size} removed and ${backup.frozen.size} frozen")
+        return backup
     }
 
-    /** 删掉一个导入进来的方案；本机那份删不掉（它跟着记录走）。返回真的删了吗。 */
-    suspend fun removePlan(id: String): Boolean {
+    /** 现在这一刻本机删掉、还没装回来的包（冻结名单要问应用列表，那边才知道谁被停用）。 */
+    suspend fun currentState(): DeletionSnapshot {
+        val removed = runCatching { history.recentlyRemovedPackages() }.getOrDefault(emptyList())
+        return DeletionSnapshot(
+            uninstall = removed.filter(::isValidBackupPackage).distinct().sortedWith(BACKUP_ORDER),
+        )
+    }
+
+    /** 改名字。[name] 空了就退回默认名字（点备份那个时间点），不会出现一行没有名字的备份。 */
+    suspend fun rename(id: String, name: String): DeletionBackup? {
         ensureReady()
-        if (id == LOCAL_PLAN_ID) return false
-        val next = _plans.value.filter { it.id != id }
-        if (next.size == _plans.value.size) return false
+        val target = _backups.value.firstOrNull { it.id == id } ?: return null
+        val wanted = name.trim().ifEmpty { DeletionBackup.defaultName(target.createdAt) }
+        val renamed = target.copy(name = uniqueName(wanted, exceptId = id))
+        val next = _backups.value.map { if (it.id == id) renamed else it }
         mutex.withLock {
-            _plans.value = next
+            _backups.value = next
+            persist(next)
+        }
+        return renamed
+    }
+
+    /** 删掉一份备份。返回真的删了吗。 */
+    suspend fun removeBackup(id: String): Boolean {
+        ensureReady()
+        val next = _backups.value.filterNot { it.id == id }
+        if (next.size == _backups.value.size) return false
+        mutex.withLock {
+            _backups.value = next
             persist(next)
         }
         return true
     }
 
-    /** 清掉所有导入进来的方案；返回清掉几份。 */
-    suspend fun clearImported(): Int {
+    /** 按 id 取一份。 */
+    suspend fun backup(id: String): DeletionBackup? {
         ensureReady()
-        val count = _plans.value.size
-        mutex.withLock {
-            _plans.value = emptyList()
-            persist(emptyList())
-        }
-        return count
-    }
-
-    /** 备份用的 JSON 文本。 */
-    fun backupJson(plan: DeletionPlan): String {
-        val body = buildJsonObject {
-            put("name", plan.name)
-            put("exportedAt", currentTimeMillis())
-            put(
-                KEY,
-                buildJsonArray {
-                    plan.packages.forEach { add(JsonPrimitive(it)) }
-                },
-            )
-        }
-        return json.encodeToString(SerializationJsonObject.serializer(), body)
+        return _backups.value.firstOrNull { it.id == id }
     }
 
     /**
-     * 备份一个方案到**用户自己挑的位置**（系统「存储到」界面）；取消返回 path = null，
-     * 不写任何文件。
+     * 备份文件的 JSON 正文。给"存到手机"和"分享出去"两处共用，
+     * 也回答"这一份导出来会是什么样"。
      */
-    suspend fun savePlanAs(plan: DeletionPlan): DeletionListExport {
-        val content = backupJson(plan)
-        val picked = runCatching { platform.saveFileAs(FILE_NAME, content, JSON_MIME) }.getOrNull()
-        return DeletionListExport(packages = plan.packages.size, path = picked)
+    fun toJson(backup: DeletionBackup): String = DeletionBackupCodec.encode(backup)
+
+    /** 存到用户自己挑的位置；取消返回 path = null，不写任何文件。 */
+    suspend fun saveAs(backup: DeletionBackup): DeletionBackupExport {
+        val content = toJson(backup)
+        val fileName = DeletionBackupCodec.fileName(backup.name)
+        val picked = runCatching { platform.saveFileAs(fileName, content, JSON_MIME) }.getOrNull()
+        return DeletionBackupExport(path = picked, fileName = fileName)
+    }
+
+    /** 交给系统分享面板（微信文件传输助手、QQ、邮件、U 盘……）。打不开返回 false。 */
+    suspend fun shareAs(backup: DeletionBackup): DeletionBackupExport {
+        val content = toJson(backup)
+        val fileName = DeletionBackupCodec.fileName(backup.name)
+        val shared = runCatching { platform.shareFile(fileName, content, JSON_MIME) }.getOrDefault(false)
+        val path = if (shared) null else runCatching { platform.exportLog(fileName, content) }.getOrNull()
+        return DeletionBackupExport(path = path, fileName = fileName, shared = shared)
     }
 
     /**
-     * 备份并通过系统的分享面板送出去（微信文件传输助手、QQ、邮件、U 盘……）；
-     * 分享面板打开返回 true，没打开（桌面 / 网页构建）返回 false。
+     * 把用户挑回来的文本读成一份备份并**加进列表**（导入进来就留着，可以再看、再恢复，
+     * 也可以再分享出去）。读不懂回答 null。
      */
-    suspend fun sharePlanAs(plan: DeletionPlan): Boolean {
-        val content = backupJson(plan)
-        return runCatching { platform.shareFile(FILE_NAME, content, JSON_MIME) }.getOrDefault(false)
-    }
-
-    /**
-     * 把用户挑回来的文本读成一份名单。
-     *
-     * 文本不是 JSON 时回答 null（调用方据此说「这份文件读不懂」）。
-     */
-    fun parse(text: String): DeletionListImport? {
-        val root = runCatching { json.parseToJsonElement(text.trim()) }.getOrNull() ?: return null
-        val elements = when (root) {
-            is JsonArray -> root.jsonArray
-            is SerializationJsonObject -> {
-                root[KEY]?.jsonArray
-                    ?: root[LEGACY_KEY]?.jsonArray
-                    ?: return null
-            }
-
-            else -> return null
-        }
-        val raw = elements.mapNotNull { element ->
-            runCatching { element.jsonPrimitive.content }.getOrNull()
-                ?: runCatching { element.jsonObject["packageName"]?.jsonPrimitive?.content }.getOrNull()
-        }
-        // 被丢掉的条数：原始条数减去留下来的条数（不合法的和重复的都算）。
-        val distinctRaw = raw.filter(::isValidPackageName).distinct()
-        val accepted = distinctRaw.sortedWith(PACKAGE_ORDER)
-        val name = (root as? SerializationJsonObject)?.get("name")?.jsonPrimitive?.content.orEmpty()
-        return DeletionListImport(
-            accepted = accepted,
-            rejected = raw.size - distinctRaw.size,
-            name = name.ifBlank { DEFAULT_NAME },
+    suspend fun import(text: String): DeletionBackup? {
+        ensureReady()
+        val parsed = DeletionBackupCodec.decode(text) ?: return null
+        val at = currentTimeMillis()
+        val backup = DeletionBackup(
+            id = "import-" + at + "-" + (0..999).random(),
+            name = uniqueName(parsed.name),
+            createdAt = at,
+            uninstall = parsed.uninstall.sortedWith(compareBy(BACKUP_ORDER) { it.packageName }),
+            frozen = emptyList(),
+            device = parsed.device,
+            imported = true,
         )
+        val next = (listOf(backup) + _backups.value).sortedByDescending { it.createdAt }
+        mutex.withLock {
+            _backups.value = next
+            persist(next)
+        }
+        return backup
     }
 
-    /** 同名时加后缀：`我的方案` → `我的方案 (2)`。 */
-    private fun uniqueName(base: String): String {
-        val taken = _plans.value.mapTo(HashSet()) { it.name }
+    /** 导入前先解析一次，让调用方能在确认框里说清"有多少条、丢掉几条"。 */
+    fun parse(text: String): ImportedBackup? = DeletionBackupCodec.decode(text)
+
+    /**
+     * 照一份备份恢复：停用过的先启用，卸载过的再装回来。
+     *
+     * [restore] 是真正动手的那一段（走应用列表那条路，不在这里另写一套）。一个包只恢复一次：
+     * 它在 [DeletionBackup.frozen] 里就按"启用"恢复，否则按"装回"恢复。
+     */
+    suspend fun restore(
+        backup: DeletionBackup,
+        restore: suspend (packageName: String, kind: OperationKind) -> Int,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): DeletionRestoreResult {
+        val failed = mutableListOf<String>()
+        // 先启用后装回：冻结的包本来就还在，装回对它是空操作，顺序错了会把成功算成失败。
+        val ordered = backup.frozen.map { it.packageName to OperationKind.ENABLE } +
+            backup.uninstall.map { it.packageName to OperationKind.REINSTALL }
+        var succeeded = 0
+        ordered.forEachIndexed { index, (pkg, kind) ->
+            val done = runCatching { restore(pkg, kind) }.getOrDefault(0)
+            if (done > 0) succeeded++ else failed += pkg
+            onProgress(index + 1, ordered.size)
+        }
+        return DeletionRestoreResult(succeeded = succeeded, failed = failed)
+    }
+
+    /** 同名时加后缀：`卸载记录 2026-11-26 19:04` → `… (2)`。 */
+    private fun uniqueName(base: String, exceptId: String = ""): String {
+        val taken = _backups.value.filterNot { it.id == exceptId }.mapTo(HashSet()) { it.name }
         if (base !in taken) return base
         var n = 2
         while ("$base ($n)" in taken) n++
         return "$base ($n)"
     }
 
-    private suspend fun persist(plans: List<DeletionPlan>) = withContext(Dispatchers.Default) {
+    private suspend fun persist(backups: List<DeletionBackup>) = withContext(Dispatchers.Default) {
         runCatching {
-            storage.write(json.encodeToString(PlanBlob.serializer(), PlanBlob(plans)).encodeToByteArray())
-        }.onFailure { LogUtils.e(TAG, "Could not store the imported plans", it) }
+            storage.write(DeletionBackupCodec.encodeBlob(backups).encodeToByteArray())
+        }.onFailure { LogUtils.e(TAG, "Could not store the backups", it) }
         Unit
     }
 }
 
-/** 落盘那一份：只装导入进来的方案（本机那份每次现算）。 */
-@Serializable
-private data class PlanBlob(val plans: List<DeletionPlan> = emptyList())
+/** 现在这一刻本机删掉的包（不落盘；备份时由页面配上应用名和冻结名单）。 */
+data class DeletionSnapshot(
+    val uninstall: List<String> = emptyList(),
+) {
+    val total: Int get() = uninstall.size
+}
 
-/** 导入一份名单读出来的结果。 */
-data class DeletionListImport(
-    /** 合法、去重、排好序的包名。 */
-    val accepted: List<String>,
-    /** 被丢掉的条数（包名不合法、或者那一行根本不是一个字符串）。 */
-    val rejected: Int,
-    /** 文件里写的名字；没写就默认名字。 */
-    val name: String,
+/** 存 / 分享的结果。 */
+data class DeletionBackupExport(
+    /** 文件落到了哪里；null = 取消了，或者平台没有这个能力。 */
+    val path: String? = null,
+    val fileName: String = "",
+    val shared: Boolean = false,
 )
 
-/** 导出之后的结果。 */
-data class DeletionListExport(
-    /** 文件里写了几个包名。 */
-    val packages: Int,
-    /**
-     * 文件落到了哪里（用户挑的那个位置）。null = 用户取消了，或者这个平台没有「存储到」界面，
-     * 两种情况都没有写出任何文件。
-     */
-    val path: String?,
-)
+/** 整份恢复的结果：成功几个、失败哪些（失败的包名照原样带出来，调用方点一下就能单独重试）。 */
+data class DeletionRestoreResult(
+    val succeeded: Int = 0,
+    val failed: List<String> = emptyList(),
+) {
+    val total: Int get() = succeeded + failed.size
+}

@@ -1,5 +1,6 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,12 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,22 +32,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.core.CantaPlatform
-import io.github.samolego.canta.data.app.DeletionListImport
+import io.github.samolego.canta.data.app.BackupApp
+import io.github.samolego.canta.data.app.BackupTime
+import io.github.samolego.canta.data.app.DeletionBackup
+import io.github.samolego.canta.data.app.DeletionBackupExport
 import io.github.samolego.canta.data.app.DeletionListStore
-import io.github.samolego.canta.data.app.DeletionPlan
-import io.github.samolego.canta.data.app.LOCAL_PLAN_ID
+import io.github.samolego.canta.data.app.ImportedBackup
+import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.cancel
 import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
-import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -58,84 +61,50 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 「卸载记录」页：所有能整份装回来的**方案**。
+ * 「卸载记录」页：**点备份**，然后看一份份备份。
  *
- * 一条方案 = 一份名单：最上面那份是**本机的卸载记录**（删了还没装回来的包，实时算），
- * 下面是**导入进来的**每一份（导一次就留一份，可以并存）。点一条进去看它包含哪些包，
- * 在里面既可以逐个装回，也可以整份装回。
+ * 页面从上到下三段：
+ *  1. 顶上一个「备份」按钮 —— 点了就用**此刻**的两份名单（卸载名单 + 冻结名单）存一份，
+ *     名字默认就是点的那个时间，之后可以改。
+ *  2. 备份列表 —— 每行一份，点开是详情（那条分隔线下面铺开每个包）。
+ *  3. 详情里的「恢复这一份」—— 照这份备份把包装回来 / 把停用的启用回来。
  *
- * 导入放在右上角，因为它是"文件进来"，和页面内容是并列的动作，不该占着列表的位置。
+ * 导入、分享、重命名、删除都在触手可及的位置；导入的备份和本机做的备份在列表里长得一样，
+ * 只是多一行「导入」。
  */
 @Composable
 fun DeletionListScreen(
     deletionList: DeletionListStore,
     platform: CantaPlatform,
     onNavigateBack: () -> Unit,
-    /** 装回一个包，返回成功的条数。 */
-    onRestore: suspend (String) -> Int = { 0 },
+    /** 装回 / 启用一个包，返回成功的条数（走应用列表那条路，不在这里另写一套）。 */
+    onRestore: suspend (packageName: String, kind: OperationKind) -> Int = { _, _ -> 0 },
+    /** 现在这一刻本机的两份名单：备份按钮用它，只用来做备份，不落盘。 */
+    currentSnapshot: suspend () -> Pair<List<BackupApp>, List<BackupApp>> =
+        suspend { emptyList<BackupApp>() to emptyList() },
+    /** 这台手机型号 / ROM 一句话，备份时记进文件。 */
+    deviceLabel: suspend () -> String = { "" },
 ) {
-    val importedPlans by deletionList.importedPlans.collectAsStateWithLifecycle()
+    val backups by deletionList.backups.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    var local by remember { mutableStateOf<DeletionPlan?>(null) }
-    var openPlan by remember { mutableStateOf<DeletionPlan?>(null) }
-    var pendingImport by remember { mutableStateOf<DeletionListImport?>(null) }
-    /** 正要备份的那一份；非空就弹「存到手机 / 分享出去」。 */
-    var backupTarget by remember { mutableStateOf<DeletionPlan?>(null) }
-    var lastBackup by remember { mutableStateOf<String?>(null) }
 
-    suspend fun reload() { local = deletionList.localPlan() }
+    /** 点开的那一份：非空就把它那条铺开，旁边给「恢复这一份」。 */
+    var expanded by remember { mutableStateOf<String?>(null) }
+    /** 详情里的包列表是否全部铺开：默认只放前几个，一长串包名不该一次挤满屏。 */
+    var allPackages by remember { mutableStateOf(false) }
+    /** 正在恢复的那一份；带进度（done / total）。 */
+    var working by remember { mutableStateOf<Restoring?>(null) }
+    var pendingImport by remember { mutableStateOf<ImportedBackup?>(null) }
+    var renameTarget by remember { mutableStateOf<DeletionBackup?>(null) }
+    var deleteTarget by remember { mutableStateOf<DeletionBackup?>(null) }
+    var exportTarget by remember { mutableStateOf<DeletionBackup?>(null) }
+    var lastExport by remember { mutableStateOf<DeletionBackupExport?>(null) }
+    var snapshotSize by remember { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         deletionList.ensureReady()
-        reload()
-    }
-
-    // 点开的那一条也要跟着记录刷新：装回一个之后，它这一份就少一条。
-    LaunchedEffect(openPlan?.id) {
-        openPlan?.let { opened ->
-            openPlan = if (opened.id == LOCAL_PLAN_ID) {
-                deletionList.localPlan()
-            } else {
-                deletionList.plan(opened.id)
-            }
-        }
-    }
-
-    openPlan?.let { plan ->
-        DeletionPlanDetail(
-            plan = plan,
-            onBack = { openPlan = null },
-            onRestoreOne = { pkg ->
-                scope.launch {
-                    val done = onRestore(pkg)
-                    openPlan = if (plan.id == LOCAL_PLAN_ID) {
-                        deletionList.localPlan()
-                    } else {
-                        deletionList.plan(plan.id)
-                    }
-                    platform.showMessage(if (done > 0) "已装回 $pkg" else "没能装回 $pkg")
-                }
-            },
-            onRestoreAll = {
-                scope.launch {
-                    val targets = plan.packages
-                    var done = 0
-                    targets.forEach { pkg -> done += onRestore(pkg) }
-                    openPlan = if (plan.id == LOCAL_PLAN_ID) {
-                        deletionList.localPlan()
-                    } else {
-                        deletionList.plan(plan.id)
-                    }
-                    platform.showMessage("整份恢复：成功 $done / ${targets.size}")
-                }
-            },
-            onBackup = { backupTarget = plan },
-        )
-        return
-    }
-
-    val plans = buildList {
-        local?.let { add(it) }
-        addAll(importedPlans)
+        runCatching { currentSnapshot() }.getOrNull()?.let { (gone, frozen) -> snapshotSize = gone.size + frozen.size }
     }
 
     Scaffold(
@@ -144,10 +113,10 @@ fun DeletionListScreen(
                 title = "卸载记录",
                 onNavigateBack = onNavigateBack,
                 actions = {
-                    // 恢复在右上角：它是"把别处那份带回来"，不是列表本身的一部分。
+                    // 导入：把别处那一份带进来，和本机做的备份并列排着。
                     FlBarButton(
                         glyph = FlGlyphs.importFile,
-                        contentDescription = "从备份恢复",
+                        contentDescription = "导入备份",
                         onClick = {
                             scope.launch {
                                 val text = platform.pickTextFile()
@@ -172,34 +141,89 @@ fun DeletionListScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(top = 6.dp, bottom = 28.dp),
         ) {
+            BackupButton(
+                subtitle = if (snapshotSize > 0) {
+                    "这一刻有 $snapshotSize 个包可以记下来"
+                } else {
+                    "把此刻的卸载名单和冻结名单存成一份"
+                },
+                enabled = !busy,
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        val (gone, frozen) = runCatching { currentSnapshot() }
+                            .getOrElse { emptyList<BackupApp>() to emptyList<BackupApp>() }
+                        val device = runCatching { deviceLabel() }.getOrDefault("")
+                        if (gone.isEmpty() && frozen.isEmpty()) {
+                            platform.showMessage("现在没有可备份的：没有删掉未装回的包，也没有冻结的包")
+                        } else {
+                            val backup = deletionList.createBackup(gone, frozen, device)
+                            snapshotSize = backup.total
+                            expanded = backup.id
+                            platform.showMessage("已备份「${backup.name}」：${backup.counts}")
+                        }
+                        busy = false
+                    }
+                },
+            )
+
+            Spacer(Modifier.height(14.dp))
             Text(
-                text = "点一份方案看它删了哪些包；每行右边的「备份」可以存到手机或分享出去",
-                style = FlText.caption2,
+                text = "备份列表（${backups.size}）",
+                style = FlText.caption1.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = AppCardInset + 2.dp, vertical = 4.dp),
             )
-            plans.forEach { plan ->
-                PlanRow(
-                    plan = plan,
-                    onClick = { openPlan = plan },
-                    // 每一行自己带一个「备份」：点它是"存到哪 / 分享给谁"，不是直接写文件。
-                    onBackup = { backupTarget = plan },
-                )
-                Spacer(Modifier.height(6.dp))
-            }
-            if (plans.all { it.packages.isEmpty() }) {
-                Spacer(Modifier.height(16.dp))
+
+            if (backups.isEmpty()) {
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "还没有卸载过应用。卸载之后它的包会出现在「本机卸载记录」里。",
+                    text = "还没有备份。点上面的「备份」按此刻的两份名单存一份；以后换手机用右上角导回来。",
                     style = FlText.footnote,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = AppCardInset + 10.dp),
                 )
             }
-            lastBackup?.let { where ->
+
+            backups.forEach { backup ->
+                val open = expanded == backup.id
+                BackupRow(
+                    backup = backup,
+                    expanded = open,
+                    allPackages = allPackages,
+                    restoring = working?.takeIf { it.id == backup.id },
+                    onToggle = { expanded = if (open) null else backup.id; allPackages = false },
+                    onToggleAllPackages = { allPackages = !allPackages },
+                    onRestore = {
+                        if (working == null) {
+                            working = Restoring(id = backup.id, done = 0, total = backup.total)
+                            scope.launch {
+                                val result = deletionList.restore(
+                                    backup = backup,
+                                    restore = { pkg, kind -> onRestore(pkg, kind) },
+                                    onProgress = { d, t -> working = Restoring(backup.id, d, t) },
+                                )
+                                working = null
+                                val failedNote = if (result.failed.isEmpty()) {
+                                    ""
+                                } else {
+                                    "，${result.failed.size} 个没恢复（${result.failed.take(3).joinToString("、")}）"
+                                }
+                                platform.showMessage("恢复完成：成功 ${result.succeeded} / ${result.total}$failedNote")
+                            }
+                        }
+                    },
+                    onRename = { renameTarget = backup },
+                    onShare = { exportTarget = backup },
+                    onDelete = { deleteTarget = backup },
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+
+            lastExport?.let { exported ->
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "上次备份：$where",
+                    text = if (exported.shared) "已交给分享面板：${exported.fileName}" else "上次保存：${exported.path}",
                     style = FlText.caption2,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -210,33 +234,73 @@ fun DeletionListScreen(
         }
     }
 
-    // 备份去哪儿：存到手机（自己挑位置）还是分享出去。
-    backupTarget?.let { plan ->
-        BackupTargetDialog(
-            planName = plan.name,
-            onDismiss = { backupTarget = null },
-            onSaveToDevice = {
-                backupTarget = null
+    // 备份去哪儿：分享出去，还是存到手机（自己挑位置）。
+    exportTarget?.let { backup ->
+        ExportDialog(
+            backup = backup,
+            onDismiss = { exportTarget = null },
+            onShare = {
+                exportTarget = null
                 scope.launch {
-                    val exported = deletionList.savePlanAs(plan)
-                    if (exported.path != null) {
-                        lastBackup = exported.path
-                        platform.showMessage("已备份到 ${exported.path}")
-                    } else {
-                        platform.showMessage("已取消，没有备份任何文件")
+                    val exported = deletionList.shareAs(backup)
+                    lastExport = exported
+                    if (!exported.shared) {
+                        platform.showMessage(
+                            exported.path?.let { "这个版本没有分享面板，已存到 $it" }
+                                ?: "这个版本没有分享面板，也没能写文件"
+                        )
                     }
                 }
             },
-            onShare = {
-                backupTarget = null
+            onSaveToDevice = {
+                exportTarget = null
                 scope.launch {
-                    val shared = deletionList.sharePlanAs(plan)
-                    platform.showMessage(
-                        if (shared) "选一个应用把它发出去" else "这个版本没有分享面板，改成存到手机吧"
-                    )
+                    val exported = deletionList.saveAs(backup)
+                    lastExport = exported
+                    if (exported.path != null) {
+                        platform.showMessage("已保存到 ${exported.path}")
+                    } else {
+                        platform.showMessage("已取消，没有写出文件")
+                    }
                 }
             },
         )
+    }
+
+    renameTarget?.let { backup ->
+        RenameDialog(
+            backup = backup,
+            onDismiss = { renameTarget = null },
+            onConfirm = { name ->
+                renameTarget = null
+                scope.launch {
+                    val renamed = deletionList.rename(backup.id, name)
+                    platform.showMessage(renamed?.let { "已改名为「${it.name}」" } ?: "这一份已经不在了")
+                }
+            },
+        )
+    }
+
+    deleteTarget?.let { backup ->
+        CantaDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = "删除「${backup.name}」",
+            buttons = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+                TextButton(onClick = {
+                    deleteTarget = null
+                    scope.launch {
+                        val gone = deletionList.removeBackup(backup.id)
+                        if (expanded == backup.id) expanded = null
+                        platform.showMessage(if (gone) "已删除这一份备份" else "这一份已经不在了")
+                    }
+                }) { Text("删除") }
+            },
+        ) {
+            Text("删的是这一份备份本身，手机上的应用不会被改动。")
+        }
     }
 
     pendingImport?.let { parsed ->
@@ -246,168 +310,295 @@ fun DeletionListScreen(
             onConfirm = {
                 pendingImport = null
                 scope.launch {
-                    val plan = deletionList.importAsPlan(parsed)
-                    platform.showMessage(
-                        buildString {
-                            append("已恢复「${plan.name}」：${plan.packages.size} 个包")
-                            if (parsed.rejected > 0) append("，丢掉 ${parsed.rejected} 条看不懂的")
-                        }
-                    )
+                    val backup = deletionList.import(parsed.raw)
+                    if (backup == null) {
+                        platform.showMessage("这份文件恢复不了任何包")
+                    } else {
+                        expanded = backup.id
+                        val rejectedNote =
+                            if (parsed.rejected > 0) "，丢掉 ${parsed.rejected} 条看不懂的" else ""
+                        platform.showMessage("已导入「${backup.name}」：${backup.uninstall.size} 个包$rejectedNote")
+                    }
                 }
             },
         )
     }
 }
 
-/** 一份方案：名字、有多少条、从哪来；点进去看包，右边的「备份」存位置或分享出去。 */
+/** 正在跑的那一份恢复：哪一份、到第几个。 */
+private data class Restoring(val id: String, val done: Int, val total: Int)
+
+/** 详情里每份名单先露几个：够认出这是哪一次删的，又不至于把页面撑成一张长表。 */
+private const val PACKS_PREVIEW = 12
+
+/** 页面上那唯一一个主动作：备份。写文字不写图标，因为不认识图标的人读不出"备份"。 */
 @Composable
-private fun PlanRow(plan: DeletionPlan, onClick: () -> Unit, onBackup: () -> Unit) {
+private fun BackupButton(subtitle: String, enabled: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = AppCardInset)
             .clip(RoundedCornerShape(AppCardCorner))
-            .background(FlSurfaceLevel.Card.colorOf(scheme))
-            .clickable(onClick = onClick)
+            .background(if (enabled) scheme.primary else scheme.surfaceContainerHigh)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(9.dp))
-                .background(scheme.primary.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            FlGlyphIcon(
-                glyph = if (plan.origin == DeletionPlan.Origin.LOCAL) FlGlyphs.appsList else FlGlyphs.importFile,
-                size = 18.dp,
-                tint = scheme.primary,
-            )
-        }
+        FlGlyphIcon(
+            glyph = FlGlyphs.addCircle,
+            size = 20.dp,
+            tint = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
+            fill = 1f,
+        )
         Spacer(Modifier.width(11.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = plan.name,
-                style = FlText.subheadline,
-                color = scheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                text = "备份",
+                style = FlText.subheadline.copy(fontWeight = FontWeight.SemiBold),
+                color = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
             )
             Text(
-                text = buildString {
-                    append("${plan.packages.size} 个包")
-                    if (plan.origin == DeletionPlan.Origin.IMPORTED) append(" · 导入")
-                },
+                text = subtitle,
                 style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
+                color = (if (enabled) scheme.onPrimary else scheme.onSurfaceVariant).copy(alpha = 0.85f),
             )
         }
-        // 备份按钮单独一块点击区：点它只问"备份去哪"，不会顺带把这一行当成"点进去"。
-        // 写成带文字的胶囊而不是一个光秃秃的小图标：只画图标时人根本认不出这里是备份。
-        Text(
-            text = "备份",
-            style = FlText.caption1,
-            color = scheme.primary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(percent = 50))
-                .background(scheme.primary.copy(alpha = 0.12f))
-                .clickable(onClick = onBackup)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        SettingsChevron()
     }
 }
 
-/** 一份方案的详情：包列表，每条可点装回；顶部两个整份动作。 */
+/**
+ * 列表里的一行：名字、时间、两份名单各几条；点一下把里面每个包铺开。
+ *
+ * 铺开后那一段就是详情：先用一串小字说清这份备份是什么时候、哪台机器上的，
+ * 然后是「恢复这一份」，最后是一份份应用包。
+ */
 @Composable
-private fun DeletionPlanDetail(
-    plan: DeletionPlan,
-    onBack: () -> Unit,
-    onRestoreOne: (String) -> Unit,
-    onRestoreAll: () -> Unit,
-    onBackup: () -> Unit,
+private fun BackupRow(
+    backup: DeletionBackup,
+    expanded: Boolean,
+    allPackages: Boolean,
+    restoring: Restoring?,
+    onToggle: () -> Unit,
+    onToggleAllPackages: () -> Unit,
+    onRestore: () -> Unit,
+    onRename: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Scaffold(
-        topBar = {
-            ScreenTopBar(
-                title = plan.name,
-                onNavigateBack = onBack,
-            )
-        },
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            // 两个整份动作并排：左边恢复，右边备份。都写文字，不用图标猜。
-            Row(
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppCardInset)
+            .clip(RoundedCornerShape(AppCardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = AppCardInset, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(scheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
             ) {
-                DetailAction(
-                    label = "整份恢复",
-                    enabled = plan.packages.isNotEmpty(),
-                    onClick = onRestoreAll,
-                    modifier = Modifier.weight(1f),
-                )
-                DetailAction(
-                    label = "备份这份",
-                    enabled = plan.packages.isNotEmpty(),
-                    onClick = onBackup,
-                    modifier = Modifier.weight(1f),
-                    secondary = true,
+                FlGlyphIcon(
+                    glyph = if (backup.imported) FlGlyphs.importFile else FlGlyphs.copy,
+                    size = 18.dp,
+                    tint = scheme.primary,
                 )
             }
-            if (plan.packages.isEmpty()) {
+            Spacer(Modifier.width(11.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "这一份是空的。",
-                    style = FlText.footnote,
-                    color = scheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = AppCardInset + 10.dp, vertical = 20.dp),
+                    text = backup.name,
+                    style = FlText.subheadline,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = AppCardInset,
-                        end = AppCardInset,
-                        top = 4.dp,
-                        bottom = 24.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(plan.packages, key = { it }) { pkg ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(AppCardCorner))
-                                .background(FlSurfaceLevel.Card.colorOf(scheme))
-                                .clickable { onRestoreOne(pkg) }
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = pkg,
-                                style = FlText.subheadline,
-                                color = scheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(text = "装回", style = FlText.caption2, color = scheme.primary)
-                        }
-                    }
+                Text(
+                    text = buildString {
+                        append(BackupTime.point(backup.createdAt))
+                        append(" · ")
+                        append(backup.counts)
+                        if (backup.imported) append(" · 导入")
+                    },
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            // 转一下箭头就够了：整行可点，铺开详情。
+            FlGlyphIcon(
+                glyph = if (expanded) FlGlyphs.chevronDown else FlGlyphs.chevronForward,
+                size = 16.dp,
+                tint = scheme.onSurfaceVariant,
+                fill = 0f,
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp).padding(bottom = 12.dp)) {
+                if (backup.device.isNotEmpty()) {
+                    Text(
+                        text = "机型：${backup.device}",
+                        style = FlText.caption2,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = "备份于 ${BackupTime.point(backup.createdAt)}",
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DetailAction(
+                        label = when {
+                            restoring != null -> "恢复中 ${restoring.done}/${restoring.total}"
+                            else -> "恢复这一份"
+                        },
+                        enabled = restoring == null && backup.total > 0,
+                        onClick = onRestore,
+                        modifier = Modifier.weight(1f),
+                    )
+                    DetailAction(
+                        label = "分享/导出",
+                        enabled = true,
+                        onClick = onShare,
+                        modifier = Modifier.weight(1f),
+                        secondary = true,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DetailAction(
+                        label = "重命名",
+                        enabled = true,
+                        onClick = onRename,
+                        modifier = Modifier.weight(1f),
+                        secondary = true,
+                    )
+                    DetailAction(
+                        label = "删除",
+                        enabled = true,
+                        onClick = onDelete,
+                        modifier = Modifier.weight(1f),
+                        secondary = true,
+                        danger = true,
+                    )
+                }
+                if (backup.uninstall.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    SectionHeader("卸载名单（${backup.uninstall.size}）")
+                    // 一长串包名不用一次铺满屏：先放前 PACKS_PREVIEW 个，点「展开」再放全。
+                    val shown = if (allPackages) backup.uninstall else backup.uninstall.take(PACKS_PREVIEW)
+                    shown.forEach { app -> AppRow(app, "装回") }
+                    MoreRow(
+                        hidden = backup.uninstall.size - shown.size,
+                        all = allPackages,
+                        onClick = onToggleAllPackages,
+                    )
+                }
+                if (backup.frozen.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    SectionHeader("冻结名单（${backup.frozen.size}）")
+                    val shown = if (allPackages) backup.frozen else backup.frozen.take(PACKS_PREVIEW)
+                    shown.forEach { app -> AppRow(app, "启用") }
+                    MoreRow(
+                        hidden = backup.frozen.size - shown.size,
+                        all = allPackages,
+                        onClick = onToggleAllPackages,
+                    )
+                }
+                if (backup.total == 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "这一份是空的。",
+                        style = FlText.footnote,
+                        color = scheme.onSurfaceVariant,
+                    )
                 }
             }
         }
     }
 }
 
-/** 详情页顶部那两个整份动作之一。[secondary] 画成淡底主色字，用来区分主次。 */
+/** 详情里那两段名单的标题。 */
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        style = FlText.caption1.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 4.dp),
+    )
+}
+
+/** 一长串应用包先只看前几个，剩下的用这一行收着；点一下铺开 / 收起。 */
+@Composable
+private fun MoreRow(hidden: Int, all: Boolean, onClick: () -> Unit) {
+    if (hidden <= 0 && !all) return
+    Text(
+        text = if (all) "收起" else "展开剩下 $hidden 个",
+        style = FlText.caption1,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .padding(top = 6.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 5.dp),
+    )
+}
+
+/** 备份里的一个应用包：应用名、包名、（知道的）版本号，右边写着恢复它会做什么。 */
+@Composable
+private fun AppRow(app: BackupApp, action: String) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(FlSurfaceLevel.Inset.colorOf(scheme))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = app.shownLabel,
+                style = FlText.caption1,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = buildString {
+                    append(app.packageName)
+                    if (app.versionName.isNotEmpty()) append(" · ${app.versionName}")
+                },
+                style = FlText.caption2.copy(fontFamily = FontFamily.Monospace),
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(text = action, style = FlText.caption2, color = scheme.primary)
+    }
+}
+
+/** 详情里那几格动作之一。[secondary] 画成淡底主色字，[danger] 画成红字。 */
 @Composable
 private fun DetailAction(
     label: String,
@@ -415,15 +606,18 @@ private fun DetailAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     secondary: Boolean = false,
+    danger: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val background = when {
         !enabled -> scheme.surfaceContainerHigh
+        danger -> scheme.error.copy(alpha = 0.12f)
         secondary -> scheme.primary.copy(alpha = 0.12f)
         else -> scheme.primary
     }
     val foreground = when {
         !enabled -> scheme.onSurfaceVariant
+        danger -> scheme.error
         secondary -> scheme.primary
         else -> scheme.onPrimary
     }
@@ -432,91 +626,92 @@ private fun DetailAction(
             .clip(RoundedCornerShape(percent = 50))
             .background(background)
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 11.dp),
+            .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             style = FlText.subheadline,
             color = foreground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-/** 恢复前先说清会加进来多少条、丢掉多少条。 */
+/** 改名：一个输入框，默认把现名填好，直接删改就行。 */
 @Composable
-private fun ImportConfirmDialog(
-    parsed: DeletionListImport,
+private fun RenameDialog(
+    backup: DeletionBackup,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
+    onConfirm: (String) -> Unit,
 ) {
+    var text by remember(backup.id) { mutableStateOf(backup.name) }
     CantaDialog(
         onDismissRequest = onDismiss,
-        title = "恢复「${parsed.name}」",
+        title = "重命名备份",
         buttons = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.cancel))
-            }
-            TextButton(onClick = onConfirm) { Text("恢复") }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+            TextButton(onClick = { onConfirm(text) }) { Text("保存") }
         },
     ) {
         Column {
-            Text("这份备份有 ${parsed.accepted.size} 个包名，会存成一份新方案。")
-            if (parsed.rejected > 0) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "另有 ${parsed.rejected} 条不是合法包名，会被丢掉。",
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("备份名字") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "留空就用默认名字：${DeletionBackup.defaultName(backup.createdAt)}",
+                style = FlText.caption2,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
-/**
- * 备份去哪儿：**存到手机**（自己挑位置：U 盘、网盘挂载、任意文件夹）或者**分享出去**
- * （微信文件传输助手、QQ、邮件）。两条路都给，因为"备份"在不同人手里是不同的事。
- */
+/** 分享出去 / 存到手机：两条路都给，因为"导出"在不同人手里是不同的事。 */
 @Composable
-private fun BackupTargetDialog(
-    planName: String,
+private fun ExportDialog(
+    backup: DeletionBackup,
     onDismiss: () -> Unit,
-    onSaveToDevice: () -> Unit,
     onShare: () -> Unit,
+    onSaveToDevice: () -> Unit,
 ) {
     CantaDialog(
         onDismissRequest = onDismiss,
-        title = "备份「$planName」",
+        title = "导出「${backup.name}」",
         buttons = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.cancel))
-            }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
         },
     ) {
         Column {
             Text(
-                "备份成一份 JSON。以后换手机，用这一页右上角的「恢复」把它带回来。",
+                "导出的是一份 JSON（卸载名单 + 冻结名单）。分享给别人或换手机后，用这一页右上角的「导入」带回来。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(10.dp))
-            BackupOptionRow(
-                title = "存到手机",
-                subtitle = "自己挑文件夹和文件名",
-                onClick = onSaveToDevice,
-            )
-            Spacer(Modifier.height(6.dp))
-            BackupOptionRow(
+            OptionRow(
                 title = "分享出去",
                 subtitle = "发到微信文件传输助手、QQ、邮件或 U 盘",
                 onClick = onShare,
+            )
+            Spacer(Modifier.height(6.dp))
+            OptionRow(
+                title = "存到手机",
+                subtitle = "自己挑文件夹和文件名",
+                onClick = onSaveToDevice,
             )
         }
     }
 }
 
-/** 备份对话框里的一行：标题 + 说明，整行可点。 */
+/** 对话框里的一行：标题 + 说明，整行可点。 */
 @Composable
-private fun BackupOptionRow(title: String, subtitle: String, onClick: () -> Unit) {
+private fun OptionRow(title: String, subtitle: String, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -525,15 +720,48 @@ private fun BackupOptionRow(title: String, subtitle: String, onClick: () -> Unit
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Text(
-            text = title,
-            style = FlText.subheadline,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = subtitle,
-            style = FlText.caption2,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Text(text = title, style = FlText.subheadline, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = subtitle, style = FlText.caption2, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * 导入确认框：说清这份文件里写了多少条、来自哪台机器、会丢掉几条。
+ * 确认之后拿 [ImportedBackup.raw]（原文）真的导进来。
+ */
+@Composable
+private fun ImportConfirmDialog(
+    parsed: ImportedBackup,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = "导入「${parsed.name}」",
+        buttons = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.cancel))
+            }
+            TextButton(onClick = onConfirm) { Text("导入") }
+        },
+    ) {
+        Column {
+            Text("这份文件里写了 ${parsed.uninstall.size} 个包名，导入后存成一份新备份，随时可以恢复。")
+            if (parsed.device.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "来自 ${parsed.device}",
+                    style = FlText.caption2,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (parsed.rejected > 0) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "另有 ${parsed.rejected} 条不是合法包名，会被丢掉。",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 }

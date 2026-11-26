@@ -148,6 +148,10 @@ class AppListViewModel(
     /** All apps, regardless of search and filters. */
     val apps: List<AppInfo> get() = _apps
 
+    /** 这台手机的型号 / ROM 一句话，备份时记下来，换手机后看列表能认出是哪台机器。 */
+    suspend fun deviceLabel(): String =
+        runCatching { cantaHandler.deviceProfile()?.shortLabel() }.getOrNull().orEmpty()
+
     val selectedApps = mutableStateSetOf<String>()
 
     var searchQuery by mutableStateOf("")

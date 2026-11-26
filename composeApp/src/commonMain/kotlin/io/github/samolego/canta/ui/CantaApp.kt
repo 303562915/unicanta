@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import io.github.samolego.canta.data.app.BackupApp
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import androidx.compose.ui.Alignment
@@ -1185,13 +1186,39 @@ private fun CantaNavigation(
                     deletionList = deps.deletionList,
                     platform = platform,
                     onNavigateBack = { navController.navigateUp() },
-                    // 点一条就装回来：走的是「未安装」页那同一条路，不是另写一套恢复流程。
-                    onRestore = { packageName ->
+                    // 恢复走「未安装 / 冻结」页那同一条路：一个包装回来是 REINSTALL，冻回去的启用是 ENABLE。
+                    onRestore = { packageName, kind ->
                         appListViewModel.applyPackages(
                             packageNames = listOf(packageName),
-                            kind = OperationKind.REINSTALL,
+                            kind = kind,
                         )
                     },
+                    // 点备份那一刻的两份名单：卸载名单由记录现算，冻结名单问应用列表（它才知道谁被停用）。
+                    currentSnapshot = {
+                        val removed = deps.deletionList.currentState().uninstall
+                        val byPackage = appListViewModel.apps.associateBy { it.packageName }
+                        val frozen = appListViewModel.apps
+                            .filter { it.isDisabled }
+                            .map { app ->
+                                BackupApp(
+                                    packageName = app.packageName,
+                                    label = app.name,
+                                    versionName = app.versionName,
+                                    isSystem = app.isSystemApp,
+                                )
+                            }
+                        val uninstall = removed.map { pkg ->
+                            val app = byPackage[pkg]
+                            BackupApp(
+                                packageName = pkg,
+                                label = app?.name.orEmpty(),
+                                versionName = app?.versionName.orEmpty(),
+                                isSystem = app?.isSystemApp == true,
+                            )
+                        }
+                        uninstall to frozen
+                    },
+                    deviceLabel = { appListViewModel.deviceLabel() },
                 )
             }
             composable(route = Screen.Mine.route) {
