@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +89,14 @@ private val StarGold = Color(0xFFE8A33D)
 /** 机场列表一行里图标方块的边长。 */
 private val AirportTileSize = 34.dp
 
+/**
+ * 一页几条。
+ *
+ * 榜单现在有六十多家，一口气全画出来会卡；页面先画这一页，划到底再追加同样多，直到画完。
+ * 十条刚好是手机一屏多一点，慢机也测得出来，快机划两下就到底。
+ */
+private const val AirportPageSize = 10
+
 /** 机场类型：值 → 页面上的名字，顺序就是选择器的顺序。 */
 private val AirportKinds = listOf(
     "airport" to "机场",
@@ -135,6 +144,8 @@ internal fun RecommendationsAirportTab(
     var airportComposer by remember { mutableStateOf(false) }
     var airportBusy by remember { mutableStateOf(false) }
     var airportError by remember { mutableStateOf<String?>(null) }
+    /** 正在向 airport-head 之后追加的那一页位置：首页 10 条，往下划一页给 `pageSize` 条。 */
+    var visiblePages by remember { mutableIntStateOf(1) }
     /** 摊开看的那一条：点名字或「详情」打开，点同一个再关。 */
     var openedId by remember { mutableStateOf<Long?>(null) }
     /** 摊开时再点一次「详情」才展开完整介绍，列表里那两行字已经够长了。 */
@@ -142,6 +153,9 @@ internal fun RecommendationsAirportTab(
 
     // 每次拿到新的一屏就写回外层：切走再回来先画它，而不是从空列表开始转圈。
     LaunchedEffect(airports, loading, error, subscriptions, reloadKey) {
+        // 列表换了（投过票重排、刚分享完又拉了一趟）就从第一页重来：翻到第 5 页的人，
+        // 对着一份重排过的榜单继续往下划，看到的不是他想看的顺序。
+        visiblePages = 1
         state.airports = airports
         state.loading = loading
         state.error = error
@@ -236,6 +250,21 @@ internal fun RecommendationsAirportTab(
         }
 
         else -> Column(modifier = modifier.fillMaxSize()) {
+            // 「划到底了没有」用的是 listState 的布局信息，所以它得在 LazyColumn 外面算完再给
+            // 懒列表用：放在 item 里算，等于让每一帧的组合去读它自己的测量结果。
+            val shownCount = (visiblePages * AirportPageSize).coerceAtMost(airports.size)
+            val hasMore = shownCount < airports.size
+            val atEnd by remember(shownCount, hasMore) {
+                derivedStateOf {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+                    hasMore && last >= info.totalItemsCount - 2
+                }
+            }
+            LaunchedEffect(atEnd, shownCount, hasMore) {
+                if (atEnd) visiblePages++
+            }
+
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 state = listState,
@@ -266,7 +295,7 @@ internal fun RecommendationsAirportTab(
                         }
                     }
 
-                    items(airports, key = { "airport-${it.id}" }) { entry ->
+                    items(airports.take(visiblePages * AirportPageSize), key = { "airport-${it.id}" }) { entry ->
                         val opened = openedId == entry.id
                         AirportCard(
                             entry = entry,
@@ -290,9 +319,17 @@ internal fun RecommendationsAirportTab(
                         )
                     }
 
+                    // 一次只画 AirportPageSize 条，多的划到底再给一页：一口气画 60 张卡片，
+                    // 每一张都带可点区域，组合和测量都在争帧。判据是「划到了列表末尾」，
+                    // 用 `lastVisibleItemIndex` 而不是在页脚上做 `LaunchedEffect`——后者在列表
+                    // 短到根本滚不动时会立刻再给一页，等于没分页。
                     item(key = "board-foot") {
                         Note(
-                            text = "认同 / 不认同决定它排多前，五星决定它多好用；投过票或打过星，才取得到订阅。",
+                            text = if (hasMore) {
+                                "已经拉出 $shownCount / ${airports.size} 家，继续往下划就再来一页。"
+                            } else {
+                                "认同 / 不认同决定它排多前，五星决定它多好用；投过票或打过星，才取得到订阅。"
+                            },
                             inset = 16.dp,
                         )
                     }
