@@ -92,6 +92,7 @@ import io.github.samolego.canta.ui.component.SwitchSettingsItem
 import io.github.samolego.canta.ui.dialog.LaunchGateDialog
 import io.github.samolego.canta.ui.dialog.RestoreExportDialog
 import io.github.samolego.canta.ui.fl.FlAccent
+import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -121,6 +122,13 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     /** 打开主题页：配色与深浅色在那页里选，这里只写当前值。 */
     onOpenTheme: () -> Unit = {},
+    /** 打开删除名单页：导出一份 JSON、再导回来（见 [DeletionListScreen]）。 */
+    onOpenDeletionList: () -> Unit = {},
+    /**
+     * 打开「我的」：这一页现在是底栏那一格的落点，所以"我上传过什么、我的身份"要能从这里进。
+     * 顶栏右上角那一个头像按钮就是它。
+     */
+    onOpenMine: () -> Unit = {},
     /**
      * 现在实际生效的是哪一种特权运行时，以及走到哪一步。读 handler 而不是记着：
      * 昨天能 root、今天丢了的手机，得在这一页说清楚。
@@ -187,10 +195,18 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            // 从「我的」页进来，所以顶栏带回退箭头。
+            // 设置现在由底栏那一格直接进，所以没有"上一页"可以回退：顶栏左边不画箭头，
+            // 右边放一个「我的」——身份和"我上传过的方案"仍在那一页。
             ScreenTopBar(
                 title = stringResource(Res.string.settings),
                 onNavigateBack = onNavigateBack,
+                actions = {
+                    FlBarButton(
+                        glyph = FlGlyphs.profiles,
+                        contentDescription = "我的",
+                        onClick = onOpenMine,
+                    )
+                },
             )
         }
     ) { padding ->
@@ -371,6 +387,16 @@ fun SettingsScreen(
                 title = "导出恢复脚本",
                 subtitle = "最近删除的包名 / 一键恢复全部已卸载的包，发到电脑上双击运行",
                 onClick = { restoreDialogShown = true },
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 删除名单：自己决定要删的包名，导出一份 JSON 带走，换手机再导回来。
+            // 和上面那份恢复脚本是两件事：那个是"救我这次删的"，这个是"我一直想删的清单"。
+            AppLinkCard(
+                glyph = FlGlyphs.importFile,
+                title = "删除名单（导入 / 导出）",
+                subtitle = "把自己删掉的包名导成 JSON，换机或重装后再导回来",
+                onClick = onOpenDeletionList,
             )
             Spacer(Modifier.height(CardGap))
 
