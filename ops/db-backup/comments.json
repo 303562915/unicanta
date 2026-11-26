@@ -4488,6 +4488,42 @@
   "target": "com.android.location.fused"
  },
  {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:46:23.783179+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 607,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.android.networkstack"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:46:45.077302+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 608,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "vendor.qti.hardware.cacert.server"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:47:06.455181+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 609,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.qti.phone"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "那该卸！",
@@ -4498,6 +4534,90 @@
   "parent_id": 41,
   "system_name": "HyperOS 3",
   "target": "com.xiaomi.ab"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:47:27.134259+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 610,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.qualcomm.qcrilmsgtunnel"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:47:42.065295+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 611,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.xiaomi.ecc"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:47:56.692087+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 612,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "vendor.qti.data.ntnsatapp"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:48:18.214586+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 613,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "vendor.qti.imsdatachannel"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:48:33.513184+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 614,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.android.networkstack.tethering"
+ },
+ {
+  "author": "珍德世泥鸭",
+  "author_id": "13478",
+  "body": "可以删吗",
+  "created_at": "2026-11-26T10:48:49.404018+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 615,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.os.callservice"
+ },
+ {
+  "author": "奇瑞",
+  "author_id": "12777",
+  "body": "删除后重启没问题",
+  "created_at": "2026-11-26T10:54:01.754583+00:00",
+  "device_model": "Redmi Note 13 Pro",
+  "id": 616,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.306",
+  "target": "com.miui.accessibility"
  },
  {
   "author": "听风说你",
@@ -4536,6 +4656,18 @@
   "target": "com.miui.systemAdSolution"
  },
  {
+  "author": "TiAmo",
+  "author_id": "12822",
+  "body": "color os的第三方流体云，卸载了第三方应用无法使用流体云。",
+  "created_at": "2026-11-26T11:08:11.934077+00:00",
+  "device_model": "一加 15",
+  "id": 649,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "Android",
+  "target": "com.coloros.ocs.opencapabilityservice"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "[动动脑子]",
@@ -4546,6 +4678,42 @@
   "parent_id": 64,
   "system_name": "HyperOS 3",
   "target": "com.miui.systemAdSolution"
+ },
+ {
+  "author": "TiAmo",
+  "author_id": "12822",
+  "body": "系统功能(如倒计时、通话等)的流体云效果实现",
+  "created_at": "2026-11-26T11:09:29.056061+00:00",
+  "device_model": "一加 15",
+  "id": 650,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "Android",
+  "target": "com.oplus.pantanal.ums"
+ },
+ {
+  "author": "nihao",
+  "author_id": "14514",
+  "body": "vivo不能改格式保存到手机exe改成其他格式文件纯纯废物[6]",
+  "created_at": "2026-11-26T11:09:43.530286+00:00",
+  "device_model": "iQOO Neo9",
+  "id": 651,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "Funtouch OS 14.0",
+  "target": "com.android.notes"
+ },
+ {
+  "author": "nihao",
+  "author_id": "14514",
+  "body": "而且必须登录vivo账号要卸载的话不知道会不会把隐藏了[大哭]",
+  "created_at": "2026-11-26T11:12:54.698991+00:00",
+  "device_model": "iQOO Neo9",
+  "id": 652,
+  "kind": "app",
+  "parent_id": 651,
+  "system_name": "Funtouch OS 14.0",
+  "target": "com.android.notes"
  },
  {
   "author": "开发者",

@@ -36,6 +36,18 @@
   "pkg": "com.google.android.projection.gearhead"
  },
  {
+  "agrees": 0,
+  "applied": false,
+  "author": "TiAmo",
+  "author_id": "12822",
+  "body": "color os第三方流体云相关，卸载后第三方流体云无法使用",
+  "created_at": "2026-11-26T11:07:11.573176+00:00",
+  "disagrees": 0,
+  "id": 13,
+  "note": "",
+  "pkg": "com.coloros.ocs.opencapabilityservice"
+ },
+ {
   "agrees": 50,
   "applied": true,
   "author": "开发者",
