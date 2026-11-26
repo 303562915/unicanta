@@ -1,7 +1,6 @@
 package io.github.samolego.canta.data.bloat
 
 import io.github.samolego.canta.data.CantaSettings
-import io.github.samolego.canta.data.bloat.BundledBloatList
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.testing.MemoryStorage
 import io.ktor.client.HttpClient
@@ -10,7 +9,6 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.TimeZone
@@ -28,11 +26,6 @@ class BloatRepositoryTest {
     private val listJson = """{"com.a": {"description": "A", "removal": "Recommended"}}"""
     private val cachedJson = """{"com.cached": {"description": "C", "removal": "Expert"}}"""
     private val bundledJson = """{"com.bundled": {"description": "B", "removal": "Caution"}}"""
-
-    /** 枚举目录里随包的那一份，只读一次。 */
-    private val bundledFromResources: String by lazy {
-        runBlocking { BundledBloatList.raw() }.orEmpty()
-    }
 
     /**
      * 这条用例自己那台服务器的 commits 返回值：永远不会等于 settings 里写的 `same`，
@@ -129,18 +122,22 @@ class BloatRepositoryTest {
 
     @Test
     fun replacesCorruptCache() = runTest {
-        // 服务器给的是**完整可用的**名单（随包那份），不是 `listJson`：那份只有 `com.a` 一条，
-        // 旧实现的"下载成功"判据是 `parsed.isNotEmpty()`，于是解析成空表 → 判成没下到 → 坏缓存
-        // 被留在原地（CI 45758627750 的 `expected:<[com.a]> but was:<[]>` 就是这个）。
-        // 这里也不传 `bundled`：回退路径不是这条用例要验的东西，接上它反而会把"下载成功"盖住。
-        val server = Server(sha = "same", list = bundledFromResources)
+        // 服务器回一小份**真的能解析出条目**的名单：`refresh()` 判"下载成功"看的是解析结果非空。
+        // 两条走过的弯路，别再来一遍：
+        //  * 服务器只回 `{"com.a": …}` 且缓存是坏的 → 解析成空表 → 判成没下到 → 坏缓存留在
+        //    原地（CI 45758627750 的 `expected:<[com.a]> but was:<[]>`）；
+        //  * 改用整份随包名单当服务器内容 → `BundledBloatList.raw()` 在 desktop 测试里读出来是
+        //    空串（composeResources 不在测试 classpath 上），服务器就回空串（CI 45760808432）。
+        // 正解：服务器内容用 `bundledJson`（一小份真的 JSON，解析得出来），settings 里记一个
+        // **不同**的旧 commit。这条用例要验的是"坏缓存被一次成功的下载替换掉"，其余一概不掺进来。
+        val server = Server(sha = "same", list = bundledJson)
         val cache = MemoryStorage("{not json".encodeToByteArray())
 
-        val bloat = BloatRepository(server.client, cache, settings("same")).load()
+        val bloat = BloatRepository(server.client, cache, settings("old")).load()
 
-        assertTrue(bloat.containsKey("com.cached").not())
-        assertTrue(bloat.isNotEmpty())
-        assertEquals(bundledFromResources, cache.content?.decodeToString())
+        // 坏缓存被换掉了，换成了刚下到的那份。
+        assertEquals(setOf("com.bundled"), bloat.keys)
+        assertEquals(bundledJson, cache.content?.decodeToString())
     }
 
     @Test
@@ -326,10 +323,11 @@ class BloatRepositoryTest {
         // 断言 expected:<false> but was:<true>（CI run 45757908675 / 45758627750）。地址不共享，
         // 这个前提就稳了。
         val unreachable = "https://example.test/level_fixes.unreachable.json"
-        // 用**整份随包名单**当脚手架：手上的缓存通常读不出来（那正是要继续往下拉的理由），随包那份
-        // 才是"下到名单之后""一个是新commit"这种情况真正用得上的一份。空表会让下面的断言变成
-        // "什么都没下到"，而那不是这条用例要说的事。
-        val server = Server(sha = SENTINEL_SHA, list = bundledFromResources)
+        // commits 回一个**独有**的 sha（永远不会等于 settings 里写的 `same`），名单回 `listJson`：
+        // 这两样只要"能解析出条目"就够了，这条用例要说的是修正表拉不到，不是名单怎么下。
+        // （曾经想用整份随包名单当脚手架，但 `BundledBloatList.raw()` 在 desktop 上读出空串，
+        //  服务器就会回一个空名单——见 CI 45760808432。）
+        val server = Server(sha = SENTINEL_SHA, list = bundledJson)
         val settings = settings("same")
         val fixes = MemoryStorage()
 
@@ -341,7 +339,6 @@ class BloatRepositoryTest {
             correctionsUrl = { unreachable },
             correctionsCommitsUrl = null,
             correctionsCache = fixes,
-            bundled = { bundledFromResources },
         )
 
         assertEquals(false, repository.refreshCorrections())
