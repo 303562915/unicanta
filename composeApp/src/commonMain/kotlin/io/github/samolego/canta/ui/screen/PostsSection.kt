@@ -1,7 +1,11 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,6 +19,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +52,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
@@ -73,10 +80,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -113,7 +122,6 @@ import io.github.samolego.canta.ui.component.parseHexColor
 import io.github.samolego.canta.ui.component.readableBrandColor
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.rememberRememberedListState
-import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -206,6 +214,17 @@ private val EDITOR_TOOLS = listOf(
 
 /** 置顶标记的颜色：与「认同」同一个绿，页面上一眼是"被挑出来的那条"。 */
 private val PostPinned = Color(0xFF2FA84F)
+
+/**
+ * 参与者头像的叠压步长：`size - 8` = 21 - 8 = **13dp**（fluxdo `topic_participant_avatars.dart:53`）。
+ *
+ * 重叠量固定是 8dp，头像一变步长就跟着变 —— 所以写成常量而不是"写死 13"，
+ * 改直径时不用回来再算一遍。
+ */
+private val PARTICIPANT_STEP = 13.dp
+
+/** 阅读时长只在超过这个分钟数时才报：短帖报"1 分钟阅读"没有信息量。 */
+private const val READ_MINUTES_MIN = 3
 
 /** 列表上方的四个口径：最新（后端原序）、热门（赞与回复算出来的热度）、收藏、我的。 */
 private enum class PostBoard(val label: String) {
@@ -327,26 +346,37 @@ private fun PostsToolbar(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.width(6.dp))
-            // chevron 住在 20dp 的色调小圆里：开着换 `secondaryContainer` 并翻转 180°
-            // （`topic_filter_menu.dart:320-343`）。比一个裸 ▾ 更像"这里能开"。
+            // chevron 住在 20dp 的色调小圆里：开着换 `secondaryContainer` 并翻转 180°。
+            // 数值照 `topic_filter_menu.dart:320-343`：
+            //   - 圆底色 `AnimatedContainer` **220ms / easeOut**
+            //   - 翻转 `AnimatedRotation` **340ms / easeOutBack**（带一点过冲回弹，
+            //     这正是它看起来"啪"一下翻过去的原因；线性 tween 是死板的匀速）
+            val turn by animateFloatAsState(
+                targetValue = if (menuOpen) 180f else 0f,
+                animationSpec = tween(durationMillis = 340, easing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)),
+                label = "filter-chevron-turn",
+            )
+            val orb by animateColorAsState(
+                targetValue = if (menuOpen) {
+                    scheme.secondaryContainer
+                } else {
+                    scheme.surfaceContainerHighest.copy(alpha = 0.6f)
+                },
+                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                label = "filter-chevron-orb",
+            )
             Box(
                 modifier = Modifier
                     .size(20.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (menuOpen) {
-                            scheme.secondaryContainer
-                        } else {
-                            scheme.surfaceContainerHighest.copy(alpha = 0.6f)
-                        },
-                    ),
+                    .background(orb),
                 contentAlignment = Alignment.Center,
             ) {
                 FlGlyphIcon(
                     glyph = FlGlyphs.chevronDown,
                     size = 15.dp,
                     tint = if (menuOpen) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
-                    modifier = Modifier.rotate(if (menuOpen) 180f else 0f),
+                    modifier = Modifier.rotate(turn),
                 )
             }
         }
@@ -427,9 +457,15 @@ private fun PostsFab(
     //   - 菜单项间距 **4**（原来 10，太散）
     //   - 菜单项本身是 `primaryContainer` 的胶囊，**图标在右**、文字在左，内边距 24/8
     //   - 弹出时从 0.2 缩放到 1（淡入）
+    //
+    // 驱动它的**不是 tween 而是两根弹簧**（`m3e_fab_menu.dart:61` 的 `M3eMotion.fastSpatial`）：
+    // 转形（圆角、底色、图标尺寸）走 ζ=0.6 / stiffness=800 的空间弹簧——欠阻尼，所以
+    // 展开到头时会有一点点回弹；透明度走 ζ=1.0 / stiffness=3800 的效果弹簧——临界阻尼、
+    // 快得多，只要不抖。上一版写的是 240ms 匀速 tween，展开过程是"匀速变圆"，没有那股回弹。
+    val spatial = spring<Float>(dampingRatio = 0.6f, stiffness = 800f)
     val expand = animateFloatAsState(
         targetValue = if (open) 1f else 0f,
-        animationSpec = tween(durationMillis = 240),
+        animationSpec = spatial,
         label = "posts-fab-expand",
     )
     val tint = expand.value
@@ -496,20 +532,35 @@ private fun PostsFab(
  *
  * [visible] 走 [AnimatedVisibility]：弹出时从 0.2 缩放到 1 并淡入，收起时反向。
  * 调用方**不要**再在外面包 `if`——包了就没有退出动画（见 [PostsFab] 那段注释）。
+ *
+ * 进场用两根弹簧而不是 tween，和 FAB 主体同一套（`m3e_fab_menu.dart:108-109`）：
+ * 缩放走 `fastSpatial`（ζ=0.6、k=800，欠阻尼带回弹），透明度走 `fastEffects`
+ * （ζ=1.0、k=3800，临界阻尼、快得多）。用 220ms 匀速 tween 的话，菜单项是"匀速长出来"，
+ * 而 FAB 自己已经带上了回弹 —— 一动一静，看着像两个组件。
  */
 @Composable
 private fun FabAction(visible: Boolean, glyph: FlGlyph, label: String, onClick: () -> Unit) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.2f, animationSpec = tween(220)),
-        exit = fadeOut(tween(160)) + scaleOut(targetScale = 0.2f, animationSpec = tween(160)),
+        enter = fadeIn(
+            animationSpec = spring(dampingRatio = 1f, stiffness = 3800f),
+        ) + scaleIn(
+            initialScale = 0.2f,
+            animationSpec = spring(dampingRatio = 0.6f, stiffness = 800f),
+        ),
+        exit = fadeOut(
+            animationSpec = spring(dampingRatio = 1f, stiffness = 3800f),
+        ) + scaleOut(
+            targetScale = 0.2f,
+            animationSpec = spring(dampingRatio = 0.6f, stiffness = 800f),
+        ),
     ) {
         val scheme = MaterialTheme.colorScheme
         Row(
             modifier = Modifier
                 // 顺序是 `clip → background → clickable → padding`：背景必须画在点击层**下面**，
                 // 反过来（先 clickable 再 background）背景会盖住涟漪，和抽屉、全仓其它胶囊都反着。
-                .heightIn(min = 40.dp)
+                .heightIn(min = 56.dp)
                 .clip(RoundedCornerShape(50))
                 .background(scheme.primaryContainer)
                 .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
@@ -1295,30 +1346,31 @@ internal fun PostsScreen(
                 openId > 0L -> ScreenTopBar(
                     title = thread?.post?.title?.ifBlank { "帖子" } ?: "帖子",
                     onNavigateBack = closeThread,
+                    // 详情页顶栏高度 **56dp**、标题**左对齐**：fluxdo 这里就是 Flutter 原生
+                    // `AppBar`（`kToolbarHeight = 56`、`centerTitle: false`、
+                    // `textTheme.titleMedium`）。本仓 `FlTopBarHeight` 是 72dp 且标题居中，
+                    // 那是 FlClash 的二级页规范 —— 帖子详情这一页要照 fluxdo，所以单独传。
+                    height = 56.dp,
+                    centered = false,
+                    // 标题照 fluxdo 的 `textTheme.titleMedium`：≈16sp、**常规字重**
+                    // （不是本仓二级页那套 17sp 加粗，也不是首页 24sp 大标题）。
+                    titleStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp),
                     actions = {
                         val open = thread?.post
-                        if (canDeleteOpen && open != null) {
-                            // 「编辑」「删除」用 44dp 圆图标而不是文字按钮：`FlTopBar` 的标题吃
-                            // `weight(1f)`，而 TextButton 有 58dp 最小宽度，两颗就是 124dp，
-                            // 360dp 屏上标题只剩 148dp（八个字）就被省略了。图标按钮一颗 44dp，
-                            // 两颗 96dp，而且形状和左边那颗返回键是同一套。
-                            //
-                            // 锁住的帖子不给改（后端 `post_update` 也会拒），按钮直接置灰。
-                            FlBarButton(
-                                glyph = FlGlyphs.edit,
-                                contentDescription = "编辑",
-                                onClick = { editPost(open) },
-                                size = 40.dp,
-                                iconSize = 20.dp,
-                                enabled = busyKey == null && !open.locked,
-                            )
-                            FlBarButton(
-                                glyph = FlGlyphs.delete,
-                                contentDescription = "删除",
-                                onClick = { confirmTarget = open },
-                                size = 40.dp,
-                                iconSize = 20.dp,
-                                enabled = busyKey == null,
+                        if (open != null) {
+                            // 顶栏右侧照 fluxdo 只留一颗「更多」（`Symbols.more_vert_rounded`）。
+                            // **编辑与删除都不在顶栏** —— 上一版把两颗圆图标放在这里，
+                            // 与 fluxdo 的位置正好相反（见下面那个菜单）。
+                            DetailMoreMenu(
+                                open = open,
+                                canManage = canDeleteOpen,
+                                busy = busyKey != null,
+                                onEdit = { editPost(open) },
+                                onDelete = { confirmTarget = open },
+                                onCopy = {
+                                    platform.copyToClipboard(copyablePost(open))
+                                    platform.showMessage("帖子已复制")
+                                },
                             )
                         }
                     },
@@ -2007,7 +2059,7 @@ private fun PostCard(
             Text(
                 text = post.title.ifBlank { "（无标题）" },
                 // 15sp / 行高 1.3：与 `TopicCardStyle.titleFontSize` 的默认值同一个数。
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 19.5.sp),
                 // 读完的帖子退一档：w600 → w500（`topic_card.dart:313`）
                 fontWeight = if (read) FontWeight.Medium else FontWeight.SemiBold,
                 color = titleColor,
@@ -2017,11 +2069,12 @@ private fun PostCard(
             )
             if (unread) {
                 Spacer(modifier = Modifier.width(6.dp))
-                // 蓝点与标题首行视觉居中：`EdgeInsets.only(top: 5)`。
+                // 蓝点与标题首行视觉居中：`EdgeInsets.only(top: 5)`；直径 **8dp**
+                // （fluxdo `topic_card.dart:880` / `topic_card_layout.dart:1075`）。
                 Box(
                     modifier = Modifier
                         .padding(top = 5.dp)
-                        .size(7.dp)
+                        .size(8.dp)
                         .background(scheme.primary, CircleShape),
                 )
             }
@@ -2184,47 +2237,80 @@ private fun SkeletonBar(widthFraction: Float, align: Boolean = true) {
 
 
 /**
- * 详情底部「相关帖子」的一行：标题 + 一行元信息，点它换到那一条。
+ * 详情底部「相关话题」的一行，照 fluxdo `topic_more_topics.dart:343-419`：
  *
- * 比列表卡片轻：这里是"看完这帖还能顺手看什么"，不是再铺一张列表。
+ * - **没有卡片背景**：`InkWell` + `padding(horizontal = 16, vertical = 9)` 的通栏行
+ * - 左侧**创建人头像 32dp** + 10dp 间距（上一版没有头像）
+ * - 标题 `bodyMedium` + w500 + 行高 1.35、最多 2 行
+ * - 元信息 `labelSmall`：左边分类，右边回复数 + 「·」+ 相对时间
+ *
+ * 它比列表卡片轻：这里是"看完这帖还能顺手看什么"，不是再铺一张列表。
  */
 @Composable
 private fun RelatedPostRow(post: CommunityPost, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(FlSurfaceLevel.Block.colorOf(scheme))
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            text = post.title.ifBlank { "（无标题）" },
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = scheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = buildString {
+        Box(modifier = Modifier.padding(top = 1.dp)) {
+            PostAvatar(
+                name = post.author.ifBlank { "匿" },
+                seed = post.authorId.ifEmpty { post.author },
+                size = 32.dp,
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = post.title.ifBlank { "（无标题）" },
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                fontWeight = FontWeight.Medium,
+                color = scheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (post.category.isNotBlank()) {
-                    append(post.category)
-                    append(" · ")
+                    Text(
+                        text = post.category,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = metaTint(scheme.onSurfaceVariant, 0.8f),
+                        maxLines = 1,
+                    )
                 }
-                append(post.comments)
-                append(" 回复 · ")
-                append(post.likes)
-                append(" 赞")
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = metaTint(scheme.onSurfaceVariant, 0.8f),
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = "${post.comments}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = metaTint(scheme.onSurfaceVariant, 0.8f),
+                    maxLines = 1,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                val stamp = relativeStamp(post.createdAt)
+                if (stamp.isNotBlank()) {
+                    Text(
+                        text = stamp,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = metaTint(scheme.onSurfaceVariant, 0.8f),
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2326,7 +2412,7 @@ private fun PostThreadPane(
 
                 item(key = "op") {
                     PostFloorCard(
-                        floorLabel = "楼主",
+                        floorLabel = "#1",
                         author = shown.author,
                         authorSeed = shown.authorId.ifEmpty { shown.author },
                         stamp = relativeStamp(shown.createdAt),
@@ -2379,7 +2465,7 @@ private fun PostThreadPane(
                 // 楼层号就是时间序里的位置：后端按时间正序给，这里 index + 1 直接对得上。
                 itemsIndexed(comments, key = { _, item -> "c-${item.id}" }) { index, comment ->
                     PostFloorCard(
-                        floorLabel = "#${index + 1}",
+                        floorLabel = "#${index + 2}",
                         author = comment.author,
                         authorSeed = comment.authorId.ifEmpty { comment.author },
                         stamp = relativeStamp(comment.createdAt),
@@ -2442,6 +2528,9 @@ private fun PostThreadPane(
  * [PostFloorCard] 自己不再加左右边距：它被放在 LazyColumn 里，边距由内容区的 contentPadding
  * 统一给，避免"卡片套边距"两处相加。
  */
+// `FlowRow` 仍是实验性布局 API（compose 1.12 也一样），必须逐个函数 opt-in ——
+// 本仓其它用到它的地方（`PlanScopePicker` / `TweaksScreen` / `AppTile`）都是这么写的。
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
     val scheme = MaterialTheme.colorScheme
@@ -2515,34 +2604,60 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
             }
         }
 
-        // 参与者：几个小头像叠在一起，后面写「N 参与者」。没回帖的人不画这一行。
-        if (participants.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+        // 统计行：参与者头像 + 「N 参与者」+ 「X 分钟阅读」。
+        // 照 fluxdo 的 `topic_statistics.dart`：一个 `Wrap(spacing: 12)`，每项是"数值 + 浅色标签"
+        // 两段文字，阅读时长是**下一项**而不是被推到行右端。
+        if (participants.isNotEmpty() || readMinutes > READ_MINUTES_MIN) {
+            // Compose 里对应的不是 Dart 的 `Wrap` 而是 `FlowRow`（换行 + 水平间距）。
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
-                participants.forEachIndexed { index, (seed, name) ->
-                    // 叠压：第二个往后错开 14dp，最后一个压在最上面，看起来是一摞。
-                    Box(modifier = Modifier.offset(x = (-(index * 8)).dp)) {
-                        PostAvatar(
-                            name = name.ifBlank { "匿" },
-                            seed = seed,
-                            size = 20.dp,
+                if (participants.isNotEmpty()) {
+                    // 头像叠 + 「N 参与者」是**一项**，不能被 FlowRow 拆到两行去。
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ParticipantStack(participants = participants)
+                        Text(
+                            text = "${participants.size.coerceAtLeast(1)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = metaTint(scheme.onSurfaceVariant, 0.8f),
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "参与者",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = metaTint(scheme.onSurfaceVariant, 0.5f),
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "${participants.size.coerceAtLeast(1)} 参与者",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "$readMinutes 分钟阅读",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.outline,
-                )
+                // 只有读起来"值得"的时候才报时长：fluxdo 是 minutes > 3，短帖报一个
+                // "1 分钟阅读"没有信息量，只是多占一格。
+                if (readMinutes > READ_MINUTES_MIN) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.MenuBook,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = metaTint(scheme.onSurfaceVariant, 0.8f),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "$readMinutes",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = metaTint(scheme.onSurfaceVariant, 0.8f),
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "分钟阅读",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = metaTint(scheme.onSurfaceVariant, 0.5f),
+                        )
+                    }
+                }
             }
         }
 
@@ -2636,9 +2751,217 @@ private fun TagPill(tag: String) {
 }
 
 /**
+ * 参与者头像叠压，照 fluxdo `topic_participant_avatars.dart:53-70` 的真做法：
+ *
+ * ```
+ * step = size - 8
+ * SizedBox(width = size + (n-1) * step, height = size) {
+ *     Stack { for (i) PositionedDirectional(start = i * step, width = size) { avatar } }
+ * }
+ * ```
+ *
+ * 三处容易写错的地方，都是对照源码抄出来的：
+ *
+ * 1. **占位宽度**：`size + (n-1) * step`。`offset` 只平移、不改测量位置，所以外层容器
+ *    必须**再补一个 `size - step`**（= 重叠量 8dp）的余量，否则最后一个头像的右边缘会被
+ *    父容器的 `clipToBounds` 裁掉 8dp。用 `wrapContentWidth(unbounded = true)` 就不必算这个数，
+ *    但那样外层在 Row 里会退化成无界宽；这里显式给宽，算得清。
+ * 2. **圆环不是实心圆**：相邻头像之间那道 1.5dp 的 `surface` 分隔是**描边**（`Border.all`），
+ *    画成实心 `drawCircle` 就成了"每个头像垫一块白饼"，头像本身就看不出来了。
+ * 3. **不要重复 clip**：`PostAvatar` 内部已经 `clip(CircleShape)`，外面再 clip 一次只多一层图层。
+ */
+@Composable
+private fun ParticipantStack(participants: List<Pair<String, String>>) {
+    val scheme = MaterialTheme.colorScheme
+    val size = 21.dp
+    val step = PARTICIPANT_STEP
+    // 重叠量 = size - step = 8dp；外层要把最后这一个的完整圆包住。
+    val overlap = size - step
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .width(size + step * (participants.size - 1).coerceAtLeast(0) + overlap)
+                .height(size),
+        ) {
+            participants.forEachIndexed { index, (seed, name) ->
+                Box(
+                    modifier = Modifier
+                        // x 是**正的**：第 i 个头像从 i*step 起画，后画的压在前一个的右半边上，
+                        // 视觉上是一摞"向右展开"的叠压（和 fluxdo 的 start 方向一致）。
+                        .offset(x = step * index)
+                        .size(size)
+                        // 描边（不是实心圆）：半径还要收回 0.75dp，否则线宽的一半会溢出被裁。
+                        .drawBehind {
+                            drawCircle(
+                                color = scheme.surface,
+                                radius = this.size.minDimension / 2f - 0.75.dp.toPx(),
+                                style = Stroke(width = 1.5.dp.toPx()),
+                            )
+                        },
+                ) {
+                    PostAvatar(
+                        name = name.ifBlank { "匿" },
+                        seed = seed,
+                        size = size,
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+    }
+}
+
+/**
+ * 详情页顶栏那颗「更多」，照 fluxdo `topic_detail_page.dart:1781-1786` + `:2002-2017`：
+ *
+ * - 触发器：一颗 `more_vert`（竖三点）图标按钮，触控 48dp、图标 24dp
+ * - 菜单项：**图标 20dp + 12dp 间距 + 文字**（`PopupMenuItem` 形态），不是一排图标
+ * - 作者本人比其他人只多两项：**「编辑话题」第一项**、**「删除」最后一项**
+ *
+ * 为什么编辑/删除要收进菜单而不是像上一版那样摆在顶栏上当两颗圆按钮：
+ * 1. 源码就是这么放的（顶栏 actions 只有 更多）；
+ * 2. 顶栏标题吃 `weight(1f)`，一颗 TextButton 最小 58dp，两颗 124dp，360dp 屏上标题
+ *    只剩 148dp（八个字）就被省略 —— 收进菜单等于把这段宽度还给标题；
+ * 3. 删除是破坏性动作，藏进菜单才需要多点一下。
+ *
+ * 锁住的帖子不给「编辑」（后端 `post_update` 也会拒），这一项直接灰掉而不是隐藏：
+ * 藏起来人会以为"我明明作者却没有编辑"，灰掉才说明"是这条锁了"。
+ */
+@Composable
+private fun DetailMoreMenu(
+    open: CommunityPost,
+    canManage: Boolean,
+    busy: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    /** 复制整帖（标题、作者、正文、标签）。 */
+    onCopy: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(50))
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = "更多选项",
+                    onClick = { menuOpen = true },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            FlGlyphIcon(
+                glyph = FlGlyphs.more,
+                size = 24.dp,
+                tint = scheme.onSurface,
+            )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            if (canManage) {
+                // 第一项：编辑话题（作者本人 / 有编辑权）。
+                MenuRow(
+                    glyph = FlGlyphs.edit,
+                    label = "编辑话题",
+                    tint = if (open.locked) scheme.onSurfaceVariant.copy(alpha = 0.38f) else scheme.onSurface,
+                    enabled = !busy && !open.locked,
+                    onClick = {
+                        menuOpen = false
+                        onEdit()
+                    },
+                )
+                // 「复制整帖」对谁都有用（把这条转给别处看），不分作者。
+                MenuRow(
+                    glyph = FlGlyphs.copy,
+                    label = "复制帖子",
+                    tint = scheme.onSurface,
+                    enabled = true,
+                    onClick = {
+                        menuOpen = false
+                        onCopy()
+                    },
+                )
+                HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+                // 最后一项：删除（红色）。放在分隔线下面，和上面的常用项隔开。
+                MenuRow(
+                    glyph = FlGlyphs.delete,
+                    label = "删除",
+                    tint = scheme.error,
+                    enabled = !busy,
+                    onClick = {
+                        menuOpen = false
+                        onDelete()
+                    },
+                )
+            } else {
+                // 不是作者：fluxdo 那边这一档只有读类动作。本仓能给的也就「复制帖子」，
+                // 所以菜单只有这一项 —— 不放灰掉的编辑/删除，那会像"我应该能点"。
+                MenuRow(
+                    glyph = FlGlyphs.copy,
+                    label = "复制帖子",
+                    tint = scheme.onSurface,
+                    enabled = true,
+                    onClick = {
+                        menuOpen = false
+                        onCopy()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 菜单里的一行：图标 20dp + 12dp 间距 + 文字。
+ *
+ * 不用 `DropdownMenuItem(text = …)` 的默认形态：那个的图标走 `leadingIcon`，尺寸和间距
+ * 都由 M3 默认值决定（24dp 图标），而 fluxdo 这里是 **20dp + 12dp**。
+ */
+@Composable
+private fun MenuRow(
+    glyph: FlGlyph,
+    label: String,
+    tint: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val ink = if (enabled) tint else tint.copy(alpha = 0.38f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 圆角 4（M3 的 `menuItemShape`）：不给的话 clickable 的涟漪是**直角矩形**，
+            // 铺在圆角菜单里像一块补丁。
+            .clip(RoundedCornerShape(4.dp))
+            // 最小 48dp：内容本身 14+20+14 正好 48，但中文字的 fallback 行高可能比
+            // `bodyMedium` 的 20sp 高一两像素，那样菜单项就会比别的鼓一格。
+            .heightIn(min = 48.dp)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClickLabel = label,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlGlyphIcon(glyph = glyph, size = 20.dp, tint = ink)
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = ink,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
  * 一层楼：左边头像，右边作者、楼层号、时间与正文，底下一行动作。
  *
- * [floorLabel] 是"楼主"或者 "#3" —— 楼层号让"第几层"这件事一眼对得上，也是引用回复的抓手。
+ * [floorLabel] 是 `#1` / `#2` —— 楼层号让"第几层"这件事一眼对得上，也是引用回复的抓手。
+ *
+ * 注意：fluxdo 的**主楼也是 `#1`**，没有「楼主」这种写法
+ * （`post_header_section.dart:356` 的 `'#${post.postNumber}'`）。
  */
 @Composable
 private fun PostFloorCard(
@@ -2662,43 +2985,80 @@ private fun PostFloorCard(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        PostAvatar(name = author.ifBlank { "匿" }, seed = authorSeed, size = 36.dp)
-        Spacer(modifier = Modifier.width(10.dp))
+        // 头像 **40dp** + 1dp 描边（fluxdo `post_header.dart:72` 的 `radius = 20`，
+        // 以及 `:131-134` 的 `Border.all(outlineVariant, 1)`）。描边画在内部，
+        // 用 `drawBehind` 画圆环而不是 `border()`，这样尺寸不会被撑大。
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .drawBehind {
+                    drawCircle(
+                        color = scheme.outlineVariant,
+                        radius = this.size.minDimension / 2f,
+                        style = Stroke(width = 1.dp.toPx()),
+                    )
+                },
+        ) {
+            PostAvatar(name = author.ifBlank { "匿" }, seed = authorSeed, size = 40.dp)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            // fillMaxWidth 是必须的：名字那一格用了 weight(1f) 把楼层号/徽章/时间推到右边，
-            // 而没有有界宽度时 weight 会算成 0（作者名被压成一两个字，右边反而空着）。
+            // 头部照 fluxdo `post_header.dart:233-360`：左边一列是「名字 + 徽章」，
+            // 右边一列是「时间 / 楼层号」**竖排两行**（时间在上、楼层号在下）。
+            // 上一版把楼层号和名字挤在同一行，长名字时时间/楼层号会被压到 0 宽。
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
-                AuthorLabel(
-                    name = author.ifBlank { "匿名" },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = scheme.onSurface,
-                    maxLines = 1,
-                    // 名字占满剩下的宽度，楼层号、徽章、时间跟着名字走；名字太长就省略号。
+                Row(
                     modifier = Modifier.weight(1f),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = floorLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-                badges.forEach { badge ->
-                    Spacer(modifier = Modifier.width(4.dp))
-                    PostBadge(
-                        text = badge,
-                        color = if (badge == "置顶") PostPinned else scheme.primary,
-                    )
-                }
-                if (stamp.isNotBlank()) {
-                    Text(
-                        text = stamp,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AuthorLabel(
+                        name = author.ifBlank { "匿名" },
+                        style = MaterialTheme.typography.titleSmall,
+                        color = scheme.onSurface,
                         maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    badges.forEach { badge ->
+                        Spacer(modifier = Modifier.width(4.dp))
+                        PostBadge(
+                            text = badge,
+                            color = when (badge) {
+                                // 置顶：绿（这一条是被挑出来的）
+                                "置顶" -> PostPinned
+                                // 已锁：中性灰。原来跟"我"一样吃 `primary`，同一行里两个蓝徽章
+                                // 分不出哪个是权限状态、哪个是身份标记。
+                                "已锁" -> scheme.outline
+                                else -> scheme.primary
+                            },
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.padding(start = 8.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    if (stamp.isNotBlank()) {
+                        Text(
+                            text = stamp,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = metaTint(scheme.onSurfaceVariant, 0.8f),
+                            maxLines = 1,
+                            // 右列是"固定宽度 + 名字先占"，窄屏上时间可能只剩几个字：
+                            // 不给 `Ellipsis` 时 `Text` 默认是 `Clip`，会硬切出半截"3 天"。
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    // 楼层号：**10sp / onSurfaceVariant α0.4**（`post_header_section.dart:357-362`
+                    // 的 `labelSmall + fontSize: 10`），在时间下面一行、右对齐。
+                    Text(
+                        text = floorLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = metaTint(scheme.onSurfaceVariant, 0.4f),
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }
@@ -2801,7 +3161,7 @@ private fun PublishCircleButton(busy: Boolean, enabled: Boolean, onClick: () -> 
     ) {
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(36.dp)
                 .clip(CircleShape)
                 .background(
                     if (enabled || busy) scheme.primary
@@ -2890,7 +3250,10 @@ private fun PostEditorPane(
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            // 标题：headlineSmall + w600，提示文字压到 50% 透明度（fluxdo 的 hintStyle）。
+            // 标题：24sp / w600 / letterSpacing 0，提示文字压到 50% 透明度。
+            // 字号照 fluxdo `create_topic_page.dart:1127-1130`（`headlineSmall` 基底 24sp + w600）。
+            // 注意本仓的 `headlineSmall` 被 FlTypography 压到 17sp（那是 FlClash 的二级页标题），
+            // 所以这里必须显式给 24 —— 直接写 `typography.headlineSmall.copy(w600)` 会是 17sp。
             OutlinedTextField(
                 value = title,
                 onValueChange = onTitleChange,
@@ -2898,12 +3261,17 @@ private fun PostEditorPane(
                 placeholder = {
                     Text(
                         text = "输入标题…",
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = 24.sp,
+                            lineHeight = 30.sp,
+                        ),
                         color = scheme.onSurfaceVariant.copy(alpha = 0.5f),
                         fontWeight = FontWeight.Normal,
                     )
                 },
                 textStyle = MaterialTheme.typography.headlineSmall.copy(
+                    fontSize = 24.sp,
+                    lineHeight = 30.sp,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 0.sp,
                 ),
@@ -2948,15 +3316,27 @@ private fun PostEditorPane(
                     value = body,
                     onValueChange = onBodyChange,
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 14,
+                    // 源码里创建页是 `expands: true` → 没有行数下限（由 Expanded 撑满）。
+                    // 我们是可滚页面，没有那个撑满容器，所以留一个下限保证"点得到正文"，
+                    // 10 行是这块高度能放下的量；字号与行高照源码的 `TextField` 默认。
+                    minLines = 10,
                     placeholder = {
                         Text(
                             text = "正文内容（支持 Markdown）…",
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                lineHeight = 24.sp,
+                            ),
                             color = scheme.onSurfaceVariant.copy(alpha = 0.5f),
                         )
                     },
-                    textStyle = MaterialTheme.typography.bodyLarge,
+                    // 16sp / 24sp 行高：fluxdo `markdown_editor.dart` 不显式指定，
+                    // 走 `TextField` 默认的 `bodyLarge`（16/24）。本仓的 bodyLarge 被
+                    // FlTypography 改成 17/22，所以要显式收回来。
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp,
+                        lineHeight = 24.sp,
+                    ),
                     colors = plainField,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                 )
@@ -3414,23 +3794,38 @@ private fun DraftRow(
     }
 }
 
-/** 一个区块的标题：名字，带条数时再跟一个数字。 */
+/**
+ * 一个区块的标题：名字，带条数时再跟一个数字。
+ *
+ * 样式照 fluxdo `topic_more_topics.dart:86-130`：`titleSmall / w600` + 前一颗 16dp 的
+ * 强调色小图标 + 6dp 间距，区块内边距 `LTRB(16, 16, 16, 8)`。
+ * 上一版是 `labelMedium + primary` 的"彩色小标签"，那是 FlClash 的区块头写法，
+ * 在帖子详情里看着像一条可点的链接。
+ */
 @Composable
 private fun PostSectionHeader(label: String, count: Int? = null) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        FlGlyphIcon(
+            glyph = FlGlyphs.star,
+            size = 16.dp,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         if (count != null) {
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "· $count",
+                text = "$count",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -2,6 +2,7 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import io.github.samolego.canta.ui.fl.FlTopBar
 import io.github.samolego.canta.ui.fl.FlTopBarHeight
@@ -20,12 +21,22 @@ fun ScreenTopBar(
     actions: @Composable RowScope.() -> Unit = {},
     /** Row height below the status bar; pages that float the bar over content go slimmer. */
     height: Dp = FlTopBarHeight,
+    /**
+     * Whether the title sits in the middle. Root pages keep it at the start.
+     *
+     * 帖子详情页传 false：那里要照 fluxdo 的原生 `AppBar`（`centerTitle: false`），
+     * 标题左对齐、高 56dp，而不是 FlClash 这套"二级页居中 72dp"。
+     */
+    centered: Boolean = true,
+    /** Overrides the title style; see [FlTopBar.titleStyle]. */
+    titleStyle: TextStyle? = null,
 ) {
     FlTopBar(
         title = title,
-        centered = true,
+        centered = centered,
         onBack = onNavigateBack,
         actions = actions,
         height = height,
+        titleStyle = titleStyle,
     )
 }

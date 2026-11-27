@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -63,6 +64,12 @@ fun FlTopBar(
     actions: @Composable RowScope.() -> Unit = {},
     /** Row height below the status bar; pages that float the bar over content go slimmer. */
     height: Dp = FlTopBarHeight,
+    /**
+     * Overrides the title's text style. Pages that must match a third-party bar pass their own:
+     * the post detail page uses fluxdo's `titleMedium` (≈16sp, regular weight) instead of
+     * FlClash's 17sp bold or the 24sp root-page title.
+     */
+    titleStyle: TextStyle? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(
@@ -99,7 +106,12 @@ fun FlTopBar(
                 ) {
                     Text(
                         text = title,
-                        style = if (centered) FlText.headline else FlText.pageTitle,
+                        // 居中的二级页用 `headline`（17sp/w600）；左对齐的根页面用 `pageTitle`
+                        // （24sp/w600），那是 FlClash 首页的写法。两边都不改。
+                        //
+                        // 帖子详情页那一种既不是居中也不是大标题，所以它自己是传
+                        // [titleStyle] 覆盖 —— 别在这里加第三种默认值，会把上面两类都改歪。
+                        style = titleStyle ?: if (centered) FlText.headline else FlText.pageTitle,
                         color = scheme.onSurface,
                         textAlign = if (centered) TextAlign.Center else TextAlign.Start,
                         maxLines = 1,

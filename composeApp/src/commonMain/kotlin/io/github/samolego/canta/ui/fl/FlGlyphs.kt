@@ -341,6 +341,35 @@ object FlGlyphs {
         ),
     )
 
+    /**
+     * 五角星：区块标题前面那颗「这是挑出来的内容」的记号。
+     *
+     * FlClash 原版没有星（它的区块头用竖条），这里补一颗：外接圆半径 8.4、五个尖角，
+     * 顶点从正上方（-90°）起，用 24 网格的中心点 (12, 12)。折线闭合、`GlyphRole.Line`。
+     */
+    val star = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            // 五个外尖与五个内凹交替：外半径 8.4、内半径 3.6（金色分割比附近的取整）。
+            GlyphPolyline(
+                vertices = listOf(
+                    GlyphVertex(12f, 3.6f, 0.5f),
+                    GlyphVertex(14.1f, 9.2f, 0.4f),
+                    GlyphVertex(20.1f, 9.4f, 0.4f),
+                    GlyphVertex(15.3f, 13.0f, 0.4f),
+                    GlyphVertex(17.1f, 18.8f, 0.4f),
+                    GlyphVertex(12f, 15.4f, 0.4f),
+                    GlyphVertex(6.9f, 18.8f, 0.4f),
+                    GlyphVertex(8.7f, 13.0f, 0.4f),
+                    GlyphVertex(3.9f, 9.4f, 0.4f),
+                    GlyphVertex(9.9f, 9.2f, 0.4f),
+                ),
+                closed = true,
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
     val toggle = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
