@@ -202,15 +202,30 @@ fun SafetyRulesScreen(
     // Which phone's plans are on screen. Every model by default: with a young community this
     // phone's own list is often empty, and an empty ranking says nothing useful about what the
     // community removes. A chip in the picker narrows it to this phone or to another model.
-    var planScope by remember { mutableStateOf<PlanScope>(PlanScope.All) }
+    //
     // 上次挑的机型存在设置里（见 AppSettingsProto.planScope）：这一页是二级页，去应用详情再返回
     // 会重新组合，只放在 `remember` 里就变回「全部机型」——群里说的「记不住本机机型，返回就成了
-    // 全部机型」正是这个。目录到了之后再把存的那串还原成具体机型。
-    // 先认下"存过什么"，还原只在目录到位后做一次：目录是异步来的，早还原只能落空。
+    // 全部机型」正是这个。
+    //
+    // 现在它**就是**页面状态本身（下面那个 `planScopeOfStored(storedScope, catalog)`），不再是
+    // "先 remember 一份、再一次性还原一次"。一次性还原的写法有两个洞，正好就是「返回 / 切回来还要
+    // 重选」：
+    //  * 还原要求目录先到，`catalog` 一空就 `return@LaunchedEffect`，而 `scopeRestored` 那一位在
+    //    数据到手前没有任何东西可还原时就白花了；
+    //  * 每次重组都从 `PlanScope.All` 重新开始，靠那个效应再"跳"回某台机器——中间会闪一下
+    //    「全部机型」，用户看到的就是"又让我重选"。
+    // 读设置是同步的（`planScopeFlow` 背后是 `StateFlow`），首帧就已经是上次那台机器。
     val storedScope by settings.planScopeFlow.collectAsStateWithLifecycle(initialValue = "")
-    var scopeRestored by remember { mutableStateOf(false) }
     // Every model the backend has plans for, with the counts its chips print.
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
+    // 目录里认不出存的那台机器（型号改名、方案删光）就退到「全部机型」：和没选过一样，不会崩。
+    //
+    // 换范围之后的「清旧行 + 立加载中」写在下面 `plans` / `loading` / `notice` 之后那个
+    // `LaunchedEffect(planScope)` 里，原因见那里。
+    val planScope: PlanScope = remember(storedScope, catalog) {
+        planScopeOfStored(storedScope, catalog)
+    }
+    // Every model the backend has plans for, with the counts its chips print.
     var catalogLoading by remember { mutableStateOf(true) }
     var pickerOpen by remember { mutableStateOf(false) }
     // The package filter of the list under the switch: the switch says which phone, this says
@@ -252,6 +267,20 @@ fun SafetyRulesScreen(
     var liked by remember { mutableStateOf(setOf<Long>()) }
     // The install's own identity: a token created once, plus the number the backend gave it.
     var identity by remember { mutableStateOf(Identity("")) }
+
+    // 换了范围就把上一份 rows 清掉、把「加载中」立起来。这是 [pickScope] / 发布后切回本机写进设置的
+    // **后果**，所以放在对被观察值的反应里，而不是放在点击那一刻：无论谁写下这个值，列表都不会拿旧
+    // 范围的数据顶着新范围的名字显示一帧，也不会因为漏写而"点了没反应"。
+    //
+    // 放在这一组 `remember` 之后，是因为它首帧就要读 `plans` / `loading` / `notice`：
+    // 在 Kotlin 属性初始化顺序里，写在前面的 `LaunchedEffect` 块能编译，但读到的会是未初始化值。
+    LaunchedEffect(planScope) {
+        if (loading || plans.isNotEmpty()) {
+            plans = emptyList()
+            loading = true
+        }
+        notice = null
+    }
 
     val apps = appListViewModel.apps
     val ticked = appListViewModel.selectedApps.toList()
@@ -326,13 +355,6 @@ fun SafetyRulesScreen(
         catalogLoading = true
         catalog = repo.catalog()?.toCatalogModels().orEmpty()
         catalogLoading = false
-    }
-
-    // 目录到手后，把上次挑的机型还原一次。只在第一份目录上做，之后刷新目录不再覆盖用户当下的选择。
-    LaunchedEffect(catalog, scopeRestored) {
-        if (scopeRestored || catalog.isEmpty()) return@LaunchedEffect
-        scopeRestored = true
-        if (storedScope.isNotBlank()) planScope = planScopeOfStored(storedScope, catalog)
     }
 
     LaunchedEffect(profile, reloads, planScope, identity) {
@@ -505,17 +527,12 @@ fun SafetyRulesScreen(
     val ownLabel = profile?.displayModel.orEmpty()
     // One place that changes the phone on screen: the sheet and the build capsules both go
     // through it, so the list is never left showing another scope's rows for a frame.
+    //
+    // 现在只写设置这一处：`planScope` 由 `storedScope` 派生，清列表与"加载中"由上面那个
+    // `LaunchedEffect(planScope)` 做——同一次动作只有一条写入路径，不会出现"点了没生效"或者
+    // 中间拿旧数据顶着新名字的一帧。
     val pickScope: (PlanScope) -> Unit = { picked ->
-        if (picked != planScope) {
-            // The old rows are another phone's: clearing them here means the list never shows a
-            // plan under a name it does not belong to, not even for one frame.
-            plans = emptyList()
-            loading = true
-            notice = null
-            planScope = picked
-            // 写进设置：离开这一页再回来还是这台机器（见上面的 storedScope）。
-            onScopeRemember(picked.toStoredValue())
-        }
+        if (picked != planScope) onScopeRemember(picked.toStoredValue())
     }
     val opened = planScope as? PlanScope.Other
     val allModels = planScope == PlanScope.All
@@ -825,9 +842,7 @@ fun SafetyRulesScreen(
                             plans = refreshed
                             if (refreshed.isNotEmpty()) persistPlans(refreshed)
                         } else {
-                            plans = emptyList()
-                            loading = true
-                            planScope = PlanScope.ThisPhone
+                            // 只写设置：列表清空与"加载中"由 `LaunchedEffect(planScope)` 负责。
                             onScopeRemember(PlanScope.ThisPhone.toStoredValue())
                         }
                     }
