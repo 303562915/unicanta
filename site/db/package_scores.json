@@ -16409,8 +16409,8 @@
    {
     "pkg": "com.android.bips",
     "small_batch": false,
-    "uninstalls": 153,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 154,
+    "updated_at": "2026-11-27T19:07:40.415475+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17018,8 +17018,8 @@
    {
     "pkg": "com.android.quicksearchbox",
     "small_batch": false,
-    "uninstalls": 337,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 338,
+    "updated_at": "2026-11-27T19:14:45.597702+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17130,8 +17130,8 @@
    {
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": false,
-    "uninstalls": 165,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 166,
+    "updated_at": "2026-11-27T19:14:06.460581+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17900,8 +17900,8 @@
    {
     "pkg": "com.miui.bugreport",
     "small_batch": false,
-    "uninstalls": 304,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 305,
+    "updated_at": "2026-11-27T19:08:28.664691+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19020,8 +19020,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 512,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 513,
+    "updated_at": "2026-11-27T19:05:18.192333+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19076,8 +19076,8 @@
    {
     "pkg": "com.xiaomi.mirror",
     "small_batch": false,
-    "uninstalls": 284,
-    "updated_at": "2026-11-27T18:48:46.400443+00:00",
+    "uninstalls": 285,
+    "updated_at": "2026-11-27T19:02:19.728324+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19160,8 +19160,8 @@
    {
     "pkg": "com.xiaomi.type",
     "small_batch": false,
-    "uninstalls": 184,
-    "updated_at": "2026-11-27T18:13:29.269521+00:00",
+    "uninstalls": 185,
+    "updated_at": "2026-11-27T19:04:13.851201+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24217,8 +24217,8 @@
    {
     "pkg": "com.android.bips",
     "small_batch": false,
-    "uninstalls": 129,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 130,
+    "updated_at": "2026-11-27T19:07:40.415475+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24679,8 +24679,8 @@
    {
     "pkg": "com.android.quicksearchbox",
     "small_batch": false,
-    "uninstalls": 258,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 259,
+    "updated_at": "2026-11-27T19:14:45.597702+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24763,8 +24763,8 @@
    {
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": false,
-    "uninstalls": 127,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 128,
+    "updated_at": "2026-11-27T19:14:06.460581+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25246,8 +25246,8 @@
    {
     "pkg": "com.miui.bugreport",
     "small_batch": false,
-    "uninstalls": 226,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 227,
+    "updated_at": "2026-11-27T19:08:28.664691+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26093,8 +26093,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 357,
-    "updated_at": "2026-11-27T18:49:41.393528+00:00",
+    "uninstalls": 358,
+    "updated_at": "2026-11-27T19:05:18.192333+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26149,8 +26149,8 @@
    {
     "pkg": "com.xiaomi.mirror",
     "small_batch": false,
-    "uninstalls": 186,
-    "updated_at": "2026-11-27T18:39:51.809963+00:00",
+    "uninstalls": 187,
+    "updated_at": "2026-11-27T19:02:19.728324+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26226,8 +26226,8 @@
    {
     "pkg": "com.xiaomi.type",
     "small_batch": false,
-    "uninstalls": 184,
-    "updated_at": "2026-11-27T18:13:29.269521+00:00",
+    "uninstalls": 185,
+    "updated_at": "2026-11-27T19:04:13.851201+00:00",
     "verdict": "BREAKS"
    },
    {
