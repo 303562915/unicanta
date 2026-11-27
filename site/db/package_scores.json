@@ -16311,8 +16311,8 @@
    {
     "pkg": "com.qualcomm.qti.qcolor",
     "small_batch": false,
-    "uninstalls": 110,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 111,
+    "updated_at": "2026-11-27T08:47:28.012592+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16570,8 +16570,8 @@
    {
     "pkg": "com.xiaomi.aiservice",
     "small_batch": false,
-    "uninstalls": 224,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 225,
+    "updated_at": "2026-11-27T08:48:11.407208+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16619,8 +16619,8 @@
    {
     "pkg": "com.xiaomi.cameratools",
     "small_batch": false,
-    "uninstalls": 84,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 85,
+    "updated_at": "2026-11-27T08:47:28.012592+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22782,8 +22782,8 @@
    {
     "pkg": "com.qualcomm.qti.qcolor",
     "small_batch": false,
-    "uninstalls": 87,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 88,
+    "updated_at": "2026-11-27T08:47:28.012592+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23013,8 +23013,8 @@
    {
     "pkg": "com.xiaomi.aiservice",
     "small_batch": false,
-    "uninstalls": 166,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 167,
+    "updated_at": "2026-11-27T08:48:11.407208+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23062,8 +23062,8 @@
    {
     "pkg": "com.xiaomi.cameratools",
     "small_batch": false,
-    "uninstalls": 60,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 61,
+    "updated_at": "2026-11-27T08:47:28.012592+00:00",
     "verdict": "BREAKS"
    },
    {

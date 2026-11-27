@@ -5184,6 +5184,30 @@
   "target": "4"
  },
  {
+  "author": "圭玉一",
+  "author_id": "14167",
+  "body": "你们用这个方案后充电会不会又烫又慢？",
+  "created_at": "2026-11-27T08:45:45.188358+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 777,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.7",
+  "target": "92"
+ },
+ {
+  "author": "圭玉一",
+  "author_id": "14167",
+  "body": "作者你充电会不会又烫又慢？",
+  "created_at": "2026-11-27T08:46:17.207196+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 778,
+  "kind": "plan",
+  "parent_id": 140,
+  "system_name": "HyperOS 4.0.7",
+  "target": "92"
+ },
+ {
   "author": "#10231",
   "author_id": "10231",
   "body": "没有出现这种情况",
