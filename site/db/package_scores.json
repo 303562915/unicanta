@@ -47105,7 +47105,7 @@
     "pkg": "com.oplus.metis",
     "small_batch": true,
     "uninstalls": 22,
-    "updated_at": "2026-11-27T05:21:06.380982+00:00",
+    "updated_at": "2026-11-27T05:50:35.793296+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -51283,7 +51283,7 @@
     "pkg": "com.oplus.metis",
     "small_batch": true,
     "uninstalls": 22,
-    "updated_at": "2026-11-27T05:21:06.380982+00:00",
+    "updated_at": "2026-11-27T05:50:35.793296+00:00",
     "verdict": "BOOTLOOP"
    },
    {
