@@ -2883,90 +2883,93 @@ private fun PostThreadPane(
                     //     与有没有分隔无关 —— 这就是下面 `floorIndexOf` 敢用加法算的前提。
                     // 同一个 item 内先后 emit 的两块内容，LazyColumn 照样按垂直方向上下摆，
                     // 线上位置与原来那条独立条目一致。
-                    item(key = "c-${comment.id}") {
-                        if (thisDay.isNotEmpty() && thisDay != previousDay) {
-                            FloorDateSeparator(iso = comment.createdAt)
-                        }
-                        // 被回复的那一楼的作者名与头像种子：优先取**当前列表里**那一行
-                        // （名字可能已经改过），列表里没有时才退回后端抄在 replyToAuthor 上的那份。
-                        //
-                        // **键里不放 `comments`**：放了之后任何一次刷新都会让这 200 层的
-                        // remember 全部失效、各扫一遍列表，变成 O(n²)；而我们要的只是
-                        // "这个名字在不在列表里"。`replyToAuthor` 语义上就是"当时那一份"，
-                        // 刷新后仍显示旧名是可接受的（引用本来指的就是当时那一句）。
-                        val quotedRow = remember(comment.replyToId) {
-                            if (comment.replyToId <= 0L) {
-                                null
-                            } else {
-                                comments.firstOrNull { it.id == comment.replyToId }
-                            }
-                        }
-                        val quotedAuthor = quotedRow?.author?.takeIf { it.isNotBlank() }
-                            ?: comment.replyToAuthor
-                        // 头像种子与别处同一个口径（`authorId.ifEmpty { author }`）：图床地址是按
-                        // 身份码推出来的，名字只作兜底里的首字。
-                        val quotedSeed = quotedRow?.let { it.authorId.ifEmpty { it.author } }
-                            .orEmpty()
-                            .ifEmpty { comment.authorId.ifEmpty { comment.author } }
-                        PostFloorCard(
-                            floorLabel = "#${index + 2}",
-                            author = comment.author,
-                            authorSeed = comment.authorId.ifEmpty { comment.author },
-                            stamp = relativeStamp(comment.createdAt),
-                            body = comment.body,
-                            badges = if (authorId.isNotBlank() && comment.authorId == authorId) {
-                                listOf("我")
-                            } else {
-                                emptyList()
-                            },
-                            // 引用指示条：这一楼在回哪一楼。`replyToId <= 0` 时整个 lambda 是 null，
-                            // `PostFloorCard` 里那一段就一个组合项都不建（与没有功能时完全一样）。
-                            //
-                            // 点击 = 滚到被回复的那一层。**跳转回调本身可能为 null**
-                            // （列表里还没有那一楼），那时指示条照样画（信息有用），但不挂 clickable
-                            // —— 不做"点了没反应"的东西。
-                            //
-                            // 这里**不套 `derivedStateOf`**：`floorLabelOf(target)` 每次重组扫一遍
-                            // `comments` 也就几十次整数比较，比多一层快照订阅便宜。
-                            replyIndicator = if (comment.replyToId > 0L) {
-                                val target = comment.replyToId
-                                val jump = onJumpToFloor
-                                val floorOfTarget = floorLabelOf(target)
-                                {
-                                    FloorReplyIndicator(
-                                        floor = floorOfTarget,
-                                        author = quotedAuthor,
-                                        authorSeed = quotedSeed,
-                                        // 跳转的**实质**条件：目标楼真的在列表里（`floorOfTarget`
-                                        // 能算出号来，即找到过它）。找不到时 `jump` 也可能非空，
-                                        // 所以两道都过才挂手势。
-                                        onClick = if (floorOfTarget >= 2 && jump != null) {
-                                            { jump(target) }
-                                        } else {
-                                            null
-                                        },
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                            highlighted = highlightedFloorId != 0L && highlightedFloorId == comment.id,
-                            footer = {
-                                if (!shown.locked) {
-                                    // 「引用回复」= 一颗 36dp 正圆（照 `post_action_bar.dart:386-397`
-                                    // 的 `reply_rounded` 圆形按钮）。本仓的引用是"把原文塞进回复框"
-                                    // 而不是内联展开，所以这一颗是**动作**，与源码同一个位置、同一个形状。
-                                    FloorCircleButton(
-                                        label = "引用回复",
-                                        tint = scheme.onSurfaceVariant,
-                                        onClick = { onQuote(comment) },
-                                    ) {
-                                        FlGlyphIcon(glyph = FlGlyphs.quote, size = 18.dp)
-                                    }
-                                }
-                            },
-                        )
+                    if (thisDay.isNotEmpty() && thisDay != previousDay) {
+                        FloorDateSeparator(iso = comment.createdAt)
                     }
+                    // 被回复的那一楼的作者名与头像种子：优先取**当前列表里**那一行
+                    // （名字可能已经改过），列表里没有时才退回后端抄在 replyToAuthor 上的那份。
+                    //
+                    // **键里不放 `comments`**：放了之后任何一次刷新都会让这 200 层的
+                    // remember 全部失效、各扫一遍列表，变成 O(n²)；而我们要的只是
+                    // "这个名字在不在列表里"。`replyToAuthor` 语义上就是"当时那一份"，
+                    // 刷新后仍显示旧名是可接受的（引用本来指的就是当时那一句）。
+                    val quotedRow = remember(comment.replyToId) {
+                        if (comment.replyToId <= 0L) {
+                            null
+                        } else {
+                            comments.firstOrNull { it.id == comment.replyToId }
+                        }
+                    }
+                    val quotedAuthor = quotedRow?.author?.takeIf { it.isNotBlank() }
+                        ?: comment.replyToAuthor
+                    // 头像种子与别处同一个口径（`authorId.ifEmpty { author }`）：图床地址是按
+                    // 身份码推出来的，名字只作兜底里的首字。
+                    val quotedSeed = quotedRow?.let { it.authorId.ifEmpty { it.author } }
+                        .orEmpty()
+                        .ifEmpty { comment.authorId.ifEmpty { comment.author } }
+                    PostFloorCard(
+                        floorLabel = "#${index + 2}",
+                        author = comment.author,
+                        authorSeed = comment.authorId.ifEmpty { comment.author },
+                        stamp = relativeStamp(comment.createdAt),
+                        body = comment.body,
+                        badges = if (authorId.isNotBlank() && comment.authorId == authorId) {
+                            listOf("我")
+                        } else {
+                            emptyList()
+                        },
+                        // 引用指示条：这一楼在回哪一楼。`replyToId <= 0` 时整个 lambda 是 null，
+                        // `PostFloorCard` 里那一段就一个组合项都不建（与没有功能时完全一样）。
+                        //
+                        // 点击 = 滚到被回复的那一层。**跳转回调本身可能为 null**
+                        // （列表里还没有那一楼），那时指示条照样画（信息有用），但不挂 clickable
+                        // —— 不做"点了没反应"的东西。
+                        //
+                        // 这里**不套 `derivedStateOf`**：`floorLabelOf(target)` 每次重组扫一遍
+                        // `comments` 也就几十次整数比较，比多一层快照订阅便宜。
+                        replyIndicator = if (comment.replyToId > 0L) {
+                            val target = comment.replyToId
+                            val jump = onJumpToFloor
+                            val floorOfTarget = floorLabelOf(target)
+                            // 显式声明成 composable lambda 再交给参数：直接写 `{ … }` 紧跟在
+                            // `val floorOfTarget = …` 后面，Kotlin 会把它当成上一行的尾随 lambda
+                            // 参数（`floorLabelOf(target) { … }`），于是既报"类型不匹配"，又让
+                            // 块里的 `floorOfTarget` 落到作用域外。
+                            val block: @Composable () -> Unit = {
+                                FloorReplyIndicator(
+                                    floor = floorOfTarget,
+                                    author = quotedAuthor,
+                                    authorSeed = quotedSeed,
+                                    // 跳转的**实质**条件：目标楼真的在列表里（`floorOfTarget`
+                                    // 能算出号来，即找到过它）。找不到时 `jump` 也可能非空，
+                                    // 所以两道都过才挂手势。
+                                    onClick = if (floorOfTarget >= 2 && jump != null) {
+                                        { jump(target) }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                            block
+                        } else {
+                            null
+                        },
+                        highlighted = highlightedFloorId != 0L && highlightedFloorId == comment.id,
+                        footer = {
+                            if (!shown.locked) {
+                                // 「引用回复」= 一颗 36dp 正圆（照 `post_action_bar.dart:386-397`
+                                // 的 `reply_rounded` 圆形按钮）。本仓的引用是"把原文塞进回复框"
+                                // 而不是内联展开，所以这一颗是**动作**，与源码同一个位置、同一个形状。
+                                FloorCircleButton(
+                                    label = "引用回复",
+                                    tint = scheme.onSurfaceVariant,
+                                    onClick = { onQuote(comment) },
+                                ) {
+                                    FlGlyphIcon(glyph = FlGlyphs.quote, size = 18.dp)
+                                }
+                            }
+                        },
+                    )
                 }
 
                 if (related.isNotEmpty()) {
