@@ -5436,6 +5436,78 @@
   "target": "android"
  },
  {
+  "author": "达维多维奇",
+  "author_id": "11843",
+  "body": "涉及后台和电池管理，和应用程序保护绑定。没有三方调度或后台管理删除后会导致功耗大量增加",
+  "created_at": "2026-11-27T14:34:33.441715+00:00",
+  "device_model": "SM-S9280",
+  "id": 797,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "One UI 8.5",
+  "target": "com.samsung.android.sm_cn"
+ },
+ {
+  "author": "达维多维奇",
+  "author_id": "11843",
+  "body": "三星设备删除后会导致手表连接软件无限闪退",
+  "created_at": "2026-11-27T14:35:48.809658+00:00",
+  "device_model": "SM-S9280",
+  "id": 798,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "One UI 8.5",
+  "target": "com.android.providers.calendar"
+ },
+ {
+  "author": "达维多维奇",
+  "author_id": "11843",
+  "body": "删除后会导致智能管理器无限闪退",
+  "created_at": "2026-11-27T14:36:55.898405+00:00",
+  "device_model": "SM-S9280",
+  "id": 799,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "One UI 8.5",
+  "target": "com.samsung.android.sm.devicesecurity.tcm"
+ },
+ {
+  "author": "达维多维奇",
+  "author_id": "11843",
+  "body": "删除后既圈既搜功能异常",
+  "created_at": "2026-11-27T14:37:49.151714+00:00",
+  "device_model": "SM-S9280",
+  "id": 800,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "One UI 8.5",
+  "target": "com.samsung.android.imagepp"
+ },
+ {
+  "author": "达维多维奇",
+  "author_id": "11843",
+  "body": "和spen有关",
+  "created_at": "2026-11-27T14:41:07.905522+00:00",
+  "device_model": "SM-S9280",
+  "id": 801,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "One UI 8.5",
+  "target": "com.samsung.android.service.aircommand"
+ },
+ {
+  "author": "金城武",
+  "author_id": "12555",
+  "body": "可以删",
+  "created_at": "2026-11-27T14:43:58.389838+00:00",
+  "device_model": "REDMI K90 Pro Max",
+  "id": 802,
+  "kind": "app",
+  "parent_id": 236,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.miui.thirdappassistant"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
