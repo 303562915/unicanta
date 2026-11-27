@@ -639,8 +639,14 @@
     <string name="recommend_detail_hint">The button opens the project page in your browser. Canta only keeps the link and installs nothing from here.</string>
     <string name="recommend_switch_grid">Switch to grid layout</string>
     <string name="recommend_switch_list">Switch to list layout</string>
-    <string name="recommend_tab_list">List</string>
+    <string name="recommend_tab_list">Recommendations</string>
     <string name="recommend_tab_vote">Votes</string>
+    <string name="recommend_tab_airport">Airports</string>
+    <string name="recommend_tab_airport_vote">Airport votes</string>
+    <string name="recommend_airport_vote_empty">Nobody has shared an airport yet. Post the one you use in the Airports tab and the first row shows up here.</string>
+    <string name="recommend_airport_vote_foot">Ranked by agree votes; ties go to the entry with more ratings, then to the older one. Open a row to vote, rate, get the subscription link and comment.</string>
+    <string name="recommend_comment_empty">No comments yet. One sentence from someone who used it saves everyone else the trial.</string>
+    <string name="recommend_comment_placeholder">Used it? Say a word</string>
     <string name="recommend_uninstall_hint">Still on this phone — open one to remove it:</string>
     <string name="recommend_uninstall_short">Remove</string>
     <string name="plan_upload_candidate_count">%1$d candidates on this phone</string>

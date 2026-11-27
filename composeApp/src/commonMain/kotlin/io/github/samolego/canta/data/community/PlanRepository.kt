@@ -1397,6 +1397,15 @@ class PlanRepository(
     suspend fun appComments(packageName: String, viewer: String = ""): List<PlanComment> =
         commentsFor(COMMENT_KIND_APP, packageName, viewer)
 
+    /**
+     * 任意 kind 的评论线程（`kind` / `target` 在后端都是自由文本）。
+     *
+     * 加一种页面不必动库：推荐页的条目就是 `recommend` + 项目地址。机场那条不走这里——它另有
+     * [airportComments]，先试专用函数、再退回通用那条。
+     */
+    suspend fun commentsOf(kind: String, target: String, viewer: String = ""): List<PlanComment> =
+        commentsFor(kind, target, viewer)
+
     private suspend fun commentsFor(kind: String, target: String, viewer: String = ""): List<PlanComment> {
         if (target.isEmpty()) return emptyList()
         val body = buildJsonObject {

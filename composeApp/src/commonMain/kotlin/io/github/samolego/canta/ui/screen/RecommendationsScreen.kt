@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
+import io.github.samolego.canta.data.community.COMMENT_KIND_RECOMMEND
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
@@ -90,6 +91,8 @@ import io.github.samolego.canta.generated.resources.recommend_cat_store
 import io.github.samolego.canta.generated.resources.recommend_cat_system
 import io.github.samolego.canta.generated.resources.recommend_cat_tools
 import io.github.samolego.canta.generated.resources.recommend_close
+import io.github.samolego.canta.generated.resources.recommend_comment_empty
+import io.github.samolego.canta.generated.resources.recommend_comment_placeholder
 import io.github.samolego.canta.generated.resources.recommend_detail_hint
 import io.github.samolego.canta.generated.resources.recommend_details
 import io.github.samolego.canta.generated.resources.recommend_empty
@@ -98,6 +101,8 @@ import io.github.samolego.canta.generated.resources.recommend_footer
 import io.github.samolego.canta.generated.resources.recommend_open_browser
 import io.github.samolego.canta.generated.resources.recommend_switch_grid
 import io.github.samolego.canta.generated.resources.recommend_switch_list
+import io.github.samolego.canta.generated.resources.recommend_tab_airport
+import io.github.samolego.canta.generated.resources.recommend_tab_airport_vote
 import io.github.samolego.canta.generated.resources.recommend_tab_list
 import io.github.samolego.canta.generated.resources.recommend_tab_vote
 import io.github.samolego.canta.generated.resources.recommend_title
@@ -139,8 +144,16 @@ private const val TAB_LIST = 0
 /** The second half: the community's queue — the form that files one, and the votes it collects. */
 private const val TAB_VOTE = 1
 
-/** The third half: 机场投票、钱包和积分商城（见 [RecommendationsAirportTab]）。 */
+/** The third half: 机场分享、评分、订阅、积分（见 [RecommendationsAirportTab]）。 */
 private const val TAB_AIRPORT = 2
+
+/**
+ * 第四块：机场投票榜。同一份机场数据，按认同票排名，点开与机场那一格是同一个详情弹窗。
+ *
+ * 为什么单开一格：机场那一格要放「分享一个机场」的入口、订阅与钱包，列表本身反而被挤到下面；
+ * 想「看哪家现在最被认」的人，得先划过分享入口。投票是另一件事，各占一格谁也不挡谁。
+ */
+private const val TAB_AIRPORT_VOTE = 3
 
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
 private val SuggestAgree = Color(0xFF2FA84F)
@@ -209,6 +222,10 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  * Both halves are read from the state of this one composable, so switching between them costs
  * nothing: the catalog is read once, the queue once, and the scroll position of each half is its own.
  *
+ * 分格：应用推荐 / 投票 / 机场 / 机场投票。后两格是同一份机场数据的两种画法（分享与收录 vs 按票
+ * 排名），共用 [AirportTabState]，滚动位置各自存一份。四格里的条目点开都是详情弹窗，而详情里都
+ * 带评论区——「点进去能评论」在这四格上是同一件事，不是三格有、第四格没有。
+ *
  * @param repository the community backend, for the second half; null leaves it out.
  * @param author the name this install's submissions are signed with.
  * @param authorId the identity number behind [author]: what "mine" and one vote per identity key on.
@@ -243,8 +260,9 @@ fun RecommendationsScreen(
     val cacheOwner = authorId.ifEmpty { author }
     val cacheKey = recommendationsCacheKey(cacheOwner)
     val cached = remember(cacheKey) { ScreenCache.get<RecommendationsSnapshot>(cacheKey) }
-    // 机场/积分那一块的跨 tab 状态：它只在 tab == TAB_AIRPORT 时组合，切走会整棵丢掉，
-    // 所以由这一页（常驻）持有，回来时数据还在就不重拉。键带身份：钱包是某个身份自己的。
+    // 机场/积分那一块的跨 tab 状态：机场与机场投票两格共用这一个实例，切走会整棵丢掉，
+    // 所以由这一页（常驻）持有，回来时数据还在就不重拉。两格共用也是为了让票数立刻一致。
+    // 键带身份：钱包是某个身份自己的。
     val airportState = remember(cacheKey) { AirportTabState() }
     // 打包目录是本地资源，不经过缓存：读一次就有，冷启动也不会慢。
     var catalog by remember(cacheKey) { mutableStateOf<Recommendations?>(null) }
@@ -381,9 +399,12 @@ fun RecommendationsScreen(
     }
 
     val openSuggest: () -> Unit = { composerOpen = true }
+    // 四格时每格只有屏宽的四分之一（分段的槽宽是 maxWidth / segments.size），标签只能是短词：
+    // 数字拼进标签必被截断，所以计数一律画在各格内容区的 SectionHeader 里。
     val listTabLabel = stringResource(Res.string.recommend_tab_list)
     val voteTabLabel = stringResource(Res.string.recommend_tab_vote)
-    val airportTabLabel = "机场"
+    val airportTabLabel = stringResource(Res.string.recommend_tab_airport)
+    val airportVoteTabLabel = stringResource(Res.string.recommend_tab_airport_vote)
 
     Scaffold(
         topBar = {
@@ -405,13 +426,14 @@ fun RecommendationsScreen(
                         }
                     },
                 )
-                // 三块当一个控制：应用目录、社区投票、机场与兑换。数字进标签，没打开也知道
-                // 有多少东西等着投；机场那一块没有全局计数（在它自己的列表里），只写名字。
+                // 四块当一个控制：应用目录、社区投票、机场、机场投票。标签只放短词——四格的槽宽
+                // 是屏宽的四分之一，把计数拼进标签必被截断；计数画在各格内容区的 SectionHeader 里。
                 FlSegmentedControl(
                     segments = listOf(
-                        FlSegment("list", if (loaded == null) listTabLabel else "$listTabLabel ${loaded.apps.size}"),
-                        FlSegment("vote", if (suggested.isEmpty()) voteTabLabel else "$voteTabLabel ${suggested.size}"),
+                        FlSegment("list", listTabLabel),
+                        FlSegment("vote", voteTabLabel),
                         FlSegment("airport", airportTabLabel),
+                        FlSegment("airport-vote", airportVoteTabLabel),
                     ),
                     selectedIndex = tab,
                     onSelect = { tab = it },
@@ -442,6 +464,21 @@ fun RecommendationsScreen(
                 state = airportState,
                 modifier = Modifier.fillMaxSize().padding(padding),
                 setupGate = setupGate,
+            )
+        } else if (tab == TAB_AIRPORT_VOTE) {
+            // 机场投票榜：同一份 airports、同一个 [AirportTabState]，只是换个画法。state 共用是
+            // 有意的——在榜单里投一票再切回机场那一格，票数是同一个数，不用等它重拉一遍。
+            // 滚动位置另给一个键，不然第四格会接着机场那一格的滚动位置往上长。
+            RecommendationsAirportTab(
+                repository = repository,
+                platform = platform,
+                author = author,
+                authorId = authorId,
+                state = airportState,
+                modifier = Modifier.fillMaxSize().padding(padding),
+                setupGate = setupGate,
+                board = true,
+                stateKey = "airport-vote",
             )
         } else if (tab == TAB_VOTE) {
             // The queue on its own page: what others filed, one line each, and the form that adds
@@ -585,6 +622,12 @@ fun RecommendationsScreen(
         RecommendationDetailDialog(
             app = app,
             stillInstalled = app.installedReplacements(installedPackages),
+            repository = repository,
+            platform = platform,
+            author = author,
+            authorId = authorId,
+            canComment = setupGate.ready,
+            commentGate = setupGate.prompt,
             onDismiss = { detail = null },
             onOpen = {
                 detail = null
@@ -603,6 +646,12 @@ fun RecommendationsScreen(
             voting = votingId == app.id,
             canVote = canVote,
             onVote = { agree -> vote(app, agree) },
+            repository = repository,
+            platform = platform,
+            author = author,
+            authorId = authorId,
+            canComment = setupGate.ready,
+            commentGate = setupGate.prompt,
             onDismiss = { suggestionDetail = null },
             onOpen = {
                 suggestionDetail = null
@@ -641,6 +690,14 @@ private fun SuggestedApp.asPinned(): RecommendedApp = RecommendedApp(
     mark = tileMark,
     featured = true,
 )
+
+/**
+ * 一条推荐条目在评论表里的身份：项目地址（去空白、去末尾斜杠）。
+ *
+ * 用地址而不是列表下标：地址跨设备、跨版本对得齐同一件事，下标会因为一次投票把榜单重排之后再
+ * 指到别人身上。末尾斜杠去掉，是为了同一个项目不生出两条线程。
+ */
+private fun recommendCommentTarget(url: String): String = url.trim().trimEnd('/')
 
 /**
  * The author of an app, for the sheet that spells an entry out — or nothing when it would only
@@ -1038,6 +1095,13 @@ private fun SuggestionDetailDialog(
     voting: Boolean,
     canVote: Boolean,
     onVote: (Boolean) -> Unit,
+    /** 评论区要用的后端 / 身份 / 门槛提示：四个 tab 的详情共用同一套。 */
+    repository: PlanRepository?,
+    platform: CantaPlatform,
+    author: String,
+    authorId: String,
+    canComment: Boolean,
+    commentGate: String,
     onDismiss: () -> Unit,
     onOpen: () -> Unit,
 ) {
@@ -1157,6 +1221,22 @@ private fun SuggestionDetailDialog(
                 }
             }
         }
+
+        // 评论区：排队等票的条目也要能问「用了怎么样」。target 是项目地址，榜单重排也不会指错人。
+        Spacer(modifier = Modifier.height(14.dp))
+        CommunityCommentSection(
+            kind = COMMENT_KIND_RECOMMEND,
+            target = recommendCommentTarget(app.url),
+            repository = repository,
+            author = author,
+            authorId = authorId,
+            me = authorId.ifEmpty { author },
+            canComment = canComment,
+            gateHint = commentGate,
+            platform = platform,
+            emptyHint = stringResource(Res.string.recommend_comment_empty),
+            placeholder = stringResource(Res.string.recommend_comment_placeholder),
+        )
     }
 }
 
@@ -1323,6 +1403,13 @@ private fun RecommendationDetailDialog(
     app: RecommendedApp,
     /** Packages from `app.replacesPackages` this phone still has: what the entry can point at. */
     stillInstalled: List<String>,
+    /** 评论区要用的后端 / 身份 / 门槛提示：四个 tab 的详情共用同一套。 */
+    repository: PlanRepository?,
+    platform: CantaPlatform,
+    author: String,
+    authorId: String,
+    canComment: Boolean,
+    commentGate: String,
     onDismiss: () -> Unit,
     onOpen: () -> Unit,
     onOpenApp: (String) -> Unit,
@@ -1420,6 +1507,23 @@ private fun RecommendationDetailDialog(
                 }
             }
         }
+
+        // 评论区：这一格原来只有介绍和「去浏览器」，问不了「用过吗、好不好用」。与机场、应用页
+        // 同一个组件：父评论 + 回复、作者、时间、认同数都由它画，不在这里再写一套。
+        Spacer(modifier = Modifier.height(14.dp))
+        CommunityCommentSection(
+            kind = COMMENT_KIND_RECOMMEND,
+            target = recommendCommentTarget(app.url),
+            repository = repository,
+            author = author,
+            authorId = authorId,
+            me = authorId.ifEmpty { author },
+            canComment = canComment,
+            gateHint = commentGate,
+            platform = platform,
+            emptyHint = stringResource(Res.string.recommend_comment_empty),
+            placeholder = stringResource(Res.string.recommend_comment_placeholder),
+        )
     }
 }
 

@@ -17,6 +17,14 @@ const val COMMENT_KIND_APP: String = "app"
 const val COMMENT_KIND_AIRPORT: String = "airport"
 
 /**
+ * 推荐页条目下面的评论：`target` 是该条目的项目地址（`RecommendedApp.url`）。
+ *
+ * 为什么用地址而不是列表下标：地址跨设备、跨版本都对得齐同一件事，下标会因为一次投票把榜单
+ * 重排之后指到别人身上。后端 `community_comments` 的 kind/target 本来就是自由文本，不需要迁移。
+ */
+const val COMMENT_KIND_RECOMMEND: String = "recommend"
+
+/**
  * How many rows one page of an inbox list holds.
  *
  * The page asks for this many and no more: a phone that parses 200 rows of history before it can

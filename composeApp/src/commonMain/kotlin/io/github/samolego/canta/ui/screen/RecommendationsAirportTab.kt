@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import io.github.samolego.canta.ui.component.rememberRememberedListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,6 +53,10 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.PlanComment
 import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.data.recommend.CommunityAirport
+import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.recommend_airport_vote_empty
+import io.github.samolego.canta.generated.resources.recommend_airport_vote_foot
+import io.github.samolego.canta.generated.resources.recommend_tab_airport_vote
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.component.shortStamp
@@ -62,13 +67,15 @@ import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * 跨「切走再切回来」要留住的那一份。
  *
- * 这一块只在 `tab == TAB_AIRPORT` 时组合，切到应用目录再切回来整棵子树会被丢掉，于是列表、
- * 钱包、已取到的订阅和滚动位置全部归零，还要重跑五趟网络。放在这里由推荐页持有（它是常驻的），
- * 回来时先画上一份、数据还在就不重拉。
+ * 这一块只在「机场」和「机场投票」这两格组合，切到应用目录再切回来整棵子树会被丢掉，于是列表、
+ * 已取到的订阅和滚动位置全部归零，还要重跑五趟网络。放在这里由推荐页持有（它是常驻的），
+ * 回来时先画上一份、数据还在就不重拉。两格共用同一个实例：在榜单里投的一票，切回机场那一格
+ * 立刻就是新的票数。
  */
 internal class AirportTabState {
     var airports by mutableStateOf<List<CommunityAirport>>(emptyList())
@@ -140,10 +147,19 @@ internal fun RecommendationsAirportTab(
     modifier: Modifier = Modifier,
     /** 名字与头像设过了没有：没设过能看能投能兑换，但分享不了新机场（见 [IdentitySetup]）。 */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
+    /**
+     * true = 「机场投票」那一格：同一份机场数据，按认同票排成榜单，不再是分享/收录的列表。
+     *
+     * 两种模式共用这一个 composable 而不是各写一份：拉数据、投票、打分、取订阅、详情弹窗
+     * 全都一样，差的是列表本身画什么。分成两份就等于把这些各抄一遍，改一处漏一处。
+     */
+    board: Boolean = false,
+    /** 滚动位置存在哪一格：两个 tab 各给一个键，不然第四个 tab 会接着机场的滚动位置往上长。 */
+    stateKey: String = "airport",
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
-    val listState = rememberRememberedListState("airport")
+    val listState = rememberRememberedListState(stateKey)
 
     var airports by remember(state) { mutableStateOf(state.airports) }
     var loading by remember(state) { mutableStateOf(state.loading) }
@@ -277,11 +293,63 @@ internal fun RecommendationsAirportTab(
                 if (atEnd) visiblePages++
             }
 
+            // 榜单的顺序：认同票多的排前面；票一样多时看评分人数（评的人多说明更被用过），
+            // 再一样就按创建时间——先上来的排前面，免得同票的两家每次刷新都换位置。
+            val ranked = remember(airports) {
+                airports.sortedWith(
+                    compareByDescending<CommunityAirport> { it.agrees }
+                        .thenByDescending { it.ratingCount }
+                        .thenByDescending { it.createdAt },
+                )
+            }
+            val boardTitle = stringResource(Res.string.recommend_tab_airport_vote)
+
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 state = listState,
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
+                if (board) {
+                    // 投票榜：只有排名、名字和那一行小字。投票、打分、取订阅、评论都在点开的
+                    // 详情里——同一层操作在两个 tab 上必须完全一样，所以弹的是同一个弹窗。
+                    item(key = "airport-vote-head") {
+                        AirportSectionHeader(label = boardTitle, count = ranked.size)
+                    }
+
+                    if (ranked.isEmpty()) {
+                        item(key = "airport-vote-empty") {
+                            Note(
+                                text = error ?: stringResource(Res.string.recommend_airport_vote_empty),
+                                inset = 16.dp,
+                            )
+                        }
+                    }
+
+                    itemsIndexed(
+                        ranked.take(visiblePages * AirportPageSize),
+                        key = { _, entry -> "airport-rank-${entry.id}" },
+                    ) { index, entry ->
+                        AirportVoteRow(
+                            rank = index + 1,
+                            entry = entry,
+                            onClick = {
+                                detailsExpanded = false
+                                openedId = entry.id
+                            },
+                        )
+                    }
+
+                    item(key = "airport-vote-foot") {
+                        Note(
+                            text = if (hasMore) {
+                                "已经拉出 $shownCount / ${ranked.size} 家，继续往下划就再来一页。"
+                            } else {
+                                stringResource(Res.string.recommend_airport_vote_foot)
+                            },
+                            inset = 16.dp,
+                        )
+                    }
+                } else {
                     item(key = "airport-new") {
                         EntryRow(
                             title = "分享一个机场",
@@ -341,6 +409,7 @@ internal fun RecommendationsAirportTab(
                             inset = 16.dp,
                         )
                     }
+                }
             }
         }
     }
@@ -496,6 +565,110 @@ private fun Note(text: String, inset: Dp) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 8.dp, bottom = 2.dp),
     )
+}
+
+/**
+ * 榜单上的一行：名次、图标、名字，以及 `metaLine` 那一行小字（类型 · 评分 · 票数）。
+ *
+ * 前三名用强调色，第 4 名往后只画普通颜色的数字：一眼看得出「前几名是这几家」，又不把整列染成
+ * 彩虹。整行可点，点开的是机场详情——投票、打分、取订阅、评论都在那里，与分享那一格是同一个弹窗，
+ * 所以两个 tab 上「点进去能做的事」不会出现两套。
+ */
+@Composable
+private fun AirportVoteRow(
+    rank: Int,
+    entry: CommunityAirport,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val top = rank <= 3
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.surfaceContainerLow)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(AirportTileSize)
+                .clip(RoundedCornerShape(50))
+                .background(
+                    if (top) {
+                        scheme.primary.copy(alpha = 0.14f)
+                    } else {
+                        FlSurfaceLevel.Page.raised.colorOf(scheme)
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = rank.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (top) FontWeight.Bold else FontWeight.Medium,
+                color = if (top) scheme.primary else scheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.width(9.dp))
+        Box(
+            modifier = Modifier
+                .size(AirportTileSize)
+                .clip(RoundedCornerShape(10.dp))
+                .background(scheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = entry.tileMark,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = scheme.primary,
+            )
+        }
+        Spacer(modifier = Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = entry.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = entry.kindLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSecondaryContainer,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(scheme.secondaryContainer)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
+            Text(
+                text = entry.metaLine.ifEmpty { "还没人评" },
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "详情",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.primary,
+            modifier = Modifier
+                .clip(RoundedCornerShape(percent = 50))
+                .background(scheme.primary.copy(alpha = 0.10f))
+                .padding(horizontal = 9.dp, vertical = 3.dp),
+        )
+    }
 }
 
 /** 一条机场：名字、类型、评分、票，以及一条能点的星和订阅。 */
@@ -910,8 +1083,9 @@ private fun AirportDetailDialog(
 
         // 评论区：投票决定它排多前，评论说的是「哪条线路挂了」「怎么续费」这种具体的事。
         Spacer(modifier = Modifier.height(14.dp))
-        AirportCommentSection(
-            entryId = entry.id,
+        CommunityCommentSection(
+            kind = COMMENT_KIND_AIRPORT,
+            target = entry.id.toString(),
             repository = repository,
             author = author,
             authorId = authorId,
@@ -919,20 +1093,30 @@ private fun AirportDetailDialog(
             canComment = canComment,
             gateHint = commentGate,
             platform = platform,
+            emptyHint = "还没有人评论。用过的可以在这里说一句线路和坑。",
+            placeholder = "这条好不好用？说一句",
         )
     }
 }
 
 /**
- * 一条机场下面的评论：列表 + 输入栏，发完立刻重拉。
+ * 一条东西下面的评论：列表 + 输入栏，发完立刻重拉。
  *
- * 为什么自己拉而不走外层的 state：评论只在弹窗开着时才有人看，且每条机场各有一份；把它塞进
- * [AirportTabState] 会让整个榜单跟着一份评论的重拉而去组合。所以这一块自己拿、自己发，
+ * 现在四种条目共用这一块：机场（[COMMENT_KIND_AIRPORT]）和推荐页的条目（`recommend` + 项目地址）
+ * 都是「父评论 + 回复 + 作者 + 时间 + 认同数」的同一套排版，各写一遍只会各漏一处。
+ *
+ * 为什么自己拉而不走外层的 state：评论只在弹窗开着时才有人看，且每条各有一份；塞进
+ * [AirportTabState] 会让整个榜单跟着一份评论的重拉而重新组合。所以这一块自己拿、自己发，
  * 弹窗关掉就随组合一起消失。
+ *
+ * @param kind [PlanComment] 的种类，见 `COMMENT_KIND_*`。
+ * @param target 这一条的身份：机场是 id 的字符串，推荐条目是项目地址（用地址不用下标，见
+ *   `COMMENT_KIND_RECOMMEND`）。它同时是这一块的 `remember` 键，换一条就整块重置。
  */
 @Composable
-private fun AirportCommentSection(
-    entryId: Long,
+internal fun CommunityCommentSection(
+    kind: String,
+    target: String,
     repository: PlanRepository?,
     author: String,
     authorId: String,
@@ -940,21 +1124,25 @@ private fun AirportCommentSection(
     canComment: Boolean,
     gateHint: String,
     platform: CantaPlatform,
+    /** 一条都没有时那句话：机场说线路和坑，推荐条目说好不好用。 */
+    emptyHint: String,
+    /** 输入框里的提示语。 */
+    placeholder: String,
 ) {
     val scheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    var comments by remember(entryId) { mutableStateOf<List<PlanComment>>(emptyList()) }
-    var loading by remember(entryId) { mutableStateOf(true) }
-    var error by remember(entryId) { mutableStateOf<String?>(null) }
-    var draft by remember(entryId) { mutableStateOf("") }
-    var replyTo by remember(entryId) { mutableStateOf<PlanComment?>(null) }
-    var sending by remember(entryId) { mutableStateOf(false) }
+    var comments by remember(target) { mutableStateOf<List<PlanComment>>(emptyList()) }
+    var loading by remember(target) { mutableStateOf(true) }
+    var error by remember(target) { mutableStateOf<String?>(null) }
+    var draft by remember(target) { mutableStateOf("") }
+    var replyTo by remember(target) { mutableStateOf<PlanComment?>(null) }
+    var sending by remember(target) { mutableStateOf(false) }
     /** 重拉的开关：发完一条 +1。 */
-    var reloadKey by remember(entryId) { mutableIntStateOf(0) }
+    var reloadKey by remember(target) { mutableIntStateOf(0) }
     /** 展开回复的那几条（线程起始评论的 id）。 */
-    var expanded by remember(entryId) { mutableStateOf(setOf<Long>()) }
+    var expanded by remember(target) { mutableStateOf(setOf<Long>()) }
 
-    LaunchedEffect(entryId, reloadKey) {
+    LaunchedEffect(kind, target, reloadKey) {
         val repo = repository
         if (repo == null) {
             loading = false
@@ -962,7 +1150,12 @@ private fun AirportCommentSection(
             return@LaunchedEffect
         }
         if (comments.isEmpty()) loading = true
-        val fresh = if (entryId <= 0L) null else repo.airportComments(entryId, me)
+        // 机场先走专用函数（它自己再退回通用那条）；别的种类直接走通用封装。
+        val fresh = when {
+            target.isEmpty() -> null
+            kind == COMMENT_KIND_AIRPORT -> repo.airportComments(target.toLongOrNull() ?: 0L, me)
+            else -> repo.commentsOf(kind, target, me)
+        }
         if (fresh != null) {
             comments = fresh
             error = null
@@ -983,13 +1176,24 @@ private fun AirportCommentSection(
                 sending = true
                 // 先记下回复的是哪一条：下面要把 `replyTo` 清掉，清掉之后就取不到了。
                 val answered = replyTo
-                val id = repo.commentOnAirport(
-                    airportId = entryId,
-                    body = body,
-                    author = author,
-                    authorId = authorId,
-                    replyTo = answered?.id ?: 0L,
-                )
+                val id = if (kind == COMMENT_KIND_AIRPORT) {
+                    repo.commentOnAirport(
+                        airportId = target.toLongOrNull() ?: 0L,
+                        body = body,
+                        author = author,
+                        authorId = authorId,
+                        replyTo = answered?.id ?: 0L,
+                    )
+                } else {
+                    repo.comment(
+                        kind = kind,
+                        target = target,
+                        body = body,
+                        author = author,
+                        authorId = authorId,
+                        replyTo = answered?.id ?: 0L,
+                    )
+                }
                 sending = false
                 if (id == null) {
                     platform.showMessage("没发出去：${repo.lastError ?: "检查一下网络再试"}")
@@ -1038,7 +1242,7 @@ private fun AirportCommentSection(
         )
 
         !loading && comments.isEmpty() -> Text(
-            text = "还没有人评论。用过的可以在这里说一句线路和坑。",
+            text = emptyHint,
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
         )
@@ -1133,7 +1337,7 @@ private fun AirportCommentSection(
             enabled = canComment && !sending,
             placeholder = {
                 Text(
-                    text = if (replyTo != null) "回一句…" else "这条好不好用？说一句",
+                    text = if (replyTo != null) "回一句…" else placeholder,
                     style = MaterialTheme.typography.labelSmall,
                 )
             },
