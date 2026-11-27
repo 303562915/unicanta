@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - master
+  # 2026-11-27 加：**push 触发不够用。**
+  #
+  # 两个事实叠在一起会让开发版出不来：
+  #   1. `db-backup` 每 3～5 分钟往 master 提交一次，而它用的是 `GITHUB_TOKEN`——
+  #      GitHub 不会因为这种 push 再触发别的 workflow（防递归）。
+  #   2. 本工作流末尾那步 `Skip publication if this is no longer master HEAD`：
+  #      构建要几分钟，构建期间只要有人推了新提交，这一次就**构建成功但不发布**。
+  #
+  # 于是「代码刚推上去 → 构建中 → db-backup 又推了一条 → 跳过发布」会稳定发生，
+  # 表现成「明明构建成功了，下载页上还是旧包」。给一个手动入口，这种情况补一发就行。
+  workflow_dispatch:
 
 concurrency:
   group: development-release-master
