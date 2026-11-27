@@ -11296,8 +11296,8 @@
    {
     "pkg": "com.android.browser",
     "small_batch": false,
-    "uninstalls": 273,
-    "updated_at": "2026-11-27T00:36:54.141044+00:00",
+    "uninstalls": 274,
+    "updated_at": "2026-11-27T00:52:13.63454+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11828,8 +11828,8 @@
    {
     "pkg": "com.android.quicksearchbox",
     "small_batch": false,
-    "uninstalls": 293,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 294,
+    "updated_at": "2026-11-27T00:54:41.431778+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -12759,8 +12759,8 @@
    {
     "pkg": "com.miui.hybrid",
     "small_batch": true,
-    "uninstalls": 528,
-    "updated_at": "2026-11-27T00:32:17.084313+00:00",
+    "uninstalls": 529,
+    "updated_at": "2026-11-27T00:53:45.401049+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -12871,8 +12871,8 @@
    {
     "pkg": "com.miui.personalassistant",
     "small_batch": false,
-    "uninstalls": 186,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 187,
+    "updated_at": "2026-11-27T00:54:41.431778+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -13046,8 +13046,8 @@
    {
     "pkg": "com.miui.voicetrigger",
     "small_batch": false,
-    "uninstalls": 144,
-    "updated_at": "2026-11-27T00:36:54.141044+00:00",
+    "uninstalls": 145,
+    "updated_at": "2026-11-27T01:01:32.350695+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16081,8 +16081,8 @@
    {
     "pkg": "com.android.browser",
     "small_batch": false,
-    "uninstalls": 73,
-    "updated_at": "2026-11-27T00:36:54.141044+00:00",
+    "uninstalls": 74,
+    "updated_at": "2026-11-27T00:52:13.63454+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16459,8 +16459,8 @@
    {
     "pkg": "com.android.quicksearchbox",
     "small_batch": true,
-    "uninstalls": 54,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 55,
+    "updated_at": "2026-11-27T00:54:41.431778+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17194,8 +17194,8 @@
    {
     "pkg": "com.miui.hybrid",
     "small_batch": false,
-    "uninstalls": 129,
-    "updated_at": "2026-11-27T00:32:17.084313+00:00",
+    "uninstalls": 130,
+    "updated_at": "2026-11-27T00:53:45.401049+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17257,8 +17257,8 @@
    {
     "pkg": "com.miui.personalassistant",
     "small_batch": false,
-    "uninstalls": 24,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 25,
+    "updated_at": "2026-11-27T00:54:41.431778+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -19293,8 +19293,8 @@
    {
     "pkg": "com.miui.voicetrigger",
     "small_batch": false,
-    "uninstalls": 113,
-    "updated_at": "2026-11-26T22:24:48.653018+00:00",
+    "uninstalls": 114,
+    "updated_at": "2026-11-27T01:01:32.350695+00:00",
     "verdict": "BREAKS"
    },
    {
