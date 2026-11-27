@@ -1357,8 +1357,8 @@
    {
     "pkg": "com.oppo.ctautoregist",
     "small_batch": false,
-    "uninstalls": 9,
-    "updated_at": "2026-11-27T07:56:57.225297+00:00",
+    "uninstalls": 10,
+    "updated_at": "2026-11-27T08:50:13.328133+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -2705,8 +2705,8 @@
    {
     "pkg": "com.oppo.ctautoregist",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T05:52:46.69971+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T08:50:13.328133+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -14149,7 +14149,7 @@
     "pkg": "com.android.adservices.api",
     "small_batch": false,
     "uninstalls": 426,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14169,8 +14169,8 @@
    {
     "pkg": "com.android.bips",
     "small_batch": false,
-    "uninstalls": 134,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 135,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14183,8 +14183,8 @@
    {
     "pkg": "com.android.browser",
     "small_batch": false,
-    "uninstalls": 288,
-    "updated_at": "2026-11-27T08:38:42.270127+00:00",
+    "uninstalls": 289,
+    "updated_at": "2026-11-27T08:52:19.339704+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14331,7 +14331,7 @@
     "pkg": "com.android.egg",
     "small_batch": false,
     "uninstalls": 397,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14659,8 +14659,8 @@
    {
     "pkg": "com.android.privatespace",
     "small_batch": false,
-    "uninstalls": 248,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 249,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14737,7 +14737,7 @@
     "pkg": "com.android.quicksearchbox",
     "small_batch": false,
     "uninstalls": 308,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14891,14 +14891,14 @@
     "pkg": "com.android.traceur",
     "small_batch": false,
     "uninstalls": 340,
-    "updated_at": "2026-11-27T08:41:57.306861+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.android.updater",
     "small_batch": true,
-    "uninstalls": 37,
-    "updated_at": "2026-11-27T08:44:45.694215+00:00",
+    "uninstalls": 38,
+    "updated_at": "2026-11-27T08:52:11.452161+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -14975,7 +14975,7 @@
     "pkg": "com.bsp.catchlog",
     "small_batch": false,
     "uninstalls": 262,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15066,7 +15066,7 @@
     "pkg": "com.goodix.fingerprint.producttest",
     "small_batch": false,
     "uninstalls": 91,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15087,7 +15087,7 @@
     "pkg": "com.google.android.accessibility.switchaccess",
     "small_batch": false,
     "uninstalls": 159,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15206,7 +15206,7 @@
     "pkg": "com.google.android.gms.location.history",
     "small_batch": false,
     "uninstalls": 239,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15555,15 +15555,15 @@
    {
     "pkg": "com.miui.accessibility",
     "small_batch": false,
-    "uninstalls": 376,
-    "updated_at": "2026-11-27T08:38:42.270127+00:00",
+    "uninstalls": 377,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.analytics",
     "small_batch": false,
-    "uninstalls": 429,
-    "updated_at": "2026-11-27T08:24:59.541756+00:00",
+    "uninstalls": 430,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15598,7 +15598,7 @@
     "pkg": "com.miui.bugreport",
     "small_batch": false,
     "uninstalls": 280,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15611,8 +15611,8 @@
    {
     "pkg": "com.miui.carlink",
     "small_batch": false,
-    "uninstalls": 334,
-    "updated_at": "2026-11-27T08:41:57.306861+00:00",
+    "uninstalls": 335,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15626,7 +15626,7 @@
     "pkg": "com.miui.cit",
     "small_batch": false,
     "uninstalls": 185,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15668,7 +15668,7 @@
     "pkg": "com.miui.contentextension",
     "small_batch": false,
     "uninstalls": 165,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15695,15 +15695,15 @@
    {
     "pkg": "com.miui.dmregservice",
     "small_batch": true,
-    "uninstalls": 170,
-    "updated_at": "2026-11-27T08:37:08.066728+00:00",
+    "uninstalls": 171,
+    "updated_at": "2026-11-27T08:49:36.331901+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.extraphoto",
     "small_batch": false,
     "uninstalls": 147,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15724,14 +15724,14 @@
     "pkg": "com.miui.greenguard",
     "small_batch": false,
     "uninstalls": 374,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.guardprovider",
     "small_batch": false,
-    "uninstalls": 151,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 152,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15744,8 +15744,8 @@
    {
     "pkg": "com.miui.hybrid",
     "small_batch": true,
-    "uninstalls": 549,
-    "updated_at": "2026-11-27T08:24:59.541756+00:00",
+    "uninstalls": 550,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15780,7 +15780,7 @@
     "pkg": "com.miui.misightservice",
     "small_batch": false,
     "uninstalls": 427,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15864,7 +15864,7 @@
     "pkg": "com.miui.personalassistant",
     "small_batch": false,
     "uninstalls": 197,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -15941,7 +15941,7 @@
     "pkg": "com.miui.securityinputmethod",
     "small_batch": false,
     "uninstalls": 144,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15968,8 +15968,8 @@
    {
     "pkg": "com.miui.systemAdSolution",
     "small_batch": false,
-    "uninstalls": 280,
-    "updated_at": "2026-11-27T08:28:32.942923+00:00",
+    "uninstalls": 281,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -15997,7 +15997,7 @@
     "pkg": "com.miui.thirdappassistant",
     "small_batch": false,
     "uninstalls": 215,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16053,7 +16053,7 @@
     "pkg": "com.miui.voiceassist",
     "small_batch": false,
     "uninstalls": 246,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16122,8 +16122,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 586,
-    "updated_at": "2026-11-27T08:24:59.541756+00:00",
+    "uninstalls": 588,
+    "updated_at": "2026-11-27T08:52:47.935356+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16193,7 +16193,7 @@
     "pkg": "com.qti.qualcomm.deviceinfo",
     "small_batch": false,
     "uninstalls": 139,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16417,7 +16417,7 @@
     "pkg": "com.qualcomm.qti.xrvd.service",
     "small_batch": false,
     "uninstalls": 137,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16508,7 +16508,7 @@
     "pkg": "com.wapi.wapicertmanage",
     "small_batch": false,
     "uninstalls": 113,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16535,22 +16535,22 @@
    {
     "pkg": "com.xiaomi.ab",
     "small_batch": false,
-    "uninstalls": 317,
-    "updated_at": "2026-11-27T08:38:42.270127+00:00",
+    "uninstalls": 318,
+    "updated_at": "2026-11-27T08:49:19.94845+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.aiasst.service",
     "small_batch": false,
     "uninstalls": 321,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.aiasst.vision",
     "small_batch": false,
     "uninstalls": 165,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16564,14 +16564,14 @@
     "pkg": "com.xiaomi.aireco",
     "small_batch": false,
     "uninstalls": 388,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.aiservice",
     "small_batch": false,
-    "uninstalls": 225,
-    "updated_at": "2026-11-27T08:48:11.407208+00:00",
+    "uninstalls": 226,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16592,7 +16592,7 @@
     "pkg": "com.xiaomi.barrage",
     "small_batch": false,
     "uninstalls": 160,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16634,7 +16634,7 @@
     "pkg": "com.xiaomi.digitalkey",
     "small_batch": false,
     "uninstalls": 285,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16647,8 +16647,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 503,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 505,
+    "updated_at": "2026-11-27T08:51:07.335982+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16696,8 +16696,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 479,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 480,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16731,15 +16731,15 @@
    {
     "pkg": "com.xiaomi.migameservice",
     "small_batch": false,
-    "uninstalls": 299,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 302,
+    "updated_at": "2026-11-27T08:53:21.674938+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.minigame",
     "small_batch": false,
-    "uninstalls": 397,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 399,
+    "updated_at": "2026-11-27T08:51:07.335982+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16753,21 +16753,21 @@
     "pkg": "com.xiaomi.mirror",
     "small_batch": false,
     "uninstalls": 266,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.mis",
     "small_batch": false,
-    "uninstalls": 335,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 336,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.mtb",
     "small_batch": false,
     "uninstalls": 192,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16780,8 +16780,8 @@
    {
     "pkg": "com.xiaomi.payment",
     "small_batch": false,
-    "uninstalls": 370,
-    "updated_at": "2026-11-27T08:41:57.306861+00:00",
+    "uninstalls": 371,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16794,8 +16794,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 385,
-    "updated_at": "2026-11-27T08:37:08.066728+00:00",
+    "uninstalls": 386,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16836,8 +16836,8 @@
    {
     "pkg": "com.xiaomi.type",
     "small_batch": false,
-    "uninstalls": 169,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 170,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16857,9 +16857,9 @@
    {
     "pkg": "com.xiaomi.xaee",
     "small_batch": true,
-    "uninstalls": 8,
-    "updated_at": "2026-11-27T06:12:42.393156+00:00",
-    "verdict": "BREAKS"
+    "uninstalls": 10,
+    "updated_at": "2026-11-27T08:51:24.582241+00:00",
+    "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.xiaomi.xmsf",
@@ -16872,7 +16872,7 @@
     "pkg": "com.xiaomi.xmsfkeeper",
     "small_batch": false,
     "uninstalls": 198,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20592,8 +20592,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 135,
-    "updated_at": "2026-11-27T08:16:36.014139+00:00",
+    "uninstalls": 136,
+    "updated_at": "2026-11-27T08:52:47.935356+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20879,8 +20879,8 @@
    {
     "pkg": "com.xiaomi.ab",
     "small_batch": false,
-    "uninstalls": 56,
-    "updated_at": "2026-11-27T08:10:38.740087+00:00",
+    "uninstalls": 57,
+    "updated_at": "2026-11-27T08:49:19.94845+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21138,9 +21138,9 @@
    {
     "pkg": "com.xiaomi.xaee",
     "small_batch": true,
-    "uninstalls": 5,
-    "updated_at": "2026-11-27T06:12:42.393156+00:00",
-    "verdict": "UNCLEAR"
+    "uninstalls": 7,
+    "updated_at": "2026-11-27T08:51:24.582241+00:00",
+    "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.xmsf",
@@ -21243,7 +21243,7 @@
     "pkg": "com.android.adservices.api",
     "small_batch": false,
     "uninstalls": 335,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21263,8 +21263,8 @@
    {
     "pkg": "com.android.bips",
     "small_batch": false,
-    "uninstalls": 116,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 117,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21277,8 +21277,8 @@
    {
     "pkg": "com.android.browser",
     "small_batch": true,
-    "uninstalls": 201,
-    "updated_at": "2026-11-27T08:24:59.541756+00:00",
+    "uninstalls": 202,
+    "updated_at": "2026-11-27T08:52:19.339704+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21397,7 +21397,7 @@
     "pkg": "com.android.egg",
     "small_batch": false,
     "uninstalls": 311,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21662,8 +21662,8 @@
    {
     "pkg": "com.android.privatespace",
     "small_batch": false,
-    "uninstalls": 248,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 249,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21719,7 +21719,7 @@
     "pkg": "com.android.quicksearchbox",
     "small_batch": false,
     "uninstalls": 239,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21845,14 +21845,14 @@
     "pkg": "com.android.traceur",
     "small_batch": false,
     "uninstalls": 261,
-    "updated_at": "2026-11-27T08:41:57.306861+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.android.updater",
     "small_batch": true,
-    "uninstalls": 23,
-    "updated_at": "2026-11-27T08:44:45.694215+00:00",
+    "uninstalls": 24,
+    "updated_at": "2026-11-27T08:52:11.452161+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -21908,7 +21908,7 @@
     "pkg": "com.bsp.catchlog",
     "small_batch": false,
     "uninstalls": 199,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21957,7 +21957,7 @@
     "pkg": "com.goodix.fingerprint.producttest",
     "small_batch": false,
     "uninstalls": 81,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21978,7 +21978,7 @@
     "pkg": "com.google.android.accessibility.switchaccess",
     "small_batch": false,
     "uninstalls": 129,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22027,7 +22027,7 @@
     "pkg": "com.google.android.gms.location.history",
     "small_batch": false,
     "uninstalls": 189,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22243,15 +22243,15 @@
    {
     "pkg": "com.miui.accessibility",
     "small_batch": false,
-    "uninstalls": 249,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 250,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.analytics",
     "small_batch": false,
-    "uninstalls": 297,
-    "updated_at": "2026-11-27T08:24:59.541756+00:00",
+    "uninstalls": 298,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22286,21 +22286,21 @@
     "pkg": "com.miui.bugreport",
     "small_batch": false,
     "uninstalls": 209,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.carlink",
     "small_batch": false,
-    "uninstalls": 244,
-    "updated_at": "2026-11-27T08:41:57.306861+00:00",
+    "uninstalls": 245,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.cit",
     "small_batch": false,
     "uninstalls": 140,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22328,7 +22328,7 @@
     "pkg": "com.miui.contentextension",
     "small_batch": false,
     "uninstalls": 103,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22348,15 +22348,15 @@
    {
     "pkg": "com.miui.dmregservice",
     "small_batch": true,
-    "uninstalls": 97,
-    "updated_at": "2026-11-27T08:37:08.066728+00:00",
+    "uninstalls": 98,
+    "updated_at": "2026-11-27T08:49:36.331901+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.extraphoto",
     "small_batch": false,
     "uninstalls": 114,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22370,21 +22370,21 @@
     "pkg": "com.miui.greenguard",
     "small_batch": false,
     "uninstalls": 258,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.guardprovider",
     "small_batch": false,
-    "uninstalls": 127,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 128,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.hybrid",
     "small_batch": true,
-    "uninstalls": 373,
-    "updated_at": "2026-11-27T08:24:59.541756+00:00",
+    "uninstalls": 374,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22412,7 +22412,7 @@
     "pkg": "com.miui.misightservice",
     "small_batch": false,
     "uninstalls": 324,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22461,7 +22461,7 @@
     "pkg": "com.miui.personalassistant",
     "small_batch": false,
     "uninstalls": 160,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -22517,7 +22517,7 @@
     "pkg": "com.miui.securityinputmethod",
     "small_batch": false,
     "uninstalls": 112,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22544,8 +22544,8 @@
    {
     "pkg": "com.miui.systemAdSolution",
     "small_batch": false,
-    "uninstalls": 224,
-    "updated_at": "2026-11-27T08:28:32.942923+00:00",
+    "uninstalls": 225,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -22566,7 +22566,7 @@
     "pkg": "com.miui.thirdappassistant",
     "small_batch": false,
     "uninstalls": 163,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22594,7 +22594,7 @@
     "pkg": "com.miui.voiceassist",
     "small_batch": false,
     "uninstalls": 152,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22649,8 +22649,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 416,
-    "updated_at": "2026-11-27T08:24:59.541756+00:00",
+    "uninstalls": 417,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22713,7 +22713,7 @@
     "pkg": "com.qti.qualcomm.deviceinfo",
     "small_batch": false,
     "uninstalls": 110,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22881,7 +22881,7 @@
     "pkg": "com.qualcomm.qti.xrvd.service",
     "small_batch": false,
     "uninstalls": 118,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22958,7 +22958,7 @@
     "pkg": "com.wapi.wapicertmanage",
     "small_batch": false,
     "uninstalls": 94,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22979,21 +22979,21 @@
     "pkg": "com.xiaomi.ab",
     "small_batch": false,
     "uninstalls": 241,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.aiasst.service",
     "small_batch": false,
     "uninstalls": 209,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.aiasst.vision",
     "small_batch": false,
     "uninstalls": 129,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23007,14 +23007,14 @@
     "pkg": "com.xiaomi.aireco",
     "small_batch": false,
     "uninstalls": 310,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.aiservice",
     "small_batch": false,
-    "uninstalls": 167,
-    "updated_at": "2026-11-27T08:48:11.407208+00:00",
+    "uninstalls": 168,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23035,7 +23035,7 @@
     "pkg": "com.xiaomi.barrage",
     "small_batch": false,
     "uninstalls": 124,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23077,7 +23077,7 @@
     "pkg": "com.xiaomi.digitalkey",
     "small_batch": false,
     "uninstalls": 220,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23090,8 +23090,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 359,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 361,
+    "updated_at": "2026-11-27T08:51:07.335982+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23132,8 +23132,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 336,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 337,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23167,15 +23167,15 @@
    {
     "pkg": "com.xiaomi.migameservice",
     "small_batch": false,
-    "uninstalls": 238,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 241,
+    "updated_at": "2026-11-27T08:53:21.674938+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.minigame",
     "small_batch": false,
-    "uninstalls": 301,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 303,
+    "updated_at": "2026-11-27T08:51:07.335982+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23189,21 +23189,21 @@
     "pkg": "com.xiaomi.mirror",
     "small_batch": false,
     "uninstalls": 174,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.mis",
     "small_batch": false,
-    "uninstalls": 266,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 267,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.mtb",
     "small_batch": false,
     "uninstalls": 150,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23216,8 +23216,8 @@
    {
     "pkg": "com.xiaomi.payment",
     "small_batch": false,
-    "uninstalls": 251,
-    "updated_at": "2026-11-27T08:41:57.306861+00:00",
+    "uninstalls": 252,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23230,8 +23230,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 270,
-    "updated_at": "2026-11-27T08:37:08.066728+00:00",
+    "uninstalls": 271,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23265,8 +23265,8 @@
    {
     "pkg": "com.xiaomi.type",
     "small_batch": false,
-    "uninstalls": 169,
-    "updated_at": "2026-11-27T08:36:16.979183+00:00",
+    "uninstalls": 170,
+    "updated_at": "2026-11-27T08:49:50.637854+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23301,7 +23301,7 @@
     "pkg": "com.xiaomi.xmsfkeeper",
     "small_batch": false,
     "uninstalls": 155,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "updated_at": "2026-11-27T08:48:42.180104+00:00",
     "verdict": "BREAKS"
    },
    {

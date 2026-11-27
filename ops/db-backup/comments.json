@@ -5208,6 +5208,18 @@
   "target": "92"
  },
  {
+  "author": "Algernon",
+  "author_id": "14979",
+  "body": "这个是小米删的",
+  "created_at": "2026-11-27T08:54:08.270293+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 779,
+  "kind": "plan",
+  "parent_id": 237,
+  "system_name": "HyperOS 4.0.8",
+  "target": "11"
+ },
+ {
   "author": "#10231",
   "author_id": "10231",
   "body": "没有出现这种情况",
