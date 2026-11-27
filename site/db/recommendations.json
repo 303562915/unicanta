@@ -406,6 +406,20 @@
   "url": "https://github.com/84593320z/GKD-XA"
  },
  {
+  "agrees": 1,
+  "applied": false,
+  "author": "Algernon",
+  "author_id": "14979",
+  "category": "tools",
+  "created_at": "2026-11-27T08:32:10.529299+00:00",
+  "disagrees": 0,
+  "id": 32,
+  "license": "GPL-3.0 license",
+  "name": "Sky ADB",
+  "summary": "Android 上的 adb 助手，可以很方便的管理安卓手机、平板、电视和盒子。支持AI控制。\n(替代甲壳虫ADB)",
+  "url": "https://github.com/sky22333/skyadb"
+ },
+ {
   "agrees": 0,
   "applied": false,
   "author": "#12149",
@@ -439,12 +453,12 @@
   "author": "Algernon",
   "author_id": "14979",
   "category": "tools",
-  "created_at": "2026-11-27T08:32:10.529299+00:00",
+  "created_at": "2026-11-27T08:35:50.104201+00:00",
   "disagrees": 0,
-  "id": 32,
-  "license": "GPL-3.0 license",
-  "name": "Sky ADB",
-  "summary": "Android 上的 adb 助手，可以很方便的管理安卓手机、平板、电视和盒子。支持AI控制。\n(替代甲壳虫ADB)",
-  "url": "https://github.com/sky22333/skyadb"
+  "id": 33,
+  "license": "AGPL-3.0 许可证",
+  "name": "RustDesk",
+  "summary": "一款开源远程桌面应用程序，专为自托管设计，作为 TeamViewer 的替代方案。",
+  "url": "https://github.com/rustdesk/rustdesk"
  }
 ]
