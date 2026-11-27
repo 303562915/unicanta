@@ -5316,6 +5316,18 @@
   "target": "com.xiaomi.aiservice"
  },
  {
+  "author": "宇轩",
+  "author_id": "15411",
+  "body": "6，前两天用了这个方案无限重启，数据不保，就是晚上[城墙落泪]4.0.4系统，",
+  "created_at": "2026-11-27T11:08:50.384901+00:00",
+  "device_model": "REDMI K90 Ultra",
+  "id": 788,
+  "kind": "plan",
+  "parent_id": 785,
+  "system_name": "HyperOS 4.0.4",
+  "target": "9"
+ },
+ {
   "author": "#10762",
   "author_id": "10762",
   "body": "OS3 卸载会导致护眼模式磁贴变暗，介意可冻结",
