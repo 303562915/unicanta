@@ -1053,6 +1053,9 @@ private fun CantaNavigation(
                     planCache = deps.planCache,
                     // 记住「选择机型」挑的那台：这一页是二级页，返回再进来不该变回全部机型。
                     onScopeRemember = { value -> settingsViewModel.savePlanScope(value) },
+                    // 这个值是 App 级 `StateFlow`：页面重新进入时首帧读到的就是上次那台，
+                    // 不会先画一遍「全部机型」再跳回来（页面自己订阅存储就会有那一帧）。
+                    storedScopeFlow = settingsViewModel.planScope,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }

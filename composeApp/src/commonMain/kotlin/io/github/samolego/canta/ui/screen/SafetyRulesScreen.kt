@@ -121,6 +121,8 @@ import io.github.samolego.canta.util.romLabelOf
 import io.github.samolego.canta.util.romName
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
@@ -165,6 +167,32 @@ private data class UploadRequest(
 )
 
 /**
+ * 「上次挑的机型」从哪来。
+ *
+ * 由调用方传一个 `StateFlow` 进来（见 [io.github.samolego.canta.ui.viewmodel.SettingsViewModel.planScope]），
+ * **不要**在这个页面里用 `collectAsStateWithLifecycle(initialValue = "")` 去订阅存储：
+ * 页面每次重新进入（从应用详情返回、切 tab）都会重新收集，第一帧拿到的就是那个空串 =
+ * 「全部机型」，然后才换成真正选的那台 —— 用户看到的就是「每次都先显示全部，再跳回之前选的」。
+ * 传进来的 `StateFlow` 在 App 启动时就读好了，页面任何时候读到的都是真值。
+ *
+ * 兜底：调用方没传（测试、网页版、别的入口）时 flow 是空的，那就退回存储的
+ * `planScopeFlow.value` —— 它是 `StateFlow`，**同步**就有现有值，同样不会先画一帧「全部机型」。
+ * 注意这里刻意不写 `initialValue`：那个参数就是"空串先顶一帧"的根源。
+ */
+@Composable
+private fun rememberedScope(flow: StateFlow<String>, settings: CantaSettings): String {
+    // 两个都是 `StateFlow`：用**无参**的 `collectAsStateWithLifecycle()`，它的初值就是 `value`
+    // （项目里别处也这么用，见 `CantaApp` 的 `themeAccent`），所以第一帧就是真值，不存在
+    // 「先空串、再跳」那一帧。带 `initialValue = ""` 的写法恰恰会造出那一帧，别改回去。
+    return if (flow.value.isNotEmpty()) {
+        flow.collectAsStateWithLifecycle().value
+    } else {
+        // 只有调用方没给 App 级 flow（测试、网页版）时才走这里；存储的 `value` 同样是同步真值。
+        settings.planScopeFlow.collectAsStateWithLifecycle().value
+    }
+}
+
+/**
  * Two views of the same question, scoped to one phone at a time.
  *
  * *Top removed*: packages ranked by the likes their plans got on that model and ROM version — the
@@ -206,6 +234,14 @@ fun SafetyRulesScreen(
      * 只需要一个"记住它"的动作。
      */
     onScopeRemember: (String) -> Unit = {},
+    /**
+     * 上一次挑的机型（`PlanScope.toStoredValue` 的写法，空串 = 全部机型）。
+     *
+     * 必须是**已经读好的** `StateFlow`，不是页面自己订阅的 Flow：页面每次重新进入都会重新收集，
+     * 首帧只会拿到"还没读到"的值，于是先画一遍「全部机型」再跳回来——就是用户报的那个现象。
+     * 传 `SettingsViewModel.planScope` 进来，它跟着 App 一起活，值早就在手上。
+     */
+    storedScopeFlow: StateFlow<String> = MutableStateFlow(""),
     onNavigateBack: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -216,18 +252,16 @@ fun SafetyRulesScreen(
     // community removes. A chip in the picker narrows it to this phone or to another model.
     //
     // 上次挑的机型存在设置里（见 AppSettingsProto.planScope）：这一页是二级页，去应用详情再返回
-    // 会重新组合，只放在 `remember` 里就变回「全部机型」——群里说的「记不住本机机型，返回就成了
-    // 全部机型」正是这个。
+    // 会重新组合，只放在 `remember` 里就变回「全部机型」。
     //
-    // 现在它**就是**页面状态本身（下面那个 `planScopeOfStored(storedScope, catalog)`），不再是
-    // "先 remember 一份、再一次性还原一次"。一次性还原的写法有两个洞，正好就是「返回 / 切回来还要
-    // 重选」：
-    //  * 还原要求目录先到，`catalog` 一空就 `return@LaunchedEffect`，而 `scopeRestored` 那一位在
-    //    数据到手前没有任何东西可还原时就白花了；
-    //  * 每次重组都从 `PlanScope.All` 重新开始，靠那个效应再"跳"回某台机器——中间会闪一下
-    //    「全部机型」，用户看到的就是"又让我重选"。
-    // 读设置是同步的（`planScopeFlow` 背后是 `StateFlow`），首帧就已经是上次那台机器。
-    val storedScope by settings.planScopeFlow.collectAsStateWithLifecycle(initialValue = "")
+    // 现在的判定是：**这个值从哪里来、什么时候到手**。
+    //  1. 由 App 级的 `SettingsViewModel.planScope` 提供（参数 `storedScopeFlow`），那个
+    //     `StateFlow` 的初值就是存储里的真值，页面第一帧读到的就已经是上次那台；
+    //  2. **本页不订阅存储**。页面级的 `collectAsStateWithLifecycle(initialValue = "")` 在每次重新
+    //     进入时都会从那个空串开始收集，于是先画一帧「全部机型」，协程读回来后再跳成上次那台 ——
+    //     用户报的「每次退出来都先显示全部，然后再跳」就是这一帧。
+    //  3. 下面的 `planScope` 只看这个值，不看目录，所以目录什么时候回来都不会改顶部那台。
+    val storedScope = rememberedScope(storedScopeFlow, settings)
     // Every model the backend has plans for, with the counts its chips print.
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
     // **必须在 `catalog` 之下**：`planScope` 要读它。
