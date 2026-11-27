@@ -815,10 +815,10 @@ fun ChatScreen(
             tailId = last.id
             // 首屏不算「新消息」：那时列表可能还没量出高度，`scrollToItem` 落不到位，停在半屏
             // 中间看着像"只读到一半"。首屏交给下面的「首屏落底」那一段，按最终尺寸再落一次。
-            if (firstPaintDone) listState.scrollToItem(messages.size - 1)
+            if (firstPaintDone) listState.scrollToItem(0)
         } else if (!firstPaintDone) {
             // 首屏（消息数量没变）：还是落一次底，只是这里先给一个初值。
-            listState.scrollToItem(messages.size - 1)
+            listState.scrollToItem(0)
         }
         // 首屏（或新消息）已经落到底：从现在起，滚到顶才算"要翻历史"。
         settled = true
@@ -835,7 +835,8 @@ fun ChatScreen(
     LaunchedEffect(conversationId, messages.isNotEmpty()) {
         if (firstPaintDone || messages.isEmpty()) return@LaunchedEffect
         repeat(FirstPaintScrollPasses) { pass ->
-            listState.scrollToItem(messages.size - 1)
+            // reverseLayout 下 index 0 就是最新那条，也就是底部。
+            listState.scrollToItem(0)
             if (pass < FirstPaintScrollPasses - 1) {
                 withFrameNanos { }
                 delay(FirstPaintScrollPassMs)
@@ -846,34 +847,43 @@ fun ChatScreen(
 
     // 视口会变矮：键盘弹起、输入框从 40dp 长到 120dp、表情/更多面板拉开、快捷表情条出现。
     // LazyColumn 这时只会守住原来的滚动位置，最新那一条就被输入栏压掉一半——所以视口一变矮，
-    // 只要刚才贴在底部，就把最后一条重新顶回可见区。变化前的高度/最后可见项要自己记，
+    // 只要刚才贴在底部，就把最后一条重新顶回可见区。变化前的高度/底部那条要自己记，
     // 因为 layoutInfo 里读到的已经是新布局。
     LaunchedEffect(conversationId) {
         var previousHeight = 0
-        var previousLastVisible = -1
+        var previousBottomIndex = -1
         snapshotFlow {
-            val info = listState.layoutInfo
-            info.viewportSize.height to (info.visibleItemsInfo.lastOrNull()?.index ?: -1)
-        }.collect { (height, lastVisible) ->
-            val total = listState.layoutInfo.totalItemsCount
-            if (height > 0 && height < previousHeight && total > 0 && previousLastVisible >= total - 1) {
-                listState.scrollToItem(total - 1)
+            // reverseLayout 的起点是底部：`firstVisibleItemIndex` 就是压在视口下沿的那一条，
+            // 它是 0 就说明刚才贴在最新一条上。
+            listState.layoutInfo.viewportSize.height to listState.firstVisibleItemIndex
+        }.collect { (height, bottomIndex) ->
+            if (height > 0 && height < previousHeight && previousBottomIndex == 0) {
+                listState.scrollToItem(0)
             }
             previousHeight = height
-            previousLastVisible = lastVisible
+            previousBottomIndex = bottomIndex
         }
     }
 
     /** 滚到最新一条：胶囊和向下箭头共用这一个动作。 */
     val scrollToBottom: () -> Unit = {
         if (messages.isNotEmpty()) {
-            scope.launch { listState.animateScrollToItem(messages.size - 1) }
+            scope.launch { listState.animateScrollToItem(0) }
         }
     }
 
     // 视图停在最顶那一行时往回翻一页。loadingEarlier 挡住重入，空结果就静默认了。
     // 注意 keys 里不能放 loadingEarlier：这个 effect 一置位就把自己取消掉，翻页永远发不出去。
-    val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    // reverseLayout 把方向倒过来了：最旧那条是索引最大的那一条，它露出来才算"翻到顶"。
+    val atTop by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val total = info.totalItemsCount
+            // 用最大索引而不是 `lastOrNull().index`：倒序列表里可见项是按屏幕位置排的，
+            // 最上面那一条才是索引最大的那条（最旧的）。
+            total > 0 && (info.visibleItemsInfo.maxOfOrNull { it.index } ?: -1) >= total - 1
+        }
+    }
     LaunchedEffect(atTop, conversationId, settled) {
         if (!settled || !atTop || loadingEarlier) return@LaunchedEffect
         val oldest = messages.firstOrNull() ?: return@LaunchedEffect
@@ -881,9 +891,9 @@ fun ChatScreen(
         try {
             val older = repository.messagesBefore(owner, conversationId, oldest.id, ChatPageSize)
             if (older.isNotEmpty()) {
+                // 旧的那一页排在"更上面"：倒序列表里它们是**后面**的索引，所以现有每一条的索引
+                // 一个都没变，视口自己就停在原处，不用再补一次 scrollToItem。
                 messages = (older + messages).distinctBy { message -> message.id }
-                // 新来的那一页接在前面：把原来第一条挪回视野顶上，手感上像"没动过"。
-                listState.scrollToItem(older.size)
             }
         } finally {
             // 被取消（下拉到底、换会话）也要把闸门放回 false，否则再也翻不了页。
@@ -891,18 +901,16 @@ fun ChatScreen(
         }
     }
 
-    // 滚到底了没有：最后一条可见项就是最后一条消息，就算在底。
+    // 滚到底了没有：reverseLayout 下压在视口下沿的是索引 0，那就是最新一条。
     val atBottom by remember {
         derivedStateOf {
-            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            last >= messages.size - 1
+            listState.layoutInfo.totalItemsCount > 0 && listState.firstVisibleItemIndex == 0
         }
     }
-    // 还有几条没滚到：估一个数就够，胶囊上的数字不是账目。
+    // 还有几条没滚到：起点以下的那些索引就是没看见的新消息，估一个数就够，胶囊上的数字不是账目。
     val unseen by remember {
         derivedStateOf {
-            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            (messages.size - 1 - last).coerceAtLeast(0)
+            if (listState.layoutInfo.totalItemsCount == 0) 0 else listState.firstVisibleItemIndex
         }
     }
 
@@ -1239,6 +1247,10 @@ fun ChatScreen(
     // 顶栏据此不挂点击——宁可点不动，也不要推开一张没有内容的主页。
     val peerOwner = detail?.members?.firstOrNull { member -> member.owner != owner }?.owner.orEmpty()
 
+    // 列表是从底部往上排的（LazyColumn 的 reverseLayout），所以喂给 items 的是倒过来的视图：
+    // index 0 是最新那条、index + 1 才是更旧的那条。它只是个视图，不复制列表。
+    val ordered = messages.asReversed()
+
     // 已读回执挂在自己**最后一条**下面：微信、抖音都是这个位置，人也只在那儿找。
     // 判据是"别人的读位置比这条的创建时间晚"——后端每人只存一个 last_read_at，不存每条回执。
     val lastMine = messages.lastOrNull { it.sender == owner }
@@ -1336,11 +1348,15 @@ fun ChatScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
+                        // 从底部往上排：最新那条天生就在最底下，一进页面不用再靠几次 `scrollToItem`
+                        // 去"追"底（追的那几帧就是"从头像开始"那一眼）。消息不够一屏时也是贴着输入栏
+                        // 往上长，不会吊在屏幕顶上。
+                        reverseLayout = true,
                     ) {
                         // 日期分隔画在每条消息自己的 item 里，不额外占一个索引：
-                        // 这样 layoutInfo 里的索引仍然与 messages 一一对应，下面的"在不在底"才算得准。
-                        itemsIndexed(messages, key = { _, message -> message.id }) { index, message ->
-                            val previous = if (index > 0) messages[index - 1] else null
+                        // 这样 layoutInfo 里的索引仍然与 ordered 一一对应，下面的"在不在底"才算得准。
+                        itemsIndexed(ordered, key = { _, message -> message.id }) { index, message ->
+                            val previous = ordered.getOrNull(index + 1)
                             val newDay = previous == null ||
                                 chatDayOf(previous.createdAt) != chatDayOf(message.createdAt)
                             // 同一天里隔得久了也起一条居中时间（微信是 5 分钟）：
