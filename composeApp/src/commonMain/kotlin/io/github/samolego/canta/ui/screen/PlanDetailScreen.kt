@@ -119,6 +119,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
+import io.github.samolego.canta.ui.component.DanmakuLine
 import io.github.samolego.canta.ui.component.DanmakuSettingsDialog
 import io.github.samolego.canta.ui.component.DanmakuStyle
 import io.github.samolego.canta.ui.component.DefaultDanmakuStyle
@@ -310,13 +311,13 @@ fun PlanDetailScreen(
         mutableFloatStateOf(DefaultDanmakuStyle.fontSizeSp)
     }
     var danmakuSpeed by rememberSaveable(planId) {
-        mutableFloatStateOf(DefaultDanmakuStyle.speedDpPerSec)
+        mutableFloatStateOf(DefaultDanmakuStyle.passSeconds)
     }
     val danmakuStyle = remember(danmakuColor, danmakuFontSize, danmakuSpeed) {
         DanmakuStyle(
             colorArgb = danmakuColor,
             fontSizeSp = danmakuFontSize,
-            speedDpPerSec = danmakuSpeed,
+            passSeconds = danmakuSpeed,
         )
     }
     /** 弹幕设置面板开着没有；长按顶栏图标打开。 */
@@ -807,7 +808,7 @@ fun PlanDetailScreen(
             onStyleChange = { changed ->
                 danmakuColor = changed.colorArgb
                 danmakuFontSize = changed.fontSizeSp
-                danmakuSpeed = changed.speedDpPerSec
+                danmakuSpeed = changed.passSeconds
             },
             onDismiss = { danmakuSettingsOpen = false },
         )
@@ -1298,14 +1299,23 @@ private fun otherDevices(
  * 回复头上那个「↳」是它和一级唯一的区别：滚法、字号、速度完全一样（要的就是「所有弹幕都这么
  * 飘」）。回的是另一条回复时把对象也写上（`CommentThread.markerFor`），否则「↳ 嗯」这种一句话
  * 读不出在对谁说。
+ *
+ * 每条都带上自己的赞数，并且标出「这批里点赞最多的是哪些」（并列的算同一条，见 [DanmakuLine]）：
+ * 弹幕层据此给它们换金色、加粗、在尾巴上挂赞数。
  */
-private fun danmakuRows(comments: List<PlanComment>): List<String> {
+private fun danmakuRows(comments: List<PlanComment>): List<DanmakuLine> {
+    if (comments.isEmpty()) return emptyList()
+    // 这批里最高的赞数；0 表示一条赞都没有，那就谁都不算「最多」——全屏金色等于没有区分。
+    val best = comments.maxOf { it.likes }
+    fun line(text: String, likes: Int): DanmakuLine =
+        DanmakuLine(text = text, likes = likes, top = likes > 0 && likes >= best)
     val threads = comments.threads()
-    val starters = threads.map { it.comment.body }
+    val starters = threads.map { line(it.comment.body, it.comment.likes) }
     val answers = threads.flatMap { thread ->
         thread.replies.map { answer ->
             val to = thread.markerFor(answer)
-            if (to.isNotEmpty()) "↳ 回 @$to：${answer.body}" else "↳ ${answer.body}"
+            val text = if (to.isNotEmpty()) "↳ 回 @$to：${answer.body}" else "↳ ${answer.body}"
+            line(text, answer.likes)
         }
     }
     return starters + answers
@@ -1331,8 +1341,8 @@ private fun PlanHero(
     onEditNote: ((String) -> Unit)? = null,
     /** 角上那条披带点下去要说的话；toast 由页面那一层负责，这里只说内容。 */
     onMessage: (String) -> Unit = {},
-    /** 下面那些评论的正文，一句一条：卡片顶部那条弹幕带飘的就是它们。 */
-    danmaku: List<String> = emptyList(),
+    /** 下面那些评论的正文，一句一条：卡片上飘的就是它们。 */
+    danmaku: List<DanmakuLine> = emptyList(),
     /** 弹幕开着没有（开关在顶栏，默认开）。 */
     danmakuOn: Boolean = true,
     /** 弹幕的颜色、大小、速度：顶栏那个图标长按进来的面板改的就是它。 */

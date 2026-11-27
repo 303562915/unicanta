@@ -111,21 +111,22 @@ fun DanmakuSettingsDialog(
             }
         }
 
-        // 速度：每秒走多少 dp。
+        // 速度：一条弹幕走完全程要几秒（越小越快）。
         DialogGroup(label = "速度") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DanmakuSpeedChoices.forEach { (label, speed) ->
+                DanmakuSpeedChoices.forEach { (label, seconds) ->
                     ChoiceChip(
                         label = label,
-                        selected = style.speedDpPerSec == speed,
-                        onClick = { onStyleChange(style.copy(speedDpPerSec = speed)) },
+                        selected = style.passSeconds == seconds,
+                        onClick = { onStyleChange(style.copy(passSeconds = seconds)) },
                     )
                 }
             }
         }
 
-        // 预览：这块底色就是卡片那块底色，字用的就是当前这一份样式。
-        Box(
+        // 预览：这块底色就是卡片那块底色，字用的就是当前这一份样式。第二行是「点赞最多的那条」
+        // 长什么样——金色、更粗、尾巴挂赞数，不预览一遍读者不知道那抹金色是哪来的。
+        Column(
             modifier = Modifier
                 .padding(top = 14.dp)
                 .fillMaxWidth()
@@ -138,6 +139,13 @@ fun DanmakuSettingsDialog(
                 fontSize = style.fontSizeSp.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = style.resolvedColor(),
+            )
+            Text(
+                text = "这条是点赞最多的 · 12 赞",
+                fontSize = style.fontSizeSp.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = DanmakuTopColor,
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }
