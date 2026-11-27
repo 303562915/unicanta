@@ -7261,7 +7261,7 @@
     "pkg": "com.android.traceur",
     "small_batch": true,
     "uninstalls": 19,
-    "updated_at": "2026-11-27T10:45:51.395115+00:00",
+    "updated_at": "2026-11-27T12:12:21.139538+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -7380,14 +7380,14 @@
     "pkg": "com.bbk.iqoo.logsystem",
     "small_batch": true,
     "uninstalls": 16,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.bbk.lite.theme",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8066,14 +8066,14 @@
     "pkg": "com.vivo.accessibilityenhance",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:26:30.283699+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.agent",
     "small_batch": false,
     "uninstalls": 4,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8101,7 +8101,7 @@
     "pkg": "com.vivo.ai.gptagent",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8129,14 +8129,14 @@
     "pkg": "com.vivo.aiengine",
     "small_batch": false,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.aiservice",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:26:57.170038+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8157,7 +8157,7 @@
     "pkg": "com.vivo.appfilter",
     "small_batch": false,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8171,7 +8171,7 @@
     "pkg": "com.vivo.assistant",
     "small_batch": true,
     "uninstalls": 9,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8213,14 +8213,14 @@
     "pkg": "com.vivo.car.networking",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.carlauncher",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8241,7 +8241,7 @@
     "pkg": "com.vivo.connbase",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8297,7 +8297,7 @@
     "pkg": "com.vivo.doubleinstance",
     "small_batch": false,
     "uninstalls": 6,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -8388,21 +8388,21 @@
     "pkg": "com.vivo.familycare.local",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:31:37.778711+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.vivo.favorite",
     "small_batch": false,
     "uninstalls": 7,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.vivo.findphone",
     "small_batch": false,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8458,7 +8458,7 @@
     "pkg": "com.vivo.gamecube",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8479,28 +8479,28 @@
     "pkg": "com.vivo.gamewatch",
     "small_batch": true,
     "uninstalls": 8,
-    "updated_at": "2026-11-27T11:29:22.364823+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.vivo.globalanimation",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.globaldragdrop",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.globalsearch",
     "small_batch": false,
     "uninstalls": 4,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8528,7 +8528,7 @@
     "pkg": "com.vivo.hiboard",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8542,7 +8542,7 @@
     "pkg": "com.vivo.hybrid",
     "small_batch": true,
     "uninstalls": 19,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8612,7 +8612,7 @@
     "pkg": "com.vivo.magazine",
     "small_batch": true,
     "uninstalls": 15,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8633,7 +8633,7 @@
     "pkg": "com.vivo.multinlp",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8675,14 +8675,14 @@
     "pkg": "com.vivo.pay",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.pcsuite",
     "small_batch": false,
     "uninstalls": 4,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8717,7 +8717,7 @@
     "pkg": "com.vivo.pushservice",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8738,7 +8738,7 @@
     "pkg": "com.vivo.remoteassistant",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8752,7 +8752,7 @@
     "pkg": "com.vivo.safecenter",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8773,14 +8773,14 @@
     "pkg": "com.vivo.screenreader",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.vivo.sdkplugin",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -8801,7 +8801,7 @@
     "pkg": "com.vivo.setupwizard",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8829,7 +8829,7 @@
     "pkg": "com.vivo.singularity",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:36:42.422238+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8899,7 +8899,7 @@
     "pkg": "com.vivo.sos",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8955,7 +8955,7 @@
     "pkg": "com.vivo.upnpserver",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -8969,7 +8969,7 @@
     "pkg": "com.vivo.vdfs",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -9011,7 +9011,7 @@
     "pkg": "com.vivo.vms",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -9025,7 +9025,7 @@
     "pkg": "com.vivo.voicewakeup",
     "small_batch": false,
     "uninstalls": 9,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -9039,7 +9039,7 @@
     "pkg": "com.vivo.weather.provider",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -9059,9 +9059,9 @@
    {
     "pkg": "com.vivo.widget.gallery",
     "small_batch": true,
-    "uninstalls": 4,
-    "updated_at": "2026-11-26T11:54:57.54907+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T12:10:51.567805+00:00",
+    "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.vivo.widget.healthcare",
@@ -12444,14 +12444,14 @@
     "pkg": "com.bbk.iqoo.logsystem",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.bbk.lite.theme",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12738,14 +12738,14 @@
     "pkg": "com.vivo.accessibilityenhance",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:26:30.283699+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.agent",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12759,21 +12759,21 @@
     "pkg": "com.vivo.ai.gptagent",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.aiengine",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.aiservice",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:26:57.170038+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12787,14 +12787,14 @@
     "pkg": "com.vivo.appfilter",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.assistant",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12808,14 +12808,14 @@
     "pkg": "com.vivo.car.networking",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.carlauncher",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12829,7 +12829,7 @@
     "pkg": "com.vivo.connbase",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12850,7 +12850,7 @@
     "pkg": "com.vivo.doubleinstance",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12885,21 +12885,21 @@
     "pkg": "com.vivo.familycare.local",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:31:37.778711+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.favorite",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.findphone",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12913,7 +12913,7 @@
     "pkg": "com.vivo.gamecube",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12927,28 +12927,28 @@
     "pkg": "com.vivo.gamewatch",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:29:22.364823+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.globalanimation",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.globaldragdrop",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.globalsearch",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12962,14 +12962,14 @@
     "pkg": "com.vivo.hiboard",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.hybrid",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13004,14 +13004,14 @@
     "pkg": "com.vivo.magazine",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.multinlp",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13039,14 +13039,14 @@
     "pkg": "com.vivo.pay",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.pcsuite",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13060,14 +13060,14 @@
     "pkg": "com.vivo.pushservice",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.remoteassistant",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13081,21 +13081,21 @@
     "pkg": "com.vivo.safecenter",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.screenreader",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.sdkplugin",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13109,14 +13109,14 @@
     "pkg": "com.vivo.setupwizard",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.singularity",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:36:42.422238+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13130,7 +13130,7 @@
     "pkg": "com.vivo.sos",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13151,14 +13151,14 @@
     "pkg": "com.vivo.upnpserver",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.vdfs",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13186,14 +13186,14 @@
     "pkg": "com.vivo.vms",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:31:03.084971+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.voicewakeup",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13207,7 +13207,7 @@
     "pkg": "com.vivo.weather.provider",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T11:34:52.894023+00:00",
+    "updated_at": "2026-11-27T12:03:24.413025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -14527,9 +14527,9 @@
    },
    {
     "pkg": "com.vivo.widget.gallery",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-23T07:49:37.852471+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T12:10:51.567805+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -14689,7 +14689,7 @@
     "pkg": "com.android.traceur",
     "small_batch": true,
     "uninstalls": 4,
-    "updated_at": "2026-11-27T10:45:51.395115+00:00",
+    "updated_at": "2026-11-27T12:12:21.139538+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -15913,7 +15913,7 @@
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": false,
     "uninstalls": 149,
-    "updated_at": "2026-11-27T10:19:38.527441+00:00",
+    "updated_at": "2026-11-27T12:04:50.376463+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16647,8 +16647,8 @@
    {
     "pkg": "com.miui.analytics",
     "small_batch": false,
-    "uninstalls": 437,
-    "updated_at": "2026-11-27T11:46:37.933365+00:00",
+    "uninstalls": 439,
+    "updated_at": "2026-11-27T12:02:47.866892+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16829,8 +16829,8 @@
    {
     "pkg": "com.miui.hybrid",
     "small_batch": true,
-    "uninstalls": 560,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 561,
+    "updated_at": "2026-11-27T12:05:29.492074+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -16865,7 +16865,7 @@
     "pkg": "com.miui.misightservice",
     "small_batch": false,
     "uninstalls": 435,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "updated_at": "2026-11-27T12:04:13.621661+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17138,7 +17138,7 @@
     "pkg": "com.miui.voiceassist",
     "small_batch": false,
     "uninstalls": 248,
-    "updated_at": "2026-11-27T11:58:01.914033+00:00",
+    "updated_at": "2026-11-27T12:02:54.797142+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17207,8 +17207,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 596,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 597,
+    "updated_at": "2026-11-27T12:10:23.828058+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17278,7 +17278,7 @@
     "pkg": "com.qti.qualcomm.deviceinfo",
     "small_batch": false,
     "uninstalls": 139,
-    "updated_at": "2026-11-27T10:19:38.527441+00:00",
+    "updated_at": "2026-11-27T12:03:32.709596+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17306,7 +17306,7 @@
     "pkg": "com.qualcomm.atfwd2",
     "small_batch": false,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T09:40:48.818059+00:00",
+    "updated_at": "2026-11-27T12:04:50.376463+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -17564,8 +17564,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 307,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 308,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17732,8 +17732,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 516,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 517,
+    "updated_at": "2026-11-27T12:06:23.964046+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17781,8 +17781,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 487,
-    "updated_at": "2026-11-27T11:46:37.933365+00:00",
+    "uninstalls": 488,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17816,15 +17816,15 @@
    {
     "pkg": "com.xiaomi.migameservice",
     "small_batch": false,
-    "uninstalls": 308,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 309,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.minigame",
     "small_batch": false,
-    "uninstalls": 407,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 408,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17865,8 +17865,8 @@
    {
     "pkg": "com.xiaomi.payment",
     "small_batch": false,
-    "uninstalls": 380,
-    "updated_at": "2026-11-27T11:55:46.528535+00:00",
+    "uninstalls": 381,
+    "updated_at": "2026-11-27T12:06:23.964046+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17879,8 +17879,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 391,
-    "updated_at": "2026-11-27T11:46:37.933365+00:00",
+    "uninstalls": 392,
+    "updated_at": "2026-11-27T12:12:47.984459+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17921,8 +17921,8 @@
    {
     "pkg": "com.xiaomi.type",
     "small_batch": false,
-    "uninstalls": 173,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 174,
+    "updated_at": "2026-11-27T12:04:14.015268+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19075,7 +19075,7 @@
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-25T14:50:28.175338+00:00",
+    "updated_at": "2026-11-27T12:04:50.376463+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -19516,7 +19516,7 @@
     "pkg": "com.miui.misightservice",
     "small_batch": true,
     "uninstalls": 8,
-    "updated_at": "2026-11-27T11:45:08.118915+00:00",
+    "updated_at": "2026-11-27T12:04:13.621661+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -19712,7 +19712,7 @@
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
     "uninstalls": 16,
-    "updated_at": "2026-11-27T05:17:19.862346+00:00",
+    "updated_at": "2026-11-27T12:04:50.376463+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -19747,8 +19747,8 @@
     "pkg": "com.qti.qualcomm.deviceinfo",
     "small_batch": false,
     "uninstalls": 6,
-    "updated_at": "2026-11-25T16:20:41.149474+00:00",
-    "verdict": "BREAKS"
+    "updated_at": "2026-11-27T12:03:32.709596+00:00",
+    "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.qti.service.colorservice",
@@ -19775,7 +19775,7 @@
     "pkg": "com.qualcomm.atfwd2",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-25T14:22:43.060535+00:00",
+    "updated_at": "2026-11-27T12:04:50.376463+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -20167,7 +20167,7 @@
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
     "uninstalls": 11,
-    "updated_at": "2026-11-26T11:08:28.315903+00:00",
+    "updated_at": "2026-11-27T12:03:32.709596+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -22224,7 +22224,7 @@
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
     "uninstalls": 95,
-    "updated_at": "2026-11-27T08:10:38.740087+00:00",
+    "updated_at": "2026-11-27T12:12:47.984459+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23391,8 +23391,8 @@
    {
     "pkg": "com.miui.analytics",
     "small_batch": false,
-    "uninstalls": 304,
-    "updated_at": "2026-11-27T11:46:37.933365+00:00",
+    "uninstalls": 306,
+    "updated_at": "2026-11-27T12:02:47.866892+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23524,8 +23524,8 @@
    {
     "pkg": "com.miui.hybrid",
     "small_batch": true,
-    "uninstalls": 382,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 383,
+    "updated_at": "2026-11-27T12:05:29.492074+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23735,7 +23735,7 @@
     "pkg": "com.miui.voiceassist",
     "small_batch": false,
     "uninstalls": 153,
-    "updated_at": "2026-11-27T11:58:01.914033+00:00",
+    "updated_at": "2026-11-27T12:02:54.797142+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23790,8 +23790,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 424,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 425,
+    "updated_at": "2026-11-27T12:10:23.828058+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24070,8 +24070,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 242,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 243,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24231,8 +24231,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 369,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 370,
+    "updated_at": "2026-11-27T12:06:23.964046+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24273,8 +24273,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 342,
-    "updated_at": "2026-11-27T11:46:37.933365+00:00",
+    "uninstalls": 343,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24308,15 +24308,15 @@
    {
     "pkg": "com.xiaomi.migameservice",
     "small_batch": false,
-    "uninstalls": 247,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 248,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.xiaomi.minigame",
     "small_batch": false,
-    "uninstalls": 309,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 310,
+    "updated_at": "2026-11-27T12:08:17.986783+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24357,8 +24357,8 @@
    {
     "pkg": "com.xiaomi.payment",
     "small_batch": false,
-    "uninstalls": 259,
-    "updated_at": "2026-11-27T11:55:46.528535+00:00",
+    "uninstalls": 260,
+    "updated_at": "2026-11-27T12:06:23.964046+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24371,8 +24371,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 276,
-    "updated_at": "2026-11-27T11:46:37.933365+00:00",
+    "uninstalls": 277,
+    "updated_at": "2026-11-27T12:09:43.319225+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24406,8 +24406,8 @@
    {
     "pkg": "com.xiaomi.type",
     "small_batch": false,
-    "uninstalls": 173,
-    "updated_at": "2026-11-27T11:59:45.45585+00:00",
+    "uninstalls": 174,
+    "updated_at": "2026-11-27T12:04:14.015268+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -37298,17 +37298,24 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.google.android.apps.photos",
+    "small_batch": true,
+    "uninstalls": 0,
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.google.android.apps.restore",
     "small_batch": false,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T11:54:54.814439+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.google.android.apps.tachyon",
     "small_batch": true,
     "uninstalls": 4,
-    "updated_at": "2026-11-27T10:08:27.749591+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -37420,7 +37427,7 @@
     "pkg": "com.google.android.marvin.talkback",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-23T02:14:02.173024+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -37525,7 +37532,7 @@
     "pkg": "com.google.android.projection.gearhead",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-23T02:14:02.173024+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -37623,14 +37630,14 @@
     "pkg": "com.microsoft.appmanager",
     "small_batch": true,
     "uninstalls": 8,
-    "updated_at": "2026-11-27T09:55:47.680786+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "SAFE"
    },
    {
     "pkg": "com.microsoft.skydrive",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-27T10:08:27.749591+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -37819,7 +37826,7 @@
     "pkg": "com.samsung.android.app.parentalcare",
     "small_batch": true,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T11:51:17.406568+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "SAFE"
    },
    {
@@ -38239,7 +38246,7 @@
     "pkg": "com.samsung.android.kidsinstaller",
     "small_batch": false,
     "uninstalls": 8,
-    "updated_at": "2026-11-27T11:51:17.406568+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "SAFE"
    },
    {
@@ -38379,7 +38386,7 @@
     "pkg": "com.samsung.android.mdx",
     "small_batch": true,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T09:55:47.680786+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -38540,7 +38547,7 @@
     "pkg": "com.samsung.android.scloud",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T09:55:47.680786+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -43033,17 +43040,24 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.google.android.apps.photos",
+    "small_batch": true,
+    "uninstalls": 0,
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.google.android.apps.restore",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T11:54:54.814439+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.google.android.apps.tachyon",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T10:08:27.749591+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -43141,7 +43155,7 @@
     "pkg": "com.google.android.marvin.talkback",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-23T02:14:02.173024+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -43225,7 +43239,7 @@
     "pkg": "com.google.android.projection.gearhead",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-23T02:14:02.173024+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -43323,14 +43337,14 @@
     "pkg": "com.microsoft.appmanager",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T07:39:43.100786+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.microsoft.skydrive",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T10:08:27.749591+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -43442,7 +43456,7 @@
     "pkg": "com.samsung.android.app.parentalcare",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T11:51:17.406568+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "SAFE"
    },
    {
@@ -43757,7 +43771,7 @@
     "pkg": "com.samsung.android.kidsinstaller",
     "small_batch": false,
     "uninstalls": 4,
-    "updated_at": "2026-11-27T11:51:17.406568+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -43876,7 +43890,7 @@
     "pkg": "com.samsung.android.mdx",
     "small_batch": true,
     "uninstalls": 4,
-    "updated_at": "2026-11-27T07:50:33.678371+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -43995,7 +44009,7 @@
     "pkg": "com.samsung.android.scloud",
     "small_batch": true,
     "uninstalls": 0,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "updated_at": "2026-11-27T12:05:44.123599+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -48411,8 +48425,8 @@
    {
     "pkg": "com.google.android.as.oss",
     "small_batch": true,
-    "uninstalls": 6,
-    "updated_at": "2026-11-26T07:46:09.00128+00:00",
+    "uninstalls": 7,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -48462,6 +48476,13 @@
     "small_batch": true,
     "uninstalls": 0,
     "updated_at": "2026-11-27T01:33:38.260506+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.google.android.documentsui",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -48631,6 +48652,13 @@
     "uninstalls": 7,
     "updated_at": "2026-11-27T11:27:52.277838+00:00",
     "verdict": "BREAKS"
+   },
+   {
+    "pkg": "com.google.android.setupwizard",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
+    "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.google.android.tag",
@@ -50733,6 +50761,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.sonymobile.appprediction",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.sonymobile.extmonitorapp",
     "small_batch": true,
     "uninstalls": 0,
@@ -50814,6 +50849,13 @@
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-27T11:50:55.675105+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.sonymobile.wallpaper.ec",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -51465,6 +51507,13 @@
     "small_batch": true,
     "uninstalls": 0,
     "updated_at": "2026-11-27T11:27:52.277838+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "jp.co.sony.mc.xperiaservices",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -56587,10 +56636,24 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.google.android.as.oss",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.google.android.calendar",
     "small_batch": true,
     "uninstalls": 0,
     "updated_at": "2026-11-27T11:50:55.675105+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.google.android.documentsui",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -56647,6 +56710,13 @@
     "small_batch": true,
     "uninstalls": 0,
     "updated_at": "2026-11-27T11:27:52.277838+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.google.android.setupwizard",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -56930,6 +57000,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.sonymobile.appprediction",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.sonymobile.extmonitorapp",
     "small_batch": true,
     "uninstalls": 0,
@@ -57014,6 +57091,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.sonymobile.wallpaper.ec",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "jp.co.nttdocomo.anshinmode",
     "small_batch": true,
     "uninstalls": 2,
@@ -57039,6 +57123,13 @@
     "small_batch": true,
     "uninstalls": 0,
     "updated_at": "2026-11-27T11:27:52.277838+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "jp.co.sony.mc.xperiaservices",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T12:01:16.694442+00:00",
     "verdict": "INSUFFICIENT"
    }
   ]
