@@ -14152,15 +14152,15 @@
    {
     "pkg": "com.miui.cloudbackup",
     "small_batch": false,
-    "uninstalls": 87,
-    "updated_at": "2026-11-27T02:04:21.670316+00:00",
+    "uninstalls": 88,
+    "updated_at": "2026-11-27T02:28:17.296235+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.cloudservice",
     "small_batch": false,
-    "uninstalls": 107,
-    "updated_at": "2026-11-27T02:04:21.670316+00:00",
+    "uninstalls": 108,
+    "updated_at": "2026-11-27T02:28:17.296235+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15237,9 +15237,9 @@
    {
     "pkg": "com.xiaomi.security.onetrack",
     "small_batch": false,
-    "uninstalls": 39,
-    "updated_at": "2026-11-27T02:27:15.893918+00:00",
-    "verdict": "BREAKS"
+    "uninstalls": 40,
+    "updated_at": "2026-11-27T02:30:19.163044+00:00",
+    "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.xiaomi.simactivate.service",
@@ -19441,8 +19441,8 @@
    {
     "pkg": "com.xiaomi.security.onetrack",
     "small_batch": false,
-    "uninstalls": 30,
-    "updated_at": "2026-11-27T02:27:15.893918+00:00",
+    "uninstalls": 31,
+    "updated_at": "2026-11-27T02:30:19.163044+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20525,15 +20525,15 @@
    {
     "pkg": "com.miui.cloudbackup",
     "small_batch": false,
-    "uninstalls": 67,
-    "updated_at": "2026-11-26T23:39:47.855709+00:00",
+    "uninstalls": 68,
+    "updated_at": "2026-11-27T02:28:17.296235+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.cloudservice",
     "small_batch": false,
-    "uninstalls": 81,
-    "updated_at": "2026-11-26T23:39:47.855709+00:00",
+    "uninstalls": 82,
+    "updated_at": "2026-11-27T02:28:17.296235+00:00",
     "verdict": "BREAKS"
    },
    {
