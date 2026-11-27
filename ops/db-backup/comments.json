@@ -5352,6 +5352,18 @@
   "target": "com.xiaomi.market"
  },
  {
+  "author": "爽到飞起",
+  "author_id": "11923",
+  "body": "正常会慢，温控太垃圾了",
+  "created_at": "2026-11-27T12:17:31.855761+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 790,
+  "kind": "plan",
+  "parent_id": 140,
+  "system_name": "HyperOS 4.0.7",
+  "target": "92"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
