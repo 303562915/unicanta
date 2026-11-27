@@ -529,9 +529,15 @@ private fun CantaNavigation(
     // 「Variable 'shownAvatarUrl' must be initialized」——2026-11-26 开发版就是这么红的。
     //
     // 用 `remember` 而不是每次重组现算：`personAvatarUrl(...)` 会拼字符串，
-    // 两个输入（`myAvatarUrl`、`writtenIdentity`）都是 State，变了才该重算。
-    val shownAvatarUrl: String = remember(myAvatarUrl, writtenIdentity) {
-        myAvatarUrl.trim().ifEmpty { personAvatarUrl(writtenIdentity.owner) }
+    // 输入（`myAvatarUrl`、身份号）变了才该重算。
+    //
+    // 身份号有两份来源：启动预热那次的结果（[writtenIdentity]），以及存储里的 `identityUserId`。
+    // **以后者为准**：预热那次可能跑在 `identify()` 回来之前（刚清完应用数据就是这样），那时它还是
+    // 空的，只靠它这张照片就一直是首字母；而 `identityUserId` 是绑好身份之后由存储推上来的活值。
+    val myOwner by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
+    val shownAvatarUrl: String = remember(myAvatarUrl, myOwner, writtenIdentity) {
+        val owner = if (myOwner > 0L) myOwner.toString() else writtenIdentity.owner
+        myAvatarUrl.trim().ifEmpty { personAvatarUrl(owner) }
     }
     val updateClient = remember { HttpClient() }
     /**

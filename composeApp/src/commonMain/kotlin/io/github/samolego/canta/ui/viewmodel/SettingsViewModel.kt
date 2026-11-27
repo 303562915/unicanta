@@ -92,20 +92,18 @@ class SettingsViewModel(
      * 这台机器的身份号（`#10003` 里的那个数字），读到之后才非空。
      *
      * 只为 [identitySetup] 服务：本机没存头像直链时，靠它把地址推回来（见那道门的注释）。
-     * 单独放在这里而不是每个页面各读一次——`DeviceIdentity.current` 是 suspend 的，而这道门是
-     * 全 app 共用的一个 `StateFlow`。
+     *
+     * **必须跟着存储的 flow 走，不能只读一次**。以前这里是 `init` 里 `DeviceIdentity.current()`
+     * 读一遍：那一次读排在 `syncName()` 前面（同一个 `viewModelScope`，先注册先跑），而
+     * **刚清完应用数据**时本机还没有身份号——`identify()` 是网络回来的，晚一步才由
+     * `setIdentityUserId` 写进来。于是这一次读拿到 0，`avatarOwner` 永远空着，这道门就一直
+     * 关着：头像在图床上明明还在（别的页面按身份号推得出来、也画出来了），这里却一直说
+     * 「换头像」，还不让人发言。改成订阅 `identityUserIdFlow`，身份号一到就当场变绿，不用重启。
      */
-    private val avatarOwner = MutableStateFlow("")
-
-    init {
-        // 身份号只读一次：它不会变（`identityUserId` 在第一次连上之后定下来就一直是它），
-        // 而这道门在每个页面的每一帧都被读。
-        viewModelScope.launch {
-            val identity = runCatching { DeviceIdentity.current(settingsStore) }.getOrNull()
-            val owner = identity?.owner.orEmpty()
-            if (owner.isNotEmpty()) avatarOwner.value = owner
-        }
-    }
+    private val avatarOwner: StateFlow<String> =
+        settingsStore.identityUserIdFlow
+            .map { DeviceIdentity.ownerOf(it) }
+            .state("")
 
     /**
      * 名字与头像都设过了没有——**没设过就不许往社区里写任何东西**（见 [IdentitySetup]）。
