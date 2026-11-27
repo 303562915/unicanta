@@ -1236,10 +1236,6 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.About.route) {
-                // 关于页的赞助榜要的名字：这一次只读名字（商城页那次还要身份号，这里不需要）。
-                // 读不到就是空串，榜上落回身份号，不影响这一页别的功能。
-                var aboutAuthor by remember { mutableStateOf("") }
-                LaunchedEffect(Unit) { aboutAuthor = DeviceIdentity.displayName(deps.settings) }
                 AboutScreen(
                     platform = platform,
                     settingsViewModel = settingsViewModel,
@@ -1254,7 +1250,6 @@ private fun CantaNavigation(
                     // 「贡献者」那一行现在是赞助榜：点开就地展开（与「最近更新」同一个做法）。
                     // 只在展开时才去拉榜，折叠时不发请求。
                     sponsors = sponsorStore,
-                    author = aboutAuthor,
                     onOpenProfile = { person -> navController.navigate(Screen.Uploader.routeFor(person)) },
                 )
             }

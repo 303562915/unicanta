@@ -478,6 +478,12 @@
     <string name="about_sponsors_empty">No sponsors yet. Every contribution goes to servers and API tokens.</string>
     <string name="about_sponsors_total">¥%1$d received · %2$d sponsors</string>
     <string name="about_sponsors_add">Become a sponsor</string>
+    <string name="about_sponsors_close">Close</string>
+    <string name="about_sponsors_copy_group">Copy group number</string>
+    <string name="about_sponsors_code_desc">Sponsor payment code</string>
+    <string name="about_sponsors_howto_money">Scan the code above in WeChat to sponsor any amount.</string>
+    <string name="about_sponsors_howto_token">Token sponsorship costs nothing: invite someone to use the app, or hand over a usable token. Contact the group owner (QQ group %1$s).</string>
+    <string name="about_sponsors_howto_note">Every contribution goes to servers and API tokens. The wall is updated by the owner, not from the app.</string>
     <string name="about_source_repo">Source code</string>
     <string name="about_latest_download">Latest download</string>
     <string name="description_source">Description from the UAD list, published in English</string>

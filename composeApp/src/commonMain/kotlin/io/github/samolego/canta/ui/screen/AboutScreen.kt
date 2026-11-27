@@ -1,5 +1,6 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -29,11 +30,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,13 +69,13 @@ import io.github.samolego.canta.generated.resources.about_latest_download
 import io.github.samolego.canta.generated.resources.about_qq_group
 import io.github.samolego.canta.generated.resources.about_qq_group_copied
 import io.github.samolego.canta.generated.resources.about_qq_group_hint
-import io.github.samolego.canta.generated.resources.about_sponsors_add
 import io.github.samolego.canta.generated.resources.about_sponsors_collapse
 import io.github.samolego.canta.generated.resources.about_sponsors_empty
 import io.github.samolego.canta.generated.resources.about_sponsors_expand
 import io.github.samolego.canta.generated.resources.about_sponsors_expand_open
 import io.github.samolego.canta.generated.resources.about_sponsors_loading
 import io.github.samolego.canta.generated.resources.about_sponsors_total
+import io.github.samolego.canta.generated.resources.sponsor_miniapp_code
 import io.github.samolego.canta.generated.resources.about_tagline
 import io.github.samolego.canta.generated.resources.about_title
 import io.github.samolego.canta.generated.resources.about_update_available
@@ -98,10 +99,12 @@ import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.AppLinkCard
 import io.github.samolego.canta.ui.component.AppToggleCard
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.UnreadDot
+import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlProgressBar
@@ -110,8 +113,8 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.update.UpdateCenter
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 // 「贡献者」原来是一个跳 `github.com/303562915/unicanta/graphs/contributors` 的外链。
@@ -140,6 +143,20 @@ private val QQ_GROUP_SCHEMES = listOf(
 
 /** Height the icon tile is drawn at. */
 private val IconTile = 62.dp
+
+/** 赞助榜一格里的头像直径。 */
+private val SponsorAvatar = 34.dp
+
+/** 「我也赞助」小窗里那张收款码的边长：够扫，又不至于把整屏占满。 */
+private val CodeSize = 220.dp
+
+/**
+ * 赞助榜一行排几个人。
+ *
+ * 4 个：头像 34 + 名字一行，四列在手机上每个格子约 70dp 宽，名字缩到 6 个字以内还能看清；
+ * 再多就挤成看不清的小方块，再少就变成一行一个名字那种"列表"，不是这一栏要的样子。
+ */
+private const val SponsorsPerRow = 4
 
 /**
  * The about page, laid out the way FlClash lays out its own: the app on top, then the update row
@@ -177,9 +194,12 @@ internal fun AboutScreen(
      * 带默认值是为了不逼所有调用点都改：这一页只读它，不承担"连不上就报错"的责任。
      */
     sponsors: SponsorStore? = null,
-    /** 提交这一刻的名字（榜上显示它）。身份由 token 认，不用自报号码。 */
-    author: String = "",
-    /** 点赞助榜上那一行：进那个人的主页（与互动页、群成员网格同一条路由）。 */
+    /**
+     * 点赞助榜上那一格：进那个人的主页（与互动页、群成员网格同一条路由）。
+     *
+     * 这一页**只读榜单**：记账（谁赞助了多少）由维护者在后台补录，客户端没有入口，
+     * 所以这里不再需要"提交者叫什么名字"。
+     */
     onOpenProfile: (String) -> Unit = {},
 ) {
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
@@ -345,7 +365,6 @@ internal fun AboutScreen(
             SponsorWallCard(
                 store = sponsors,
                 platform = platform,
-                author = author,
                 expanded = sponsorsExpanded,
                 onToggle = { settingsViewModel.saveSponsorsExpanded(!sponsorsExpanded) },
                 onOpenProfile = onOpenProfile,
@@ -688,21 +707,21 @@ private fun UpdateHistoryCard(
 private fun SponsorWallCard(
     store: SponsorStore?,
     platform: CantaPlatform,
-    author: String,
     expanded: Boolean,
     onToggle: () -> Unit,
     onOpenProfile: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val scope = rememberCoroutineScope()
 
     var wall by remember(store) { mutableStateOf<SponsorWall?>(null) }
     var loading by remember(store) { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember(store) { mutableIntStateOf(0) }
-    var composer by remember { mutableStateOf(false) }
-    var submitting by remember { mutableStateOf(false) }
-    var submitError by remember { mutableStateOf<String?>(null) }
+    /** 「我也赞助」那张小窗开着没有。 */
+    var showHowTo by remember { mutableStateOf(false) }
+    // 复制群号之后那句提示：和本文件上面 `qqGroupCopied` 同一个道理——`stringResource` 是
+    // @Composable，只能在组合里读，不能在点击的 lambda 里现读（那里不是可组合上下文）。
+    val groupCopied = stringResource(Res.string.about_qq_group_copied)
 
     // 只在展开时才去拉：折叠状态下这一页不该为一块看不见的东西多发一次请求。
     LaunchedEffect(store, expanded, reloadKey) {
@@ -806,18 +825,30 @@ private fun SponsorWallCard(
                     style = FlText.caption1,
                     color = scheme.primary,
                 )
-                entries.forEach { entry ->
-                    Spacer(Modifier.height(6.dp))
-                    SponsorWallRow(entry = entry, onOpenProfile = onOpenProfile)
+                entries.chunked(SponsorsPerRow).forEach { row ->
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        row.forEach { entry ->
+                            SponsorWallCell(
+                                entry = entry,
+                                modifier = Modifier.weight(1f),
+                                onOpenProfile = onOpenProfile,
+                            )
+                        }
+                        // 最后一行没排满：补空位，免得那几个人被拉宽成一排大格子。
+                        repeat(SponsorsPerRow - row.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(10.dp))
-            // 记账入口：钱在群里收，这张表只把它记进榜，所以按钮写「记上」不写「支付」。
+            // 这一行是"怎么赞助"的入口，不是记账入口：点开是一张收款码 + 一句 token 赞助怎么来。
             TextButton(
-                onClick = {
-                    submitError = null
-                    composer = true
-                },
+                onClick = { showHowTo = true },
                 contentPadding = PaddingValues(horizontal = 0.dp),
             ) {
                 Text(stringResource(Res.string.about_sponsors_add))
@@ -825,113 +856,144 @@ private fun SponsorWallCard(
         }
     }
 
-    if (composer) {
-        SponsorComposerDialog(
-            submitting = submitting,
-            error = submitError,
-            defaultName = author,
-            onDismiss = {
-                composer = false
-                submitError = null
-            },
-            onSubmit = submit@{ amount, kind, note, anonymous ->
-                val s = store
-                if (s == null) {
-                    submitError = "社区后端没连上，这一笔没记上。"
-                    return@submit
-                }
-                submitting = true
-                submitError = null
-                scope.launch {
-                    val result = s.add(
-                        amountYuan = if (kind == "money") amount else 0,
-                        kind = kind,
-                        name = author,
-                        note = note,
-                        anonymous = anonymous,
-                    )
-                    submitting = false
-                    when {
-                        result == null -> submitError = s.lastError ?: "没记上：检查一下网络再试"
-                        result.duplicate -> {
-                            composer = false
-                            platform.showMessage("这一笔已经在榜上了")
-                        }
-                        else -> {
-                            composer = false
-                            reloadKey++
-                            platform.showMessage(
-                                if (kind == "money") "谢谢！已记上 ¥$amount" else "谢谢！已记上 AI 邀请",
-                            )
-                        }
-                    }
-                }
+    if (showHowTo) {
+        SponsorHowToDialog(
+            onDismiss = { showHowTo = false },
+            onCopyGroup = {
+                // 复制群号比"打开 QQ"稳：没装 QQ 的人至少拿到了数字。
+                platform.copyToClipboard(QQ_GROUP)
+                platform.showMessage(groupCopied)
             },
         )
     }
 }
 
-/** 榜上的一位：头像、名字、形式与金额，整行可点（进那个人的主页）。 */
+/**
+ * 「我也赞助」那张小窗：一张收款小程序码，加一句"token 赞助请联系群主"。
+ *
+ * 这里**只给方式，不记账**：钱和码都在群主那边收，榜由维护者补录，客户端没有提交通道——
+ * 谁都能往榜上插一行"我赞助了一万"的话，这张榜就没有意义了。
+ *
+ * 码是从一张金底图片里裁出来的（`drawable/sponsor_miniapp_code.png`）：原图一整块版面只有中间
+ * 那个码有用，四周的金色是背景，所以素材只留码本身（400×400 加 8px 白边）。
+ */
 @Composable
-private fun SponsorWallRow(entry: SponsorEntry, onOpenProfile: (String) -> Unit) {
+private fun SponsorHowToDialog(
+    onDismiss: () -> Unit,
+    onCopyGroup: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.about_sponsors_add),
+        widthFraction = WIDE_DIALOG_WIDTH,
+        buttons = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.about_sponsors_close)) }
+            TextButton(onClick = onCopyGroup) { Text(stringResource(Res.string.about_sponsors_copy_group)) }
+        },
+    ) {
+        // 扫一下就能赞助：码本身画在白色底上，深色主题里也不会糊成一片。
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White)
+                .padding(10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(Res.drawable.sponsor_miniapp_code),
+                contentDescription = stringResource(Res.string.about_sponsors_code_desc),
+                modifier = Modifier.size(CodeSize),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = stringResource(Res.string.about_sponsors_howto_money),
+            style = FlText.caption1,
+            color = scheme.onSurface,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(Res.string.about_sponsors_howto_token, QQ_GROUP),
+            style = FlText.caption1,
+            color = scheme.onSurface,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(Res.string.about_sponsors_howto_note),
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * 榜上的一位：一格 = 头像、名字、赞助方式。
+ *
+ * 为什么是竖着排的一格而不是一行：这一栏要的是"一排人头像"的样子，一行一个名字会占掉太多高度，
+ * 二十个人就是一屏。一格 4 个（见 [SponsorsPerRow]），头像在上、名字在下、赞助什么在最下面。
+ *
+ * 整格可点：进那个人的主页（与互动页、群成员网格同一条路由）。
+ */
+@Composable
+private fun SponsorWallCell(
+    entry: SponsorEntry,
+    modifier: Modifier = Modifier,
+    onOpenProfile: (String) -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     val shownName = when {
         entry.anonymous -> "匿名"
         entry.name.isNotBlank() -> entry.name
         else -> "#${entry.owner}"
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
+    Column(
+        modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .clickable(
                 enabled = entry.canOpenProfile,
                 role = Role.Button,
                 onClick = { if (entry.canOpenProfile) onOpenProfile(entry.owner) },
             )
-            .padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // 匿名的头像不给照片：名字都藏了，脸还挂着等于没藏。
         if (entry.anonymous) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(SponsorAvatar)
                     .clip(RoundedCornerShape(percent = 50))
                     .background(scheme.surfaceContainerHighest.copy(alpha = 0.6f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = "匿", style = FlText.caption2, color = scheme.onSurfaceVariant)
+                Text(text = "匿", style = FlText.caption1, color = scheme.onSurfaceVariant)
             }
         } else {
             PersonAvatar(
                 name = shownName,
                 owner = entry.owner,
-                size = 28.dp,
+                size = SponsorAvatar,
                 background = scheme.primary.copy(alpha = 0.9f),
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
             text = shownName,
-            style = FlText.caption1,
+            style = FlText.caption2,
             color = scheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.height(1.dp))
         Text(
-            text = entry.kindLabel,
-            style = FlText.caption2,
-            color = scheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            // 出钱的写金额，AI 邀请写「邀请」：两者不是一回事，用一个数糊住会让人以为是 ¥0。
+            // 出钱的写「¥N」，没出钱的写「token 赞助」：两者不是一回事，用一个数糊住会让人以为是 ¥0。
             text = entry.badge,
-            style = FlText.caption1,
+            style = FlText.caption2,
             color = if (entry.amountYuan > 0) scheme.primary else scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

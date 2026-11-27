@@ -32,14 +32,14 @@ data class SponsorEntry(
     /** 页面上的形式标签。 */
     val kindLabel: String
         get() = when (kind) {
-            "ai" -> "AI 邀请"
+            "ai" -> "token 赞助"
             "other" -> "其它支持"
             else -> "打赏"
         }
 
-    /** 榜上那一行右边写什么：出钱的写金额，AI 邀请写「邀请」。 */
+    /** 榜上那一格下面写什么：出钱的写金额，没出钱的写赞助方式。 */
     val badge: String
-        get() = if (amountYuan > 0) "¥$amountYuan" else "邀请"
+        get() = if (amountYuan > 0) "¥$amountYuan" else "token 赞助"
 
     /** 身份号能不能点（进主页）：空串、或者不是数字（老客户端的自报号码）都不给入口。 */
     val canOpenProfile: Boolean
