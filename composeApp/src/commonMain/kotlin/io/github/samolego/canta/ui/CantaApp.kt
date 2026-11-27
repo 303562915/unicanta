@@ -726,7 +726,8 @@ private fun CantaNavigation(
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
     val showPostsTab by settingsViewModel.showPostsTab.collectAsStateWithLifecycle()
-    val showStoreTab by settingsViewModel.showStoreTab.collectAsStateWithLifecycle()
+    // 商城那一格不再读：它已经从底栏挪到设置页里（见 [SettingsScreen] 的 onOpenStore），
+    // 存着的 `showStoreTab` 因此没有读者，但字段留着——老安装的设置文件里那个值不必迁移。
 
     // Null until the stored settings have loaded, so the wrong screen never flashes.
     val onboardingVersion by settingsViewModel.onboardingVersion.collectAsStateWithLifecycle()
@@ -1335,6 +1336,8 @@ private fun CantaNavigation(
                     authorId = storeIdentity,
                     // 名字/头像没设完：能看能买能兑换，但上不了架。
                     setupGate = setupGate,
+                    // 从设置页那一行进来的二级页：顶栏要能回去。
+                    onNavigateBack = { navController.navigateUp() },
                 )
             }
             composable(route = Screen.Logs.route) {
@@ -1565,6 +1568,8 @@ private fun CantaNavigation(
                 SettingsScreen(
                     platform = platform,
                     onNavigateBack = { navController.navigateUp() },
+                    // 商城从这一页进：底栏那一格已经撤掉了（见 `bottomBarItems`）。
+                    onOpenStore = { navController.navigate(Screen.Store.route) { launchSingleTop = true } },
                     settingsViewModel = settingsViewModel,
                     deviceUsers = deviceUsers,
                     selectedUserId = selectedUserId,
@@ -2137,7 +2142,8 @@ private fun CantaNavigation(
                         showTweaks = showTweaksTab,
                         showRecommend = showRecommendTab,
                         showPosts = showPostsTab,
-                        showStore = showStoreTab,
+                        // 商城不再占底栏的一格：它挪到设置页里那一行（见 [SettingsScreen] 的 onOpenStore），
+                        // 底栏留给每天都要点的几页。
                         // Nothing to point at while the queue itself is open: that page is the dot.
                         showVoteDot = newVotes && currentRoute != Screen.Recommendations.route,
                         showVoteCount = newVoteCount,
@@ -2257,7 +2263,7 @@ private val BOTTOM_BAR_ROUTES = setOf(
     Screen.Recommendations.route,
     // 帖子是底栏上的一格，跟上面几页一样：点进来底栏还在，顶栏也不画返回箭头。
     Screen.Posts.route,
-    Screen.Store.route,
+    // 商城**不在**这里：它从设置页那一行进，是二级页，顶栏带返回箭头。
     Screen.Messages.route,
     // 底栏最后一格是「我的」；设置页从它里面进，设置页本身不是底栏的一格。
     Screen.Mine.route,
@@ -2268,7 +2274,6 @@ private object BarKey {
     const val APPS = "apps"
     const val RULES = "rules"
     const val POSTS = "posts"
-    const val STORE = "store"
     const val TWEAKS = "tweaks"
     const val RECOMMEND = "recommend"
     const val MESSAGES = "messages"
@@ -2288,8 +2293,6 @@ private fun bottomBarItems(
     showRecommend: Boolean,
     /** 帖子页要不要占一格：出厂就在（见 [showPostsTab][io.github.samolego.canta.data.proto.AppSettingsProto]），设置里可以关掉。 */
     showPosts: Boolean = true,
-    /** 商城要不要占一格：和帖子一样出厂就在，设置里可以关掉。 */
-    showStore: Boolean = true,
     showVoteDot: Boolean = false,
     /** How many votes are new: shown as the number in the marker, when there is one to show. */
     showVoteCount: Int = 0,
@@ -2332,17 +2335,6 @@ private fun bottomBarItems(
             ),
         )
     }
-    if (showStore) {
-        // 商城：积分、积分商城、兑换中心。机场榜单那一页不再兼着放钱的事。
-        add(
-            BottomBarItem(
-                BarKey.STORE,
-                FlGlyphs.tools,
-                "商城",
-                route == Screen.Store.route,
-            ),
-        )
-    }
     add(
         BottomBarItem(
             BarKey.MESSAGES,
@@ -2379,7 +2371,6 @@ private fun onBottomBarSelect(
         BarKey.TWEAKS -> navController.navigateSingleTop(Screen.Tweaks.route)
         BarKey.RECOMMEND -> navController.navigateSingleTop(Screen.Recommendations.route)
         BarKey.POSTS -> navController.navigateSingleTop(Screen.Posts.route)
-        BarKey.STORE -> navController.navigateSingleTop(Screen.Store.route)
         BarKey.MESSAGES -> navController.navigateSingleTop(Screen.Messages.route)
         BarKey.SETTINGS -> navController.navigateSingleTop(Screen.Mine.route)
     }

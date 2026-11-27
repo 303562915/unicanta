@@ -287,11 +287,9 @@ fun AppBarSlotsCard(
     showTweaks: Boolean,
     showRecommend: Boolean,
     showPosts: Boolean,
-    showStore: Boolean,
     onToggleTweaks: (Boolean) -> Unit,
     onToggleRecommend: (Boolean) -> Unit,
     onTogglePosts: (Boolean) -> Unit,
-    onToggleStore: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val fixed = listOf(
@@ -319,13 +317,8 @@ fun AppBarSlotsCard(
             lit = showPosts,
             onToggle = { onTogglePosts(!showPosts) },
         ),
-        BarSlot(
-            // 一叠卡片＝货架：积分商城与兑换中心都在那一页。
-            FlGlyphs.profiles,
-            "商城",
-            lit = showStore,
-            onToggle = { onToggleStore(!showStore) },
-        ),
+        // 商城不再是一格：它整页挪进了设置页（见 `SettingsScreen` 的「商城」那一行），
+        // 这里只剩"底栏上还要不要多一个入口"的那三页。
     )
     Column(
         modifier = Modifier

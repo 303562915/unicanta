@@ -112,6 +112,13 @@ internal fun StoreScreen(
     modifier: Modifier = Modifier,
     /** 名字与头像设过了没有：没设过能买能兑换，但上不了架（见 [IdentitySetup]）。 */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
+    /**
+     * 顶栏的返回箭头。
+     *
+     * 商城不再是底栏的一格（见设置页「商城」那一行），所以它现在是一个**二级页**：顶栏要有回退，
+     * 否则进来之后只能靠系统返回键出去。
+     */
+    onNavigateBack: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
@@ -229,7 +236,7 @@ internal fun StoreScreen(
     Scaffold(
         topBar = {
             // 底栏一级页面：不给返回箭头（与其它一级页一致）。
-            ScreenTopBar(title = "商城")
+            ScreenTopBar(title = "商城", onNavigateBack = onNavigateBack)
         },
     ) { padding ->
         // 不再整页画转圈：点进商城那一刻就该看见这一页（顶栏、钱包、货架标题都在），

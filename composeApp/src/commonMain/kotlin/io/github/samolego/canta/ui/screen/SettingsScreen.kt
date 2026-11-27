@@ -127,6 +127,8 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     /** 打开主题页：配色与深浅色在那页里选，这里只写当前值。 */
     onOpenTheme: () -> Unit = {},
+    /** 打开商城页（积分、积分商城、兑换中心）；它以前是底栏的一格，现在从这一页进。 */
+    onOpenStore: () -> Unit = {},
     /** 打开卸载记录页：一份份方案，导出 JSON、导入、整份装回来（见 [DeletionListScreen]）。 */
     onOpenDeletionList: () -> Unit = {},
     /**
@@ -166,7 +168,8 @@ fun SettingsScreen(
     val showTweaksTab by settingsViewModel.showTweaksTab.collectAsStateWithLifecycle()
     val showRecommendTab by settingsViewModel.showRecommendTab.collectAsStateWithLifecycle()
     val showPostsTab by settingsViewModel.showPostsTab.collectAsStateWithLifecycle()
-    val showStoreTab by settingsViewModel.showStoreTab.collectAsStateWithLifecycle()
+    // 商城那一格不再有开关：它从底栏挪到了这一页（见下面的「商城」那一行），
+    // 存着的 `showStoreTab` 因此没有读者，字段留着不动。
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
     /** 手动挑的界面语言（BCP-47 标签）；空串 = 跟随系统。 */
@@ -330,15 +333,26 @@ fun SettingsScreen(
             Spacer(Modifier.height(CardGap))
 
             // 底栏本身：第一行四个常亮，第二行三个可选项（工具/推荐/帖子），点了才上底栏。
+            // 商城不在这张卡里：它已经整页挪到下面「商城」那一行。
             AppBarSlotsCard(
                 showTweaks = showTweaksTab,
                 showRecommend = showRecommendTab,
                 showPosts = showPostsTab,
-                showStore = showStoreTab,
                 onToggleTweaks = settingsViewModel::saveShowTweaksTab,
                 onToggleRecommend = settingsViewModel::saveShowRecommendTab,
                 onTogglePosts = settingsViewModel::saveShowPostsTab,
-                onToggleStore = settingsViewModel::saveShowStoreTab,
+            )
+            Spacer(Modifier.height(CardGap))
+
+            // 商城：积分、积分商城、兑换中心（CDK 码池）。
+            //
+            // 它以前是底栏的一格，2026-11-27 挪到这里：底栏留给每天都要点的几页，而商城是偶尔
+            // 去一趟的。点这一行进那一页，那一页顶栏带返回箭头（它是二级页了）。
+            AppLinkCard(
+                glyph = FlGlyphs.profiles,
+                title = "商城",
+                subtitle = "积分、积分商城与兑换中心",
+                onClick = onOpenStore,
             )
             Spacer(Modifier.height(CardGap))
 
