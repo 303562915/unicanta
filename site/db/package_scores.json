@@ -167,8 +167,8 @@
    {
     "pkg": "com.android.printspooler",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T05:45:01.201311+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -349,22 +349,22 @@
    {
     "pkg": "com.coloros.accessibilityassistant",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T05:34:35.34518+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.coloros.activation",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T03:11:16.444671+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.coloros.assistantscreen",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-26T23:57:49.85003+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -516,9 +516,9 @@
    },
    {
     "pkg": "com.coloros.systemclone",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-26T23:57:49.85003+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -860,8 +860,8 @@
    {
     "pkg": "com.oplus.aod",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-26T23:57:49.85003+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1196,8 +1196,8 @@
    {
     "pkg": "com.oplus.sos",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1245,8 +1245,8 @@
    {
     "pkg": "com.oplus.travelengine",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1266,8 +1266,8 @@
    {
     "pkg": "com.oplus.vdc",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -3311,6 +3311,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.android.printspooler",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.android.stk",
     "small_batch": true,
     "uninstalls": 1,
@@ -3332,10 +3339,24 @@
     "verdict": "INSUFFICIENT"
    },
    {
-    "pkg": "com.coloros.activation",
+    "pkg": "com.coloros.accessibilityassistant",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T03:11:16.444671+00:00",
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.coloros.activation",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.coloros.assistantscreen",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -3420,6 +3441,13 @@
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-27T06:16:36.619097+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.coloros.systemclone",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -3605,6 +3633,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.oplus.aod",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.oplus.appdetail",
     "small_batch": false,
     "uninstalls": 4,
@@ -3780,6 +3815,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.oplus.sos",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.oplus.statistics.rom",
     "small_batch": false,
     "uninstalls": 4,
@@ -3808,10 +3850,17 @@
     "verdict": "INSUFFICIENT"
    },
    {
-    "pkg": "com.oplus.vdc",
+    "pkg": "com.oplus.travelengine",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T01:30:25.418154+00:00",
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.oplus.vdc",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T06:21:25.678924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -22265,7 +22314,7 @@
     "pkg": "com.android.providers.downloads",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T06:12:40.842115+00:00",
+    "updated_at": "2026-11-27T06:21:19.818891+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -23469,7 +23518,7 @@
     "pkg": "com.honor.browser",
     "small_batch": true,
     "uninstalls": 7,
-    "updated_at": "2026-11-27T06:12:07.24484+00:00",
+    "updated_at": "2026-11-27T06:21:19.818891+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25187,7 +25236,7 @@
     "pkg": "com.android.providers.downloads",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T06:12:40.842115+00:00",
+    "updated_at": "2026-11-27T06:21:19.818891+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -26307,7 +26356,7 @@
     "pkg": "com.honor.browser",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T06:12:07.24484+00:00",
+    "updated_at": "2026-11-27T06:21:19.818891+00:00",
     "verdict": "BREAKS"
    },
    {

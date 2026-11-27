@@ -12313,12 +12313,12 @@
  {
   "brand": "Realme",
   "comments": 0,
-  "created_at": "2026-11-27T06:17:48.7849+00:00",
-  "id": 398,
+  "created_at": "2026-11-27T06:22:07.562561+00:00",
+  "id": 399,
   "is_test": false,
   "market_name": "真我Neo8",
   "model": "RMX8899",
-  "note": "",
+  "note": "极简",
   "owner": "12063",
   "owner_name": "",
   "packages": [
@@ -12450,7 +12450,7 @@
    "com.oplus.customize.coreapp",
    "com.oplus.keyguard.style.widgets"
   ],
-  "rebooted_at": "2026-11-27T06:17:48.553305+00:00",
+  "rebooted_at": "2026-11-27T06:22:07.52845+00:00",
   "rom": "coloros",
   "rom_build": "V17.0.0",
   "rom_version": 17,
