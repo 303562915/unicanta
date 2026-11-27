@@ -43,7 +43,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,8 +73,8 @@ import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
-import io.github.samolego.canta.data.community.COMMENT_KIND_RECOMMEND
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.data.recommend.SuggestedApp
@@ -83,22 +82,16 @@ import io.github.samolego.canta.data.recommend.githubOwnerOf
 import io.github.samolego.canta.data.recommend.githubProjectUrl
 import io.github.samolego.canta.data.recommend.appliedQueueFingerprint
 import io.github.samolego.canta.generated.resources.Res
-import io.github.samolego.canta.generated.resources.recommend_by
 import io.github.samolego.canta.generated.resources.recommend_cat_files
 import io.github.samolego.canta.generated.resources.recommend_cat_media
 import io.github.samolego.canta.generated.resources.recommend_cat_privacy
 import io.github.samolego.canta.generated.resources.recommend_cat_store
 import io.github.samolego.canta.generated.resources.recommend_cat_system
 import io.github.samolego.canta.generated.resources.recommend_cat_tools
-import io.github.samolego.canta.generated.resources.recommend_close
-import io.github.samolego.canta.generated.resources.recommend_comment_empty
-import io.github.samolego.canta.generated.resources.recommend_comment_placeholder
-import io.github.samolego.canta.generated.resources.recommend_detail_hint
 import io.github.samolego.canta.generated.resources.recommend_details
 import io.github.samolego.canta.generated.resources.recommend_empty
 import io.github.samolego.canta.generated.resources.recommend_featured
 import io.github.samolego.canta.generated.resources.recommend_footer
-import io.github.samolego.canta.generated.resources.recommend_open_browser
 import io.github.samolego.canta.generated.resources.recommend_switch_grid
 import io.github.samolego.canta.generated.resources.recommend_switch_list
 import io.github.samolego.canta.generated.resources.recommend_tab_airport
@@ -106,8 +99,6 @@ import io.github.samolego.canta.generated.resources.recommend_tab_airport_vote
 import io.github.samolego.canta.generated.resources.recommend_tab_list
 import io.github.samolego.canta.generated.resources.recommend_tab_vote
 import io.github.samolego.canta.generated.resources.recommend_title
-import io.github.samolego.canta.generated.resources.recommend_uninstall_hint
-import io.github.samolego.canta.generated.resources.recommend_uninstall_short
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.rememberRememberedGridState
 import io.github.samolego.canta.ui.component.rememberRememberedListState
@@ -156,7 +147,7 @@ private const val TAB_AIRPORT = 2
 private const val TAB_AIRPORT_VOTE = 3
 
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
-private val SuggestAgree = Color(0xFF2FA84F)
+internal val SuggestAgree = Color(0xFF2FA84F)
 
 /** Grey-red for "不认同"; quieter than [SuggestAgree], because a rejected entry is not a fault. */
 private val SuggestDisagree = Color(0xFFC0564C)
@@ -223,8 +214,12 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  * nothing: the catalog is read once, the queue once, and the scroll position of each half is its own.
  *
  * 分格：应用推荐 / 投票 / 机场 / 机场投票。后两格是同一份机场数据的两种画法（分享与收录 vs 按票
- * 排名），共用 [AirportTabState]，滚动位置各自存一份。四格里的条目点开都是详情弹窗，而详情里都
- * 带评论区——「点进去能评论」在这四格上是同一件事，不是三格有、第四格没有。
+ * 排名），共用 [AirportTabState]，滚动位置各自存一份。四格里的条目点开都是**整页详情**
+ * （[RecommendDetailScreen] / [AirportDetailScreen]），而详情里都带评论区——「点进去能评论」在
+ * 这四格上是同一件事，不是三格有、第四格没有。
+ *
+ * 详情不再是弹窗：评论要读、要回、要滚，弹窗放不下（见 [Screen.RecommendDetail]）。
+ * 这一页只负责"点了哪个条目"，把「来源 + id」交回调用方，由它去导航。
  *
  * @param repository the community backend, for the second half; null leaves it out.
  * @param author the name this install's submissions are signed with.
@@ -234,6 +229,10 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  *   it replaces are still here; empty hides that guidance rather than guessing.
  * @param onOpenApp opens the app detail page of a package, which is where the removal controls are;
  *   nothing is uninstalled from this page itself.
+ * @param onOpenDetail 条目被点开：参数是「来源 + id」（`app` / `suggestion`，见
+ *   [Screen.RecommendDetail]）。四格共用这一个回调而不是四个：页面里"打开详情"这件事对目录条目、
+ *   社区条目、机场条目是同一个动作，差的是来源那一段，而来源本来就是路由的一个参数。
+ * @param onOpenAirport 机场条目被点开：交给调用方导航到 [Screen.AirportDetail]。
  * @param onVoteQueueSeen the queue as it stood when the vote tab was opened, so the caller can
  *   store it and put out the red dot that said somebody had voted.
  */
@@ -248,6 +247,10 @@ fun RecommendationsScreen(
     onToggleLayout: () -> Unit = {},
     installedPackages: Set<String> = emptySet(),
     onOpenApp: (String) -> Unit = {},
+    /** 条目被点开：`source` 是 `app` / `suggestion`，`key` 是那一条的 id。 */
+    onOpenDetail: (String, String) -> Unit = { _, _ -> },
+    /** 机场条目被点开：导航到机场详情整页。 */
+    onOpenAirport: (CommunityAirport) -> Unit = {},
     /** 自上次看过投票那一格以来，新进精选的条目数：那个点就画在投票标签上。 */
     newApplied: Int = 0,
     onVoteQueueSeen: (String) -> Unit = {},
@@ -266,7 +269,6 @@ fun RecommendationsScreen(
     val airportState = remember(cacheKey) { AirportTabState() }
     // 打包目录是本地资源，不经过缓存：读一次就有，冷启动也不会慢。
     var catalog by remember(cacheKey) { mutableStateOf<Recommendations?>(null) }
-    var detail by remember { mutableStateOf<RecommendedApp?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
     var query by rememberSaveable { mutableStateOf("") }
     /** Which half is showing. The list is what the bar leads here for, so it opens first. */
@@ -293,7 +295,6 @@ fun RecommendationsScreen(
     var composerOpen by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var submitError by remember { mutableStateOf<String?>(null) }
-    var suggestionDetail by remember { mutableStateOf<SuggestedApp?>(null) }
 
     // 有缓存就不必再读一遍打包资源（重读也是一样的内容）；key 里带 [cacheKey]，是因为换身份时
     // 上面的 state 会跟着键重建，那时不重跑这个 effect 就会永远停在转圈上。
@@ -451,8 +452,14 @@ fun RecommendationsScreen(
             return@Scaffold
         }
 
-        val openDetails: (RecommendedApp) -> Unit = { detail = it }
-        val openSuggestion: (SuggestedApp) -> Unit = { suggestionDetail = it }
+        // 点开一个条目：这一页只说出「来源 + id」，详情那一整页由调用方导航过去
+        // （见 [Screen.RecommendDetail]）。这里不再留 detail / suggestionDetail 两个开关。
+        val openDetails: (RecommendedApp) -> Unit = { app ->
+            onOpenDetail(RECOMMEND_SOURCE_APP, app.id)
+        }
+        val openSuggestion: (SuggestedApp) -> Unit = { app ->
+            onOpenDetail(RECOMMEND_SOURCE_SUGGESTION, app.id.toString())
+        }
 
         if (tab == TAB_AIRPORT) {
             // 机场与积分：钱包、投票、商城、兑换中心都在这一块里，各自从后端拿自己的那份。
@@ -464,6 +471,7 @@ fun RecommendationsScreen(
                 state = airportState,
                 modifier = Modifier.fillMaxSize().padding(padding),
                 setupGate = setupGate,
+                onOpenAirport = onOpenAirport,
             )
         } else if (tab == TAB_AIRPORT_VOTE) {
             // 机场投票榜：同一份 airports、同一个 [AirportTabState]，只是换个画法。state 共用是
@@ -479,6 +487,7 @@ fun RecommendationsScreen(
                 setupGate = setupGate,
                 board = true,
                 stateKey = "airport-vote",
+                onOpenAirport = onOpenAirport,
             )
         } else if (tab == TAB_VOTE) {
             // The queue on its own page: what others filed, one line each, and the form that adds
@@ -618,48 +627,6 @@ fun RecommendationsScreen(
         }
     }
 
-    detail?.let { app ->
-        RecommendationDetailDialog(
-            app = app,
-            stillInstalled = app.installedReplacements(installedPackages),
-            repository = repository,
-            platform = platform,
-            author = author,
-            authorId = authorId,
-            canComment = setupGate.ready,
-            commentGate = setupGate.prompt,
-            onDismiss = { detail = null },
-            onOpen = {
-                detail = null
-                platform.openUrl(app.url)
-            },
-            onOpenApp = { pkg ->
-                detail = null
-                onOpenApp(pkg)
-            },
-        )
-    }
-
-    suggestionDetail?.let { app ->
-        SuggestionDetailDialog(
-            app = app,
-            voting = votingId == app.id,
-            canVote = canVote,
-            onVote = { agree -> vote(app, agree) },
-            repository = repository,
-            platform = platform,
-            author = author,
-            authorId = authorId,
-            canComment = setupGate.ready,
-            commentGate = setupGate.prompt,
-            onDismiss = { suggestionDetail = null },
-            onOpen = {
-                suggestionDetail = null
-                platform.openUrl(app.url)
-            },
-        )
-    }
-
     if (composerOpen) {
         SuggestComposerDialog(
             submitting = submitting,
@@ -692,18 +659,13 @@ private fun SuggestedApp.asPinned(): RecommendedApp = RecommendedApp(
 )
 
 /**
- * 一条推荐条目在评论表里的身份：项目地址（去空白、去末尾斜杠）。
- *
- * 用地址而不是列表下标：地址跨设备、跨版本对得齐同一件事，下标会因为一次投票把榜单重排之后再
- * 指到别人身上。末尾斜杠去掉，是为了同一个项目不生出两条线程。
- */
-private fun recommendCommentTarget(url: String): String = url.trim().trimEnd('/')
-
-/**
- * The author of an app, for the sheet that spells an entry out — or nothing when it would only
+ * The author of an app, for the page that spells an entry out — or nothing when it would only
  * repeat the name it already stands under.
+ *
+ * internal 而不是 private：详情整页（[RecommendDetailScreen]）与列表要写同一行"作者 X · 许可证"，
+ * 两处各写一遍迟早会一处判重、一处不判，同一个作者在一页上出现两次。
  */
-private fun authorLineOf(name: String, author: String): String? {
+internal fun authorLineOf(name: String, author: String): String? {
     val trimmed = author.trim()
     if (trimmed.isEmpty()) return null
     val plain = trimmed.filter { it.isLetterOrDigit() }.lowercase()
@@ -849,7 +811,7 @@ private fun SuggestedRow(
 }
 
 /** The one line under a proposed app's name: how far it is from the bar, in the fewest words. */
-private fun voteStateOf(app: SuggestedApp): String = when {
+internal fun voteStateOf(app: SuggestedApp): String = when {
     app.applied -> "已上榜 · 认同率 ${((app.share ?: 0f) * 100).toInt()}%"
     app.missingVotes > 0 ->
         "还差 ${app.missingVotes} 票" + (app.share?.let { " · 认同 ${(it * 100).toInt()}%" } ?: "")
@@ -1084,162 +1046,6 @@ private fun SuggestEntryRow(onClick: () -> Unit, inset: Dp = 6.dp) {
     }
 }
 
-/**
- * What a tap on a proposed app opens: the sentence about it, who filed it, where the votes stand,
- * and the same two buttons the row carries — bigger here, because this is the place to think about
- * it. The button at the end leaves Canta for the project page; nothing is installed from here.
- */
-@Composable
-private fun SuggestionDetailDialog(
-    app: SuggestedApp,
-    voting: Boolean,
-    canVote: Boolean,
-    onVote: (Boolean) -> Unit,
-    /** 评论区要用的后端 / 身份 / 门槛提示：四个 tab 的详情共用同一套。 */
-    repository: PlanRepository?,
-    platform: CantaPlatform,
-    author: String,
-    authorId: String,
-    canComment: Boolean,
-    commentGate: String,
-    onDismiss: () -> Unit,
-    onOpen: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val accent = remember(app.id, app.category) { accentOf("", "${app.id}-${app.category}") }
-    val meta = listOfNotNull(
-        authorLineOf(app.name, app.author)?.let { stringResource(Res.string.recommend_by, it) },
-        app.license.trim().ifEmpty { null },
-    ).joinToString(" · ")
-
-    CantaDialog(
-        onDismissRequest = onDismiss,
-        widthFraction = WIDE_DIALOG_WIDTH,
-        scrollable = true,
-        buttons = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.recommend_close)) }
-            Button(onClick = onOpen) {
-                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(text = stringResource(Res.string.recommend_open_browser), modifier = Modifier.padding(start = 8.dp))
-            }
-        },
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            AppTile(mark = app.tileMark, accent = accent, size = CellTileSize, corner = 16.dp)
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = app.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (meta.isNotBlank()) {
-                    Text(
-                        text = meta,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = scheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (app.applied) {
-                Text(
-                    text = "已上榜",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(percent = 50))
-                        .background(SuggestAgree)
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-            }
-        }
-
-        Surface(
-            modifier = Modifier.padding(top = 12.dp),
-            shape = RoundedCornerShape(8.dp),
-            color = scheme.secondaryContainer,
-        ) {
-            Text(
-                text = categoryLabel(app.category),
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSecondaryContainer,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            )
-        }
-
-        if (app.summary.isNotBlank()) {
-            Text(
-                text = app.summary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 10.dp),
-            )
-        }
-
-        Text(
-            text = voteStateOf(app) + " · ${app.agrees} 认同 / ${app.disagrees} 不认同",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (app.applied) scheme.primary else scheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 10.dp),
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-        if (app.applied) {
-            // Closed ballot: the sheet keeps the result, not a pair of buttons that would be
-            // counting votes on a question the page has already answered.
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                SettledVote()
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "票数已够，投票关闭",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                CompactVote(
-                    label = "认同",
-                    count = app.agrees,
-                    selected = app.mine == true,
-                    color = SuggestAgree,
-                    enabled = canVote && !voting,
-                    onClick = { onVote(true) },
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                CompactVote(
-                    label = "不认同",
-                    count = app.disagrees,
-                    selected = app.mine == false,
-                    color = SuggestDisagree,
-                    enabled = canVote && !voting,
-                    onClick = { onVote(false) },
-                )
-                if (voting) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-                }
-            }
-        }
-
-        // 评论区：排队等票的条目也要能问「用了怎么样」。target 是项目地址，榜单重排也不会指错人。
-        Spacer(modifier = Modifier.height(14.dp))
-        CommunityCommentSection(
-            kind = COMMENT_KIND_RECOMMEND,
-            target = recommendCommentTarget(app.url),
-            repository = repository,
-            author = author,
-            authorId = authorId,
-            me = authorId.ifEmpty { author },
-            canComment = canComment,
-            gateHint = commentGate,
-            platform = platform,
-            emptyHint = stringResource(Res.string.recommend_comment_empty),
-            placeholder = stringResource(Res.string.recommend_comment_placeholder),
-        )
-    }
-}
-
 /** The six category keys, in the order the page lists them. */
 private val ComposerCategories = listOf("system", "store", "privacy", "files", "media", "tools")
 
@@ -1394,146 +1200,12 @@ private fun SuggestComposerDialog(
 }
 
 /**
- * What a tap on a cell opens: the whole entry, and the one button that leaves Canta. Nothing is
- * installed from here either — the button hands the project page to the browser. This is also where
- * the author and the summary live, which is why the tile and the row do not repeat them.
- */
-@Composable
-private fun RecommendationDetailDialog(
-    app: RecommendedApp,
-    /** Packages from `app.replacesPackages` this phone still has: what the entry can point at. */
-    stillInstalled: List<String>,
-    /** 评论区要用的后端 / 身份 / 门槛提示：四个 tab 的详情共用同一套。 */
-    repository: PlanRepository?,
-    platform: CantaPlatform,
-    author: String,
-    authorId: String,
-    canComment: Boolean,
-    commentGate: String,
-    onDismiss: () -> Unit,
-    onOpen: () -> Unit,
-    onOpenApp: (String) -> Unit,
-) {
-    val accent = remember(app.accent, app.id) { accentOf(app.accent, app.id) }
-    val meta = listOfNotNull(
-        authorLineOf(app.name, app.author)?.let { stringResource(Res.string.recommend_by, it) },
-        app.license.trim().ifEmpty { null },
-    ).joinToString(" · ")
-
-    CantaDialog(
-        onDismissRequest = onDismiss,
-        widthFraction = WIDE_DIALOG_WIDTH,
-        scrollable = true,
-        buttons = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.recommend_close)) }
-            Button(onClick = onOpen) {
-                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(text = stringResource(Res.string.recommend_open_browser), modifier = Modifier.padding(start = 8.dp))
-            }
-        },
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            AppTile(mark = app.tileMark, accent = accent, size = CellTileSize, corner = 16.dp)
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = app.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (meta.isNotBlank()) {
-                    Text(
-                        text = meta,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        Surface(
-            modifier = Modifier.padding(top = 14.dp),
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer,
-        ) {
-            Text(
-                text = categoryLabel(app.category),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            )
-        }
-
-        if (app.summary.isNotBlank()) {
-            Text(
-                text = app.summary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-
-        Text(
-            text = stringResource(Res.string.recommend_detail_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-
-        if (stillInstalled.isNotEmpty()) {
-            // "Install this and drop those" is only an instruction while those packages are still
-            // here: once they are gone there is no next step, and the sheet keeps quiet.
-            Column(
-                modifier = Modifier.padding(top = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.recommend_uninstall_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                stillInstalled.forEach { pkg ->
-                    TextButton(
-                        onClick = { onOpenApp(pkg) },
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
-                    ) {
-                        Text(text = pkg, style = MaterialTheme.typography.labelMedium)
-                        Text(
-                            text = stringResource(Res.string.recommend_uninstall_short),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
-        }
-
-        // 评论区：这一格原来只有介绍和「去浏览器」，问不了「用过吗、好不好用」。与机场、应用页
-        // 同一个组件：父评论 + 回复、作者、时间、认同数都由它画，不在这里再写一套。
-        Spacer(modifier = Modifier.height(14.dp))
-        CommunityCommentSection(
-            kind = COMMENT_KIND_RECOMMEND,
-            target = recommendCommentTarget(app.url),
-            repository = repository,
-            author = author,
-            authorId = authorId,
-            me = authorId.ifEmpty { author },
-            canComment = canComment,
-            gateHint = commentGate,
-            platform = platform,
-            emptyHint = stringResource(Res.string.recommend_comment_empty),
-            placeholder = stringResource(Res.string.recommend_comment_placeholder),
-        )
-    }
-}
-
-/**
  * The stand-in icon: a rounded tile filled with the app's accent colour and its mark drawn white on
  * top, so a list with no images still reads as a list of apps rather than a list of links. [ring]
  * draws an outline around it, which is how a pinned entry is marked.
  */
 @Composable
-private fun AppTile(
+internal fun AppTile(
     mark: String,
     accent: Color,
     size: Dp,
@@ -1589,7 +1261,7 @@ private fun FooterNote(count: Int, inset: Dp = 6.dp) {
 }
 
 /** The accent named by the entry, or one picked from its id so every card still differs. */
-private fun accentOf(accent: String, id: String): Color {
+internal fun accentOf(accent: String, id: String): Color {
     val hex = accent.removePrefix("#").trim()
     val parsed = hex.toLongOrNull(16)?.let { value ->
         when (hex.length) {
@@ -1603,7 +1275,7 @@ private fun accentOf(accent: String, id: String): Color {
 
 /** Localised heading of a category key. */
 @Composable
-private fun categoryLabel(key: String): String = when (key) {
+internal fun categoryLabel(key: String): String = when (key) {
     "system" -> stringResource(Res.string.recommend_cat_system)
     "store" -> stringResource(Res.string.recommend_cat_store)
     "privacy" -> stringResource(Res.string.recommend_cat_privacy)

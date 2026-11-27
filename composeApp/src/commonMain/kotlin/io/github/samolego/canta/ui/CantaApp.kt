@@ -1102,6 +1102,18 @@ private fun CantaNavigation(
                     // take the reader to the page where they are removed.
                     installedPackages = appListViewModel.apps.map { it.packageName }.toSet(),
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    // 点条目 → 整页详情。四格共用这两个回调：来源（app / suggestion）本来就是
+                    // 目标路由的一段路径参数（见 [Screen.RecommendDetail]），机场那条是另一条路由。
+                    onOpenDetail = { source, key ->
+                        navController.navigate(Screen.RecommendDetail.routeFor(source, key)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onOpenAirport = { airport ->
+                        navController.navigate(Screen.AirportDetail.routeFor(airport.id)) {
+                            launchSingleTop = true
+                        }
+                    },
                     // 新上榜的条数：那一个点画在投票那一格上（页内），底栏那格只在离开这一页时
                     // 还留着，两处说的是同一件事，不是两份消息。
                     newApplied = newVoteCount,
@@ -1115,6 +1127,63 @@ private fun CantaNavigation(
                         }
                     },
                     // 名字/头像没设完：推荐能看能投，但提交不了新条目。
+                    setupGate = setupGate,
+                )
+            }
+            composable(route = Screen.RecommendDetail.route) { entry ->
+                // 一个推荐条目的整页：来源（app / suggestion）和那一条的 id 都是路径参数，
+                // 读法与其它二级页一致（Navigation 2.10 给的是 SavedState，不是 Bundle）。
+                val args = entry.arguments
+                val detailSource = args?.let { a ->
+                    runCatching { a.read { if (contains("source")) getString("source") else null } }.getOrNull()
+                }.orEmpty()
+                val detailKey = args?.let { a ->
+                    runCatching { a.read { if (contains("key")) getString("key") else null } }.getOrNull()
+                }.orEmpty()
+                // 身份与推荐页那一份取法完全相同：署名 + 身份号（评论、点赞、删除都按它算）+
+                // 证明身份号的 token（删除自己写的评论要它）。
+                var detailAuthor by remember { mutableStateOf("") }
+                var detailIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) {
+                    detailAuthor = DeviceIdentity.displayName(deps.settings)
+                    detailIdentity = DeviceIdentity.current(deps.settings)
+                }
+                RecommendDetailScreen(
+                    source = detailSource,
+                    key = detailKey,
+                    platform = platform,
+                    repository = communityRepository,
+                    // 与推荐页同一份"这台手机装着什么"：详情页里"能替换哪些包"要据此过滤。
+                    installedPackages = appListViewModel.apps.map { it.packageName }.toSet(),
+                    author = detailAuthor,
+                    authorId = detailIdentity.owner.ifEmpty { detailIdentity.token },
+                    token = detailIdentity.token,
+                    onNavigateBack = { navController.navigateUp() },
+                    onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    setupGate = setupGate,
+                )
+            }
+            composable(route = Screen.AirportDetail.route) { entry ->
+                // 一条机场的整页：id 是路径参数。
+                val airportId = entry.arguments?.let { a ->
+                    runCatching {
+                        a.read { if (contains("airportId")) getString("airportId").toLongOrNull() else null }
+                    }.getOrNull()
+                } ?: 0L
+                var airportAuthor by remember { mutableStateOf("") }
+                var airportIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(airportId) {
+                    airportAuthor = DeviceIdentity.displayName(deps.settings)
+                    airportIdentity = DeviceIdentity.current(deps.settings)
+                }
+                AirportDetailScreen(
+                    airportId = airportId,
+                    repository = communityRepository,
+                    platform = platform,
+                    author = airportAuthor,
+                    authorId = airportIdentity.owner.ifEmpty { airportIdentity.token },
+                    token = airportIdentity.token,
+                    onNavigateBack = { navController.navigateUp() },
                     setupGate = setupGate,
                 )
             }
