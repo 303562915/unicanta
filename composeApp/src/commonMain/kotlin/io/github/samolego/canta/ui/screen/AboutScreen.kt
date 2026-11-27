@@ -160,8 +160,12 @@ private val SponsorAvatar = 34.dp
  * 赞助榜在 [ScreenCache] 里的键。
  *
  * 榜是公开的、与"谁在看"无关，所以**不分人一格**（商城页的余额要分人，这里不用）。
+ *
+ * `:money-first` 后缀是为了一次性的顺序切换：后端改成"资金赞助排在 token 赞助前面"之后，
+ * 老缓存里还是旧顺序，而 [mergeSponsors] 的规则是"老位置不动"，光靠刷新永远换不过来。
+ * 换个键名让老缓存作废，下一次加载就按新顺序画。
  */
-private const val SPONSOR_WALL_CACHE = "screen:sponsors"
+private const val SPONSOR_WALL_CACHE = "screen:sponsors:money-first"
 
 /**
  * 把这次拉到的榜并到已经画出来的那份上：**老的一个不动，新来的人接在后面**。
