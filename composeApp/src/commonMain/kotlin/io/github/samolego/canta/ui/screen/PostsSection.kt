@@ -79,6 +79,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
@@ -2499,25 +2502,18 @@ private fun PostThreadPane(
                 }
             }
 
-            if (shown.locked) {
-                Surface(color = FlSurfaceLevel.Block.colorOf(scheme)) {
-                    Text(
-                        text = "这条帖已经锁了，回不了。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-                }
-            } else {
-                ReplyBar(
-                    reply = reply,
-                    busy = busyKey == "reply:${shown.id}",
-                    onChange = onReplyChange,
-                    onSend = onSend,
-                )
-            }
+            // 锁帖不另起一条横带：fluxdo 是把"话题已关闭"写进回复胶囊的文案里
+            // （`topic_bottom_bar.dart:376-379` 的 `TopicReplyEntryState.closed` →「话题已关闭」+ 锁图标）。
+            // 那条横带每屏白占 40dp，而胶囊已经在同一位置说明同一件事。
+            ReplyBar(
+                reply = reply,
+                busy = busyKey == "reply:${shown.id}",
+                locked = shown.locked,
+                // 认不出身份的人写不了回帖，胶囊文字换成"登录后参与讨论"而不是点了才报错。
+                enabled = authorId.isNotBlank(),
+                onChange = onReplyChange,
+                onSend = onSend,
+            )
         }
         }
     }
@@ -2558,12 +2554,26 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
             .padding(top = 14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = post.title.ifBlank { "（无标题）" },
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = scheme.onSurface,
-        )
+        // 标题 + 锁图标：锁住的帖子在标题**前面**画一颗锁（`topic_detail_header.dart:109-120`
+            // 的 20dp / `outline` 色），而不是另起一条"这条帖已经锁了"的横带 —— 那条横带
+            // 每屏白占一行，而锁本来就是标题的属性。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (post.locked) {
+                    FlGlyphIcon(
+                        glyph = FlGlyphs.lock,
+                        size = 20.dp,
+                        tint = scheme.outline,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = post.title.ifBlank { "（无标题）" },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.onSurface,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
 
         // 分类 + 标签：discourse 那种一排水洗标签。分类带自己那一小块颜色。
         if (post.category.isNotBlank() || post.tags.isNotEmpty()) {
@@ -3080,47 +3090,213 @@ private fun PostFloorCard(
     }
 }
 
-/** 吸底回复栏：一行输入 + 发送。点一下就开始写，不占整屏。 */
+/**
+ * 吸底回复栏：**不是输入框，是一条 56dp 高的操作行**，左边一颗「假输入框」胶囊。
+ *
+ * 照 fluxdo `topic_bottom_bar.dart`：
+ * - 行高 `contentHeight = 56`（`:24`），水平内边距 `12`（`:136`）
+ * - 胶囊：`surfaceContainerHighest` 底 + 全圆角（`radius(9999)`，`:455`），
+ *   **高 40**、水平内边距 `14`（`:354`）、`edit_rounded` 图标 **18dp** + 8dp 间距、文案 `bodyMedium`
+ * - 文案随状态变：没登录 / 已关闭 / 正常时的「写下你的回复…」/ 有草稿时的摘要（`:358-385`）
+ *
+ * 为什么不再是一行 `OutlinedTextField`：真输入框贴在最底下，只要一出现就整个被键盘顶走、
+ * 或者被键盘盖住，而且列表只剩半屏。fluxdo 的做法是"点一下才升起面板"，读帖时不占高度。
+ */
 @Composable
 private fun ReplyBar(
     reply: String,
     busy: Boolean,
+    locked: Boolean,
+    enabled: Boolean,
     onChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    // 整块吃输入法 inset：edge-to-edge 下系统不再缩窗口，不垫这一下吸底输入栏会被键盘盖住。
-    Surface(modifier = Modifier.imePadding(), color = FlSurfaceLevel.Block.colorOf(scheme)) {
+    // 面板开着没有：开着才画遮罩与面板，关着时这一栏只有那颗胶囊。
+    var composerOpen by remember { mutableStateOf(false) }
+
+    // 这条底栏**不再吃 `imePadding`**：它里面已经没有真输入框了（只在点开的面板里有），
+// 键盘弹起时它不需要让位；垫了的话面板开着的那段时间，底栏会被顶起一条空白，
+// 面板底部到键盘之间就多出一道缝。
+    Surface(color = FlSurfaceLevel.Block.colorOf(scheme)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.Bottom,
+                // 56dp 高 + 左右 12，照 `contentHeight` / `_horizontalPadding`。
+                .height(56.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
-                value = reply,
-                onValueChange = onChange,
-                modifier = Modifier.weight(1f),
-                minLines = 1,
-                maxLines = 4,
-                placeholder = { Text("回复…") },
-                textStyle = MaterialTheme.typography.bodySmall,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Box(
+            Row(
                 modifier = Modifier
-                    .size(44.dp)
+                    .weight(1f)
+                    // 胶囊高 40：不给固定高的话它会被父 Row 拉到 56，看着像一块板。
+                    .height(40.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(if (reply.isBlank() || busy) scheme.surfaceVariant else scheme.primary)
-                    .clickable(enabled = reply.isNotBlank() && !busy, role = Role.Button, onClick = onSend),
-                contentAlignment = Alignment.Center,
+                    .background(scheme.surfaceContainerHighest)
+                    .clickable(
+                        enabled = enabled && !locked,
+                        role = Role.Button,
+                        onClickLabel = "回复",
+                        onClick = { composerOpen = true },
+                    )
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 FlGlyphIcon(
-                    glyph = FlGlyphs.send,
-                    size = 20.dp,
-                    tint = if (reply.isBlank() || busy) scheme.onSurfaceVariant else scheme.onPrimary,
+                    glyph = FlGlyphs.edit,
+                    size = 18.dp,
+                    tint = if (enabled && !locked) scheme.onSurfaceVariant else scheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when {
+                        locked -> "话题已关闭"
+                        !enabled -> "登录后参与讨论"
+                        // 草稿摘要取**第一个非空行**：只取 `firstOrNull()` 时，正文以一个空行开头就会
+                        // 显示成"草稿："后面什么都没有，看着像把草稿弄丢了。
+                        reply.isNotBlank() -> {
+                            val head = reply.lineSequence().firstOrNull { it.isNotBlank() }?.trim()
+                                ?: reply.trim()
+                            "草稿：${head.take(30)}"
+                        }
+                        else -> "写下你的回复…"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (enabled && !locked) {
+                        scheme.onSurfaceVariant
+                    } else {
+                        scheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+
+    // 面板：整页压暗 + 从底部升起的输入区（`topic_quick_reply.dart`）。
+    if (composerOpen) {
+        ReplyComposerPanel(
+            reply = reply,
+            busy = busy,
+            onChange = onChange,
+            onSend = {
+                onSend()
+                composerOpen = false
+            },
+            onDismiss = { composerOpen = false },
+        )
+    }
+}
+
+/**
+ * 回复面板，照 fluxdo `topic_quick_reply.dart`：
+ *
+ * - 圆角 **24**（`_panelRadius = 24`，`:84`），贴底时**上圆下平**（`:426-427`）
+ * - 遮罩 **0.32** 黑（`:341` 的 `0.32 * raw`）
+ * - 展开 **340ms** / 收起 **260ms**，曲线 `easeInOutCubicEmphasized`（`:85-91`）
+ * - 输入框：`surfaceContainerHighest` 底、圆角 **16**、`minLines 3 / maxLines 8`、
+ *   内边距 **14**、`bodyLarge`（`:524-546`）
+ * - 发送：`FilledButton(minimumSize = Size(72, 38))`，文案「发送」，忙碌时 16dp 转圈（`:602-618`）
+ */
+@Composable
+private fun ReplyComposerPanel(
+    reply: String,
+    busy: Boolean,
+    onChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            // 关闭只交给下面那块遮罩：Dialog 自己的"点外面也关"在 `usePlatformDefaultWidth =
+            // false` 时把整个窗口当"外面"，判定含糊，留着会偶发"点面板却关掉"。
+            dismissOnClickOutside = false,
+        ),
+    ) {
+        // 整个对话框内容 = 一块透明的全屏层：上面是遮罩（点它收起），下面贴着面板。
+        // `imePadding` 在这一层：键盘弹起时**整个对话区**缩小，面板跟着被顶到键盘上沿。
+        // 放在面板那一层只会在面板内部加出空白，输入区照样被键盘盖住。
+        Box(modifier = Modifier.fillMaxSize().imePadding()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    // 上圆下平：`RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart)`。
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .background(scheme.surfaceContainerHighest),
+            ) {
+                // 输入框：圆角 16、底色低一档、内边距 14、3~8 行。
+                OutlinedTextField(
+                    value = reply,
+                    onValueChange = onChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 12.dp, top = 16.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(scheme.surfaceContainerLow),
+                    minLines = 3,
+                    maxLines = 8,
+                    placeholder = { Text("写下你的回复…") },
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                )
+                // 底部一行：右边一颗「发送」。
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            // `minimumSize = Size(72, 38)`
+                            .heightIn(min = 38.dp)
+                            .widthIn(min = 72.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(if (reply.isBlank() || busy) scheme.surfaceVariant else scheme.primary)
+                            .clickable(
+                                enabled = reply.isNotBlank() && !busy,
+                                role = Role.Button,
+                                onClickLabel = "发送",
+                                onClick = onSend,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (busy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = scheme.onPrimary,
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Text(
+                                text = "发送",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (reply.isBlank()) scheme.onSurfaceVariant else scheme.onPrimary,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -3234,12 +3410,23 @@ private fun PostEditorPane(
         unfocusedContainerColor = Color.Transparent,
     )
 
-    Column(modifier = modifier.fillMaxSize()) {
+    // 外层吃 IME：正文靠 `weight(1f)` 撑满，键盘一弹可用的高度就变少，
+// 不在这一层垫 inset，正文会被键盘压到只剩一行。底部属性条那层就**不再**垫，避免垫两次。
+    Column(modifier = modifier.fillMaxSize().imePadding()) {
+        // 布局照 fluxdo `create_topic_page.dart`：**标题区固定高、正文 `expands: true` 撑满**
+        // 剩下所有高度（`markdown_editor.dart:917` —— `expands` 为真时 `minLines` 是 null，
+        // 正文自己滚动，不是整页滚动）。
+        //
+        // 上一版是「整页 `verticalScroll` + 正文 `minLines = 14`」：正文只有 14 行高，
+        // 再往下写就整页滚，标题跟着滚出屏幕 —— 写到第三屏时看不见"我给这条帖起了什么名"。
         Column(
             modifier = Modifier
+                // 这一层的 `weight(1f)` 是必需的：它里面的正文也在用 `weight(1f)`，
+                // 而 `weight` 只在父级**高度有界**时才有意义。这层不给 weight 的话，
+                // 它在父 Column 里是 wrap 高度（无界），正文的 weight 就退化成"按内容量"，
+                // 正文框只剩一行高 —— 正好和"撑满"这个目标相反。
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
             Spacer(modifier = Modifier.height(10.dp))
@@ -3290,11 +3477,15 @@ private fun PostEditorPane(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (previewing) {
+                // 预览也吃满同一块高度：切过去时页面不跳、不缩，只是同一块区域换了内容。
                 Box(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
+                        .padding(top = 4.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+                        .verticalScroll(rememberScrollState())
                         .padding(10.dp),
                 ) {
                     if (body.text.isBlank()) {
@@ -3304,8 +3495,11 @@ private fun PostEditorPane(
                             color = scheme.onSurfaceVariant,
                         )
                     } else {
+                        // `fillMaxWidth` 不能省：`MiniMarkdown` 内部是一个 `Column`，在
+                        // `verticalScroll` 的 Box 里不给宽度就会按内容 intrinsic 量，长段落不换行。
                         MiniMarkdown(
                             text = body.text,
+                            modifier = Modifier.fillMaxWidth(),
                             baseStyle = MaterialTheme.typography.bodyMedium,
                             color = scheme.onSurface,
                         )
@@ -3315,11 +3509,12 @@ private fun PostEditorPane(
                 OutlinedTextField(
                     value = body,
                     onValueChange = onBodyChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    // 源码里创建页是 `expands: true` → 没有行数下限（由 Expanded 撑满）。
-                    // 我们是可滚页面，没有那个撑满容器，所以留一个下限保证"点得到正文"，
-                    // 10 行是这块高度能放下的量；字号与行高照源码的 `TextField` 默认。
-                    minLines = 10,
+                    // `weight(1f)` 就是源码里的 `expands: true`：正文占满标题与底栏之间的
+                    // 全部高度，超出的部分自己在框内滚，**不再有 `minLines` 下限**
+                    //（`markdown_editor.dart:917`：`minLines = expands ? null : 5`）。
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     placeholder = {
                         Text(
                             text = "正文内容（支持 Markdown）…",
@@ -3341,29 +3536,29 @@ private fun PostEditorPane(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                 )
             }
+            // 字数角标：右下角，小字灰，不占一行。
             Text(
                 text = "${body.text.length}/$POST_BODY_LIMIT",
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.outline,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                 textAlign = TextAlign.End,
             )
             if (error != null) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = error, style = MaterialTheme.typography.labelSmall, color = scheme.error)
             }
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
         }
 
         HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
 
         // 底部常驻：属性条 + 工具栏。这两块是"发之前最后核对的东西"，吸在最下面。
-        // `imePadding`：这一块贴在屏幕底边，键盘一起来它就会被整个盖住——写长文时
-        // "分类/标签/工具栏"这三样全看不见。回复栏（[ReplyBar]）早就垫了这一下，这里漏了。
+        // **这里不再垫 `imePadding`**：IME 由最外层那个 Column 吃掉了。两层都垫的话，
+        // 键盘弹起时这块会往上跳两倍 inset 的高度，中间留一条空白。
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .imePadding()
                 .background(FlSurfaceLevel.Block.colorOf(scheme)),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
