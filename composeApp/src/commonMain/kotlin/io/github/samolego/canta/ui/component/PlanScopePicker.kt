@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -380,6 +381,11 @@ fun PlanScopeDialog(
 ) {
     var opened by remember { mutableStateOf<CatalogModel?>(null) }
     val current = opened
+    // 机型列表的滚动位置提到对话框这一层：点进一台机器看版本、再按「‹ 机型」返回时，`ModelPicker`
+    // 本来会整个离开组合，它内部 `remember` 出来的 `LazyListState` 跟着一起没了 —— 于是「往下翻了
+    // 半天、点进去看一眼、退回来又从第一个机型开始」。现在状态在分支外面，跨这一来一回活着；
+    // 键也落了盘，对话框整个关掉再打开仍停在原来那一行。
+    val modelListState = rememberRememberedListState("scope:models")
     // 时间自己走：对话框可能开着好一会儿，写死一个数字会慢慢变成假话。
     var now by remember { mutableLongStateOf(currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -476,6 +482,7 @@ fun PlanScopeDialog(
                             onRetry = onRetry,
                             onSelectAll = { onSelect(PlanScope.All) },
                             onSelectThisPhone = { onSelect(PlanScope.ThisPhone) },
+                            listState = modelListState,
                             modifier = Modifier.weight(1f),
                         )
                     } else {
@@ -537,6 +544,8 @@ private fun ModelPicker(
     onRetry: () -> Unit,
     onSelectAll: () -> Unit,
     onSelectThisPhone: () -> Unit,
+    /** 滚动位置由调用方持有：点进一台机器再返回、整个对话框关掉再开，都停在原处。 */
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -599,6 +608,7 @@ private fun ModelPicker(
             else -> LazyColumn(
                 // The whole remaining height: the list is the page, not a peek at it.
                 modifier = Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
                 contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
