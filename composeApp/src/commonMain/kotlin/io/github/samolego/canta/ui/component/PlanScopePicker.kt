@@ -43,10 +43,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import io.github.samolego.canta.util.currentTimeMillis
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -366,9 +369,25 @@ fun PlanScopeDialog(
     onSelect: (PlanScope) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    /**
+     * 这份机型目录是什么时候从后端拿到的（本机毫秒），0 = 还没拿到过。
+     *
+     * 为什么要显示：目录是**实时查后端**的（`plan_catalog`），而「我刚上传了一台手机，
+     * 这里却没有它」是这个选择器最常被质疑的一件事。把「几分钟前同步的」写在标题右边，
+     * 一眼就能分出是「后端里确实还没有」还是「我手上这份是旧的，点重试」。
+     */
+    syncedAt: Long = 0L,
 ) {
     var opened by remember { mutableStateOf<CatalogModel?>(null) }
     val current = opened
+    // 时间自己走：对话框可能开着好一会儿，写死一个数字会慢慢变成假话。
+    var now by remember { mutableLongStateOf(currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(20_000L)
+            now = currentTimeMillis()
+        }
+    }
 
     BasicAlertDialog(
         // The system back button steps one level down before it closes the sheet: at "builds of a
@@ -431,6 +450,19 @@ fun PlanScopeDialog(
                                 .weight(1f)
                                 .padding(start = if (current == null) 8.dp else 2.dp, end = 12.dp),
                         )
+                        // 标题右边这一格：这份目录有多新。
+                        //
+                        // 只在「一级（选机型）」显示：进了某台机器的 build 列表之后，看的是同一份
+                        // 目录的下一层，时间一样，再写一遍只是重复。转圈时不写 —— 那时候还没有
+                        // 「什么时候同步的」这回事，写个 0 秒前是假的。
+                        if (current == null && !loading && syncedAt > 0L) {
+                            Text(
+                                text = dataAgeLabel(now - syncedAt),
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.outline,
+                                maxLines = 1,
+                            )
+                        }
                     }
                     HorizontalDivider()
 

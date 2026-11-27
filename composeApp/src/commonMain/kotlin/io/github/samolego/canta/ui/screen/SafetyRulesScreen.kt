@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -116,6 +117,7 @@ import io.github.samolego.canta.ui.dialog.UploadPlanDialog
 import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.currentTimeMillis
 import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.Identity
 import io.github.samolego.canta.util.SafetyRules
@@ -294,6 +296,8 @@ fun SafetyRulesScreen(
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
     // **必须在 `catalog` 之下**：`planScope` 要读它。
     var catalogLoading by remember { mutableStateOf(true) }
+    // 目录最近一次**真的**从后端拿到的时间（本机毫秒）；0 = 还没成功过。
+    var catalogFetchedAt by remember { mutableLongStateOf(0L) }
     var pickerOpen by remember { mutableStateOf(false) }
     // 页面显示哪个机型：**只看上一次的选择**，不看目录。
     //
@@ -458,7 +462,16 @@ fun SafetyRulesScreen(
     LaunchedEffect(reloads, identity) {
         if (catalog.isEmpty()) catalogLoading = true
         val fresh = repo.catalog()?.toCatalogModels().orEmpty()
-        if (fresh.isNotEmpty() && fresh != catalog) catalog = fresh
+        // 「这份目录是什么时候拉到的」：选择器标题右边那个「N分钟前」用它。
+        //
+        // **只要拉回来非空就算一次同步**，哪怕内容和手上一样 —— 那正是最有用的信息：
+        // 「3 分钟前同步过，后端里就是这些」，于是"刚传的手机怎么没有"有了答案（是后端没有，
+        // 不是我这份旧）。反过来，拉回来是空就**不**动这个时间：一次没答上不该把
+        // 「5 小时前」洗成「刚刚」，那会让人以为数据是新的。
+        if (fresh.isNotEmpty()) {
+            if (fresh != catalog) catalog = fresh
+            catalogFetchedAt = currentTimeMillis()
+        }
         catalogLoading = false
     }
 
@@ -898,6 +911,8 @@ fun SafetyRulesScreen(
             },
             onRetry = { reloads++ },
             onDismiss = { pickerOpen = false },
+            // 标题右边那格「N分钟前」：这份机型目录是什么时候从后端拿到的。
+            syncedAt = catalogFetchedAt,
         )
     }
 

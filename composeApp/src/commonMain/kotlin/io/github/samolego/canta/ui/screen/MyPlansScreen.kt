@@ -47,6 +47,7 @@ import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.dataAgeLabel
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.util.DeviceProfile
@@ -391,17 +392,9 @@ private fun PlanIdBadge(id: Long) {
 }
 
 /**
- * 「刚刚 / N分钟前 / N小时前 / N天前」——本地时钟差，不联网、不解析时区。
+ * 「共 N 个方案 · 几秒/几分钟前更新」那一行的时间部分。
  *
- * 只给这一页顶那条信息用：它要回答的是「这份数据新不新」，不是「这条方案哪天建的」
- * （那个日期在每一行里，走的是 `rebootedAt.take(10)`）。所以不需要 `relativeStamp`
- * 那套北京时间与「昨天 HH:mm」的规则。
+ * 规则本身在 [dataAgeLabel]（选择器那边也用同一套），这里只补一个「更新」后缀：
+ * 这一行说的不是「列表建于何时」，而是「我上一次真的问到后端是哪会儿」。
  */
-private fun ageLabel(elapsedMillis: Long): String {
-    if (elapsedMillis < 60_000L) return "刚刚更新"
-    val minutes = elapsedMillis / 60_000L
-    if (minutes < 60L) return "${minutes}分钟前更新"
-    val hours = minutes / 60L
-    if (hours < 24L) return "${hours}小时前更新"
-    return "${hours / 24L}天前更新"
-}
+private fun ageLabel(elapsedMillis: Long): String = dataAgeLabel(elapsedMillis) + "更新"
