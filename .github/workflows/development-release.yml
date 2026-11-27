@@ -105,9 +105,33 @@ jobs:
           git fetch origin master
           if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/master)" ]; then
             echo "is_head=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 2026-11-27 改：**只比「是不是 HEAD」会把开发版永远卡在旧包。**
+          #
+          # `db-backup` 每 3～5 分钟往 master 提交一次，而这次构建也要三分钟左右 ——
+          # 于是「构建期间又进来一条提交」是常态，不是意外。实测连续两次构建都是
+          # `success` + `Publish rolling prerelease: skipped`，下载页停在 build 675。
+          #
+          # 但那些提交**只改快照 JSON**（`site/db/`、`ops/db-backup/`、
+          # `composeApp/src/commonMain/composeResources/files/*_snapshot.json`），
+          # 一行 Kotlin 都没动。用旧 HEAD 编出来的 APK 和新 HEAD 是同一份代码，
+          # 区别只有「打到包里的社区快照是哪一版」—— 而客户端拿到快照要从 GitHub 读，
+          # 内置那份只是断网兜底，旧一轮没有影响。
+          #
+          # 所以判断改成：**我之后新增的提交里有没有非快照的改动**。
+          # 没有 → 当作 HEAD，照发；有 → 真的等处在新 HEAD 的那次构建来发。
+          changed=$(git diff --name-only HEAD origin/master || true)
+          code=$(printf '%s\n' "$changed" \
+            | grep -vE '^(site/db/|ops/db-backup/|composeApp/src/commonMain/composeResources/files/)' \
+            | grep -v '^$' || true)
+          if [ -z "$code" ]; then
+            echo "is_head=true" >> "$GITHUB_OUTPUT"
+            echo "Newer commits only touched snapshot JSON; code is identical, publishing anyway."
           else
             echo "is_head=false" >> "$GITHUB_OUTPUT"
-            echo "A newer master commit exists; skipping this publication."
+            echo "A newer master commit changes code; skipping this publication:"
+            printf '%s\n' "$code"
           fi
 
       - name: Publish rolling prerelease
