@@ -5100,6 +5100,18 @@
   "target": "com.mobiletools.systemhelper"
  },
  {
+  "author": "#12321",
+  "author_id": "12321",
+  "body": "17pm可以删 不卡米",
+  "created_at": "2026-11-27T03:35:37.662972+00:00",
+  "device_model": "Xiaomi 17 Pro Max",
+  "id": 770,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.5",
+  "target": "com.xiaomi.registration"
+ },
+ {
   "author": "#10231",
   "author_id": "10231",
   "body": "没有出现这种情况",
