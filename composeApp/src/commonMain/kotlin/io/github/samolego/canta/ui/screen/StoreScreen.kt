@@ -45,6 +45,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.cache.stableMerge
 import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.SponsorStore
 import io.github.samolego.canta.data.recommend.PointOffer
 import io.github.samolego.canta.data.recommend.PointOrder
 import io.github.samolego.canta.data.recommend.PointRedeemResult
@@ -100,6 +101,8 @@ private fun storeCacheKey(who: String): String = "screen:store:$who"
  *
  * @param repository 社区后端，商城的商品与订单都走它；null 时页面只说明、不装作有数据。
  * @param cdk 码池那一套（发布一批码 / 兑换 / 我的码）；null 时那一块不画。
+ * @param sponsors 赞助榜（贡献值那一栏）；null 时那一块只说明、不装作有数据。
+ * @param onOpenProfile 点赞助榜上那一行：进那个人的主页（与互动页、群成员网格同一条路由）。
  * @param author 署名，[authorId] 为空时当身份用。
  */
 @Composable
@@ -112,6 +115,10 @@ internal fun StoreScreen(
     modifier: Modifier = Modifier,
     /** 名字与头像设过了没有：没设过能买能兑换，但上不了架（见 [IdentitySetup]）。 */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
+    /** 赞助榜的数据层；null 时那一块只画说明（见 [SponsorWallSection]）。 */
+    sponsors: SponsorStore? = null,
+    /** 点榜上那个人：进主页。默认什么也不做（测试宿主、或者这一层还没有导航）。 */
+    onOpenProfile: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
@@ -319,6 +326,16 @@ internal fun StoreScreen(
                     author = author,
                     authorId = who,
                     setupGate = setupGate,
+                )
+            }
+
+            item(key = "sponsors") {
+                // 贡献值那一栏：谁赞助了、多少。点一行进那个人的主页，头像按身份号从图床取。
+                SponsorWallSection(
+                    store = sponsors,
+                    platform = platform,
+                    author = author,
+                    onOpenProfile = onOpenProfile,
                 )
             }
 

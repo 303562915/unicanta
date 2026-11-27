@@ -69,6 +69,7 @@ import io.github.samolego.canta.data.community.OfficialGroups
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.SocialRepository
+import io.github.samolego.canta.data.community.SponsorStore
 import io.github.samolego.canta.data.community.unreadSince
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.RestoreMode
@@ -319,6 +320,10 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     val postStore = remember {
         PostStore(CommunityRpc(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) }))
     }
+    // 赞助榜（贡献值那一栏）：只读一张榜 + 记一笔，自己一套 RPC，凭据与上面几个仓储同一个 token。
+    val sponsorStore = remember {
+        SponsorStore(CommunityRpc(HttpClient(), identityToken = { DeviceIdentity.ensure(deps.settings) }))
+    }
     // 实时聊天：服务端在 messages 上挂的 INSERT 触发器往 `chat:<会话号>` 广播一声，这里订阅它。
     // 网页版没有 websocket 引擎，构造得出来但连不上，聊天页会退回轮询（见 ChatScreen.liveSource）。
     val chatLive: ChatLiveSource? = remember {
@@ -405,6 +410,7 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
                         chatLive,
                         cdkStore = cdkStore,
                         postStore = postStore,
+                        sponsorStore = sponsorStore,
                         writtenIdentity = writtenIdentity,
                     )
                     // The lock is a cover rather than a replacement. Drawn over the pages, it
@@ -439,6 +445,8 @@ private fun CantaNavigation(
      */
     cdkStore: CdkStore,
     postStore: PostStore,
+    /** 赞助榜（贡献值那一栏）的数据层：构造理由与 [cdkStore] 相同。 */
+    sponsorStore: SponsorStore,
     /**
      * 预热出来的身份，给「我的头像」兜底用（见那边的 `shownAvatarUrl`）。
      *
@@ -1210,6 +1218,9 @@ private fun CantaNavigation(
                     authorId = storeIdentity,
                     // 名字/头像没设完：能看能买能兑换，但上不了架。
                     setupGate = setupGate,
+                    // 贡献值那一栏的赞助榜：点一行进那个人的主页。
+                    sponsors = sponsorStore,
+                    onOpenProfile = { person -> navController.navigate(Screen.Uploader.routeFor(person)) },
                 )
             }
             composable(route = Screen.Logs.route) {
