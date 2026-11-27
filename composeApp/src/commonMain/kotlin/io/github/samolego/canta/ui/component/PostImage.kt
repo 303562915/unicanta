@@ -3,6 +3,8 @@ package io.github.samolego.canta.ui.component
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +16,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -25,6 +29,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrokenImage
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,8 +50,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -56,8 +73,10 @@ import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.decodeToImageBitmap
+import kotlin.math.roundToInt
 
 /** 方图墙的格子间距。参考 fluxdo 的网格（`image_grid_builder.dart:51` 是 6.0），这里缩小一档。 */
 private val PostImageGridSpacing = 4.dp
@@ -80,6 +99,15 @@ private const val PostImageViewerMaxZoom = 4f
 private const val PostImageViewerDoubleTapZoom = 2.5f
 
 /**
+ * 复制链接后那条自绘提示停留多久（毫秒）。
+ *
+ * 1.2 秒：与本仓 shortcut 提示的节奏一致，长到够看清、短到不挡下一眼的内容。
+ * 为什么是自绘而不是 Toast：本文件是 commonMain、**不引 platform**，拿不到 `android.widget.Toast`；
+ * 为一个"复制成功"把 platform 期望/expect-actual 拉进来，代价远大于收益。
+ */
+private const val PostImageHintMillis = 1_200L
+
+/**
  * 正文里的一张图（Markdown 的 `![说明](地址)`）。
  *
  * 为什么要有它：`MiniMarkdown` 原来只画文字，`![截图](https://…)` 会原样显示成一串带括号的字符
@@ -93,6 +121,8 @@ private const val PostImageViewerDoubleTapZoom = 2.5f
  *  * 失败   → 同一个灰框上写「图片加载失败」，点一下重试。
  *
  * 点图片进全屏（[PostImageViewer]）：正文宽度只有屏宽减 32，长截图在楼里读不清。
+ * 长按弹菜单（[PostImageActionMenu]）：复制图片链接 / 在浏览器打开 —— 与 fluxdo 的图片上下文
+ * 菜单同一档（`image_context_menu.dart:157-177` 的「复制链接」「打开原图」）。
  *
  * 多张图请用 [PostImageGrid]：一张一张按内容宽铺满，一楼的长度会翻几倍。
  *
@@ -135,62 +165,99 @@ fun PostImage(
 
     val loaded = bitmap
     val shape = RoundedCornerShape(8.dp)
-    if (loaded != null) {
-        // 宽高比按图片自己算，但夹在 0.5..2.5：一张 1:4 的竖版长截图铺满内容宽会把三层楼都推不见，
-        // 夹到 1:2 并裁掉两端，既看得清内容又不把这一楼撑爆。
-        val ratio = if (loaded.height > 0) {
-            (loaded.width.toFloat() / loaded.height.toFloat()).coerceIn(0.5f, 2.5f)
-        } else {
-            16f / 9f
-        }
-        Image(
-            bitmap = loaded,
-            contentDescription = alt.ifBlank { "图片" },
-            contentScale = ContentScale.Crop,
-            modifier = modifier
-                .fillMaxWidth()
-                .aspectRatio(ratio)
-                .clip(shape)
-                .clickable(onClickLabel = "查看大图") { zoomed = true },
-        )
-    } else {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                // 占位固定 16:9：真实尺寸还不知道，先给一个不会太矮的比例。
-                .aspectRatio(16f / 9f)
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .then(
-                    // 显式写成分支块：`if (cond) Modifier.clickable(...) { … } else Modifier` 这种
-                    // 紧跟尾随 lambda 的写法，Kotlin 的解析器会和 `else` 抢那个 `}`，容易读成
-                    // "clickable 的第二个参数"。
-                    if (failed) {
-                        Modifier.clickable(onClickLabel = "重试") { attempt++ }
-                    } else {
-                        Modifier
+    // 长按菜单的锚点（手指按下的位置；null = 没弹）与复制后的那行提示。两者都挂在外层 Box 上，
+    // 而不是挂在图片本身上：加载失败时也要能长按（那会儿至少「复制链接」还有用）。
+    var menuAt by remember(address) { mutableStateOf<Offset?>(null) }
+    var hint by remember(address) { mutableStateOf<String?>(null) }
+
+    // 外层 Box 只是"让菜单和提示能浮在图上"的容器：`modifier` 从两个分支搬到这里，
+    // 所以外框尺寸、内边距与改动前完全一致（图片/灰框仍旧自己 fillMaxWidth + 比例）。
+    Box(modifier = modifier.fillMaxWidth()) {
+        if (loaded != null) {
+            // 宽高比按图片自己算，但夹在 0.5..2.5：一张 1:4 的竖版长截图铺满内容宽会把三层楼都推不见，
+            // 夹到 1:2 并裁掉两端，既看得清内容又不把这一楼撑爆。
+            val ratio = if (loaded.height > 0) {
+                (loaded.width.toFloat() / loaded.height.toFloat()).coerceIn(0.5f, 2.5f)
+            } else {
+                16f / 9f
+            }
+            Image(
+                bitmap = loaded,
+                contentDescription = alt.ifBlank { "图片" },
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(ratio)
+                    .clip(shape)
+                    // 原来的 `clickable(onClickLabel = "查看大图")` 换成了 `detectTapGestures`：
+                    // 长按要拿手指坐标去锚菜单，`clickable` 不给坐标。无障碍标签用
+                    // `semantics { onClick(label = …) }` 补回来（不然读屏只剩"图片"两个字）。
+                    .semantics { onClick(label = "查看大图") { zoomed = true; true } }
+                    .pointerInput(address) {
+                        detectTapGestures(
+                            onTap = { zoomed = true },
+                            // `detectTapGestures` 里 onTap 与 onLongPress 天然互斥：长按判成功会吃掉
+                            // 这一轮，抬手不再触发 onTap。所以"长按出菜单"不会顺手把查看器也打开，
+                            // 也就不需要两个 pointerInput 各自计时（那样长按会同时点开大图）。
+                            onLongPress = { position -> menuAt = position },
+                        )
                     },
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (failed) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.BrokenImage,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.outline,
-                    )
-                    Text(
-                        text = "图片加载失败",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 占位固定 16:9：真实尺寸还不知道，先给一个不会太矮的比例。
+                    .aspectRatio(16f / 9f)
+                    .clip(shape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .then(
+                        // 显式写成分支块：`if (cond) Modifier.clickable(...) { … } else Modifier` 这种
+                        // 紧跟尾随 lambda 的写法，Kotlin 的解析器会和 `else` 抢那个 `}`，容易读成
+                        // "clickable 的第二个参数"。
+                        if (failed) {
+                            Modifier.clickable(onClickLabel = "重试") { attempt++ }
+                        } else {
+                            Modifier
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (failed) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.BrokenImage,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                        )
+                        Text(
+                            text = "图片加载失败",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
                 }
             }
         }
+
+        // 单图菜单里没有「关闭」：这张图本来就在正文里，菜单收起即结束，没有"关掉查看器"这回事。
+        PostImageActionMenu(
+            url = address,
+            anchor = menuAt,
+            onDismiss = { menuAt = null },
+            onCloseViewer = null,
+            onHint = { hint = it },
+        )
+        PostImageHint(
+            text = hint,
+            onTimeout = { hint = null },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp),
+        )
     }
 
     // 全屏：已经解码好的那张直接从缓存取（[PostImageCache.get] 命中），不再下一次网络。
@@ -380,15 +447,19 @@ private fun PostImageGridTile(
  * reset 缩放（`image_viewer_page.dart:1174`、`:1253-1255`），这里落到 Compose 就是
  * `userScrollEnabled = !zoomed`。
  *
- * 手势分两层挂，用法与 `ChatScreen` 的 `ChatImageViewer`（`ChatScreen.kt:3339-3440`）一致：
- *  * `detectTapGestures`：单击关闭，双击在 1f ↔ [PostImageViewerDoubleTapZoom] 之间切；
- *  * `detectTransformGestures`：捏合缩放 + 拖动。`zoom` 是相对上一次的增量，所以乘上去而
- *    不是赋值；缩回 ≤1f 时把位移清零并夹回 1f —— 图小于画面时还留着位移会歪在一边。
+ * 手势分三层挂，前两层的用法与 `ChatScreen` 的 `ChatImageViewer`（`ChatScreen.kt:3339-3440`）一致：
+ *  * `detectTapGestures`：单击关闭，双击在 1f ↔ [PostImageViewerDoubleTapZoom] 之间切，
+ *    长按在手指位置弹菜单（[PostImageActionMenu]，三项里多一项「关闭」）；
+ *  * `detectTransformGestures`（只在 [zoomed] 时挂）：捏合缩放 + 拖动。`zoom` 是相对上一次的
+ *    增量，所以乘上去而不是赋值；缩回 ≤1f 时把位移清零并夹回 1f —— 图小于画面时还留着位移会歪。
+ *  * [detectTwoFingerPinch]（一直挂着）：**只认两指**的捏合，专门负责"1 倍时也能捏进去"。
  *
- * 唯一的差别是缩放那一层还多一个开关条件（`pointerInput(zoomed)`）：没放大时
- * `detectTransformGestures` 会把单指横向拖动 consume 掉，pager 就再也翻不动了，所以没放大时
- * 只挂点击层、把拖动整个让给 pager；放大后 pager 的 `userScrollEnabled` 关掉，拖动才归缩放层
- * 做平移。代价是首次放大要双击（或先双击再捏合微调），换来的是两条手势永远不打架。
+ * 为什么 1 倍时不能直接挂 `detectTransformGestures`：它不区分手指数量，单指横向拖动也会被它
+ * consume，pager 于是再也翻不动。所以两层分工：放大后 pager 的 `userScrollEnabled` 关掉、拖动
+ * 归变换层做平移；没放大时变换层整个不挂，改由两指那一层在 Initial 阶段抢事件（单指从不消费，
+ * 翻页照旧）。这样首次放大不再只能靠双击 —— 参考 fluxdo 的用法：查看器里捏合与双击是并列的
+ * 入口（`image_viewer_page.dart:1220-1223` 的 `onDoubleTap`，手势本体由 `GestureImageView` 的
+ * controller 承担，缩放与翻页由 `inPageView` 决定谁让谁，见 `:1294-1300`）。
  *
  * 图仍然从 [PostImageCache] 取：正文里已经解过的那张直接命中，不重复下载。
  * 取不到就只画灰底占位 + 「图片加载失败」，右上角的 × 是唯一能看见的出口。
@@ -412,13 +483,18 @@ private fun PostImageViewer(
             val pagerState = rememberPagerState(initialPage = start, pageCount = { urls.size })
             var scale by remember { mutableStateOf(1f) }
             var offset by remember { mutableStateOf(Offset.Zero) }
+            // 长按菜单的锚点与复制后的提示，理由同 [PostImage]：都在这一层持有，
+            // 菜单与提示浮在 pager 之上。
+            var menuAt by remember { mutableStateOf<Offset?>(null) }
+            var hint by remember { mutableStateOf<String?>(null) }
             val zoomed = scale > 1f
 
             // 翻到另一页就把缩放归位：Flutter 那边是离场页 reset（`image_viewer_page.dart:1253-1255`），
-            // 不归位的话下一张会接着上一张的倍数显示。
+            // 不归位的话下一张会接着上一张的倍数显示。菜单也一起收起：它指的是上一张的地址。
             LaunchedEffect(pagerState.currentPage) {
                 scale = 1f
                 offset = Offset.Zero
+                menuAt = null
             }
 
             Box(
@@ -436,12 +512,23 @@ private fun PostImageViewer(
                                     scale = PostImageViewerDoubleTapZoom
                                 }
                             },
+                            // 与 onTap 天然互斥：长按吃掉这一轮，抬手不会顺手把查看器关掉。
+                            onLongPress = { position -> menuAt = position },
                         )
                     }
                     .pointerInput(zoomed) {
                         // 没放大就不挂变换层：单指拖动必须留给 pager（见上面的说明）。
                         if (!zoomed) return@pointerInput
                         detectTransformGestures { _, pan, zoom, _ ->
+                            val next = (scale * zoom).coerceIn(1f, PostImageViewerMaxZoom)
+                            scale = next
+                            offset = if (next <= 1f) Offset.Zero else offset + pan
+                        }
+                    }
+                    // 两指那一层**不带 zoomed 键**：一旦按倍数重建，捏合刚过 1f 就会被重建打断，
+                    // 只能放大一丁点、抬手再捏一次。它内部自己判断"这一轮有没有第二根手指"。
+                    .pointerInput(Unit) {
+                        detectTwoFingerPinch { pan, zoom ->
                             val next = (scale * zoom).coerceIn(1f, PostImageViewerMaxZoom)
                             scale = next
                             offset = if (next <= 1f) Offset.Zero else offset + pan
@@ -489,7 +576,84 @@ private fun PostImageViewer(
                         modifier = Modifier.size(22.dp),
                     )
                 }
+
+                // 长按菜单：地址取**当前页**（不是长按那一刻的页面，不过菜单一翻页就收起，
+                // 见上面 LaunchedEffect，所以两者始终是同一张）。
+                PostImageActionMenu(
+                    url = urls[pagerState.currentPage],
+                    anchor = menuAt,
+                    onDismiss = { menuAt = null },
+                    onCloseViewer = onDismiss,
+                    onHint = { hint = it },
+                )
+                // 提示放底部居中、离底 96dp：躲开拇指与虚拟导航条，也不压住顶部的页码。
+                PostImageHint(
+                    text = hint,
+                    onTimeout = { hint = null },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 96.dp),
+                )
             }
+        }
+    }
+}
+
+/**
+ * 只认**两指及以上**的捏合：第一次放大不再必须双击。
+ *
+ * 为什么不能直接用 `detectTransformGestures` 常挂：它不数手指，单指横向拖动也会被它 consume，
+ * pager 从此翻不动（这正是原来只能"先双击再捏合"的原因）。所以这里自己数指针：
+ *
+ *  * 按下第一根手指时**什么都不消费**，这一轮先让给 pager，翻页、单击、双击都照旧；
+ *  * 出现第二根手指才接手，并且**在 Initial 阶段**消费。Initial 阶段是从外往里派的，
+ *    pager 的 scrollable 在 Main 阶段才看到事件；它一旦发现 change 被别人消费就会取消这一轮
+ *    拖动（`awaitDragOrCancellation` 的判据），所以双指捏合不会顺手把页翻过去；
+ *  * 抬起一根后回到"不认"的状态（基准清空），剩下那根不会再突然变成平移。
+ *
+ * 质心/半径用当前**所有**按下的指针算（两指、三指都一样），与 `detectTransformGestures` 的
+ * 语义对齐：pan 取质心位移，zoom 取"平均到质心的距离"的变化比。指针数量一变就只记基准、跳过
+ * 这一帧 —— 否则质心会从"单指最后位置"跳成"两指中点"，图会闪一下、还会被多缩放一截。
+ *
+ * [onTransform] 里要沿用调用方自己的 `coerceIn(1f, 4f)` 规则（见 [PostImageViewerMaxZoom]）。
+ */
+private suspend fun PointerInputScope.detectTwoFingerPinch(
+    onTransform: (pan: Offset, zoom: Float) -> Unit,
+) {
+    awaitEachGesture {
+        // 只要"有人按下了"，不消费：这一轮在第二根手指出现之前都属于 pager。
+        awaitFirstDown(requireUnconsumed = false)
+        var lastCentroid: Offset? = null
+        var lastRadius = 0f
+        var lastCount = 0
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val pressed = event.changes.filter { it.pressed }
+            if (pressed.isEmpty()) return@awaitEachGesture
+            if (pressed.size < 2) {
+                lastCentroid = null
+                lastRadius = 0f
+                lastCount = 0
+                continue
+            }
+            val centroid = pressed.fold(Offset.Zero) { acc, change -> acc + change.position } /
+                pressed.size.toFloat()
+            val radius = pressed
+                .map { (it.position - centroid).getDistance() }
+                .average()
+                .toFloat()
+            val previousCentroid = lastCentroid
+            val previousRadius = lastRadius
+            val previousCount = lastCount
+            // 记下这一帧的基准。手指数量变过的那一帧只当"重新起算"：既不算位移也不算缩放。
+            lastCentroid = centroid
+            lastRadius = radius
+            lastCount = pressed.size
+            // 双指按下的这一轮归本层：先消费，pager 的拖动才能被取消掉。
+            pressed.forEach { it.consume() }
+            if (previousCentroid == null || previousCount != pressed.size) continue
+            if (previousRadius <= 0.01f || radius <= 0.01f) continue
+            onTransform(centroid - previousCentroid, radius / previousRadius)
         }
     }
 }
@@ -558,6 +722,144 @@ private fun PostImageViewerPage(url: String, scale: Float, offset: Offset) {
                 )
             }
         }
+    }
+}
+
+/**
+ * 长按图片弹出的小菜单：复制图片链接 / 在浏览器打开（查看器里再多一项「关闭」）。
+ *
+ * 为什么是 `DropdownMenu` 而不是自己画一层浮层：它的"点外面就收起""返回键收起""贴边自动
+ * 往里挪"都是现成的，这几件事自己写要处理 popup 之外的点击与窗口安全区，漏一个就是关不掉。
+ *
+ * 锚点用**手指按下的位置**（不选整块居中）：正文图可能只有半屏高，查看器里的长截图几乎满屏，
+ * 居中弹的话菜单会正好压在手指底下那块内容上；跟着手指走，菜单落在按的地方旁边，松手就看得到
+ * 自己按的是哪一块。落点靠一个 0 尺寸的 [Box] + `Modifier.offset`：`DropdownMenu` 的弹窗是相对
+ * 它的父布局定位的，把父布局挪到手指处，菜单就跟过去。
+ *
+ * [anchor] 为 null 表示"没弹"；[onCloseViewer] 非空才多出「关闭」——正文单图没有"查看器"可关，
+ * 查看器里则本来就缺一个明确的出口（右上角的 × 在长截图上离拇指很远）。
+ *
+ * 三项的顺序与 fluxdo 的图片上下文菜单一致（`image_context_menu.dart:157-177` 复制链接 / 打开，
+ * 关闭项在最后，见 `:218-224`）。保存到相册那一项没做：本文件是 commonMain，写文件必须引 platform。
+ */
+@Composable
+private fun PostImageActionMenu(
+    url: String,
+    anchor: Offset?,
+    onDismiss: () -> Unit,
+    /** 非空 = 在查看器里：菜单多一项「关闭」，点了直接关查看器。 */
+    onCloseViewer: (() -> Unit)?,
+    /** 让调用方挂一行自绘提示（[PostImageHint]）——本文件没有 Toast 可用。 */
+    onHint: (String) -> Unit,
+) {
+    // 先落成非空的局部 val：下面 `Modifier.offset { … }` 的 lambda 里要用坐标，
+    // 直接拿可空参数在 lambda 里做 smart cast 是能过，但读起来像在赌编译器。
+    val press = anchor ?: return
+    val closeViewer = onCloseViewer
+    val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+    Box(modifier = Modifier.offset { IntOffset(press.x.roundToInt(), press.y.roundToInt()) }) {
+        DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+            PostImageMenuRow(icon = Icons.Rounded.ContentCopy, label = "复制图片链接") {
+                clipboard.setText(AnnotatedString(url))
+                // 先收菜单再提示：提示条要落在图中间，菜单还开着会被压在下面。
+                onDismiss()
+                onHint("链接已复制")
+            }
+            PostImageMenuRow(icon = Icons.Rounded.Link, label = "在浏览器打开") {
+                onDismiss()
+                // 没有默认浏览器（桌面/网页）、或者地址不是 http(s) 时会抛：不该让一次点击把
+                // 整个正文炸掉，所以吞掉异常，只把结果说成一句话。
+                if (!runCatching { uriHandler.openUri(url) }.isSuccess) onHint("打不开这个链接")
+            }
+            if (closeViewer != null) {
+                PostImageMenuRow(icon = Icons.Rounded.Close, label = "关闭") {
+                    onDismiss()
+                    closeViewer()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 图片菜单里的一行：图标 20dp + 12dp 间距 + 文字、最小行高 48dp、圆角 4dp。
+ *
+ * 数值照本仓 `PostsSection.kt:4280` 的 `MenuRow`（fluxdo 的 `PopupMenuItem` 形态：
+ * 图标 20dp、行高 48dp），但不直接复用它 —— 那个是 `private`，跨文件用不到；也不想为了这一个
+ * 菜单把那套（带 enabled/tint 的完整版）在 builder 里再暴露一遍，所以这里复制最小的一份。
+ *
+ * 圆角 4dp 不能省：菜单整体是圆角的，行上没有圆角的话点击涟漪是一个直角矩形，看着像补丁。
+ */
+@Composable
+private fun PostImageMenuRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    val ink = MaterialTheme.colorScheme.onSurface
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = ink,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = ink,
+            maxLines = 1,
+            // 12dp 间距用 padding 而不是再插一个 Spacer：`width` 这个 modifier 本文件没引，
+            // 为一个间距多加一条 import 不值当。
+            modifier = Modifier.padding(start = 12.dp),
+        )
+    }
+}
+
+/**
+ * 复制成功之后那行自绘提示：黑底白字的小胶囊，[PostImageHintMillis] 之后自己消失。
+ *
+ * 为什么自绘：本文件是 commonMain，`Toast` 是 Android 独有的，为一个"已复制"拉 expect/actual
+ * 进来代价太大。放在调用方的 Box 里、底部居中，跟 Toast 的观感接近，也不挡图。
+ *
+ * [text] 为 null = 不显示。计时写成 `LaunchedEffect(text)`：提示一出现就是 1.2 秒的倒计时，
+ * 时间到就把状态清空（`onTimeout`）。同一句话连点两次「复制」不会重新计时（键没变就不重启），
+ * 那也没关系 —— 屏幕上本来就还写着"链接已复制"。
+ */
+@Composable
+private fun PostImageHint(
+    text: String?,
+    onTimeout: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LaunchedEffect(text) {
+        if (text != null) {
+            delay(PostImageHintMillis)
+            onTimeout()
+        }
+    }
+    if (text == null) return
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White,
+            maxLines = 1,
+        )
     }
 }
 

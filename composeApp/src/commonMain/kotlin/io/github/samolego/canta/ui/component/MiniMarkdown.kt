@@ -393,11 +393,19 @@ private val CodeBlockCollapsedHeight = (18 * CodeBlockCollapsedLines).dp
  * `horizontalScroll`（或反过来）在 `LazyColumn` 里会拿到无限高约束，一量就崩；而且嵌套滚动手势
  * 在手机上本来就分不清是在滚代码还是在滚楼层。裁剪的好处是"这一楼占多少高度"是写死的，
  * 展开才把它放开。
+ *
+ * 代码本体走「代码块着色」一节的 [highlightCode]：注释/字符串/数字/关键字各上一种主题色，
+ * 其余仍是调用方给的正文色；认不出语言、或超过 [CodeHighlightMaxChars] 就退回单色。
+ * 换掉的只有 `Text` 的 `text`（`code` → `highlighted`），标题行、复制、横向滚动、折叠按钮
+ * 和行数统计一个都没动，所以复制出来的仍是纯代码。
  */
 @Composable
 private fun CodeBlock(code: String, language: String, color: Color) {
     val clipboard = LocalClipboardManager.current
     val scroll = rememberScrollState()
+    // 着色结果按 (code, language) 缓存（见 [rememberHighlightedCode]）：滚动和展开/折叠都只是
+    // 重新量同一份 AnnotatedString，不会再扫一遍代码。
+    val highlighted = rememberHighlightedCode(code, language)
     // 行数 = 换行符个数 + 1：`"a\nb"` 是两行；末尾没有换行的最后一行也算一行（`"a\n"` 是两行）。
     val lineCount = remember(code) { code.count { it == '\n' } + 1 }
     val collapsible = lineCount > CodeBlockCollapsedLines
@@ -443,7 +451,9 @@ private fun CodeBlock(code: String, language: String, color: Color) {
             }
         }
         Text(
-            text = code,
+            // 只把这一处从纯文本换成带 span 的版本：横向滚动、复制、折叠、行数统计都还吃 `code`
+            // 原文，所以复制出去的永远是纯代码，不带任何着色痕迹。
+            text = highlighted,
             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
             color = color,
             // 代码不折行：折过之后缩进全乱，横向滚动比看不懂强。
@@ -489,6 +499,352 @@ private fun CodeBlock(code: String, language: String, color: Color) {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 代码块着色
+// ---------------------------------------------------------------------------
+
+/**
+ * 代码着色的字符上限：超过这个长度就整段单色画。
+ *
+ * 4000 字符（约 150 行紧凑代码）是拿"200 行日志滚动不掉帧"换来的：这里的着色是**在渲染路径上
+ * 同步跑**的，没有第二个 isolate，也不能加依赖。一次扫描几千字符只要几十微秒，但一层楼里常有
+ * 五六个代码块，滚动时每个都要重新量一遍文字，扫两万字符的那一个就是掉帧的那一个。
+ * 参考实现给长代码的熔断是 30000 字符（`lib/services/highlighter_service.dart:181`，
+ * 判断在 `:190-194` 的 `shouldSkipHighlight`），但那边把高亮丢进 isolate 异步算、用的还是完整
+ * 语法包（`re_highlight`，见 `lib/utils/fluxdo_render_callbacks.dart:1561-1636`）；本仓没有那个
+ * 线程池也没有那个包，阈值只能自己压到"手机上滚起来肯定不卡"的量级。
+ *
+ * 跳过着色时返回的是不带任何 span 的 `AnnotatedString(code)`，与改动前的 `text = code`
+ * 是同一份排版：这段分支与现状逐像素一致。
+ */
+private const val CodeHighlightMaxChars = 4000
+
+/**
+ * 代码块用到的四档颜色（第五类"其余"直接用调用方传进来的正文色，不单独开 span）。
+ *
+ * 全部由 [rememberHighlightedCode] 从 `MaterialTheme.colorScheme` 现取，**这里不写任何 hex**：
+ * 应用除了默认的 [io.github.samolego.canta.ui.fl.FlPalette] 还有按色相生成的主题
+ * （`FlAccent.kt:90` / `:104` 的 secondary），写死颜色在那些主题的浅色底上就会读不清。
+ *
+ * - [comment] `onSurfaceVariant` 55%：注释是"可以跳过"的内容，对着 12sp 等宽字再压一档；
+ *   取 onSurfaceVariant 而不是 onSurface 是因为它本来就比正文淡一层，深浅主题都成立。
+ * - [string] `primary` 90%：主色是应用里最稳的可读强调色（浅色 `#007AFF`、深色 `#2F83FF`，
+ *   见 `FlPalette.kt:22` / `:60`），压在 90% 又不会比正文更跳。**不使用绿色**：绿色在浅色
+ *   `surfaceVariant`（`#E4E2E4`）上的对比只有 2 出头，而代码块里占字符数最多的恰恰是字符串。
+ * - [number] `tertiary`：第三种强调色，色相和 primary/secondary 都拉开了；应用里本就拿它标
+ *   "另一个维度"的信息（`RecordsScreen.kt:282`、`AppBadge.kt:55`），数字/常量正好是这一类。
+ * - [keyword] `secondary`：浅色 `#405E96` 压在 `surfaceVariant #E4E2E4` 上约 5.1:1、
+ *   深色 `#ADC6FF` 压在深色 surfaceVariant 上约 5.5:1（`FlPalette.kt:27` / `:65`），
+ *   都过 4.5:1，所以**不需要**退回 `primary`。
+ */
+private data class CodePalette(
+    val comment: Color,
+    val string: Color,
+    val number: Color,
+    val keyword: Color,
+)
+
+/**
+ * 一种语言的"词法外形"：只记注释怎么写、关键字是哪张表，**不做任何语法解析**。
+ *
+ * 为什么只有五类（注释 / 字符串 / 数字 / 关键字 / 其余）：代码块在帖子里的作用是"看个大概"，
+ * 不是编译器的语法树。完整语法包要给每门语言几 MB 的语法定义、还要一个 isolate 去跑
+ * （参考实现就是这么做的：`lib/utils/fluxdo_render_callbacks.dart:1561-1636` 的异步高亮 widget
+ * 委托给 `HighlighterService`），本仓不能加依赖；而且真按 token 类型铺开十几档颜色，在 12sp
+ * 等宽字、半屏宽的代码块里也没人分得清 `Type` 和 `Function`。五类刚好覆盖"读代码时眼睛要找的
+ * 东西"：哪段被注释掉了、字符串边界在哪、哪里是关键字——剩下的交给正文色。
+ *
+ * 关键字表每门语言**只收 20 个以内**，够读就行：这不是补全库，收多了反而会让普通标识符满屏变色。
+ */
+private enum class CodeSyntax(
+    /** 行注释的起始记号；`null` = 这门语言在这里不做行注释。 */
+    val lineComment: String?,
+    /** 块注释的起始记号；`null` = 不支持。HTML 的 `<!-- -->` 也走这一对。 */
+    val blockCommentStart: String?,
+    val blockCommentEnd: String?,
+    /** 关键字表（不含大小写变体，SQL 靠 [keywordIgnoresCase] 放宽）。 */
+    val keywords: Set<String>,
+    /** SQL 的关键字大小写不敏感：`select` / `SELECT` 都算。 */
+    val keywordIgnoresCase: Boolean = false,
+) {
+    KOTLIN(
+        lineComment = "//",
+        blockCommentStart = "/*",
+        blockCommentEnd = "*/",
+        keywords = setOf(
+            "fun", "val", "var", "class", "object", "interface", "data", "when", "if", "else",
+            "for", "while", "return", "null", "true", "false", "import", "package", "is", "override",
+        ),
+    ),
+    JAVA(
+        lineComment = "//",
+        blockCommentStart = "/*",
+        blockCommentEnd = "*/",
+        keywords = setOf(
+            "public", "private", "protected", "static", "final", "class", "interface", "void",
+            "new", "return", "if", "else", "for", "while", "null", "true", "false", "import",
+            "package", "try",
+        ),
+    ),
+    DART(
+        lineComment = "//",
+        blockCommentStart = "/*",
+        blockCommentEnd = "*/",
+        keywords = setOf(
+            "class", "extends", "implements", "final", "var", "void", "async", "await", "Future",
+            "String", "int", "bool", "double", "null", "true", "false", "return", "if", "else",
+            "import",
+        ),
+    ),
+    JAVASCRIPT(
+        lineComment = "//",
+        blockCommentStart = "/*",
+        blockCommentEnd = "*/",
+        keywords = setOf(
+            "function", "const", "let", "var", "return", "if", "else", "for", "new", "class",
+            "extends", "async", "await", "export", "import", "default", "null", "undefined",
+            "true", "false",
+        ),
+    ),
+    PYTHON(
+        // 三引号字符串在这里会被切成几段相邻的字符串色，视觉上仍是整段字符串色，够用。
+        lineComment = "#",
+        blockCommentStart = null,
+        blockCommentEnd = null,
+        keywords = setOf(
+            "def", "class", "import", "from", "as", "if", "elif", "else", "for", "while",
+            "return", "None", "True", "False", "in", "not", "and", "or", "lambda", "with",
+        ),
+    ),
+    SQL(
+        // `#` 在 MySQL 里也是注释，但 `--` 三端通用，只收这一种。
+        lineComment = "--",
+        blockCommentStart = "/*",
+        blockCommentEnd = "*/",
+        keywords = setOf(
+            "select", "from", "where", "join", "left", "right", "inner", "outer", "group", "by",
+            "order", "having", "insert", "update", "delete", "values", "create", "table", "and",
+            "or",
+        ),
+        keywordIgnoresCase = true,
+    ),
+    JSON(
+        // 严格 JSON 没有注释，但 `//` 是 jsonc（VS Code 的 settings.json 之类）的日常写法，
+        // 认它比不认划算：字符串里的 `//` 会被字符串分支先吃掉（`https://…` 不受影响）。
+        lineComment = "//",
+        blockCommentStart = "/*",
+        blockCommentEnd = "*/",
+        keywords = setOf("true", "false", "null"),
+    ),
+    SHELL(
+        lineComment = "#",
+        blockCommentStart = null,
+        blockCommentEnd = null,
+        keywords = setOf(
+            "if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac",
+            "function", "export", "local", "return", "echo", "cd", "set", "unset", "source",
+        ),
+    ),
+    XML(
+        lineComment = null,
+        blockCommentStart = "<!--",
+        blockCommentEnd = "-->",
+        // 标记语言没有关键字：`<div>` 是标签名，按正文色就够了，硬塞一张表只会满屏变色。
+        keywords = emptySet(),
+    ),
+}
+
+/**
+ * `language` → 语法表；认不出返回 `null`（调用方按单色画）。
+ *
+ * 按**小写前缀**匹配：围栏的 info string 是用户随手写的，`kt` / `kotlin`、`js` / `javascript` /
+ * `ts`、`sh` / `bash` / `shell`、`py` / `python` 都得认。两条**顺序**上的坑：`java` 必须排在
+ * `javascript` 后面判断（否则 `javascript` 会被 `java` 抢走）；`json` 必须排在 `js` 前面
+ * （`"json".startsWith("js")` 是 true，反过来写 JSON 会被当成 JavaScript）。
+ */
+private fun codeSyntaxOf(language: String): CodeSyntax? {
+    val lang = language.trim().lowercase()
+    if (lang.isEmpty()) return null
+    return when {
+        lang.startsWith("json") -> CodeSyntax.JSON
+        lang.startsWith("kotlin") || lang.startsWith("kt") -> CodeSyntax.KOTLIN
+        lang.startsWith("javascript") || lang.startsWith("typescript") ||
+            lang.startsWith("js") || lang.startsWith("ts") -> CodeSyntax.JAVASCRIPT
+        lang.startsWith("java") -> CodeSyntax.JAVA
+        lang.startsWith("dart") -> CodeSyntax.DART
+        lang.startsWith("python") || lang.startsWith("py") -> CodeSyntax.PYTHON
+        lang.startsWith("sql") -> CodeSyntax.SQL
+        lang.startsWith("bash") || lang.startsWith("shell") ||
+            lang.startsWith("sh") -> CodeSyntax.SHELL
+        lang.startsWith("xml") || lang.startsWith("html") -> CodeSyntax.XML
+        else -> null
+    }
+}
+
+/**
+ * `[start, end)` 是不是这张关键字表里的词。
+ *
+ * 逐字符比而不是 `substring` 后查表：一段代码里标识符有几百个，每个都切出一个 String 是白扔的
+ * 分配；表最多 20 条，先比长度就能筛掉绝大多数，剩下的也只比到第一个不同的字符。
+ */
+private fun CodeSyntax.isKeywordAt(code: String, start: Int, end: Int): Boolean {
+    val len = end - start
+    for (word in keywords) {
+        if (word.length != len) continue
+        var k = 0
+        while (k < len) {
+            val a = code[start + k]
+            val b = word[k]
+            val same = if (keywordIgnoresCase) a.equals(b, ignoreCase = true) else a == b
+            if (!same) break
+            k++
+        }
+        if (k == len) return true
+    }
+    return false
+}
+
+/**
+ * 数字字面量里还能接哪些字符：十进制/十六进制/二进制里的数字与字母，加浮点、整型后缀和位数
+ * 分隔符（`1_000`）。
+ *
+ * 只放这些是**故意**的：把英文字母全放进去，`1.toString`、`3.foo` 这种会把点后面一整段吞成
+ * 数字色。`.` 后面必须还是数字，也是同一个理由。
+ */
+private fun isNumberBody(ch: Char): Boolean =
+    ch in '0'..'9' || ch in 'a'..'f' || ch in 'A'..'F' ||
+        ch == 'x' || ch == 'X' || ch == 'o' || ch == 'O' ||
+        ch == 'l' || ch == 'L' || ch == 'u' || ch == 'U' || ch == '_'
+
+/**
+ * 把 [code] 切成五类，产出一份带 span 的 [AnnotatedString]。
+ *
+ * 实现是**单遍**扫描：从 0 走到 `n`，每认出一种记号就往后吃到它的结尾、写一段 [SpanStyle]，
+ * 然后从结尾继续。三条"不会卡死/不会溢出"的保证：
+ * 1. 字符串最多吃到**行尾**：没关的引号不会把后面几百行正文全染成字符串色，下标也不会停在原地；
+ * 2. 块注释没闭合时吃到文本结尾；
+ * 3. 每个分支都让 `i` 严格增大（要么跳到记号结尾，要么 `i++`），不存在原地打转的路径。
+ *
+ * 性能：整段只 `append(code)` 一次，着色靠 `addStyle` 标区间，**不切 substring 拼文本**，
+ * 所以内存是"一份代码 + 几十个 span"，复杂度 O(n)。认不出的语言、或超过
+ * [CodeHighlightMaxChars] 的代码，直接返回不带 span 的 `AnnotatedString`（与纯文本渲染一致）。
+ */
+private fun highlightCode(code: String, language: String, palette: CodePalette): AnnotatedString {
+    val syntax = codeSyntaxOf(language) ?: return AnnotatedString(code)
+    if (code.length > CodeHighlightMaxChars) return AnnotatedString(code)
+    val n = code.length
+    return buildAnnotatedString {
+        // 整段只 append 一次：下面是往这份文本上标区间，不是一段段拼字符串。
+        append(code)
+        var i = 0
+        while (i < n) {
+            val ch = code[i]
+
+            // 1) 行注释：吃到换行前一个字符。
+            val line = syntax.lineComment
+            if (line != null && code.startsWith(line, i)) {
+                var end = i + line.length
+                while (end < n && code[end] != '\n') end++
+                addStyle(SpanStyle(color = palette.comment), i, end)
+                i = end
+                continue
+            }
+
+            // 2) 块注释（HTML 的 `<!-- -->` 也走这里）：没闭合就吃到文本结尾。
+            val open = syntax.blockCommentStart
+            val close = syntax.blockCommentEnd
+            if (open != null && close != null && code.startsWith(open, i)) {
+                var end = i + open.length
+                while (end < n && !code.startsWith(close, end)) end++
+                if (end < n) end += close.length
+                addStyle(SpanStyle(color = palette.comment), i, end)
+                i = end
+                continue
+            }
+
+            // 3) 字符串：三种引号一视同仁（kotlin/js/dart 的模板串、shell 的反引号都长这样）。
+            //    `\` 吃掉下一个字符，所以 `\"` 不算收尾；没闭合就到行尾收手，绝不跨行。
+            if (ch == '"' || ch == '\'' || ch == '`') {
+                var end = i + 1
+                while (end < n) {
+                    val c = code[end]
+                    if (c == '\\') {
+                        end += 2
+                        continue
+                    }
+                    if (c == ch) {
+                        end++
+                        break
+                    }
+                    if (c == '\n') break
+                    end++
+                }
+                if (end > n) end = n
+                addStyle(SpanStyle(color = palette.string), i, end)
+                i = end
+                continue
+            }
+
+            // 4) 数字：从数字起头，吃掉 `0x` / 指数 / 类型后缀 / 小数部分。
+            if (ch in '0'..'9') {
+                var end = i + 1
+                while (end < n) {
+                    val c = code[end]
+                    val exponentSign = (c == '+' || c == '-') &&
+                        (code[end - 1] == 'e' || code[end - 1] == 'E')
+                    if (exponentSign) {
+                        end++
+                    } else if (c == '.') {
+                        if (end + 1 < n && code[end + 1].isDigit()) end++ else break
+                    } else if (isNumberBody(c)) {
+                        end++
+                    } else {
+                        break
+                    }
+                }
+                addStyle(SpanStyle(color = palette.number), i, end)
+                i = end
+                continue
+            }
+
+            // 5) 标识符：整段吃下去再查表，命中才上色，没命中当正文。整段吃还有一个好处：
+            //    `x1` 里的 `1` 不会被当成数字重新起头。
+            if (ch.isLetter() || ch == '_') {
+                var end = i + 1
+                while (end < n && (code[end].isLetterOrDigit() || code[end] == '_')) end++
+                if (syntax.isKeywordAt(code, i, end)) {
+                    addStyle(SpanStyle(color = palette.keyword), i, end)
+                }
+                i = end
+                continue
+            }
+
+            // 6) 其余（空白、括号、运算符）：不开 span，交给 Text 的 `color`。
+            i++
+        }
+    }
+}
+
+/**
+ * 按当前主题算出四档颜色并缓存着色结果。
+ *
+ * `remember` 的键是 `code` + `language`（再加一份 [CodePalette]）：前两个保证"同一段代码只扫
+ * 一遍"——滚动、展开/折叠、父层重组都命中缓存，不会重算；palette 是 data class，颜色没变时
+ * `equals` 相等，同样不击穿缓存，只有换主题才会重算一次。**不能只用 `(code, language)`**：
+ * `remember` 看不见主题，单靠它的话切深浅色后高亮会停在旧配色上。
+ */
+@Composable
+private fun rememberHighlightedCode(code: String, language: String): AnnotatedString {
+    val scheme = MaterialTheme.colorScheme
+    val palette = CodePalette(
+        comment = scheme.onSurfaceVariant.copy(alpha = 0.55f),
+        string = scheme.primary.copy(alpha = 0.9f),
+        number = scheme.tertiary,
+        keyword = scheme.secondary,
+    )
+    return remember(code, language, palette) { highlightCode(code, language, palette) }
 }
 
 // ---------------------------------------------------------------------------

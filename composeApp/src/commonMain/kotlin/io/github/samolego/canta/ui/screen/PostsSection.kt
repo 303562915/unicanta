@@ -343,6 +343,131 @@ private fun isLongFloorBody(body: String): Boolean {
     return false
 }
 
+// ------------------------------------------------------------------ 楼层「回复历史」（父链）
+//
+// 注意：这一套和上面那套「长帖折叠」是**两套**，别合并。
+//   - 上面折的是**楼层自己的正文**：门槛 800 字 / 20 行，露 8 行，状态按楼层 id 记在
+//     `expandedBodyFloors`（`Set<Long>`），容器上还压了一层渐变遮罩。
+//   - 这里折的是**父链卡片里的引用原文**：固定 3 行，露 54dp，状态按「楼层 id + 层序」记在
+//     `unfoldedReplyCards`（`Set<String>`），只裁不渐变（行高整数倍，切在行与行之间，不切字）。
+// 复用其中任何一样（常量、容器、状态集），调一处就会连带改到另一处的观感 —— 这两块调参的
+// 目的完全不同：一个省滚动高度，一个让"在回谁"能原地读完又不撑爆一屏。
+
+/**
+ * 父链最多上溯几层。
+ *
+ * 3 层是"能读懂上下文"与"别炸一屏"之间取的数：卡片最矮也有 头像行 20 + 6 + 3 行正文 54 +
+ * 24 内边距 ≈ 104dp，3 层 ≈ 312dp，正好半屏；放开到 5 层，一屏里就只剩楼层自己的开头一行。
+ * 参考实现的父帖链一整串全展开（`post_reply_history.dart:47-70` 一次性列出 `replyHistory`
+ * 全部），那边一条帖子最多两三层父帖、不会失控；本仓的 `replyToId` 是自由引用，可以有人连环
+ * 引用十几层，所以这里必须封顶。
+ */
+private const val REPLY_HISTORY_DEPTH = 3
+
+/** 父链卡片露几行正文。 */
+private const val REPLY_HISTORY_CARD_LINES = 3
+
+/**
+ * 父链卡片之间 **3dp** 的缝。
+ *
+ * 与参考实现的 `SegmentedCardItem._gap = 3`（`embedded_posts.dart:64-66`）同一个数：那边一整串
+ * 父帖是一组分段卡片，条目之间就靠这 3dp 分出"每一张是一层"，再宽就散成三张不相干的卡。
+ */
+private val REPLY_HISTORY_CARD_GAP = 3.dp
+
+/**
+ * 父链卡片正文行高 **18sp**（13sp × 1.4）。
+ *
+ * 与 [NESTED_LINE] 同一个数、同一个来源（`embedded_posts.dart:24-25` 的
+ * `_embeddedFontSize = 13` / `_embeddedLineHeight = 1.4`）：父链卡与嵌套回复露的都是"引用来的
+ * 次级内容"，字号、行高只要差一格，同一屏里两块引用就会一大一小。
+ */
+private val REPLY_HISTORY_CARD_LINE_HEIGHT = 18.sp
+
+/**
+ * 父链卡片折叠时估算"一行能放几个字"。
+ *
+ * 卡片内容宽 ≈ 屏宽 380 − 楼层左右 32 − 卡片内边距 24 ≈ 324dp，13sp 中文字约 13dp 宽 → 约 22 字。
+ * 只用于**判断要不要折**，不参与布局：估多了会把短正文也折起来（多一颗「展开」），估少了
+ * 长正文不折（撑高卡片）。宁可估少 —— 少折只是不省高度，多折却是"字被切掉还没按钮"。
+ */
+private const val REPLY_HISTORY_CARD_CHARS_PER_LINE = 22
+
+/**
+ * 折叠态容器的最大高度 = 3 行 × 18sp = **54sp**；`fontScale = 1` 时正好 **54dp**。
+ *
+ * 与 [foldedBodyMaxHeight] 同一个理由不写死 `54.dp`：系统字号调到 1.3 倍时 18sp 已经比 18dp 高，
+ * 写死 54dp 就只剩 2 行多，"露 3 行"当场失效。走 `TextUnit.toDp()` 的话行数不动、只是那 3 行更高；
+ * 而且高度恒等于行高的整数倍，`clipToBounds` 正好切在行间空隙上，不会切出半截字。
+ */
+private fun replyHistoryCardFoldHeight(density: Density): Dp =
+    with(density) { REPLY_HISTORY_CARD_LINE_HEIGHT.toDp() * REPLY_HISTORY_CARD_LINES.toFloat() }
+
+/**
+ * 父卡正文放不下 [REPLY_HISTORY_CARD_LINES] 行吗（要不要折）。
+ *
+ * 按字符数除以 [REPLY_HISTORY_CARD_CHARS_PER_LINE] 估行（每个 `\n` 另起一段），**不真的去量**：
+ * `MiniMarkdown` 出来的是一列（段落/表格/代码块/图片），没有一处能挂 `onTextLayout`；要精确就得
+ * 把它塞进 `SubcomposeLayout` 先测一遍，那等于给每张父卡付一次额外的组合与测量。
+ *
+ * 复杂度 O(n)、只按正文 `remember`（见调用点）：一次刷新只对变了的正文重算。
+ */
+private fun isLongReplyCardBody(body: String): Boolean {
+    if (body.isEmpty()) return false
+    var lines = 0
+    var run = 0
+    var index = 0
+    while (index < body.length) {
+        if (body[index] == '\n') {
+            lines += if (run == 0) 1 else (run + REPLY_HISTORY_CARD_CHARS_PER_LINE - 1) / REPLY_HISTORY_CARD_CHARS_PER_LINE
+            if (lines > REPLY_HISTORY_CARD_LINES) return true
+            run = 0
+        } else {
+            run++
+        }
+        index++
+    }
+    return lines + (run + REPLY_HISTORY_CARD_CHARS_PER_LINE - 1) / REPLY_HISTORY_CARD_CHARS_PER_LINE >
+        REPLY_HISTORY_CARD_LINES
+}
+
+/**
+ * 父链卡片的折叠状态键：**楼层 id + 层序**。
+ *
+ * 为什么带层序：同一个 id 在一条链里只会出现一次（[replyHistoryOf] 用已访问集合挡环），所以
+ * 光用 id 也不会串；但"层序"进键之后，同一条楼层出现在两条不同链的不同位置时（A 引 B、C 也引 B），
+ * 展开状态各算各的 —— 那是两处不同的引用，不该一处展开另一处跟着展开。
+ */
+private fun replyHistoryCardKey(commentId: Long, depth: Int): String = "$commentId#$depth"
+
+/**
+ * 沿 `replyToId` 往上收父链，最多 [REPLY_HISTORY_DEPTH] 层（index 0 = 直接父楼）。
+ *
+ * 两道闸，缺一不可：
+ *  1. **已访问集合** `seen` —— 脏数据里 `replyToId` 可能成环（A 引 B、B 引 A，甚至自己引自己），
+ *     只靠层数上限的话环会在 3 层后停住、但会画出"引用了自己两次"的鬼卡；先查 `seen` 就在
+ *     第一次重复处断掉。
+ *  2. **层数上限** —— 正常数据也可能一路引用到第 20 层，`seen` 挡不住，必须封顶。
+ *
+ * 父楼**不在 [byId] 里**（被删 / 还没拉到）时链条就地截断：上面几层还有就照画，一个都没有就是
+ * 空链 —— 调用点靠"空链 → 不给长按"把这条通路关掉，不伪造一层空卡。
+ */
+private fun replyHistoryOf(start: PostComment, byId: Map<Long, PostComment>): List<PostComment> {
+    val chain = ArrayList<PostComment>(REPLY_HISTORY_DEPTH)
+    val seen = HashSet<Long>(REPLY_HISTORY_DEPTH * 2)
+    seen += start.id
+    var cursor = start
+    while (chain.size < REPLY_HISTORY_DEPTH) {
+        val parentId = cursor.replyToId
+        if (parentId <= 0L) break
+        val parent = byId[parentId] ?: break
+        if (!seen.add(parent.id)) break
+        chain += parent
+        cursor = parent
+    }
+    return chain
+}
+
 /**
  * 自动存草稿的防抖窗口：还在敲就重新计时，700 毫秒没再动才写一次盘。
  *
@@ -3080,6 +3205,54 @@ private fun PostThreadPane(
     }
 
     /**
+     * 楼层 id → 楼层：**「回复历史」上溯用的索引**。
+     *
+     * 为什么单独一张表：父链是"从这一楼的 `replyToId` 往上一层一层找"，每找一次就是一次
+     * `comments.indexOfFirst`。200 层楼里若每层都各自上溯 3 次，就是 200 × 3 × 200 = 12 万次
+     * 整数比较 —— 每重组一次付一遍（O(n²)）。有了这张表，每一步都是 O(1)。
+     *
+     * `remember(comments)`：**列表换血必须重建**，否则拿着上一次刷新的 `PostComment` 对象画卡
+     * （名字、正文、楼层号都会是旧的）。链表里的键只认 id，与对象无关，所以换血之后
+     * "展开着的是哪一层"（`expandedReplyHistoryOf`）仍然对得上。
+     *
+     * 只用这一份，别再在楼层里 `firstOrNull`：同一个"找父楼"的动作写两处实现，早晚两处算错
+     * 不一样的东西。
+     */
+    val commentsById: Map<Long, PostComment> = remember(comments) {
+        if (comments.isEmpty()) emptyMap() else comments.associateBy { it.id }
+    }
+
+    /**
+     * 现在**原地展开着**回复历史（父链）的是哪一层楼（0 = 都没展开）。
+     *
+     * 单值，照 [expandedRepliesFloor] 的做法：一屏里同时摊开两条父链，正文会被挤成碎片，
+     * 而且"父链 → 正文 → 动作行"这套读序会乱。展开新的就自动收起旧的。
+     */
+    var expandedReplyHistoryOf by remember(post?.id) { mutableStateOf(0L) }
+
+    /**
+     * 父链卡里已经展开全文的那些卡（键 = [replyHistoryCardKey]，即「楼层 id + 层序」）。
+     *
+     * 为什么是 `Set` 而不是单值：一张卡展开只把**那张卡**放回原高，同一条链上最多 3 张，
+     * 各开各的彼此不挤 —— 与 `expandedBodyFloors` 同一个理由。
+     *
+     * 键里带 id，所以换一层楼展开另一条链、或者列表换血，都不会串到别的卡上；
+     * 不清空也无害（一层楼的链最多 3 张卡，键的数量上界就是 层数 × 3）。
+     */
+    var unfoldedReplyCards by remember(post?.id) { mutableStateOf(emptySet<String>()) }
+
+    /**
+     * 当前展开着的那一层的父链（空 = 没展开 / 父楼已不在列表里）。
+     *
+     * 只算**一次**（`remember(commentsById, expandedReplyHistoryOf)`），不是每层楼各算一次：
+     * 200 层楼里只有一处能展开，算 200 遍纯属浪费。链的起点就是"展开着的那个 id"对应的楼层。
+     */
+    val replyHistoryChain: List<PostComment> = remember(commentsById, expandedReplyHistoryOf) {
+        val start = commentsById[expandedReplyHistoryOf]
+        if (start == null) emptyList() else replyHistoryOf(start, commentsById)
+    }
+
+    /**
      * 现在展开的是哪一层楼（0 = 都没展开）。
      *
      * 单值而不是 `Set`：一屏里同时摊开两串嵌套回复，正文会被挤成碎片，而且滚动定位会跳来跳去。
@@ -3502,17 +3675,11 @@ private fun PostThreadPane(
                         // 被回复的那一楼的作者名与头像种子：优先取**当前列表里**那一行
                         // （名字可能已经改过），列表里没有时才退回后端抄在 replyToAuthor 上的那份。
                         //
-                        // **键里不放 `comments`**：放了之后任何一次刷新都会让这 200 层的
-                        // remember 全部失效、各扫一遍列表，变成 O(n²)；而我们要的只是
-                        // "这个名字在不在列表里"。`replyToAuthor` 语义上就是"当时那一份"，
-                        // 刷新后仍显示旧名是可接受的（引用本来指的就是当时那一句）。
-                        val quotedRow = remember(comment.replyToId) {
-                            if (comment.replyToId <= 0L) {
-                                null
-                            } else {
-                                comments.firstOrNull { it.id == comment.replyToId }
-                            }
-                        }
+                        // 走 `commentsById`（`remember(comments)` 建的那张表）而不是
+                        // `comments.firstOrNull`：父链上溯本来就要这张表，指示条这一处再各自
+                        // 扫一遍列表，等于 200 层楼各付一次 O(n)。表随列表换血重建，所以刷新后
+                        // 拿到的是**新的**那一条；`replyToAuthor` 仍然是"当时那一份"的兜底。
+                        val quotedRow = if (comment.replyToId > 0L) commentsById[comment.replyToId] else null
                         val quotedAuthor = quotedRow?.author?.takeIf { it.isNotBlank() }
                             ?: comment.replyToAuthor
                         // 头像种子与别处同一个口径（`authorId.ifEmpty { author }`）：图床地址是按
@@ -3538,12 +3705,28 @@ private fun PostThreadPane(
                             // （列表里还没有那一楼），那时指示条照样画（信息有用），但不挂 clickable
                             // —— 不做"点了没反应"的东西。
                             //
+                            // 长按 = 原地展开这一楼的「回复历史」（父链，见 [ReplyHistoryList]）。
+                            // 为什么挂在指示条上：那一条写的正是"在回谁"，父链就是"这条引用链的
+                            // 前文"，两者是同一件事的入口与内容（参考实现把指示条本身当成展开开关，
+                            // `post_header.dart:364-375` 的 `onTap` 就是 `onToggleReplyHistory`）。
+                            //
                             // 这里**不套 `derivedStateOf`**：`floorLabelOf(target)` 每次重组扫一遍
                             // `comments` 也就几十次整数比较，比多一层快照订阅便宜。
                             replyIndicator = if (comment.replyToId > 0L) {
                                 val target = comment.replyToId
                                 val jump = onJumpToFloor
                                 val floorOfTarget = floorLabelOf(target)
+                                // 父楼在不在列表里：决定"能不能长按展开"。找不到（被删 / 还没拉到）
+                                // 时**不给长按**，指示条退回只显示名字的老样子 —— 不伪造一层空卡。
+                                val chainable = commentsById[target] != null
+                                val expandedHere = expandedReplyHistoryOf == comment.id
+                                // 先落成非空 lambda 再判 `chainable`：多行 lambda 直接写在
+                                // `if (…) { … } else { null }` 的分支里能编译，但读的人要数两层花括号，
+                                // 这里拆开更好认（也避开"孤立 lambda 是不是块"的那点歧义）。
+                                val toggleHistory: () -> Unit = {
+                                    expandedReplyHistoryOf = if (expandedHere) 0L else comment.id
+                                }
+                                val onToggleHistory: (() -> Unit)? = if (chainable) toggleHistory else null
                                 // 显式声明成 composable lambda 再交给参数：直接写 `{ … }` 紧跟在
                                 // `val floorOfTarget = …` 后面，Kotlin 会把它当成上一行的尾随 lambda
                                 // 参数（`floorLabelOf(target) { … }`），于是既报"类型不匹配"，又让
@@ -3560,6 +3743,44 @@ private fun PostThreadPane(
                                             { jump(target) }
                                         } else {
                                             null
+                                        },
+                                        expanded = expandedHere,
+                                        onLongClick = onToggleHistory,
+                                    )
+                                }
+                                block
+                            } else {
+                                null
+                            },
+                            // 「回复历史」（父链）：指示条下方、正文上方的那一段小卡。
+                            // 只有"这一层正是展开着的那一层"、且链条真有内容时才建；其余情况传 null，
+                            // 这一层楼的组合项与改动前**一个都不多**。
+                            //
+                            // 链条与状态都在 [PostThreadPane]：`PostFloorCard` 是无状态的，手里也没有
+                            // 全量 `comments`，让它自己上溯只能靠 `indexOfFirst` 扫列表（200 层楼 = O(n²)）。
+                            replyHistory = if (expandedReplyHistoryOf == comment.id &&
+                                replyHistoryChain.isNotEmpty()
+                            ) {
+                                val block: @Composable () -> Unit = {
+                                    ReplyHistoryList(
+                                        chain = replyHistoryChain,
+                                        floorLabelOf = floorLabelOf,
+                                        unfoldedKeys = unfoldedReplyCards,
+                                        // 键是「楼层 id + 层序」（见 replyHistoryCardKey），
+                                        // 所以收放着的是**哪一张卡**永远不含糊。
+                                        onToggleUnfold = { key ->
+                                            unfoldedReplyCards = if (key in unfoldedReplyCards) {
+                                                unfoldedReplyCards - key
+                                            } else {
+                                                unfoldedReplyCards + key
+                                            }
+                                        },
+                                        // 点父卡 = 跳到那一层 + **收起整条链**：跳走了链还摊着，
+                                        // 人会以为那是目标楼下面的内容（与指示条单击同一个落点，
+                                        // 只是收尾多做一步）。
+                                        onJump = { id ->
+                                            expandedReplyHistoryOf = 0L
+                                            jumpToFloorId(id)
                                         },
                                     )
                                 }
@@ -4847,6 +5068,10 @@ private fun FloorDateSeparator(iso: String) {
  * [onClick] 为 null 时**不挂 `clickable`**：目标楼层不在当前列表里（刚被删 / 还没拉到）时，
  * 这条指示条仍然要画（"在回谁"是有用的信息），但点下去没有地方可去，就不该有个假手势。
  *
+ * [onLongClick] 是「回复历史」的入口（原地展开父链，见 [ReplyHistoryList]）——**长按而不是加箭头**，
+ * 理由见该参数自己的注释。它同样在"父楼不在列表里"时为 null，于是那条通路不给手势、一个组合项
+ * 也不多变。
+ *
  * [floor] 是对方楼层号；找不到（-1）时只写名字，不编一个 `#-1`。
  */
 @Composable
@@ -4855,6 +5080,23 @@ private fun FloorReplyIndicator(
     author: String,
     authorSeed: String,
     onClick: (() -> Unit)? = null,
+    /**
+     * 长按：在原地展开 / 收起这一层的「回复历史」（父链）。
+     *
+     * 为什么选长按、不在指示条右侧加一颗展开箭头：这条指示条是按**内容宽**画的（`Row` 没
+     * `fillMaxWidth`），里面已经挤着 `reply_rounded` 14dp + 6 + 头像 20dp + 4 + 名字（最多
+     * [INLINE_REPLY_NAME_MAX] = 96dp）。再塞一颗 12~14dp 的箭头：
+     *  1. 名字那 96dp 得再让一格，长名字直接变成"回复 #3 · 张…"；
+     *  2. 指示条只有 5dp 上下内边距、整条高 30dp，14dp 的箭头贴着圆角边框，看着像残次品；
+     *  3. 箭头会**一直显示**，而"这里能展开父链"不是主操作（主操作是点它跳过去），常驻图标反而
+     *     抢走点击焦点。
+     * 长按不占一个像素：无引用 / 父楼已被删的那些楼层，指示条与改动前**逐项一致**（见 [onLongClick]
+     * 的默认值）。代价是可发现性差一档 —— 由 `onLongClickLabel`（读屏会念「展开回复历史」）与
+     * 父链展开后卡片自身的形状补回来。
+     */
+    onLongClick: (() -> Unit)? = null,
+    /** 这一层的父链现在展开着没有：只影响长按的无障碍标签，不影响任何绘制。 */
+    expanded: Boolean = false,
     /**
      * 是不是挂在名字行右侧的那一版。
      *
@@ -4892,7 +5134,19 @@ private fun FloorReplyIndicator(
             // 内边距必须排在 clickable 之前：这样点击区覆盖到圆角里的整条，而不是只有字。
             .padding(horizontal = 8.dp, vertical = 5.dp)
             .then(
-                if (onClick != null) {
+                if (onLongClick != null) {
+                    // 单击 = 跳走、长按 = 原地展开父链，两种手势落在同一个区域里。
+                    // `combinedClickable` 就是为这个存在的（列表卡片的长按收藏同一套，见 PostCard）。
+                    // `onClick ?: {}`：能长按的前提是父楼在列表里，那时 `onClick` 一定非空；
+                    // 兜一个空 lambda 只是为了让签名成立，不会真的走到"点了没反应"。
+                    Modifier.combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = if (onClick != null) "跳到被回复的楼层" else null,
+                        onLongClickLabel = if (expanded) "收起回复历史" else "展开回复历史",
+                        onLongClick = onLongClick,
+                        onClick = onClick ?: {},
+                    )
+                } else if (onClick != null) {
                     Modifier.clickable(role = Role.Button, onClickLabel = "跳到被回复的楼层", onClick = onClick)
                 } else {
                     Modifier
@@ -4956,6 +5210,18 @@ private fun PostFloorCard(
      * 只有调用点（手里有整份 `comments`）知道，所以内容在这里由调用点给。
      */
     replies: (@Composable () -> Unit)? = null,
+    /**
+     * 展开的「回复历史」：沿 `replyToId` 往上最多 3 层的小卡（[ReplyHistoryList]）。
+     *
+     * 位置在**名字行下面、正文上面**：参考实现把父帖卡挂在头部正下方
+     * （`post_reply_history.dart:47-52` 的 `Padding(only(top: 12))` 套 `ParentPostCard` 组），
+     * 读起来是"这条在回谁"的一段展开注脚，而不是这一楼正文的一部分 —— 放进正文下面会变成
+     * "正文 → 别人的正文"，层级反了。
+     *
+     * 默认 null，和 [replies] 同一个口径：收起时这一层楼的组合项一个都不多。
+     * 链条只由调用点（[PostThreadPane]，手里有全量 `comments`）算，这里不扫列表。
+     */
+    replyHistory: (@Composable () -> Unit)? = null,
     /**
      * 这一层是不是"刚刚被跳过来"的那一层。true 时左边画一条 3dp 主色竖条并在 1.5s 后淡出
      * （fluxdo `post_segment_frame.dart:164-183` 的 `_PostSelectionIndicator`：`left/top/bottom = 0`
@@ -5154,6 +5420,14 @@ private fun PostFloorCard(
                     }
                     // 引用指示条已经挪到上面名字行里（见那段注释），这里不再单独占一行：
                     // 一层楼的高度回到「头像/名字行 + 正文 + 动作行」三段，楼层之间的密度才跟得上参考图。
+                    // 回复历史（父链）就挂在指示条正下方、正文之前：null 时这一段一个组合项都不建，
+                    // 楼层高度与没有这个功能时逐项一致。顶 8dp 跟"头部 → 正文"同一个数（下一段
+                    // Spacer），块与块的节奏才一致 —— 参考实现那边是 12（`post_reply_history.dart:48`），
+                    // 但那边头部的行距本身就比这里松，直接抄数值会让父链离名字更远。
+                    if (replyHistory != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        replyHistory()
+                    }
                     // 正文与头部之间 12dp（`post_item.dart:284` 的 `SizedBox(height: 12)`）。
                     // 不挂 `Arrangement.spacedBy`：见上面那段注释。
                     Spacer(modifier = Modifier.height(8.dp))
@@ -5261,6 +5535,208 @@ private fun FoldBodyToggle(label: String, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.primary,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * 一层楼原地展开的「回复历史」：沿 `replyToId` 往上最多 [REPLY_HISTORY_DEPTH] 层，一层一张小卡。
+ *
+ * 参考实现 `post_reply_history.dart:47-70`：把 `replyHistory` 整个列成一列 [ParentPostCard]
+ * （`embedded_posts.dart:43-152`）。本仓的差别只有两处，都是为了"引用一多别炸一屏"：
+ *  1. 层数封顶 3（那边是后端给多少列多少，本仓 `replyToId` 是自由引用，可以连环引用十几层）；
+ *  2. 圆角统一 8dp（那边走 `SegmentedCardItem`，首尾各切一角；这里三条各自独立，切角反而像
+ *     拼错的分组）。
+ *
+ * 链条**不在这里算**：`PostFloorCard` 是无状态的（同一份被 200 层楼复用），`comments` 也不在它
+ * 手上。算链条的地方在 [PostThreadPane]，那里有全量 `comments` 与现成的 id → 楼层表。
+ *
+ * [onJump] 为 null 时卡片不挂手势（只读）。真给的话，点一张父卡 = 跳到那一层并**收起整条链**
+ * （收起由调用点做），与指示条的单击同一个落点 —— 跳走了链却还摊在那里，人回头会以为那是
+ * 目标楼的下一层。
+ */
+@Composable
+private fun ReplyHistoryList(
+    chain: List<PostComment>,
+    floorLabelOf: (Long) -> Int,
+    /** 已经展开全文的那些卡片键（[replyHistoryCardKey]）。 */
+    unfoldedKeys: Set<String>,
+    onToggleUnfold: (String) -> Unit,
+    onJump: ((Long) -> Unit)?,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        chain.forEachIndexed { depth, parent ->
+            if (depth > 0) {
+                Spacer(modifier = Modifier.height(REPLY_HISTORY_CARD_GAP))
+            }
+            val key = replyHistoryCardKey(parent.id, depth)
+            ReplyHistoryCard(
+                parent = parent,
+                floor = floorLabelOf(parent.id),
+                unfolded = key in unfoldedKeys,
+                onToggleUnfold = { onToggleUnfold(key) },
+                onJump = onJump,
+            )
+        }
+    }
+}
+
+/**
+ * 父链上的一张卡：**谁（`#N`）+ 说了什么（3 行）**，点一下跳到那一层。
+ *
+ * 逐项照 `embedded_posts.dart:43-152` 的 `ParentPostCard`：
+ * - 首行：`reply_rounded` **14dp**（主色）→ 6dp → 头像 **20dp**（`radius: 10`，
+ *   `embedded_posts.dart:110-115`）→ 6dp → 名字 `labelMedium` **w600** 单行省略
+ *   （`:120-129`）→ 右侧 `#N` `labelSmall` + `onSurfaceVariant`（`:130-135`）
+ * - 正文：13sp / 行高 1.4（=18sp）+ `onSurfaceVariant`（`:27-41` 与 `:136-146`），只露 3 行
+ * - 外壳：`surfaceContainerHighest α0.3` 底 + 圆角 8dp + 内边距 12dp（`:100-104` 的 `all(12)`；
+ *   底色本仓沿用楼层动作胶囊那一档，见 [FloorPill]，同屏两块"次级块"的底色才是一个调子）
+ *
+ * 3 行折叠与楼层正文的"长帖折叠"是**两套**，阈值/容器/状态都不共用（见 [REPLY_HISTORY_DEPTH]
+ * 上面那段）。折叠判定是估算（[isLongReplyCardBody]），估漏了只是不折、不会切字。
+ */
+@Composable
+private fun ReplyHistoryCard(
+    parent: PostComment,
+    /** 这一张在 `comments` 里的楼层号；< 2 表示那一层已不在列表里（理论上不会，链条只用列表内的行）。 */
+    floor: Int,
+    unfolded: Boolean,
+    onToggleUnfold: () -> Unit,
+    onJump: ((Long) -> Unit)?,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val name = parent.author.ifBlank { "匿名" }
+    // 只在正文变了时重算：一次刷新不该把每张卡都重数一遍行。
+    val long = remember(parent.body) { isLongReplyCardBody(parent.body) }
+    val foldHeight = replyHistoryCardFoldHeight(LocalDensity.current)
+    val jumpFn = onJump
+    // 先落成局部 val 再判空（同 [NestedRepliesList] 里那段注释：直接抓 `onJump` 要靠 smart-cast）。
+    val jump: (() -> Unit)? = if (jumpFn != null && floor >= 2) {
+        { jumpFn(parent.id) }
+    } else {
+        null
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(scheme.surfaceContainerHighest.copy(alpha = 0.3f))
+            .then(
+                if (jump != null) {
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = "跳到第 $floor 楼",
+                        onClick = jump,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.Reply,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = scheme.primary,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            PostAvatar(
+                name = name,
+                seed = parent.authorId.ifEmpty { parent.author },
+                size = 20.dp,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                // 名字吃满剩余宽度：`#N` 因此恒贴右边，几张卡的数字在同一列上，扫读时不用找。
+                modifier = Modifier.weight(1f),
+            )
+            if (floor >= 2) {
+                Text(
+                    text = "#$floor",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        if (parent.body.isBlank()) {
+            Text(
+                text = "（没有正文）",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+        } else {
+            val bodyText: @Composable () -> Unit = {
+                MiniMarkdown(
+                    text = parent.body,
+                    baseStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        lineHeight = REPLY_HISTORY_CARD_LINE_HEIGHT,
+                    ),
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            // 与楼层正文同一条原则：折叠作用在**容器**上，正文本身始终是完整的一份（截半截
+            // Markdown 会在表格/代码块中间切出残片）。
+            if (!long || unfolded) {
+                bodyText()
+                if (long) ReplyCardFoldToggle(label = "收起", onClick = onToggleUnfold)
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = foldHeight)
+                        // 只裁不渐变：高度是行高的整数倍，切口落在行间，本来就没有"半截字"要淡出；
+                        // 再叠一层渐变还要知道卡片底色（α 叠加过的），等于把主题色抄一份进来。
+                        .clipToBounds(),
+                ) {
+                    bodyText()
+                }
+                ReplyCardFoldToggle(label = "展开", onClick = onToggleUnfold)
+            }
+        }
+    }
+}
+
+/**
+ * 父卡正文末尾那颗「展开 / 收起」。
+ *
+ * 不用 [FoldBodyToggle]：那颗是 `TextButton`（M3 最小触控高度 40dp 起），垫在一张 3 行小卡里
+ * 会凭空多出近 40dp，三张卡就是一截空屏；这里要的只是"一行点得着的字"。
+ * 也不复用它的折叠语义 —— 两套折叠的阈值、容器、状态各自独立，共用一个按钮只会让人以为它们
+ * 是同一个开关。
+ *
+ * 整行铺满 + `clickable`：点哪都算，手指不用瞄准两个字。
+ */
+@Composable
+private fun ReplyCardFoldToggle(label: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "展开或收起引用的原文",
+                onClick = onClick,
+            )
+            .padding(top = 2.dp),
     ) {
         Text(
             text = label,
