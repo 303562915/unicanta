@@ -166,9 +166,9 @@
    },
    {
     "pkg": "com.android.printspooler",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:45:01.201311+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -495,9 +495,9 @@
    },
    {
     "pkg": "com.coloros.smartlock",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -867,8 +867,8 @@
    {
     "pkg": "com.oplus.beaconlink",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:45:09.906642+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1028,8 +1028,8 @@
    {
     "pkg": "com.oplus.logtrial",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:43:28.559086+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1041,9 +1041,9 @@
    },
    {
     "pkg": "com.oplus.metis",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1091,8 +1091,8 @@
    {
     "pkg": "com.oplus.omoji",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1112,8 +1112,8 @@
    {
     "pkg": "com.oplus.ovoicemanager.wakeup",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1195,10 +1195,10 @@
    },
    {
     "pkg": "com.oplus.stdsp",
-    "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
-    "verdict": "SAFE"
+    "small_batch": true,
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
+    "verdict": "BREAKS"
    },
    {
     "pkg": "com.oplus.subsys",
@@ -1217,8 +1217,8 @@
    {
     "pkg": "com.oplus.thirdkit",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1315,8 +1315,8 @@
    {
     "pkg": "com.qualcomm.qti.devicestatisticsservice",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2216,8 +2216,8 @@
    {
     "pkg": "com.android.printspooler",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:45:01.201311+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2454,8 +2454,8 @@
    {
     "pkg": "com.coloros.smartlock",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2713,8 +2713,8 @@
    {
     "pkg": "com.oplus.beaconlink",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:45:09.906642+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2860,8 +2860,8 @@
    {
     "pkg": "com.oplus.logtrial",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:43:28.559086+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2874,8 +2874,8 @@
    {
     "pkg": "com.oplus.metis",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2902,8 +2902,8 @@
    {
     "pkg": "com.oplus.omoji",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2916,8 +2916,8 @@
    {
     "pkg": "com.oplus.ovoicemanager.wakeup",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2986,8 +2986,8 @@
    {
     "pkg": "com.oplus.stdsp",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -3007,8 +3007,8 @@
    {
     "pkg": "com.oplus.thirdkit",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -3091,8 +3091,8 @@
    {
     "pkg": "com.qualcomm.qti.devicestatisticsservice",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:42:17.753775+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
