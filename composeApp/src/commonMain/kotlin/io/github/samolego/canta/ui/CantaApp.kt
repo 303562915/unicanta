@@ -1316,7 +1316,15 @@ private fun CantaNavigation(
                 // 详情、回帖、点赞、收藏、引用、跳楼仍然全走 PostsScreen 那一份实现，
                 // 这里只把「起步停在哪一格」告诉它（openThreadOnEnter），并在它把详情关掉时
                 // 把这一页弹回去（onThreadClosed）—— 这一页没有列表可退，退回列表才是对的。
-                val detailPostId = entry.arguments?.getString(ARG_POST_ID)?.toLongOrNull() ?: 0L
+                // 参数要从 `SavedState` 里 `read { }` 出来（多平台导航里 arguments 不是 Bundle，
+                // 直接 `getString` 解析不到）；与本文件其它路由同一个写法。
+                val detailPostId = entry.arguments
+                    ?.let { args ->
+                        runCatching {
+                            args.read { if (contains(ARG_POST_ID)) getString(ARG_POST_ID) else null }
+                        }.getOrNull()
+                    }
+                    ?.toLongOrNull() ?: 0L
                 var detailAuthor by remember { mutableStateOf("") }
                 var detailIdentity by remember { mutableStateOf("") }
                 var detailOwner by remember { mutableStateOf("") }
