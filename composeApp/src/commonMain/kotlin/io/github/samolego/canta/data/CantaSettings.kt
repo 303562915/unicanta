@@ -93,6 +93,36 @@ private fun encodeChatSaved(saved: List<SavedChat>): String =
     }
 
 /**
+ * 群公告的「已确认」记录：`会话号 -> 公告指纹`。
+ *
+ * 公告是"看一遍就够了"的东西：确认过还每次进群都挂一条横幅，等于每次都要再关一次。
+ * 换一条新公告指纹就变了，横幅会重新出现一次。
+ *
+ * 坏数据给空表：一段记录撑不起一次崩溃（设置文件在用户自己的存储里，可能被手改过）。
+ */
+private fun decodeNoticeSeen(raw: String): Map<Long, String> =
+    if (raw.isBlank()) {
+        emptyMap()
+    } else {
+        runCatching {
+            Json.Default.parseToJsonElement(raw).jsonObject.mapNotNull { (key, value) ->
+                val id = key.toLongOrNull() ?: return@mapNotNull null
+                id to value.jsonPrimitive.contentOrNull.orEmpty()
+            }.toMap()
+        }.getOrDefault(emptyMap())
+    }
+
+/** [decodeNoticeSeen] 的反向；一条都没有就存空串。 */
+private fun encodeNoticeSeen(seen: Map<Long, String>): String =
+    if (seen.isEmpty()) {
+        ""
+    } else {
+        buildJsonObject {
+            seen.forEach { (id, fingerprint) -> put(id.toString(), fingerprint) }
+        }.toString()
+    }
+
+/**
  * 把 [AppSettingsProto.chatDrafts] 那段 JSON 解回 `会话号 -> 正文`，最近的在后。
  *
  * 坏数据给空列表而不是抛：一段草稿撑不起一次崩溃，而这段文本是可能被手改过的
@@ -250,6 +280,12 @@ class CantaSettings(storage: AppBlobStorage) {
      * 和草稿一样解在 flow 这一层：只有 [setChatSaved] 知道那段 JSON 的形状。坏数据当空列表。
      */
     val chatSavedFlow: Flow<List<SavedChat>> = field { decodeChatSaved(it.chatSaved) }
+    /**
+     * 已经确认过的群公告：`会话号 -> 公告指纹`。
+     *
+     * 聊天页拿它决定要不要在消息上面挂那条公告横幅（见 `ChatScreen` 的 `noticeSeen`）。
+     */
+    val noticeSeenFlow: Flow<Map<Long, String>> = field { decodeNoticeSeen(it.noticeSeen) }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** 关于页最下面那张「最近更新」是否展开；出厂折叠，见 [AppSettingsProto.updateHistoryExpanded]。 */
@@ -440,6 +476,20 @@ class CantaSettings(storage: AppBlobStorage) {
             val kept = decodeChatSaved(current.chatSaved).filterNot { it.id == entry.id }
             val next = if (keep) kept + entry else kept
             current.copy(chatSaved = encodeChatSaved(next.takeLast(MAX_CHAT_SAVED)))
+        }
+    }
+
+    /**
+     * 记下「这个群的这一条公告我看过了」。
+     *
+     * 只存指纹不存正文：判断只需"还是不是同一条"，正文存在聊天页那一层（会话详情）。
+     */
+    suspend fun setNoticeSeen(conversationId: Long, fingerprint: String) {
+        if (conversationId <= 0L || fingerprint.isBlank()) return
+        update { current ->
+            val seen = decodeNoticeSeen(current.noticeSeen).toMutableMap()
+            seen[conversationId] = fingerprint
+            current.copy(noticeSeen = encodeNoticeSeen(seen))
         }
     }
     /** 记住关于页最下面那张「最近更新」是展开还是折叠。 */

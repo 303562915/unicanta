@@ -454,6 +454,14 @@ fun ChatScreen(
     savedMessages: List<ChatMessage> = emptyList(),
     /** 收藏 / 取消收藏一条；[keep] 为 true 是收进来。null 表示这一层不做持久化。 */
     onToggleSaved: ((ChatMessage, Boolean) -> Unit)? = null,
+    /**
+     * 本人已经确认过的那条公告的指纹（见 [onNoticeSeen]）；等于当前公告的指纹就不再显示横幅。
+     *
+     * 空串是"这条公告没确认过"。
+     */
+    noticeSeen: String = "",
+    /** 点了公告的「知道了」或者关掉过横幅：把这条公告的指纹记到本机（由上层落盘）。 */
+    onNoticeSeen: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     // 上一次看过的这一屏先画出来：从消息页点进来时不该再看一次「… → 等网络」。
@@ -614,12 +622,25 @@ fun ChatScreen(
     var imageHint by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
     /**
-     * 群公告横幅这一趟被关掉了没有。
+     * 本群公告的正文（私聊恒为空）与它的指纹。
      *
-     * 只记这一次进入页面：公告本身是长期的东西，下次进来该再看见一眼；但人正在聊天时它挡着一行，
-     * 关掉就该关掉，不该因为滚动或新消息又弹回来。
+     * 指纹用来记「这条公告本人已经确认过」：`长度:哈希` 就够了——换了公告内容就变，同一条公告
+     * 重进页面还是同一个指纹。只在本机比对（见 [noticeSeen]），不进后端。
      */
-    var announcementDismissed by remember(conversationId) { mutableStateOf(false) }
+    val noticeText = detail?.takeIf { it.isGroup }?.announcement.orEmpty()
+    val noticeFingerprint = if (noticeText.isBlank()) {
+        ""
+    } else {
+        "${noticeText.length}:${noticeText.hashCode()}"
+    }
+    /**
+     * 公告横幅这一趟被关掉了没有。
+     *
+     * 跟着会话号和公告指纹一起重置：换了群、或者群主换了公告，横幅都该重新出现一次。
+     */
+    var announcementDismissed by remember(conversationId, noticeFingerprint) {
+        mutableStateOf(false)
+    }
     /** 公告全文对话框开没开：横幅点一下看全文（横幅只显示两三行）。 */
     var showAnnouncement by remember { mutableStateOf(false) }
     /** 刚复制的是哪一条：不是 null 的时候底部亮一句「已复制」，过一会儿自己灭掉。 */
@@ -1367,13 +1388,11 @@ fun ChatScreen(
                 onTogglePin = { togglePin() },
                 onToggleMute = { toggleMute() },
                 // 群公告：从会话详情里拿。私聊没有公告，传空串就是「还没有公告」。
-                announcement = if (grouped) detail?.announcement.orEmpty() else "",
+                announcement = noticeText,
                 // 置顶消息：进页面时拉一次，钉/取消钉之后由 togglePinMessage 重拉。
                 pinnedMessages = pinnedMessages,
                 // 收藏：本机那一份（上层按会话号筛好传进来）。
                 savedMessages = savedMessages,
-                // 我在本群的昵称：设置那一格展开时给一行。
-                myNickname = detail?.myNickname.orEmpty(),
                 // 「聊天」那一下：入口行收起 + 回到最新一条（reverseLayout 里 0 就是尾巴）。
                 onJumpToLatest = { scope.launch { listState.animateScrollToItem(0) } },
                 // 公告卡片不挂「编辑」：写公告统一在群设置页（点头像或点「设置」进去）。
@@ -1399,17 +1418,26 @@ fun ChatScreen(
                         .only(WindowInsetsSides.Bottom),
                 ),
         ) {
-            // 群公告横幅：群里发过公告就一直挂在消息上面（微信就是这个位置），点开看全文。
+            // 群公告横幅：群里发过公告就挂在消息上面（微信就是这个位置），点开看全文。
             // 顶栏那排入口里的「公告」格子是同一个内容的第二个入口——横幅会被往下翻走，格子不会。
-            if (grouped && !announcementDismissed) {
-                val notice = detail?.announcement.orEmpty()
-                if (notice.isNotBlank()) {
-                    ChatAnnouncementBanner(
-                        text = notice,
-                        onOpen = { showAnnouncement = true },
-                        onClose = { announcementDismissed = true },
-                    )
-                }
+            //
+            // 确认过就不再出现：指纹与 [noticeSeen] 相同时，这条公告本人已经点过「知道了」，
+            // 每次进来都再挂一条、每次都要再关一次，那不是提醒，是噪音。
+            if (
+                grouped &&
+                noticeText.isNotBlank() &&
+                noticeFingerprint != noticeSeen &&
+                !announcementDismissed
+            ) {
+                ChatAnnouncementBanner(
+                    text = noticeText,
+                    onOpen = { showAnnouncement = true },
+                    onClose = {
+                        // 关掉也算确认：这一条不再自动出现，换新公告（指纹变了）才会再来一次。
+                        announcementDismissed = true
+                        onNoticeSeen(noticeFingerprint)
+                    },
+                )
             }
             loadError?.let { reason -> ChatErrorLine(reason) }
             // 翻译失败那句只借一次机会：它和 loadError 同一个样式，两秒后自己收走。
@@ -1886,7 +1914,12 @@ fun ChatScreen(
                     modifier = Modifier
                         .align(Alignment.End)
                         .padding(top = 14.dp)
-                        .clickable { showAnnouncement = false },
+                        .clickable {
+                            // 确认过就记下来：这一条公告以后不再自动挂在聊天上面（换新公告才再出现）。
+                            showAnnouncement = false
+                            announcementDismissed = true
+                            onNoticeSeen(noticeFingerprint)
+                        },
                 )
             }
         }
@@ -1919,7 +1952,7 @@ fun ChatScreen(
  * [Chat] 不是"聊天页"，而是"什么都别展开"：入口行还开着的时候，点第一个格子就是把下面那块收掉、
  * 顺手回到最新一条消息。和抖音群聊那一下一致——顶上那排是开关，不是第二个页面。
  */
-private enum class ChatHeaderSection { Chat, Announcement, Pinned, Saved, Settings }
+private enum class ChatHeaderSection { Chat, Announcement, Pinned, Saved }
 
 /**
  * 顶栏：回去的箭头 + 圆头像 + 名字（群聊挂人数）+ 右边一颗折叠按钮。
@@ -1929,8 +1962,7 @@ private enum class ChatHeaderSection { Chat, Announcement, Pinned, Saved, Settin
  * 群公告、置顶消息这类"整个群都该看见"的东西从顶栏进，而不是藏在右上角某个菜单的第三项里。
  *
  * 公告、置顶、收藏三格右上角各有一颗红点：有内容就亮，一眼看出这个群有没有新公告、有没有置顶。
- * 「设置」也是就地展开：先给一张摘要卡（群头像、群名、人数、我的群昵称），卡片底部那行才进
- * 群设置页——群名、群头像、公告、进群码都在那一页。
+ * 「设置」不展开任何东西，直接进群设置页——群名、群头像、公告、我的群昵称、进群码都在那一页。
  *
  * 左边的圆头像和标题也是一块入口：群聊点进群资料（[onOpenGroupInfo]），
  * 私聊点进对面那个人的主页（[onOpenProfile]，身份用 [peerOwner]）。私聊还没拿到对方身份时
@@ -1966,8 +1998,6 @@ private fun ChatTopBar(
     savedMessages: List<ChatMessage> = emptyList(),
     /** 点「聊天」：把入口行收起来并回到最新一条。null 时只收起入口行。 */
     onJumpToLatest: (() -> Unit)? = null,
-    /** 我在这个群里的昵称；空串就是没设过（用全局名字）。设置那一格展开时给一行。 */
-    myNickname: String = "",
 ) {
     val scheme = MaterialTheme.colorScheme
     // 入口行开没开：那颗三角按钮是它的唯一开关。
@@ -2069,13 +2099,19 @@ private fun ChatTopBar(
                             section = ChatHeaderSection.Chat
                             onJumpToLatest?.invoke()
                         }
-                        // 其余四格都在原位展开/收起：再点同一个格子就是收回去。
+                        // 其余三格都在原位展开/收起：再点同一个格子就是收回去。
                         else -> section = if (section == picked) ChatHeaderSection.Chat else picked
                     }
                 },
+                // 「设置」不进展开区：收起这排，直接进群设置页（群名、群头像、公告、进群码都在那儿）。
+                onOpenSettings = {
+                    entriesOpen = false
+                    section = ChatHeaderSection.Chat
+                    onOpenGroupInfo()
+                },
             )
         }
-        // 展开区的正文：公告全文、置顶消息、收藏、设置摘要，四块共用同一个位置，选哪块显示哪块。
+        // 展开区的正文：公告全文、置顶消息、收藏，三块共用同一个位置，选哪块显示哪块。
         // 只在入口行开着时画——入口行收起来，下面这一块跟着一起收，不留一条没来由的卡片。
         if (entriesOpen) {
             when (section) {
@@ -2089,16 +2125,6 @@ private fun ChatTopBar(
                     title = "我收藏的消息",
                     messages = savedMessages,
                     emptyText = "还没有收藏的消息：长按一条消息就能收进来。",
-                )
-                // 设置就地展开一张摘要卡，再点同一个格子收起；「更多设置」才进详情页。
-                ChatHeaderSection.Settings -> ChatGroupSummaryCard(
-                    title = title,
-                    conversationId = conversationId,
-                    memberCount = memberCount,
-                    myNickname = myNickname,
-                    peerOwner = peerOwner,
-                    isGroup = isGroup,
-                    onOpenSettings = onOpenGroupInfo,
                 )
                 ChatHeaderSection.Chat -> Unit
             }
@@ -2173,8 +2199,8 @@ private fun ChatFoldButton(
 /**
  * 顶栏下面那一排入口：聊天 / 公告 / 置顶消息 / 收藏 / 设置，五格均分，一格一个动作。
  *
- * 五个格子都是"就地展开/收起"：点一下展开下面那张卡，再点同一格收回去；只有「聊天」是收起整排
- * 并回到最新一条（它本来就是"我在看消息"这个状态）。
+ * 前四格是"就地展开/收起"：点一下展开下面那张卡，再点同一格收回去；「聊天」是收起整排并回到
+ * 最新一条（它本来就是"我在看消息"这个状态）。第五格「设置」不展开任何东西，直接进群设置页。
  */
 @Composable
 private fun ChatHeaderEntries(
@@ -2183,6 +2209,8 @@ private fun ChatHeaderEntries(
     pinnedCount: Int,
     savedCount: Int,
     onPick: (ChatHeaderSection) -> Unit,
+    /** 第五格「设置」：直接进群设置页，不在顶栏里展开任何东西（用户 2026-11-27 定的）。 */
+    onOpenSettings: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -2220,10 +2248,10 @@ private fun ChatHeaderEntries(
         )
         ChatEntryCell(
             label = "设置",
-            selected = section == ChatHeaderSection.Settings,
+            selected = false,
             dot = false,
             modifier = Modifier.weight(1f),
-            onClick = { onPick(ChatHeaderSection.Settings) },
+            onClick = onOpenSettings,
         )
     }
 }
@@ -2363,86 +2391,6 @@ private fun ChatAnnouncementCard(text: String) {
     }
 }
 
-/**
- * 设置那一格展开的摘要卡：群头像、群名、人数、我在本群的昵称，最后一行「更多设置」进详情页。
- *
- * 为什么不一点就跳页：顶栏这排本来就是"就地展开"的东西，跳页会把整屏消息顶掉；先看一眼这个群
- * 是谁、我叫什么，要换头像/改群名/看进群码再进那一页。
- */
-@Composable
-private fun ChatGroupSummaryCard(
-    title: String,
-    conversationId: Long,
-    memberCount: Int,
-    myNickname: String,
-    peerOwner: String,
-    isGroup: Boolean,
-    onOpenSettings: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(scheme.surfaceVariant.copy(alpha = 0.55f))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ChatHeaderAvatar(
-                title = title,
-                isGroup = isGroup,
-                peerOwner = peerOwner,
-                conversationId = conversationId,
-                onClick = null,
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title.ifBlank { if (isGroup) "群聊" else "私聊" },
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = if (isGroup && memberCount > 0) "$memberCount 人" else "私聊",
-                    fontSize = 11.sp,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "我的群昵称",
-                fontSize = 12.sp,
-                color = scheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = myNickname.ifBlank { "未设置" },
-                fontSize = 12.sp,
-                color = scheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Text(
-            text = "更多设置：群名称与头像、群公告、群邀请码",
-            fontSize = 12.sp,
-            color = scheme.primary,
-            modifier = Modifier
-                .padding(top = 10.dp)
-                .clickable(onClickLabel = "打开群设置", onClick = onOpenSettings),
-        )
-    }
-}
 
 /**
  * 置顶消息 / 收藏共用的一张卡片：标题 + 每一行「谁说的：摘要」，最多五条。

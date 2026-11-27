@@ -226,6 +226,14 @@ class SettingsViewModel(
     val chatSaved = settingsStore.chatSavedFlow.state(emptyList<SavedChat>())
 
     /**
+     * 已经确认过的群公告：`会话号 -> 公告指纹`。
+     *
+     * 聊天页只问一句「这个群的这条公告确认过没有」，所以这一层给一份快照就够；
+     * 换新公告指纹不同，横幅会自己回来。
+     */
+    val noticeSeen = settingsStore.noticeSeenFlow.state(emptyMap<Long, String>())
+
+    /**
      * 本机拉黑过的人（身份号）。
      *
      * 后端没有拉黑接口，这份名单只落在设置文件里：消息页据此把这些人的私聊从列表里滤掉。
@@ -399,6 +407,10 @@ class SettingsViewModel(
 
     /** 收藏 / 取消收藏一条聊天消息；只落本机设置，后端不知道。 */
     fun saveChatSaved(entry: SavedChat, keep: Boolean) = save { setChatSaved(entry, keep) }
+
+    /** 记下「这个群的这条公告我看过了」：以后不再自动挂横幅，换新公告才再出现。 */
+    fun saveNoticeSeen(conversationId: Long, fingerprint: String) =
+        save { setNoticeSeen(conversationId, fingerprint) }
 
     /** 拉黑或取消拉黑一个人；后端没有这个接口，落的是本机设置里的那份名单。 */
     fun saveBlockedPeer(peer: String, blocked: Boolean) = save { setBlockedPeer(peer, blocked) }

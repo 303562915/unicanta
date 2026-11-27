@@ -345,6 +345,13 @@ data class AppSettingsProto(
      * "我当时留着的那句话"，不是"现在还剩什么"。
      */
     @ProtoNumber(55) val chatSaved: String = "",
+    /**
+     * 已经确认过的群公告：`{会话号: 公告指纹}` 的一段 JSON；空串 = 一条都没确认过。
+     *
+     * 为什么需要它：群公告是"看一遍就够了"的东西。确认过还每次进群都在消息上面挂一条横幅，
+     * 等于每次都要再关一次；换一条新公告指纹就变，横幅才重新出现。
+     */
+    @ProtoNumber(56) val noticeSeen: String = "",
 )
 
 /**

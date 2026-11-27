@@ -2006,6 +2006,8 @@ private fun CantaNavigation(
                 val chatDrafts by settingsViewModel.chatDrafts.collectAsStateWithLifecycle()
                 // 本机收藏的聊天消息：这个会话的那几条在下面按会话号筛出来（收藏只对自己可见）。
                 val chatSaved by settingsViewModel.chatSaved.collectAsStateWithLifecycle()
+                // 已确认过的群公告：指纹相同就不再挂公告横幅。
+                val noticeSeen by settingsViewModel.noticeSeen.collectAsStateWithLifecycle()
                 val chatBlockedPeers by settingsViewModel.blockedPeers.collectAsStateWithLifecycle()
                 LaunchedEffect(conversationId) {
                     chatName = DeviceIdentity.displayName(deps.settings)
@@ -2074,6 +2076,11 @@ private fun CantaNavigation(
                             ),
                             keep,
                         )
+                    },
+                    // 公告确认过就不再挂横幅：本机记一条指纹，换新公告（指纹变了）才再出现。
+                    noticeSeen = noticeSeen[conversationId].orEmpty(),
+                    onNoticeSeen = { fingerprint ->
+                        settingsViewModel.saveNoticeSeen(conversationId, fingerprint)
                     },
                     // 拉黑只对私聊有意义：群里没有"那个人"，群不受本机名单影响。
                     blocked = !chatIsGroup && chatPeer.isNotEmpty() && chatPeer in chatBlockedPeers,
