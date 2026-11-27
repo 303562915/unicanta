@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.filled.ThumbUp
@@ -52,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,6 +110,7 @@ import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.PersonAvatar
+import io.github.samolego.canta.ui.component.PlanDanmaku
 import io.github.samolego.canta.ui.component.PackageSearchField
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
@@ -282,6 +285,14 @@ fun PlanDetailScreen(
      */
     var searchOpen by remember(planId) { mutableStateOf(false) }
     var query by remember(planId) { mutableStateOf("") }
+    /**
+     * 卡片顶部那条评论弹幕开着没有。默认开着（要的就是点进来有动静），开关在顶栏搜索按钮左边：
+     * 关掉之后卡片立刻回到原来那个高度，再打开也不重新拉评论——飘的还是手里这一批。
+     *
+     * 用 [rememberSaveable] 而不是 `remember`：转屏、被系统重建回来时，刚关掉的弹幕不该自己
+     * 又冒出来。它不是一项全局设置，所以只记在这一次页面里，退出页面就回到默认的开。
+     */
+    var danmakuOn by rememberSaveable(planId) { mutableStateOf(true) }
     /** The scroll of the page's list: opening the filter scrolls the packages into view. */
     val listState = rememberLazyListState()
     /**
@@ -675,6 +686,7 @@ fun PlanDetailScreen(
                     },
                     planId = planId,
                     loading = loading,
+                    danmakuOn = danmakuOn,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -691,6 +703,24 @@ fun PlanDetailScreen(
                 height = FlTopBarCompactHeight,
                 actions = {
                     plan?.let { current ->
+                        // 弹幕开关：亮着就是开着，暗下去就是关掉了。放在搜索左边、贴着它，是为了
+                        // 让「这个页面能怎么调」集中在同一撮——分享、搜索这两个都在这里，读者要
+                        // 关弹幕时眼睛已经在往这片区域找了。
+                        IconButton(
+                            onClick = { danmakuOn = !danmakuOn },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Subtitles,
+                                contentDescription = if (danmakuOn) "关闭弹幕" else "打开弹幕",
+                                modifier = Modifier.size(17.dp),
+                                tint = if (danmakuOn) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                                },
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 searchOpen = !searchOpen
@@ -938,6 +968,8 @@ private fun PlanDetailContent(
     planId: Long = 0L,
     /** 首帧网络那批还没到：评论线程这时先画缓存里那一份，而不是画一个空。 */
     loading: Boolean = false,
+    /** 卡片顶部那条评论弹幕开着没有；开关在页面顶栏。 */
+    danmakuOn: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -1055,6 +1087,10 @@ private fun PlanDetailContent(
                 onOpenUploader = onOpenUploader,
                 onEditNote = onEditNote,
                 onMessage = onMessage,
+                // 弹幕飘的是评论正文，一句一条：只取正文，作者名不飘——弹幕是「这里有人在说话」
+                // 的动静，不是一份带署名的目录。
+                danmaku = remember(comments) { comments.map { it.body } },
+                danmakuOn = danmakuOn,
             )
         }
 
@@ -1217,6 +1253,10 @@ private fun PlanHero(
     onEditNote: ((String) -> Unit)? = null,
     /** 角上那条披带点下去要说的话；toast 由页面那一层负责，这里只说内容。 */
     onMessage: (String) -> Unit = {},
+    /** 下面那些评论的正文，一句一条：卡片顶部那条弹幕带飘的就是它们。 */
+    danmaku: List<String> = emptyList(),
+    /** 弹幕开着没有（开关在顶栏，默认开）。关掉时整条带子不占高度。 */
+    danmakuOn: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
@@ -1242,6 +1282,15 @@ private fun PlanHero(
             Column(
                 modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
             ) {
+                // 弹幕带排在这一列的最前面，所以它只让卡片高一点，不盖住下面任何一个字：作者行、
+                // 方案名、包数都还在原位。没评论、或者读者用顶栏那个按钮关掉了，这里整段不画，
+                // 卡片回到原来那个高度。
+                if (danmakuOn && danmaku.isNotEmpty()) {
+                    PlanDanmaku(
+                        lines = danmaku,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
                 // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
                 // first character of that person's name, like everywhere else. The name leads the line;
                 // the badge, if there is one, stands at the end of it. Tapping it opens the uploader's
