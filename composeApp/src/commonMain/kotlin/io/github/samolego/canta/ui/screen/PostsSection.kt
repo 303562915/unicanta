@@ -78,6 +78,7 @@ import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
@@ -107,6 +108,9 @@ import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Favorite
+// 举报：楼层「更多」菜单里那一项与举报面板的标题都用它（Rounded 集，必须单独 import，
+// 这仓库漏过一次 import 直接 `Unresolved reference`）。
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Lock
@@ -155,10 +159,14 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -173,6 +181,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
@@ -259,6 +268,80 @@ private const val POST_BODY_LIMIT = 8000
  * `FLOORS_FIRST + i`，与跨天分隔的条数无关。哪天往楼层前面再插一项，改这个数就行。
  */
 private const val FLOORS_FIRST = 3
+
+// ---------------------------------------------------------------------------- 长正文折叠
+//
+// 参考实现把长帖按 HTML 顶层块**切成多段**、交给同一列 sliver 慢慢补（fluxdo
+// `lib/widgets/post/post_item/segmented_long_post.dart:44-84` 的 `tryBuild`：`chunkThreshold`
+// 一过就 `chunkDocument`，每段一个 `NewEngineChunkSegment`）。本仓的正文是 `MiniMarkdown`
+// 直接吃 Markdown 源码，没有"块"这种中间形态，也**不能**把源码截成半截去渲染（截在半截表格
+// 或代码块里，出来的是一块残片）。所以这边只做折叠：整块照旧渲染一次，用**容器**的高度
+// 夹住前 8 行 —— 拿不到虚拟化的省，但省掉的是"每一层楼都要先滚过去才知道它有多长"的观感问题，
+// 而实现只在容器上，`MiniMarkdown` 一行都不用动。
+
+/**
+ * 折叠门槛之一：正文字符数**超过**它就折叠。
+ *
+ * 800 是"一段长文"的量：手机一屏大约 20 行 × 20 来字，800 字差不多两屏多；短于这个量的
+ * 楼层保持原样 —— 楼层是列表项，常见楼层多出一行就会把整列表的密度拖垮。
+ */
+private const val FOLD_LONG_BODY_CHARS = 800
+
+/**
+ * 折叠门槛之二：正文**原始行数**超过它就折叠。
+ *
+ * 字符数与行数两个门槛都要：代码块、清单、空行多、每行一两个字的正文，字符不多但照样把
+ * 那一层楼撑到两屏高；只留字符数门槛，这一类永远漏过去。
+ */
+private const val FOLD_LONG_BODY_LINES = 20
+
+/** 折叠态露出来的行数。 */
+private const val FOLDED_BODY_VISIBLE_LINES = 8
+
+/**
+ * 正文行高：与 `PostFloorCard` 里 `MiniMarkdown` 的 `lineHeight = 21.sp` 是**同一个数**
+ * （14sp 正文 × 1.5，见 `post_item.dart:332-347` 的 `bodyMedium.copyWith(height: 1.5)`）。
+ */
+private val FOLDED_BODY_LINE_HEIGHT = 21.sp
+
+/**
+ * 折叠态容器的最大高度 = 8 行 × 21sp = **168sp**；`fontScale = 1` 时就是 **168dp**。
+ *
+ * 这里不写死 `168.dp`，而是走 `TextUnit.toDp()`：系统字号调到 1.3 倍时 21sp 已经比 21dp 高，
+ * 写死 168dp 就只剩 6 行，"前 8 行"这个承诺当场失效；走换算的话行数不动、只是那 8 行更高。
+ */
+private fun foldedBodyMaxHeight(density: Density): Dp =
+    with(density) { FOLDED_BODY_LINE_HEIGHT.toDp() * FOLDED_BODY_VISIBLE_LINES.toFloat() }
+
+/**
+ * 折叠态底部那层遮罩的高度（32dp）：三段渐变（透明 → 底色），让第 8 行末尾"淡进底色"，
+ * 而不是被容器边缘硬切一刀。
+ */
+private val FOLDED_BODY_FADE_HEIGHT = 32.dp
+
+/**
+ * 正文算不算「长」：**字符数 > [FOLD_LONG_BODY_CHARS]** 或 **行数 > [FOLD_LONG_BODY_LINES]**，
+ * 任一超过就要折叠。
+ *
+ * 行数按原始换行（`\n`）数：Markdown 渲染后的视觉行只会更多（自动换行、列表项），所以这是个
+ * **下界** —— 会把"其实很长"的正文判成长，不会反过来。要精确就得先渲染再量，那是给每一层楼
+ * 都加一次测量，不划算。
+ *
+ * 复杂度 O(n)、只按 `body` 记忆（见调用点 `remember(body)`）：一次列表刷新只对**变了**的正文重算。
+ */
+private fun isLongFloorBody(body: String): Boolean {
+    if (body.length > FOLD_LONG_BODY_CHARS) return true
+    var lines = 1
+    var index = 0
+    while (index < body.length) {
+        if (body[index] == '\n') {
+            lines++
+            if (lines > FOLD_LONG_BODY_LINES) return true
+        }
+        index++
+    }
+    return false
+}
 
 /**
  * 自动存草稿的防抖窗口：还在敲就重新计时，700 毫秒没再动才写一次盘。
@@ -982,6 +1065,13 @@ internal fun PostsScreen(
      * 只能把开关提上来。关帖时一并收掉，免得下次点开别的帖子面板还盖在上面。
      */
     var tocOpen by remember { mutableStateOf(false) }
+    /**
+     * 帖内搜索面板开着没有（[PostSearchSheet]）。
+     *
+     * 与 [tocOpen] 同一套理由：入口在顶栏「更多」里，面板要用 `comments` 与 `listState`
+     * （只有 `PostThreadPane` 拿得到），所以开关提到这一层，面板本体画在 pane 里。
+     */
+    var searchOpen by remember { mutableStateOf(false) }
     var posting by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
     /**
@@ -1483,6 +1573,8 @@ internal fun PostsScreen(
         replyTo = null
         // 目录面板跟着关：它是"这一帖的楼层索引"，帖子关掉之后留着只会盖在列表上。
         tocOpen = false
+        // 帖内搜索同理。
+        searchOpen = false
         // 独立详情那一页（`Screen.PostDetail`）：没有"列表"可以退回页内，所以直接把自己弹回去。
         // 页内切换时这里是 null，什么都不做。
         onThreadClosed?.invoke()
@@ -1531,6 +1623,22 @@ internal fun PostsScreen(
         replyTo = comment
         platform.showMessage("已引用，写完点发送")
     }
+
+    /**
+     * 举报某一楼：帖子、楼层、楼层号、理由 → 一段文本进剪贴板 + 一句 toast。
+     *
+     * 只在这里落地（`platform` 就在这个 composable 手里），与 [onCopy] / `onCopyFloor` 同一条
+     * 链路：本文件里 [PostThreadPane] 往下一路都是 private 的纯 UI，拿不到平台句柄，也不该
+     * 让每个 composable 都能随手写剪贴板。
+     *
+     * 为什么不是"发请求"：后端没有举报 RPC（见 [reportableFloor] 的说明），所以这里做到
+     * "把要说的话整理好、复制走"为止，并如实告诉人下一步是发到反馈群。
+     */
+    val onReportFloor: (CommunityPost, PostComment, Int, String) -> Unit =
+        report@{ post, comment, floor, reason ->
+            platform.copyToClipboard(reportableFloor(post, comment, floor, reason))
+            platform.showMessage("举报内容已复制，请发到反馈群")
+        }
 
     /** 当前这一屏的口径算出来的列表：分类、标签、搜索词、排序都只在这一层做，不动网络。 */
     val shown = remember(posts, board, categoryPick, tagPick, query, authorId, reads, readsVersion) {
@@ -1672,6 +1780,7 @@ internal fun PostsScreen(
                                     platform.showMessage("帖子已复制")
                                 },
                                 onOpenToc = { tocOpen = true },
+                                onOpenSearch = { searchOpen = true },
                             )
                         }
                     },
@@ -1830,11 +1939,17 @@ else -> Column {
                     platform.copyToClipboard(copyableFloor(floor, comment))
                     platform.showMessage("已复制")
                 },
+                // 举报某一楼：**文本在 PostsScreen 里拼、剪贴板也在这里写**（见 [onReportFloor]
+                // 那条 val 的注释）。面板本身画在 `PostThreadPane` 里张罗，只有"点提交"那一下
+                // 回到这一层 —— 与复制、收藏、点赞同一个方向。
+                onReportFloor = onReportFloor,
                 onOpenRelated = { post -> startThread(post) },
                 // 目录面板：开关在 `PostsScreen`（顶栏入口也在这儿），面板本体画在
                 // `PostThreadPane` 里（它才拿着 `listState`，算得出"现在在第几层"）。
                 tocOpen = tocOpen,
                 onDismissToc = { tocOpen = false },
+                searchOpen = searchOpen,
+                onDismissSearch = { searchOpen = false },
                 modifier = Modifier.padding(padding),
             )
 
@@ -2801,6 +2916,46 @@ private fun copyableFloor(floor: Int, comment: PostComment): String = buildStrin
 }
 
 /**
+ * 举报某一楼时写进剪贴板的那一段：**帖子标题 + 楼层号 + 作者 + 理由**（外加两个编号）。
+ *
+ * 为什么是"复制"而不是发一个请求：本仓后端**没有举报 RPC** —— `PostStore` 只有
+ * `posts_list` / `post_get` / `post_add` / `post_comment_add` / `post_like` / `post_delete`
+ * 六个方法，没有任何一条能收下举报。所以提交这一步如实落在剪贴板上，由人贴到反馈群里；
+ * 界面上也写清了这件事（见 [FloorReportSheet] 里那行说明）。**不**造一个发出去必然失败的
+ * 请求，也不弹"举报成功"—— 那是在骗点按钮的人。
+ *
+ * 帖名与楼层号都写全：群里收到这一段的人只看这几行，得能对回原帖的哪一层。楼层号由调用点
+ * 传（与卡片上的 `#N` 是同一个表达式，见 [copyableFloor] 的说明），这边不再扫一遍 `comments`。
+ */
+private fun reportableFloor(
+    post: CommunityPost,
+    comment: PostComment,
+    floor: Int,
+    reason: String,
+): String = buildString {
+    appendLine("【举报】")
+    append("帖子：")
+    appendLine(post.title.ifBlank { "（无标题）" })
+    append("楼层：#")
+    append(floor)
+    append(" · ")
+    appendLine(comment.author.ifBlank { "匿名" })
+    val day = comment.createdAt.take(10)
+    if (day.length == 10) {
+        append("时间：")
+        appendLine(day)
+    }
+    append("理由：")
+    appendLine(reason)
+    // 编号给人对账用：帖名可能被别人改过、楼层号会随删帖变，这两个数不会。
+    append("（帖子编号 ")
+    append(post.id)
+    append(" · 楼层编号 ")
+    append(comment.id)
+    append("）")
+}
+
+/**
  * 一条帖子的详情：主楼 + 回帖按楼层排，底下吸着一个回复栏。
  *
  * 用整页而不是对话框：回帖一多，对话框里那点高度连三层都看不完，「楼层」这个概念也就没了。
@@ -2842,10 +2997,24 @@ private fun PostThreadPane(
      * 让接收方自己再扫一遍 `comments` 就多了一份实现。
      */
     onCopyFloor: (PostComment, Int) -> Unit,
+    /**
+     * 举报某一楼：帖子、楼层、楼层号、理由 → 由 `PostsScreen` 拼成文本写进剪贴板并 toast。
+     *
+     * 和 [onCopyFloor] 完全同一个理由不在这里直接摸 platform：这一路下来是 private 的纯 UI。
+     * 楼层号（`#N`）同样由这一层传上去 —— 菜单抬头、举报文本、卡片标签用的是同一个
+     * `index + 2`，接收方不该再算一次。
+     *
+     * 「提交」这一步只是**复制**：后端没有举报 RPC，面板上那行小字也这么写（见
+     * [FloorReportSheet]）。
+     */
+    onReportFloor: (CommunityPost, PostComment, Int, String) -> Unit,
     onOpenRelated: (CommunityPost) -> Unit,
     /** 目录面板开着没有（[PostTocSheet]）：入口在顶栏「更多」里，开关状态由 `PostsScreen` 持有。 */
     tocOpen: Boolean = false,
     onDismissToc: () -> Unit = {},
+    /** 帖内搜索面板开着没有（[PostSearchSheet]）；理由同 [tocOpen]。 */
+    searchOpen: Boolean = false,
+    onDismissSearch: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -2918,6 +3087,47 @@ private fun PostThreadPane(
      * 信息量上等价（点一下就能换），视觉上稳。
      */
     var expandedRepliesFloor by remember(post?.id) { mutableStateOf(0L) }
+
+    /**
+     * 主楼（`#1`）的长正文展开没有：**单独一个布尔位、键是帖子 id**。
+     *
+     * 为什么不与下面那个按楼层 id 记的 `Set` 合用一个：主楼不在 `comments` 里，它的 id 是
+     * `post.id`，两张表的 id 完全可能撞上 —— 撞上就等于"展开主楼把某一层楼也展开了"。
+     * 参考实现那边每层楼一个布尔量（`segmented_long_post.dart` 里各段自己管自己的状态），
+     * 搬到这边就是"一个 id 一个位"。
+     */
+    var opBodyExpanded by remember(post?.id) { mutableStateOf(false) }
+
+    /**
+     * 长正文**展开着**的那些楼层（按楼层 id）。照 [expandedRepliesFloor] 的做法放在这一层
+     * （`PostFloorCard` 是无状态的，它自己记不住任何东西）。
+     *
+     * 为什么是 `Set` 而不是像嵌套回复那样的单值：嵌套回复一展开就把这一层楼撑长，同时开两串
+     * 会互相挤；"展开全文"只是把一层楼放回它原本的高度，多开几层各长各的，不打架。
+     *
+     * 刷新列表后不会错位：存的是 id，`stableMerge` 换血之后同一个 id 还是同一条回复；
+     * 被删掉的楼层由下面那个 `LaunchedEffect` 从 Set 里剔掉。
+     */
+    var expandedBodyFloors by remember(post?.id) { mutableStateOf(emptySet<Long>()) }
+
+    // 被删掉的楼层别在 Set 里留残影：`comments` 一换血就把已经不在列表里的 id 剔掉。
+    // 只在 Set 非空时才扫（默认零开销），扫的也只是 `comments` 那一遍整数比较。
+    LaunchedEffect(comments) {
+        if (expandedBodyFloors.isNotEmpty()) {
+            val alive = comments.mapTo(HashSet(comments.size)) { it.id }
+            if (!expandedBodyFloors.all { it in alive }) {
+                expandedBodyFloors = expandedBodyFloors.filterTo(HashSet(expandedBodyFloors.size)) { it in alive }
+            }
+        }
+    }
+
+    /**
+     * 举报面板正对着哪一层（null = 面板关着）。
+     *
+     * 状态在这一层、面板也画在这一层：卡片的 footer 是 `LazyColumn` 的一个 item，滚出屏就被
+     * 回收 —— 把开关放在那里，人往下一滑面板就跟着没了。与 [PostTocSheet] 同一个放法。
+     */
+    var reportTarget by remember(post?.id) { mutableStateOf<FloorReportTarget?>(null) }
 
     /**
      * 刚跳过去的那一层（0 = 没有）：左边竖条亮 [HIGHLIGHT_HOLD_MS] 之后清掉。
@@ -3147,6 +3357,10 @@ private fun PostThreadPane(
                             // 主楼的 id 就是帖子的 id：跳转锚点用的是"这一楼"的 id，
                             // 而主楼不在 `comments` 里，所以单独用帖子 id 参与高亮判定。
                             highlighted = highlightedFloorId != 0L && highlightedFloorId == shown.id,
+                            // 主楼的长正文同样先折：状态是**帖子 id 那一个位**（见 `opBodyExpanded`），
+                            // 不复用按楼层 id 记的那个 Set。
+                            bodyExpanded = opBodyExpanded,
+                            onToggleBody = { opBodyExpanded = !opBodyExpanded },
                             footer = {
                                 // 顺序照 fluxdo `post_action_bar.dart:263-281`：
                                 //   Row { [leftButton = 回复胶囊] + 12, Expanded(Wrap(end){ 其它动作 }) }
@@ -3354,6 +3568,15 @@ private fun PostThreadPane(
                                 null
                             },
                             highlighted = highlightedFloorId != 0L && highlightedFloorId == comment.id,
+                            // 折叠态按**楼层 id** 记（刷新换血后 id 还是同一条回复，不会错位）。
+                            bodyExpanded = comment.id in expandedBodyFloors,
+                            onToggleBody = {
+                                expandedBodyFloors = if (comment.id in expandedBodyFloors) {
+                                    expandedBodyFloors - comment.id
+                                } else {
+                                    expandedBodyFloors + comment.id
+                                }
+                            },
                             footer = {
                                 // 动作行左起：**「N 条回复」胶囊**（有子回复时才有）+ 「引用回复」圆钮，
                                 // 右端一颗「更多」（`MoreVert`）。
@@ -3410,9 +3633,10 @@ private fun PostThreadPane(
                                         }
                                     }
                                     Spacer(modifier = Modifier.weight(1f))
-                                    // 「更多」：复制本楼 / 跳到本楼顶部 / 只看此人（看全部）。
-                                    // 三种动作全部是**只读**的，所以锁帖也照给 —— 与顶栏那颗
-                                    // `DetailMoreMenu` 同一个口径（锁帖只挡编辑与删除）。
+                                    // 「更多」：复制本楼 / 跳到本楼顶部 / 只看此人（看全部）/ 举报。
+                                    // 前三种动作是**只读**的，所以锁帖也照给 —— 与顶栏那颗
+                                    // `DetailMoreMenu` 同一个口径（锁帖只挡编辑与删除）；
+                                    // 举报同理：锁帖恰恰是有事要上报的时候。
                                     FloorMoreMenu(
                                         floorLabel = "#${index + 2}",
                                         author = comment.author,
@@ -3421,6 +3645,9 @@ private fun PostThreadPane(
                                         onJumpToSelf = { jumpToFloorId(comment.id) },
                                         onOnlyThisAuthor = { applyAuthorFilter(authorKeyOf(comment)) },
                                         onShowAll = { clearAuthorFilter() },
+                                        // 举报面板的开关在这一层（卡片 item 会被回收），
+                                        // 楼层号用同一个 `index + 2`。
+                                        onReport = { reportTarget = FloorReportTarget(comment, index + 2) },
                                     )
                                 }
                             },
@@ -3527,6 +3754,41 @@ private fun PostThreadPane(
                         }
                     },
                     onDismiss = onDismissToc,
+                )
+            }
+
+            // ---- 帖内搜索面板（[PostSearchSheet]）----
+            //
+            // 与目录同一个位置、同一套理由：`comments` 与 `floorLabelOf` 只有这一层有。
+            // 跳转复用 [jumpToFloorId]（过滤态下会先撤过滤再滚），与「回复 #N」指示条、
+            // 目录面板**完全同一条路径** —— 三个入口跳到同一层时的行为必须一模一样，
+            // 否则"目录里跳得对、搜索里跳偏一层"这种 bug 最难查。
+            if (searchOpen) {
+                PostSearchSheet(
+                    topicTitle = shown.title,
+                    comments = comments,
+                    floorLabelOf = floorLabelOf,
+                    onJump = { id -> jumpToFloorId(id) },
+                    onDismiss = onDismissSearch,
+                )
+            }
+
+            // ---- 举报面板（[FloorReportSheet]）----
+            //
+            // 与目录面板同一种放法：开关在楼层菜单里（菜单只是把 `reportTarget` 置上），
+            // 面板本体画在这一层 —— 楼层 item 会被 LazyColumn 回收，面板不能跟着走。
+            // 提交之后**先关面板再交出去**：剪贴板与 toast 都在 `PostsScreen`，那边的动作
+            // 一旦慢了半拍，人看到的就是"点了提交、面板还盖在上面"。
+            val target = reportTarget
+            if (target != null) {
+                FloorReportSheet(
+                    floorLabel = "#${target.floor}",
+                    author = target.comment.author,
+                    onDismiss = { reportTarget = null },
+                    onSubmit = { reason ->
+                        reportTarget = null
+                        onReportFloor(shown, target.comment, target.floor, reason)
+                    },
                 )
             }
         }
@@ -3906,6 +4168,8 @@ private fun DetailMoreMenu(
     onCopy: () -> Unit,
     /** 打开目录面板（[PostTocSheet]）：楼层一多，"翻回某一楼"就只剩这一条路了。 */
     onOpenToc: () -> Unit,
+    /** 打开帖内搜索（[PostSearchSheet]）：在**当前这条帖子**的楼层里找关键词。 */
+    onOpenSearch: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     var menuOpen by remember { mutableStateOf(false) }
@@ -3929,13 +4193,27 @@ private fun DetailMoreMenu(
             // 图标用 `FormatListBulleted` 而不是 `Icons.Rounded.List`：后者会把 `List`
             // 这个名字带进作用域，与 `List<PostComment>` 这种类型名同形，读代码时容易误会。
             MenuRow(
-                icon = Icons.Rounded.FormatListBulleted,
+                // `AutoMirrored` 版本：`Icons.Rounded.FormatListBulleted` 在本仓的 Compose 版本里
+                // 已标 `@Deprecated`（RTL 语言下图标该镜像），CI 会报 warning。
+                icon = Icons.AutoMirrored.Rounded.FormatListBulleted,
                 label = "目录",
                 tint = scheme.onSurface,
                 enabled = true,
                 onClick = {
                     menuOpen = false
                     onOpenToc()
+                },
+            )
+            // 「帖内搜索」紧跟在目录下面：两者是同一类动作（在长帖里找位置），
+            // 一个按楼层列表找、一个按关键词找。
+            MenuRow(
+                icon = Icons.Rounded.Search,
+                label = "帖内搜索",
+                tint = scheme.onSurface,
+                enabled = true,
+                onClick = {
+                    menuOpen = false
+                    onOpenSearch()
                 },
             )
             HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
@@ -4178,6 +4456,8 @@ private fun FloorCircleButton(
  *    滚到这一层自己的 item + 左边竖条亮 1.5s（[HIGHLIGHT_HOLD_MS]）。
  *  - 「只看此人」/「看全部」：200 层长帖里只追一个人说的话。过滤只改渲染、不重排 `comments`
  *    （见 `PostThreadPane` 里 `floorRows` 那段注释），所以菜单文案随过滤状态在两者之间切换。
+ *  - 「举报」（红）：不是本地动作，开的是 [FloorReportSheet]。**先关菜单再开面板**（见 [onReport]
+ *    的注释），理由清单与文案照 `post_flag_sheet.dart` + `FlagType.defaultTypes`。
  *
  * 抬头那一行（`#N` + 作者）**不可点**：它是"这个菜单在操作哪一层"，不是动作 ——
  * 所以不挂 `clickable`，只吃 `labelSmall` + `onSurfaceVariant`。
@@ -4193,6 +4473,14 @@ private fun FloorMoreMenu(
     onJumpToSelf: () -> Unit,
     onOnlyThisAuthor: () -> Unit,
     onShowAll: () -> Unit,
+    /**
+     * 「举报」：只负责把面板打开（面板本体与开关状态在 [PostThreadPane]）。
+     *
+     * 这个菜单是 `DropdownMenu`，**先关菜单再开面板**（与上面每一项同一个顺序）：不关的话
+     * 菜单的弹出层还挂在这颗按钮上，面板一出来就压在它上面，「面板属于哪一层楼」这件事
+     * 当场糊掉；而且下拉菜单的遮罩还在吃点击。
+     */
+    onReport: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     var menuOpen by remember { mutableStateOf(false) }
@@ -4277,6 +4565,20 @@ private fun FloorMoreMenu(
                     },
                 )
             }
+            // 举报：单独一条分隔线压在它上面 —— 它跟上面那几个"只读动作"不是一类，
+            // 也照惯例放在菜单最后。颜色吃 `scheme.error`（红 = "这一条需要人来看"），
+            // 图标 `Flag`（照 fluxdo `post_flag_sheet.dart:129` 的 `Symbols.flag_rounded`）。
+            HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+            MenuRow(
+                icon = Icons.Rounded.Flag,
+                label = "举报",
+                tint = scheme.error,
+                enabled = true,
+                onClick = {
+                    menuOpen = false
+                    onReport()
+                },
+            )
         }
     }
 }
@@ -4668,6 +4970,21 @@ private fun PostFloorCard(
      * 那种一帧上把它画成和活楼层一模一样。
      */
     deleted: Boolean = false,
+    /**
+     * 长的正文现在是不是"展开全文"那一态（判定见 [isLongFloorBody]，门槛是 800 字 / 20 行）。
+     *
+     * 状态**不在这里**：这个 composable 是无状态的（同一份它被 200 层楼复用，自己记状态就等于
+     * 把 200 份状态塞进一个被回收来回收去的列表项里），由 [PostThreadPane] 按楼层 id 记住再传进来
+     * —— 与 `replies` / `replyIndicator` 同一个做法。
+     */
+    bodyExpanded: Boolean = false,
+    /**
+     * 「展开全文（共 N 字）」/「收起」的落点；**null = 这一层不给折叠**。
+     *
+     * 短正文（不到 800 字且不到 20 行）走的是下面那条**与加折叠之前逐项一致**的分支：不套
+     * 容器、不加按钮、不多一个组合项，所以常见楼层的高度一个字都没变。
+     */
+    onToggleBody: (() -> Unit)? = null,
     footer: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -4678,6 +4995,23 @@ private fun PostFloorCard(
         animationSpec = tween(durationMillis = HIGHLIGHT_FADE_MS),
         label = "floor-highlight",
     )
+    // 这一层的底色：正常是页面色，已删的那一层压在页面色下面垫一格 `errorContainer α0.15`
+    // （源码 `post_segment_frame.dart:152-160` 同色同透明度）。摘出来单独一个值，是因为折叠态
+    // 那层渐变遮罩的**终点色必须与它一模一样** —— 写死 `scheme.surface` 的话，已删楼层/换主题
+    // 时遮罩底部会现出一条颜色不同的横带。
+    val floorBackground = if (deleted) {
+        scheme.errorContainer.copy(alpha = 0.15f).compositeOver(scheme.surface)
+    } else {
+        scheme.surface
+    }
+    // 要不要折：只有调用点给了动作、且正文确实长（800 字 / 20 行）才折。按 `body` 记忆 ——
+    // 列表刷新时没变的正文不重算，O(n) 只付一次。`remember` 放在 `&&` 前面（而不是后面）：
+    // 短路写在前面的 `onToggleBody != null` 一旦由 null 变成非 null，后面的 `remember` 就
+    // 从"没调用过"变成"调用"，那条条件分支的组合位置会挪一格。
+    val foldable = remember(body) { isLongFloorBody(body) } && onToggleBody != null
+    // 折叠态容器的高度：8 行 × 21sp（fontScale = 1 时 168dp，换算见 [foldedBodyMaxHeight]）。
+    val foldedMaxHeight = foldedBodyMaxHeight(LocalDensity.current)
+    val toggleBody: () -> Unit = { onToggleBody?.invoke() }
     // 通栏 + 分隔线，不是卡片：fluxdo 的一层楼是 `PostSegmentFrame` 里 `Padding(EdgeInsets.all(16))`
     // 的一块**无背景、无圆角**的内容，层与层之间靠一条 0.5dp 的底边框分开
     //（`post_item.dart:263-264` / `post_segment_frame.dart:63-67`）。
@@ -4696,14 +5030,8 @@ private fun PostFloorCard(
             .fillMaxWidth()
             // 底色用**页面色**：分隔线要压在这块底色上（日期标签也是这么遮线的，
             // 见 `post_segment_frame.dart:48-51`），换成透明的话画不到目标上。
-            // 已删的那一层压在页面色下面垫一格 `errorContainer α0.15`（源码同色同透明度）。
-            .background(
-                if (deleted) {
-                    scheme.errorContainer.copy(alpha = 0.15f).compositeOver(scheme.surface)
-                } else {
-                    scheme.surface
-                },
-            )
+            // 值见上面的 `floorBackground`（折叠态渐变要跟它对齐）。
+            .background(floorBackground)
             // 上下 12 而不是 16：LazyColumn 已经有 4dp 的同层间距，16+16+4 = 36dp 的层间空白
             // 会把"楼"切断成一屏一屏；12+12+4 = 28，和 fluxdo 一个 16dp 边距再加它自己那点间距的观感一致。
             .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -4839,14 +5167,69 @@ private fun PostFloorCard(
                         // 正文 **14sp / 行高 1.5 = 21sp**（`post_item.dart:332-347` 的
                         // `bodyMedium.copyWith(height: 1.5)`）。本仓 `bodyMedium` 被 FlTypography
                         // 抬到 15/20，不显式压回来每层楼会多占约 5% 的高度、密度明显比 fluxdo 松。
-                        MiniMarkdown(
-                            text = body,
-                            baseStyle = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp,
-                                lineHeight = 21.sp,
-                            ),
-                            color = scheme.onSurface,
-                        )
+                        //
+                        // 收成一个局部 lambda，是因为下面三条分支共用同一段渲染：**正文源码一次都不截**
+                        // ——把 Markdown 截成半截再交给它，切在表格/代码块中间时出来的是残片。
+                        // 折叠作用在**容器**上（高度 + 裁剪 + 遮罩），正文本身始终是完整的一份。
+                        val bodyText: @Composable () -> Unit = {
+                            MiniMarkdown(
+                                text = body,
+                                baseStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 14.sp,
+                                    lineHeight = FOLDED_BODY_LINE_HEIGHT,
+                                ),
+                                color = scheme.onSurface,
+                            )
+                        }
+                        // 短正文 / 已经展开：与加折叠之前**逐项一致**（短正文连按钮都不画）。
+                        if (!foldable || bodyExpanded) {
+                            bodyText()
+                            if (foldable) {
+                                FoldBodyToggle(label = "收起", onClick = toggleBody)
+                            }
+                        } else {
+                            // 折叠态：容器夹到 8 行高，超出的部分裁掉，再在底部叠一段 32dp 的
+                            // 竖向渐变（透明 → 底色），读起来是"下面还有，淡出去了"。
+                            //
+                            // 遮罩用 `drawWithContent` **画**、而不是再叠一个 Box：叠出来的那个
+                            // 兄弟节点会参与命中测试，把正文最后几行的点击（链接、图片）吃掉；
+                            // 画上去的东西没有布局节点，一个事件都不碰。
+                            //
+                            // 不做 `animateContentSize`：200 层楼的列表里给每层挂一个尺寸动画，
+                            // 展开/收起那一刻会把整屏的测量拉长一倍，滚动跟手感直接崩掉。
+                            // 盒子高度跳变、滚动位置不动（上面的内容一像素都没挪）。
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = foldedMaxHeight)
+                                    .clipToBounds()
+                                    .drawWithContent {
+                                        drawContent()
+                                        // `coerceAtMost(size.height)`：容器万一比遮罩还矮
+                                        // （正文只有几行、却因为长行被判成长），`startY` 会成负数、
+                                        // 渐变直接画到框外。夹一下，这种边角上最多是"整块都是实色"。
+                                        val fade = FOLDED_BODY_FADE_HEIGHT.toPx()
+                                            .coerceAtMost(size.height)
+                                        drawRect(
+                                            // 终点是这一层的底色、起点透明：底部是实色（第 8 行
+                                            // 被压淡），往上淡出到没有。
+                                            brush = Brush.verticalGradient(
+                                                colors = listOf(Color.Transparent, floorBackground),
+                                                startY = size.height - fade,
+                                                endY = size.height,
+                                            ),
+                                            topLeft = Offset(0f, size.height - fade),
+                                            size = Size(size.width, fade),
+                                        )
+                                    },
+                            ) {
+                                bodyText()
+                            }
+                            FoldBodyToggle(
+                                label = "展开全文（共 ${body.length} 字）",
+                                onClick = toggleBody,
+                            )
+                        }
                     }
                     // 这一行原来靠父级 `spacedBy(4.dp)` 与正文隔开；父级间距去掉后自己垫。
                     Spacer(modifier = Modifier.height(4.dp))
@@ -4858,6 +5241,283 @@ private fun PostFloorCard(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 长正文底下那颗「展开全文（共 N 字）」/「收起」。
+ *
+ * 用 `TextButton` 而不是自绘一行 `clickable`：它自带按钮的无障碍角色、涟漪与最小触控高度，
+ * 而这里要的正是一颗"点得着的一行字"。`contentPadding` 收到 0，文字**贴正文的左边缘**——
+ * 正文没有缩进，按钮再缩一格就成了另一层的东西。
+ *
+ * 展开与收起只换文案（「收起」）、不换图标不换颜色：同一颗按钮连点两次是展开→收起，位置不动，
+ * 手指不用重新找。
+ */
+@Composable
+private fun FoldBodyToggle(label: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.primary,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * 一条举报理由：稳定键 + 标题 + 一句说明。
+ *
+ * [key] 不进界面，只留在代码里当标识（真正的落点是剪贴板里那段人话）；界面只画 [title] 与
+ * [description] 两层，与 fluxdo 的 `_buildFlagOption`（`post_flag_sheet.dart:223-292`）同一个结构：
+ * 上面一行标题、下面一行灰字说明。
+ */
+private class FloorReportReason(
+    val key: String,
+    val title: String,
+    val description: String,
+)
+
+/**
+ * 举报理由清单：分类与文案照参考实现。
+ *
+ *  - 来源一：`lib/widgets/post/post_item/widgets/post_flag_sheet.dart:41-44` 把清单分成两段
+ *    （「向 @用户 发送消息」= `notify_user`，与「私下通知管理人员」= 其余）；
+ *  - 来源二：`lib/models/topic.dart:2871-2905` 的 `FlagType.defaultTypes` 是那四条的**兜底**
+ *    定义（`off_topic` / `inappropriate` / `spam` / `notify_moderators`，position 1..4）；
+ *  - 来源三：中文文案在 `lib/l10n/modules/topic/topic_zh.arb:244-251`。
+ *
+ * 只搬「通知管理人员」那一段：本仓没有私信通道（`PostStore` 连举报都没有），"向作者发送消息"
+ * 那几条摆出来就是点下去没有任何落点的选项 —— 宁可少一段，也不给一颗假按钮。
+ * 顺序按源码的 `position`，`other`（= `notify_moderators`）照旧在最后。
+ */
+private val FLOOR_REPORT_REASONS = listOf(
+    FloorReportReason("off_topic", "离题", "此帖与当前讨论无关，应该移到其他话题"),
+    FloorReportReason("inappropriate", "不当内容", "此帖包含不适当的内容"),
+    FloorReportReason("spam", "垃圾信息", "此帖是广告或垃圾信息"),
+    FloorReportReason("other", "其他问题", "需要管理人员关注的其他问题"),
+)
+
+/**
+ * 举报面板正对着的那一层：楼层本体 + 楼层号。
+ *
+ * 楼层号在这里存一份（而不是画面板时再扫 `comments`）：与卡片上的 `#N`、菜单抬头、复制出来的
+ * `#N` 都是调用点那一个 `index + 2`，本文件反复强调"楼层号只该有一处算法"。
+ */
+private class FloorReportTarget(val comment: PostComment, val floor: Int)
+
+/**
+ * 楼层举报面板：贴底、自绘。
+ *
+ * 骨架照同文件的 [ComposerPickerSheet]（`BasicAlertDialog` + 整屏遮罩 + 贴底 `Surface` +
+ * 抓手/关闭 + 内容区自己滚），**没有**用 `ModalBottomSheet`：本仓别处的面板已经踩过
+ * "sheet 抢手势、与列表滚动打架"的坑，贴底 Surface 这条路一直稳。
+ *
+ * 内容照 `post_flag_sheet.dart:119-208`：标题写清**操作对象**（`#N · 作者`，同 `:127-138`），
+ * 一段一条的单选列表，底部一颗主按钮。差别只有一处，而且是刻意的：**提交不是发请求**。
+ * 本仓后端没有举报 RPC，所以这里老老实实写一行「当前版本没有在线举报通道」，
+ * 提交 = 把整理好的文本复制走（见 [reportableFloor]），toast 也说同一件事。
+ * 一个空请求、一句"举报成功"都比这行小字更糟：那是在骗点按钮的人。
+ *
+ * 空理由时「提交」是灰的：复制一段没有理由的举报等于什么也没说。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FloorReportSheet(
+    /** 这一层的楼层号（`#N`）。 */
+    floorLabel: String,
+    author: String,
+    onDismiss: () -> Unit,
+    /** 选中理由的**标题**（「不当内容」这种），由调用点拼进剪贴板文本。 */
+    onSubmit: (String) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    var picked by remember { mutableStateOf<FloorReportReason?>(null) }
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+        // 整宽：面板里每一行都是"整宽一行都可点"的候选，平台默认宽度会让它缩成中间一条。
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 遮罩整屏铺满（理由见 [ComposerPickerSheet] 里那段注释：按面板高度画会留下死区）。
+            // 面板自己是不透明 `Surface`，天然挡点击，所以遮罩铺满不会误关。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            Surface(
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = FlSurfaceLevel.Block.colorOf(scheme),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 导航栏留白垫在面板上：最后那排按钮不垫会被手势条压住。
+                        .navigationBarsPadding(),
+                ) {
+                    // 抓手 + 关闭：与 [ComposerPickerSheet] 同一个尺寸（40×4、`onSurfaceVariant α0.3`）。
+                    Box(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(width = 40.dp, height = 4.dp)
+                                .background(scheme.onSurfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(50)),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 8.dp)
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(50))
+                                .clickable(role = Role.Button, onClickLabel = "关闭", onClick = onDismiss),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.Close, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
+                        }
+                    }
+                    // 标题行：红旗下 + 「举报 #N · 作者」（照 `post_flag_sheet.dart:127-138`：
+                    // 图标吃 `error`，标题把这个面板在操作哪一层写在脸上）。
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Flag, null, Modifier.size(20.dp), tint = scheme.error)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "举报 $floorLabel · ${author.ifBlank { "匿名" }}",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = scheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    // 「提交其实是复制」必须写在这里、用正常的字号读得见：这是这个面板唯一一处
+                    // 可能与预期不符的地方，藏进 toast 里太晚（人已经点完了）。
+                    Text(
+                        text = "当前版本没有在线举报通道，提交只是把这条举报复制下来，需要你发到反馈群。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp),
+                    )
+                    // 理由列表：四条其实一屏就放得下，`heightIn` + 滚动是给"以后加理由 / 字号很大"
+                    // 留的余量，免得小屏上一颗按钮被挤出屏幕。
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        FLOOR_REPORT_REASONS.forEach { reason ->
+                            ReportReasonRow(
+                                reason = reason,
+                                picked = picked === reason,
+                                onClick = { picked = reason },
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 「取消」与标题右边那颗 X 是同一个出口，多给一颗文字按钮是因为这一行
+                        // 已经有「提交」了：只给 X 时人得先找一次出口。
+                        TextButton(onClick = onDismiss) {
+                            Text("取消", color = scheme.onSurfaceVariant)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = { picked?.let { reason -> onSubmit(reason.title) } },
+                            // 没选理由就点不动：见这个函数上面的注释。
+                            enabled = picked != null,
+                        ) {
+                            Text("提交")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 举报面板里的一行理由：单选点 + 标题 + 一句说明。
+ *
+ * 单选点自己画（两个 `drawCircle`），不引 M3 的 `RadioButton`：那个自带 48dp 触控区与禁用色，
+ * 套进这一行就是两层点击区、两种灰。形状沿用 [PickerOptionRow] 的圆角与 48dp 行高，
+ * 从别的面板点过来手指还是那根手指。
+ */
+@Composable
+private fun ReportReasonRow(
+    reason: FloorReportReason,
+    picked: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(role = Role.RadioButton, onClickLabel = reason.title, onClick = onClick)
+            // 最小 48dp 放在 padding **之前**：这样那一行算上内边距正好 48（与菜单项、胶囊
+            // 同一个触控档），写在 padding 之后会变成 48 + 12 = 60，四条理由就凭空高出 48dp。
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .drawBehind {
+                    drawCircle(
+                        color = if (picked) scheme.primary else scheme.outlineVariant,
+                        style = Stroke(width = 1.5.dp.toPx()),
+                    )
+                    if (picked) {
+                        // 实心内点：半径收 4dp，读作"选中的那一颗"。
+                        drawCircle(color = scheme.primary, radius = size.minDimension / 2f - 4.dp.toPx())
+                    }
+                },
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = reason.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (picked) scheme.primary else scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = reason.description,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

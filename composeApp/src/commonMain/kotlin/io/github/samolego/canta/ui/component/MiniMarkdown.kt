@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,10 +25,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -49,8 +54,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 行内标记：`**粗**` `*斜*` `_斜_` `` `代码` `` `~~删除~~` `[文字](链接)`，以及**裸地址**
- * （`https://…` 直接粘进来那种）。不处理块级。
+ * 行内标记：`**粗**` `*斜*` `_斜_` `` `代码` `` `~~删除~~` `[文字](链接)`、**裸地址**
+ * （`https://…` 直接粘进来那种），以及 `@名字` **提及**（主色 + 半粗，刻意不可点，见 [mentionEndAt]）。
+ * 不处理块级。
  *
  * 只认**成对**的标记：没闭合的那一半原样输出，因为帖子正文常有人手打一个星号，
  * 吃掉它比留着更难看。链接是**可点**的（`LinkAnnotation.Url`，点击由 `LocalUriHandler` 打开，
@@ -143,11 +149,14 @@ fun MiniMarkdown(
                     modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
                 )
 
-                is MdBlock.Paragraph -> Text(
-                    text = markdownInline(block.text, linkColor),
-                    style = baseStyle,
+                // 段落可能夹着行内图片（`看这张 ![截图](url) 效果`），由 [ParagraphContent]
+                // 决定是"一个 Text"还是"文字 + 图片 + 文字"；没有行内图片时它内部只画一个 Text，
+                // 与改动前逐字节一致，不额外套一层 Column。
+                is MdBlock.Paragraph -> ParagraphContent(
+                    text = block.text,
+                    baseStyle = baseStyle,
                     color = color,
-                    softWrap = true,
+                    linkColor = linkColor,
                 )
 
                 is MdBlock.BulletList -> Column(
@@ -249,6 +258,120 @@ private fun headingStyle(level: Int): TextStyle {
 }
 
 /**
+ * 段落渲染：纯文字就一个 [Text]；带行内图片时按 `[文字][图片][文字…]` 依次铺。
+ *
+ * 为什么要拆：Markdown 里图片本来就可以写在句子中间（`看这张 ![截图](https://…) 效果`），
+ * 但 [parseBlocks] 只把**整行**一个 `![](…)` 认成图片块（[imageBlockOf]），行内那种会落进段落、
+ * 被当普通文字原样吐出来——`![截图](https://…)` 连括号一起显示，等于这张图在手机上永远看不见。
+ * 参考实现的扩展表里行内图片是正常渲染的（`lib/widgets/markdown_editor/markdown_renderer.dart:220-223`
+ * 把正文交给 `ExtensionSet.gitHubFlavored`），这里补上同一件事。
+ *
+ * 拆出来的图片**不参与** [PostImageGrid] 成组：成组只对"整行图片"成立（[MiniMarkdown] 里那段
+ * 连续图片循环，对应参考实现的 `builders/image_grid_builder.dart`）。把句子中间的图并进方图墙
+ * 等于把它从那句上下文里拽出来，读者就不知道那句话在说什么了。
+ *
+ * 纯文字段落**不加**额外的组合项：`pieces` 只有一个文字片时直接画一个 [Text]，与改动前的调用点
+ * 完全一致（一楼几百个段落，凭空多套一层 Column 是白送的布局开销）。改动来源是需求里
+ * 「没有行内图片的段落行为与现在完全一致」这一条。
+ */
+@Composable
+private fun ParagraphContent(
+    text: String,
+    baseStyle: TextStyle,
+    color: Color,
+    linkColor: Color,
+) {
+    val pieces = remember(text) { splitInlineImages(text) }
+    val single = pieces.singleOrNull()
+    if (single is ParagraphPiece.Plain) {
+        Text(
+            text = markdownInline(single.text, linkColor),
+            style = baseStyle,
+            color = color,
+            softWrap = true,
+        )
+        return
+    }
+    Column {
+        pieces.forEach { piece ->
+            when (piece) {
+                is ParagraphPiece.Plain -> Text(
+                    text = markdownInline(piece.text, linkColor),
+                    style = baseStyle,
+                    color = color,
+                    softWrap = true,
+                )
+                // 上下留白与整行图片那条对齐（6dp）：段内的图不会把上下两行字挤在一起。
+                // 同一地址重复出现时由 `PostImageCache`（`PostImage.kt:578`）兜住，只下一次网络。
+                is ParagraphPiece.Picture -> PostImage(
+                    url = piece.url,
+                    alt = piece.alt,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 段落里的一段：[Plain] 是普通文字，[Picture] 是一张行内图片。 */
+private sealed interface ParagraphPiece {
+    class Plain(val text: String) : ParagraphPiece
+    class Picture(val url: String, val alt: String) : ParagraphPiece
+}
+
+/**
+ * 行内图片语法：`![说明](https://…)`，说明可以为空。
+ *
+ * 与 [ImagePattern]（整行版）只差锚点：那边要求整行**只有**这一个语法，这边允许前后还有字，
+ * 所以不加 `^…$`。地址同样只认 http(s)，别的（相对路径、`data:`）留着当文字，见 [imageBlockOf]。
+ */
+private val InlineImagePattern = Regex("""!\[([^\]]*)\]\((https?://[^\s)]+)\)""")
+
+/**
+ * 把一段正文按行内图片切成若干片；没有图片时返回**单独一片原文**，
+ * 调用方 [ParagraphContent] 据此走"一个 Text"的快路径。
+ */
+private fun splitInlineImages(text: String): List<ParagraphPiece> {
+    val pieces = mutableListOf<ParagraphPiece>()
+    var cursor = 0
+    for (hit in InlineImagePattern.findAll(text)) {
+        val start = hit.range.first
+        if (start > cursor) pieces += ParagraphPiece.Plain(text.substring(cursor, start))
+        pieces += ParagraphPiece.Picture(
+            url = hit.groupValues[2],
+            alt = hit.groupValues[1].trim(),
+        )
+        cursor = hit.range.last + 1
+    }
+    if (cursor < text.length) pieces += ParagraphPiece.Plain(text.substring(cursor))
+    // 整段就是一张行内图时 `pieces` 里只有图片片，这里不补空文字片：空的 Text 会多占一行行高。
+    if (pieces.isEmpty()) pieces += ParagraphPiece.Plain(text)
+    return pieces
+}
+
+/**
+ * 代码块先露几行，超过就折起来。
+ *
+ * 12 行是"能看出这段在干什么、又不至于把一层楼撑成两三屏"的折中；一段两百行的日志摊开后，
+ * 后面几层回复要翻好几屏才看得到。参考实现的代码外壳同样给内容区设了高度上限
+ * （`lib/utils/fluxdo_render_callbacks.dart:697` 的 `maxHeight: screenHeight * 0.3`），
+ * 只是那边限的是图表预览区，这里按行数限，行数比屏高更好预期。
+ */
+private const val CodeBlockCollapsedLines = 12
+
+/**
+ * 折起时**代码文本区**的限高：`bodySmall` 是 `fontSize 12sp` / `lineHeight 18sp`，
+ * 12 行 = `18 × 12 = 216dp`（sp 与 dp 在字体缩放 1.0 时 1:1，这里就按 1:1 算）。
+ *
+ * 为什么不读 `MaterialTheme.typography.bodySmall.lineHeight`：拿回来的是 `TextUnit`，
+ * 再折算成 dp 要过 `LocalDensity` + 字体缩放，限高值会随系统字号漂，折叠区的大小就不可预期了。
+ * 布局尺寸用固定 dp；系统字号放大的用户会少看到小半行，这是有意的取舍。
+ *
+ * 216dp 只是文字区的上限，`10dp` 的左右/上下内边距在它外侧，所以折叠时容器比 216 稍高一点。
+ */
+private val CodeBlockCollapsedHeight = (18 * CodeBlockCollapsedLines).dp
+
+/**
  * 围栏代码块：一条 28dp 的标题行（左语言名、右复制）+ 代码本体。
  *
  * 单独一个 composable 是为了让 `rememberScrollState()` 有个固定的调用点：
@@ -264,11 +387,23 @@ private fun headingStyle(level: Int): TextStyle {
  * 剪贴板用 `LocalClipboardManager.setText(AnnotatedString(...))`——仓库里 `ChatScreen.kt:649`
  * （复制消息）、`TweaksScreen.kt:156`（复制命令）都是这一套，commonMain 三端（安卓/桌面/wasm）
  * 通用；不能用 `android.content.ClipboardManager`，那是 androidMain 才有的东西。
+ *
+ * 超过 [CodeBlockCollapsedLines] 行时**纵向裁剪**到 [CodeBlockCollapsedHeight]，底部给一行
+ * 「展开全部（共 N 行）」/「收起」。这里刻意**不加**纵向滚动：`verticalScroll` 套
+ * `horizontalScroll`（或反过来）在 `LazyColumn` 里会拿到无限高约束，一量就崩；而且嵌套滚动手势
+ * 在手机上本来就分不清是在滚代码还是在滚楼层。裁剪的好处是"这一楼占多少高度"是写死的，
+ * 展开才把它放开。
  */
 @Composable
 private fun CodeBlock(code: String, language: String, color: Color) {
     val clipboard = LocalClipboardManager.current
     val scroll = rememberScrollState()
+    // 行数 = 换行符个数 + 1：`"a\nb"` 是两行；末尾没有换行的最后一行也算一行（`"a\n"` 是两行）。
+    val lineCount = remember(code) { code.count { it == '\n' } + 1 }
+    val collapsible = lineCount > CodeBlockCollapsedLines
+    // 键是 `code`：同一条帖子里换了代码内容就回到收起态，不把上一段代码"展开过"的状态带过来。
+    var expanded by remember(code) { mutableStateOf(false) }
+    val collapsed = collapsible && !expanded
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -315,8 +450,44 @@ private fun CodeBlock(code: String, language: String, color: Color) {
             softWrap = false,
             modifier = Modifier
                 .horizontalScroll(scroll)
-                .padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 10.dp),
+                .padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 10.dp)
+                .then(
+                    // 只约束高度，宽度照旧由 horizontalScroll 给（无限宽）；两者是不同轴，不会互相
+                    // 抢约束，也就不存在"无限约束传下去把布局量崩"的那条老问题。
+                    if (collapsed) {
+                        Modifier
+                            .heightIn(max = CodeBlockCollapsedHeight)
+                            // 超出 12 行的部分要真的切掉：`heightIn` 只是把量出来的高度夹住，
+                            // 手快的排版实现仍可能画到框外，`clipToBounds()` 才是那道闸。
+                            .clipToBounds()
+                    } else {
+                        Modifier
+                    },
+                ),
         )
+        if (collapsible) {
+            // 「叠」在容器**底部**，但用独立一行 32dp 而不是浮在代码上：浮层要么盖住第 12 行，
+            // 要么得垫一层不透明底色/渐变压在代码上，而代码字是正文色，一压就读不清。
+            // 居中对齐而不是右对齐：这一行是整块代码的分界线，居中读作"这块内容的开关"；
+            // 右对齐会与顶栏那颗复制图标连成一条竖线，像是第二个复制按钮。
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(32.dp)
+                    .clickable(
+                        onClickLabel = if (expanded) "收起代码" else "展开全部代码",
+                    ) { expanded = !expanded }
+                    .padding(horizontal = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (expanded) "收起" else "展开全部（共 $lineCount 行）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
     }
 }
 
@@ -882,11 +1053,85 @@ private class InlineMatch(
 )
 
 /**
+ * `@提及` 允许的字符：ASCII 字母数字、`_`、`-`，以及中文汉字（`\u4e00`..`\u9fa5`，覆盖常用汉字区）。
+ *
+ * 不认全角 `＠`：Discourse 那条来源的提及是半角敲出来的，全角那个更可能是排版时的随手输入。
+ */
+private fun isMentionChar(ch: Char): Boolean =
+    ch in 'A'..'Z' ||
+        ch in 'a'..'z' ||
+        ch in '0'..'9' ||
+        ch == '_' ||
+        ch == '-' ||
+        ch in '\u4e00'..'\u9fa5'
+
+/** 名字最短/最长：一个字符就当提及太容易误伤（正文里手打一个 `@` 太常见），超过 20 也不是用户名。 */
+private const val MentionMinLength = 2
+private const val MentionMaxLength = 20
+
+/**
+ * `@` 前面出现这些字符时，说明它多半在一段地址里，不是在跟人说话：`/` `:` `?` `#` `&` `=` 都是
+ * URL 的结构符。
+ *
+ * 刻意**不**把这几个字符放进来：`_` `-` `+` `%` `.`。`_@张三_` 这种斜体写法里 `@` 前面就是 `_`，
+ * 挡掉它等于把提及吞了；而邮箱那侧由"前面不能是 ASCII 字母数字"那条管住（`a.b@c.com` 的 `@`
+ * 前面是字母，已经挡住了），不需要再加一层。
+ */
+private const val MentionBlockingPrefix = "/:?#=&"
+
+/**
+ * [start] 处是不是一个 `@名字`；是就返回它结束的位置（`@` 之后那串名字的末尾）。
+ *
+ * 规则来自需求：半角 `@` + 紧跟的 2–20 个 [isMentionChar] 字符。三道闸：
+ *
+ *  1. **`@` 前一个字符不能是 ASCII 字母数字**——这就是"不把邮箱当提及"的判据。
+ *     刻意只算 ASCII：中文里 `谢谢@张三` 是词与词直接相接，把汉字也当成"紧贴邮箱"的证据会把
+ *     最常见的写法挡掉（`Char.isLetterOrDigit()` 对汉字返回 true，所以这里不能图省事用它）。
+ *  2. **`@` 前一个字符不能是地址结构符**（[MentionBlockingPrefix]）。裸地址在 [appendMarked] 里
+ *     是整条先吃掉的，`https://x/@y` 轮不到这里；留着这道闸是为了兜住"前半截已经被当文字输出"的
+ *     情况，别让地址尾巴被高亮成半截蓝色。
+ *  3. **长度 2–20**，短了不认、长了截断到 20（后面的字符还给正文，不吞字）。
+ *
+ * 参考实现的提及正则（`lib/models/mention_user.dart:7`）走的是"前面必须是行首或空白"那条路，
+ * 这里放宽成"不是字母数字"：中文里 `谢谢@张三` 前面没有空格，按空白判会漏掉一半的提及。
+ */
+private fun mentionEndAt(text: String, start: Int): Int? {
+    if (start >= text.length || text[start] != '@') return null
+    if (start > 0) {
+        val prev = text[start - 1]
+        if (prev in 'A'..'Z' || prev in 'a'..'z' || prev in '0'..'9') return null
+        if (prev in MentionBlockingPrefix) return null
+    }
+    var end = start + 1
+    while (end < text.length && end - start - 1 < MentionMaxLength && isMentionChar(text[end])) end++
+    if (end - start - 1 < MentionMinLength) return null
+    return end
+}
+
+/**
  * 在 [start] 处试每种标记，命中就返回。返回 null 表示这个字符按字面输出。
  *
  * 长的先试：`**` 在 `*` 前面，否则粗体会被当成两个斜体。
  */
 private fun matchInlineAt(text: String, start: Int, linkColor: Color): InlineMatch? {
+    // `@名字` 排在最前面：它只认 `@`，抢不走 `**`/`*`/`[`/`` ` `` 那些按首字符分的分支。
+    // 与裸地址的先后关系是由调用方决定的——[appendMarked] 在每个位置先问这个函数，
+    // 问不到才试 [bareUrlEnd]；所以 `https://x/@y` 是在 `h` 那个位置被整条吃掉，`@` 根本轮不到。
+    // 这里的"`@` 前一个字符是地址结构符就不认"是第二道闸，兜住裸地址前半截已经画成文字的情况。
+    val mentionEnd = mentionEndAt(text, start)
+    if (mentionEnd != null) {
+        return InlineMatch(
+            end = mentionEnd,
+            contentStart = start + 1,
+            contentEnd = mentionEnd,
+            // 主色 + 半粗：只表达"这是对某个人说的"，**点不开**——本仓库没有"用户名 → 主页"的
+            // 解析接口，挂 `LinkAnnotation` 等于给一个点了没反应的链接。参考实现那边能点，
+            // 是因为它拿得到 `mentionedUsers` 并配了 `onMentionUser` 回调
+            // （`lib/models/mention_user.dart:7` 起那段提及解析就是给这个用途的）。
+            style = SpanStyle(color = linkColor, fontWeight = FontWeight.SemiBold),
+            deep = false,
+        )
+    }
     if (text[start] == '`') {
         val close = text.indexOf('`', start + 1)
         // 空的 `` 不算代码片段，按字面留着。
