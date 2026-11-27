@@ -99,6 +99,17 @@ private const val SNAPSHOT_TIMEOUT_MS = 15_000L
 private const val SNAPSHOT_RETRY_BACKOFF_MS = 60_000L
 
 /**
+ * 快照内存缓存的有效期。
+ *
+ * 一分钟：db-backup 目前 5–15 分钟跑一轮，所以一份快照最长就是「上一轮」那么旧；
+ * 一分钟的缓存不会让用户多等（有旧内容先画旧的），也不会让几十 KB 的文件被反复下载。
+ *
+ * 这条**必须有**：2026-11-27 有人提交方案后，自己开着 App 一天都看不到它，
+ * 就是因为缓存原来永不过期（见 [snapshotCache]）。
+ */
+private const val SNAPSHOT_CACHE_TTL_MS = 60_000L
+
+/**
  * 随包带的那一份方案快照（composeResources/files/plans_snapshot.json）。
  *
  * 由 db-backup.yml 在每次生成 site/db/plans.json 之后一并写进来，所以它和线上那份同源。
@@ -352,12 +363,29 @@ class PlanRepository(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** 快照读成功过一次就记着，别每次断网都重新拉一遍几百 KB。 */
+    /**
+     * 快照读成功过一次就记着，别每次进列表都重新拉一遍几百 KB。
+     *
+     * **但它会过期**（[SNAPSHOT_CACHE_TTL_MS]）。2026-11-27 的真事：有人 03:36 提交了方案
+     * （`plans.id=381`，真我 Neo8），而 `db-backup` 03:24 刚生成过快照、下一次要到 03:45，
+     * 于是 GitHub 上那份还没有他。这时如果他（或任何人）在 03:24 之后已经打开过列表，
+     * 这一格缓存**永远不会失效**——App 开着一天就一天看不到，刷新也没用，因为刷新走的是
+     * 同一个 `offlinePlans()`，第一行就是 `snapshotCache?.let { return it }`。
+     *
+     * 所以缓存要带时间：过了 TTL 就重新去网上读一次。一分钟这个量级既不会让用户等
+     * （有旧内容可用时先画旧的、后台换新的），也不会让一份几十 KB 的文件被反复下载。
+     */
     private var snapshotCache: List<CommunityPlan>? = null
+
+    /** [snapshotCache] 是什么时候填的；配合 [SNAPSHOT_CACHE_TTL_MS] 判过期。 */
+    private var snapshotCachedAt: Long = 0L
 
     /** 推荐条目快照读成功一次的缓存；与 [snapshotCache] 同样的理由（一份几十 KB，别反复拉）。 */
     @Volatile
     private var suggestionCache: List<SuggestedApp>? = null
+
+    /** [suggestionCache] 的填充时间，配合 [SNAPSHOT_CACHE_TTL_MS] 判过期。 */
+    private var suggestionCachedAt: Long = 0L
 
     /**
      * 上一次「两个源都读不到」的时间（单调递增的本机时钟）。
@@ -378,14 +406,18 @@ class PlanRepository(
      * 不是一次业务请求，它失败时调用方看到的是「这边没有，去问后端」，不该被改写成另一种错误。
      */
     suspend fun offlinePlans(): List<CommunityPlan> {
-        snapshotCache?.let { return it }
+        // 缓存只在 TTL 内算数（见 snapshotCache 的注释）：过了就重新去网上读一次。
+        // 读失败时下面还有「磁盘 → APK 内置」两层，所以这里不用担心把内容弄丢。
+        snapshotCache?.let {
+            if (currentTimeMillis() - snapshotCachedAt < SNAPSHOT_CACHE_TTL_MS) return it
+        }
         // 刚失败过就别再去网上试：这条现在是热路径（每次列表），不能让它反复等满超时。
         // 但**不能就此返回空** —— 那把这个"保底"自己变成了坏消息。退避期间读本地：
         // 先磁盘（上次联网那份），再 APK 内置（打包那份）。
         if (snapshotFailedAt != 0L && currentTimeMillis() - snapshotFailedAt < SNAPSHOT_RETRY_BACKOFF_MS) {
             val persisted = runCatching { loadPersisted?.invoke() }.getOrNull().orEmpty()
             if (persisted.isNotEmpty()) {
-                snapshotCache = persisted
+                // 磁盘那份也不标成「刚读到」：它可能比网上那份旧，下一轮该继续尝试联网。
                 return persisted
             }
             return bundledSnapshot()
@@ -402,6 +434,7 @@ class PlanRepository(
             // 解析出一个空表多半是文件被写坏了：那也算没读到，接着试下一个源。
             if (rows.isEmpty()) continue
             snapshotCache = rows
+            snapshotCachedAt = currentTimeMillis()
             snapshotFailedAt = 0L
             // 同时落盘：下次断网时读的就是这一份（比 APK 内置那份新）。
             // 失败吞掉 —— 存不进去不该让这次成功的读取变成失败。
@@ -432,12 +465,19 @@ class PlanRepository(
      * 的退避窗口内。两处都必须给出「有内容」，否则保底这一层等于不存在。
      */
     private suspend fun bundledSnapshot(): List<CommunityPlan> {
-        snapshotCache?.let { return it }
+        // 同一份 TTL：内置那份是 APK 里读出来的，内容不会变，但**缓存里可能已经换成网络那份**
+        // （磁盘 → 内置这条链上，读到的可能是别的来源留下的旧值），所以同样按时间放行。
+        snapshotCache?.let {
+            if (currentTimeMillis() - snapshotCachedAt < SNAPSHOT_CACHE_TTL_MS) return it
+        }
         val rows = runCatching {
             parsePlans(Res.readBytes(BUNDLED_SNAPSHOT_PATH).decodeToString())
         }.getOrDefault(emptyList())
         // 成功读出来就进缓存：后面整个会话都不必再碰这个文件。
-        if (rows.isNotEmpty()) snapshotCache = rows
+        if (rows.isNotEmpty()) {
+            snapshotCache = rows
+            // 内置那份不标成新鲜：它最旧，下一轮该继续尝试联网。
+        }
         return rows
     }
 
@@ -1820,7 +1860,11 @@ class PlanRepository(
      * 里面**不该**、也**不能**带上"这台手机投过没"。谁投过由客户端自己的本地状态叠加。
      */
     private suspend fun offlineSuggestions(): List<SuggestedApp>? {
-        suggestionCache?.let { return it }
+        // 与 [snapshotCache] 同一条 TTL 规矩：推荐条目也是「别人随时会新提一条」的东西，
+        // 永不过期的缓存会让刚提的条目在自己和别人屏幕上都不出现。
+        suggestionCache?.let {
+            if (currentTimeMillis() - suggestionCachedAt < SNAPSHOT_CACHE_TTL_MS) return it
+        }
         for (url in listOf(suggestionMirrorUrl, suggestionUrl)) {
             if (url.isBlank()) continue
             val text = runCatching {
@@ -1834,6 +1878,7 @@ class PlanRepository(
             }.getOrDefault(emptyList())
             if (rows.isEmpty()) continue
             suggestionCache = rows
+            suggestionCachedAt = currentTimeMillis()
             return rows
         }
         // 网络不通 → 随包那份（装机那天的社区）。
