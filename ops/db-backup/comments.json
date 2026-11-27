@@ -5076,6 +5076,18 @@
   "target": "com.coloros.sceneservice"
  },
  {
+  "author": "Admin",
+  "author_id": "13489",
+  "body": "安全文件夹里的还是无法删除，无法给权限",
+  "created_at": "2026-11-27T03:21:12.56879+00:00",
+  "device_model": "SM-S9180",
+  "id": 769,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "One UI 8.5",
+  "target": "com.mobiletools.systemhelper"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "[不看]你们这个没改名字的，主页那里闪动吗？",
