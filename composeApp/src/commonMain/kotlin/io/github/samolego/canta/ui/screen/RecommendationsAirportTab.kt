@@ -295,11 +295,12 @@ internal fun RecommendationsAirportTab(
 
             // 榜单的顺序：认同票多的排前面；票一样多时看评分人数（评的人多说明更被用过），
             // 再一样就按创建时间——先上来的排前面，免得同票的两家每次刷新都换位置。
+            // 后端给的是 ISO 时间串，升序即「早的在先」；缺时间的排到最后，不抢位置。
             val ranked = remember(airports) {
                 airports.sortedWith(
                     compareByDescending<CommunityAirport> { it.agrees }
                         .thenByDescending { it.ratingCount }
-                        .thenByDescending { it.createdAt },
+                        .thenBy { it.createdAt.ifEmpty { "9999" } },
                 )
             }
             val boardTitle = stringResource(Res.string.recommend_tab_airport_vote)
