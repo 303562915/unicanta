@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.SponsorEntry
 import io.github.samolego.canta.data.community.SponsorStore
 import io.github.samolego.canta.data.community.SponsorWall
@@ -154,6 +155,33 @@ private val IconTile = 62.dp
 
 /** 赞助榜一格里的头像直径。 */
 private val SponsorAvatar = 34.dp
+
+/**
+ * 赞助榜在 [ScreenCache] 里的键。
+ *
+ * 榜是公开的、与"谁在看"无关，所以**不分人一格**（商城页的余额要分人，这里不用）。
+ */
+private const val SPONSOR_WALL_CACHE = "screen:sponsors"
+
+/**
+ * 把这次拉到的榜并到已经画出来的那份上：**老的一个不动，新来的人接在后面**。
+ *
+ * 为什么不直接换成 [fresh]：整块替换等于每刷新一次就重排一遍，人一多看起来就是"人变了"，
+ * 而且网络抖一下（fresh 只剩几条）会把已经看到的人全抹掉。按 id 合并之后，同一个人还在原位、
+ * 只是金额按最新的更新，新出现的排在最后。
+ *
+ * 已经被撤掉（`hidden`）的人这一趟不会被移除：榜很少撤人，而"用缓存兜底"是这一块的主要诉求；
+ * 真要清掉某人，把这一格的缓存键改个名字即可（见 [SPONSOR_WALL_CACHE]）。
+ */
+private fun mergeSponsors(old: List<SponsorEntry>, fresh: List<SponsorEntry>): List<SponsorEntry> {
+    if (fresh.isEmpty()) return old
+    if (old.isEmpty()) return fresh
+    val latest = fresh.associateBy { it.id }
+    // 老位置不动，数据用这次的最新值。
+    val kept = old.map { latest[it.id] ?: it }
+    val seen = old.mapTo(mutableSetOf()) { it.id }
+    return kept + fresh.filter { it.id !in seen }
+}
 
 /** 「我也赞助」小窗里那张收款码的边长：够扫，又不至于把整屏占满。 */
 private val CodeSize = 220.dp
@@ -721,8 +749,12 @@ private fun SponsorWallCard(
 ) {
     val scheme = MaterialTheme.colorScheme
 
-    var wall by remember(store) { mutableStateOf<SponsorWall?>(null) }
-    var loading by remember(store) { mutableStateOf(false) }
+    // 上一屏画出来的那一份（见 [ScreenCache]）：**在 state 初始化时就摆上**，与商城页、方案详情一个做法。
+    // 有缓存就直接画，不再先转一圈；网断了也还有东西看。
+    val cached = remember(store) { ScreenCache.get<SponsorWall>(SPONSOR_WALL_CACHE) }
+    var wall by remember(store) { mutableStateOf(cached) }
+    // 有缓存就不挂 loading：那一屏刚才还在。
+    var loading by remember(store) { mutableStateOf(cached == null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember(store) { mutableIntStateOf(0) }
     /** 「我也赞助」那张小窗开着没有。 */
@@ -739,20 +771,26 @@ private fun SponsorWallCard(
             loading = false
             return@LaunchedEffect
         }
-        // 每次展开都重新读一遍（榜是会变的），且这里无条件置位——以前写成 `if (wall == null)`，
-        // 收起来再展开时界面没有任何"在刷新"的提示，一次失败还会被旧数据盖住。
-        loading = true
+        // 已经有缓存就别转圈：转一下再画出来只是让人以为页面卡了。
+        if (wall == null) loading = true
         val fresh = s.wall()
         loading = false
         if (fresh != null) {
-            wall = fresh
+            // **新来的人接在后面，老的一个不动**：直接整块替换会让榜上的人每刷新一次就重排一遍，
+            // 看着像"人变了"。所以先摆缓存里已经有的人（保持原顺序），再补这次新出现的。
+            val merged = mergeSponsors(wall?.entries.orEmpty(), fresh.entries)
+            val next = fresh.copy(entries = merged)
+            wall = next
             error = null
+            // 存回本地：下次进来先画这一份，再等网络顶上去。空榜不写——一次空响应不该把
+            // 已经看到的人从本地抹掉。
+            if (merged.isNotEmpty()) ScreenCache.put(SPONSOR_WALL_CACHE, next)
         } else {
             // 旧榜留着看，但这次没刷到要说得出来（下面非空分支也会把这句话画出来）。
             error = if (s.functionMissing) {
-                "这一版的社区后端还没有赞助榜，等一次服务端更新。"
+                "这一版的社区后端还没有赞助榜。"
             } else {
-                s.lastError ?: "榜没拉到，检查一下网络或代理。"
+                s.lastError ?: "没拉到，检查网络。"
             }
         }
     }

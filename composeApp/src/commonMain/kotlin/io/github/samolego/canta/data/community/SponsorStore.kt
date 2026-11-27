@@ -1,5 +1,6 @@
 package io.github.samolego.canta.data.community
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -20,6 +21,7 @@ import kotlinx.serialization.json.put
  *
  * [name] 是榜上显示的名字；匿名的人后端下发空串，页面画「匿名」。[anonymous] 用来决定画哪个。
  */
+@Serializable
 data class SponsorEntry(
     val id: Long,
     val owner: String,
@@ -51,6 +53,7 @@ data class SponsorEntry(
  *
  * 全部字段缺了就退回 0 / 空表：老后端没有这几个键时页面仍然画得出来（只是空榜）。
  */
+@Serializable
 data class SponsorWall(
     val totalYuan: Long = 0L,
     val count: Int = 0,
