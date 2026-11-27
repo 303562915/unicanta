@@ -99,15 +99,26 @@ fun PlanScope.label(ownLabel: String): String = when (this) {
  */
 private const val SCOPE_SEPARATOR = "|"
 
+/**
+ * 「本机」在设置里存成什么样：只有分隔符，型号与版本两段都空。
+ *
+ * 公开出来是因为调用方（规则页）要做「不查目录就能认下的两个范围」这件事：空串 = 全部机型，
+ * 这一串 = 本机，其余才是他机、必须查目录。两处各写一个 `"|"` 迟早会写歪一个。
+ */
+const val SCOPE_THIS_PHONE = SCOPE_SEPARATOR
+
 fun PlanScope.toStoredValue(): String = when (this) {
     PlanScope.All -> ""
-    PlanScope.ThisPhone -> SCOPE_SEPARATOR
+    PlanScope.ThisPhone -> SCOPE_THIS_PHONE
     is PlanScope.Other -> model.model + SCOPE_SEPARATOR + (build?.key ?: "")
 }
 
 /**
  * 把 [toStoredValue] 存下来的那串东西还原成范围；认不出来（存的是别的写法、目录里没这台机器）
  * 就回答 [PlanScope.All]，与「没选过」同一个结果。
+ *
+ * 匹配是**大小写不敏感**的，理由见下面的注释：精确比等会让「返回之后又变成全部机型」这件事
+ * 每重新拉一次目录就复现一次。
  *
  * 版本那一段存的是 [CatalogBuild.key]（`rom/版本号/build`）：同一个型号的不同系统版本各有自己的
  * 方案，只存一个版本数字会把两个 build 混成一条。
@@ -118,10 +129,20 @@ fun planScopeOfStored(stored: String, models: List<CatalogModel>): PlanScope {
     if (raw == SCOPE_SEPARATOR) return PlanScope.ThisPhone
     val split = raw.indexOf(SCOPE_SEPARATOR)
     if (split < 0) return PlanScope.All
-    val model = models.firstOrNull { it.model == raw.substring(0, split) } ?: return PlanScope.All
+    val rawModel = raw.substring(0, split)
+    // **大小写不敏感**：存的是上一次目录里那行的 `model` 原文（后端给的是 "23113RKC6C"、
+    // "SM-F9710" 这种，大小写并不保证），而 `toCatalogModels` 是按 `model.lowercase()` 分组的。
+    // 每次重拉目录，后端下发的这条数据大小写一变（或本来就是另一台机器报的），精确比等就会
+    // 匹配不上 → 这里回落到 `PlanScope.All`，用户看到的就是「退出来，上面又自动变成全部机型」。
+    // 用 `equals(ignoreCase = true)` 匹配，命中不了再退一步比营销名。
+    val model = models.firstOrNull { it.model.equals(rawModel, ignoreCase = true) }
+        ?: models.firstOrNull { it.label.equals(rawModel, ignoreCase = true) }
+        ?: return PlanScope.All
     val key = raw.substring(split + 1)
     if (key.isEmpty()) return PlanScope.Other(model)
-    val build = model.builds.firstOrNull { it.key == key } ?: return PlanScope.Other(model)
+    // 版本那一段也要能容得下大小写与"这一版没了"：认不出就退到「这台机器的全部版本」，
+    // 而不是整页退到「全部机型」——后者看起来像用户的选择被清掉了。
+    val build = model.builds.firstOrNull { it.key.equals(key, ignoreCase = true) }
     return PlanScope.Other(model, build)
 }
 

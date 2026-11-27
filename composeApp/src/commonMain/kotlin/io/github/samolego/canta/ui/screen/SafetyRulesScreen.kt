@@ -101,6 +101,7 @@ import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.PlanScope
 import io.github.samolego.canta.ui.component.PlanScopeBar
 import io.github.samolego.canta.ui.component.PlanScopeDialog
+import io.github.samolego.canta.ui.component.SCOPE_THIS_PHONE
 import io.github.samolego.canta.ui.component.label
 import io.github.samolego.canta.ui.component.memoryKey
 import io.github.samolego.canta.ui.component.planScopeOfStored
@@ -218,16 +219,50 @@ fun SafetyRulesScreen(
     val storedScope by settings.planScopeFlow.collectAsStateWithLifecycle(initialValue = "")
     // Every model the backend has plans for, with the counts its chips print.
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
-    // 目录里认不出存的那台机器（型号改名、方案删光）就退到「全部机型」：和没选过一样，不会崩。
-    //
-    // 换范围之后的「清旧行 + 立加载中」写在下面 `plans` / `loading` / `notice` 之后那个
-    // `LaunchedEffect(planScope)` 里，原因见那里。
-    val planScope: PlanScope = remember(storedScope, catalog) {
-        planScopeOfStored(storedScope, catalog)
-    }
-    // Every model the backend has plans for, with the counts its chips print.
+    // 「上一次认出来的范围」：目录为空的那一帧（从详情返回、正在重拉）要沿用它，不能退成全部机型。
+    var resolvedScope by remember { mutableStateOf(PlanScope.All) }
+    // **必须在 `catalog` / `resolvedScope` 之后**：下面的 `planScope` 要读它们。
     var catalogLoading by remember { mutableStateOf(true) }
     var pickerOpen by remember { mutableStateOf(false) }
+    // 目录里认不出存的那台机器（型号改名、方案删光）就退到「全部机型」：和没选过一样，不会崩。
+    //
+    // 还有第三个洞，比前两个更容易被看见：**存的是「本机」（`|`）时它也要等目录**，而「本机」这个
+    // 范围根本不依赖目录里的任何一行。目录是异步来的、返回时还会整段重拉，所以从应用详情退回来的
+    // 一瞬间 `catalog` 是空的 → 退回「全部机型」→ 顶部胶囊变一下、底下列表换一份 → 这就是用户说的
+    // 「退出来它闪一下 / 上面又自动选」。
+    //
+    // 修法：已知的范围在目录到位前直接认下，不经过目录。
+    //  * `storedScope` 为空 → 全部机型（默认，本来就不用查目录）；
+    //  * `storedScope` 是 `|` → 本机（不需要目录）；
+    //  * 其余（他机）才需要目录来还原型号 —— 目录空了（刚返回、还在拉）就沿用上一份认出来的，
+    //    不把"这一帧认不出"当成"用户选了全部机型"。
+    // 换范围之后的「清旧行 + 立加载中」写在下面 `plans` / `loading` / `notice` 之后那个
+    // `LaunchedEffect(planScope)` 里，原因见那里。
+    val storedTrim = storedScope.trim()
+    val planScope: PlanScope = when (storedTrim) {
+        "" -> PlanScope.All
+        SCOPE_THIS_PHONE -> PlanScope.ThisPhone
+        else -> {
+            val fromCatalog = if (catalog.isEmpty()) null else planScopeOfStored(storedTrim, catalog)
+            when {
+                fromCatalog == null -> resolvedScope
+                fromCatalog == PlanScope.All -> resolvedScope.takeIf { it != PlanScope.All } ?: PlanScope.All
+                else -> fromCatalog
+            }
+        }
+    }
+    // 认出来的结果记下来，给「目录为空的那一帧」用（返回、重拉目录的一瞬间）：`planScope` 本身是
+    // 纯函数、不持有可变态，回退得靠这一份。
+    LaunchedEffect(storedScope, catalog) {
+        val trim = storedScope.trim()
+        when {
+            trim.isEmpty() -> resolvedScope = PlanScope.All
+            trim == SCOPE_THIS_PHONE -> resolvedScope = PlanScope.ThisPhone
+            catalog.isNotEmpty() -> planScopeOfStored(trim, catalog)
+                .takeIf { it != PlanScope.All }
+                ?.let { resolvedScope = it }
+        }
+    }
     // The package filter of the list under the switch: the switch says which phone, this says
     // which package in it. Not remembered across a reload — a stale filter looks like a shorter
     // list, not like a search that is still on.
@@ -272,13 +307,17 @@ fun SafetyRulesScreen(
     // **后果**，所以放在对被观察值的反应里，而不是放在点击那一刻：无论谁写下这个值，列表都不会拿旧
     // 范围的数据顶着新范围的名字显示一帧，也不会因为漏写而"点了没反应"。
     //
-    // 放在这一组 `remember` 之后，是因为它首帧就要读 `plans` / `loading` / `notice`：
-    // 在 Kotlin 属性初始化顺序里，写在前面的 `LaunchedEffect` 块能编译，但读到的会是未初始化值。
+    // 注意它**只在范围真的换了**时跑：用 `remember` 记住上一次的范围，第一次组合只记录不清列表
+    // ——否则从应用详情返回的那一帧就会把刚恢复的列表清空，列表随即重画，那正是「闪一下」的来源。
+    //
+    // 放在这一组 `remember` 之后，是因为它要读 `plans` / `loading` / `notice`。
+    var lastScope by remember { mutableStateOf<PlanScope?>(null) }
     LaunchedEffect(planScope) {
-        if (loading || plans.isNotEmpty()) {
-            plans = emptyList()
-            loading = true
-        }
+        val previous = lastScope
+        lastScope = planScope
+        if (previous == null || previous == planScope) return@LaunchedEffect
+        plans = emptyList()
+        loading = true
         notice = null
     }
 
@@ -314,15 +353,20 @@ fun SafetyRulesScreen(
         }
     }
 
+    // 「本机」的机型信息（`profile`）在返回时不要重新走一遍那 5 次带延迟的轮询：读一次就够，
+    // 已经读过就留给状态自己带着——从应用详情退回来的那一瞬间，顶部胶囊和 ROM 那一行得是现成的。
+    // 只有真的还没读到（首启、手机刚起来）时才继续每 1.2 秒再问。
     LaunchedEffect(Unit) {
         rules = SafetyRules.bundled()
         if (appListViewModel.apps.isEmpty()) appListViewModel.loadApps()
         // The profile is read from the device, which can still be busy right after a boot: keep
         // asking instead of leaving the page without a device for the rest of the visit.
-        repeat(PROFILE_ATTEMPTS) {
-            profile = handler.deviceProfile()
-            if (profile != null) return@LaunchedEffect
-            delay(1_200L)
+        if (profile == null) {
+            repeat(PROFILE_ATTEMPTS) {
+                profile = handler.deviceProfile()
+                if (profile != null) return@LaunchedEffect
+                delay(1_200L)
+            }
         }
     }
 
@@ -351,9 +395,16 @@ fun SafetyRulesScreen(
     // with the plans, so opening the picker right after the page does not sit on an empty list.
     // 登录完成（identity 从未登录的那个值变成带号码的值）后重拉一次：上一次拉的时候后端还不知道
     // 这台机器跑哪一版，而登录那一下会把本机版本一起报上去、并顺手补回自己的老方案，所以必须再看一眼。
+    //
+    // 三条纪律，缺一条都会让「返回」看起来像在闪：
+    //  1. 拉回来的是**空**就不覆盖手上这一份：后端一时没答、或者这一帧没网，凭什么把已经认出来的
+    //     机型表清空（清空 → 认不出存的型号 → 顶部胶囊退回「全部机型」→ 用户说"它上面又自动选"）。
+    //  2. 内容没变就不写：同一份目录重装一遍只会让下游（范围解析、胶囊行）白跑一轮。
+    //  3. `catalogLoading` 只在**还没有**目录时才立起来：返回时那一份仍在手上，不该先画加载圈。
     LaunchedEffect(reloads, identity) {
-        catalogLoading = true
-        catalog = repo.catalog()?.toCatalogModels().orEmpty()
+        if (catalog.isEmpty()) catalogLoading = true
+        val fresh = repo.catalog()?.toCatalogModels().orEmpty()
+        if (fresh.isNotEmpty() && fresh != catalog) catalog = fresh
         catalogLoading = false
     }
 
@@ -431,7 +482,13 @@ fun SafetyRulesScreen(
             is PlanScope.Other -> {
                 // Another model's list is never cached: the cache belongs to this phone's own build,
                 // and a list from another model shown as "yours" after a reboot would be a lie.
-                loading = true
+                //
+                // 只有手上是**另一台机器的旧行**时才清屏立加载中。返回时手上已经是这台机器上一份
+                // 对的列表（列表状态也正带着它的滚动位置），先清空再重画一遍正是"闪一下"。
+                if (plans.isNotEmpty() && plans.first().model != scope.model.model) {
+                    plans = emptyList()
+                }
+                loading = plans.isEmpty()
                 offline = false
                 var fetched: List<CommunityPlan>? = null
                 for (attempt in 0 until PLAN_ATTEMPTS) {
@@ -449,6 +506,12 @@ fun SafetyRulesScreen(
                     if (attempt < PLAN_ATTEMPTS - 1) delay(PLAN_RETRY_DELAYS[attempt.coerceIn(0, PLAN_RETRY_DELAYS.lastIndex)])
                 }
                 offline = fetched == null
+                // 拉不到（断网/后端忙）就留着手上那份，不拿空表把它顶掉：清空之后下面那段 map 也
+                // 一样跑，列表会先空一帧再回来，看着还是闪。
+                if (fetched == null && plans.isNotEmpty()) {
+                    loading = false
+                    return@LaunchedEffect
+                }
                 plans = fetched.orEmpty().withoutDuplicates().map { plan ->
                     // A backend without the device columns sends no model: the scope already says
                     // which phone these rows belong to, and the warning about using them needs it.
