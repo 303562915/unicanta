@@ -665,9 +665,22 @@ class PlanRepository(
         val snapshot = offlinePlans()
         if (snapshot.isNotEmpty()) {
             val mine = snapshot.filter { plan ->
-                plan.model.equals(profile.model, ignoreCase = true) &&
-                    plan.rom.equals(profile.rom, ignoreCase = true) &&
-                    plan.romVersion == profile.romVersion
+                // 型号必须相符：这是唯一真实的「这台机器」标识。
+                if (!plan.model.equals(profile.model, ignoreCase = true)) return@filter false
+                // ROM 系列**同族**即算，不要求字面相等。理由见 [sameRomFamily]：
+                // 同一台真我 Neo8 昨天报 `realmeui 7`、今天报 `coloros 17`（同一个人）。
+                // 原因是 OPPO/realme 系那几个系统属性有时读得到、有时读不到，读不到就落到下一个键。
+                if (!sameRomFamily(plan.rom, profile.rom)) return@filter false
+                // **同族但不同名时，不比版本号**。这是上面那台机器的第二个坑：
+                // realme UI 的 7 和它 ColorOS 底座的 17 是同一代系统的**两个编号体系**，
+                // 数字天然对不上（realme UI N ↔ ColorOS N+10 的说法在港台论坛也是这么写的）。
+                // 同名时才比版本：那时数字是同一套体系，跨代该区分开。
+                if (plan.rom.equals(profile.rom, ignoreCase = true)) {
+                    if (plan.romVersion != profile.romVersion && plan.romVersion != 0 && profile.romVersion != 0) {
+                        return@filter false
+                    }
+                }
+                true
             }
             // **必须清掉错误状态**：调用方（`PlanDetailScreen` 等）靠
             // `lastError == null && !lastFailureWasNetwork` 判断「这一次的答案可不可信」。
@@ -679,8 +692,13 @@ class PlanRepository(
             // 排序照后端：**同一个 build 的排前面**（`p_rom_build` 的作用就是这个），
             // 然后才是票数多的在前。不能反过来——先按票数排的话，同一 build 的那几条
             // 会被票数更高的别的 build 挤到后面，"这台机器实测过"就看不出来了。
+            //
+            // 上面放宽了 ROM 系列，这里补一道：**ROM 字面相符的排在同族前面**。
+            // 那台真我 Neo8 的 5 条方案里，`realmeui` 那条才是他昨天在这台机器上实测的，
+            // `coloros` 那几条是今天属性读不到时记下的同族数据 —— 先给他看真正属于他的。
             return mine.sortedWith(
-                compareByDescending<CommunityPlan> { it.romBuild.equals(profile.romBuild, ignoreCase = true) }
+                compareByDescending<CommunityPlan> { it.rom.equals(profile.rom, ignoreCase = true) }
+                    .thenByDescending { it.romBuild.equals(profile.romBuild, ignoreCase = true) }
                     .thenByDescending { it.votes },
             )
         }
@@ -2545,6 +2563,36 @@ class PlanRepository(
 
 @Suppress("unused")
 private fun JsonObject.text(key: String): String = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
+
+/**
+ * 两个 ROM 名算不算「一家人」——用于 [PlanRepository.plansFor] 的本地筛选。
+ *
+ * **为什么不要求字面相等**：OPPO / realme / 一加 那几个系统属性
+ * （`ro.build.version.realmeui`、`ro.build.version.oplusrom`、`ro.build.version.opporom`）
+ * 在同一台机器上**有时读得到、有时读不到**，读不到就落到下一个键。于是同一台真我 Neo8
+ * 昨天上报 `realmeui 7`、今天上报 `coloros 17`（2026-11-27 实测，同一个人同一条方案列表）。
+ * 拿 ROM 名做硬过滤，用户就会「今天提交的方案今天看不见」。
+ *
+ * 分组依据是**底座相同**（同一套系统属性、同一批系统包），不是营销名：
+ *
+ * - `realmeui` / `coloros` / `oxygenos`：都是 ColorOS 底座，OPPO / realme / 一加 三家共用
+ * - `hyperos` / `miui`：小米，后者是前者的前身
+ * - `oneui` / `magicos` / `emui` / `harmonyos`：华为系与三星各自独立
+ * - 其余（`stock`、`funtouch`、`originos`、`flyme`、`myos`…）：只认同名
+ *
+ * `stock`（原生 Android）**不跟任何一家合并**：一台刷了原生系统的 realme，它的「能卸哪些」
+ * 与 ColorOS 上的答案不是一回事。
+ */
+private fun sameRomFamily(a: String, b: String): Boolean {
+    if (a.equals(b, ignoreCase = true)) return true
+    fun group(rom: String): String? = when (rom.lowercase()) {
+        "realmeui", "coloros", "oxygenos" -> "bbk"
+        "hyperos", "miui" -> "xiaomi"
+        else -> null
+    }
+    val ga = group(a) ?: return false
+    return ga == group(b)
+}
 
 @Suppress("unused")
 private fun JsonObject.num(key: String): Double = this[key]?.jsonPrimitive?.doubleOrNull ?: 0.0
