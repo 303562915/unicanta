@@ -714,7 +714,7 @@ private fun AirportCard(
                 }
             }
             Spacer(modifier = Modifier.width(6.dp))
-            VotePill(
+            AirportVotePill(
                 label = "认同",
                 count = entry.agrees,
                 selected = entry.mine == true,
@@ -723,7 +723,7 @@ private fun AirportCard(
                 onClick = { onVote(true) },
             )
             Spacer(modifier = Modifier.width(4.dp))
-            VotePill(
+            AirportVotePill(
                 label = "不认同",
                 count = entry.disagrees,
                 selected = entry.mine == false,
@@ -820,7 +820,7 @@ internal fun StarRow(myStars: Int, enabled: Boolean, onRate: (Int) -> Unit) {
 
 /** 一侧的票：选中的填色，没选的是一块浅底。 */
 @Composable
-internal fun VotePill(
+internal fun AirportVotePill(
     label: String,
     count: Int,
     selected: Boolean,

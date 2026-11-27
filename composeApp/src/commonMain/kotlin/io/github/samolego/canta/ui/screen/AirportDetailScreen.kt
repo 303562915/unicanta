@@ -47,7 +47,6 @@ import io.github.samolego.canta.data.community.updatedComment
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.airport_comment_empty
-import io.github.samolego.canta.generated.resources.airport_comment_placeholder
 import io.github.samolego.canta.generated.resources.airport_detail_intro
 import io.github.samolego.canta.generated.resources.airport_detail_loading
 import io.github.samolego.canta.generated.resources.airport_detail_missing
@@ -541,7 +540,7 @@ fun AirportDetailScreen(
                                     color = scheme.primary,
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    VotePill(
+                                    AirportVotePill(
                                         label = "认同",
                                         count = loaded.agrees,
                                         selected = loaded.mine == true,
@@ -550,7 +549,7 @@ fun AirportDetailScreen(
                                         onClick = { vote(true) },
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    VotePill(
+                                    AirportVotePill(
                                         label = "不认同",
                                         count = loaded.disagrees,
                                         selected = loaded.mine == false,

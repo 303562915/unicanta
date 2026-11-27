@@ -34,15 +34,6 @@ const val COMMENT_KIND_RECOMMEND: String = "recommend"
 fun recommendCommentTarget(url: String): String = url.trim().trimEnd('/')
 
 /**
- * 一条推荐条目在评论表里的身份：项目地址（去空白、去末尾斜杠）。
- *
- * 放在这里而不是页面里：列表页和详情页都要用它拼同一个 target，两份实现只要差一个字符，
- * 同一项目就会生出两条线程——「列表里能看到评论、点进去却是空的」。去掉末尾斜杠是为了
- * `https://github.com/x/y` 和 `https://github.com/x/y/` 算同一件事。
- */
-fun recommendCommentTarget(url: String): String = url.trim().trimEnd('/')
-
-/**
  * How many rows one page of an inbox list holds.
  *
  * The page asks for this many and no more: a phone that parses 200 rows of history before it can

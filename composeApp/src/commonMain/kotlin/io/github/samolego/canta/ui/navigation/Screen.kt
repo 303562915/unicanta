@@ -84,35 +84,6 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     }
 
     /**
-     * 一个推荐条目的整页：图标、作者、许可证、介绍、这台手机还装着的那些被替换的包，以及下面
-     * 那条能回话的评论线程。
-     *
-     * 为什么是整页而不是 [Recommendations] 上的弹窗：评论要读、要回、要滚，弹窗高度有限、外面
-     * 还压着一层遮罩，回一句要跟滚动条抢；[PlanDetail] 和 [AppDetail] 那种页面才是"可以交流的"
-     * 样子。
-     *
-     * 路径里放「来源 + id」，而不是把项目地址塞进来：地址里带 `/`（`https://github.com/x/y`），
-     * 当作一段路径参数取出来只剩前半截，评论就挂到别的 target 上了。`source` 只有
-     * `app`（内置目录条目的字符串 id）和 `suggestion`（社区条目的数字 id）两个值——两边的 id
-     * 可能撞名（一个是 `cyime`，一个是 `7`），所以来源必须一起带。
-     */
-    data object RecommendDetail : Screen("recommend/{source}/{key}") {
-        /** 具体路由：`recommend/app/cyime`、`recommend/suggestion/7`。 */
-        fun routeFor(source: String, key: String) = "recommend/$source/$key"
-    }
-
-    /**
-     * 一条机场的整页：名字、类型、六格参数、投票、打分、订阅链接，以及下面的评论区。
-     *
-     * 与 [RecommendDetail] 同一个理由：机场详情原来也是弹窗，评论塞在最下面一截，读长一点的
-     * 线路吐槽就得跟弹窗自己的滚动抢。
-     */
-    data object AirportDetail : Screen("airport/{airportId}") {
-        /** 具体路由：`airport/7`，配对 `airportId` 那个参数。 */
-        fun routeFor(id: Long) = "airport/$id"
-    }
-
-    /**
      * 社区帖子：一页自己的讨论区——发帖、看帖、回帖、点赞，带本地草稿。
      *
      * 从推荐页右上角的「帖子」进。不挂在推荐页的顶部分段里：那是一张要滚很久的列表，
