@@ -4,7 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.collapseVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -62,6 +62,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import io.github.samolego.canta.ui.fl.isDark
 import androidx.compose.material3.OutlinedTextField
@@ -2590,10 +2591,15 @@ private fun PostThreadPane(
                     }
                     val thisDay = BeijingTime.dayKey(comment.createdAt)
                     // 两边都解析不出日期（后端给了怪形状）时不画，免得插一条空标签。
+                    //
+                    // 分隔线并进**这一层自己的** item 里，不再单独 `item(key = "date-…")`：
+                    // `itemsIndexed` 的 itemContent 的 receiver 是 `LazyItemScope`，它带 scope
+                    // marker，外面那层 `LazyListScope` 被挡住，`item()` 在里面根本调不到；
+                    // 就算调到了也是"组成一个条目的时候再往列表里插条目"，运行期一样错。
+                    // 同一个 item 内先后 emit 的两块内容，LazyColumn 照样按垂直方向上下摆，
+                    // 线上位置与原来那条独立条目一致。
                     if (thisDay.isNotEmpty() && thisDay != previousDay) {
-                        item(key = "date-${comment.id}") {
-                            FloorDateSeparator(iso = comment.createdAt)
-                        }
+                        FloorDateSeparator(iso = comment.createdAt)
                     }
                     PostFloorCard(
                         floorLabel = "#${index + 2}",
@@ -4051,7 +4057,12 @@ private fun PostEditorPane(
                 enter = expandVertically(
                     animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
                 ),
-                exit = collapseVertically(
+                // Compose 的 `ExitTransition` 工厂里没有 `collapseVertically`：收起就是
+                // `shrinkVertically`，方向与上面的 `expandVertically`（默认从 `Alignment.Top` 长）
+                // 对齐——`shrinkVertically` 的 `shrinkTowards` 默认也是 `Alignment.Top`，往顶部收回。
+                // 同仓 `SettingsScreen.kt` / `component/Dropdown.kt` / `component/CommentThread.kt`
+                // 都用这个名字，这里照现有写法只传时长与缓动。
+                exit = shrinkVertically(
                     animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                 ),
             ) {
