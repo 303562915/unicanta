@@ -62,8 +62,8 @@
    {
     "pkg": "com.android.cellbroadcastreceiver.module",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:13:34.188142+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -231,7 +231,7 @@
     "pkg": "com.android.stk",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "updated_at": "2026-11-27T05:14:44.599776+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -347,10 +347,17 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.coloros.healthcheck",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:45.687279+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.coloros.karaoke",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T05:15:24.992025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -643,8 +650,8 @@
    {
     "pkg": "com.heytap.opluscarlink",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:13:10.108827+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -727,8 +734,8 @@
    {
     "pkg": "com.oplus.aimemory",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:23.467026+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -902,8 +909,8 @@
    {
     "pkg": "com.oplus.location",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:13:58.534774+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -938,7 +945,7 @@
     "pkg": "com.oplus.nas",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "updated_at": "2026-11-27T05:14:44.599776+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1009,6 +1016,13 @@
     "small_batch": false,
     "uninstalls": 1,
     "updated_at": "2026-11-26T23:57:49.85003+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.oplus.portrait",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:15:24.734597+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1431,6 +1445,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.coloros.healthcheck",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:45.687279+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.coloros.karaoke",
     "small_batch": false,
     "uninstalls": 1,
@@ -1683,6 +1704,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.oplus.location",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:13:58.534774+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.oplus.metis",
     "small_batch": false,
     "uninstalls": 1,
@@ -1736,6 +1764,13 @@
     "small_batch": false,
     "uninstalls": 1,
     "updated_at": "2026-11-26T23:57:49.85003+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.oplus.portrait",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:15:24.734597+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1887,8 +1922,8 @@
    {
     "pkg": "com.android.cellbroadcastreceiver.module",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:13:34.188142+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2007,7 +2042,7 @@
     "pkg": "com.android.stk",
     "small_batch": true,
     "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "updated_at": "2026-11-27T05:14:44.599776+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2118,8 +2153,8 @@
    {
     "pkg": "com.coloros.karaoke",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:15:24.992025+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2342,8 +2377,8 @@
    {
     "pkg": "com.heytap.opluscarlink",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:13:10.108827+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2412,8 +2447,8 @@
    {
     "pkg": "com.oplus.aimemory",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:23.467026+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2609,7 +2644,7 @@
     "pkg": "com.oplus.nas",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "updated_at": "2026-11-27T05:14:44.599776+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12806,8 +12841,8 @@
    {
     "pkg": "com.android.adservices.api",
     "small_batch": false,
-    "uninstalls": 417,
-    "updated_at": "2026-11-27T05:12:01.213945+00:00",
+    "uninstalls": 418,
+    "updated_at": "2026-11-27T05:12:54.354409+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -12842,7 +12877,7 @@
     "pkg": "com.android.browser",
     "small_batch": false,
     "uninstalls": 279,
-    "updated_at": "2026-11-27T04:31:50.335161+00:00",
+    "updated_at": "2026-11-27T05:15:23.526111+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15130,8 +15165,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 496,
-    "updated_at": "2026-11-27T05:10:03.473465+00:00",
+    "uninstalls": 497,
+    "updated_at": "2026-11-27T05:12:54.354409+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17627,7 +17662,7 @@
     "pkg": "com.android.browser",
     "small_batch": false,
     "uninstalls": 77,
-    "updated_at": "2026-11-27T03:46:59.302211+00:00",
+    "updated_at": "2026-11-27T05:15:23.526111+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19634,8 +19669,8 @@
    {
     "pkg": "com.android.adservices.api",
     "small_batch": false,
-    "uninstalls": 330,
-    "updated_at": "2026-11-27T04:53:32.553566+00:00",
+    "uninstalls": 331,
+    "updated_at": "2026-11-27T05:12:54.354409+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21279,8 +21314,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 355,
-    "updated_at": "2026-11-27T05:10:03.473465+00:00",
+    "uninstalls": 356,
+    "updated_at": "2026-11-27T05:12:54.354409+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -27741,15 +27776,15 @@
    {
     "pkg": "com.miui.translation.xmcloud",
     "small_batch": false,
-    "uninstalls": 12,
-    "updated_at": "2026-11-26T03:39:12.507738+00:00",
+    "uninstalls": 13,
+    "updated_at": "2026-11-27T05:13:42.861892+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.translation.youdao",
     "small_batch": true,
-    "uninstalls": 3,
-    "updated_at": "2026-11-24T08:35:58.928579+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T05:13:42.861892+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -30063,15 +30098,15 @@
    {
     "pkg": "com.miui.translation.xmcloud",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-24T08:35:58.928579+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:13:42.861892+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.miui.translation.youdao",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-24T08:35:58.928579+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:13:42.861892+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42035,8 +42070,8 @@
    {
     "pkg": "com.heytap.speechassist",
     "small_batch": true,
-    "uninstalls": 12,
-    "updated_at": "2026-11-27T04:35:53.340641+00:00",
+    "uninstalls": 13,
+    "updated_at": "2026-11-27T05:13:47.858397+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -43087,8 +43122,8 @@
    {
     "pkg": "com.heytap.speechassist",
     "small_batch": true,
-    "uninstalls": 12,
-    "updated_at": "2026-11-27T04:35:53.340641+00:00",
+    "uninstalls": 13,
+    "updated_at": "2026-11-27T05:13:47.858397+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -43721,6 +43756,13 @@
     "verdict": "BOOTLOOP"
    },
    {
+    "pkg": "com.amap.android.location",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.android.adservices.api",
     "small_batch": false,
     "uninstalls": 41,
@@ -43884,8 +43926,8 @@
    {
     "pkg": "com.android.egg",
     "small_batch": true,
-    "uninstalls": 52,
-    "updated_at": "2026-11-27T05:03:37.506899+00:00",
+    "uninstalls": 53,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -44139,6 +44181,13 @@
     "uninstalls": 18,
     "updated_at": "2026-11-27T01:33:38.260506+00:00",
     "verdict": "BREAKS"
+   },
+   {
+    "pkg": "com.android.onetimeinitializer",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.ons",
@@ -44402,64 +44451,78 @@
    {
     "pkg": "com.android.theme.color.black",
     "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.theme.color.cinnamon",
     "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.theme.color.green",
     "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.theme.color.ocean",
     "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.theme.color.orchid",
     "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.theme.color.purple",
     "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.theme.color.space",
     "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.theme.font.notoserifsource",
     "small_batch": true,
-    "uninstalls": 14,
-    "updated_at": "2026-11-27T05:03:37.506899+00:00",
+    "uninstalls": 15,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.android.theme.icon_pack.rounded.systemui",
     "small_batch": false,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon_pack.rounded.themepicker",
+    "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.pebble",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -44467,6 +44530,20 @@
     "small_batch": false,
     "uninstalls": 1,
     "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.taperedrect",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.vessel",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -44479,8 +44556,8 @@
    {
     "pkg": "com.android.traceur",
     "small_batch": true,
-    "uninstalls": 48,
-    "updated_at": "2026-11-27T05:03:37.506899+00:00",
+    "uninstalls": 49,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -45618,10 +45695,24 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.mediatek.calendarimporter",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.mediatek.carrierexpress",
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-24T23:49:45.474753+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.dataprotection",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -45641,15 +45732,36 @@
    {
     "pkg": "com.mediatek.gnssdebugreport",
     "small_batch": true,
-    "uninstalls": 3,
-    "updated_at": "2026-11-27T05:03:37.506899+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.mediatek.lbs.em2.ui",
     "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.mdmconfig",
+    "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T05:03:37.506899+00:00",
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.mdmlsample",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.ppl",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -46063,6 +46175,13 @@
     "small_batch": false,
     "uninstalls": 1,
     "updated_at": "2026-11-22T18:44:37.100415+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.motorola.demo",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -47246,6 +47365,13 @@
     "small_batch": false,
     "uninstalls": 1,
     "updated_at": "2026-11-22T18:44:37.100415+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.tblenovo.lenovotips",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -52535,6 +52661,194 @@
     "small_batch": false,
     "uninstalls": 1,
     "updated_at": "2026-11-27T02:44:10.710234+00:00",
+    "verdict": "INSUFFICIENT"
+   }
+  ]
+ },
+ {
+  "rom": "stock",
+  "rom_version": 11,
+  "scores": [
+   {
+    "pkg": "com.amap.android.location",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.egg",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.onetimeinitializer",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.black",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.cinnamon",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.green",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.ocean",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.orchid",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.purple",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.space",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.font.notoserifsource",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon_pack.rounded.systemui",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon_pack.rounded.themepicker",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.pebble",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.taperedrect",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.vessel",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.traceur",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.calendarimporter",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.dataprotection",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.gnssdebugreport",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.lbs.em2.ui",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.mdmconfig",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.mdmlsample",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.mediatek.ppl",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.motorola.demo",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.tblenovo.lenovotips",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T05:14:46.147176+00:00",
     "verdict": "INSUFFICIENT"
    }
   ]
