@@ -125,6 +125,21 @@ fun planScopeOfStored(stored: String, models: List<CatalogModel>): PlanScope {
     return PlanScope.Other(model, build)
 }
 
+/**
+ * 「这一份列表」的标识，给滚动位置记忆当键用（见 `rememberRememberedListState`）。
+ *
+ * 三个范围是**三份不同的列表**（`plansAll` / `plansFor` / `plansForModel`），它们的第 N 行不是同一条
+ * 方案、也不是同一个包。位置必须按这里分开存，否则换一台机型、再从详情页返回，列表会被恢复成另一份
+ * 列表的行号——看上去正是「返回之后顺序跳到下面去了」。键里不带空格与冒号以外的分隔符，避免和
+ * `scroll:` 前缀打架。
+ */
+fun PlanScope.memoryKey(): String = when (this) {
+    PlanScope.All -> "all"
+    PlanScope.ThisPhone -> "this"
+    // 同一台机器的不同 build 各有自己的方案，位置也要分开：`rom/版本/build` 已经能区分它们。
+    is PlanScope.Other -> "other:" + model.model + (build?.key?.let { ":" + it } ?: "")
+}
+
 /** The build part of the scope: only another model has a separate build chip. */
 fun PlanScope.buildLabel(): String? = when (this) {
     PlanScope.All -> null

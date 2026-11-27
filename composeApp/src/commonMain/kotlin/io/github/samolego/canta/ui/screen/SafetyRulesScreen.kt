@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -102,9 +101,10 @@ import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.PlanScope
 import io.github.samolego.canta.ui.component.PlanScopeBar
 import io.github.samolego.canta.ui.component.PlanScopeDialog
-import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.label
+import io.github.samolego.canta.ui.component.memoryKey
 import io.github.samolego.canta.ui.component.planScopeOfStored
+import io.github.samolego.canta.ui.component.rememberRememberedListState
 import io.github.samolego.canta.ui.component.toStoredValue
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
@@ -711,6 +711,9 @@ fun SafetyRulesScreen(
                     otherDevice = opened != null,
                     offline = offline,
                     query = packageQuery,
+                    // 位置记忆按「哪个范围」分开存：本机、全部机型、某一台他机，三者的列表不是同一份，
+                    // 共用一个键会让从应用详情返回时落到另一份列表的第 N 行。
+                    page = "ranking:" + planScope.memoryKey(),
                     onOpenApp = onOpenApp,
                     onRetry = { reloads++ },
                 )
@@ -725,6 +728,7 @@ fun SafetyRulesScreen(
                     offline = offline,
                     widerScope = opened != null || allModels,
                     query = packageQuery,
+                    page = "plans:" + planScope.memoryKey(),
                     onOpenPlan = onOpenPlan,
                     onVote = vote,
                     onDelete = { pendingDelete = it },
@@ -977,6 +981,8 @@ private fun RankingTab(
     offline: Boolean,
     /** Package filter from the switch bar: matched against the package name and the app's label. */
     query: String = "",
+    /** 位置记忆的键：这一份列表是哪个范围的（见 [rememberRememberedListState]）。 */
+    page: String = "ranking",
     onOpenApp: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -998,9 +1004,15 @@ private fun RankingTab(
         }
     }
 
-    // 双击底栏「规则」那一格：这张排行榜自己滚回顶部。
-    val listState = rememberLazyListState()
-    ScrollToTopEffect(listState)
+    // 位置带记忆（见 [rememberRememberedListState]）：点进应用详情再返回、冷启动再进来，都还停在
+    // 原来那几行。裸的 `rememberLazyListState` 只能在同一个组合里活着——详情页是导航栈里的新页面，
+    // 返回时这一页被重新组合，`remember` 跟着一起没了，列表从第一行开始，看上去就是「点进去返回，
+    // 顺序跳到下面去了」。
+    val listState = rememberRememberedListState(page = page)
+    // 过滤词变了（包名筛选）要先回顶部：换的是「这一份列表是什么」，不是滚动位置。
+    LaunchedEffect(needle) {
+        if (needle.isNotEmpty()) listState.scrollToItem(0)
+    }
 
     when {
         loading -> Text(
@@ -1176,6 +1188,8 @@ private fun PlansTab(
     widerScope: Boolean = false,
     /** Package filter from the switch bar: a plan is kept when it holds a package that matches. */
     query: String = "",
+    /** 位置记忆的键：这一份列表是哪个范围的（见 [rememberRememberedListState]）。 */
+    page: String = "plans",
     onOpenPlan: (Long) -> Unit,
     onVote: (CommunityPlan) -> Unit,
     onDelete: (CommunityPlan) -> Unit,
@@ -1187,9 +1201,17 @@ private fun PlansTab(
     } else {
         plans.filter { plan -> plan.packages.any { it.contains(needle, ignoreCase = true) } }
     }
-    // 双击底栏「规则」那一格：方案列表自己滚回顶部。
-    val plansListState = rememberLazyListState()
-    ScrollToTopEffect(plansListState)
+    // 位置带记忆：点进方案详情 / 应用详情再返回，列表还停在原来那几张卡片上。这一屏尤其明显——
+    // 它的分支是「加载中 → 空 → 列表」，列表本来就比别的东西晚一两帧出现，没有记忆就等于每次回来
+    // 都从第一张读起（而且 `plans` 还会被重新请求换一遍）。
+    //
+    // 调这个 Composable 是强制的：列表处在分支里，一旦现在不是「有内容」那一支，整段列表连同它的
+    // 状态会被销毁、再按新的一份重建，位置当场丢光——**这一行必须留在 `when` 前面**。
+    val plansListState = rememberRememberedListState(page = page)
+    // 过滤词变了（包名筛选）要先回顶部：换的是「这一份列表是什么」，不是滚动位置。
+    LaunchedEffect(needle) {
+        if (needle.isNotEmpty()) plansListState.scrollToItem(0)
+    }
     when {
         loading -> Text(
             "…",

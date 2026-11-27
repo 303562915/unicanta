@@ -2,8 +2,6 @@ package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -41,38 +39,54 @@ private const val ScrollSaveDelayMillis = 500L
 fun scrollCacheKey(page: String): String = "scroll:$page"
 
 /**
- * 「这一轮运行里，这一页的位置恢复过一次了」。
+ * 「这一轮运行里，这个键的盘上那份已经读过了」。
  *
- * 分两个场景，两者的正确行为不一样：
+ * 以前这里是 `claim(key): Boolean` —— 同一个键第二次问就一律回答「不要恢复」。本意是「从别的页面
+ * 返回时落在顶部」，但判断依据是「这一轮运行里有没有恢复过」，而 Compose 在页面被导航回来、外层换了个
+ * 头、或者列表所在的分支从「加载中」切成「有内容」时，都会重新走一遍这个 `remember`。于是：
  *
- *  * **冷启动 / App 被杀后再打开**：要「上次看到哪就从哪开始」——这是用户要的那个缓存感。
- *  * **只是去别的页面又返回来**：人刚刚就在这一页上，回来应该落在顶部，而不是突然出现在中间；
- *    恢复成上一次的位置反而像是「点错了」。
+ *  * 第一屏读到了盘上那份，第二次读就是 null —— 冷启动正落到位置时，页面一动就跳回顶部；
+ *  * 盘上一份都没有的时候，`remember` 里的实例才是唯一的位置来源，而它被 `remember` 键一改就没了。
  *
- * 两件事在 Compose 里长得一模一样（都是一个新的 Composable 实例），唯一的区别是「这一轮运行里
- * 有没有恢复过」：第一次恢复、之后一律给 null（从顶部开始），而滚动中照样写盘，下个冷启动还是对的。
+ * 现在只回答「盘上那份能不能用」，用不用它由 [rememberRememberedListState] 自己判断（见
+ * `position`）：同一轮运行里优先用手上那个（真的在被滚动、位置一直是最新的）实例，盘上那份只负责
+ * 冷启动的第一次落位。判据从「第几次问」变成「谁更准」，返回时才不会被顶回顶部，也不会跳。
  */
 private object ScrollRestore {
-    private val restored = mutableSetOf<String>()
+    /** 这一轮运行里已经从盘上读过这个键了：只影响要不要再读文件，不影响位置。 */
+    private val read = mutableSetOf<String>()
 
-    /** 这个 key 现在能不能恢复；同一轮运行里第二次问就是 false。 */
-    fun claim(key: String): Boolean = restored.add(key)
+    /** 这个键还要不要去盘上找；同一次运行里第二次问就不必再读一遍文件。 */
+    fun claim(key: String): Boolean = read.add(key)
 }
 
 /**
  * 带记忆的列表滚动状态。
  *
+ * 位置有三个来源，优先级从高到低：
+ *
+ *  1. **盘上那份**（[ScreenCache]，`scroll:page`）：冷启动落回上次那一行；
+ *  2. **这一轮运行里手上那个实例** [live]（放在 `remember` 里，跨组合重建存活）：从详情页返回、
+ *     分支切换时位置就接在这里；
+ *  3. 顶部（都没有）。
+ *
+ * 第 2 条是这一版新加的。以前只留「第 1 条 + 同一进程里 `remember` 出来的那个实例」，页面一被
+ * 重新组合（导航返回是常态）实例就没了，位置清零，看起来正是「点进应用详情再返回，列表顺序就跳到
+ * 下面去了」。
+ *
  * @param page 这一屏的名字（`"apps"` / `"posts"` / `"messages"`…），落盘键由它生成。
  */
 @Composable
 fun rememberRememberedListState(page: String): LazyListState {
+    val live = remember(page) { LazyListState() }
     val key = remember(page) { scrollCacheKey(page) }
-    val saved = remember(key) { if (ScrollRestore.claim(key)) ScreenCache.get<ScrollMemory>(key) else null }
-    val state = rememberLazyListState(
-        initialFirstVisibleItemIndex = saved?.index ?: 0,
-        initialFirstVisibleItemScrollOffset = saved?.offset ?: 0,
-    )
-    guardIndex(saved, onCorrect = { last -> state.scrollToItem(last) }) {
+    val saved = remember(key) {
+        if (ScrollRestore.claim(key)) ScreenCache.get<ScrollMemory>(key) else null
+    }
+    // 盘上那份只管冷启动的第一次落位；手上那个只要真的被滚过，就以它为准（它永远是最新的）。
+    val initial = live.position() ?: saved
+    val state = rememberSavedListState(initial, live)
+    guardIndex(initial, onCorrect = { last -> state.scrollToItem(last) }) {
         state.layoutInfo.totalItemsCount
     }
     LaunchedEffect(state, key) {
@@ -92,13 +106,14 @@ fun rememberRememberedListState(page: String): LazyListState {
 /** 网格版（应用列表那种自适应列）：同一套记忆，只是换成 [LazyGridState]。 */
 @Composable
 fun rememberRememberedGridState(page: String): LazyGridState {
+    val live = remember(page) { LazyGridState() }
     val key = remember(page) { scrollCacheKey(page) }
-    val saved = remember(key) { if (ScrollRestore.claim(key)) ScreenCache.get<ScrollMemory>(key) else null }
-    val state = rememberLazyGridState(
-        initialFirstVisibleItemIndex = saved?.index ?: 0,
-        initialFirstVisibleItemScrollOffset = saved?.offset ?: 0,
-    )
-    guardIndex(saved, onCorrect = { last -> state.scrollToItem(last) }) {
+    val saved = remember(key) {
+        if (ScrollRestore.claim(key)) ScreenCache.get<ScrollMemory>(key) else null
+    }
+    val initial = live.position() ?: saved
+    val state = rememberSavedGridState(initial, live)
+    guardIndex(initial, onCorrect = { last -> state.scrollToItem(last) }) {
         state.layoutInfo.totalItemsCount
     }
     LaunchedEffect(state, key) {
@@ -112,6 +127,51 @@ fun rememberRememberedGridState(page: String): LazyGridState {
             }
     }
     return state
+}
+
+/**
+ * 手上这个实例现在停在哪；已经在顶部就算「没有位置」——那是每次进来都会落到的地方，不值得为了让
+ * 界面对着它而把盘上那份（上次真的停过的那一行）丢掉。
+ *
+ * 定义在这里是为了和 [rememberRememberedListState] 的文档贴在一起：它解释的是「回退到哪一份位置」，
+ * 而不是列表本身。
+ */
+private fun LazyListState.position(): ScrollMemory? =
+    if (firstVisibleItemIndex <= 0 && firstVisibleItemScrollOffset <= 0) {
+        null
+    } else {
+        ScrollMemory(firstVisibleItemIndex, firstVisibleItemScrollOffset)
+    }
+
+private fun LazyGridState.position(): ScrollMemory? =
+    if (firstVisibleItemIndex <= 0 && firstVisibleItemScrollOffset <= 0) {
+        null
+    } else {
+        ScrollMemory(firstVisibleItemIndex, firstVisibleItemScrollOffset)
+    }
+
+/**
+ * 列表状态：能落位就落位，落不了就从顶部来。
+ *
+ * `remember` 键用 [saved] 本身（不是它的字段）：一屏有多份列表（不同范围、不同 tab）时，换的那一份
+ * 往往带同一个位置值，用值当键会把两份列表的状态混成一个。
+ */
+@Composable
+private fun rememberSavedListState(saved: ScrollMemory?, live: LazyListState): LazyListState = remember(saved) {
+    if (saved == null) {
+        live
+    } else {
+        LazyListState(saved.index, saved.offset)
+    }
+}
+
+@Composable
+private fun rememberSavedGridState(saved: ScrollMemory?, live: LazyGridState): LazyGridState = remember(saved) {
+    if (saved == null) {
+        live
+    } else {
+        LazyGridState(saved.index, saved.offset)
+    }
 }
 
 /**
