@@ -1376,12 +1376,7 @@ fun ChatScreen(
                 myNickname = detail?.myNickname.orEmpty(),
                 // 「聊天」那一下：入口行收起 + 回到最新一条（reverseLayout 里 0 就是尾巴）。
                 onJumpToLatest = { scope.launch { listState.animateScrollToItem(0) } },
-                // 只有群主能改公告；别人（和私聊）不给这个入口。
-                onEditAnnouncement = if (grouped && detail?.isOwner(owner) == true) {
-                    { onOpenGroupInfo() }
-                } else {
-                    null
-                },
+                // 公告卡片不挂「编辑」：写公告统一在群设置页（点头像或点「设置」进去）。
             )
         },
         // 底部 inset 只留一份。Scaffold 默认已经给内容一份 navigationBars，内容里再来一次
@@ -1971,8 +1966,6 @@ private fun ChatTopBar(
     savedMessages: List<ChatMessage> = emptyList(),
     /** 点「聊天」：把入口行收起来并回到最新一条。null 时只收起入口行。 */
     onJumpToLatest: (() -> Unit)? = null,
-    /** 点公告卡片右上角的「编辑」：去群设置里写公告。null 表示不给这个入口（非群主/私聊）。 */
-    onEditAnnouncement: (() -> Unit)? = null,
     /** 我在这个群里的昵称；空串就是没设过（用全局名字）。设置那一格展开时给一行。 */
     myNickname: String = "",
 ) {
@@ -2086,11 +2079,7 @@ private fun ChatTopBar(
         // 只在入口行开着时画——入口行收起来，下面这一块跟着一起收，不留一条没来由的卡片。
         if (entriesOpen) {
             when (section) {
-                ChatHeaderSection.Announcement -> ChatAnnouncementCard(
-                    text = announcement,
-                    canEdit = isGroup && onEditAnnouncement != null,
-                    onEdit = onEditAnnouncement,
-                )
+                ChatHeaderSection.Announcement -> ChatAnnouncementCard(text = announcement)
                 ChatHeaderSection.Pinned -> ChatMessageListCard(
                     title = "置顶消息",
                     messages = pinnedMessages,
@@ -2325,15 +2314,13 @@ private fun ChatAnnouncementBanner(
 /**
  * 公告卡片：群公告全文，三行以后自己收成「展开全文」。
  *
- * 没有公告的时候也说一句（而不是画一个空白框）：这一格点了要有回应，不然人以为按钮坏了；
- * 群主那一侧多一个「编辑」，点了去群设置里写。
+ * **这里只读，不给「编辑」**（2026-11-27 用户定的）：写公告这件事统一在群设置页，点群头像或者
+ * 顶栏那排的「设置」进去就有；聊天页顶上再多一个编辑入口，等于同一个动作两处可做、两处各改一半。
+ *
+ * 没有公告的时候也说一句，而不是画一个空白框：这一格点了要有回应，不然人以为按钮坏了。
  */
 @Composable
-private fun ChatAnnouncementCard(
-    text: String,
-    canEdit: Boolean,
-    onEdit: (() -> Unit)?,
-) {
+private fun ChatAnnouncementCard(text: String) {
     val scheme = MaterialTheme.colorScheme
     var expanded by remember(text) { mutableStateOf(false) }
     Column(
@@ -2344,23 +2331,12 @@ private fun ChatAnnouncementCard(
             .background(scheme.surfaceVariant.copy(alpha = 0.55f))
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "群公告",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = scheme.primary,
-            )
-            Spacer(Modifier.weight(1f))
-            if (canEdit && onEdit != null) {
-                Text(
-                    text = "编辑",
-                    fontSize = 12.sp,
-                    color = scheme.primary,
-                    modifier = Modifier.clickable(onClickLabel = "编辑群公告", onClick = onEdit),
-                )
-            }
-        }
+        Text(
+            text = "群公告",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.primary,
+        )
         Text(
             text = text.ifBlank { "这个群还没有公告。" },
             fontSize = 13.sp,
