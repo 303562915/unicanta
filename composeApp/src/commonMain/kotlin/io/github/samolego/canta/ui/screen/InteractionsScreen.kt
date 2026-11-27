@@ -205,6 +205,14 @@ fun InteractionsScreen(
     var summary by remember(cacheKey) { mutableStateOf(cached?.summary ?: InboxSummary.EMPTY) }
     // 有缓存就不摆骨架：这一趟刷新只是把新的一版顶上去。
     var loading by remember(cacheKey) { mutableStateOf(cached == null) }
+    /**
+     * 这一趟是否已经从后端拉到过首屏。
+     *
+     * 红点（[onInboxSeen]）只在这一趟**真读到新数据**之后才熄灭，不能靠"缓存里有消息"就算读过：
+     * 缓存是上一趟画出来的东西，人刚进页面、一个字都还没看，红点就没了，等于把"有新消息"
+     * 这件事直接抹掉。有缓存时这一屏也不再空白，所以把熄灭推到网络回来那一刻并不耽误什么。
+     */
+    var freshLoaded by remember(cacheKey) { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
@@ -286,6 +294,8 @@ fun InteractionsScreen(
             inbox = freshInbox
             // 游标跟着画出来的那一页走：缓存里记的就是「屏幕上这一页取到哪儿」。
             inboxOffset = INTERACTION_PER_SOURCE
+            // 这一趟真拿到手了：下面那个 effect 才允许把红点熄灭。
+            freshLoaded = true
             commitCache()
         }
         loadError = failure
@@ -323,8 +333,12 @@ fun InteractionsScreen(
 
     // 消息这一栏被真正看见了，才算读过：交回去的是「最新的一条」和「后端计数时的那个瞬间」，
     // 后者才是游标，本页记住看了几行没有意义。「我的评论」不是消息流，不该把别的分类标成读过。
-    LaunchedEffect(section, messages, inbox, summary) {
-        if (section == InteractionSection.MESSAGES &&
+    //
+    // `freshLoaded` 是那道闸：**只有这一趟从后端读到了新数据才熄红点**。少了它，上面那份缓存
+    // 一画出来 `inbox.items` 就非空，人刚点进这一页、还没看一个字，红点就消失了。
+    LaunchedEffect(section, messages, inbox, summary, freshLoaded) {
+        if (freshLoaded &&
+            section == InteractionSection.MESSAGES &&
             messages != InteractionMessages.MINE &&
             inbox.items.isNotEmpty()
         ) {

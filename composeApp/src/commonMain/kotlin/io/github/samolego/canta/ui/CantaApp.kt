@@ -1757,7 +1757,18 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.Interactions.route) {
-                var interactionsIdentity by remember { mutableStateOf(Identity("")) }
+                // 身份初值用**进程内记住的那一份**：`DeviceIdentity.current` 是 suspend，
+                // 让它从空串开始的话，这一屏第一帧的缓存键就是空的（见 `interactionsCacheKey`），
+                // 于是缓存明明在内存里也命中不了 —— 用户看到的就是"进去一片空白，等它转"。
+                // 商城页、消息页早就是这么做的，这里补上同一条；`writtenIdentity` 是 App 启动时
+                // 预热出来的那一份，`remembered()` 还没填上时拿它兜底。
+                var interactionsIdentity by remember {
+                    mutableStateOf(
+                        DeviceIdentity.remembered()
+                            ?: writtenIdentity.takeIf { it.owner.isNotEmpty() || it.token.isNotEmpty() }
+                            ?: Identity(""),
+                    )
+                }
                 // 「我的评论」那一栏的头像首字：这台设备的显示名。
                 var interactionsName by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
