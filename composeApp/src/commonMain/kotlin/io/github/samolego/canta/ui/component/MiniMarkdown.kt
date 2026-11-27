@@ -137,6 +137,14 @@ fun MiniMarkdown(
 
                 is MdBlock.CodeBlock -> CodeBlock(block.code, color)
 
+                // 图片单独成块：`![说明](地址)` 原来会原样打出那串括号，帖子里贴的图一个都看不到。
+                // 这里交给 [PostImage] 取字节、解码、按真实比例铺满内容宽。
+                is MdBlock.Image -> PostImage(
+                    url = block.url,
+                    alt = block.alt,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                )
+
                 is MdBlock.Rule -> HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 is MdBlock.Gap -> Spacer(modifier = Modifier.height(4.dp))
@@ -194,6 +202,8 @@ private sealed interface MdBlock {
     /** 连续多行 `> ` 已经拼成一段，行间保留换行。 */
     class Quote(val text: String) : MdBlock
     class CodeBlock(val code: String) : MdBlock
+    /** 一行独占一张图：`![说明](http…)`。 */
+    class Image(val url: String, val alt: String) : MdBlock
     object Rule : MdBlock
     object Gap : MdBlock
 }
@@ -234,6 +244,14 @@ private fun parseBlocks(text: String): List<MdBlock> {
         }
         if (isRule(trimmed)) {
             blocks += MdBlock.Rule
+            i++
+            continue
+        }
+        // 图片要先于标题判断：`![x](y)` 里那个 `!` 后面跟的是 `[`，不会被误认成标题，
+        // 但顺序上放在这里与代码块、空行一起，读起来就是"整行资源类"的那一组。
+        val image = imageBlockOf(trimmed)
+        if (image != null) {
+            blocks += MdBlock.Image(url = image.second, alt = image.first)
             i++
             continue
         }
@@ -293,7 +311,21 @@ private fun startsBlock(trimmed: String): Boolean =
         headingLevel(trimmed) > 0 ||
         trimmed.startsWith(">") ||
         bulletText(trimmed) != null ||
-        orderedText(trimmed) != null
+        orderedText(trimmed) != null ||
+        imageBlockOf(trimmed) != null
+
+/**
+ * `![说明](http…)` 整行时返回 `说明 to 地址`，否则 null。
+ *
+ * 只认 http(s)：别的地址（相对路径、`data:`）既下不到也没意义，按普通文字留着更诚实。
+ * 说明可以空（`![](…)`），空串就让 [PostImage] 用「图片」兜底。
+ */
+private val ImagePattern = Regex("""^!\[([^\]]*)\]\((https?://[^\s)]+)\)$""")
+
+private fun imageBlockOf(trimmed: String): Pair<String, String>? {
+    val hit = ImagePattern.matchEntire(trimmed) ?: return null
+    return hit.groupValues[1].trim() to hit.groupValues[2]
+}
 
 /** `---` 或 `***`，整行只有同一个字符且至少三个。 */
 private fun isRule(trimmed: String): Boolean {

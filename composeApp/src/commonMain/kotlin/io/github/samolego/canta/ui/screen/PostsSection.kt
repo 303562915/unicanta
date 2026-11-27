@@ -380,6 +380,15 @@ private val PARTICIPANT_STEP = 13.dp
 /** 阅读时长只在超过这个分钟数时才报：短帖报"1 分钟阅读"没有信息量。 */
 private const val READ_MINUTES_MIN = 3
 
+/**
+ * 名字行右侧那条引用指示条里，名字最宽多少。
+ *
+ * 参考实现是 `ConstrainedBox(maxWidth: 80)`（`post_header.dart:472-473`），按那边 11sp 的字号
+ * 大约装得下 8~9 个中文字。本仓同样是 11sp，但整条还要带上「回复 #12 · 」这一截，
+ * 所以这里给名字单独留 96dp：再多就会把左边的作者名挤成省略号。
+ */
+private val INLINE_REPLY_NAME_MAX = 96.dp
+
 /** 列表上方的四个口径：最新（后端原序）、热门（赞与回复算出来的热度）、收藏、我的。 */
 private enum class PostBoard(val label: String) {
     Latest("最新"),
@@ -3149,7 +3158,9 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
             // 16 而不是 12：楼层现在是一条 padding 16 的通栏，header 跟着对齐 —— 详情页里
             // 所有正文块的左边缘必须落在同一条直线上（`PostSectionHeader` 本来也是 16）。
             .padding(horizontal = 16.dp)
-            .padding(top = 14.dp),
+            // 顶 20：参考实现的 header 是 `EdgeInsets.fromLTRB(16, 20, 16, 16)`
+            // （`topic_detail_header.dart:84`），标题上方那口气就是 20 —— 原来写 14，标题贴着顶栏。
+            .padding(top = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // 标题 + 锁图标：锁住的帖子在标题**前面**画一颗锁（`topic_detail_header.dart:109-120`
@@ -3162,26 +3173,32 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
                 }
                 Text(
                     text = post.title.ifBlank { "（无标题）" },
-                    // **必须显式给 24sp**：本仓的 `headlineSmall` 被 FlTypography 映射到
+                    // **必须显式给字号**：本仓的 `headlineSmall` 被 FlTypography 映射到
                     // `FlText.headline`（17sp/22，那是 FlClash 二级页标题的档），
-                    // 而 fluxdo 的详情标题是 24sp。直接写 `typography.headlineSmall` 会小 7sp，
-                    // 点进帖子标题反倒比列表卡片还小一截。
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 24.sp,
-                        lineHeight = 30.sp,
+                    // 直接写 `typography.headlineSmall` 点进帖子标题反倒比列表卡片还小一截。
+                    //
+                    // 数值照 `topic_detail_header.dart:103-107`：`titleLarge` + `w600` +
+                    // `height: 1.4` + `letterSpacing: 0.2`。M3 的 `titleLarge` 是 **22sp**，
+                    // 1.4 倍行高 = 30.8 ≈ 31sp。上一版写 24sp / Bold(700)，比参考大两号、重一档。
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 22.sp,
+                        lineHeight = 31.sp,
+                        letterSpacing = 0.2.sp,
+                        fontWeight = FontWeight.SemiBold,
                     ),
-                    fontWeight = FontWeight.Bold,
                     color = scheme.onSurface,
                     modifier = Modifier.weight(1f, fill = false),
                 )
             }
 
-        // 分类 + 标签：discourse 那种一排水洗标签。分类带自己那一小块颜色。
+        // 分类 + 标签：`Wrap(spacing: 6, runSpacing: 8)`（`topic_detail_header.dart:163-166`）。
+        // 上一版是横滚一行，标签一多就有一半藏在屏幕外；参考实现是**换行**，多出来的落到第二行。
         if (post.category.isNotBlank() || post.tags.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
                 if (post.category.isNotBlank()) {
                     CategoryPill(category = post.category, colorHex = post.categoryColor)
@@ -3191,26 +3208,29 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
         }
 
         // 元信息：回复 / 赞 / 时间。三件事挤一行，用中点分开——比三行小字省地方。
+        // 每项内部照 `_buildMetadataItem`（`topic_detail_header.dart:346-381`）：图标 14dp、
+        // 与数字之间 4dp、数字 α0.8 + w500、后面的标签 α0.5 —— 一眼能分出"数"和"名"。
         Row(verticalAlignment = Alignment.CenterVertically) {
             ThreadMeta(
                 glyph = Icons.Rounded.ChatBubble,
-                text = "${post.comments} 回复",
+                value = "${post.comments}",
+                label = "回复",
                 tint = scheme.onSurfaceVariant,
             )
             ThreadMetaDivider()
             ThreadMeta(
                 glyph = Icons.Rounded.Favorite,
-                text = "${post.likes} 赞",
+                value = "${post.likes}",
+                label = "赞",
                 tint = if (post.mineLike) scheme.primary else scheme.onSurfaceVariant,
             )
             val stamp = relativeStamp(post.createdAt)
             if (stamp.isNotBlank()) {
                 ThreadMetaDivider()
-                Text(
-                    text = stamp,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 1,
+                ThreadMeta(
+                    glyph = Icons.Rounded.Schedule,
+                    value = stamp,
+                    tint = scheme.onSurfaceVariant,
                 )
             }
         }
@@ -3278,23 +3298,48 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
     }
 }
 
-/** 元信息里的一个小图标 + 一句话。 */
+/**
+ * 元信息里的一个小图标 + 一个数 + 可选的标签，照 `topic_detail_header.dart:346-381`
+ * 的 `_buildMetadataItem`：
+ *
+ * - 图标 **14dp**，颜色是 `onSurfaceVariant α0.7`
+ * - 图标与数之间 **4dp**
+ * - 数 `α0.8` + **w500**（比标签亮、比正文稳）；标签 `α0.5`
+ *
+ * 为什么把"数"和"标签"分开而不是拼成一句 `"3 回复"`：拼起来只能同色同字重，
+ * 一行的三个数（回复/赞/时间）读起来会糊成一条灰线，分不开"值"和"它是什么"。
+ */
 @Composable
-private fun ThreadMeta(glyph: ImageVector, text: String, tint: Color) {
+private fun ThreadMeta(
+    glyph: ImageVector,
+    value: String,
+    tint: Color,
+    label: String? = null,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = glyph,
             contentDescription = null,
-            modifier = Modifier.size(13.dp),
-            tint = tint,
+            modifier = Modifier.size(14.dp),
+            tint = metaTint(tint, 0.7f),
         )
-        Spacer(modifier = Modifier.width(3.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Text(
-            text = text,
+            text = value,
             style = MaterialTheme.typography.labelSmall,
-            color = tint,
+            fontWeight = FontWeight.Medium,
+            color = metaTint(tint, 0.8f),
             maxLines = 1,
         )
+        if (label != null) {
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = metaTint(tint, 0.5f),
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -3741,9 +3786,10 @@ private fun FloorDateSeparator(iso: String) {
  *
  * - 容器：`padding(h 8, v 5)`、底色 `primary α0.08`、圆角 **20**、边框 1dp `primary α0.1`
  * - 内容：`reply_rounded` **14dp**（主色）→ 6dp → 对方头像 **20dp** → 4dp → 名字
- *   `labelSmall` 抬到 **11sp**、主色、最多 `maxWidth 80` 之后省略号
- * - 整条右边留 **12dp**（源码是"指示条 + `SizedBox(width: 12)`"，本仓放在名字下面一行，
- *   所以 12dp 变成这一行的右内边距，让它不贴着右边缘）
+ *   `labelSmall` 抬到 **11sp**、主色、最多 [INLINE_REPLY_NAME_MAX] 之后省略号
+ * - 位置：**名字那一行的右侧、时间/楼层号左边**，与源码 `_buildRightSection` 的
+ *   「指示条 → 12 → 时间/楼层号」一致。整条不再单占一行 —— 那样一层楼多花 30dp，
+ *   引用一多整页就垮了。
  *
  * [onClick] 为 null 时**不挂 `clickable`**：目标楼层不在当前列表里（刚被删 / 还没拉到）时，
  * 这条指示条仍然要画（"在回谁"是有用的信息），但点下去没有地方可去，就不该有个假手势。
@@ -3756,15 +3802,28 @@ private fun FloorReplyIndicator(
     author: String,
     authorSeed: String,
     onClick: (() -> Unit)? = null,
+    /**
+     * 是不是挂在名字行右侧的那一版。
+     *
+     * 参考实现里它就和时间/楼层号同一行（`post_header.dart:364-419`），所以这里是**默认形态**：
+     * 按内容宽、不外撑、名字最多 [INLINE_REPLY_NAME_MAX]。false 时退回"整行铺满 + 右留 12"，
+     * 给以后需要在正文里单独铺一条的场合留个口子。
+     */
+    inline: Boolean = true,
 ) {
     val scheme = MaterialTheme.colorScheme
     val name = author.ifBlank { "匿名" }
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            // 右 12dp：`Row` 自己撑满宽度，指示条内容仍然按内容宽（`Modifier` 只给外框），
-            // 这一行的右边距就是源码里 `SizedBox(width: 12)` 的等价物。
-            .padding(end = 12.dp)
+            .then(
+                if (inline) {
+                    Modifier
+                } else {
+                    // 整行版：`Row` 自己撑满宽度，指示条内容仍按内容宽，右边 12dp 就是源码里
+                    // `SizedBox(width: 12)` 的等价物。
+                    Modifier.fillMaxWidth().padding(end = 12.dp)
+                },
+            )
             .clip(RoundedCornerShape(20.dp))
             .background(scheme.primary.copy(alpha = 0.08f))
             // 边框 **1dp `primary α0.1`**。用 `drawBehind` 里的 `Stroke` 而不是 `border()`：
@@ -3800,7 +3859,10 @@ private fun FloorReplyIndicator(
             color = scheme.primary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 200.dp),
+            // 同排那一版名字最多 12 个字（源码 `ConstrainedBox(maxWidth: 80)` 是按 **8~9 个中文字**
+            // 的宽度定的；本仓的字号是 11sp，这里按同样的观感给 96dp），再多就省略：
+            // 名字比它旁边的正文长，标题区会被这一条撑歪。
+            modifier = Modifier.widthIn(max = if (inline) INLINE_REPLY_NAME_MAX else 200.dp),
         )
     }
 }
@@ -3940,7 +4002,9 @@ private fun PostFloorCard(
                     // 上一版把楼层号和名字挤在同一行，长名字时时间/楼层号会被压到 0 宽。
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
+                        // 整行 `CrossAxisAlignment.center`（源码 `post_header.dart:223-224`）：头像 40、
+                        // 名字与右列都对着头像的中线，而不是各自贴着顶边。
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(
                             modifier = Modifier.weight(1f),
@@ -3968,6 +4032,13 @@ private fun PostFloorCard(
                                 )
                             }
                         }
+                        // 引用指示条：**名字行右侧、时间/楼层号左边**（fluxdo `post_header.dart:364-419`
+                        // 的 `_buildRightSection`：指示条 → 12 → 时间/楼层号）。上一版把它另起一行放在
+                        // 名字下面，每层楼白多占 30dp，引用多时整页往下垮，而且"这条在回谁"读不出层级。
+                        if (replyIndicator != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            replyIndicator()
+                        }
                         Column(
                             modifier = Modifier.padding(start = 8.dp),
                             horizontalAlignment = Alignment.End,
@@ -3994,16 +4065,8 @@ private fun PostFloorCard(
                             )
                         }
                     }
-                    // 引用指示条：**就在作者名那一行的下面**一条窄带（fluxdo `post_header.dart:369-390`
-                    // 把它挂在右边时间/楼层号的**同一行**上；本仓的时间/楼层号是竖排右列、宽度按内容算，
-                    // 挤一条「图标 + 头像 + 12 个字的名字」进去会把右列撑到半屏，所以落到第二行 ——
-                    // 视觉上仍是"名字下面一条贴着作者区的窄条"，与源码同一段信息、同一个高度）。
-                    //
-                    // 为 null 时**一个组合项都不建**，布局与没有这一条时一样。
-                    if (replyIndicator != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        replyIndicator()
-                    }
+                    // 引用指示条已经挪到上面名字行里（见那段注释），这里不再单独占一行：
+                    // 一层楼的高度回到「头像/名字行 + 正文 + 动作行」三段，楼层之间的密度才跟得上参考图。
                     // 正文与头部之间 12dp（`post_item.dart:284` 的 `SizedBox(height: 12)`）。
                     // 不挂 `Arrangement.spacedBy`：见上面那段注释。
                     Spacer(modifier = Modifier.height(8.dp))
