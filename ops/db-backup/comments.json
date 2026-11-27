@@ -5568,6 +5568,30 @@
   "target": "92"
  },
  {
+  "author": "是果宝呐",
+  "author_id": "10319",
+  "body": "注意：com.miui.systemAdSolution卸载后会导致系统应用启动时黑屏10秒左右。",
+  "created_at": "2026-11-27T23:32:24.084157+00:00",
+  "device_model": "REDMI K90 Ultra",
+  "id": 808,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 3",
+  "target": "38"
+ },
+ {
+  "author": "是果宝呐",
+  "author_id": "10319",
+  "body": "恢复方法如下：`adb shell pm install-existing --user 0 com.miui.analytics` 然后改用挂起：`adb shell pm suspend com.miui.systemAdSolution`",
+  "created_at": "2026-11-27T23:34:05.406372+00:00",
+  "device_model": "REDMI K90 Ultra",
+  "id": 809,
+  "kind": "plan",
+  "parent_id": 808,
+  "system_name": "HyperOS 3",
+  "target": "38"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
