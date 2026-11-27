@@ -783,13 +783,6 @@ class SocialRepository(
     }
 
     /**
-     * [conversation] 里比 [beforeId] 更旧的一页消息，解析与 [messagesFor] 完全一致。
-     *
-     * 往上翻历史用这一条：拿当前看到的最旧那条的 id 当锚，新消息再多也不会把页错开
-     * （用 offset 翻历史会被刚到的消息挤动，所以有这两个入口）。
-     * [beforeId] 传 0 就是"从最新一条往前"，后端按同一件事处理。
-     */
-    /**
      * 这个群的置顶消息，最新钉的在前。
      *
      * 和聊天记录分开问：置顶那几条很可能在很久以前（往上翻几百条才见得到），跟着每一页历史一起
@@ -827,6 +820,13 @@ class SocialRepository(
         return booleanFrom(text, "message_pin") ?: false
     }
 
+    /**
+     * [conversation] 里比 [beforeId] 更旧的一页消息，解析与 [messagesFor] 完全一致。
+     *
+     * 往上翻历史用这一条：拿当前看到的最旧那条的 id 当锚，新消息再多也不会把页错开
+     * （用 offset 翻历史会被刚到的消息挤动，所以有这两个入口）。
+     * [beforeId] 传 0 就是"从最新一条往前"，后端按同一件事处理。
+     */
     suspend fun messagesBefore(
         owner: String,
         conversation: Long,

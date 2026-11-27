@@ -725,7 +725,7 @@ fun ChatScreen(
         detail = repository.conversationDetail(owner, conversationId)
         // 群置顶消息：和详情一起问一次就够。置顶不常变，改的那一下自己会重拉（见 togglePinMessage）。
         pinnedMessages = if (detail?.isGroup == true) {
-            // 类型写明：getOrDefault(emptyList()) 在这条链上推不出元素类型，Kotlin 会报推断失败。
+            // 读不到就是空列表：置顶拉不动不该让整页报错，入口行那格会老实说「还没有置顶消息」。
             runCatching { repository.pinnedMessages(owner, conversationId) }.getOrNull().orEmpty()
         } else {
             emptyList()
@@ -1934,8 +1934,8 @@ private enum class ChatHeaderSection { Chat, Announcement, Pinned, Saved, Settin
  * 群公告、置顶消息这类"整个群都该看见"的东西从顶栏进，而不是藏在右上角某个菜单的第三项里。
  *
  * 公告、置顶、收藏三格右上角各有一颗红点：有内容就亮，一眼看出这个群有没有新公告、有没有置顶。
- * 「设置」不进展开区，直接走 [onOpenGroupInfo]——群名、群头像、公告、我的群昵称、进群码都在那一页，
- * 在顶栏里再抄一遍只会两处各改一半。
+ * 「设置」也是就地展开：先给一张摘要卡（群头像、群名、人数、我的群昵称），卡片底部那行才进
+ * 群设置页——群名、群头像、公告、进群码都在那一页。
  *
  * 左边的圆头像和标题也是一块入口：群聊点进群资料（[onOpenGroupInfo]），
  * 私聊点进对面那个人的主页（[onOpenProfile]，身份用 [peerOwner]）。私聊还没拿到对方身份时

@@ -344,7 +344,7 @@ data class AppSettingsProto(
      * 存的是**收藏那一刻**的正文：原消息后来被撤回、或者被删掉，收藏里那句话仍然在——收藏要的是
      * "我当时留着的那句话"，不是"现在还剩什么"。
      */
-    @ProtoNumber(53) val chatSaved: String = "",
+    @ProtoNumber(55) val chatSaved: String = "",
 )
 
 /**
