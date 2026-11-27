@@ -5393,7 +5393,7 @@
     "pkg": "android.overlay.vivoresrro",
     "small_batch": false,
     "uninstalls": 11,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -5407,14 +5407,14 @@
     "pkg": "com.amap.android.location",
     "small_batch": true,
     "uninstalls": 4,
-    "updated_at": "2026-11-24T16:20:14.638415+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.adservices.api",
     "small_batch": true,
     "uninstalls": 17,
-    "updated_at": "2026-11-27T03:06:48.951645+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -5575,7 +5575,7 @@
     "pkg": "com.android.egg",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-25T16:10:54.142876+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -5603,7 +5603,7 @@
     "pkg": "com.android.federatedcompute.services",
     "small_batch": true,
     "uninstalls": 12,
-    "updated_at": "2026-11-27T01:32:55.780685+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -5701,7 +5701,7 @@
     "pkg": "com.android.internal.systemui.navbar.threebutton",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-23T08:40:56.015487+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -5715,7 +5715,7 @@
     "pkg": "com.android.microdroid.empty_payload",
     "small_batch": true,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T01:32:55.780685+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -5743,7 +5743,7 @@
     "pkg": "com.android.ondevicepersonalization.services",
     "small_batch": false,
     "uninstalls": 14,
-    "updated_at": "2026-11-27T01:31:33.672327+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -5862,7 +5862,7 @@
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-25T14:41:23.594819+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -5932,7 +5932,7 @@
     "pkg": "com.android.theme.font.notoserifsource",
     "small_batch": false,
     "uninstalls": 13,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -6212,7 +6212,7 @@
     "pkg": "com.bbk.photoframewidget",
     "small_batch": false,
     "uninstalls": 8,
-    "updated_at": "2026-11-26T11:28:16.595125+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -6296,21 +6296,21 @@
     "pkg": "com.goodix",
     "small_batch": true,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.goodix.deltadiff",
     "small_batch": true,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.google.android.accessibility.switchaccess",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-26T04:37:45.47038+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -6366,7 +6366,7 @@
     "pkg": "com.google.android.projection.gearhead",
     "small_batch": true,
     "uninstalls": 0,
-    "updated_at": "2026-11-21T15:51:01.48374+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -6422,7 +6422,7 @@
     "pkg": "com.mediatek.atmwifimeta",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-25T13:05:26.120561+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -6471,7 +6471,7 @@
     "pkg": "com.mediatek.gnssdebugreport",
     "small_batch": true,
     "uninstalls": 4,
-    "updated_at": "2026-11-26T14:19:48.634992+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -6485,7 +6485,7 @@
     "pkg": "com.mediatek.lbs.em2.ui",
     "small_batch": true,
     "uninstalls": 4,
-    "updated_at": "2026-11-26T14:19:48.634992+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -6506,14 +6506,14 @@
     "pkg": "com.mediatek.mdmconfig",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-26T14:19:48.634992+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
     "pkg": "com.mediatek.mdmlsample",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-26T14:19:48.634992+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -6548,7 +6548,7 @@
     "pkg": "com.mediatek.ygps",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-26T07:59:22.961548+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -6835,7 +6835,7 @@
     "pkg": "com.rongcard.eid",
     "small_batch": true,
     "uninstalls": 11,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -6961,7 +6961,7 @@
     "pkg": "com.vivo.alphacamera",
     "small_batch": false,
     "uninstalls": 7,
-    "updated_at": "2026-11-27T01:32:55.780685+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -6975,7 +6975,7 @@
     "pkg": "com.vivo.are",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-26T16:49:30.579692+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -7101,7 +7101,7 @@
     "pkg": "com.vivo.doubletimezoneclock",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-25T00:55:37.382547+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -7115,7 +7115,7 @@
     "pkg": "com.vivo.dream.clock",
     "small_batch": false,
     "uninstalls": 3,
-    "updated_at": "2026-11-24T10:30:44.405523+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -7416,7 +7416,7 @@
     "pkg": "com.vivo.motionrecognition",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-26T05:42:24.72786+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -7437,7 +7437,7 @@
     "pkg": "com.vivo.networkimprove",
     "small_batch": true,
     "uninstalls": 12,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -7703,7 +7703,7 @@
     "pkg": "com.vivo.timerwidget",
     "small_batch": false,
     "uninstalls": 4,
-    "updated_at": "2026-11-26T14:07:17.187419+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -7773,7 +7773,7 @@
     "pkg": "com.vivo.vivokaraoke",
     "small_batch": true,
     "uninstalls": 8,
-    "updated_at": "2026-11-26T14:07:17.187419+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11688,7 +11688,7 @@
     "pkg": "android.overlay.vivoresrro",
     "small_batch": true,
     "uninstalls": 7,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -11702,14 +11702,14 @@
     "pkg": "com.amap.android.location",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-24T16:20:14.638415+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.adservices.api",
     "small_batch": true,
     "uninstalls": 7,
-    "updated_at": "2026-11-26T23:52:08.567535+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -11807,7 +11807,7 @@
     "pkg": "com.android.egg",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-22T12:35:40.801491+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -11821,7 +11821,7 @@
     "pkg": "com.android.federatedcompute.services",
     "small_batch": true,
     "uninstalls": 9,
-    "updated_at": "2026-11-27T01:32:55.780685+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -11877,14 +11877,14 @@
     "pkg": "com.android.internal.systemui.navbar.threebutton",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-23T07:49:37.852471+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.microdroid.empty_payload",
     "small_batch": true,
     "uninstalls": 9,
-    "updated_at": "2026-11-27T01:32:55.780685+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -11898,7 +11898,7 @@
     "pkg": "com.android.ondevicepersonalization.services",
     "small_batch": true,
     "uninstalls": 8,
-    "updated_at": "2026-11-27T01:31:33.672327+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -11933,7 +11933,7 @@
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-25T02:09:41.335317+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -11947,7 +11947,7 @@
     "pkg": "com.android.theme.font.notoserifsource",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -12024,7 +12024,7 @@
     "pkg": "com.bbk.photoframewidget",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-26T11:28:16.595125+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -12045,21 +12045,21 @@
     "pkg": "com.goodix",
     "small_batch": true,
     "uninstalls": 7,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
-    "verdict": "UNCLEAR"
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.goodix.deltadiff",
     "small_batch": true,
     "uninstalls": 7,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
-    "verdict": "UNCLEAR"
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.google.android.accessibility.switchaccess",
     "small_batch": true,
     "uninstalls": 0,
-    "updated_at": "2026-11-24T11:32:37.732266+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12101,7 +12101,7 @@
     "pkg": "com.google.android.projection.gearhead",
     "small_batch": true,
     "uninstalls": 0,
-    "updated_at": "2026-11-21T15:51:01.48374+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12119,38 +12119,45 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.mediatek.atmwifimeta",
+    "small_batch": true,
+    "uninstalls": 0,
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.mediatek.gnssdebugreport",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-22T12:35:40.801491+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.mediatek.lbs.em2.ui",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-22T12:35:40.801491+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.mediatek.mdmconfig",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-23T07:49:37.852471+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.mediatek.mdmlsample",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-23T07:49:37.852471+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.mediatek.ygps",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-22T02:15:59.683165+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12325,7 +12332,7 @@
     "pkg": "com.rongcard.eid",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -12402,14 +12409,14 @@
     "pkg": "com.vivo.alphacamera",
     "small_batch": false,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T01:32:55.780685+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
     "pkg": "com.vivo.are",
     "small_batch": true,
     "uninstalls": 4,
-    "updated_at": "2026-11-26T16:49:30.579692+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12493,7 +12500,14 @@
     "pkg": "com.vivo.doubletimezoneclock",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-23T03:09:03.550195+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.vivo.dream.clock",
+    "small_batch": true,
+    "uninstalls": 0,
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12675,14 +12689,14 @@
     "pkg": "com.vivo.motionrecognition",
     "small_batch": true,
     "uninstalls": 0,
-    "updated_at": "2026-11-21T15:51:01.48374+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.vivo.networkimprove",
     "small_batch": true,
     "uninstalls": 8,
-    "updated_at": "2026-11-27T01:36:05.493169+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "SAFE"
    },
    {
@@ -12850,7 +12864,7 @@
     "pkg": "com.vivo.timerwidget",
     "small_batch": false,
     "uninstalls": 1,
-    "updated_at": "2026-11-23T07:49:37.852471+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -12892,7 +12906,7 @@
     "pkg": "com.vivo.vivokaraoke",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-25T02:09:41.335317+00:00",
+    "updated_at": "2026-11-27T07:08:27.300559+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -13632,7 +13646,7 @@
     "pkg": "com.android.browser",
     "small_batch": false,
     "uninstalls": 284,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "updated_at": "2026-11-27T07:09:39.800866+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14927,7 +14941,7 @@
     "pkg": "com.miui.analytics",
     "small_batch": false,
     "uninstalls": 424,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "updated_at": "2026-11-27T07:09:39.800866+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15059,8 +15073,8 @@
    {
     "pkg": "com.miui.extraphoto",
     "small_batch": false,
-    "uninstalls": 143,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "uninstalls": 144,
+    "updated_at": "2026-11-27T07:08:05.225768+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15788,7 +15802,7 @@
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
     "uninstalls": 298,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "updated_at": "2026-11-27T07:09:39.800866+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20551,7 +20565,7 @@
     "pkg": "com.android.browser",
     "small_batch": true,
     "uninstalls": 198,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "updated_at": "2026-11-27T07:09:39.800866+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21405,7 +21419,7 @@
     "pkg": "com.miui.analytics",
     "small_batch": false,
     "uninstalls": 294,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "updated_at": "2026-11-27T07:09:39.800866+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21502,8 +21516,8 @@
    {
     "pkg": "com.miui.extraphoto",
     "small_batch": false,
-    "uninstalls": 111,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "uninstalls": 112,
+    "updated_at": "2026-11-27T07:08:05.225768+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22014,7 +22028,7 @@
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
     "uninstalls": 235,
-    "updated_at": "2026-11-27T07:03:00.271417+00:00",
+    "updated_at": "2026-11-27T07:09:39.800866+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22783,7 +22797,7 @@
     "pkg": "com.hihonor.aipluginengine",
     "small_batch": false,
     "uninstalls": 12,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23084,7 +23098,7 @@
     "pkg": "com.hihonor.detectrepair",
     "small_batch": false,
     "uninstalls": 14,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -23364,7 +23378,7 @@
     "pkg": "com.hihonor.keychain",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -23532,7 +23546,7 @@
     "pkg": "com.hihonor.pcassistant",
     "small_batch": true,
     "uninstalls": 13,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23581,7 +23595,7 @@
     "pkg": "com.hihonor.quickgame",
     "small_batch": true,
     "uninstalls": 25,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -23651,14 +23665,14 @@
     "pkg": "com.hihonor.search",
     "small_batch": false,
     "uninstalls": 15,
-    "updated_at": "2026-11-27T06:07:39.828008+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.hihonor.searchservice",
     "small_batch": true,
     "uninstalls": 16,
-    "updated_at": "2026-11-27T06:07:39.828008+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23686,7 +23700,7 @@
     "pkg": "com.hihonor.smartiot",
     "small_batch": false,
     "uninstalls": 16,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -23749,7 +23763,7 @@
     "pkg": "com.hihonor.trustspace",
     "small_batch": true,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "SAFE"
    },
    {
@@ -23770,7 +23784,7 @@
     "pkg": "com.hihonor.virtualinput",
     "small_batch": false,
     "uninstalls": 13,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -25691,7 +25705,7 @@
     "pkg": "com.hihonor.aipluginengine",
     "small_batch": false,
     "uninstalls": 10,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25971,7 +25985,7 @@
     "pkg": "com.hihonor.detectrepair",
     "small_batch": false,
     "uninstalls": 12,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -26230,7 +26244,7 @@
     "pkg": "com.hihonor.keychain",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -26391,7 +26405,7 @@
     "pkg": "com.hihonor.pcassistant",
     "small_batch": false,
     "uninstalls": 11,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26433,7 +26447,7 @@
     "pkg": "com.hihonor.quickgame",
     "small_batch": true,
     "uninstalls": 19,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26503,14 +26517,14 @@
     "pkg": "com.hihonor.search",
     "small_batch": false,
     "uninstalls": 12,
-    "updated_at": "2026-11-27T06:07:39.828008+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "UNCLEAR"
    },
    {
     "pkg": "com.hihonor.searchservice",
     "small_batch": false,
     "uninstalls": 13,
-    "updated_at": "2026-11-27T06:07:39.828008+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26538,7 +26552,7 @@
     "pkg": "com.hihonor.smartiot",
     "small_batch": false,
     "uninstalls": 15,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26594,8 +26608,8 @@
     "pkg": "com.hihonor.trustspace",
     "small_batch": true,
     "uninstalls": 9,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
-    "verdict": "UNCLEAR"
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.hihonor.videoeditor",
@@ -26608,7 +26622,7 @@
     "pkg": "com.hihonor.virtualinput",
     "small_batch": false,
     "uninstalls": 12,
-    "updated_at": "2026-11-27T06:36:07.392019+00:00",
+    "updated_at": "2026-11-27T07:04:12.065059+00:00",
     "verdict": "UNCLEAR"
    },
    {
