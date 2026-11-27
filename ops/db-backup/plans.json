@@ -10336,7 +10336,7 @@
   "reboot_verified": true,
   "rebooted_at": "2026-11-22T23:39:56.200222+00:00",
   "rom": "coloros",
-  "rom_build": "",
+  "rom_build": "V17.0.0",
   "rom_version": 17,
   "sdk": 37,
   "title": "Coloros17 功能全正常但省电"
@@ -10540,7 +10540,7 @@
   "reboot_verified": true,
   "rebooted_at": "2026-11-23T00:35:13.624261+00:00",
   "rom": "coloros",
-  "rom_build": "",
+  "rom_build": "V17.0.0",
   "rom_version": 17,
   "sdk": 37,
   "title": "C17省电"
