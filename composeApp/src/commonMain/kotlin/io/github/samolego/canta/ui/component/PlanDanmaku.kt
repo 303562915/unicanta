@@ -34,11 +34,16 @@ private const val DANMAKU_LANES = 3
 /** 每条轨道的高度：11 号字加一点呼吸，三条正好一条窄带。 */
 private const val DANMAKU_LANE_HEIGHT_DP = 20
 
-/** 同时在场的最多条数：评论可能上百，全飘出来只显得吵。 */
-private const val DANMAKU_MAX_LINES = 14
+/**
+ * 同时在场的最多条数：评论可能上百，全飘出来只显得吵。
+ *
+ * 给到二十几条是因为弹幕池里有一级评论也有它们的回复（见 `danmakuRows`）：一级全排在前、回复跟在
+ * 后面，池子太小的话回复会一条都轮不上，看起来就像「只有一级在飘」。
+ */
+private const val DANMAKU_MAX_LINES = 24
 
-/** 一条弹幕最多几个字：二十多个字在手机上已经横跨一屏，再多就只剩尾巴。 */
-private const val DANMAKU_MAX_CHARS = 28
+/** 一条弹幕最多几个字：三十多个字在手机上已经横跨一屏，再多就只剩尾巴。 */
+private const val DANMAKU_MAX_CHARS = 34
 
 /** 每秒走过的距离（dp）。慢一点才读得清，也才配得上「慢慢淡过来」。 */
 private const val DANMAKU_SPEED_DP_PER_SEC = 40f

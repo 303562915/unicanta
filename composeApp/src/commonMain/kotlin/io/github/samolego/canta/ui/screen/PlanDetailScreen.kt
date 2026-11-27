@@ -1087,9 +1087,10 @@ private fun PlanDetailContent(
                 onOpenUploader = onOpenUploader,
                 onEditNote = onEditNote,
                 onMessage = onMessage,
-                // 弹幕飘的是评论正文，一句一条：只取正文，作者名不飘——弹幕是「这里有人在说话」
-                // 的动静，不是一份带署名的目录。
-                danmaku = remember(comments) { comments.map { it.body } },
+                // 弹幕飘的是评论正文，一级和它下面的回复都在里面（见 [danmakuRows]）；作者名不飘
+                // ——弹幕是「这里有人在说话」的动静，不是一份带署名的目录。回复前面挂一个「↳」，
+                // 读得出这是回上面那句的，但滚法和其他弹幕完全一样。
+                danmaku = remember(comments) { danmakuRows(comments) },
                 danmakuOn = danmakuOn,
             )
         }
@@ -1233,6 +1234,29 @@ private fun otherDevices(
  * the note, and the numbers. Nothing is centred, because centred type in a card this full turns
  * every line into its own little island and buries the order the reader needs.
  */
+/**
+ * 弹幕池：一级评论一句一条，它下面的回复也一句一条，两级都在。
+ *
+ * 顺序是「所有一级，然后所有二级」，不是按线程交错：弹幕池有条数上限（[PlanDanmaku] 里的
+ * `DANMAKU_MAX_LINES`），交错排的话前几条评论底下回复一多，后面的评论就整条轮不上；先排一级，
+ * 「这个方案上有人说过话」这一层永远在，回复再按剩下的名额补进去。
+ *
+ * 回复头上那个「↳」是它和一级唯一的区别：滚法、字号、速度完全一样（要的就是「所有弹幕都这么
+ * 飘」）。回的是另一条回复时把对象也写上（`CommentThread.markerFor`），否则「↳ 嗯」这种一句话
+ * 读不出在对谁说。
+ */
+private fun danmakuRows(comments: List<PlanComment>): List<String> {
+    val threads = comments.threads()
+    val starters = threads.map { it.comment.body }
+    val answers = threads.flatMap { thread ->
+        thread.replies.map { answer ->
+            val to = thread.markerFor(answer)
+            if (to.isNotEmpty()) "↳ 回 @$to：${answer.body}" else "↳ ${answer.body}"
+        }
+    }
+    return starters + answers
+}
+
 @Composable
 private fun PlanHero(
     plan: CommunityPlan,
