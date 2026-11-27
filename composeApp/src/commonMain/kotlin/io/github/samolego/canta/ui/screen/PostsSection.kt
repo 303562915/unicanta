@@ -2437,18 +2437,22 @@ private fun PostCard(
 @Composable
 private fun PostMetric(glyph: ImageVector, count: Int, active: Boolean) {
     val scheme = MaterialTheme.colorScheme
+    // fluxdo `topic_card.dart:909-939`：统计图标与数字都是 `onSurfaceVariant @ 0.75`，
+    // 只有"我赞过了"才换成 primary。本仓原来用 `outline`（比 onSurfaceVariant 更淡），
+    // 整行会显得比作者名还弱，与源码的层级相反。
+    val ink = if (active) scheme.primary else metaTint(scheme.onSurfaceVariant, 0.75f)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = glyph,
             contentDescription = null,
             modifier = Modifier.size(13.dp),
-            tint = if (active) scheme.primary else scheme.outline,
+            tint = ink,
         )
         Spacer(modifier = Modifier.width(3.dp))
         Text(
             text = count.toString(),
             style = MaterialTheme.typography.labelSmall,
-            color = if (active) scheme.primary else scheme.outline,
+            color = ink,
             maxLines = 1,
         )
     }
