@@ -101,13 +101,18 @@ private const val SNAPSHOT_RETRY_BACKOFF_MS = 60_000L
 /**
  * 快照内存缓存的有效期。
  *
- * 一分钟：db-backup 目前 5–15 分钟跑一轮，所以一份快照最长就是「上一轮」那么旧；
- * 一分钟的缓存不会让用户多等（有旧内容先画旧的），也不会让几十 KB 的文件被反复下载。
+ * **30 秒**（原 60 秒，2026-11-27 收紧）。钱不是问题，时效才是：
+ * GitHub Pages 对静态文件基本不限流量，`plans.json` 现在 320 KB，一个月被读几千次
+ * 也就几百 MB，离 100 GB 额度差着两个数量级。没理由为了省这点带宽让人等一分钟。
+ *
+ * 30 秒的依据是这个文件多久变一次：`db-backup` 现在 3–5 分钟跑一轮，所以
+ * 「30 秒缓存」比「1 秒缓存」几乎不会多读到一次**内容不同**的版本，却能让
+ * 「刚提交完、回去看列表」在半分钟内成立。
  *
  * 这条**必须有**：2026-11-27 有人提交方案后，自己开着 App 一天都看不到它，
  * 就是因为缓存原来永不过期（见 [snapshotCache]）。
  */
-private const val SNAPSHOT_CACHE_TTL_MS = 60_000L
+private const val SNAPSHOT_CACHE_TTL_MS = 30_000L
 
 /**
  * 随包带的那一份方案快照（composeResources/files/plans_snapshot.json）。
@@ -524,6 +529,24 @@ class PlanRepository(
         private set
 
     /**
+     * 把「上一次调用」的错误状态清成「答上了」。
+     *
+     * 快照命中时**必须**调它：那条路一个请求都不发，于是 [lastError] /
+     * [lastFailureWasNetwork] 会保留上一次调用留下的值；调用方普遍按
+     * `lastError == null && !lastFailureWasNetwork` 判断这一趟的结果可不可信，
+     * 残留值会把一份明明拿到手的列表判成「没读到」。
+     *
+     * 2026-11-27 的真事：别人给某人的方案点了赞，他从互动消息点进去却看不到那个方案 ——
+     * 列表其实查到了（快照里就有），只是被残留的错误状态判成失败，页面停在旧内容上。
+     *
+     * **新增任何「不发请求就返回」的路径，都要调这个。**
+     */
+    private fun markAnswered() {
+        lastError = null
+        lastFailureWasNetwork = false
+    }
+
+    /**
      * The newest row of each kind this install was actually shown by [inboxPage], keyed by kind.
      *
      * The inbox is four sources merged into one stream, and the page hands the whole stream to a
@@ -646,6 +669,13 @@ class PlanRepository(
                     plan.rom.equals(profile.rom, ignoreCase = true) &&
                     plan.romVersion == profile.romVersion
             }
+            // **必须清掉错误状态**：调用方（`PlanDetailScreen` 等）靠
+            // `lastError == null && !lastFailureWasNetwork` 判断「这一次的答案可不可信」。
+            // 快照命中时不发任何请求，这两个字段会**保留上一次调用的残留值** ——
+            // 之前任何一次失败都会让它们非空，于是调用方把一份明明拿到手的列表判成「没读到」，
+            // 屏幕上就停着旧内容。这正是 2026-11-27「别人给我点了赞、点进去却看不到那个方案」
+            // 的形状：列表其实查到了，只是被判成失败。
+            markAnswered()
             // 排序照后端：**同一个 build 的排前面**（`p_rom_build` 的作用就是这个），
             // 然后才是票数多的在前。不能反过来——先按票数排的话，同一 build 的那几条
             // 会被票数更高的别的 build 挤到后面，"这台机器实测过"就看不出来了。
@@ -760,7 +790,12 @@ class PlanRepository(
         // 代价只有一个：别人刚发的方案最多晚一轮（15–60 分钟）才出现在这里。这是**可以接受**的
         // ——这一趟只负责"有哪些方案、各多少票"，自己的投票在本地先更新、后台再同步。
         val snapshot = offlinePlans()
-        if (snapshot.isNotEmpty()) return snapshot.take(limit)
+        if (snapshot.isNotEmpty()) {
+            // 与 [plansFor] 同一条规矩：快照命中也要清掉错误状态，否则上一次任何一次失败
+            // 都会让调用方把这份列表判成「没读到」。
+            markAnswered()
+            return snapshot.take(limit)
+        }
 
         // 快照读不到（没发布过 / 两个源都断）：退回后端，然后再退回"没有"。
         val body = buildJsonObject { put("p_limit", limit) }.toString()
