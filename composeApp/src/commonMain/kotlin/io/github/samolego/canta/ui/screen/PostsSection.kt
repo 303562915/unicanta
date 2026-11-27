@@ -598,7 +598,8 @@ private fun TopBarIconButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            size = 24.dp,
+            // `Icon` 没有 `size` 参数（它是 `FlGlyphIcon` 的），尺寸要走 `modifier`。
+            modifier = Modifier.size(24.dp),
             tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
     }
@@ -751,7 +752,7 @@ private fun FabAction(visible: Boolean, icon: ImageVector, label: String, onClic
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    size = 24.dp,
+                    modifier = Modifier.size(24.dp),
                     tint = scheme.onPrimaryContainer,
                 )
             }
@@ -2688,6 +2689,13 @@ private fun PostThreadPane(
 ) {
     val scheme = MaterialTheme.colorScheme
     val listState = rememberLazyListState()
+    // 回复面板开着没有。放在这一层是为了让**动作行左侧那颗「N 条回复」胶囊**也能打开它
+    // （fluxdo `post_action_bar.dart:270` 的 `leftButton` 就是那颗回复胶囊）：
+    // 两处各自 remember 一份，就会出现"点了胶囊、底下的面板没反应"。
+    var composerOpen by remember { mutableStateOf(false) }
+    // 换到另一条帖子时把面板收掉：`remember` 会跟着这个 composable 活到下一次换帖，
+    // 不清的话从 A 帖的面板"穿"到 B 帖上，人会以为自己刚才在 B 里写了什么。
+    LaunchedEffect(post?.id) { composerOpen = false }
     // 收进一个局部 val：下面几个 lambda 里要读它的字段，写一处最稳。
     val shown = post
 
@@ -2813,9 +2821,31 @@ private fun PostThreadPane(
                         // 而主楼不在 `comments` 里，所以单独用帖子 id 参与高亮判定。
                         highlighted = highlightedFloorId != 0L && highlightedFloorId == shown.id,
                         footer = {
-                            // 一排胶囊 + 圆形图标按钮，照 fluxdo `post_action_bar.dart`。
-                            // 四项功能一个不少：赞、回复数（读，不可点）、复制、收藏。
+                            // 顺序照 fluxdo `post_action_bar.dart:263-281`：
+                            //   Row { [leftButton = 回复胶囊] + 12, Expanded(Wrap(end){ 其它动作 }) }
+                            // 也就是**回复胶囊在左、其余动作靠右**。上一版是"赞在最左"，与源码相反。
+                            //
+                            // fluxdo 那颗左胶囊点开的是"内联回复"；本仓没有内联回复，
+                            // 所以它的 `onClick` 直接打开底部的回复面板 —— 位置照抄，行为落到
+                            // 本仓真实有的功能上，不做成点了没反应的装饰。
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                FloorPill(
+                                    label = "${shown.comments} 条回复",
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ChatBubble,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(15.dp),
+                                            tint = scheme.onSurfaceVariant,
+                                        )
+                                    },
+                                    active = composerOpen,
+                                    // 锁帖 / 认不出身份时不能开面板：胶囊跟着置灰，
+                                    // 而不是点下去弹一个"回不了"。
+                                    enabled = !shown.locked && authorId.isNotBlank(),
+                                    onClick = { composerOpen = true },
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
                                 FloorPill(
                                     label = if (busyKey == "like:${shown.id}") "…"
                                     else "${shown.likes}",
@@ -2834,23 +2864,6 @@ private fun PostThreadPane(
                                     active = shown.mineLike,
                                     enabled = busyKey == null,
                                     onClick = onToggleLike,
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                // 「N 条回复」只是读数，不点：它指向的是下面那一列楼层本身，
-                                // 点它无处可去（源码那边的回复胶囊是"展开内联回复"，本仓没有内联回复）。
-                                FloorPill(
-                                    label = "${shown.comments} 条回复",
-                                    icon = {
-                                        Icon(
-                                            imageVector = Icons.Rounded.ChatBubble,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(15.dp),
-                                            tint = scheme.onSurfaceVariant,
-                                        )
-                                    },
-                                    active = false,
-                                    enabled = false,
-                                    onClick = null,
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
                                 // 复制整帖（标题、作者、正文、标签）：「这帖转给我看看」最省事的做法。
@@ -3046,6 +3059,9 @@ private fun PostThreadPane(
                         "" to quote.author.ifBlank { "匿名" }
                     }
                 },
+                // 面板开关在 `PostThreadPane` 那一层：动作行左侧那颗回复胶囊也要开它。
+                open = composerOpen,
+                onOpenChange = { composerOpen = it },
                 onChange = onReplyChange,
                 onSend = onSend,
             )
@@ -3998,12 +4014,18 @@ private fun ReplyBar(
      * 楼层号可能是空串（那一楼在列表里已经找不到了，比如刚被删），这时只写名字，不编一个号。
      */
     replyTo: Pair<String, String>? = null,
+    /**
+     * 面板开着没有。**状态提到上层**（`PostThreadPane`）而不是留在本函数里：
+     * 动作行左边那颗「N 条回复」胶囊也要能把它打开（fluxdo 的 `_buildRepliesButton`
+     * 就是动作行左侧那颗），两处各留一份 `remember` 会出现"点了胶囊、面板没开"。
+     */
+    open: Boolean = false,
+    onOpenChange: (Boolean) -> Unit = {},
     onChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    // 面板开着没有：开着才画遮罩与面板，关着时这一栏只有那颗胶囊。
-    var composerOpen by remember { mutableStateOf(false) }
+    // 关着时这一栏只有那颗胶囊；开着才画遮罩与面板（`composerOpen` 来自上层，见上）。
 
     // 这条底栏**不再吃 `imePadding`**：它里面已经没有真输入框了（只在点开的面板里有），
 // 键盘弹起时它不需要让位；垫了的话面板开着的那段时间，底栏会被顶起一条空白，
@@ -4028,7 +4050,7 @@ private fun ReplyBar(
                         enabled = enabled && !locked,
                         role = Role.Button,
                         onClickLabel = "回复",
-                        onClick = { composerOpen = true },
+                        onClick = { onOpenChange(true) },
                     )
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -4069,16 +4091,16 @@ private fun ReplyBar(
     }
 
     // 面板：整页压暗 + 从底部升起的输入区（`topic_quick_reply.dart`）。
-    if (composerOpen) {
+    if (open) {
         ReplyComposerPanel(
             reply = reply,
             busy = busy,
             onChange = onChange,
             onSend = {
                 onSend()
-                composerOpen = false
+                onOpenChange(false)
             },
-            onDismiss = { composerOpen = false },
+            onDismiss = { onOpenChange(false) },
         )
     }
 }
