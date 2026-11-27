@@ -9306,6 +9306,31 @@
   "title": "日常 · 一加 13"
  },
  {
+  "brand": "Xiaomi",
+  "codename": "manet",
+  "created_at": "2026-11-27T06:09:36.546832+00:00",
+  "id": 396,
+  "is_test": false,
+  "market_name": "Redmi K70 Pro",
+  "model": "23117RK66C",
+  "note": "自己测试用的，太基础了别看",
+  "owner": "13564",
+  "packages": [
+   "com.xiaomi.registration",
+   "com.xiaomi.aiasst.service",
+   "com.xiaomi.aicr",
+   "com.miui.analytics",
+   "com.miui.hybrid"
+  ],
+  "reboot_verified": true,
+  "rebooted_at": "2026-11-27T06:09:35.799992+00:00",
+  "rom": "hyperos",
+  "rom_build": "OS2.0.208.0.VNMCNXM",
+  "rom_version": 2,
+  "sdk": 35,
+  "title": "自己测试 · Redmi K70 Pro"
+ },
+ {
   "brand": "HONOR",
   "codename": "HNBKQ",
   "created_at": "2026-11-21T11:24:42.29763+00:00",
