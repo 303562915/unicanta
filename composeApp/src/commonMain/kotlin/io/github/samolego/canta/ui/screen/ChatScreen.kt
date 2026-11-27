@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +47,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -89,6 +91,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -128,7 +131,6 @@ import io.github.samolego.canta.ui.fl.FlGlyph
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
-import io.github.samolego.canta.ui.fl.FlTopBarHeight
 import io.github.samolego.canta.ui.fl.isDark
 import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.IdentitySetup
@@ -144,6 +146,29 @@ import org.jetbrains.compose.resources.painterResource
 
 /** 单颗表情那条消息画多大：比气泡里内联的表情大得多，又没有大到占半屏。 */
 private val ChatStickerSize = 112.dp
+
+// ---------------------------------------------------------------- 顶部那块（标题栏 + 入口行）的布局尺
+//
+// 一整块只用这几个数，不再逐个写 padding/Spacer：标题栏与入口行左右内边距相同、元素间距相同，
+// 两排的左右基线才对得上；某一格想往哪边挪，只能改这里的共同值，不能单独加 margin。
+
+/** 标题栏高度：比 `FlTopBarHeight` 矮一截，去掉顶部那块多余的留白。 */
+private val ChatHeaderBarHeight = 60.dp
+
+/** 标题栏/入口行左右内边距：两排共用，左右基线才对得齐。 */
+private val ChatHeaderSidePadding = 16.dp
+
+/** 标题栏里各元素之间的统一间距（返回 / 头像 / 群名 / 折叠按钮）。 */
+private val ChatHeaderGap = 10.dp
+
+/** 顶栏那个圆头像的直径：比正文里的行内头像大一圈，和抖音群聊顶栏一个量级。 */
+private val ChatHeaderAvatarSize = 52.dp
+
+/** 入口行高度：选中那一格的底色居中放在这一行里，上下都留一点，不贴着顶栏与分割线。 */
+private val ChatTabBarHeight = 52.dp
+
+/** 标题栏与入口行底部那条 1px 浅灰分割线。 */
+private val ChatHeaderDividerThickness = 0.5.dp
 
 /**
  * 「快捷表情直接发出去」那一条在本机的类型。
@@ -2031,27 +2056,30 @@ private fun ChatTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(FlTopBarHeight)
-                .padding(horizontal = 8.dp),
+                .height(ChatHeaderBarHeight)
+                .padding(horizontal = ChatHeaderSidePadding),
             verticalAlignment = Alignment.CenterVertically,
+            // 四个元素之间只有一个间距值（原来每个 Spacer 各写一个数，宽窄不一）：
+            // 想调就改 ChatHeaderGap，别在某一处单独加宽。
+            horizontalArrangement = Arrangement.spacedBy(ChatHeaderGap),
         ) {
             FlBarButton(
                 glyph = FlGlyphs.chevronBack,
                 contentDescription = "返回",
                 onClick = onNavigateBack,
+                size = 40.dp,
                 iconSize = 20.dp,
                 filled = false,
             )
-            Spacer(Modifier.width(2.dp))
             ChatHeaderAvatar(
                 title = title,
                 isGroup = isGroup,
                 peerOwner = peerOwner,
                 groupMembers = groupMembers,
                 conversationId = conversationId,
+                size = ChatHeaderAvatarSize,
                 onClick = openHeader,
             )
-            Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f).then(headerClick)) {
                 Text(
                     text = heading,
@@ -2072,7 +2100,6 @@ private fun ChatTopBar(
                     )
                 }
             }
-            Spacer(Modifier.width(4.dp))
             ChatFoldButton(
                 expanded = entriesOpen,
                 dot = announcement.isNotBlank() ||
@@ -2212,51 +2239,67 @@ private fun ChatHeaderEntries(
     /** 第五格「设置」：直接进群设置页，不在顶栏里展开任何东西（用户 2026-11-27 定的）。 */
     onOpenSettings: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ChatEntryCell(
-            label = "聊天",
-            selected = section == ChatHeaderSection.Chat,
-            dot = false,
-            modifier = Modifier.weight(1f),
-            onClick = { onPick(ChatHeaderSection.Chat) },
-        )
-        ChatEntryCell(
-            label = "公告",
-            selected = section == ChatHeaderSection.Announcement,
-            dot = hasAnnouncement,
-            modifier = Modifier.weight(1f),
-            onClick = { onPick(ChatHeaderSection.Announcement) },
-        )
-        ChatEntryCell(
-            label = "置顶消息",
-            selected = section == ChatHeaderSection.Pinned,
-            dot = pinnedCount > 0,
-            modifier = Modifier.weight(1f),
-            onClick = { onPick(ChatHeaderSection.Pinned) },
-        )
-        ChatEntryCell(
-            label = "收藏",
-            selected = section == ChatHeaderSection.Saved,
-            dot = savedCount > 0,
-            modifier = Modifier.weight(1f),
-            onClick = { onPick(ChatHeaderSection.Saved) },
-        )
-        ChatEntryCell(
-            label = "设置",
-            selected = false,
-            dot = false,
-            modifier = Modifier.weight(1f),
-            onClick = onOpenSettings,
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ChatTabBarHeight)
+                // 左右内边距与标题栏同一个值：两排的左右基线才对得齐。
+                .padding(horizontal = ChatHeaderSidePadding),
+            verticalAlignment = Alignment.CenterVertically,
+            // 五格一律 weight(1f) 均分；格子之间给一点点缝，但不靠给某一格加 margin 来挪位置。
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ChatEntryCell(
+                label = "聊天",
+                selected = section == ChatHeaderSection.Chat,
+                dot = false,
+                modifier = Modifier.weight(1f),
+                onClick = { onPick(ChatHeaderSection.Chat) },
+            )
+            ChatEntryCell(
+                label = "公告",
+                selected = section == ChatHeaderSection.Announcement,
+                dot = hasAnnouncement,
+                modifier = Modifier.weight(1f),
+                onClick = { onPick(ChatHeaderSection.Announcement) },
+            )
+            ChatEntryCell(
+                label = "置顶消息",
+                selected = section == ChatHeaderSection.Pinned,
+                dot = pinnedCount > 0,
+                modifier = Modifier.weight(1f),
+                onClick = { onPick(ChatHeaderSection.Pinned) },
+            )
+            ChatEntryCell(
+                label = "收藏",
+                selected = section == ChatHeaderSection.Saved,
+                dot = savedCount > 0,
+                modifier = Modifier.weight(1f),
+                onClick = { onPick(ChatHeaderSection.Saved) },
+            )
+            ChatEntryCell(
+                label = "设置",
+                selected = false,
+                dot = false,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenSettings,
+            )
+        }
+        // 入口行底部那一条 1px 浅灰线：把顶部这块和下面的消息列表分开，不留一条不用画的空白。
+        HorizontalDivider(
+            thickness = ChatHeaderDividerThickness,
+            color = MaterialTheme.colorScheme.outlineVariant,
         )
     }
 }
 
-/** 入口行里的一格：文字居中，选中时主色加粗，右上角可选一颗红点。 */
+/**
+ * 入口行里的一格：整格可点（高度撑满这一行），文字居中，选中时文字底下一块圆角浅灰。
+ *
+ * 选中底色只包住文字（左右各 6dp），不铺满整格：五格的位置仍然由 weight 均分决定，
+ * 底色宽窄不会把别的格子挤动。
+ */
 @Composable
 private fun ChatEntryCell(
     label: String,
@@ -2268,28 +2311,38 @@ private fun ChatEntryCell(
     val scheme = MaterialTheme.colorScheme
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClickLabel = label, onClick = onClick)
-            .padding(vertical = 9.dp),
+            .fillMaxHeight()
+            .clickable(onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            color = if (selected) scheme.primary else scheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (dot) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 4.dp, end = 8.dp)
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(scheme.error),
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (selected) scheme.surfaceVariant else Color.Transparent)
+                // 左右各 6dp：五格均分后每格约 62dp（360dp 宽的机器），"置顶消息"四个字 12sp 刚好放得下；
+                // 再宽就会在窄屏上被省略号截掉。
+                .padding(horizontal = 6.dp, vertical = 9.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                // 选中深色、未选中灰色：五格里哪一格开着，一眼看得出来。
+                color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+            if (dot) {
+                Box(
+                    modifier = Modifier
+                        // 红点贴在文字右上角：绝对定位在文字这一格里，不占布局，别的格子不会被推走。
+                        .align(Alignment.TopEnd)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(scheme.error),
+                )
+            }
         }
     }
 }
@@ -2478,6 +2531,11 @@ private fun ChatHeaderAvatar(
     groupMembers: List<ConversationMember> = emptyList(),
     /** 会话号：群头像按它推图床地址——设过群头像就显示那张图，没设过是群名首字。 */
     conversationId: Long = 0L,
+    /**
+     * 圆的直径。顶栏那一处用 [ChatHeaderAvatarSize]（比正文里的行内头像大一圈），
+     * 其它地方不传就是原来那个 40。
+     */
+    size: Dp = 40.dp,
     onClick: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -2495,7 +2553,7 @@ private fun ChatHeaderAvatar(
             name = title.ifBlank { chatInitial(title = title, isGroup = true) },
             conversationId = conversationId,
             members = groupMembers,
-            size = 40.dp,
+            size = size,
             modifier = clickModifier,
         )
         return
@@ -2504,7 +2562,7 @@ private fun ChatHeaderAvatar(
     PersonAvatar(
         name = title.ifBlank { chatInitial(title = title, isGroup = false) },
         owner = peerOwner,
-        size = 40.dp,
+        size = size,
         modifier = clickModifier,
         background = scheme.primary.copy(alpha = 0.15f),
         letterColor = scheme.primary,
