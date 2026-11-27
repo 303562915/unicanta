@@ -5280,6 +5280,42 @@
   "target": "com.vivo.smartLife"
  },
  {
+  "author": "Joe",
+  "author_id": "12041",
+  "body": "这个切换自动切换深色模式会造成无限重启",
+  "created_at": "2026-11-27T09:34:00.569285+00:00",
+  "device_model": "REDMI K90 Ultra",
+  "id": 785,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "9"
+ },
+ {
+  "author": "@小皮皮虾",
+  "author_id": "15220",
+  "body": "删完后相册的文字识别不能用 别的暂时还没发现",
+  "created_at": "2026-11-27T09:45:04.526301+00:00",
+  "device_model": "REDMI K90",
+  "id": 786,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.307",
+  "target": "com.xiaomi.aiservice"
+ },
+ {
+  "author": "@小皮皮虾",
+  "author_id": "15220",
+  "body": "MiMo大模型、小白条/灵感球圈选识图、屏幕理解、文档/PDF总结\n​AI通话摘要、录音转写提炼要点、相册AI搜图、AI扩图修图\n​小爱跨APP自动执行、小爱建议、翻译、OCR识别、AI生图\n​输入法AI、浏览器网页总结、文件管家AI摘要，以上几个部分功能可能会产生bug 但是我都没用这些功能 没有一一测试了",
+  "created_at": "2026-11-27T09:49:56.425815+00:00",
+  "device_model": "REDMI K90",
+  "id": 787,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.307",
+  "target": "com.xiaomi.aiservice"
+ },
+ {
   "author": "#10762",
   "author_id": "10762",
   "body": "OS3 卸载会导致护眼模式磁贴变暗，介意可冻结",
