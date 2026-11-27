@@ -5244,6 +5244,42 @@
   "target": "com.xiaomi.mi_connect_service"
  },
  {
+  "author": "nihao",
+  "author_id": "14514",
+  "body": "我iqoo删不了要真root[闭嘴]",
+  "created_at": "2026-11-27T09:01:14.582336+00:00",
+  "device_model": "iQOO Neo9",
+  "id": 781,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "Funtouch OS 14.0",
+  "target": "com.vivo.magazine"
+ },
+ {
+  "author": "nihao",
+  "author_id": "14514",
+  "body": "我删了不知道为什么我雹冻结说没有权限可能有附带的毒瘤[城墙落泪]",
+  "created_at": "2026-11-27T09:05:21.767833+00:00",
+  "device_model": "iQOO Neo9",
+  "id": 783,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "Funtouch OS 14.0",
+  "target": "com.vivo.smartLife"
+ },
+ {
+  "author": "nihao",
+  "author_id": "14514",
+  "body": "其他的没有点他会说没有下载就这个说没有权限[闭嘴]",
+  "created_at": "2026-11-27T09:07:49.388483+00:00",
+  "device_model": "iQOO Neo9",
+  "id": 784,
+  "kind": "app",
+  "parent_id": 783,
+  "system_name": "Funtouch OS 14.0",
+  "target": "com.vivo.smartLife"
+ },
+ {
   "author": "#10762",
   "author_id": "10762",
   "body": "OS3 卸载会导致护眼模式磁贴变暗，介意可冻结",

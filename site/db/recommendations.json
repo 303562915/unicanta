@@ -140,6 +140,20 @@
   "url": "https://github.com/NeoApplications/Neo-Store"
  },
  {
+  "agrees": 32,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "official",
+  "category": "files",
+  "created_at": "2026-11-23T12:33:40.366141+00:00",
+  "disagrees": 4,
+  "id": 21,
+  "license": "GPL-3.0",
+  "name": "SD Maid SE",
+  "summary": "清理残留文件和应用数据，精简之后收尾用它。",
+  "url": "https://github.com/d4rken-org/sdmaid-se"
+ },
+ {
   "agrees": 31,
   "applied": false,
   "author": "开发者",
@@ -152,20 +166,6 @@
   "name": "Aurora Store",
   "summary": "匿名从 Google Play 下载应用，不需要谷歌账号。",
   "url": "https://github.com/whyorean/AuroraStore"
- },
- {
-  "agrees": 31,
-  "applied": false,
-  "author": "开发者",
-  "author_id": "official",
-  "category": "files",
-  "created_at": "2026-11-23T12:33:40.366141+00:00",
-  "disagrees": 4,
-  "id": 21,
-  "license": "GPL-3.0",
-  "name": "SD Maid SE",
-  "summary": "清理残留文件和应用数据，精简之后收尾用它。",
-  "url": "https://github.com/d4rken-org/sdmaid-se"
  },
  {
   "agrees": 27,
