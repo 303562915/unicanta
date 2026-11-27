@@ -420,6 +420,20 @@
   "url": "https://github.com/sky22333/skyadb"
  },
  {
+  "agrees": 1,
+  "applied": false,
+  "author": "Algernon",
+  "author_id": "14979",
+  "category": "tools",
+  "created_at": "2026-11-27T08:43:28.63979+00:00",
+  "disagrees": 0,
+  "id": 34,
+  "license": "GPL-3.0 license",
+  "name": "Muse",
+  "summary": "Muse 是跑在你自己手机上的个人 Agent（personal agent）。它常驻在 Android 手机上，模型随你接（预置 40+ 供应商），数据默认不出设备。需要动手时，它直接操作这台手机：读屏、点击、跑命令、读写文件。\n\n四层记忆 + 五个聊天渠道共用同一个人格\n牵挂账本、定时任务、久未联系时主动来找你\n无障碍 / Shizuku / Root 三层通道，200+ 工具，内置终端与虚拟屏\n常驻保活、本地数据库、离线运行时",
+  "url": "https://github.com/Zer0Qing/Muse"
+ },
+ {
   "agrees": 0,
   "applied": false,
   "author": "#12149",
