@@ -118,6 +118,7 @@ import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -1215,6 +1216,29 @@ internal fun PostsScreen(
     /** 打开的那条帖子的 id；0 表示还在列表上。 */
     // 独立详情页（`Screen.PostDetail`）起步就带着目标帖；列表页这里是 0。
     var openId by remember { mutableStateOf(openThreadOnEnter) }
+    /**
+     * 这一次打开详情时，「标记已读之前」这条帖子算不算有新的回帖。
+     *
+     * `null` = 还没问过（刚打开、正文还没拉回来）；`false` / `true` = 问过的那一个答案。
+     *
+     * 为什么要在**打开之前**问一次、而不是每次重组都问一遍：打开详情的那个 `LaunchedEffect`
+     * 拉回正文之后紧接着就 `markRead(fresh.post.id, fresh.post.comments)`，把记下来的回帖数
+     * 对齐到当前值；对齐之后 [PostReadStore.isUnread] 对这条帖子恒为 false ——
+     * "比上次看到的多"这个事实只存在于对齐之前的那一瞬间，不接住它就永远读不到
+     * 「上次读到这儿」。
+     *
+     * 只接一个布尔量、不接数字：`PostReadStore` 只公开 `hasHistory` / `isUnread` / `markRead`
+     * （`Entry` 与 `blob()` 都是 private），没有"这条帖子记着多少条回帖"这种读法；在本地再存
+     * 一份 mark 就是第二份真相，写读两条路早晚会分叉。所以续读条按"有没有增量"处理 ——
+     * 具体取舍见 [ThreadResumeBar] 的 KDoc。
+     *
+     * 判"有没有增量"要用**两次** `isUnread`：当前回帖数那一次答"比记下来的多不多"，
+     * 传 0 那一次答"表里有没有这条帖子的记录"（只有没有记录时它对 0 也回答 true）。
+     * 少了后一次，第一次读的帖子会和"有新回复"一样被判成 true。
+     *
+     * `remember(openId)`：换一条帖子、或者关掉回到 0 就重来一次，不会把上一帖的答案带过来。
+     */
+    var resumeUnread by remember(openId) { mutableStateOf<Boolean?>(null) }
     var thread by remember { mutableStateOf<PostThread?>(null) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadError by remember { mutableStateOf<String?>(null) }
@@ -1285,6 +1309,25 @@ internal fun PostsScreen(
             threadError = current.reason ?: "这条帖子没拉到。"
         } else {
             thread = fresh
+            // 先问「进来之前有没有新的回帖」，**再**标记已读：`markRead` 会把回帖数对齐到
+            // 当前值，之后 `isUnread` 对这条帖子恒为 false（见 [resumeUnread] 的注释）。
+            // 只在这条帖子这一趟的第一次成功加载时问：`reloadKey` 变动会再跑一遍这个 effect，
+            // 那时手里的答案已经是"打开那一刻"的，不该被覆盖成 false。
+            if (resumeUnread == null) {
+                // 三个问题，缺一个都算"没有增量"：
+                //  1. 这台手机上有没有任何已读记录（`hasHistory`）：全新装上时列表都不画未读点，
+                //     详情里也不该冒出一条"上次读到这儿"；
+                //  2. **这条帖子有没有被读过**：拿 `isUnread(id, 0)` 当探针 —— 表里没有这条时
+                //     它对任何数都回答 true，而 `0 > mark.comments` 对任何真实记下来的数都不成立，
+                //     所以这里回答的正是"有没有记录"。第一次读的帖子靠这一步挡住
+                //     （否则它会和"有新回复"一样被判成 true）；
+                //  3. 现在的回帖数比记下来的多（`isUnread(id, 当前回帖数)`）：没有增量就不出现，
+                //     `mark == comments.size` 时这一步就是 false。
+                resumeUnread = reads != null &&
+                    reads.hasHistory() &&
+                    !reads.isUnread(fresh.post.id, 0) &&
+                    reads.isUnread(fresh.post.id, fresh.post.comments)
+            }
             // 已经读了正文，就把这条帖子此时的回帖数记下来：列表上的未读点因此灭掉，
             // 以后回帖变多再重新亮起来（"有新回复"）。
             if (reads != null && reads.markRead(fresh.post.id, fresh.post.comments)) {
@@ -2031,6 +2074,9 @@ else -> Column {
                 authorId = authorId,
                 related = related,
                 saved = reads?.isSaved(openId) == true,
+                // 续读条只在「打开之前确实有新的回帖」时才出现（见 [resumeUnread]）；
+                // `null`（还没问过）与 `false` 都是"不出现"——没有未读时那一格一个组合项都不建。
+                resumeUnread = resumeUnread == true,
                 /**
                  * 这一条要回的是哪一楼（null = 普通回帖）。
                  *
@@ -3098,6 +3144,12 @@ private fun PostThreadPane(
     /** 这条帖子现在收着没有。 */
     saved: Boolean,
     /**
+     * 这一次打开这条帖子时，标记已读**之前**它算不算有新的回帖（见 `PostsScreen` 里的
+     * `resumeUnread`）。为 true 才在楼层列表开头画那条 [ThreadResumeBar]；
+     * 为 false 时那一格一个组合项都不建，`thread-*` 的 item 序列与改动前完全一样。
+     */
+    resumeUnread: Boolean = false,
+    /**
      * 这一次发送要挂到哪一楼下面（引用回复）；null 表示普通回帖。
      *
      * 只影响回复栏胶囊的文案（「回复 #N · 名字」）——正文里那段 `> 作者：…` 是另一件事
@@ -3472,6 +3524,23 @@ private fun PostThreadPane(
         }
     }
 
+    /**
+     * 正文里 `#N` 楼层引用的跳转：把**楼层号**换成楼层 id 再复用 [jumpToFloorId]。
+     *
+     * 换算是 `floorLabelOf` 的反向：`#1` 是主楼（不在 `comments` 里，滚到 item 1）、
+     * `#2` 起是 `comments[0…]`；越界或算不出来时什么都不做（不给"点了没反应"的假手势，
+     * 因为正文里的数字本来就可能是随手写的）。
+     *
+     * 为什么放在这一层：换算要 `comments` 与 `listState` 两者，只有这里同时拿得到。
+     */
+    val onFloorRef: (Int) -> Unit = { floor ->
+        when {
+            floor <= 0 -> Unit
+            floor == 1 -> scope.launch { listState.animateScrollToItem(1) }
+            else -> comments.getOrNull(floor - 2)?.let { target -> jumpToFloorId(target.id) }
+        }
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         if (shown == null) {
             if (loading) {
@@ -3534,6 +3603,8 @@ private fun PostThreadPane(
                             // 不复用按楼层 id 记的那个 Set。
                             bodyExpanded = opBodyExpanded,
                             onToggleBody = { opBodyExpanded = !opBodyExpanded },
+                            // 主楼正文里的 `#N` 也可点：引用回复常被人写在主楼里（编辑过的主楼也会带）。
+                            onFloorRef = onFloorRef,
                             footer = {
                                 // 顺序照 fluxdo `post_action_bar.dart:263-281`：
                                 //   Row { [leftButton = 回复胶囊] + 12, Expanded(Wrap(end){ 其它动作 }) }
@@ -3603,6 +3674,38 @@ private fun PostThreadPane(
                     }
 
                     item(key = "thread-head") {
+                        // 「上次读到这儿」的续读条：**塞进这一个 item 的顶部**，不另起一个
+                        // `item(key = "thread-resume")`。
+                        //
+                        // 理由（也写在 [ThreadResumeBar] 的 KDoc 里）：楼层索引是
+                        // `FLOORS_FIRST + i`（= 3 + i）算出来的，而这个 3 被好几处同时读到
+                        // （`floorIndexOf` / `jumpToFloorId` / `applyAuthorFilter` 的"滚到
+                        // FLOORS_FIRST" / 目录面板的 `first < FLOORS_FIRST` 判断）。往楼层前面
+                        // 插一个新 item 就得把它改成 4 —— 数字好改，漏掉任何一处都变成
+                        // "跳少一格"这种**没有编译错误**的 bug。塞进已有 item 则一个索引都不用动：
+                        // LazyColumn 的 item 序列与改动前逐项相同，跳楼 / 日期分隔 / 只看此人 /
+                        // 目录 / 帖内搜索全部照旧。这一格的语义本来就是"楼层列表的开头"，
+                        // 续读条摆在这里也不违和。
+                        //
+                        // `resumeUnread` 为 false 时**一个组合项都不建**（判断在 item 内部、
+                        // 在 LazyColumn 的作用域之外），所以没有增量时这一格与改动前完全一样：
+                        // 不占高度，也不留空 item。
+                        if (resumeUnread) {
+                            val firstFloor = comments.firstOrNull()
+                            ThreadResumeBar(
+                                onClick = if (firstFloor != null) {
+                                    // 目标 = 第一层楼（也就是 `FLOORS_FIRST` 那一格）。
+                                    // 跳转统一走 `jumpToFloorId`：过滤态下它会先撤过滤、
+                                    // 下一帧再按全量索引滚过去，与「回复 #N」指示条、
+                                    // 目录面板、帖内搜索用的是同一个函数。
+                                    { jumpToFloorId(firstFloor.id) }
+                                } else {
+                                    // 一层楼都没有（`comments` 空）时算不出目标：
+                                    // 胶囊置灰、整条不挂点击，不做"点了没反应"的东西。
+                                    null
+                                },
+                            )
+                        }
                         PostSectionHeader(label = "回复", count = shown.comments)
                         // 「只看此人」开着时的说明条：200 层的帖子里只剩三层，不写清楚"为什么"，
                         // 看的人只会以为楼层丢了。出口（「看全部」）就放在同一行 ——
@@ -3798,6 +3901,7 @@ private fun PostThreadPane(
                                     expandedBodyFloors + comment.id
                                 }
                             },
+                            onFloorRef = onFloorRef,
                             footer = {
                                 // 动作行左起：**「N 条回复」胶囊**（有子回复时才有）+ 「引用回复」圆钮，
                                 // 右端一颗「更多」（`MoreVert`）。
@@ -4865,6 +4969,118 @@ private fun FloorFilterBanner(name: String, count: Int, onClear: () -> Unit) {
 }
 
 /**
+ * 详情页楼层列表顶上那条「上次读到这儿」的续读条：
+ * `[▶] 后面有新回复 ──────────────── ( 接着看 )`，40dp 高、圆角 8、`primaryContainer α0.25` 底。
+ *
+ * 为什么需要它：长帖关掉再进来，人只想接着看后面那几条，而现在只能自己一路往下划。
+ * **本仓自有需求** —— 参考实现（fluxdo 的详情页）里没有等价物：它有列表吸顶的筛选条，
+ * 但没有任何"上次读到哪儿"的入口，所以这一条的尺寸与文案都是按本仓自己的语气定的。
+ *
+ * ## 为什么塞进 `thread-head` 那个 item，而不新起一个 `item(key = "thread-resume")`
+ *
+ * 楼层索引一律是 `FLOORS_FIRST + i`（3 + i）算出来的：`floorIndexOf`、`jumpToFloorId`、
+ * `applyAuthorFilter` 里"滚到 `FLOORS_FIRST`"、目录面板里 `first < FLOORS_FIRST` 那条判断，
+ * 全都读同一个 3。在 `thread-head` **之前**再插一个 item，这个 3 就得变成 4 ——
+ * 数字本身好改，坏的是漏改一处不会有编译错误，只会让某一条跳转「少一格」。
+ * 塞进已有的那个 item（`PostSectionHeader` 上面）则**一个索引都不用动**：LazyColumn 的
+ * item 序列与改动前逐项相同，跳楼 / 日期分隔 / 只看此人 / 目录 / 帖内搜索全部落在正确楼层。
+ *
+ * ## 为什么没有 `#N`、没有「后面 M 条」（退回只写"有新回复"）
+ *
+ * [PostReadStore] 只公开 `hasHistory` / `isUnread` / `markRead`：它记的那个 `comments` 数
+ * （`Entry.comments`）连同 `blob()` 都是 private，接口只能回答"比记下来的多不多"。
+ * 更麻烦的是打开详情时会立刻 `markRead(当前回帖数)` 把数字对齐，对齐之后连这个布尔量都
+ * 恒为 false —— 所以调用方是"打开之前问一次，只把答案（有没有增量）带进来"（见
+ * `PostsScreen` 的 `resumeUnread`；"有没有新回复"与"第一次读"是两次 `isUnread` 分开问的，
+ * 后一次传 0 当探针，因为 `isUnread` 对没记录过的帖子一律回答 true）。
+ * 拿不到具体数字就不编数字：文案写「后面有新回复」，
+ * 跳转目标退回**第一层楼**（`comments.first()`，也就是 `FLOORS_FIRST` 那一格），
+ * 至少省掉"从标题一路划到第一层"那一段。
+ * 不为了凑出 `#N` 在本地另存一份 mark —— 那是第二份真相，写读两条路早晚会分叉。
+ *
+ * ## 行为边界
+ *
+ * 它只是入口：**不做任何自动滚动**，也不改变 `FLOORS_FIRST` 之外的任何索引假设。
+ * 目标楼层算不出来（`comments` 为空）时 [onClick] 传 null：整条不挂 `clickable`、
+ * 胶囊置灰 —— 不做"点了没反应"的东西。
+ */
+@Composable
+private fun ThreadResumeBar(
+    /** 目标楼层算不出来时为 null：胶囊置灰、整条不挂点击。 */
+    onClick: (() -> Unit)?,
+) {
+    val scheme = MaterialTheme.colorScheme
+    // 置灰只压前景、不换底色：这一条仍然是"这里有个入口"，只是这一次点不动。
+    val ink = if (onClick != null) scheme.onSurface else scheme.onSurface.copy(alpha = 0.38f)
+    val accent = if (onClick != null) scheme.primary else scheme.primary.copy(alpha = 0.38f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 与楼层 / [PostSectionHeader] 同一个 16dp 内容区（详情页所有正文块的左缘在一条
+            // 直线上）。上面留 12：上面是 `thread-header` 末尾那条 0.5dp 分隔线；
+            // 下面不用留 —— [PostSectionHeader] 自己带 16dp 顶距。
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp)
+            .height(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(scheme.primaryContainer.copy(alpha = 0.25f))
+            // 点击层压在底色之上（clip → background → clickable → padding）：反过来底色会盖住
+            // 涟漪，与 [FloorPill] / 抽屉那几处是同一个顺序。
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = "接着看",
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.PlayArrow,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = accent,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "后面有新回复",
+            style = MaterialTheme.typography.labelMedium,
+            color = ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        // 右侧那颗「接着看」：样式照 [FloorFilterBanner] 里那枚行内胶囊（32dp / 全圆角 /
+        // `primaryContainer α0.3` 底 / `primary` 字），比楼层动作行那 36dp 矮一档 ——
+        // 它是说明条里的一个动作，不是楼层动作栏。
+        //
+        // 不单独挂 clickable：整条已经是热区（40dp 高、通栏），胶囊点下去落到外层的
+        // `clickable` 上，无障碍那儿只有"接着看"这一个按钮，不会读成两个。
+        Box(
+            modifier = Modifier
+                .heightIn(min = 32.dp)
+                .clip(RoundedCornerShape(50))
+                .background(scheme.primaryContainer.copy(alpha = 0.3f))
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "接着看",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = accent,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
  * 详情页右侧那条**阅读进度轨**：3dp 宽的竖条，贴右边缘，表示"读到哪儿了"。
  *
  * 形态照 fluxdo `topic_progress_track.dart:9-30` 的 `sidebar` 档（`restThickness = 3`、
@@ -5211,6 +5427,16 @@ private fun PostFloorCard(
      */
     replies: (@Composable () -> Unit)? = null,
     /**
+     * 正文里的 `#N` 楼层引用被点时的回调（`MiniMarkdown` 的 `onFloorRef`）。
+     *
+     * 本仓的引用回复会把 `> #N 作者：…` 塞进正文（见 `quoteComment`），那些数字本来只是死文字；
+     * 接上这条之后点一下就到那一层 —— 与「回复 #N · 名字」指示条同一个落点。
+     *
+     * 默认 null：编辑器预览、回复历史卡等**没有"跳转"语义**的地方不传，`#N` 保持普通文字。
+     * （楼层号 → 楼层 id 的换算是调用点的事：`#1` 是主楼、`#2` 起对应 `comments[0]`。）
+     */
+    onFloorRef: ((Int) -> Unit)? = null,
+    /**
      * 展开的「回复历史」：沿 `replyToId` 往上最多 3 层的小卡（[ReplyHistoryList]）。
      *
      * 位置在**名字行下面、正文上面**：参考实现把父帖卡挂在头部正下方
@@ -5453,6 +5679,9 @@ private fun PostFloorCard(
                                     lineHeight = FOLDED_BODY_LINE_HEIGHT,
                                 ),
                                 color = scheme.onSurface,
+                                // 正文里的 `#N` 变可点（引用回复塞进来的 `> #N 作者：…` 就是它）：
+                                // 传 null 时 `MiniMarkdown` 走短路，`#N` 仍是普通文字，输出与改动前一致。
+                                onFloorRef = onFloorRef,
                             )
                         }
                         // 短正文 / 已经展开：与加折叠之前**逐项一致**（短正文连按钮都不画）。

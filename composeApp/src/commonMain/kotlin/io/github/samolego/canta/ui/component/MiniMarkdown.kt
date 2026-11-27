@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
@@ -65,9 +66,18 @@ import androidx.compose.ui.unit.dp
  *
  * 这个函数不读主题（不是 @Composable），颜色全靠调用方给：正文用 primary，
  * 引用块里也用 primary 就够了，代码片的底色借用它的低透明度。
+ *
+ * [onFloorRef] 非空时，正文里 `#12` 这种**楼层引用**额外做成可点的（主色、无下划线，
+ * `LinkAnnotation.Clickable`，见 [floorRefEndAt]）；为 `null`（默认）时这一行**一个字节都不变**，
+ * 所以老的调用点不用改。行内码（`` `#12` ``）、代码块、链接文字里的 `#12` 仍然不可点——
+ * 它们走的是 [InlineMatch.deep] 为 false 的"原样 append"分支，根本到不了楼层判定。
  */
-fun markdownInline(text: String, linkColor: Color): AnnotatedString = buildAnnotatedString {
-    appendMarked(text, linkColor)
+fun markdownInline(
+    text: String,
+    linkColor: Color,
+    onFloorRef: ((Int) -> Unit)? = null,
+): AnnotatedString = buildAnnotatedString {
+    appendMarked(text, linkColor, onFloorRef)
 }
 
 /**
@@ -82,6 +92,13 @@ fun markdownInline(text: String, linkColor: Color): AnnotatedString = buildAnnot
  * `ExtensionSet.gitHubFlavored` 出 HTML（`lib/widgets/markdown_editor/markdown_renderer.dart:220-223`），
  * 再由 `fluxdo_render` 渲染。这里没有 HTML 中间层，所以只把那张扩展表里**帖子里真会出现**的几样
  * 搬过来：表格、代码块语言、视频地址卡片。
+ *
+ * [onFloorRef] 用**带默认值的可选参数**而不是重载：重载得把整段渲染体（下面那个 `when` 十几个分支
+ * 加上连续图片分组那段循环）再抄一遍，之后每改一次正文渲染就要同步改两处，抄漏一处就是"一楼和二楼
+ * 长得不一样"。默认参数只有一份实现，四个现有调用点（`PostsSection.kt:5449`、`:5687`、`:6128`、
+ * `:6757`，都不传它）源码一个字不用改；而且默认值会让 `onFloorRef == null` 把楼层识别整条短路
+ * （[appendMarked] 里先判空，[floorRefEndAt] 一次都不跑），所以"不传参数 = 输出与改动前逐项一致"
+ * 是**结构性**成立，不靠以后每次改代码时自觉。
  */
 @Composable
 fun MiniMarkdown(
@@ -89,6 +106,8 @@ fun MiniMarkdown(
     modifier: Modifier = Modifier,
     baseStyle: TextStyle = MaterialTheme.typography.bodyMedium,
     color: Color = MaterialTheme.colorScheme.onSurface,
+    /** 正文里的 `#N` 楼层引用被点击时回调；null = 不做成可点的（保持现状）。 */
+    onFloorRef: ((Int) -> Unit)? = null,
 ) {
     // 正文可能几千字，逐帧重新切行没必要：文本不变就不重算。
     val blocks = remember(text) { parseBlocks(text) }
@@ -142,7 +161,7 @@ fun MiniMarkdown(
             }
             when (block) {
                 is MdBlock.Heading -> Text(
-                    text = markdownInline(block.text, linkColor),
+                    text = markdownInline(block.text, linkColor, onFloorRef),
                     style = headingStyle(block.level),
                     color = color,
                     // 标题只是加粗变色不够，跟上一段之间要留一点气口。
@@ -157,6 +176,7 @@ fun MiniMarkdown(
                     baseStyle = baseStyle,
                     color = color,
                     linkColor = linkColor,
+                    onFloorRef = onFloorRef,
                 )
 
                 is MdBlock.BulletList -> Column(
@@ -171,7 +191,7 @@ fun MiniMarkdown(
                                 modifier = Modifier.padding(end = 6.dp),
                             )
                             Text(
-                                text = markdownInline(item, linkColor),
+                                text = markdownInline(item, linkColor, onFloorRef),
                                 style = baseStyle,
                                 color = color,
                                 modifier = Modifier.weight(1f),
@@ -192,7 +212,7 @@ fun MiniMarkdown(
                                 modifier = Modifier.padding(end = 6.dp),
                             )
                             Text(
-                                text = markdownInline(item.text, linkColor),
+                                text = markdownInline(item.text, linkColor, onFloorRef),
                                 style = baseStyle,
                                 color = color,
                                 modifier = Modifier.weight(1f),
@@ -202,7 +222,7 @@ fun MiniMarkdown(
                 }
 
                 is MdBlock.Quote -> Text(
-                    text = markdownInline(block.text, linkColor),
+                    text = markdownInline(block.text, linkColor, onFloorRef),
                     style = baseStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -222,9 +242,11 @@ fun MiniMarkdown(
                 is MdBlock.Table -> MdTable(
                     header = block.header,
                     rows = block.rows,
+                    alignments = block.alignments,
                     baseStyle = baseStyle,
                     color = color,
                     linkColor = linkColor,
+                    onFloorRef = onFloorRef,
                 )
 
                 // 图片在上面那个分组循环里已经消费掉了（单张走 `PostImage`、连续多张走
@@ -280,12 +302,13 @@ private fun ParagraphContent(
     baseStyle: TextStyle,
     color: Color,
     linkColor: Color,
+    onFloorRef: ((Int) -> Unit)? = null,
 ) {
     val pieces = remember(text) { splitInlineImages(text) }
     val single = pieces.singleOrNull()
     if (single is ParagraphPiece.Plain) {
         Text(
-            text = markdownInline(single.text, linkColor),
+            text = markdownInline(single.text, linkColor, onFloorRef),
             style = baseStyle,
             color = color,
             softWrap = true,
@@ -296,7 +319,7 @@ private fun ParagraphContent(
         pieces.forEach { piece ->
             when (piece) {
                 is ParagraphPiece.Plain -> Text(
-                    text = markdownInline(piece.text, linkColor),
+                    text = markdownInline(piece.text, linkColor, onFloorRef),
                     style = baseStyle,
                     color = color,
                     softWrap = true,
@@ -872,6 +895,20 @@ private val TableCellPaddingVertical = 6.dp
 private val TableCellMaxContentWidth = 200.dp
 
 /**
+ * 表头底下那条分隔线的粗细：**2dp**，比数据行之间的 1dp 粗一倍。
+ *
+ * 出处是参考实现的 `thead th { border-bottom: 2px solid var(--primary-low) }`
+ * （`lib/utils/export_utils.dart:646-652`），数据行那条 1dp 在同一文件的 `tbody td`
+ * （`:654-657`）、最后一行不画（`:659-661`）。分成两档粗细是有意义的：手机屏上表格常常
+ * 横向滚动，表头那一段是"列名"，粗一点的线才能把它和第一行数据分开；数据行之间只需要一条
+ * 弱线提示"换行了"。
+ *
+ * 颜色用**不透明的** `outlineVariant`（下面数据行那条仍是 `outlineVariant 40%`）：
+ * 2dp 已经给足了视觉重量，再用半透明反而两头都不像。
+ */
+private val TableHeaderDividerThickness = 2.dp
+
+/**
  * GFM 表格：表头一行 + 分隔行 + 若干数据行，整表可横向滚动。
  *
  * 为什么这么排：
@@ -882,17 +919,22 @@ private val TableCellMaxContentWidth = 200.dp
  *    （没有 `weight(1f)`）：两列的表里「机型」那列就该比「版本」窄。
  *  * **整表 clip 成 8dp 圆角**再交给 `horizontalScroll`：滚动内容在 Box 内绘制，圆角把表头底色
  *    的四个角一起裁掉；不 clip 的话横向滚动会把表头底色顶成直角的色块。
- *  * **数据行之间一条 1dp 分隔线**，宽度取各列之和（`horizontalScroll` 里宽度无界，
- *    `HorizontalDivider` 默认的 `fillMaxWidth()` 在这种约束下量成 0，必须显式给宽）。出处是参考
- *    实现的 `tbody td { border-bottom: 1px solid }`，最后一行不画（`export_utils.dart:654-661`）。
+ *  * **表头底下一条 [TableHeaderDividerThickness] 的分隔线**，数据行之间一条 1dp，宽度取各列之和
+ *    （`horizontalScroll` 里宽度无界，`HorizontalDivider` 默认的 `fillMaxWidth()` 在这种约束下
+ *    量成 0，必须显式给宽）。最后一行的下面不画线（`export_utils.dart:659-661`），所以数据行那条
+ *    只在 `index > 0` 时画——它是"行与行之间"的线，不是"行与行下边"的线。
+ *  * **[alignments] 决定每格 `textAlign`**（GFM 分隔行里的冒号，见 [TableAlign]）：列宽是量出来的
+ *    固定值，对齐只影响文字在格子里靠哪边，不会把列宽带偏。
  */
 @Composable
 private fun MdTable(
     header: List<String>,
     rows: List<List<String>>,
+    alignments: List<TableAlign>,
     baseStyle: TextStyle,
     color: Color,
     linkColor: Color,
+    onFloorRef: ((Int) -> Unit)? = null,
 ) {
     val scroll = rememberScrollState()
     val density = LocalDensity.current
@@ -931,7 +973,24 @@ private fun MdTable(
             .horizontalScroll(scroll),
     ) {
         Column {
-            TableRow(header, columnWidths, headerStyle, color, linkColor, header = true)
+            TableRow(
+                cells = header,
+                widths = columnWidths,
+                alignments = alignments,
+                style = headerStyle,
+                color = color,
+                linkColor = linkColor,
+                header = true,
+                onFloorRef = onFloorRef,
+            )
+            // 表头底下那条 2dp：**永远画**（参考实现的 `thead th` 也不看 tbody 有没有行，
+            // 见 `export_utils.dart:646-652`）。只有表头、没有数据行的表极少见，但真出现时
+            // 这条线正好说明"下面没东西了"。
+            HorizontalDivider(
+                modifier = Modifier.width(tableWidth),
+                thickness = TableHeaderDividerThickness,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
             rows.forEachIndexed { index, row ->
                 if (index > 0) {
                     HorizontalDivider(
@@ -940,7 +999,16 @@ private fun MdTable(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                     )
                 }
-                TableRow(row, columnWidths, baseStyle, color, linkColor, header = false)
+                TableRow(
+                    cells = row,
+                    widths = columnWidths,
+                    alignments = alignments,
+                    style = baseStyle,
+                    color = color,
+                    linkColor = linkColor,
+                    header = false,
+                    onFloorRef = onFloorRef,
+                )
             }
         }
     }
@@ -948,26 +1016,34 @@ private fun MdTable(
 
 /**
  * 表格的一行。单元格正文用调用方给的 [style]（表头是粗体版），行内标记照旧走 [markdownInline]，
- * 所以 `**加粗**`、`` `代码` ``、链接在格子里都还能用。
+ * 所以 `**加粗**`、`` `代码` ``、链接在格子里都还能用（[onFloorRef] 非空时 `#12` 在格子里也可点）。
  *
  * 宽度用 [MdTable] 量好的固定值而不是 `weight`：固定值才能保证同一列上下对齐。
  * 高度不同的行靠 `CenterVertically` 对齐（折行的长句子把行撑高时，短的那格居中不贴顶）。
+ *
+ * [alignments] 只喂给 `Text` 的 `textAlign`：格子宽度是量死的，对齐只挪文字、不挪边界，
+ * 所以同一列上下**边界仍然对齐**，只是文字靠左边/中间/右边——这正是 GFM 分隔行
+ * `:---` / `:---:` / `---:` 要表达的东西。按下标取不到时退回 `Start`（列数补齐后本该取得到，
+ * 这只是不给"下标越界"留口子）。
  */
 @Composable
 private fun TableRow(
     cells: List<String>,
     widths: List<Dp>,
+    alignments: List<TableAlign>,
     style: TextStyle,
     color: Color,
     linkColor: Color,
     header: Boolean,
+    onFloorRef: ((Int) -> Unit)? = null,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         cells.forEachIndexed { column, text ->
             Text(
-                text = markdownInline(text, linkColor),
+                text = markdownInline(text, linkColor, onFloorRef),
                 style = style,
                 color = color,
+                textAlign = (alignments.getOrNull(column) ?: TableAlign.Start).toTextAlign(),
                 modifier = Modifier
                     .width(widths[column])
                     .then(
@@ -988,6 +1064,20 @@ private fun TableRow(
             )
         }
     }
+}
+
+/**
+ * 三种对齐落到 Compose 的写法。
+ *
+ * 用 `TextAlign.Start` / `End` 而不是 `Left` / `Right`：GFM 的 `:---` 语义就是"起始边"，
+ * 让框架自己按书写方向决定是左还是右；这个应用目前只有 LTR，两种写法画出来一样，
+ * 但 `Start` 不会在以后接入 RTL 时变成一个反着的表格。输入方向固定的表（比如纯数字列）
+ * 本来也没有 `#` 之外的右对齐需求，所以不给 `TextAlign.Right` 单独开一档。
+ */
+private fun TableAlign.toTextAlign(): TextAlign = when (this) {
+    TableAlign.Start -> TextAlign.Start
+    TableAlign.Center -> TextAlign.Center
+    TableAlign.End -> TextAlign.End
 }
 
 // ---------------------------------------------------------------------------
@@ -1068,9 +1158,13 @@ private sealed interface MdBlock {
     class CodeBlock(val code: String, val language: String) : MdBlock
     /**
      * GFM 表格。[header] 与 [rows] 的每一行**列数都相同**（解析时已经补齐，见 [parseTableAt]），
-     * 所以渲染那边可以直接按下标取列宽。
+     * 所以渲染那边可以直接按下标取列宽。[alignments] 与它们等长，一格一个对齐。
      */
-    class Table(val header: List<String>, val rows: List<List<String>>) : MdBlock
+    class Table(
+        val header: List<String>,
+        val rows: List<List<String>>,
+        val alignments: List<TableAlign>,
+    ) : MdBlock
     /** 一行独占一张图：`![说明](http…)`。 */
     class Image(val url: String, val alt: String) : MdBlock
     /** 一行只有一个视频地址（`.mp4`/`.webm`/`.mov`），画成可点的卡片。 */
@@ -1274,6 +1368,23 @@ private fun orderedText(trimmed: String): OrderedItem? {
 // ---------------------------------------------------------------------------
 
 /**
+ * 一列的对齐方式，落在 [MdBlock.Table.alignments] 里。
+ *
+ * **为什么只有这三种（而需求说的是"左/中/右/默认"四种）**：GFM 的分隔行只有四种写法，
+ * 但 `---`（两边都没冒号）与 `:---`（左边一个冒号）**渲染结果完全一样**，都是起始边对齐——
+ * 分隔行里的冒号表达的是"往哪边靠"，没写就是想不起来往哪靠，那当然就是最常见的左。
+ * 所以按"渲染结果"归类只有 Start / Center / End 三档；需求里的"默认"是**解析层**的概念
+ * （[tableAlignments] 里没冒号就落到 [Start]），不是渲染层的第四种表现。多开一个
+ * `Unspecified` 枚举值只会在 [TableAlign.toTextAlign] 里多一条和 `Start` 一模一样的
+ * `when` 分支，然后永远测不出差别。
+ *
+ * 参考实现的 web 表格干脆不看对齐：`thead th { text-align: left }`
+ * （`lib/utils/export_utils.dart:646-652`）是写死的，`:---:` 在那边也还是左对齐。这里
+ * 比它多做一步，纯粹因为 GFM 写了这条语法、而写表的人用 `:---:` 时**确实**想让那一列居中。
+ */
+private enum class TableAlign { Start, Center, End }
+
+/**
  * 从 [index] 起试着认一张 GFM 表格，认出来就返回 `表 to 下一行的下标`。
  *
  * 判定三件套（缺一不认，宁可退成段落）：
@@ -1282,9 +1393,15 @@ private fun orderedText(trimmed: String): OrderedItem? {
  *  2. 分隔行每一格都是 `---` / `:--` / `--:` / `:-:`（[isTableDivider]）；
  *  3. 表头格数 == 分隔行格数。这是 GFM 的硬规矩，也是需求里「列数对不上就原样当段落」那一条。
  *
+ * 分隔行不只是"是不是表格"的判据，它同时是**对齐声明**：每格的冒号位置由 [tableAlignments]
+ * 翻成 [TableAlign]，随表格一起交给渲染层（`Text` 的 `textAlign`）。
+ *
  * 数据行一直吃到空行、不含 `|` 的行、另一条分隔行或别的块开头为止；**每行列数补齐到最宽的那行**
  * （多出来的格保留、缺的补空串），这样渲染那边 `header.indices` 就能直接按下标取列宽，
- * 也不会因为某行多打了一个 `|` 就把正文丢掉。参考实现走 `ExtensionSet.gitHubFlavored`
+ * 也不会因为某行多打了一个 `|` 就把正文丢掉。对齐列表**用同一条规则补到一样长**：
+ * 分隔行的格数只等于表头，数据行多出来的列没人声明过对齐，一律按 [TableAlign.Start] 补
+ * ——于是 `alignments[i]`、`header[i]`、每一行的 `row[i]` 三者下标永远对得上，
+ * `TableRow` 里不会出现取不到对齐的格子。参考实现走 `ExtensionSet.gitHubFlavored`
  * （`lib/widgets/markdown_editor/markdown_renderer.dart:220-223`），表格语义就是那张扩展表定下的。
  */
 private fun parseTableAt(lines: List<String>, index: Int): Pair<MdBlock.Table, Int>? {
@@ -1297,6 +1414,7 @@ private fun parseTableAt(lines: List<String>, index: Int): Pair<MdBlock.Table, I
     if (!isTableDivider(dividerLine)) return null
     val header = splitTableCells(headerLine)
     if (header.isEmpty() || header.size != splitTableCells(dividerLine).size) return null
+    val declared = tableAlignments(dividerLine)
     val body = mutableListOf<List<String>>()
     var i = index + 2
     while (i < lines.size) {
@@ -1309,8 +1427,30 @@ private fun parseTableAt(lines: List<String>, index: Int): Pair<MdBlock.Table, I
     val columns = maxOf(header.size, body.maxOfOrNull { row -> row.size } ?: 0)
     fun pad(cells: List<String>): List<String> =
         if (cells.size >= columns) cells else cells + List(columns - cells.size) { "" }
-    return MdBlock.Table(pad(header), body.map { row -> pad(row) }) to i
+    // 对齐跟着列数一起补：多出来的列是数据行自己多打的 `|`，分隔行没声明过，按默认（左）处理。
+    val alignments =
+        if (declared.size >= columns) declared else declared + List(columns - declared.size) { TableAlign.Start }
+    return MdBlock.Table(pad(header), body.map { row -> pad(row) }, alignments) to i
 }
+
+/**
+ * 把分隔行翻成每列的对齐：两头都有冒号 = 居中，只有尾冒号 = 靠右，其余（只有头冒号 / 没冒号）= 靠左。
+ *
+ * 判据只看冒号在不在，**不看横线的长度**：GFM 里 `:-:` 和 `:-----:` 是同一件事，
+ * 横线多长只是写表的人手抖，没有任何语义。
+ *
+ * 只在 [isTableDivider] 已经点头之后才调用，所以这里不需要再校验一遍"是不是合法的分隔格"；
+ * `:` 之外的字符在这里不会被看到。
+ */
+private fun tableAlignments(dividerLine: String): List<TableAlign> =
+    splitTableCells(dividerLine).map { cell ->
+        val trimmed = cell.trim()
+        when {
+            trimmed.startsWith(":") && trimmed.endsWith(":") -> TableAlign.Center
+            trimmed.endsWith(":") -> TableAlign.End
+            else -> TableAlign.Start
+        }
+    }
 
 /**
  * `| --- | :--: |` 这种分隔行。
@@ -1604,8 +1744,70 @@ private fun bareUrlEnd(text: String, start: Int): Int? {
     return if (end - start > 8) end else null
 }
 
-/** 扫描 [text]，把命中的标记换成样式，没命中的字符原样写进去。 */
-private fun AnnotatedString.Builder.appendMarked(text: String, linkColor: Color) {
+/**
+ * 楼层引用最多几位数字：Discourse 的 `postNumber` 到四位数已经是几万楼的超长帖，
+ * 五位以上在真实帖子里不存在，放宽只会把 `#12345` 这种编号误当成楼层。
+ */
+private const val FloorRefMaxDigits = 4
+
+/** 楼层引用 [LinkAnnotation.Clickable] 的 `tag` 前缀，后接楼层号（本文件目前没有别处读它）。 */
+private const val FloorRefTagPrefix = "floor:"
+
+/**
+ * [start] 处是不是一个 `#N` 楼层引用；是就返回数字之后的位置（也就是整段引用的末尾）。
+ *
+ * 为什么**前后都要判字符**：`#` 在正文里不止一种身份，光看"后面跟数字"会认错一大片。
+ *
+ *  * **前一个字符不能是 ASCII 字母数字**——挡 `C#4`（语言名）、`PHP#8`、`v2#3`（版本/编号）。
+ *    刻意只算 ASCII：`见#3` 这种中文紧贴的写法非常常见，而 `Char.isLetterOrDigit()` 对汉字
+ *    返回 true，用它会把中文语境下大半的楼层引用挡掉（同一条取舍见 [mentionEndAt] 的第 1 道闸，
+ *    那里也是这么处理的）。
+ *  * **前一个字符不能是 `&`**——挡 HTML 实体 `&#123;`、`&#x4E00;`（正文里贴代码/转义文本很常见）。
+ *    只挡 `&` 而不再挡别的符号：`(`、`、`、空格后面接 `#3` 都是正常写法。
+ *  * **后一个字符不能是数字**——四位上限之外再挡一道：`#12345` 前四位会被切出来当楼层 1234，
+ *    后面那个 `5` 变成普通文字，点击跳到的就是个不存在的楼层。宁可整段不可点，也不给一个错的目标。
+ *
+ * 长度 1–4 位（[FloorRefMaxDigits]）：`#0` 这种也认，交给调用方决定怎么处理（Discourse 的楼层从 1 开始，
+ * 跳不到就是跳不到，不该由解析层替它改数字）。
+ *
+ * 只在 [appendMarked] 的"什么都没命中"分支里被调用，所以行内码、代码块、链接文字里的 `#3`
+ * 根本走不到这里（见 [appendMarked] 里那三处顺序的说明）。
+ */
+private fun floorRefEndAt(text: String, start: Int): Int? {
+    if (start >= text.length || text[start] != '#') return null
+    if (start > 0) {
+        val prev = text[start - 1]
+        if (prev in 'A'..'Z' || prev in 'a'..'z' || prev in '0'..'9') return null
+        if (prev == '&') return null
+    }
+    var end = start + 1
+    while (end < text.length && end - start - 1 < FloorRefMaxDigits && text[end] in '0'..'9') end++
+    // 一位都没有：单独的 `#` 就是井号本身。
+    if (end == start + 1) return null
+    // 四位截断之后还跟着数字：这是编号/长数字，不是楼层。
+    if (end < text.length && text[end] in '0'..'9') return null
+    return end
+}
+
+/**
+ * 扫描 [text]，把命中的标记换成样式，没命中的字符原样写进去。
+ *
+ * [onFloorRef] 非空时，在"什么都没命中"的位置额外试一次楼层引用（[floorRefEndAt]），
+ * 命中就画成主色、无下划线的可点文字。三处顺序是有讲究的：
+ *
+ *  1. 先问 [matchInlineAt]——行内码 / 链接 / 粗体这些结构标记优先，`` `#3` `` 是在 `` ` `` 那
+ *     一步整段被吃掉的（[InlineMatch.deep] = false，只 `append(inner)`，不再递归），
+ *     所以行内码里的 `#3`、链接文字里的 `#3` 都**不会**变可点；
+ *  2. 再问 [bareUrlEnd]——裸地址整条先吃掉，`https://a/#3` 里的 `#3` 是地址的一部分；
+ *  3. 最后才试楼层引用。
+ *
+ * 反过来（楼层先判）会把 `https://a/#3` 切成"链接 + 可点的 3"，点击行为就串了。
+ */
+private fun AnnotatedString.Builder.appendMarked(
+    text: String,
+    linkColor: Color,
+    onFloorRef: ((Int) -> Unit)? = null,
+) {
     var cursor = 0
     var i = 0
     while (i < text.length) {
@@ -1622,6 +1824,35 @@ private fun AnnotatedString.Builder.appendMarked(text: String, linkColor: Color)
                 cursor = i
                 continue
             }
+            // 收进局部 val 再判空：这样下面那个 lambda 里拿到的是**已判定非空**的引用，
+            // 不用在闭包里再 `!!` 一次。
+            val refHandler = onFloorRef
+            if (refHandler != null) {
+                val refEnd = floorRefEndAt(text, i)
+                if (refEnd != null) {
+                    val number = text.substring(i + 1, refEnd).toIntOrNull()
+                    if (number != null) {
+                        append(text.substring(cursor, i))
+                        // 主色 + **不加下划线**：下划线在本文件里是"会打开别处"的记号（链接、裸地址），
+                        // 楼层引用只是同页跳转，跟链接长得一样反而误导。
+                        withStyle(SpanStyle(color = linkColor)) {
+                            withLink(
+                                LinkAnnotation.Clickable(
+                                    // `tag` 是这个 Compose 版本里 Clickable 的第一个参数（必填），
+                                    // 带上楼层号便于命中检测/日志里认出来；点击走下面的 listener，
+                                    // 不经过 LocalUriHandler，所以不会去开浏览器。
+                                    tag = FloorRefTagPrefix + number,
+                                    styles = null,
+                                    linkInteractionListener = { refHandler(number) },
+                                ),
+                            ) { append(text.substring(i, refEnd)) }
+                        }
+                        i = refEnd
+                        cursor = i
+                        continue
+                    }
+                }
+            }
             i++
             continue
         }
@@ -1631,7 +1862,8 @@ private fun AnnotatedString.Builder.appendMarked(text: String, linkColor: Color)
             when {
                 // 链接文字本身不再解析标记，但要挂上点击目标。
                 hit.url != null -> withLink(LinkAnnotation.Url(url = hit.url)) { append(inner) }
-                hit.deep -> appendMarked(inner, linkColor)
+                // 粗体/斜体/删除线里继续解析：`**见 #12**` 里的连楼层号仍然是那个楼层号。
+                hit.deep -> appendMarked(inner, linkColor, onFloorRef)
                 else -> append(inner)
             }
         }
