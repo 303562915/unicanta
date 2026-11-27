@@ -243,9 +243,9 @@
    },
    {
     "pkg": "com.coloros.sceneservice",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-26T23:57:49.85003+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T01:19:34.516269+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1601,6 +1601,13 @@
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-27T00:04:50.496173+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.coloros.sceneservice",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T01:19:34.516269+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -11618,8 +11625,8 @@
    {
     "pkg": "com.android.managedprovisioning.overlay",
     "small_batch": false,
-    "uninstalls": 199,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 200,
+    "updated_at": "2026-11-27T01:06:44.213324+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -13431,8 +13438,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 283,
-    "updated_at": "2026-11-27T00:36:54.141044+00:00",
+    "uninstalls": 284,
+    "updated_at": "2026-11-27T01:18:55.668462+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -13480,8 +13487,8 @@
    {
     "pkg": "com.xiaomi.ab",
     "small_batch": false,
-    "uninstalls": 300,
-    "updated_at": "2026-11-27T00:37:12.236649+00:00",
+    "uninstalls": 301,
+    "updated_at": "2026-11-27T01:20:41.827645+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -13585,8 +13592,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 488,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 489,
+    "updated_at": "2026-11-27T01:18:55.668462+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17691,8 +17698,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 49,
-    "updated_at": "2026-11-27T00:36:54.141044+00:00",
+    "uninstalls": 50,
+    "updated_at": "2026-11-27T01:18:55.668462+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17726,8 +17733,8 @@
    {
     "pkg": "com.xiaomi.ab",
     "small_batch": false,
-    "uninstalls": 52,
-    "updated_at": "2026-11-27T00:37:12.236649+00:00",
+    "uninstalls": 53,
+    "updated_at": "2026-11-27T01:20:41.827645+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -17817,8 +17824,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 116,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 117,
+    "updated_at": "2026-11-27T01:18:55.668462+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -18383,8 +18390,8 @@
    {
     "pkg": "com.android.managedprovisioning.overlay",
     "small_batch": false,
-    "uninstalls": 158,
-    "updated_at": "2026-11-26T23:39:47.855709+00:00",
+    "uninstalls": 159,
+    "updated_at": "2026-11-27T01:06:44.213324+00:00",
     "verdict": "BREAKS"
    },
    {
