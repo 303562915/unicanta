@@ -3,6 +3,8 @@ package io.github.samolego.canta.ui.screen
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -69,10 +71,17 @@ import io.github.samolego.canta.generated.resources.about_latest_download
 import io.github.samolego.canta.generated.resources.about_qq_group
 import io.github.samolego.canta.generated.resources.about_qq_group_copied
 import io.github.samolego.canta.generated.resources.about_qq_group_hint
+import io.github.samolego.canta.generated.resources.about_sponsors_add
+import io.github.samolego.canta.generated.resources.about_sponsors_close
 import io.github.samolego.canta.generated.resources.about_sponsors_collapse
+import io.github.samolego.canta.generated.resources.about_sponsors_code_desc
+import io.github.samolego.canta.generated.resources.about_sponsors_copy_group
 import io.github.samolego.canta.generated.resources.about_sponsors_empty
 import io.github.samolego.canta.generated.resources.about_sponsors_expand
 import io.github.samolego.canta.generated.resources.about_sponsors_expand_open
+import io.github.samolego.canta.generated.resources.about_sponsors_howto_money
+import io.github.samolego.canta.generated.resources.about_sponsors_howto_note
+import io.github.samolego.canta.generated.resources.about_sponsors_howto_token
 import io.github.samolego.canta.generated.resources.about_sponsors_loading
 import io.github.samolego.canta.generated.resources.about_sponsors_total
 import io.github.samolego.canta.generated.resources.sponsor_miniapp_code
