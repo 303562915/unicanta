@@ -5412,6 +5412,18 @@
   "target": "com.vivo.fuelsummary"
  },
  {
+  "author": "龍伍 14U",
+  "author_id": "14763",
+  "body": "这个方案用着没有 bug，没有死机现象",
+  "created_at": "2026-11-27T13:53:44.086037+00:00",
+  "device_model": "Xiaomi 14 Ultra",
+  "id": 795,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.5",
+  "target": "91"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
