@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.minimumInteractiveComponentSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -51,6 +50,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -473,6 +473,17 @@ fun ChatScreen(
     // 而菜单要按真实状态说话（已经置顶就该写「取消置顶」，写反了等于每次点都在猜）。
     var pinned by remember(conversationId) { mutableStateOf(false) }
     var muted by remember(conversationId) { mutableStateOf(false) }
+    /**
+     * 这个群钉住的消息，最新钉的在前。
+     *
+     * 和聊天记录分开存：置顶那几条可能在很久以前、不在刚拉回来的这一页里；[togglePinMessage]
+     * 改完会重拉一次，所以这里始终是服务端那一份，不做本地乐观拼接。
+     *
+     * 声明必须在 [togglePinMessage] 之前：那个函数按值读写这两个状态，Kotlin 的局部变量不能先用后声明。
+     */
+    var pinnedMessages by remember(conversationId) { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    /** 置顶/取消置顶的一句话结果；和图片那句反馈共用输入框上方那一行。 */
+    var actionHint by remember { mutableStateOf<String?>(null) }
     var showMore by remember { mutableStateOf(false) }
     /** 表情面板开没开：和 [showMore] 互斥，拉开一个就把另一个收回去。 */
     var showEmotions by remember { mutableStateOf(false) }
@@ -603,15 +614,6 @@ fun ChatScreen(
     var imageHint by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
     /**
-     * 这个群钉住的消息，最新钉的在前。
-     *
-     * 和聊天记录分开存：置顶那几条可能在很久以前，不在刚拉回来的这一页里；[togglePinMessage]
-     * 改完会重新拉一次，所以这里始终是服务端那一份，不做本地乐观拼接。
-     */
-    var pinnedMessages by remember(conversationId) { mutableStateOf<List<ChatMessage>>(emptyList()) }
-    /** 置顶/取消置顶的一句话结果；和图片那句反馈共用输入框上方那一行。 */
-    var actionHint by remember { mutableStateOf<String?>(null) }
-    /**
      * 群公告横幅这一趟被关掉了没有。
      *
      * 只记这一次进入页面：公告本身是长期的东西，下次进来该再看见一眼；但人正在聊天时它挡着一行，
@@ -723,7 +725,8 @@ fun ChatScreen(
         detail = repository.conversationDetail(owner, conversationId)
         // 群置顶消息：和详情一起问一次就够。置顶不常变，改的那一下自己会重拉（见 togglePinMessage）。
         pinnedMessages = if (detail?.isGroup == true) {
-            runCatching { repository.pinnedMessages(owner, conversationId) }.getOrDefault(emptyList())
+            // 类型写明：getOrDefault(emptyList()) 在这条链上推不出元素类型，Kotlin 会报推断失败。
+            runCatching { repository.pinnedMessages(owner, conversationId) }.getOrNull().orEmpty()
         } else {
             emptyList()
         }
@@ -1563,7 +1566,9 @@ fun ChatScreen(
                                         onSave = if (message.kind == "text" && onToggleSaved != null) {
                                             {
                                                 val keep = savedMessages.none { it.id == message.id }
-                                                onToggleSaved.invoke(message, keep)
+                                                // 用 `?.` 而不是靠智能转换：这个回调是外面递进来的可空参数，
+                                                // lambda 里按非空用会踩到"捕获的可空值"。
+                                                onToggleSaved?.invoke(message, keep)
                                                 actionHint = if (keep) "已收藏这条消息" else "已取消收藏"
                                             }
                                         } else {
