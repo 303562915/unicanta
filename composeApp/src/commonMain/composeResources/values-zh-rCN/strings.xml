@@ -583,7 +583,7 @@
     <string name="recommend_tab_airport">机场推荐</string>
     <string name="recommend_tab_airport_vote">机场投票</string>
     <string name="recommend_airport_vote_empty">还没有人给机场投票。在「机场推荐」里贴一个，第一条就出现在这里。</string>
-    <string name="recommend_airport_vote_foot">按认同票排名：票一样多时看评分人数，再看谁先来。点开一条就能投票、打分、取订阅和评论。</string>
+    <string name="recommend_airport_vote_foot">按认同票排名：票一样多时看评分人数，再看谁先来。认同 / 不认同在这一行就能按；点开一条还有打分、订阅和评论。</string>
     <string name="recommend_comment_empty">还没有人评论。用过的人说一句，别人就不用一个个试。</string>
     <string name="recommend_comment_placeholder">用过吗？说一句</string>
     <string name="recommend_uninstall_hint">这台手机还装着这些，点开就能处理：</string>

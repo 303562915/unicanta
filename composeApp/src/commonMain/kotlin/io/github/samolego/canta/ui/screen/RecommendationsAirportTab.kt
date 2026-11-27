@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.recommend.AirportBallot
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.recommend_airport_vote_empty
@@ -192,6 +193,8 @@ internal fun RecommendationsAirportTab(
     var airportError by remember { mutableStateOf<String?>(null) }
     /** 正在向 airport-head 之后追加的那一页位置：首页 10 条，往下划一页给 `pageSize` 条。 */
     var visiblePages by remember { mutableIntStateOf(1) }
+    /** 正在投的那一条：同一个 id 只发一趟，别的行照常可点。 */
+    var votingId by remember { mutableStateOf(0L) }
 
     // 每次拿到新的一屏就写回外层：切走再回来先画它，而不是从空列表开始转圈。
     //
@@ -225,6 +228,33 @@ internal fun RecommendationsAirportTab(
         }
         loading = false
         state.loadedKey = reloadKey
+    }
+
+    val vote: (CommunityAirport, Boolean) -> Unit = vote@{ entry, agree ->
+        val repo = repository
+        if (repo == null) {
+            platform.showMessage("社区后端没连上，投票没发出去。")
+            return@vote
+        }
+        if (votingId != 0L || entry.ballotSettled) return@vote
+        votingId = entry.id
+        scope.launch {
+            val fresh = repo.voteAirport(entry.id, who, agree)
+            votingId = 0L
+            if (fresh == null) {
+                platform.showMessage("没投上：${repo.lastError ?: "检查一下网络再试"}")
+            } else {
+                // 先把这一行的三个数就地换掉：重拉整张榜会让已经翻到第几页的人回到第一页，
+                // 而且票一投完列表就重排，手指还停在原来那一行上，看着像点错了行。
+                val updated = entry.copy(
+                    agrees = fresh.agrees,
+                    disagrees = fresh.disagrees,
+                    mine = fresh.mine,
+                )
+                airports = airports.map { if (it.id == updated.id) updated else it }
+                state.publish(updated)
+            }
+        }
     }
 
     when {
@@ -278,6 +308,9 @@ internal fun RecommendationsAirportTab(
                         AirportVoteRow(
                             rank = index + 1,
                             entry = entry,
+                            voting = votingId == entry.id,
+                            canVote = who.isNotEmpty(),
+                            onVote = { agree -> vote(entry, agree) },
                             onClick = { onOpenAirport(entry) },
                         )
                     }
@@ -492,6 +525,9 @@ private fun Note(text: String, inset: Dp) {
 private fun AirportVoteRow(
     rank: Int,
     entry: CommunityAirport,
+    voting: Boolean,
+    canVote: Boolean,
+    onVote: (Boolean) -> Unit,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -564,21 +600,59 @@ private fun AirportVoteRow(
                 )
             }
             Text(
-                text = entry.metaLine.ifEmpty { "还没人评" },
+                text = airportVoteStateOf(entry),
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
+                color = if (entry.ballotSettled) scheme.primary else scheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(modifier = Modifier.width(6.dp))
-        // 整行可点，右边只画一个「›」：再写「详情」两个字，等于在一件事上放两个入口。
-        Text(
-            text = "›",
-            fontSize = 18.sp,
-            color = scheme.onSurfaceVariant,
-        )
+        // 与应用投票同一套：这一轮还没结束就摆两个能按的票，结束了就只剩一个「投票结束」——
+        // 票数够、认同率也够了还让人继续按，那只是把已经定下来的结果推来推去。
+        if (entry.ballotSettled) {
+            SettledVote()
+        } else {
+            CompactVote(
+                label = "认同",
+                count = entry.agrees,
+                selected = entry.mine == true,
+                color = AirportAgree,
+                enabled = canVote && !voting,
+                onClick = { onVote(true) },
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            CompactVote(
+                label = "不认同",
+                count = entry.disagrees,
+                selected = entry.mine == false,
+                color = AirportDisagree,
+                enabled = canVote && !voting,
+                onClick = { onVote(false) },
+            )
+        }
     }
+}
+
+/**
+ * 榜单那一行名字底下的一句话：离门槛还有多远，最少的字说完。
+ *
+ * 与应用投票的 [voteStateOf] 同一副口吻：差票就说差几票、顺手报认同率，够了就说等结算。
+ */
+internal fun airportVoteStateOf(entry: CommunityAirport): String {
+    val share = entry.agreeShare
+    val ballot = when {
+        entry.ballotSettled -> "投票结束 · 认同率 ${((share ?: 0f) * 100).toInt()}%"
+        entry.missingVotes > 0 ->
+            "还差 ${entry.missingVotes} 票" + (share?.let { " · 认同 ${(it * 100).toInt()}%" } ?: "")
+        (share ?: 0f) < AirportBallot.SHARE_NEEDED ->
+            "票数够了 · 认同率 ${((share ?: 0f) * 100).toInt()}%，还差 " +
+                "${(AirportBallot.SHARE_NEEDED * 100).toInt()}%"
+        else -> "已达成条件，等待结算"
+    }
+    // 评分跟在后面：票说的是「有多少人认」，星说的是「用过的人打几分」，两个一起才是这家的样子。
+    // 窄屏上这一行可能被截断——截在评分上比截在票数上可惜，所以把它放最后。
+    return listOfNotNull(ballot, entry.starsText.ifEmpty { null }).joinToString(" · ")
 }
 
 /**

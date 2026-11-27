@@ -53,6 +53,29 @@ data class CommunityAirport(
 
     val votes: Int get() = agrees + disagrees
 
+    /**
+     * 认同率：认同票占全部票的比例，没人投过是 `null`（不是 0——0% 是"全都不认同"）。
+     *
+     * 只在有一票之后才有意义，所以是可空的；页面上没票时显示「还没人投」，不显示 0%。
+     */
+    val agreeShare: Float? get() = if (votes == 0) null else agrees.toFloat() / votes
+
+    /**
+     * 还差几票才够 [AirportBallot.VOTES_NEEDED]，两边一起算——与 [SuggestedApp.missingVotes] 同一口径：
+     * 门槛说的是"一共投了多少票"，不是"多少票认同"。到了就是 0。
+     */
+    val missingVotes: Int get() = (AirportBallot.VOTES_NEEDED - votes).coerceAtLeast(0)
+
+    /**
+     * 这一轮投票结束了没有。
+     *
+     * 门槛和「应用投票」同一套（[AirportBallot]）：票数够、认同率也够就结束——再投只会把已经定下来
+     * 的结果推来推去，所以两边的按钮都收起来，换成「投票结束」。
+     */
+    val ballotSettled: Boolean
+        get() = votes >= AirportBallot.VOTES_NEEDED &&
+            (agreeShare ?: 0f) >= AirportBallot.SHARE_NEEDED
+
     /** 「★4.2 · 12 人评分」里的前半段，没人评分时是空串。 */
     val starsText: String
         get() {
@@ -76,6 +99,20 @@ data class CommunityAirport(
      * 可能是在投票之前拉的，用旧快照拦人会把刚投完票的人挡在门外。
      */
     val unlocked: Boolean get() = mine != null || myStars > 0
+}
+
+/**
+ * 机场投票的门槛，与「应用投票」同一套数字（见 [SuggestedApp.VOTES_NEEDED] / [SHARE_NEEDED]）。
+ *
+ * 为什么两处共用一份：用户看到的应该是"同一个社区，同一把尺子"——应用要 45 票、认同率 80% 才
+ * 上榜，机场却另有一套数字，只会让人以为是两个系统在各自计票。哪儿都不用改的时候，直接引常量。
+ */
+object AirportBallot {
+    /** 需要多少张认同票。 */
+    const val VOTES_NEEDED: Int = SuggestedApp.VOTES_NEEDED
+
+    /** 认同率要到多少（含）。 */
+    const val SHARE_NEEDED: Float = SuggestedApp.SHARE_NEEDED
 }
 
 /**

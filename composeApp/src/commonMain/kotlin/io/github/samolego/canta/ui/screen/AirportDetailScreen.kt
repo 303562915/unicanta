@@ -594,23 +594,29 @@ fun AirportDetailScreen(
                                     color = scheme.primary,
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    AirportVotePill(
-                                        label = "认同",
-                                        count = loaded.agrees,
-                                        selected = loaded.mine == true,
-                                        color = AirportAgree,
-                                        enabled = canAct && !busy,
-                                        onClick = { vote(true) },
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    AirportVotePill(
-                                        label = "不认同",
-                                        count = loaded.disagrees,
-                                        selected = loaded.mine == false,
-                                        color = AirportDisagree,
-                                        enabled = canAct && !busy,
-                                        onClick = { vote(false) },
-                                    )
+                                    // 票数够、认同率也够：这一轮已经结束，两个按钮换成「投票结束」，
+                                    // 与榜单那一行同一个判断（见 CommunityAirport.ballotSettled）。
+                                    if (loaded.ballotSettled) {
+                                        SettledVote()
+                                    } else {
+                                        AirportVotePill(
+                                            label = "认同",
+                                            count = loaded.agrees,
+                                            selected = loaded.mine == true,
+                                            color = AirportAgree,
+                                            enabled = canAct && !busy,
+                                            onClick = { vote(true) },
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        AirportVotePill(
+                                            label = "不认同",
+                                            count = loaded.disagrees,
+                                            selected = loaded.mine == false,
+                                            color = AirportDisagree,
+                                            enabled = canAct && !busy,
+                                            onClick = { vote(false) },
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.weight(1f))
                                     if (!canAct) {
                                         Text(
@@ -620,6 +626,11 @@ fun AirportDetailScreen(
                                         )
                                     }
                                 }
+                                Text(
+                                    text = airportVoteStateOf(loaded),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (loaded.ballotSettled) scheme.primary else scheme.onSurfaceVariant,
+                                )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     StarRow(
                                         myStars = loaded.myStars,
