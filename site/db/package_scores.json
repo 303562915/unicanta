@@ -15619,7 +15619,7 @@
     "pkg": "com.miui.tsmclient",
     "small_batch": false,
     "uninstalls": 119,
-    "updated_at": "2026-11-27T07:38:24.723996+00:00",
+    "updated_at": "2026-11-27T07:44:45.598515+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22083,7 +22083,7 @@
     "pkg": "com.miui.tsmclient",
     "small_batch": false,
     "uninstalls": 91,
-    "updated_at": "2026-11-27T07:38:24.723996+00:00",
+    "updated_at": "2026-11-27T07:44:45.598515+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -35108,9 +35108,9 @@
    },
    {
     "pkg": "com.android.bookmarkprovider",
-    "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-23T02:14:02.173024+00:00",
+    "small_batch": true,
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -35914,8 +35914,8 @@
    {
     "pkg": "com.google.ar.core",
     "small_batch": false,
-    "uninstalls": 12,
-    "updated_at": "2026-11-26T17:19:42.315794+00:00",
+    "uninstalls": 13,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "SAFE"
    },
    {
@@ -35970,8 +35970,8 @@
    {
     "pkg": "com.microsoft.appmanager",
     "small_batch": true,
-    "uninstalls": 7,
-    "updated_at": "2026-11-26T17:17:19.70761+00:00",
+    "uninstalls": 8,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -36054,9 +36054,9 @@
    {
     "pkg": "com.samsung.accessory.budsunitemgr",
     "small_batch": false,
-    "uninstalls": 4,
-    "updated_at": "2026-11-22T07:12:03.339151+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.samsung.adaptivebrightnessgo",
@@ -36103,8 +36103,8 @@
    {
     "pkg": "com.samsung.android.app.camera.sticker.facearavatar.preload",
     "small_batch": false,
-    "uninstalls": 9,
-    "updated_at": "2026-11-26T12:16:31.814557+00:00",
+    "uninstalls": 10,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "SAFE"
    },
    {
@@ -36138,9 +36138,9 @@
    {
     "pkg": "com.samsung.android.app.interpreter",
     "small_batch": false,
-    "uninstalls": 4,
-    "updated_at": "2026-11-22T07:12:03.339151+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.samsung.android.app.kfa",
@@ -36159,8 +36159,8 @@
    {
     "pkg": "com.samsung.android.app.parentalcare",
     "small_batch": false,
-    "uninstalls": 8,
-    "updated_at": "2026-11-26T22:29:00.747761+00:00",
+    "uninstalls": 9,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "SAFE"
    },
    {
@@ -36187,16 +36187,16 @@
    {
     "pkg": "com.samsung.android.app.sharelive",
     "small_batch": false,
-    "uninstalls": 4,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.samsung.android.app.sketchbook",
     "small_batch": false,
-    "uninstalls": 4,
-    "updated_at": "2026-11-26T22:29:00.747761+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.samsung.android.app.soundpicker",
@@ -36257,15 +36257,15 @@
    {
     "pkg": "com.samsung.android.aremoji",
     "small_batch": false,
-    "uninstalls": 10,
-    "updated_at": "2026-11-26T06:01:07.170438+00:00",
+    "uninstalls": 11,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "SAFE"
    },
    {
     "pkg": "com.samsung.android.aremojieditor",
     "small_batch": false,
-    "uninstalls": 8,
-    "updated_at": "2026-11-26T06:01:07.170438+00:00",
+    "uninstalls": 9,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "SAFE"
    },
    {
@@ -36320,30 +36320,30 @@
    {
     "pkg": "com.samsung.android.bixby.agent",
     "small_batch": false,
-    "uninstalls": 8,
-    "updated_at": "2026-11-26T22:29:00.747761+00:00",
-    "verdict": "SAFE"
+    "uninstalls": 9,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
+    "verdict": "UNCLEAR"
    },
    {
     "pkg": "com.samsung.android.bixby.wakeup",
     "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-23T10:48:12.903452+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.samsung.android.bixbyhelper",
     "small_batch": false,
-    "uninstalls": 6,
-    "updated_at": "2026-11-26T22:29:00.747761+00:00",
-    "verdict": "SAFE"
+    "uninstalls": 7,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
+    "verdict": "UNCLEAR"
    },
    {
     "pkg": "com.samsung.android.bixbytouch",
     "small_batch": false,
-    "uninstalls": 6,
-    "updated_at": "2026-11-26T22:29:00.747761+00:00",
-    "verdict": "SAFE"
+    "uninstalls": 7,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
+    "verdict": "UNCLEAR"
    },
    {
     "pkg": "com.samsung.android.bixbyvision.framework",
@@ -36383,8 +36383,8 @@
    {
     "pkg": "com.samsung.android.carlink",
     "small_batch": false,
-    "uninstalls": 8,
-    "updated_at": "2026-11-26T22:29:00.747761+00:00",
+    "uninstalls": 9,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "SAFE"
    },
    {
@@ -36719,9 +36719,9 @@
    {
     "pkg": "com.samsung.android.mdx.kit",
     "small_batch": false,
-    "uninstalls": 4,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
+    "verdict": "SAFE"
    },
    {
     "pkg": "com.samsung.android.messaging",
@@ -36838,8 +36838,8 @@
    {
     "pkg": "com.samsung.android.rubin.app",
     "small_batch": false,
-    "uninstalls": 6,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "uninstalls": 7,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "SAFE"
    },
    {
@@ -36942,9 +36942,9 @@
    },
    {
     "pkg": "com.samsung.android.service.stplatform",
-    "small_batch": false,
-    "uninstalls": 7,
-    "updated_at": "2026-11-26T12:22:57.871963+00:00",
+    "small_batch": true,
+    "uninstalls": 8,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -37013,16 +37013,16 @@
    {
     "pkg": "com.samsung.android.smartcopywriting",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-26T12:22:57.871963+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.samsung.android.smartmeeting",
     "small_batch": false,
-    "uninstalls": 4,
-    "updated_at": "2026-11-22T07:12:03.339151+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
+    "verdict": "BREAKS"
    },
    {
     "pkg": "com.samsung.android.smartprovider",
@@ -37048,8 +37048,8 @@
    {
     "pkg": "com.samsung.android.softsim",
     "small_batch": false,
-    "uninstalls": 7,
-    "updated_at": "2026-11-26T06:01:07.170438+00:00",
+    "uninstalls": 8,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "SAFE"
    },
    {
@@ -37160,8 +37160,8 @@
    {
     "pkg": "com.samsung.android.vtcamerasettings",
     "small_batch": false,
-    "uninstalls": 7,
-    "updated_at": "2026-11-27T07:24:18.158266+00:00",
+    "uninstalls": 8,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "SAFE"
    },
    {
@@ -37272,9 +37272,9 @@
    {
     "pkg": "com.samsung.hongbaoassistant",
     "small_batch": true,
-    "uninstalls": 6,
-    "updated_at": "2026-11-26T12:21:11.850637+00:00",
-    "verdict": "SAFE"
+    "uninstalls": 7,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
+    "verdict": "UNCLEAR"
    },
    {
     "pkg": "com.samsung.InputEventApp",
@@ -37741,8 +37741,8 @@
    {
     "pkg": "com.sec.android.yellowpage",
     "small_batch": false,
-    "uninstalls": 6,
-    "updated_at": "2026-11-22T07:12:03.339151+00:00",
+    "uninstalls": 7,
+    "updated_at": "2026-11-27T07:41:00.129177+00:00",
     "verdict": "SAFE"
    },
    {
@@ -40878,9 +40878,9 @@
    },
    {
     "pkg": "com.android.bookmarkprovider",
-    "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-23T02:14:02.173024+00:00",
+    "small_batch": true,
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41565,8 +41565,8 @@
    {
     "pkg": "com.google.ar.core",
     "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-23T01:27:19.216074+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "SAFE"
    },
    {
@@ -41621,8 +41621,8 @@
    {
     "pkg": "com.microsoft.appmanager",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-22T07:17:55.946369+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41670,8 +41670,8 @@
    {
     "pkg": "com.samsung.accessory.budsunitemgr",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41698,8 +41698,8 @@
    {
     "pkg": "com.samsung.android.app.camera.sticker.facearavatar.preload",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41726,8 +41726,8 @@
    {
     "pkg": "com.samsung.android.app.interpreter",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41740,8 +41740,8 @@
    {
     "pkg": "com.samsung.android.app.parentalcare",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41754,15 +41754,15 @@
    {
     "pkg": "com.samsung.android.app.sharelive",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.samsung.android.app.sketchbook",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41810,15 +41810,15 @@
    {
     "pkg": "com.samsung.android.aremoji",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.samsung.android.aremojieditor",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41866,29 +41866,29 @@
    {
     "pkg": "com.samsung.android.bixby.agent",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.samsung.android.bixby.wakeup",
-    "small_batch": false,
-    "uninstalls": 1,
-    "updated_at": "2026-11-23T10:48:12.903452+00:00",
+    "small_batch": true,
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T07:40:53.293372+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.samsung.android.bixbyhelper",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.samsung.android.bixbytouch",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -41915,8 +41915,8 @@
    {
     "pkg": "com.samsung.android.carlink",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:39:43.100786+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42181,8 +42181,8 @@
    {
     "pkg": "com.samsung.android.mdx.kit",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42265,8 +42265,8 @@
    {
     "pkg": "com.samsung.android.rubin.app",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42342,8 +42342,8 @@
    {
     "pkg": "com.samsung.android.service.stplatform",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-23T01:34:02.790826+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42391,15 +42391,15 @@
    {
     "pkg": "com.samsung.android.smartcopywriting",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.samsung.android.smartmeeting",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42419,8 +42419,8 @@
    {
     "pkg": "com.samsung.android.softsim",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42475,8 +42475,8 @@
    {
     "pkg": "com.samsung.android.vtcamerasettings",
     "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42545,8 +42545,8 @@
    {
     "pkg": "com.samsung.hongbaoassistant",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:44:51.999924+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -42888,8 +42888,8 @@
    {
     "pkg": "com.sec.android.yellowpage",
     "small_batch": false,
-    "uninstalls": 2,
-    "updated_at": "2026-11-21T10:51:14.728604+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T07:41:00.129177+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
