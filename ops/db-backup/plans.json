@@ -6900,7 +6900,7 @@
   "reboot_verified": true,
   "rebooted_at": "2026-11-26T15:56:49.085664+00:00",
   "rom": "coloros",
-  "rom_build": "",
+  "rom_build": "V17.0.0",
   "rom_version": 17,
   "sdk": 37,
   "title": "省电 · 一加 Ace"
