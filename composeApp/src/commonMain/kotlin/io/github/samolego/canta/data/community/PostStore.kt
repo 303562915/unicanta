@@ -58,13 +58,28 @@ data class CommunityPost(
     val tags: List<String> = emptyList(),
 )
 
-/** 一条回帖。 */
+/**
+ * 一条回帖。
+ *
+ * [replyToId] / [replyToAuthor] 是「这一楼在回哪一楼」：0L 表示不是回复某一楼。
+ *
+ * 为什么两个都有：id 用来在 `comments` 里找到被引用的那一层（画 fluxdo 那条「回复 #N · 名字」
+ * 指示条、以及点它滚过去）；名字是发帖那一刻由后端抄下来的冗余值 —— 被引用的楼层后来可能被
+ * 删掉，届时按 id 找不到，名字仍然在，指示条照样有字可写。
+ *
+ * 缺省退默认值：老后端（没有这两列）的回答里根本没有这两个键，解析回来就是 0L / ""，
+ * 页面按"不是回复"画，不会因为一个字段缺失整条帖子画不出来。
+ */
 data class PostComment(
     val id: Long = 0L,
     val body: String = "",
     val author: String = "",
     val authorId: String = "",
     val createdAt: String = "",
+    /** 引用的那一楼（同一帖子内）的 id；0 表示没有引用。 */
+    val replyToId: Long = 0L,
+    /** 被引用那一楼发帖时的署名；空串表示没有引用（或老后端没发这个字段）。 */
+    val replyToAuthor: String = "",
 )
 
 /** 一条帖子的详情：正文全文、回帖（后端按时间正序，最多 200 条）和汇总数。 */
@@ -184,8 +199,23 @@ class PostStore(private val rpc: CommunityRpc) {
     /**
      * 回一帖，回答回完之后那条帖子的**回帖总数**（列表上的数字不必再问一次）。
      * 帖子被锁、不在了、回帖是空的、认不出身份 —— 都是 null，理由在 [lastError]。
+     *
+     * [replyToId] 大于 0 表示这一楼在回同一帖子里的第 [replyToId] 楼（引用回复）。后端会校验它
+     * 确实属于这条帖子，对不上就当没带、照常收下 —— 引用是附加信息，不值得为它整条回帖失败。
+     *
+     * **只在 > 0 时才往 payload 里放这个键**（不是放一个 0 或 null）：老后端（没有
+     * `p_reply_to_id`）遇到不认识的参数名会报 404 / PGRST202，那时候连普通回帖都发不出去。
+     * 不放键等于"没有这个能力的老后端上，这个参数从来不存在"。
+     *
+     * 名字不在这里发：`reply_to_author` 由后端从被引用的那一楼读出来抄一份，客户端不参与
+     * ——署名是别人的，让发帖人自报等于谁都能把别人的名字挂上去。
      */
-    suspend fun comment(postId: Long, body: String, author: String): Int? {
+    suspend fun comment(
+        postId: Long,
+        body: String,
+        author: String,
+        replyToId: Long = 0L,
+    ): Int? {
         lastError = null
         if (postId <= 0L || body.isBlank()) return null
         val proof = rpc.token()
@@ -194,6 +224,8 @@ class PostStore(private val rpc: CommunityRpc) {
             put("p_body", body.trim())
             put("p_author", author)
             if (proof.isNotEmpty()) put("p_token", proof)
+            // 见上面注释：只在真有引用时发这个键，老后端才不会被一个陌生参数绊倒。
+            if (replyToId > 0L) put("p_reply_to_id", replyToId)
         }.toString()
         val text = rpc.post("post_comment_add", payload) ?: return null
         val answer = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
@@ -323,6 +355,10 @@ class PostStore(private val rpc: CommunityRpc) {
             author = o["author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             authorId = o["author_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            // 引用关系：老后端的回答里没有这两个键，`?.` 一路落空 → 0L / ""，按"不是回复"画。
+            // `reply_to_id` 后端发的是 null（没引用）或数字，`longOrNull` 都接得住，null 也退回 0L。
+            replyToId = o["reply_to_id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            replyToAuthor = o["reply_to_author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
         )
     }
 }

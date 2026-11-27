@@ -302,6 +302,37 @@ object FlGlyphs {
     )
 
     /**
+     * 回复：一根从下往上、再向右拐的箭头（FlClash / MD 的 `reply`）。
+     *
+     * 整条箭头只用 `GlyphRole.Line`（描边），**不用** `GlyphRole.Body`：本仓 `FlGlyphIcon` 默认
+     * `fill = 0f`，而 body 在 fill=0 时 `drawBody` 直接 return（见 `Glyph.kt` 的 `drawBody`），
+     * 用 body 画出来的箭头是一块空白。整条路径（竖干 + 回头弯 + 三角箭头）连成一个折线，
+     * 拐角由 `StrokeJoin.Round` 收圆，14dp 下也读得出"在回上一条"。
+     */
+    val reply = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(
+                    // 箭尖在左上：从上往下绕过弯，再拐回左上方。
+                    GlyphVertex(9.4f, 4.6f, 0.8f),
+                    GlyphVertex(9.4f, 9.0f, 0.4f),
+                    GlyphVertex(6.6f, 11.6f, 0.2f),
+                    GlyphVertex(13.6f, 11.6f, 0.2f),
+                    GlyphVertex(18.6f, 14.6f, 0.6f),
+                    GlyphVertex(18.6f, 19.4f, 0.6f),
+                ),
+                role = GlyphRole.Line,
+            ),
+            // 箭头两翼：从箭尖往回画两道短斜线，凑成 `<`。
+            GlyphPolyline(
+                listOf(GlyphVertex(12.6f, 7.4f, 0f), GlyphVertex(9.4f, 10.4f, 0f), GlyphVertex(12.6f, 13.4f, 0f)),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /**
      * 删除线：一个被两道短杠「划断」的 S 形折线。
      *
      * 读法是"这行字被划掉了"：主体是一条 6.4 到 17.6 的 S（上端往右、下端也往右，中间一道
@@ -585,7 +616,10 @@ object FlGlyphs {
     val clearField = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphCircle(12f, 12f, 8.8f),
+            // 外圈必须是 `Line`：这颗图标的三笔画里两笔 × 是 `Detail`（在 fill=0f 下照画），
+            // 只有外圈是默认 `Body` —— 留 Body 的话 `fill = 0f`（`FlGlyphIcon` 的默认值）
+            // 下外圈不画，画面上只剩一个悬空的 ×，"清除"这颗按钮看着像坏掉了。
+            GlyphCircle(12f, 12f, 8.8f, role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(9.3f, 9.3f, 0f), GlyphVertex(14.7f, 14.7f, 0f)), role = GlyphRole.Detail),
             GlyphPolyline(listOf(GlyphVertex(14.7f, 9.3f, 0f), GlyphVertex(9.3f, 14.7f, 0f)), role = GlyphRole.Detail),
         ),
@@ -723,7 +757,9 @@ object FlGlyphs {
     val edit = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphPolyline(listOf(GlyphVertex(4f, 20f, 1f), GlyphVertex(8.75f, 18.75f, 1f), GlyphVertex(20.25f, 7.25f, 1.5f), GlyphVertex(16.75f, 3.75f, 1.5f), GlyphVertex(5.25f, 15.25f, 1f)), closed = true),
+            // 笔身是 `Line`：这颗图标的主体就这一笔（闭合折线），下面那笔是笔锋的 `Detail`。
+            // 留默认 `Body` 的话 `fill = 0f` 下主体不画，只剩一道笔锋短线。
+            GlyphPolyline(listOf(GlyphVertex(4f, 20f, 1f), GlyphVertex(8.75f, 18.75f, 1f), GlyphVertex(20.25f, 7.25f, 1.5f), GlyphVertex(16.75f, 3.75f, 1.5f), GlyphVertex(5.25f, 15.25f, 1f)), closed = true, role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(13.25f, 7.25f, 0f), GlyphVertex(16.75f, 10.75f, 0f)), role = GlyphRole.Detail),
         ),
     )
@@ -802,7 +838,10 @@ object FlGlyphs {
     val eye = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphPathData("M3.01 11.32A10.08 10.08 0 0 1 20.99 11.32A1.5 1.5 0 0 1 20.99 12.68A10.08 10.08 0 0 1 3.01 12.68A1.5 1.5 0 0 1 3.01 11.32Z"),
+            // 眼眶必须是 `Line`：这颗只有"眼眶 + 瞳孔"两笔画，瞳孔是 `Detail`，
+            // 而 `FlGlyphIcon` 默认 `fill = 0f` 时 `Body` 不画 —— 留默认 Body 的话
+            // 眼眶消失，只剩一个半径 2.8 的小圆点。
+            GlyphPathData("M3.01 11.32A10.08 10.08 0 0 1 20.99 11.32A1.5 1.5 0 0 1 20.99 12.68A10.08 10.08 0 0 1 3.01 12.68A1.5 1.5 0 0 1 3.01 11.32Z", role = GlyphRole.Line),
             GlyphCircle(12f, 12f, 2.8f, role = GlyphRole.Detail),
         ),
     )
@@ -847,7 +886,9 @@ object FlGlyphs {
     val cloudDownload = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphPathData("M7 19.4A4.2 4.2 0 0 1 5.06 11.47A6 6 0 1 1 16.95 9.83A4.8 4.8 0 0 1 16.4 19.4Z"),
+            // 云朵 `Line`：这颗是"云 + 向下箭头"，箭头是 `Detail`。云朵留默认 `Body`
+            // 的话 `fill = 0f` 下不画，只剩一个向下箭头 —— 语义正好变成"下载"而不是"在云里"。
+            GlyphPathData("M7 19.4A4.2 4.2 0 0 1 5.06 11.47A6 6 0 1 1 16.95 9.83A4.8 4.8 0 0 1 16.4 19.4Z", role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(12f, 8.4f, 0f), GlyphVertex(12f, 16f, 0f)), role = GlyphRole.Detail),
             GlyphPolyline(listOf(GlyphVertex(9f, 13f, 0f), GlyphVertex(12f, 16f, 0.4f), GlyphVertex(15f, 13f, 0f)), role = GlyphRole.Detail),
         ),
