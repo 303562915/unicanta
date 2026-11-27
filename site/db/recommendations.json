@@ -378,6 +378,20 @@
   "url": "https://github.com/bikram-agarwal/ObtainX"
  },
  {
+  "agrees": 1,
+  "applied": false,
+  "author": "阿方",
+  "author_id": "10543",
+  "category": "tools",
+  "created_at": "2026-11-27T04:18:43.946806+00:00",
+  "disagrees": 0,
+  "id": 30,
+  "license": "",
+  "name": "GKD-XA",
+  "summary": "比原版好用一点",
+  "url": "https://github.com/84593320z/GKD-XA"
+ },
+ {
   "agrees": 0,
   "applied": false,
   "author": "#12149",

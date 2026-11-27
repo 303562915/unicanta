@@ -13485,8 +13485,8 @@
    {
     "pkg": "com.android.systemui.overlay.miui",
     "small_batch": false,
-    "uninstalls": 197,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 198,
+    "updated_at": "2026-11-27T04:19:17.642156+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14416,8 +14416,8 @@
    {
     "pkg": "com.miui.personalassistant",
     "small_batch": false,
-    "uninstalls": 190,
-    "updated_at": "2026-11-27T03:53:34.209037+00:00",
+    "uninstalls": 191,
+    "updated_at": "2026-11-27T04:19:17.642156+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -20145,8 +20145,8 @@
    {
     "pkg": "com.android.systemui.overlay.miui",
     "small_batch": false,
-    "uninstalls": 162,
-    "updated_at": "2026-11-26T23:39:47.855709+00:00",
+    "uninstalls": 163,
+    "updated_at": "2026-11-27T04:19:17.642156+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20712,8 +20712,8 @@
    {
     "pkg": "com.miui.personalassistant",
     "small_batch": false,
-    "uninstalls": 154,
-    "updated_at": "2026-11-27T03:45:46.996411+00:00",
+    "uninstalls": 155,
+    "updated_at": "2026-11-27T04:19:17.642156+00:00",
     "verdict": "BOOTLOOP"
    },
    {
