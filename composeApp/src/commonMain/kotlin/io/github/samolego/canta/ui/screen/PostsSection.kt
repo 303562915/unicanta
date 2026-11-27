@@ -390,6 +390,36 @@ private const val READ_MINUTES_MIN = 3
  */
 private val INLINE_REPLY_NAME_MAX = 96.dp
 
+// ---- 楼层内「直接回复」的几何（照 fluxdo `embedded_posts.dart:156-174` 的 EmbeddedReplyMetrics） ----
+
+/** 头像列宽 = 父楼头像直径（40），竖线画在它的中线上。 */
+private val NESTED_GUTTER = 40.dp
+
+/** 头像列到文字的距离 = `PostHeader` 里头像与名字的间距。 */
+private val NESTED_GAP = 12.dp
+
+/** 嵌套回复的头像直径（源码 `avatarRadius = 14`）。 */
+private val NESTED_AVATAR = 28.dp
+
+/** 竖线粗细（源码 `railWidth = 1.5`）。 */
+private val NESTED_RAIL = 1.5.dp
+
+/** 竖线的横坐标 = `gutter / 2`。 */
+private val NESTED_RAIL_CENTER = 20.dp
+
+/** 竖线在头像上下断开的那点缝（源码 `railGap = 3`）。 */
+private val NESTED_RAIL_GAP = 3.dp
+
+/** 单条回复自己的上下内边距（源码 `verticalPadding = 10`）。 */
+private val NESTED_TILE_PAD = 10.dp
+
+/** 收起按钮与回复头像同尺寸（源码 `buttonSize = avatarRadius * 2`）。 */
+private val NESTED_BUTTON = 28.dp
+
+/** 嵌套正文 13sp / 1.4 = 18sp（源码 `_embeddedFontSize = 13` / `_embeddedLineHeight = 1.4`）。 */
+private val NESTED_FONT = 13.sp
+private val NESTED_LINE = 18.sp
+
 /** 列表上方的四个口径：最新（后端原序）、热门（赞与回复算出来的热度）、收藏、我的。 */
 private enum class PostBoard(val label: String) {
     Latest("最新"),
@@ -2782,6 +2812,38 @@ private fun PostThreadPane(
     }
 
     /**
+     * 每一层楼底下的「直接回复」：`replyToId` → 那几条。
+     *
+     * 与参考实现同一个模型（fluxdo 的 `post.replies`）：一条回复既在主列表里占一层楼，
+     * 又会作为"父楼下面的一串"重复出现一次。**不把子树从主列表里摘掉** —— 摘掉之后
+     * 楼层号会断号、`#N` 跳转会跳空，而且按时间正序读完整个帖子的路子就没了。
+     *
+     * 键只收"列表里真的存在的那一层"：`replyToId` 指向一条已经被删 / 还没拉到的楼层时，
+     * 那条回复在主列表里照旧是一层楼，只是不挂在谁底下（不会凭空长出一个空锚点）。
+     *
+     * `remember(comments)`：列表换血才重建。O(n)。
+     */
+    val repliesOf: Map<Long, List<PostComment>> = remember(comments) {
+        if (comments.isEmpty()) {
+            emptyMap()
+        } else {
+            val ids = comments.mapTo(HashSet(comments.size)) { it.id }
+            comments
+                .filter { it.replyToId > 0L && it.replyToId in ids }
+                .groupBy { it.replyToId }
+        }
+    }
+
+    /**
+     * 现在展开的是哪一层楼（0 = 都没展开）。
+     *
+     * 单值而不是 `Set`：一屏里同时摊开两串嵌套回复，正文会被挤成碎片，而且滚动定位会跳来跳去。
+     * 参考实现是每层一个布尔量，能同时开多个；这里收成一个，展开新的就自动收起旧的 ——
+     * 信息量上等价（点一下就能换），视觉上稳。
+     */
+    var expandedRepliesFloor by remember(post?.id) { mutableStateOf(0L) }
+
+    /**
      * 刚跳过去的那一层（0 = 没有）：左边竖条亮 [HIGHLIGHT_HOLD_MS] 之后清掉。
      *
      * 它是**状态**而不是一次性的动画：同一条指示条连点两次也要能重新亮起来，
@@ -3061,18 +3123,68 @@ private fun PostThreadPane(
                         },
                         highlighted = highlightedFloorId != 0L && highlightedFloorId == comment.id,
                         footer = {
-                            if (!shown.locked) {
-                                // 「引用回复」= 一颗 36dp 正圆（照 `post_action_bar.dart:386-397`
-                                // 的 `reply_rounded` 圆形按钮）。本仓的引用是"把原文塞进回复框"
-                                // 而不是内联展开，所以这一颗是**动作**，与源码同一个位置、同一个形状。
-                                FloorCircleButton(
-                                    label = "引用回复",
-                                    tint = scheme.onSurfaceVariant,
-                                    onClick = { onQuote(comment) },
-                                ) {
-                                    Icon(Icons.Rounded.FormatQuote, null, Modifier.size(18.dp))
+                            // 动作行左起：**「N 条回复」胶囊**（有子回复时才有）+ 「引用回复」圆钮。
+                            // 参考里"查看直接回复"是动作行上单独一颗按钮（`post_action_bar.dart`
+                            // 的 replies 按钮 + `post_replies_list.dart` 的收起按钮），
+                            // 本仓用同一颗胶囊管开关：展开时文案变「收起」并吃 `active` 底色。
+                            val kids = repliesOf[comment.id].orEmpty()
+                            val expanded = expandedRepliesFloor == comment.id
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (kids.isNotEmpty()) {
+                                    FloorPill(
+                                        label = if (expanded) "收起" else "${kids.size} 条回复",
+                                        icon = {
+                                            Icon(
+                                                imageVector = if (expanded) {
+                                                    Icons.Rounded.KeyboardArrowUp
+                                                } else {
+                                                    Icons.Rounded.ChatBubble
+                                                },
+                                                contentDescription = null,
+                                                modifier = Modifier.size(15.dp),
+                                                tint = if (expanded) {
+                                                    scheme.primary
+                                                } else {
+                                                    scheme.onSurfaceVariant
+                                                },
+                                            )
+                                        },
+                                        active = expanded,
+                                        enabled = true,
+                                        onClick = {
+                                            expandedRepliesFloor = if (expanded) 0L else comment.id
+                                        },
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                if (!shown.locked) {
+                                    // 「引用回复」= 一颗 36dp 正圆（照 `post_action_bar.dart:386-397`
+                                    // 的 `reply_rounded` 圆形按钮）。本仓的引用是"把原文塞进回复框"
+                                    // 而不是内联展开，所以这一颗是**动作**，与源码同一个位置、同一个形状。
+                                    FloorCircleButton(
+                                        label = "引用回复",
+                                        tint = scheme.onSurfaceVariant,
+                                        onClick = { onQuote(comment) },
+                                    ) {
+                                        Icon(Icons.Rounded.FormatQuote, null, Modifier.size(18.dp))
+                                    }
                                 }
                             }
+                        },
+                        // 展开的那一串直接回复。收起时传 null —— 这一层楼的高度与没有子回复时一模一样。
+                        replies = if (expandedRepliesFloor == comment.id &&
+                            repliesOf[comment.id].orEmpty().isNotEmpty()
+                        ) {
+                            {
+                                NestedRepliesList(
+                                    replies = repliesOf[comment.id].orEmpty(),
+                                    floorLabelOf = floorLabelOf,
+                                    onJump = onJumpToFloor,
+                                    onCollapse = { expandedRepliesFloor = 0L },
+                                )
+                            }
+                        } else {
+                            null
                         },
                     )
                 }
@@ -3892,10 +4004,18 @@ private fun PostFloorCard(
      * 实际内容由调用点传（[FloorReplyIndicator]）：楼层数据（`replyToId` / `replyToAuthor`）
      * 在 `comments` 里，`PostFloorCard` 自己拿不到，也就不该自己去找。
      *
-     * 位置：作者名那一行的**下面**、正文之前（源码挂在右边时间/楼层号同一行；本仓右列是
-     * 按内容宽的竖排，塞一条窄带进去会把右列撑到半屏 —— 见 `PostFloorCard` 里的注释）。
+     * 位置：**作者名那一行的右侧、时间/楼层号左边**（源码 `post_header.dart:364-419` 的
+     * `_buildRightSection`）。
      */
     replyIndicator: (@Composable () -> Unit)? = null,
+    /**
+     * 展开后的「直接回复」列表（fluxdo `post_replies_list.dart` + `embedded_posts.dart`）：
+     * 竖线串起一串 28dp 头像，正文 13sp/1.4，末尾一颗 28dp 的收起按钮。
+     *
+     * 默认 null —— 收起状态下这一层楼和没有回复时**完全一样高**。谁有子回复、展开没有，
+     * 只有调用点（手里有整份 `comments`）知道，所以内容在这里由调用点给。
+     */
+    replies: (@Composable () -> Unit)? = null,
     /**
      * 这一层是不是"刚刚被跳过来"的那一层。true 时左边画一条 3dp 主色竖条并在 1.5s 后淡出
      * （fluxdo `post_segment_frame.dart:164-183` 的 `_PostSelectionIndicator`：`left/top/bottom = 0`
@@ -4093,8 +4213,184 @@ private fun PostFloorCard(
                     // 这一行原来靠父级 `spacedBy(4.dp)` 与正文隔开；父级间距去掉后自己垫。
                     Spacer(modifier = Modifier.height(4.dp))
                     footer()
+                    // 展开的直接回复：动作行**下面**，顶 4dp（`post_replies_list.dart:36-37`）。
+                    if (replies != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        replies()
+                    }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 一层楼底下那串「直接回复」，照 fluxdo `embedded_posts.dart:156-377` 的
+ * `EmbeddedReplyMetrics` + `EmbeddedReplyTile` + `EmbeddedReplyCollapseButton`：
+ *
+ * ```
+ * gutter          = 40   // 头像列宽 = 父楼头像直径（所以竖线正好落在父楼头像的中心线上）
+ * gap             = 12   // 头像列到文字
+ * avatarRadius    = 14   // → 28dp 头像
+ * railCenter      = 20   // gutter / 2
+ * railWidth       = 1.5
+ * railGap         = 3    // 竖线在头像上下断开的那点缝
+ * verticalPadding = 10   // 每条自己的上下内边距
+ * buttonSize      = 28   // 收起按钮与回复头像同尺寸，读作这串头像的收尾
+ * ```
+ *
+ * 竖线**每条自己画**：头像上方一段、下方一段，与头像之间留 3dp。首条不画上方那段
+ * （线从第一个头像起），末条下段在底部收 3dp 留给收起按钮 —— 相邻条目首尾相接，
+ * 拼成"只在头像处断开的一根线"。画在 `padding` **之前**，这样 `size` 含上下 10dp，
+ * 头像顶边正好落在 10dp 处，与源码的 `avatarTop = verticalPadding` 一致。
+ *
+ * 正文 13sp / 1.4（=18sp）而不是楼层正文的 14/21：嵌套内容要能被一眼读成"引用来的次级内容"，
+ * 同字号会让整段看起来像多了一层楼。
+ */
+@Composable
+private fun NestedRepliesList(
+    replies: List<PostComment>,
+    floorLabelOf: (Long) -> Int,
+    onJump: ((Long) -> Unit)?,
+    onCollapse: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(modifier = Modifier.fillMaxWidth()) {
+        replies.forEachIndexed { index, reply ->
+            val floor = floorLabelOf(reply.id)
+            val first = index == 0
+            val last = index == replies.size - 1
+            // 先落成局部 val 再判空：直接写 `if (onJump != null) { { onJump(id) } }` 时，
+            // 捕获里那个 `onJump` 要靠 smart-cast 才非空，读的人（和某些编译器版本）会在这里打结。
+            val jumpFn = onJump
+            val jump: (() -> Unit)? = if (jumpFn != null && floor >= 2) {
+                { jumpFn(reply.id) }
+            } else {
+                null
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .drawBehind {
+                        val railWidth = NESTED_RAIL.toPx()
+                        val left = NESTED_RAIL_CENTER.toPx() - railWidth / 2f
+                        val avatarTop = NESTED_TILE_PAD.toPx()
+                        val avatarBottom = avatarTop + NESTED_AVATAR.toPx()
+                        val gap = NESTED_RAIL_GAP.toPx()
+                        if (!first) {
+                            drawRect(
+                                color = scheme.outlineVariant,
+                                topLeft = Offset(left, 0f),
+                                size = Size(railWidth, (avatarTop - gap).coerceAtLeast(0f)),
+                            )
+                        }
+                        val bottom = if (last) size.height - gap else size.height
+                        val from = avatarBottom + gap
+                        if (bottom > from) {
+                            drawRect(
+                                color = scheme.outlineVariant,
+                                topLeft = Offset(left, from),
+                                size = Size(railWidth, bottom - from),
+                            )
+                        }
+                    }
+                    .then(
+                        if (jump != null) {
+                            Modifier.clickable(
+                                role = Role.Button,
+                                onClickLabel = "跳到第 $floor 楼",
+                                onClick = jump,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(vertical = NESTED_TILE_PAD),
+                verticalAlignment = Alignment.Top,
+            ) {
+                // 头像列：宽度固定 40，头像 28 居中 —— 竖线（画在 x=20）正好从它中间穿过。
+                Box(
+                    modifier = Modifier.width(NESTED_GUTTER),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    PostAvatar(
+                        name = reply.author.ifBlank { "匿" },
+                        seed = reply.authorId.ifEmpty { reply.author },
+                        size = NESTED_AVATAR,
+                    )
+                }
+                Spacer(modifier = Modifier.width(NESTED_GAP))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = reply.author.ifBlank { "匿名" },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = scheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        // 楼层号：**`#N` 与主列表同一套编号**（同一个 `floorLabelOf`），
+                        // 点一下就到了那一层，所以这里只写号不重复名字。
+                        if (floor >= 2) {
+                            Text(
+                                text = "#$floor",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = scheme.onSurfaceVariant,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (reply.body.isBlank()) {
+                        Text(
+                            text = "（没有正文）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    } else {
+                        MiniMarkdown(
+                            text = reply.body,
+                            baseStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = NESTED_FONT,
+                                lineHeight = NESTED_LINE,
+                            ),
+                            // 次级内容压一档：与源码里嵌入帖渲染用 `onSurfaceVariant` 同一个意思。
+                            color = scheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        // 收起按钮：28dp 正圆 + 1dp 竖线色描边，左移 (railCenter - buttonSize/2) = 6dp，
+        // 于是它自己也落在竖线上（`embedded_posts.dart:368-374`）。
+        Box(
+            modifier = Modifier
+                .padding(
+                    start = NESTED_RAIL_CENTER - NESTED_BUTTON / 2,
+                    top = 2.dp,
+                    bottom = 2.dp,
+                )
+                .size(NESTED_BUTTON)
+                .clip(CircleShape)
+                .drawBehind {
+                    drawCircle(
+                        color = scheme.outlineVariant,
+                        radius = size.minDimension / 2f - 0.5.dp.toPx(),
+                        style = Stroke(width = 1.dp.toPx()),
+                    )
+                }
+                .clickable(role = Role.Button, onClickLabel = "收起回复", onClick = onCollapse),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowUp,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = scheme.onSurfaceVariant,
+            )
         }
     }
 }

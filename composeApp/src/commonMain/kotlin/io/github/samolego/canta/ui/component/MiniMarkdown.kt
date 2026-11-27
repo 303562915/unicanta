@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -27,15 +28,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 
 /**
- * 行内标记：`**粗**` `*斜*` `_斜_` `` `代码` `` `~~删除~~` `[文字](链接)`。不处理块级。
+ * 行内标记：`**粗**` `*斜*` `_斜_` `` `代码` `` `~~删除~~` `[文字](链接)`，以及**裸地址**
+ * （`https://…` 直接粘进来那种）。不处理块级。
  *
  * 只认**成对**的标记：没闭合的那一半原样输出，因为帖子正文常有人手打一个星号，
- * 吃掉它比留着更难看。链接只上色加下划线，不接点击——正文里的地址点不开，
- * 与 [io.github.samolego.canta.ui.component.text.UrlText] 那边可点的链接是两回事。
+ * 吃掉它比留着更难看。链接是**可点**的（`LinkAnnotation.Url`，点击由 `LocalUriHandler` 打开，
+ * 与 [io.github.samolego.canta.ui.component.text.UrlText] 同一套做法）——
+ * 参考实现里正文的链接都能点，之前这里只上色，等于整页链接都是死字。
  *
  * 这个函数不读主题（不是 @Composable），颜色全靠调用方给：正文用 primary，
  * 引用块里也用 primary 就够了，代码片的底色借用它的低透明度。
@@ -373,6 +377,7 @@ private fun orderedText(trimmed: String): OrderedItem? {
  * 命中的一对行内标记：[contentStart]..[contentEnd] 是要输出的内容，[end] 是整段标记之后的位置。
  *
  * [deep] 表示内容里还要不要继续解析：粗体里套斜体是正常的，代码和链接文字里不该再有标记。
+ * [url] 非空时这段内容按**可点链接**输出（`LinkAnnotation.Url`，与 [UrlText] 同一套做法）。
  */
 private class InlineMatch(
     val end: Int,
@@ -380,6 +385,7 @@ private class InlineMatch(
     val contentEnd: Int,
     val style: SpanStyle,
     val deep: Boolean,
+    val url: String? = null,
 )
 
 /**
@@ -476,6 +482,7 @@ private fun matchInlineAt(text: String, start: Int, linkColor: Color): InlineMat
                             textDecoration = TextDecoration.Underline,
                         ),
                         deep = false,
+                        url = url,
                     )
                 }
             }
@@ -485,6 +492,24 @@ private fun matchInlineAt(text: String, start: Int, linkColor: Color): InlineMat
     return null
 }
 
+/**
+ * 没被行内标记命中的位置，是不是一个**裸地址**（`http://…` / `https://…`）的起点；是就返回结束位置。
+ *
+ * 为什么要单独认它：帖子里九成的链接都是直接粘进来的地址，`[文字](地址)` 那种写法只有少数人用。
+ * 参考实现里这两种都能点开；这里原本一个都不能点，等于正文里所有链接都是死字。
+ *
+ * 结尾会把标点吃掉：`见 https://a.b/c。` 那个中文句号不属于地址，跟着链接走会 404；
+ * `)` `]` `」` 同理（地址常被括在括号里）。至少要有一个像样域名长度才算，否则 `https://` 四个字
+ * 也会被当成链接。
+ */
+private fun bareUrlEnd(text: String, start: Int): Int? {
+    if (!text.startsWith("http://", start) && !text.startsWith("https://", start)) return null
+    var end = start
+    while (end < text.length && !text[end].isWhitespace() && text[end] !in "<>\"'") end++
+    while (end > start && text[end - 1] in ".,;:!?，。；：！？、）】」》)]}") end--
+    return if (end - start > 8) end else null
+}
+
 /** 扫描 [text]，把命中的标记换成样式，没命中的字符原样写进去。 */
 private fun AnnotatedString.Builder.appendMarked(text: String, linkColor: Color) {
     var cursor = 0
@@ -492,13 +517,29 @@ private fun AnnotatedString.Builder.appendMarked(text: String, linkColor: Color)
     while (i < text.length) {
         val hit = matchInlineAt(text, i, linkColor)
         if (hit == null) {
+            val urlEnd = bareUrlEnd(text, i)
+            if (urlEnd != null) {
+                append(text.substring(cursor, i))
+                val url = text.substring(i, urlEnd)
+                withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                    withLink(LinkAnnotation.Url(url = url)) { append(url) }
+                }
+                i = urlEnd
+                cursor = i
+                continue
+            }
             i++
             continue
         }
         append(text.substring(cursor, i))
         val inner = text.substring(hit.contentStart, hit.contentEnd)
         withStyle(hit.style) {
-            if (hit.deep) appendMarked(inner, linkColor) else append(inner)
+            when {
+                // 链接文字本身不再解析标记，但要挂上点击目标。
+                hit.url != null -> withLink(LinkAnnotation.Url(url = hit.url)) { append(inner) }
+                hit.deep -> appendMarked(inner, linkColor)
+                else -> append(inner)
+            }
         }
         i = hit.end
         cursor = i
