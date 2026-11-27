@@ -58,7 +58,9 @@ on:
         default: false
 
 permissions:
+  # contents: 提交快照；actions: 下面那步主动 dispatch pages.yml（见「补一次部署」）。
   contents: write
+  actions: write
 
 concurrency:
   group: db-backup
@@ -619,6 +621,38 @@ jobs:
           CHANGED="${{ steps.content.outputs.changed_tables }}"
           git commit -m "chore(db-backup): 社区内容快照 ${COUNTS}${CHANGED:+（变化：$CHANGED）}"
           git push origin HEAD:master
+
+      - name: 🌐 补一次部署
+        # 2026-11-27 加：**不能只靠 push 事件去触发 pages.yml。**
+        #
+        # 链路本来是「db-backup 提交 site/db/plans.json → pages.yml 的 push.paths 命中 →
+        # 部署到 gh-pages → 客户端读到新快照」。实测这条链会断：`f2d06da1`（176 条那次）
+        # 确实改了 `site/db/plans.json`、也确实在 master 上，但**一条 workflow 都没被触发**，
+        # 于是线上 Pages 停在 164 条，客户端怎么刷新都看不到新提交的方案
+        # （用户看到的现象就是「我提交了但列表里没有」）。
+        # GitHub 的事件投递本身就会丢，`schedule` 已经丢过两次，`push` 同样会丢。
+        #
+        # 所以这里主动补一发 `workflow_dispatch`：GitHub 丢了事件也能补上。
+        # 重复部署是幂等的（pages.yml 每次都整份重新发布），代价只是多跑一次。
+        if: ${{ !inputs.dry_run && steps.content.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # 用 curl + token 而不是 `gh workflow run`：runner 上不保证装了 gh。
+          code=$(curl -sS -m 30 -o /tmp/disp.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/pages.yml/dispatches" \
+            -d '{"ref":"master"}' || echo 000)
+          # 204 = 已接受。**失败不改写这一步的结论**：部署是「补一脚」，它没踢上
+          # 也不该让一次成功的备份变成红的（push 事件那条路通常已经把它跑了一遍）。
+          if [ "$code" = "204" ]; then
+            echo "已请求部署下载页（204）"
+          else
+            echo "::warning::请求部署返回 $code：$(head -c 200 /tmp/disp.json 2>/dev/null)"
+          fi
 
       - name: 📦 Also keep it as an artifact
         if: ${{ always() }}
