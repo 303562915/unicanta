@@ -62,6 +62,7 @@ import io.github.samolego.canta.generated.resources.device_user_description
 import io.github.samolego.canta.generated.resources.fake_community_scores
 import io.github.samolego.canta.generated.resources.fake_community_scores_description
 import io.github.samolego.canta.generated.resources.hide_success_dialog
+import io.github.samolego.canta.generated.resources.language_system
 import io.github.samolego.canta.generated.resources.privilege_state_active
 import io.github.samolego.canta.generated.resources.privilege_state_not_authorized
 import io.github.samolego.canta.generated.resources.privilege_state_not_running
@@ -70,6 +71,7 @@ import io.github.samolego.canta.generated.resources.require_auth_setting
 import io.github.samolego.canta.generated.resources.require_auth_setting_desc
 import io.github.samolego.canta.generated.resources.settings
 import io.github.samolego.canta.generated.resources.settings_group_theme
+import io.github.samolego.canta.generated.resources.settings_group_language
 import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku
 import io.github.samolego.canta.generated.resources.settings_privilege_dhizuku_active
 import io.github.samolego.canta.generated.resources.settings_privilege_none
@@ -103,6 +105,7 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlThemeMode
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.lock.launchGateOf
+import io.github.samolego.canta.ui.locale.AppLanguageOptions
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -166,6 +169,8 @@ fun SettingsScreen(
     val showStoreTab by settingsViewModel.showStoreTab.collectAsStateWithLifecycle()
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
+    /** 手动挑的界面语言（BCP-47 标签）；空串 = 跟随系统。 */
+    val appLanguage by settingsViewModel.appLanguage.collectAsStateWithLifecycle()
     val showDevicePhoto by settingsViewModel.showDevicePhoto.collectAsStateWithLifecycle()
     // 存的是「静音」，所以下面那个开关读的是它的反；见 AppSettingsProto.muteChatNotices。
     val muteChatNotices by settingsViewModel.muteChatNotices.collectAsStateWithLifecycle()
@@ -180,6 +185,8 @@ fun SettingsScreen(
     var gateDialogShown by remember { mutableStateOf(false) }
     var restoreDialogShown by remember { mutableStateOf(false) }
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
+    /** 语言选择框开着没有。 */
+    var languageDialogShown by rememberSaveable { mutableStateOf(false) }
 
     val authRequiredTitle = stringResource(Res.string.require_auth_setting)
     val authRequiredSubtitle = stringResource(Res.string.require_auth_setting_desc)
@@ -188,6 +195,14 @@ fun SettingsScreen(
         FlThemeMode.Light -> stringResource(Res.string.theme_mode_light)
         FlThemeMode.Dark -> stringResource(Res.string.theme_mode_dark)
     }
+    // 现在用的是哪门语言：清单里的原生写法（「简体中文」「English」）；空串或清单里没有的标签
+    // 都算「跟随系统」——存的东西可能是手改过的设置文件，界面上不该出现一格看不懂的字符串。
+    val languageSystemLabel = stringResource(Res.string.language_system)
+    val languageLabel = AppLanguageOptions
+        .firstOrNull { option -> option.tag == appLanguage }
+        ?.name
+        ?.ifBlank { languageSystemLabel }
+        ?: languageSystemLabel
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -270,20 +285,31 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(CardGap))
-            // 这两个也并排：一个是"删完别弹成功框"，一个是"点包名先看详情"，都只有一个标题。
+            // 「删完别弹成功框」自己一行：它和下面那两格不是一回事——那两格说的是"界面长什么样"。
+            AppToggleCard(
+                glyph = FlGlyphs.check,
+                title = stringResource(Res.string.hide_success_dialog),
+                checked = hideSuccessDialog,
+                onCheckedChange = settingsViewModel::saveHideSuccessDialog,
+            )
+            Spacer(Modifier.height(CardGap))
+            // 主题与语言并排，一行两格：配色与深浅色在主题页里选，语言在这一格点开挑。
+            //
+            // 语言为什么要有自己的开关：Compose Resources 取的是手机报的语言，而不少 ROM 的语言列表
+            // 只有「简体中文 / English」，系统被识别成英文的机器上界面就整页英文。挑完立刻按新语言
+            // 重画（见 `CantaTheme` 的 appLocale），不必去改系统设置、也不用重启应用。
             AppCardPair {
-                AppToggleTile(
-                    glyph = FlGlyphs.check,
-                    title = stringResource(Res.string.hide_success_dialog),
-                    checked = hideSuccessDialog,
-                    onCheckedChange = settingsViewModel::saveHideSuccessDialog,
-                )
-                // 配色和深浅色在主题页里选；这一格只说现在用的是哪一套，点开那页。
                 AppLinkTile(
                     glyph = FlGlyphs.settings,
                     title = stringResource(Res.string.settings_group_theme),
                     subtitle = "${FlAccent.ofArgb(themeAccent).label} · $themeModeLabel",
                     onClick = onOpenTheme,
+                )
+                AppLinkTile(
+                    glyph = FlGlyphs.resources,
+                    title = stringResource(Res.string.settings_group_language),
+                    subtitle = languageLabel,
+                    onClick = { languageDialogShown = true },
                 )
             }
             Spacer(Modifier.height(CardGap))
@@ -468,6 +494,65 @@ fun SettingsScreen(
                     onExportRestoreScript(mode)
                 },
             )
+        }
+
+        // 挑界面语言：选完立刻写进设置，`CantaTheme` 那一层会按新语言把整页重画一遍。
+        if (languageDialogShown) {
+            LanguagePickerDialog(
+                selected = appLanguage,
+                onPick = { tag ->
+                    languageDialogShown = false
+                    settingsViewModel.saveAppLanguage(tag)
+                },
+                onDismiss = { languageDialogShown = false },
+            )
+        }
+    }
+}
+
+/**
+ * 挑界面语言：一门一行，用这门语言自己的写法，当前那门右边一个勾。
+ *
+ * 四十门语言一屏放不下，所以借 [CantaDialog] 的 `scrollable`：标题、清单和取消钮一起滚，
+ * 清单再长也不会被窗口裁掉一半。
+ */
+@Composable
+private fun LanguagePickerDialog(
+    selected: String,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.settings_group_language),
+        scrollable = true,
+        buttons = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+        },
+    ) {
+        AppLanguageOptions.forEach { option ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onPick(option.tag) }
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = option.name.ifBlank { stringResource(Res.string.language_system) },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                if (option.tag == selected) {
+                    FlGlyphIcon(
+                        glyph = FlGlyphs.check,
+                        size = 16.dp,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
         }
     }
 }

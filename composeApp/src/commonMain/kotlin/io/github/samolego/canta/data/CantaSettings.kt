@@ -132,6 +132,16 @@ class CantaSettings(storage: AppBlobStorage) {
     val themeAccentFlow: Flow<Int> = field { it.themeAccent }
     /** Dark mode: 0 follows the system, 1 forces light, 2 forces dark; see [AppSettingsProto.themeMode]. */
     val themeModeFlow: Flow<Int> = field { it.themeMode }
+    /**
+     * 手动挑的界面语言，BCP-47 标签；空串 = 跟随系统。见 [AppSettingsProto.appLanguage]。
+     *
+     * 这一格同时决定「进来第一帧用哪种语言」：读的是同步的一份（见 [appLanguageNow]），
+     * 否则会先按系统语言画一遍、设置读回来后再整棵树重建一次。
+     */
+    val appLanguageFlow: Flow<String> = field { it.appLanguage }
+
+    /** 界面语言的存储值，**同步**读（空串 = 跟随系统）；理由同 [planScopeNow]。 */
+    val appLanguageNow: String get() = store.state.value.appLanguage
     /** Whether the "no VPN" reminder was switched off on this install; see [AppSettingsProto.hideVpnNotice]. */
     val hideVpnNoticeFlow = field { it.hideVpnNotice }
     /** The question the start-up lock asks, by id; empty means the app opens straight away. */
@@ -303,6 +313,13 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setThemeAccent(argb: Int) = update { it.copy(themeAccent = argb) }
     suspend fun setThemeMode(mode: Int) = update { it.copy(themeMode = mode.coerceIn(0, 2)) }
+    /**
+     * 记下界面语言（BCP-47 标签）；空串 = 跟随系统。
+     *
+     * 不做白名单校验：清单在界面那一侧（`AppLanguageOptions`），设置层只管原样存。
+     * 存进来一个这门资源没有的标签，效果是回到默认语言，不是崩溃。
+     */
+    suspend fun setAppLanguage(tag: String) = update { it.copy(appLanguage = tag.trim()) }
     /** Remembers that the "no VPN" reminder must never come back; see [AppSettingsProto.hideVpnNotice]. */
     suspend fun setHideVpnNotice(hide: Boolean) = update { it.copy(hideVpnNotice = hide) }
     /**

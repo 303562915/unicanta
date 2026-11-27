@@ -327,6 +327,14 @@ data class AppSettingsProto(
      * 「包在本地，去点安装」，直到版本号真的变了。
      */
     @ProtoNumber(51) val installFailureCounts: String = "",
+    /**
+     * 手动挑的界面语言，BCP-47 标签（`zh-CN`、`en`、`ja-JP`…）；空串 = 跟随系统。
+     *
+     * 为什么要能自己挑：Compose Resources 取的是手机报的语言，而不少 ROM 的语言列表只有
+     * 「简体中文 / English」，系统语言被识别成英文的机器上界面就整页英文。存的是语言标签而不是
+     * 序号：清单以后会增减，序号一挪，已经选过的人就被换到别的语言上。
+     */
+    @ProtoNumber(54) val appLanguage: String = "",
 )
 
 /**

@@ -360,6 +360,8 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
     }
     val themeAccent by settingsViewModel.themeAccent.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
+    // 界面语言：空串 = 跟随系统。它与主题同一层生效（见 `CantaTheme`），换语言等于整页按新语言重画。
+    val appLanguage by settingsViewModel.appLanguage.collectAsStateWithLifecycle()
 
     // The start-up lock: both halves are null until the store has been read, so an install with a
     // lock never shows the app list for a frame. Once read, a usable pair keeps the question over
@@ -376,7 +378,11 @@ fun CantaApp(deps: CantaAppDependencies, closeApp: () -> Unit, crashReports: Cra
         FlThemeMode.Dark -> true
         FlThemeMode.System -> systemDark
     }
-    CantaTheme(darkTheme = darkTheme, accent = FlAccent.ofArgb(themeAccent)) {
+    CantaTheme(
+        darkTheme = darkTheme,
+        accent = FlAccent.ofArgb(themeAccent),
+        appLocale = appLanguage.ifBlank { null },
+    ) {
         // 系统栏（状态栏 / 导航栏）的底色跟着页面背景走。`enableEdgeToEdge()` 能让内容画到系统栏
         // 底下时这一步看不出来；但小米 / 澎湃这类 ROM 在「经典导航键」（三键导航）下不让应用铺
         // 过去，系统自己给那两条填色，于是浅色页面上看着是上下各一条黑框（群里 pmkarl 报的

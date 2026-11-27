@@ -167,6 +167,14 @@ class SettingsViewModel(
     /** Dark mode: 0 follows the system, 1 forces light, 2 forces dark. */
     val themeMode = settingsStore.themeModeFlow.state(0)
 
+    /**
+     * 手动挑的界面语言，BCP-47 标签；空串 = 跟随系统。
+     *
+     * 初值取盘上那一份而不是空串：空串会让应用先按系统语言画一遍、等这一格到了再按新语言整棵树
+     * 重建一次，看起来像"刚打开就被刷了一下"。
+     */
+    val appLanguage = settingsStore.appLanguageFlow.state(settingsStore.appLanguageNow)
+
     /** Whether the "no VPN" reminder was turned off for good; off unless the reader said so. */
     val hideVpnNotice = settingsStore.hideVpnNoticeFlow.state(false)
 
@@ -343,6 +351,9 @@ class SettingsViewModel(
     fun saveUpdateChannel(channel: String) = save { setUpdateChannel(channel) }
     fun saveThemeAccent(argb: Int) = save { setThemeAccent(argb) }
     fun saveThemeMode(mode: Int) = save { setThemeMode(mode) }
+
+    /** 选一门界面语言（BCP-47 标签）；空串 = 跟随系统。 */
+    fun saveAppLanguage(tag: String) = save { setAppLanguage(tag) }
 
     /** "不再提示" on the proxy reminder: persisted, so the next start does not ask again. */
     fun saveHideVpnNotice(hide: Boolean) = save { setHideVpnNotice(hide) }
