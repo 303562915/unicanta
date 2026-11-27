@@ -392,8 +392,8 @@
   "url": "https://github.com/RikkaApps/Shizuku"
  },
  {
-  "agree": 39,
-  "applied": false,
+  "agree": 40,
+  "applied": true,
   "author": "开发者",
   "author_id": "official",
   "category": "system",

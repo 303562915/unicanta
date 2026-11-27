@@ -14164,8 +14164,8 @@
    {
     "pkg": "com.miui.bugreport",
     "small_batch": false,
-    "uninstalls": 270,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 271,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14507,8 +14507,8 @@
    {
     "pkg": "com.miui.systemAdSolution",
     "small_batch": false,
-    "uninstalls": 270,
-    "updated_at": "2026-11-27T03:06:55.499267+00:00",
+    "uninstalls": 271,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -14528,8 +14528,8 @@
    {
     "pkg": "com.miui.thirdappassistant",
     "small_batch": false,
-    "uninstalls": 206,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 207,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14969,8 +14969,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 288,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 289,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15214,8 +15214,8 @@
    {
     "pkg": "com.xiaomi.minigame",
     "small_batch": false,
-    "uninstalls": 383,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 384,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20551,8 +20551,8 @@
    {
     "pkg": "com.miui.bugreport",
     "small_batch": false,
-    "uninstalls": 202,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 203,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20775,8 +20775,8 @@
    {
     "pkg": "com.miui.systemAdSolution",
     "small_batch": false,
-    "uninstalls": 217,
-    "updated_at": "2026-11-27T03:06:55.499267+00:00",
+    "uninstalls": 218,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -20789,8 +20789,8 @@
    {
     "pkg": "com.miui.thirdappassistant",
     "small_batch": false,
-    "uninstalls": 159,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 160,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21125,8 +21125,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 229,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 230,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21356,8 +21356,8 @@
    {
     "pkg": "com.xiaomi.minigame",
     "small_batch": false,
-    "uninstalls": 291,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 292,
+    "updated_at": "2026-11-27T03:24:06.651431+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -43836,7 +43836,7 @@
     "pkg": "com.android.providers.calendar",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T03:18:25.161341+00:00",
+    "updated_at": "2026-11-27T03:21:23.005448+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -51974,7 +51974,7 @@
     "pkg": "com.android.providers.calendar",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T03:18:25.161341+00:00",
+    "updated_at": "2026-11-27T03:21:23.005448+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
