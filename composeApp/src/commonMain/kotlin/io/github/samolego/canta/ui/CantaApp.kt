@@ -109,6 +109,7 @@ import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.FlThemeMode
 import io.github.samolego.canta.ui.lock.launchGateOf
+import io.github.samolego.canta.ui.navigation.ARG_POST_ID
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AirportDetailScreen
@@ -1268,6 +1269,10 @@ private fun CantaNavigation(
                     // 新页进来时自己会开一条新的编辑器（openEditorOnEnter）；从草稿继续写
                     // 那条路仍留在本页（草稿行点一下就是页内打开，不必为它多一层返回栈）。
                     onOpenCompose = { _ -> navController.navigate(Screen.PostEditor.route) },
+                    // 点一条帖子也不在列表页里原地换 pane：交给独立路由 `posts/detail/{id}`，
+                    // 那一页不挂底栏（它不在 BOTTOM_BAR_ROUTES 里）。读帖时底下那排 Tab
+                    // 与这条帖子无关，fluxdo 的 TopicDetailPage 同样是独立全屏页。
+                    onOpenThread = { post -> navController.navigate(Screen.PostDetail.of(post.id)) },
                 )
             }
             composable(route = Screen.PostEditor.route) {
@@ -1304,6 +1309,48 @@ private fun CantaNavigation(
                     setupGate = setupGate,
                     openEditorOnEnter = true,
                     onEditorClosed = { navController.popBackStack() },
+                )
+            }
+            composable(route = Screen.PostDetail.route) { entry ->
+                // 读一条帖子：**独立一页，不挂底栏**（它不在 BOTTOM_BAR_ROUTES 里）。
+                // 详情、回帖、点赞、收藏、引用、跳楼仍然全走 PostsScreen 那一份实现，
+                // 这里只把「起步停在哪一格」告诉它（openThreadOnEnter），并在它把详情关掉时
+                // 把这一页弹回去（onThreadClosed）—— 这一页没有列表可退，退回列表才是对的。
+                val detailPostId = entry.arguments?.getString(ARG_POST_ID)?.toLongOrNull() ?: 0L
+                var detailAuthor by remember { mutableStateOf("") }
+                var detailIdentity by remember { mutableStateOf("") }
+                var detailOwner by remember { mutableStateOf("") }
+                LaunchedEffect(detailPostId) {
+                    detailAuthor = DeviceIdentity.displayName(deps.settings)
+                    val identity = DeviceIdentity.current(deps.settings)
+                    detailOwner = identity.owner
+                    detailIdentity = identity.owner.ifEmpty { identity.token }
+                }
+                PostsScreen(
+                    platform = platform,
+                    store = postStore,
+                    drafts = deps.postDrafts,
+                    reads = deps.postReads,
+                    author = detailAuthor,
+                    authorId = detailIdentity,
+                    loadPlans = {
+                        val mine = if (detailOwner.isNotBlank()) {
+                            communityRepository.plansByOwner(detailOwner)
+                        } else {
+                            emptyList()
+                        }
+                        if (mine.isNotEmpty()) mine else communityRepository.plansAll(limit = 50).orEmpty()
+                    },
+                    weeklyRank = deps.weeklyRank,
+                    onOpenWeeklyRank = null,
+                    setupGate = setupGate,
+                    // 起步就停在详情；返回箭头由详情那条顶栏自己画。
+                    openThreadOnEnter = detailPostId,
+                    onThreadClosed = { navController.popBackStack() },
+                    // 相关帖子/别的帖子里点开另一条：在本页导航到新的详情，而不是页内切换，
+                    // 否则人按返回会直接回到列表，中间那条帖子的位置就丢了。
+                    onOpenThread = { post -> navController.navigate(Screen.PostDetail.of(post.id)) },
+                    onOpenCompose = { _ -> navController.navigate(Screen.PostEditor.route) },
                 )
             }
             composable(route = Screen.WeeklyRank.route) {

@@ -1,5 +1,14 @@
 package io.github.samolego.canta.ui.navigation
 
+/**
+ * 路由参数名：独立详情页 `posts/detail/{postId}` 里那一段。
+ *
+ * 放顶层而不是塞进 `Screen` 的 companion：`Screen` 是 sealed class、没有 companion，
+ * 为这一个字符串新开一个 companion 不值得。读路由参数的地方
+ * （`CantaApp` 的 `composable(...)`）直接 `backStackEntry.arguments?.getString(ARG_POST_ID)`。
+ */
+const val ARG_POST_ID = "postId"
+
 sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object Logs : Screen("logs")
 
@@ -101,6 +110,26 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
      * 草稿仍然只在 [Posts] 那一份（`deps.postDrafts`），这里不另存。
      */
     data object PostEditor : Screen("posts/new")
+
+    /**
+     * 读一条帖子：从 [Posts] 里单独开出来的一页，**不挂底栏**。
+     *
+     * 以前详情是 [Posts] 内部的一个 pane —— 点开一条帖子后整页在原地换成详情，底栏还在下面。
+     * 但底栏那几格是"应用 / 规则 / 调整 / 推荐 / 帖子 / 消息 / 我的"，**没有一格与"正在读的
+     * 这条帖子"有关**：读帖时它们既没用又容易被误触走掉。
+     *
+     * 这也是 fluxdo 的做法：`TopicDetailPage` 全部是 `Navigator.push(MaterialPageRoute(...))`
+     * 打开的全屏页（见 `mini_app_detail_page.dart:292`、`bookmarks_page.dart:225` 等十几处），
+     * 它自己的 `Scaffold` 没有 `bottomNavigationBar`；底栏只在主框架
+     * `adaptive_scaffold.dart:230` 上出现。
+     *
+     * 带 `{postId}`：这一页要先知道读哪一条。详情、回帖、点赞、引用、跳楼全还是
+     * [io.github.samolego.canta.ui.screen.PostsScreen] 那一份实现，这里只决定"起步停在哪一格"。
+     */
+    data object PostDetail : Screen("posts/detail/{$ARG_POST_ID}") {
+        /** 带参数的实例化路由：`posts/detail/123`。 */
+        fun of(postId: Long): String = "posts/detail/$postId"
+    }
 
     /**
      * 开源周榜：帖子页顶上那张卡片的详情——整期海报 + 这一周的十条榜单。

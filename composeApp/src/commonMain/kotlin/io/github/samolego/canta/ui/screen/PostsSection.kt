@@ -814,6 +814,32 @@ internal fun PostsScreen(
      * 那一页不挂底栏。带参数的是「从某条草稿继续写」，null 是写新的。
      */
     onOpenCompose: ((PostDraft?) -> Unit)? = null,
+    /**
+     * 一进来就打开这条帖子的详情，而不是先画列表。
+     *
+     * 给独立路由 `Screen.PostDetail` 用：**那一页不挂底栏**（它不在 `BOTTOM_BAR_ROUTES`
+     * 里）。fluxdo 的 `TopicDetailPage` 也是独立一页（`Navigator.push`，全屏、无底栏），
+     * 而本仓原来把详情做成 [PostsScreen] 内部的状态切换 —— [PostsScreen] 挂在底栏那一格上，
+     * 于是"读一条帖"时底下还压着一排无关的 Tab。
+     *
+     * 为 0 时是原来的 [io.github.samolego.canta.ui.navigation.Screen.Posts]：列表起步，
+     * 点一条才在页内换成详情。详情本身、回帖、点赞、引用全还是这一份实现。
+     */
+    openThreadOnEnter: Long = 0L,
+    /**
+     * 详情关闭（顶栏返回）时回调。
+     *
+     * 独立那一页（[openThreadOnEnter] > 0）用它把自己弹回列表：那一页存在的理由就是读，
+     * 没有列表可退，退回去才是对的。为 null 时是原来的页内切换，什么都不用做。
+     */
+    onThreadClosed: (() -> Unit)? = null,
+    /**
+     * 列表里点一条帖子要去的去处；null 时退回页内切换（老行为）。
+     *
+     * 传进来的话，这一页只负责列表：点一条交给外面导航到 `Screen.PostDetail/{id}`，
+     * 那一页不挂底栏。
+     */
+    onOpenThread: ((CommunityPost) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     /** 草稿挂在能认出来的身份上：身份码有了就用它，没有才退回署名。 */
@@ -919,7 +945,8 @@ internal fun PostsScreen(
 
     // ---- 详情 ----
     /** 打开的那条帖子的 id；0 表示还在列表上。 */
-    var openId by remember { mutableStateOf(0L) }
+    // 独立详情页（`Screen.PostDetail`）起步就带着目标帖；列表页这里是 0。
+    var openId by remember { mutableStateOf(openThreadOnEnter) }
     var thread by remember { mutableStateOf<PostThread?>(null) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadError by remember { mutableStateOf<String?>(null) }
@@ -1401,6 +1428,9 @@ internal fun PostsScreen(
         threadError = null
         reply = ""
         replyTo = null
+        // 独立详情那一页（`Screen.PostDetail`）：没有"列表"可以退回页内，所以直接把自己弹回去。
+        // 页内切换时这里是 null，什么都不做。
+        onThreadClosed?.invoke()
     }
 
     /** 打开详情：先清空上一次的正文，免得新帖刷新前先显示上一条的字。 */
@@ -1414,6 +1444,21 @@ internal fun PostsScreen(
         openId = post.id
         // 先进加载态：详情那一帧还没有正文，不置 true 会闪一句「这条帖子没拉到」。
         threadLoading = true
+    }
+
+    /**
+     * 所有"打开一条帖子"的入口都走这里。
+     *
+     * 有 [onOpenThread] 就把活交给外面（导航到独立那一页 `Screen.PostDetail/{id}`，不挂底栏），
+     * 没有就还是页内切换。**新增入口也请走这个函数**，别直接调 [openThread] ——
+     * 直接调会绕过外面那条路由，于是同一个点击在不同入口上行为不一样。
+     *
+     * 和 [openEditorOnEnter] / [onOpenCompose] 是同一套写法：一页两种用法（页内 / 独立页）
+     * 只差一个"起步停在哪一格"的参数，底下永远是同一份实现。
+     */
+    val startThread: (CommunityPost) -> Unit = start@{ post ->
+        val navigate = onOpenThread
+        if (navigate != null) navigate(post) else openThread(post)
     }
 
     /**
@@ -1721,7 +1766,7 @@ else -> Column {
                         platform.showMessage("帖子已复制")
                     }
                 },
-                onOpenRelated = { post -> openThread(post) },
+                onOpenRelated = { post -> startThread(post) },
                 modifier = Modifier.padding(padding),
             )
 
@@ -1847,7 +1892,7 @@ else -> Column {
                     }
                 },
                 onLoadMore = loadMore,
-                onOpen = openThread,
+                onOpen = startThread,
                 onOpenDraft = { startCompose(it) },
                 onDeleteDraft = { discardDraft(it) },
                 onWrite = { startCompose(null) },
