@@ -601,7 +601,7 @@
     <string name="airport_detail_worth">这条值不值得看</string>
     <string name="airport_detail_subscribe_get">取订阅链接</string>
     <string name="airport_detail_subscribe_copy">复制订阅链接</string>
-    <string name="airport_detail_subscribe_locked">先投一票或打个星，才能取订阅</string>
+    <string name="airport_detail_subscribe_note">订阅链接只给投过票、打过分的人：票是入场券，这就是投票在这里的实际作用。</string>
     <string name="airport_detail_open_site">打开官网</string>
     <string name="airport_field_price">价格</string>
     <string name="airport_field_traffic">流量</string>

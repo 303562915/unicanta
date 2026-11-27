@@ -109,6 +109,8 @@ import io.github.samolego.canta.ui.fl.FlThemeMode
 import io.github.samolego.canta.ui.lock.launchGateOf
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
+import io.github.samolego.canta.ui.screen.AirportDetailScreen
+import io.github.samolego.canta.ui.screen.AirportTabState
 import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.AudioWhitelistScreen
 import io.github.samolego.canta.ui.screen.DescriptionFixScreen
@@ -132,6 +134,7 @@ import io.github.samolego.canta.ui.screen.MyPlansScreen
 import io.github.samolego.canta.ui.screen.UserProfileScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
 import io.github.samolego.canta.ui.screen.PlanDetailScreen
+import io.github.samolego.canta.ui.screen.RecommendDetailScreen
 import io.github.samolego.canta.ui.screen.RecommendationsScreen
 import io.github.samolego.canta.ui.screen.UploaderProfileScreen
 import io.github.samolego.canta.ui.screen.SafetyRulesScreen
@@ -997,6 +1000,10 @@ private fun CantaNavigation(
         navController.navigate(Screen.PlanDetail.routeFor(planId))
     }
 
+    // 机场那一块的跨页快照：推荐页的「机场 / 机场投票」两格与机场详情页共用这一个实例。
+    // 详情页里投的票、取到的订阅要写回列表那一份，返回时才不是旧票数（见 AirportTabState）。
+    val airportTabState = remember { AirportTabState() }
+
     Box(modifier = Modifier.fillMaxSize().dockScroll(dockScroll)) {
         NavHost(
             navController = navController,
@@ -1098,9 +1105,9 @@ private fun CantaNavigation(
                     authorId = recommendIdentity,
                     asGrid = !listMode,
                     onToggleLayout = { settingsViewModel.saveRecommendationsListMode(!listMode) },
-                    // What this phone has, so an entry can point at the packages it replaces and
-                    // take the reader to the page where they are removed.
-                    installedPackages = appListViewModel.apps.map { it.packageName }.toSet(),
+                    // 机场那一份快照由这里持有：机场详情页要把详情里投的票、取到的订阅写回同一个
+                    // 实例，返回列表才是新的（见 AirportTabState）。
+                    airportState = airportTabState,
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     // 点条目 → 整页详情。四格共用这两个回调：来源（app / suggestion）本来就是
                     // 目标路由的一段路径参数（见 [Screen.RecommendDetail]），机场那条是另一条路由。
@@ -1160,6 +1167,15 @@ private fun CantaNavigation(
                     token = detailIdentity.token,
                     onNavigateBack = { navController.navigateUp() },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
+                    // 认同 / 不认同：与推荐页那半用的是同一个后端调用，身份也取同一份
+                    // （认出来的号码，认不出来时是 token）。
+                    onVoteSuggestion = { id, agree ->
+                        communityRepository.voteSuggestedApp(
+                            id = id,
+                            voter = detailIdentity.owner.ifEmpty { detailIdentity.token },
+                            agree = agree,
+                        )
+                    },
                     setupGate = setupGate,
                 )
             }
@@ -1180,6 +1196,8 @@ private fun CantaNavigation(
                     airportId = airportId,
                     repository = communityRepository,
                     platform = platform,
+                    // 与推荐页那两格共用同一份快照：进页先摆上它，投票 / 打分 / 取订阅写回它。
+                    state = airportTabState,
                     author = airportAuthor,
                     authorId = airportIdentity.owner.ifEmpty { airportIdentity.token },
                     token = airportIdentity.token,

@@ -150,7 +150,7 @@ private const val TAB_AIRPORT_VOTE = 3
 internal val SuggestAgree = Color(0xFF2FA84F)
 
 /** Grey-red for "不认同"; quieter than [SuggestAgree], because a rejected entry is not a fault. */
-private val SuggestDisagree = Color(0xFFC0564C)
+internal val SuggestDisagree = Color(0xFFC0564C)
 
 /** Fallback tile colours, for a catalog entry that names no accent. */
 private val FallbackAccents = listOf(
@@ -198,11 +198,11 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  *
  * The first half is the list: a wall of icons by default — a name under each tile, four to a row,
  * the way an app store shows them — and the toolbar button switches it to one card per app with the
- * summary spelled out. The author is not printed under the name: a tap opens the sheet where the
+ * summary spelled out. The author is not printed under the name: a tap opens the page where the
  * whole entry is, and a name written twice on two lines reads as a bug, not as credit. The
- * arrangement is a stored setting, not a per-visit whim: coming back shows what was chosen. An entry
- * that names the packages it can replace, and finds some of them still on this phone, carries the
- * next step with it — see [installedReplacements][RecommendedApp.installedReplacements].
+ * arrangement is a stored setting, not a per-visit whim: coming back shows what was chosen. Which of
+ * an entry's replacement packages this phone still has is settled on that page rather than here —
+ * see [RecommendDetailScreen].
  *
  * The second half is the community's queue: anybody may put an app up, provided it is open source
  * and lives on GitHub, and the votes decide whether it joins the list — forty-five votes in all, of
@@ -225,8 +225,9 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  * @param author the name this install's submissions are signed with.
  * @param authorId the identity number behind [author]: what "mine" and one vote per identity key on.
  * @param asGrid false for the one-card-per-app arrangement of the first half.
- * @param installedPackages the packages this device has, so an entry can say which of the packages
- *   it replaces are still here; empty hides that guidance rather than guessing.
+ * @param airportState 机场那一块的跨格状态。**由调用方持有**：机场详情是另一条路由
+ *   （[AirportDetailScreen]），它要把详情里投的票、取到的订阅写回同一份，回来列表才是新的。
+ *   默认自己造一个，只为"没接线也能跑"。
  * @param onOpenApp opens the app detail page of a package, which is where the removal controls are;
  *   nothing is uninstalled from this page itself.
  * @param onOpenDetail 条目被点开：参数是「来源 + id」（`app` / `suggestion`，见
@@ -245,7 +246,7 @@ fun RecommendationsScreen(
     authorId: String = "",
     asGrid: Boolean = true,
     onToggleLayout: () -> Unit = {},
-    installedPackages: Set<String> = emptySet(),
+    airportState: AirportTabState = remember { AirportTabState() },
     onOpenApp: (String) -> Unit = {},
     /** 条目被点开：`source` 是 `app` / `suggestion`，`key` 是那一条的 id。 */
     onOpenDetail: (String, String) -> Unit = { _, _ -> },
@@ -263,10 +264,6 @@ fun RecommendationsScreen(
     val cacheOwner = authorId.ifEmpty { author }
     val cacheKey = recommendationsCacheKey(cacheOwner)
     val cached = remember(cacheKey) { ScreenCache.get<RecommendationsSnapshot>(cacheKey) }
-    // 机场/积分那一块的跨 tab 状态：机场与机场投票两格共用这一个实例，切走会整棵丢掉，
-    // 所以由这一页（常驻）持有，回来时数据还在就不重拉。两格共用也是为了让票数立刻一致。
-    // 键带身份：钱包是某个身份自己的。
-    val airportState = remember(cacheKey) { AirportTabState() }
     // 打包目录是本地资源，不经过缓存：读一次就有，冷启动也不会慢。
     var catalog by remember(cacheKey) { mutableStateOf<Recommendations?>(null) }
     /** What the search box holds; empty shows the whole catalog, categories and all. */
@@ -827,7 +824,7 @@ internal fun voteStateOf(app: SuggestedApp): String = when {
  * got here, not something a later tap is supposed to move.
  */
 @Composable
-private fun SettledVote() {
+internal fun SettledVote() {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -851,7 +848,7 @@ private fun SettledVote() {
  * the count together. Filled once this install picked it, a raised surface while it did not.
  */
 @Composable
-private fun CompactVote(
+internal fun CompactVote(
     label: String,
     count: Int,
     selected: Boolean,

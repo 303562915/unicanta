@@ -662,7 +662,7 @@
     <string name="airport_detail_worth">Worth a look?</string>
     <string name="airport_detail_subscribe_get">Get the subscription link</string>
     <string name="airport_detail_subscribe_copy">Copy the subscription link</string>
-    <string name="airport_detail_subscribe_locked">Vote or rate it first, then the subscription unlocks.</string>
+    <string name="airport_detail_subscribe_note">The subscription link only goes to people who voted or rated this one: the vote is the ticket, which is what voting is for here.</string>
     <string name="airport_detail_open_site">Open the site</string>
     <string name="airport_field_price">Price</string>
     <string name="airport_field_traffic">Traffic</string>

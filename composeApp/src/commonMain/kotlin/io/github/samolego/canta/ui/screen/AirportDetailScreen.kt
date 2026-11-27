@@ -44,7 +44,6 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.inOrder
 import io.github.samolego.canta.data.community.threads
 import io.github.samolego.canta.data.community.updatedComment
-import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.airport_comment_empty
 import io.github.samolego.canta.generated.resources.airport_detail_intro
@@ -54,7 +53,7 @@ import io.github.samolego.canta.generated.resources.airport_detail_open_site
 import io.github.samolego.canta.generated.resources.airport_detail_shared_by
 import io.github.samolego.canta.generated.resources.airport_detail_subscribe_copy
 import io.github.samolego.canta.generated.resources.airport_detail_subscribe_get
-import io.github.samolego.canta.generated.resources.airport_detail_subscribe_locked
+import io.github.samolego.canta.generated.resources.airport_detail_subscribe_note
 import io.github.samolego.canta.generated.resources.airport_detail_title
 import io.github.samolego.canta.generated.resources.airport_detail_worth
 import io.github.samolego.canta.generated.resources.airport_field_devices
@@ -73,6 +72,7 @@ import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.dismissInputOnTap
+import io.github.samolego.canta.ui.component.threadKey
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.IdentitySetup
@@ -93,10 +93,14 @@ private val FieldLabelWidth = 56.dp
  * 从列表里按 id 捞是同一条路子，代价是每次进来要拉一趟列表；换来的是"后端没有单条查询"
  * 这件事不必假装存在。列表没拉到、或里面没有这一条，页面说一句、给一个返回，不会崩。
  *
+ * [state] 是列表那一页手里的同一份机场快照：进来先用它把这一条摆上（不闪"没找到"），投票 /
+ * 打分 / 取到订阅之后写回它——返回列表时票数、订阅都是新的，不必等它重拉一遍。
+ *
  * 评论走机场专用的那一对函数（[PlanRepository.airportComments] / [PlanRepository.commentOnAirport]），
  * 不是通用 `comment`：机场的评论在后端有自己的表与迁移，换一条路等于把已有的那些评论藏起来。
  *
  * @param repository 社区后端；null 时页面只说明"没连上"。
+ * @param state 列表那一页的跨格状态（见 [AirportTabState]）：进页先读、改完写回。
  * @param author 署名；[authorId] 为空时也当身份用。
  * @param authorId 身份号：投票、打分、评论都挂在它上面。
  * @param token 证明这个身份号的秘密；删除自己写的评论要它。
@@ -106,6 +110,7 @@ fun AirportDetailScreen(
     airportId: Long,
     repository: PlanRepository?,
     platform: CantaPlatform,
+    state: AirportTabState,
     author: String = "",
     authorId: String = "",
     token: String = "",
@@ -118,14 +123,19 @@ fun AirportDetailScreen(
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
     val authorLabel = author.ifEmpty { "u-anon" }
 
-    var entry by remember(airportId) { mutableStateOf<CommunityAirport?>(null) }
-    var loading by remember(airportId) { mutableStateOf(true) }
+    // 列表刚刚画过这一条：先摆上它，页面第一帧就有内容，也不会闪一句"没找到"。
+    var entry by remember(airportId) {
+        mutableStateOf(state.airports.firstOrNull { it.id == airportId })
+    }
+    var loading by remember(airportId) { mutableStateOf(entry == null) }
     /** 这一趟没拿到（网络 / 后端）：和"列表里没有这一条"是两件事。 */
     var loadError by remember(airportId) { mutableStateOf<String?>(null) }
     /** 正在进行的那一件事；同一时刻只发一趟。 */
     var busy by remember(airportId) { mutableStateOf(false) }
     /** 已经取到的订阅链接；再点一次就是复制它，不再跑网络。 */
-    var subscribeUrl by remember(airportId) { mutableStateOf("") }
+    var subscribeUrl by remember(airportId) {
+        mutableStateOf(state.subscriptions[airportId].orEmpty())
+    }
 
     // 评论：与推荐条目、方案详情页同一套。
     var comments by remember(airportId) { mutableStateOf<List<PlanComment>>(emptyList()) }
@@ -144,7 +154,8 @@ fun AirportDetailScreen(
     var pickerOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(airportId, who) {
-        loading = true
+        // 列表已经画过这一条就不挂加载态：那一屏刚才还在，再转一圈只会让人以为页面没进来。
+        if (entry == null) loading = true
         loadError = null
         val repo = repository
         if (repo == null) {
@@ -194,11 +205,14 @@ fun AirportDetailScreen(
                     if (fresh == null) {
                         platform.showMessage("没投上：${repo.lastError ?: "检查一下网络再试"}")
                     } else {
-                        entry = current.copy(
+                        val updated = current.copy(
                             agrees = fresh.agrees,
                             disagrees = fresh.disagrees,
                             mine = fresh.mine,
                         )
+                        entry = updated
+                        // 写回列表那一份并让它下一趟重拉：否则返回列表还是旧票数（键见 AirportTabState）。
+                        state.publish(updated)
                     }
                 }
             }
@@ -219,11 +233,13 @@ fun AirportDetailScreen(
                     if (fresh == null) {
                         platform.showMessage("没评上：${repo.lastError ?: "检查一下网络再试"}")
                     } else {
-                        entry = current.copy(
+                        val updated = current.copy(
                             stars = fresh.stars,
                             ratingCount = fresh.ratingCount,
                             myStars = fresh.myStars,
                         )
+                        entry = updated
+                        state.publish(updated)
                     }
                 }
             }
@@ -238,7 +254,7 @@ fun AirportDetailScreen(
             return@subscribe
         }
         // 不解锁也照样问一次后端：`unlocked` 只是上一次列表的快照，拿旧快照挡人会把刚投过票、
-        // 但列表还没刷新的人挡在门外。按钮本身是灰的（见下），这里这道只是保险。
+        // 但列表还没刷新的人挡在门外。所以按钮不看它，答案由这一趟的 `unlocked` 决定。
         val repo = repository ?: return@subscribe
         if (busy) return@subscribe
         busy = true
@@ -249,6 +265,8 @@ fun AirportDetailScreen(
                 fresh == null -> platform.showMessage("订阅没取到：${repo.lastError ?: "检查一下网络"}")
                 fresh.unlocked && fresh.subscribeUrl.isNotBlank() -> {
                     subscribeUrl = fresh.subscribeUrl
+                    // 记进列表那一份：返回列表时卡片直接写「复制订阅」，不用再取一趟。
+                    state.rememberSubscription(current.id, fresh.subscribeUrl)
                     platform.copyToClipboard(fresh.subscribeUrl)
                     platform.showMessage("订阅链接已复制")
                 }
@@ -292,7 +310,12 @@ fun AirportDetailScreen(
             if (id != null) {
                 draft = ""
                 replyTo = null
-                answered?.let { expandedThreads = expandedThreads + it.id }
+                // 回复挂在起始评论下面：把那一条拉开，让人立刻看见自己刚发的那句。
+                // 键是 `threadKey(comment, index)`，回复的 `replyTo` 就是起始评论的 id。
+                answered?.let { reply ->
+                    val starter = comments.firstOrNull { it.id == reply.replyTo } ?: reply
+                    expandedThreads = expandedThreads + threadKey(starter, 0)
+                }
                 reloadKey++
             }
         }
@@ -594,8 +617,10 @@ fun AirportDetailScreen(
                                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                                         )
                                     }
-                                    // 没投过票也没打过星：按钮是灰的，下面那句说清为什么。
-                                    val unlocked = loaded.unlocked
+                                    // 能不能取到由后端按身份现算（`AirportSubscription.unlocked`），
+                                    // 页面不拿列表里那份旧快照挡人：有身份、又不在忙就能点，
+                                    // 没解锁的那次点击会回一句"先投一票或打个星"。
+                                    val canFetch = canAct && !busy
                                     Text(
                                         text = stringResource(
                                             if (subscribeUrl.isNotEmpty()) {
@@ -606,31 +631,32 @@ fun AirportDetailScreen(
                                         ),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = if (unlocked) scheme.primary else scheme.onSurfaceVariant,
+                                        color = if (canFetch) scheme.primary else scheme.onSurfaceVariant,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(percent = 50))
                                             .background(
-                                                if (unlocked) {
+                                                if (canFetch) {
                                                     scheme.primary.copy(alpha = 0.10f)
                                                 } else {
                                                     FlSurfaceLevel.Page.raised.colorOf(scheme)
                                                 },
                                             )
                                             .clickable(
-                                                enabled = canAct && !busy && unlocked,
+                                                enabled = canFetch,
                                                 role = Role.Button,
                                                 onClick = subscribe,
                                             )
                                             .padding(horizontal = 10.dp, vertical = 4.dp),
                                     )
-                                    if (!unlocked) {
-                                        Text(
-                                            text = stringResource(Res.string.airport_detail_subscribe_locked),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = scheme.onSurfaceVariant,
-                                        )
-                                    }
                                 }
+                                // 这句话以前只在"这有条订阅链接"时出现，于是"这家没贴订阅"看起来像
+                                // 页面忘了画按钮。它回答的是"为什么这里没有取订阅的入口"，所以对
+                                // 每一条都说一遍。
+                                Text(
+                                    text = stringResource(Res.string.airport_detail_subscribe_note),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = scheme.onSurfaceVariant,
+                                )
                                 if (loaded.url.isNotBlank()) {
                                     Text(
                                         text = stringResource(Res.string.airport_detail_open_site),

@@ -53,6 +53,7 @@ import io.github.samolego.canta.data.community.updatedComment
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.data.recommend.SuggestedApp
+import io.github.samolego.canta.data.recommend.SuggestedAppVote
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.comment_section_title
 import io.github.samolego.canta.generated.resources.plan_comment_send
@@ -73,6 +74,7 @@ import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.dismissInputOnTap
+import io.github.samolego.canta.ui.component.threadKey
 import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -105,10 +107,13 @@ private data class DetailEntry(
     val accent: String,
     /** 这条替换掉的系统包；社区条目没有这一栏，就是空表。 */
     val replaces: List<String>,
-    /** 社区条目的票数状态那一句；目录条目不投票，这里是 null。 */
-    val voteLine: String? = null,
-    /** 社区条目已经够票上榜：标题旁边挂一枚小徽章。 */
-    val applied: Boolean = false,
+    /**
+     * 社区条目本身，含票数、我投过什么、够不够票上榜；目录条目是 null。
+     *
+     * 留住整条而不是只留几个数：投票之后要按 [voteStateOf] 重算"还差几票"，而那句话是从这条
+     * 数据算出来的。目录条目不投票，所以这里没有第二套字段。
+     */
+    val suggestion: SuggestedApp? = null,
 )
 
 /** 目录条目 → 详情页那一份。 */
@@ -135,8 +140,7 @@ private fun detailOf(app: SuggestedApp): DetailEntry = DetailEntry(
     tileMark = app.tileMark,
     accent = "",
     replaces = emptyList(),
-    voteLine = voteStateOf(app),
-    applied = app.applied,
+    suggestion = app,
 )
 
 /**
@@ -160,6 +164,10 @@ private fun detailOf(app: SuggestedApp): DetailEntry = DetailEntry(
  * @param author 署名；[authorId] 为空时也当身份用。
  * @param authorId 身份号：评论挂在这上面，删除和点赞也按它算。
  * @param token 证明这个身份号的秘密；删除自己写的评论要它。
+ * @param onVoteSuggestion 给社区条目投认同 / 不认同，返回投完之后的三个数；null 表示没投上。
+ *   由调用方接（`CantaApp` 里就是 `communityRepository.voteSuggestedApp(...)`）：这一页是独立路由，
+ *   拿不到推荐页里那份"正在投哪一条"的状态，所以投票这一件事走回调，两个页面用同一个后端调用。
+ *   null 表示没接线——那时按钮不画成可点，而不是点了报"没投上"。
  */
 @Composable
 fun RecommendDetailScreen(
@@ -174,6 +182,8 @@ fun RecommendDetailScreen(
     onNavigateBack: () -> Unit = {},
     /** 打开一个包的详情页：那些「还能替换掉」的包从这里去卸载。 */
     onOpenApp: (String) -> Unit = {},
+    /** 社区条目的认同 / 不认同；见上面的 `@param`。 */
+    onVoteSuggestion: (suspend (id: Long, agree: Boolean) -> SuggestedAppVote?)? = null,
     /** 名字与头像设过了没有：没设过这条线程收不了评论（见 [IdentitySetup]）。 */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
 ) {
@@ -187,6 +197,8 @@ fun RecommendDetailScreen(
     var loading by remember(source, key) { mutableStateOf(true) }
     /** 这一趟没拿到（网络 / 后端），和"回答里没有这一条"是两件事，说法也不同。 */
     var loadError by remember(source, key) { mutableStateOf<String?>(null) }
+    /** 正在投的那一票：同一时刻只发一趟。 */
+    var voting by remember(source, key) { mutableStateOf(false) }
 
     // 评论：与方案详情页同一套——线程、排序、展开、回复、删除、点赞、底部发表框。
     var comments by remember(source, key) { mutableStateOf<List<PlanComment>>(emptyList()) }
@@ -224,7 +236,14 @@ fun RecommendDetailScreen(
                         loadError = repo.lastError ?: "社区推荐拉不到，检查一下网络或代理再刷新。"
                         null
                     } else {
-                        fresh.firstOrNull { it.id == id }?.let(::detailOf)
+                        val hit = fresh.firstOrNull { it.id == id }?.let(::detailOf)
+                        // `suggestedApps` 有离线快照兜底：网络没通时它照样给一份列表。所以"列表里
+                        // 没有这一条"并不等于"这一条被下掉了"——先看那一趟是不是失败过，是就说网络/
+                        // 代理，别让人以为条目被删了，更别让人以为是自己看错了。
+                        if (hit == null && (repo.lastFailureWasNetwork || repo.lastError != null)) {
+                            loadError = repo.lastError ?: "社区推荐拉不到，检查一下网络或代理再刷新。"
+                        }
+                        hit
                     }
                 }
             }
@@ -298,8 +317,43 @@ fun RecommendDetailScreen(
                 draft = ""
                 replyTo = null
                 // 回复挂在起始评论下面：把那一条拉开，让人立刻看见自己刚发的那句。
-                answered?.let { expandedThreads = expandedThreads + it.id }
+                //
+                // 展开的键是 `threadKey(comment, index)`——后端两层结构里回复的 `replyTo` 就是起始
+                // 评论的 id，所以先按它找回起始那一条；拿不到（老后端没有 id）才退回被回复的那条。
+                // 直接用 `answered.id` 会在"回的是别人的回复"时打开一个不存在的线程。
+                answered?.let { reply ->
+                    val starter = comments.firstOrNull { it.id == reply.replyTo } ?: reply
+                    expandedThreads = expandedThreads + threadKey(starter, 0)
+                }
                 reloadKey++
+            }
+        }
+    }
+
+    /** 认同 / 不认同：走调用方接的那个后端调用，回来只改这一条自己的票数。 */
+    val voted: (Boolean) -> Unit = voted@{ agree ->
+        val suggestion = entry?.suggestion
+        // 目录条目不在投票里，按钮也不会画出来；这里再挡一次只是为了让类型收窄。
+        if (suggestion == null) return@voted
+        val vote = onVoteSuggestion
+        if (vote == null || voting) return@voted
+        voting = true
+        scope.launch {
+            val fresh = vote(suggestion.id, agree)
+            voting = false
+            if (fresh == null) {
+                platform.showMessage("没投上：${repository?.lastError ?: "检查一下网络再试"}")
+            } else {
+                // 票数、够不够上榜、"我投过什么"一起换掉：`voteStateOf` 是从这条数据算出来的，
+                // 所以只要换掉它，"还差几票"那半句会跟着更新，不必另算一遍。
+                entry = entry?.copy(
+                    suggestion = suggestion.copy(
+                        agrees = fresh.agrees,
+                        disagrees = fresh.disagrees,
+                        applied = fresh.applied,
+                        mine = agree,
+                    ),
+                )
             }
         }
     }
@@ -421,6 +475,11 @@ fun RecommendDetailScreen(
                                 accent = remember(loaded.accent, key) { accentOf(loaded.accent, key) },
                                 onOpen = { platform.openUrl(loaded.url) },
                                 onOpenApp = onOpenApp,
+                                // 投票只对社区条目、且只有接上了后端调用时才是可点的；
+                                // 目录条目本来就不投票，那一块整个不画（见 [RecommendHero]）。
+                                canVote = me.isNotEmpty() && onVoteSuggestion != null,
+                                voting = voting,
+                                onVote = voted,
                             )
                         }
 
@@ -541,8 +600,16 @@ private fun RecommendHero(
     accent: Color,
     onOpen: () -> Unit,
     onOpenApp: (String) -> Unit,
+    /** 能不能投票：社区条目 + 有身份 + 调用方接了后端调用。 */
+    canVote: Boolean = false,
+    /** 这一票正在路上：两个按钮一起灰掉，免得同一帧点两下。 */
+    voting: Boolean = false,
+    onVote: (Boolean) -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
+    val suggestion = entry.suggestion
+    /** 社区条目够票上榜：标题旁边那枚"已上榜"徽章、以及"投票关闭"那个分支都看它。 */
+    val applied = suggestion?.applied == true
     val meta = listOfNotNull(
         authorLineOf(entry.name, entry.author)?.let { stringResource(Res.string.recommend_by, it) },
         entry.license.trim().ifEmpty { null },
@@ -577,7 +644,7 @@ private fun RecommendHero(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         )
                     }
-                    if (entry.applied) {
+                    if (applied) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "已上榜",
@@ -602,13 +669,58 @@ private fun RecommendHero(
             )
         }
 
-        if (entry.voteLine != null) {
+        if (suggestion != null) {
+            // 票数那句话：还差几票 / 认同率多少 / 已上榜，来自 [voteStateOf] 那一条现算的答案；
+            // 两个数并排写出来，与原来那个弹窗里的一样。
             Text(
-                text = entry.voteLine,
+                text = voteStateOf(suggestion) +
+                    " · ${suggestion.agrees} 认同 / ${suggestion.disagrees} 不认同",
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
+                color = if (applied) scheme.primary else scheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            if (applied) {
+                // 票够了，投票就关了：这里留结果，不留一对还能再按的按钮——那等于在问一个
+                // 页面已经回答过的问题。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettledVote()
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "票数已够，投票关闭",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CompactVote(
+                        label = "认同",
+                        count = suggestion.agrees,
+                        selected = suggestion.mine == true,
+                        color = SuggestAgree,
+                        enabled = canVote && !voting,
+                        onClick = { onVote(true) },
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    CompactVote(
+                        label = "不认同",
+                        count = suggestion.disagrees,
+                        selected = suggestion.mine == false,
+                        color = SuggestDisagree,
+                        enabled = canVote && !voting,
+                        onClick = { onVote(false) },
+                    )
+                    if (voting) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
 
         Text(

@@ -71,8 +71,12 @@ import org.jetbrains.compose.resources.stringResource
  * 已取到的订阅和滚动位置全部归零，还要重跑五趟网络。放在这里由推荐页持有（它是常驻的），
  * 回来时先画上一份、数据还在就不重拉。两格共用同一个实例：在榜单里投的一票，切回机场那一格
  * 立刻就是新的票数。
+ *
+ * 它是 **public** 而不是 internal：机场详情是另一条路由（[AirportDetailScreen]），那一页和这一页
+ * 必须拿到同一个实例才谈得上"详情里投的票，回来列表就变了"。公开类型不能出现在公开函数的参数
+ * 里，所以这里不能是 internal；这个类本身没有别处会用到的秘密，只是一个 UI 快照。
  */
-internal class AirportTabState {
+class AirportTabState {
     var airports by mutableStateOf<List<CommunityAirport>>(emptyList())
     var loading by mutableStateOf(true)
     var error by mutableStateOf<String?>(null)
@@ -81,6 +85,27 @@ internal class AirportTabState {
     var reloadKey by mutableIntStateOf(0)
     /** 上一次拉完之后 [reloadKey] 的值：相等就说明这一屏已经是最新的，切回来不必再拉。 */
     var loadedKey by mutableIntStateOf(-1)
+
+    /**
+     * 详情页改了一条（投票 / 打分）之后：把新的那条写回列表这一份，并让列表下一趟重拉。
+     *
+     * 只改 `airports` 是不够的：`reloadKey` 不变时列表会拿 `loadedKey == reloadKey` 判断"这一屏
+     * 已经是最新的"，于是返回列表仍旧画着旧票数、也不再问后端。两个一起动，屏幕和后端才对得上。
+     */
+    fun publish(updated: CommunityAirport) {
+        airports = airports.map { if (it.id == updated.id) updated else it }
+        reloadKey++
+    }
+
+    /**
+     * 详情页取到订阅链接之后：记进列表这一份，回去那张卡片就直接写「复制订阅」，不用再取一趟。
+     *
+     * 空串不记：那是"这次没取到"，记住它只会让下次点击以为已经拿到。
+     */
+    fun rememberSubscription(id: Long, url: String) {
+        if (url.isBlank()) return
+        subscriptions = subscriptions + (id to url)
+    }
 }
 
 /** 认同这一条：与社区队列的绿色同一个。 */
