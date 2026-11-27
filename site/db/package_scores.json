@@ -608,8 +608,8 @@
    {
     "pkg": "com.heytap.cloud",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T01:58:55.793657+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T02:25:18.786768+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -3113,6 +3113,13 @@
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-27T01:51:49.146866+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.heytap.cloud",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.786768+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -15231,7 +15238,7 @@
     "pkg": "com.xiaomi.security.onetrack",
     "small_batch": false,
     "uninstalls": 39,
-    "updated_at": "2026-11-27T02:24:13.190283+00:00",
+    "updated_at": "2026-11-27T02:27:15.893918+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19435,7 +19442,7 @@
     "pkg": "com.xiaomi.security.onetrack",
     "small_batch": false,
     "uninstalls": 30,
-    "updated_at": "2026-11-27T02:24:13.190283+00:00",
+    "updated_at": "2026-11-27T02:27:15.893918+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -43333,8 +43340,8 @@
    {
     "pkg": "com.android.bips",
     "small_batch": false,
-    "uninstalls": 23,
-    "updated_at": "2026-11-27T01:33:38.260506+00:00",
+    "uninstalls": 24,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -43466,8 +43473,8 @@
    {
     "pkg": "com.android.egg",
     "small_batch": true,
-    "uninstalls": 50,
-    "updated_at": "2026-11-27T01:33:38.260506+00:00",
+    "uninstalls": 51,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -43704,8 +43711,8 @@
    {
     "pkg": "com.android.providers.partnerbookmarks",
     "small_batch": true,
-    "uninstalls": 8,
-    "updated_at": "2026-11-26T07:46:09.00128+00:00",
+    "uninstalls": 9,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -43863,17 +43870,80 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.android.theme.color.black",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.cinnamon",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.green",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.ocean",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.orchid",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.purple",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.space",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.android.theme.font.notoserifsource",
     "small_batch": true,
-    "uninstalls": 12,
-    "updated_at": "2026-11-27T01:33:38.260506+00:00",
+    "uninstalls": 13,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
     "verdict": "BREAKS"
+   },
+   {
+    "pkg": "com.android.theme.icon_pack.rounded.systemui",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.square",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.android.traceur",
     "small_batch": true,
-    "uninstalls": 46,
-    "updated_at": "2026-11-27T01:33:38.260506+00:00",
+    "uninstalls": 47,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -51530,6 +51600,110 @@
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-27T00:49:36.022048+00:00",
+    "verdict": "INSUFFICIENT"
+   }
+  ]
+ },
+ {
+  "rom": "stock",
+  "rom_version": 10,
+  "scores": [
+   {
+    "pkg": "com.android.bips",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.egg",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.providers.partnerbookmarks",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.black",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.cinnamon",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.green",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.ocean",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.orchid",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.purple",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.color.space",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.font.notoserifsource",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon_pack.rounded.systemui",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.theme.icon.square",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.android.traceur",
+    "small_batch": false,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T02:25:18.510956+00:00",
     "verdict": "INSUFFICIENT"
    }
   ]
