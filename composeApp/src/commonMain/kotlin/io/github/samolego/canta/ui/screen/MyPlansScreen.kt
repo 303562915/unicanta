@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,6 +50,8 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.util.DeviceProfile
+import io.github.samolego.canta.util.currentTimeMillis
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -56,13 +63,16 @@ import kotlinx.coroutines.launch
  * 只放画一屏需要的只读数据（[CommunityPlan] 是不可变 data class）；不存 MutableState、协程、回调。
  */
 @Serializable
-private data class MyPlansSnapshot(val plans: List<CommunityPlan>)
+internal data class MyPlansSnapshot(val plans: List<CommunityPlan>)
 
 /**
  * 键带上身份：这台设备（这个身份）的方案不能和别人共用一格。身份为空时不读也不写——
  * 调用方的身份是异步拿到的，第一帧那个空串槽位会被所有人串用。
+ *
+ * `internal` 而不是 `private`：`MineScreen` 上「我的方案」那行的数量要复用同一份缓存，
+ * 顺带把这一页预热了——点进去就不用再等一次网络往返。
  */
-private fun myPlansCacheKey(owner: String): String? =
+internal fun myPlansCacheKey(owner: String): String? =
     if (owner.isEmpty()) null else "screen:myplans:$owner"
 
 /**
@@ -107,6 +117,24 @@ fun MyPlansScreen(
     var pendingDelete by remember { mutableStateOf<CommunityPlan?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    /**
+     * 这份列表是什么时候从后端拿到的（本机毫秒）。
+     *
+     * 为什么要它：这一页连着排查过两次「我上传了但这里看不见」（2026-11-27），而屏幕上
+     * 分不清是**数据没到**还是**自己没刷新**。把「几分钟前拿到的」写在标题下面，
+     * 一眼就知道该不该点一下右上角那个刷新。
+     *
+     * 0 = 还没成功拿过（第一帧就是缓存那也说得清：那是上次进这一页时的数据）。
+     */
+    var fetchedAt by remember(owner) { mutableLongStateOf(0L) }
+    // 让「N 分钟前」自己走：只读本地时钟，不联网、不碰后端。
+    var now by remember { mutableLongStateOf(currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(20_000L)
+            now = currentTimeMillis()
+        }
+    }
 
     LaunchedEffect(owner, token, reloads) {
         // 不点 loading：点刷新不该把已经画着的列表换成那个「…」，那是后台替换。
@@ -131,6 +159,7 @@ fun MyPlansScreen(
         // 「我上传过的方案」清空。没有缓存可留时才退成空列表（下面那句「你还没有上传过方案」照旧）。
         if (repository.lastError == null && !repository.lastFailureWasNetwork) {
             myPlans = fetched
+            fetchedAt = currentTimeMillis()
             cacheKey?.let { key -> ScreenCache.put(key, MyPlansSnapshot(fetched)) }
         } else if (myPlans.isEmpty()) {
             myPlans = fetched
@@ -207,6 +236,25 @@ fun MyPlansScreen(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
                 )
             }
+            // 这一行回答两件事：一共几个方案、这份列表是什么时候拿到的。
+            //
+            // 「什么时候拿到的」不是装饰：这一页排查过两次「上传了但看不见」，而屏幕上分不清
+            // 是数据没到、还是自己没刷新。写着「3 分钟前」，就知道该不该点右上角那个刷新。
+            if (myPlans.isNotEmpty()) {
+                Text(
+                    text = buildString {
+                        append("共 ${myPlans.size} 个方案")
+                        if (fetchedAt > 0L) {
+                            append(" · ")
+                            append(ageLabel(now - fetchedAt))
+                        }
+                    },
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                )
+            }
             when {
                 loading -> Text("…", fontSize = 12.sp, modifier = Modifier.padding(14.dp))
 
@@ -225,8 +273,8 @@ fun MyPlansScreen(
 
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(myPlans, key = { plan -> "plan-${plan.id}" }) { plan ->
                         MyPlanRow(
@@ -244,51 +292,117 @@ fun MyPlansScreen(
 /**
  * One plan this install uploaded: tapping opens it, the bin deletes it.
  *
+ * 排版照安全页的方案卡（`SafetyRulesScreen` 里那个 `PlanCard`）走：同一套圆角、同一组信息顺序，
+ * 只是少了票数按钮、多了右上角那个 `#id`。原来这一行只有「标题 + 一行小字」，跟社区里那些
+ * 方案卡摆在一起看像半成品；现在两处读起来是同一个东西，只是权限不同。
+ *
  * The row says what deleting costs — how many packages it publishes, how many people endorsed it,
  * whether it ever passed a reboot — so the confirmation is not the first time that is visible.
  */
 @Composable
 private fun MyPlanRow(plan: CommunityPlan, onOpen: () -> Unit, onDelete: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.surfaceContainer)
-            .clickable(onClick = onOpen)
-            .padding(start = 12.dp, top = 10.dp, end = 4.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = RoundedCornerShape(16.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = plan.title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = buildString {
-                    append("${plan.packages.size} 包 · ${plan.votes} 赞")
-                    append(if (plan.isTest) " · 测试" else " · 重启验证")
-                    append(" · ${plan.rebootedAt.take(10)}")
-                },
-                fontSize = 9.sp,
-                lineHeight = 12.sp,
-                color = colors.outline,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "删除这个方案",
-                modifier = Modifier.size(16.dp),
-                tint = colors.error,
-            )
+        Column(modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 6.dp, bottom = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = plan.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(6.dp))
+                // 右上角那个编号：方案在社区里的真实 id（`plans.id`），跟详情页、群里的数字对得上。
+                // 不做成序号是因为删掉一条之后序号会跳，而 id 永远指同一条。
+                PlanIdBadge(plan.id)
+                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "删除这个方案",
+                        modifier = Modifier.size(14.dp),
+                        tint = colors.error,
+                    )
+                }
+            }
+            // 备注是上传时自己写的，比下面那行数字更能说明「这份方案是干嘛的」。
+            if (plan.note.isNotEmpty()) {
+                Text(
+                    text = plan.note,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Row(
+                modifier = Modifier.padding(top = 8.dp, end = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = buildString {
+                        append("${plan.packages.size} 包 · ${plan.votes} 赞")
+                        append(" · ${plan.rebootedAt.take(10)}")
+                    },
+                    fontSize = 9.sp,
+                    lineHeight = 12.sp,
+                    color = colors.outline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                // 「测试」那条不该被当成社区里别人也能用的方案，所以单独一个标记，跟数字分开。
+                if (plan.isTest) {
+                    Text(
+                        text = "测试",
+                        fontSize = 9.sp,
+                        color = colors.outline,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(colors.surfaceVariant)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                }
+            }
         }
     }
+}
+
+/** 右上角那个 `#400`：方案编号的一小块底，字号跟下面那行数字同一档，不抢标题。 */
+@Composable
+private fun PlanIdBadge(id: Long) {
+    val colors = MaterialTheme.colorScheme
+    Text(
+        text = "#$id",
+        fontSize = 9.sp,
+        color = colors.outline,
+        modifier = Modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(colors.surfaceVariant)
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+    )
+}
+
+/**
+ * 「刚刚 / N分钟前 / N小时前 / N天前」——本地时钟差，不联网、不解析时区。
+ *
+ * 只给这一页顶那条信息用：它要回答的是「这份数据新不新」，不是「这条方案哪天建的」
+ * （那个日期在每一行里，走的是 `rebootedAt.take(10)`）。所以不需要 `relativeStamp`
+ * 那套北京时间与「昨天 HH:mm」的规则。
+ */
+private fun ageLabel(elapsedMillis: Long): String {
+    if (elapsedMillis < 60_000L) return "刚刚更新"
+    val minutes = elapsedMillis / 60_000L
+    if (minutes < 60L) return "${minutes}分钟前更新"
+    val hours = minutes / 60L
+    if (hours < 24L) return "${hours}小时前更新"
+    return "${hours / 24L}天前更新"
 }

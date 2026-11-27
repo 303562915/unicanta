@@ -96,6 +96,10 @@ fun AppToggleCard(
 /**
  * 一张通向别处的卡片：页面、对话框或站外地址。[subtitle] 是地址或当前取值，
  * [showDot] 在标题旁点一个小红点，表示那页有新东西。
+ *
+ * [trailing] 是箭头左边那格取值（「3 个」「已开启」这类）。它和 [subtitle] 的分工：
+ * 副标题说**那页是干什么的**（一句固定的话），这一格说**现在是多少**（会变的数）。
+ * 把会变的数塞进副标题，读的人每次都要重新扫一遍整句才找得到。
  */
 @Composable
 fun AppLinkCard(
@@ -104,6 +108,7 @@ fun AppLinkCard(
     subtitle: String = "",
     onClick: () -> Unit,
     showDot: Boolean = false,
+    trailing: String = "",
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -141,6 +146,15 @@ fun AppLinkCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (trailing.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = trailing,
+                style = FlText.caption1,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
         SettingsChevron()
     }

@@ -1288,6 +1288,10 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.Mine.route) {
+                // 「我的方案」那行右边的数量要按身份问（`plans_by_owner`），而身份是异步读的：
+                // 先空着，读到之后 `MineScreen` 里那个 effect 会自己再问一次。
+                var mineIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) { mineIdentity = DeviceIdentity.current(deps.settings) }
                 MineScreen(
                     settingsViewModel = settingsViewModel,
                     onOpenSettings = { navController.navigate(Screen.Settings.route) },
@@ -1300,6 +1304,8 @@ private fun CantaNavigation(
                     unreadReplies = unreadReplies,
                     // Same dot as the bar's: the about page behind this row is where updates live.
                     updateAvailable = updateAvailable,
+                    communityRepository = communityRepository,
+                    owner = mineIdentity.owner.ifEmpty { mineIdentity.token },
                 )
             }
             composable(route = Screen.Profile.route) {

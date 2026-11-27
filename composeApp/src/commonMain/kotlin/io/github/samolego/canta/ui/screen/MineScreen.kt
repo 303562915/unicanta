@@ -29,7 +29,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +43,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.samolego.canta.data.cache.ScreenCache
+import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.profile_default_name
 import io.github.samolego.canta.generated.resources.profile_edit_name
@@ -50,10 +56,30 @@ import io.github.samolego.canta.ui.component.UserAvatar
 import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import io.github.samolego.canta.util.IdentitySetup
+import io.github.samolego.canta.util.currentTimeMillis
 import org.jetbrains.compose.resources.stringResource
 
 /** 底栏画在这一页之上，最后一张卡片下面留出它的位置。 */
 private val FloatingBarRoom = 96.dp
+
+/**
+ * 「我的方案」那行右侧那个数字，最多多少毫秒重新问一次库。
+ *
+ * 每次进「我的」页都查一遍 `plans_by_owner` 是没必要的：用户上传方案的频率以天计。
+ * 一分钟的缓存既让「刚传完回来看」能立刻对，又不至于切一次 tab 打一次库。
+ */
+private const val MY_PLAN_COUNT_TTL_MS = 60_000L
+
+/**
+ * 上一次数出来的方案数（进程级）。
+ *
+ * 为什么放在文件级而不是 `remember`：`remember` 只活在这一页的这一次组合里，切走再回来就没了，
+ * 那就等于「每进一次都查一次」。这三个变量一起构成一个一行的缓存，
+ * 键是身份（换身份要重新数），过期时间见 [MY_PLAN_COUNT_TTL_MS]。
+ */
+private var planCountOwner: String = ""
+private var planCountValue: Int? = null
+private var planCountAt: Long = 0L
 
 /**
  * "我的"页：这个安装自己的身份，以及只有本安装才知道的东西（我写过的评论）。
@@ -78,6 +104,10 @@ fun MineScreen(
     unreadReplies: Int = 0,
     /** 有新版本：关于入口带同样的红点，和底栏那个一致。 */
     updateAvailable: Boolean = false,
+    /** 问方案数用；null 就不显示那一格（不在 Android 上跑单测的预览里是这种）。 */
+    communityRepository: PlanRepository? = null,
+    /** 这个身份号：`plans_by_owner` 按它问，缓存也按它分区。 */
+    owner: String = "",
 ) {
     val userName by settingsViewModel.userName.collectAsStateWithLifecycle()
     val identityUserId by settingsViewModel.identityUserId.collectAsStateWithLifecycle()
@@ -88,6 +118,43 @@ fun MineScreen(
     ScrollToTopEffect(mineScroll)
     // 关于页「作者的群」是否点过：没点过时，关于入口也跟着点一个。
     val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
+
+    // 「我的方案」那行右边的数量。
+    //
+    // 先读「我的方案」那一页的缓存（同一份 `MyPlansSnapshot`）：多数时候用户是从这一页点进去的，
+    // 缓存本来就有，这一格就能立刻显示，也顺带把那一页预热了。缓存没有、或超过
+    // [MY_PLAN_COUNT_TTL_MS] 才真去问一次库。
+    //
+    // 数量拿不到（没网、后端没返回）时显示空串，**不显示 0** —— 0 是「你一个都没传过」这个
+    // 确定结论，而拿不到只是一个不知道。
+    var planCount by remember(owner) {
+        mutableStateOf(
+            if (planCountOwner == owner && currentTimeMillis() - planCountAt < MY_PLAN_COUNT_TTL_MS) {
+                planCountValue
+            } else {
+                myPlansCacheKey(owner)?.let { key -> ScreenCache.get<MyPlansSnapshot>(key)?.plans?.size }
+            },
+        )
+    }
+    LaunchedEffect(communityRepository, owner) {
+        val repo = communityRepository ?: return@LaunchedEffect
+        val key = myPlansCacheKey(owner) ?: return@LaunchedEffect
+        // 刚查过同一身份、还没过期：不重复打库。
+        if (planCountOwner == owner && currentTimeMillis() - planCountAt < MY_PLAN_COUNT_TTL_MS) {
+            planCountValue?.let { planCount = it }
+            return@LaunchedEffect
+        }
+        val fresh = repo.plansByOwner(owner)
+        // 拉挂了不动这一格：断网不该让「我传过 3 个」变成「一个都没有」。
+        if (repo.lastError == null && !repo.lastFailureWasNetwork) {
+            planCount = fresh.size
+            planCountOwner = owner
+            planCountValue = fresh.size
+            planCountAt = currentTimeMillis()
+            // 顺手写回缓存：点进「我的方案」时先画的就是这一份，不用再等一次网络。
+            ScreenCache.put(key, MyPlansSnapshot(fresh))
+        }
+    }
 
     Scaffold(
         topBar = { ScreenTopBar(title = "我的") },
@@ -118,11 +185,15 @@ fun MineScreen(
             //
             // 这一行**不再挂红点**：新消息的去处是消息页，红点挂在「消息」那一栏上；挂在这里却
             // 点进「我的方案」，等于写了「N 条新消息」却把人带到没有消息的页。
+            //
+            // 右边的数字是「我传过几个」：这一页唯一一处要回答「我到底有多少东西」的地方，
+            // 而它原来要点进去才知道。数量拿不到时传空串（[planCount] 为 null），不是 0。
             AppLinkCard(
                 glyph = FlGlyphs.requests,
                 title = "我的方案",
                 subtitle = "我上传过的方案，点进去管理和删除",
                 onClick = onOpenMyComments,
+                trailing = planCount?.let { "$it 个" } ?: "",
             )
             Spacer(Modifier.height(10.dp))
 
