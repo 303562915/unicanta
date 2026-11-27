@@ -51,6 +51,7 @@ import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.recommend_airport_vote_empty
 import io.github.samolego.canta.generated.resources.recommend_airport_vote_foot
+import io.github.samolego.canta.generated.resources.recommend_tab_airport
 import io.github.samolego.canta.generated.resources.recommend_tab_airport_vote
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
