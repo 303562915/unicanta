@@ -493,9 +493,20 @@ internal fun UpdateRelease.isNewerThanInstalled(): Boolean {
     // 再给这台机器推一次 4.3.9 的稳定版没有意义，弹出来的只是同一版贴的另一张标签。
     if (isNewerVersion(version, BuildInfo.VERSION_NAME)) return true
     if (isNewerVersion(BuildInfo.VERSION_NAME, version)) return false
-    return if (tag == DEVELOPMENT_TAG) buildNumber > BuildInfo.DEVELOPMENT_BUILD_NUMBER
-    // 同一个版本号：已经跑着开发版的人选「稳定版」，不该被要求"更新"成同版本号的稳定包。
-    else BuildInfo.DEVELOPMENT_BUILD_NUMBER <= 0
+
+    // 版本号相同，到这里只比构建身份。
+    if (tag == DEVELOPMENT_TAG) {
+        // 手里这份是开发包（build 号 > 0）：开发版的滚动构建靠 build 号分新旧。
+        return buildNumber > BuildInfo.DEVELOPMENT_BUILD_NUMBER
+    }
+
+    // 手里这份是**稳定包**（`DEVELOPMENT_BUILD_NUMBER == 0`）：同版本号的稳定版就是它自己。
+    //
+    // 这一行以前写的是 `BuildInfo.DEVELOPMENT_BUILD_NUMBER <= 0`，对**稳定包**恒为 true ——
+    // 于是装着 4.3.10 的稳定版用户每次检查都被告知"有新版本"，下载 4.3.10、安装失败、
+    // 再检查、再下载，无限循环（线上实测同一台机器 1 秒一轮 check→download→install 跑了 20+ 轮）。
+    // 开发包选稳定通道时仍然要能换过去，所以那一种（build 号 > 0）才是 true。
+    return BuildInfo.DEVELOPMENT_BUILD_NUMBER > 0
 }
 
 /**

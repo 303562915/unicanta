@@ -71,4 +71,30 @@ class UpdateVersionTest {
             ).isNewerThanInstalled(),
         )
     }
+
+    /**
+     * 稳定包装上之后，同版本号的稳定版**不是**更新。
+     *
+     * 这一条以前被上面那个 `if (DEVELOPMENT_BUILD_NUMBER > 0)` 绕过去了：测试构建里 build 号是 0，
+     * 于是"稳定包"这一半从来没被验过。而线上正是这一半恒为 true —— 装着 4.3.10 的稳定版用户
+     * 每次检查都被告知有新版本，下载 4.3.10、安装失败、再检查，1 秒一轮转个不停
+     * （2026-11-27 实测）。
+     *
+     * 这里**不写 if**：无论构建号是 0 还是别的值，同版本号的稳定包都必须被判成"已是最新"。
+     */
+    @Test
+    fun stableChannelNeverOffersItsOwnVersion() {
+        val stable = UpdateRelease(tag = "v${BuildInfo.VERSION_NAME}", version = BuildInfo.VERSION_NAME)
+        assertFalse(
+            stable.isNewerThanInstalled(),
+            "装着 ${BuildInfo.VERSION_NAME} 的稳定包不该把同一版当成更新（这会让更新无限循环）",
+        )
+        // 带 v 前缀、不带 v 前缀都是同一个版本。
+        assertFalse(
+            UpdateRelease(tag = BuildInfo.VERSION_NAME, version = BuildInfo.VERSION_NAME).isNewerThanInstalled(),
+        )
+        // 真正更新的稳定版仍然要认。
+        val next = UpdateRelease(tag = "v9.9.9", version = "9.9.9")
+        assertTrue(next.isNewerThanInstalled())
+    }
 }

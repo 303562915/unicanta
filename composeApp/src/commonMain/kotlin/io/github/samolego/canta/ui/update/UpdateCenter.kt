@@ -116,6 +116,25 @@ internal class UpdateCenter(
     private var notReadyVersion = ""
     private var notReadyRetries = 0
 
+    /**
+     * 这一轮会话里读到的「某版本自动安装失败过几次」，跨进程的那份值在设置里。
+     *
+     * 缓存它的唯一原因是 [startDownload] 不是挂起函数（UI 直接调），不能在里面等一次磁盘读。
+     * [check] 与 [install] 都在协程里，会顺手把它刷新到最新。
+     */
+    @Volatile
+    private var knownFailureCounts: Map<String, Int> = emptyMap()
+
+    /** 这个版本的自动安装失败次数已经用尽，不该再自动下一遍。 */
+    private fun failureGateClosed(label: String): Boolean =
+        (knownFailureCounts[label] ?: 0) >= INSTALL_NOT_READY_RETRY_DELAYS_MILLIS.size
+
+    /** 把落盘的失败次数读进 [knownFailureCounts]（只影响这一轮会话的闸门判断）。 */
+    private suspend fun refreshFailureCount(label: String) {
+        val count = runCatching { settings.installFailureCount(label) }.getOrDefault(0)
+        knownFailureCounts = knownFailureCounts + (label to count)
+    }
+
     private var downloadJob: Job? = null
 
     /** 正在下（或刚下完）的那个版本，取消下载之后要退回到它，而不是退回一张空白卡片。 */
@@ -233,8 +252,11 @@ internal class UpdateCenter(
             // 这一版已经失败过几次（跨进程），以及上次自动安装失败的那一版。
             // 两个值都在 `when` 之前读：分支体里再挂起会让判断阅读起来很绕。
             val skipped = settings.skippedAutoInstallVersionFlow.first()
-            val failures = settings.installFailureCount(label)
+            refreshFailureCount(label)
             when {
+                // 已经是这一版了（或更新）：什么都不做。稳定包以前永远走进下面那条分支 ——
+                // `isNewerThanInstalled` 对同版本号的稳定包恒为 true，于是装着 4.3.10 的人
+                // 一直在下 4.3.10（2026-11-27 修）。
                 !found.isNewerThanInstalled() -> state = UpdateState.Latest
                 // 检测到新版本就**直接下**。以前这里还要过一遍「自动下载更新包」开关：关掉它的机器
                 // 点一次检查，只得到一张「点击前往下载」的卡片，还得再点一次——"检测到了却不下载"
@@ -243,8 +265,7 @@ internal class UpdateCenter(
                 label == skipped -> state = UpdateState.Available(label, found)
                 // 这一版已经因为「运行时没就绪」失败够多次了：包本身在本地还剩着，再下载一遍
                 // 只是同一份字节、同一个结果。停在「可以下载」，让用户明确点一下再决定。
-                failures >= INSTALL_NOT_READY_RETRY_DELAYS_MILLIS.size ->
-                    state = UpdateState.Available(label, found)
+                failureGateClosed(label) -> state = UpdateState.Available(label, found)
                 else -> startDownload(found, auto = true)
             }
         }
@@ -264,6 +285,14 @@ internal class UpdateCenter(
     /** 开始下载 [release]：自动发现的版本和手点的版本走同一条路，卡片因此都有进度条。 */
     fun startDownload(release: UpdateRelease, auto: Boolean = false) {
         val label = updateLabel(release)
+        // 这个包已经在本机、而且自动安装失败过好几次：再下一遍只是同一份字节、同一个结果。
+        // 必须在这里也挡一道 —— `check()` 里那条判断只挡住"自动发现"，手点「检查更新」和
+        // 「重新尝试」都会绕到这条函数上，而线上那台 1 秒一轮的机器正是这么转起来的。
+        // 读的是这轮会话缓存的次数（[knownFailureCounts]），不在 UI 线程上挂起。
+        if (auto && failureGateClosed(label)) {
+            state = UpdateState.Available(label, release)
+            return
+        }
         downloadJob?.cancel()
         lastRelease = release
         state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
@@ -444,6 +473,7 @@ internal class UpdateCenter(
             if (failure == null) {
                 // 装上了：这一版的失败计数立刻清掉，别留到下一次误伤。
                 settings.clearInstallFailureCount(ready.version)
+                refreshFailureCount(ready.version)
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_INSTALL,
                     outcome = UpdateReport.OUTCOME_OK,
@@ -494,6 +524,9 @@ internal class UpdateCenter(
                 // 落盘记一笔失败：`UpdateCenter` 是每次启动新建的，只有把次数存下来，第二次
                 // 打开才不会再白等 3.5 分钟、再失败、再退出。见 [AppSettingsProto.installFailureCounts]。
                 settings.bumpInstallFailureCount(ready.version)
+                // 落盘之后立刻刷新这一轮会话的缓存：否则 `startDownload` 那道闸门读到的还是旧值，
+                // 手点「检查更新」照样能把包重新下一遍。
+                refreshFailureCount(ready.version)
                 // 「装不上」这一版**已经把包装好了**，再下载一遍只是同一份字节。
                 // 以前这里只记一版就完事，但手点「检查更新」还会再下、再装、再失败：
                 // 线上实测一台机器同一版本下载 41 次、安装失败 19 次，屏幕上就是「一直下、
