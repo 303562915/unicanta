@@ -478,7 +478,7 @@ private fun PostsToolbar(
         // ☰ 分类入口：打开 fluxdo 那条从左侧滑出的分类侧栏（见 [PostCategoryDrawer]）。
         // 图标必须是**三条等长横线**：`appsList` 那种"左三块右三线"的格子看着像应用列表。
         TopBarIconButton(
-            icon = Icons.Rounded.Menu,,
+            icon = Icons.Rounded.Menu,
             label = "浏览分类",
             active = category.isNotBlank() || tag.isNotBlank(),
             onClick = onOpenCategories,
@@ -554,7 +554,7 @@ private fun PostsToolbar(
         // 身份没认出来时（[onCompose] 由调用方传 null）不画：那颗按钮点了也只能说"还没认出身份"。
         if (onCompose != null) {
             TopBarIconButton(
-                icon = Icons.Rounded.Edit,,
+                icon = Icons.Rounded.Edit,
                 label = "创建话题",
                 onClick = onCompose,
             )
@@ -563,7 +563,7 @@ private fun PostsToolbar(
         // `Icons.Rounded.Search` 是官方 Material Symbols，不像自绘 glyph 那样有 `fill = 0f` 下不显示的坑。
         if (onSearch != null) {
             TopBarIconButton(
-                icon = Icons.Rounded.Search,,
+                icon = Icons.Rounded.Search,
                 label = "搜索话题",
                 onClick = onSearch,
             )
@@ -662,7 +662,7 @@ private fun PostsFab(
         // 弹出：每项从 0.2 缩放到 1 并淡入，收起时反向（`m3e_fab_menu.dart` 的 `_buildItem`）。
         FabAction(
             visible = open,
-            icon = Icons.Rounded.Refresh,,
+            icon = Icons.Rounded.Refresh,
             label = "刷新",
             onClick = onRefresh,
         )
@@ -670,13 +670,13 @@ private fun PostsFab(
             // 顺序照 `M3eFabMenu`：离 FAB 最近的是"写新帖"（主动作），草稿在它上面一格。
             FabAction(
                 visible = open,
-                icon = Icons.Rounded.Edit,,
+                icon = Icons.Rounded.Edit,
                 label = "写新帖",
                 onClick = onNewPost,
             )
             FabAction(
                 visible = open,
-                icon = Icons.Rounded.Drafts,,
+                icon = Icons.Rounded.Drafts,
                 label = if (draftCount > 0) "草稿 ($draftCount)" else "草稿",
                 onClick = onDrafts,
             )
@@ -3409,7 +3409,7 @@ private fun DetailMoreMenu(
             if (canManage) {
                 // 第一项：编辑话题（作者本人 / 有编辑权）。
                 MenuRow(
-                    icon = Icons.Rounded.Edit,,
+                    icon = Icons.Rounded.Edit,
                     label = "编辑话题",
                     tint = if (open.locked) scheme.onSurfaceVariant.copy(alpha = 0.38f) else scheme.onSurface,
                     enabled = !busy && !open.locked,
@@ -3420,7 +3420,7 @@ private fun DetailMoreMenu(
                 )
                 // 「复制整帖」对谁都有用（把这条转给别处看），不分作者。
                 MenuRow(
-                    icon = Icons.Rounded.ContentCopy,,
+                    icon = Icons.Rounded.ContentCopy,
                     label = "复制帖子",
                     tint = scheme.onSurface,
                     enabled = true,
@@ -3432,7 +3432,7 @@ private fun DetailMoreMenu(
                 HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
                 // 最后一项：删除（红色）。放在分隔线下面，和上面的常用项隔开。
                 MenuRow(
-                    icon = Icons.Rounded.Delete,,
+                    icon = Icons.Rounded.Delete,
                     label = "删除",
                     tint = scheme.error,
                     enabled = !busy,
@@ -3445,7 +3445,7 @@ private fun DetailMoreMenu(
                 // 不是作者：fluxdo 那边这一档只有读类动作。本仓能给的也就「复制帖子」，
                 // 所以菜单只有这一项 —— 不放灰掉的编辑/删除，那会像"我应该能点"。
                 MenuRow(
-                    icon = Icons.Rounded.ContentCopy,,
+                    icon = Icons.Rounded.ContentCopy,
                     label = "复制帖子",
                     tint = scheme.onSurface,
                     enabled = true,
@@ -4288,7 +4288,7 @@ private fun ComposerDraftMenuButton(savedAt: Long) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         TopBarIconButton(
-            icon = Icons.Rounded.MoreVert,,
+            icon = Icons.Rounded.MoreVert,
             label = "更多",
             onClick = { menuOpen = true },
         )
