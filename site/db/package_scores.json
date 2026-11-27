@@ -13373,8 +13373,8 @@
    {
     "pkg": "com.android.quicksearchbox",
     "small_batch": false,
-    "uninstalls": 298,
-    "updated_at": "2026-11-27T04:00:10.548965+00:00",
+    "uninstalls": 299,
+    "updated_at": "2026-11-27T04:09:36.539407+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -14213,8 +14213,8 @@
    {
     "pkg": "com.miui.cloudservice",
     "small_batch": false,
-    "uninstalls": 109,
-    "updated_at": "2026-11-27T03:06:55.499267+00:00",
+    "uninstalls": 110,
+    "updated_at": "2026-11-27T04:11:17.548257+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15025,8 +15025,8 @@
    {
     "pkg": "com.xiaomi.ab",
     "small_batch": false,
-    "uninstalls": 306,
-    "updated_at": "2026-11-27T03:46:59.302211+00:00",
+    "uninstalls": 307,
+    "updated_at": "2026-11-27T04:10:20.766761+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15116,8 +15116,8 @@
    {
     "pkg": "com.xiaomi.digitalkey",
     "small_batch": false,
-    "uninstalls": 273,
-    "updated_at": "2026-11-27T03:38:28.51674+00:00",
+    "uninstalls": 274,
+    "updated_at": "2026-11-27T04:11:46.363338+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -15242,8 +15242,8 @@
    {
     "pkg": "com.xiaomi.mis",
     "small_batch": false,
-    "uninstalls": 324,
-    "updated_at": "2026-11-27T03:46:59.302211+00:00",
+    "uninstalls": 325,
+    "updated_at": "2026-11-27T04:11:46.363338+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20061,8 +20061,8 @@
    {
     "pkg": "com.android.quicksearchbox",
     "small_batch": false,
-    "uninstalls": 232,
-    "updated_at": "2026-11-27T04:00:10.548965+00:00",
+    "uninstalls": 233,
+    "updated_at": "2026-11-27T04:09:36.539407+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20586,8 +20586,8 @@
    {
     "pkg": "com.miui.cloudservice",
     "small_batch": false,
-    "uninstalls": 83,
-    "updated_at": "2026-11-27T03:06:55.499267+00:00",
+    "uninstalls": 84,
+    "updated_at": "2026-11-27T04:11:17.548257+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21174,8 +21174,8 @@
    {
     "pkg": "com.xiaomi.ab",
     "small_batch": false,
-    "uninstalls": 232,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 233,
+    "updated_at": "2026-11-27T04:10:20.766761+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21265,8 +21265,8 @@
    {
     "pkg": "com.xiaomi.digitalkey",
     "small_batch": false,
-    "uninstalls": 212,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 213,
+    "updated_at": "2026-11-27T04:11:46.363338+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21384,8 +21384,8 @@
    {
     "pkg": "com.xiaomi.mis",
     "small_batch": false,
-    "uninstalls": 259,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 260,
+    "updated_at": "2026-11-27T04:11:46.363338+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21935,9 +21935,9 @@
    },
    {
     "pkg": "com.hihonor.android.FloatTasks",
-    "small_batch": false,
-    "uninstalls": 13,
-    "updated_at": "2026-11-26T01:14:51.684526+00:00",
+    "small_batch": true,
+    "uninstalls": 14,
+    "updated_at": "2026-11-27T04:10:53.050835+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -22188,8 +22188,8 @@
    {
     "pkg": "com.hihonor.desktop.explorer",
     "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-26T01:14:51.684526+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T04:10:53.050835+00:00",
     "verdict": "SAFE"
    },
    {
@@ -22447,8 +22447,8 @@
    {
     "pkg": "com.hihonor.iconnect",
     "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-26T01:11:44.442264+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T04:11:38.162273+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22853,9 +22853,9 @@
    {
     "pkg": "com.hihonor.trustspace",
     "small_batch": true,
-    "uninstalls": 8,
-    "updated_at": "2026-11-26T01:11:44.442264+00:00",
-    "verdict": "SAFE"
+    "uninstalls": 9,
+    "updated_at": "2026-11-27T04:10:53.050835+00:00",
+    "verdict": "UNCLEAR"
    },
    {
     "pkg": "com.hihonor.video",
@@ -24823,8 +24823,8 @@
    {
     "pkg": "com.hihonor.android.FloatTasks",
     "small_batch": false,
-    "uninstalls": 11,
-    "updated_at": "2026-11-26T01:14:51.684526+00:00",
+    "uninstalls": 12,
+    "updated_at": "2026-11-27T04:10:53.050835+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -25054,8 +25054,8 @@
    {
     "pkg": "com.hihonor.desktop.explorer",
     "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-26T01:14:51.684526+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T04:10:53.050835+00:00",
     "verdict": "SAFE"
    },
    {
@@ -25292,8 +25292,8 @@
    {
     "pkg": "com.hihonor.iconnect",
     "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-26T01:11:44.442264+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T04:11:38.162273+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25676,9 +25676,9 @@
    },
    {
     "pkg": "com.hihonor.trustspace",
-    "small_batch": false,
-    "uninstalls": 7,
-    "updated_at": "2026-11-26T01:11:44.442264+00:00",
+    "small_batch": true,
+    "uninstalls": 8,
+    "updated_at": "2026-11-27T04:10:53.050835+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -44367,9 +44367,9 @@
    {
     "pkg": "com.coloros.directui",
     "small_batch": true,
-    "uninstalls": 4,
-    "updated_at": "2026-11-24T11:13:09.296683+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T04:10:58.288703+00:00",
+    "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.coloros.filemanager",
@@ -48524,9 +48524,9 @@
    {
     "pkg": "com.coloros.directui",
     "small_batch": true,
-    "uninstalls": 4,
-    "updated_at": "2026-11-24T11:13:09.296683+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T04:10:58.288703+00:00",
+    "verdict": "BOOTLOOP"
    },
    {
     "pkg": "com.coloros.filemanager",

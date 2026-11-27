@@ -5112,6 +5112,18 @@
   "target": "com.xiaomi.registration"
  },
  {
+  "author": "#13304",
+  "author_id": "13304",
+  "body": "之前遇到过在其他应用误触广告先跳转到云服务再跳转到广告应用。由于跳转系统应用不用确认可以直接跳转，链式启动管理直接失效，直接给这破玩意儿删了",
+  "created_at": "2026-11-27T04:10:36.080075+00:00",
+  "device_model": "REDMI K90 Pro Max",
+  "id": 771,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.0",
+  "target": "com.miui.cloudservice"
+ },
+ {
   "author": "#10231",
   "author_id": "10231",
   "body": "没有出现这种情况",
