@@ -76,6 +76,29 @@ class PostReadStore(private val storage: AppBlobStorage) {
     }
 
     /**
+     * 这条帖子上次记下的回帖数；从没记过时返回 `null`。
+     *
+     * 只给读：不写盘、不触发保存、不改变"有没有新回复"的判定——[markRead] 仍只由调用方显式触发。
+     * 取数与 [isUnread] 完全同一条路径（[blob] 可能顺手解一次码并把结果留内存，这是既有行为），
+     * 没有新增任何加载逻辑。
+     *
+     * 为什么 `null` 与 `0` 要分开：`null` 是"从没记过"（全新帖子，或旧标记被 [ReadLimit] 淘汰掉），
+     * `0` 是"记过、当时 0 条回复"。UI 上前者是"没有基准、只能写有新回复"，后者是
+     * "上次读到 #0 · 后面 N 条没看"；混成 0 之后两者就再也分不开了。[isUnread] 同样用
+     * `firstOrNull` 而不是默认值，道理一样。
+     *
+     * **时序约束**：这个数在 [markRead] 之后会被对齐成当前回帖数，所以调用点必须在
+     * **标记已读之前**读。正确顺序是：打开帖子 → 先调本方法拿"上次读到 #N、后面 M 条没看"
+     * → 再调 [markRead]。反过来读到的永远等于当前回帖数，M 恒为 0，这个方法就白加了。
+     *
+     * 与 [isUnread] 一致：`postId <= 0` 返回 `null`。
+     */
+    fun readMark(postId: Long): Int? {
+        if (postId <= 0L) return null
+        return blob().reads.firstOrNull { it.id == postId }?.comments
+    }
+
+    /**
      * 记下"读到这儿了"：回帖数只涨不跌，读一次就把数字对齐到当前值。
      *
      * 返回是否真的写了一次：调用方据此决定要不要让列表重算（已经对齐过就什么都不用做）。

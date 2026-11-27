@@ -175,6 +175,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
+// 列表卡片的「有未读」：圆点是 `drawBehind` 画的、没有节点，读屏要靠 stateDescription 才知道
+// （与 `PostImage.kt:194-195` 补 `onClick` 标签同一条理由）。
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
@@ -1239,6 +1243,13 @@ internal fun PostsScreen(
      * `remember(openId)`：换一条帖子、或者关掉回到 0 就重来一次，不会把上一帖的答案带过来。
      */
     var resumeUnread by remember(openId) { mutableStateOf<Boolean?>(null) }
+    /**
+     * 上次记下的回帖数（`PostReadStore.readMark`），与 [resumeUnread] 同一次读取带回来的。
+     *
+     * `null` = 没有精确记录（第一次读 / 被已读上限淘汰）→ 续读条只写「后面有新回复」。
+     * 必须在 `markRead` 之前取：之后就被对齐成当前值了。
+     */
+    var resumeMark by remember(openId) { mutableStateOf<Int?>(null) }
     var thread by remember { mutableStateOf<PostThread?>(null) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadError by remember { mutableStateOf<String?>(null) }
@@ -1327,6 +1338,10 @@ internal fun PostsScreen(
                     reads.hasHistory() &&
                     !reads.isUnread(fresh.post.id, 0) &&
                     reads.isUnread(fresh.post.id, fresh.post.comments)
+                // 同一时刻、同样在 `markRead` 之前，把"上次记下的回帖数"也取下来：
+                // 有了这个数，续读条才能写「上次读到 #N · 后面 M 条没看」并精确落到下一层；
+                // 读晚了（`markRead` 之后）它会被对齐成当前值，M 恒为 0，那就什么都显示不出来。
+                resumeMark = reads?.readMark(fresh.post.id)
             }
             // 已经读了正文，就把这条帖子此时的回帖数记下来：列表上的未读点因此灭掉，
             // 以后回帖变多再重新亮起来（"有新回复"）。
@@ -2077,6 +2092,7 @@ else -> Column {
                 // 续读条只在「打开之前确实有新的回帖」时才出现（见 [resumeUnread]）；
                 // `null`（还没问过）与 `false` 都是"不出现"——没有未读时那一格一个组合项都不建。
                 resumeUnread = resumeUnread == true,
+                resumeMark = resumeMark,
                 /**
                  * 这一条要回的是哪一楼（null = 普通回帖）。
                  *
@@ -2630,7 +2646,7 @@ private fun PostListPane(
  * 左边是作者字母头像（同一个人永远同一个色），右边四行：标题、分类与标签、摘要、元信息。
  * 摘要只放两行：列表是用来扫的，点进去才是读。
  *
- * [unread] 是"没看过 / 有新回复"：标题左边一个实心点，扫列表时先认它。
+ * [unread] 是"没看过 / 有新回复"：**卡片右上角**一颗 8dp 主色圆点（叠层画的，不参与布局），扫列表时先认它。
  */
 /**
  * 列表上的一张帖子卡片，逐项照 fluxdo 的 `TopicCard`（`lib/widgets/topic/topic_card.dart`
@@ -2638,7 +2654,7 @@ private fun PostListPane(
  *
  * ```
  * Column(
- *   行1: 标题（满宽，最多两行，15sp/1.3）+ 右端未读点（间距 6、下沉 5）
+ * 行1: 标题（满宽，最多两行，15sp/1.3）
  *   间距 8
  *   行2: 头像 32 跨两行 + 右侧 Column(
  *         行A: 作者名（Expanded）+ 8 + 时间
@@ -2661,10 +2677,40 @@ private fun PostListPane(
  *     而且本仓社区帖子正文普遍短，一两行摘要就够判断"要不要点进去"，比只有标题的卡片信息量大。
  *  2. `maxCollapsedLines = 3`（`topic_card_style.dart:57`）：那是"展开查看更多"的折叠行数，
  *     本仓摘要不是可展开块，固定两行就够（列表是用来扫的）。
+ *  3. 未读点的**摆法**：fluxdo 把 `unreadIndicator` 摆进标题行右端的**固定槽位**
+ *     （`topic_card.dart:296` 与 `:428-433` 的 `if (unreadIndicator != null) … Padding(top: …)`，
+ *     `:879-886` 那颗 8×8 的蓝点），它参与布局 —— 所以"有未读"的标题比"已读"的少一截可用宽度，
+ *     同一列里换行位置会不一样。本仓改成画在卡片背景层上（见下一段），标题永远满宽。
  *
  * 标题为什么独占一行：论坛列表以标题为主信息，照片和署名排在它后面，视线沿左边缘直扫。
  *
- * [unread] 画在标题行右端（位置固定），[saved] / [mine] 只加在名字后面，不抢标题的注意力。
+ * [unread] 画在**卡片右上角**（标题首行右侧、卡片右内边距那条沟里），[saved] / [mine] 只加在名字后面，
+ * 不抢标题的注意力。
+ *
+ * ## 未读点为什么这样画（改这里之前先读这三条）
+ *
+ * 1. **为什么用 `drawBehind`，而不是叠一个 `Box`**：`Box` 有两难。塞进标题 `Row` 里（fluxdo 就这么做）
+ *    会参与测量，未读卡片的标题可用宽度少 `6 + 8 = 14dp`，同一屏里"读过"与"有未读"的标题折行位置不同；
+ *    改成 `Box { Column(卡片内容); Box(Modifier.align(TopEnd)) }` 又要把 `clip` / `background` /
+ *    `combinedClickable` 整条修饰符链挪到外层 `Box` 上，圆角裁切、水波纹、长按手势的作用范围全部
+ *    跟着变一次，等于重排这张卡片。`drawBehind` 只在同一个节点上多一条 draw 记录：卡片节点、
+ *    测量尺寸、手势区域一个都不动，而且它排在 `clip` 之后，点天然被圆角裁在卡片里。
+ * 2. **为什么是 8dp 圆点 + 1.5dp 描边**：参考实现是 6dp 圆点 + 1dp `surface` 描边
+ *    （`post_header_section.dart:334-345` 的 `width: 6, height: 6` +
+ *    `Border.all(color: theme.colorScheme.surface, width: 1)`），那是**楼层头**里的一颗点，
+ *    旁边的字比列表标题小一号。本仓列表卡片的标题是 15sp（见本函数标题的 `fontSize = 15.sp`），
+ *    字号大一号，点也大一号：`6 → 8`（1.33 倍）、`1 → 1.5`（1.5 倍）。描边多放大半档不是手滑：
+ *    1.33dp 在 2x/3x 屏上会被取整吃掉半条像素，看着像根本没描边，1.5dp 才落得住。
+ *    描边画在**内侧**（`radius = 4dp - 0.75dp`），所以视觉外径正好 8dp，不会额外撑出一圈 1.5dp 的边。
+ * 3. **为什么 `reads == null` / 认不出身份 / 已读时一个组合项都不建**：这个点的显隐只由传进来的
+ *    [unread] 决定，而它来自 `PostsScreen` 的 `unreadOf`：`reads != null && reads.hasHistory() &&
+ *    reads.isUnread(post.id, post.comments)`。三档各自的理由是 ——
+ *    · `reads == null`（本机存储还没起来）：算不出"有没有新回复"，画点等于撒谎；
+ *    · `hasHistory() == false`（全新装上，一条都没读过）：满屏都是点，等于没有提示；
+ *    · 已读：`isUnread` 自己就返回 `false`；认不出身份时 `post.id <= 0L`，`isUnread` 同样返回 `false`
+ *      （见 `PostReadStore.isUnread`）。
+ *    这三档在卡片里都只是"`drawBehind` 里那个 `if (!unread) return@drawBehind`" —— 不加空 `Box`、
+ *    不加 `Spacer`、不进布局，卡片仍是同一个组合项、同一个尺寸。
  */
 @Composable
 private fun PostCard(
@@ -2687,7 +2733,7 @@ private fun PostCard(
     } else {
         scheme.onSurface
     }
-    // 时间那一格：未读用主色（和标题右端那个点呼应），其余跟着元信息色走。
+    // 时间那一格：未读用主色（和右上角那颗点呼应），其余跟着元信息色走。
     val timeColor = if (unread) {
         scheme.primary
     } else {
@@ -2703,6 +2749,36 @@ private fun PostCard(
             .padding(bottom = 8.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(FlSurfaceLevel.Block.colorOf(scheme))
+            // 未读点**画在背景层上**，不进布局（为什么这么画见 [PostCard] 的 KDoc「未读点为什么这样画」）。
+            // 这一条排在 `background` 之后、内边距之前，所以 `size` 就是卡片自身的尺寸
+            // （宽 = 这一列的宽度；高 = 卡片高，卡间距那 8dp 已经被上面的 `padding(bottom = 8)` 扣掉），
+            // 坐标原点就是卡片左上角。
+            .drawBehind {
+                // 只有"有未读"才画：其余三档（`reads == null`、认不出身份、已读）连 draw 都不进，
+                // 不是"画个透明的点占着位置"。
+                if (!unread) return@drawBehind
+                // 外径 8dp、描边 1.5dp，描边画在内侧 → 视觉外径仍是 8dp（与 Flutter
+                // `Border.all` 的"描边占盒内"口径一致，见 `post_header_section.dart:334-345`）。
+                val stroke = 1.5.dp.toPx()
+                val radius = 4.dp.toPx() - stroke / 2f
+                // 位置：右上角，落在卡片右侧 12dp 内边距那条沟里（点的右缘离卡边 2dp），
+                // 所以它永远压不到标题文字；纵向对齐标题**首行**的中线 = 顶内边距 10dp
+                // + 首行行高 19.5sp 的一半（标题的 `lineHeight = 19.5.sp`）。
+                val center = Offset(
+                    x = size.width - 6.dp.toPx(),
+                    y = 10.dp.toPx() + 19.5.sp.toPx() / 2f,
+                )
+                drawCircle(color = scheme.primary, radius = radius, center = center)
+                // 描边用 `surface`（`post_header_section.dart:340-343` 的
+                // `Border.all(color: theme.colorScheme.surface, width: 1)`）：卡片底色是
+                // `FlSurfaceLevel.Block`，圆点直接压上去边缘会和底色糊在一起，一圈底色描边把它托出来。
+                drawCircle(
+                    color = scheme.surface,
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = stroke),
+                )
+            }
             // 长按 = 收藏 / 取消收藏：列表上最常用的两个动作（看、收）各占一种手势，不必先进详情。
             .combinedClickable(
                 role = Role.Button,
@@ -2710,6 +2786,11 @@ private fun PostCard(
                 onLongClick = onLongClick,
                 onClick = onClick,
             )
+            // 圆点没有节点（`drawBehind` 画的），读屏软件看不见它，所以"有未读"在这里补一句话。
+            // 排在 `combinedClickable` 之后：并进它那个按钮节点一起念，不新增一个读屏停靠点。
+            .semantics {
+                if (unread) stateDescription = "有未读"
+            }
             .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
     ) {
         // 行1：标题满宽。这一行必须 fillMaxWidth —— 标题吃 weight(1f)，无界宽度下会被算成 0。
@@ -2737,17 +2818,9 @@ private fun PostCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (unread) {
-                Spacer(modifier = Modifier.width(6.dp))
-                // 蓝点与标题首行视觉居中：`EdgeInsets.only(top: 5)`（`topic_card.dart:432`）；
-                // 直径 **8dp**（`topic_card.dart:879-880` 的 `width/height: 8`）。
-                Box(
-                    modifier = Modifier
-                        .padding(top = 5.dp)
-                        .size(8.dp)
-                        .background(scheme.primary, CircleShape),
-                )
-            }
+            // 未读点**不在这里**：它由卡片自己的 `drawBehind` 画在右上角（零布局影响）。
+            // 上一版在这一行末尾塞过 `Spacer(6dp) + Box(8dp)`，那 14dp 会从标题的可用宽度里扣掉，
+            // 同一列里"有未读"和"已读"的标题换行位置就不一样了。
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -3149,6 +3222,12 @@ private fun PostThreadPane(
      * 为 false 时那一格一个组合项都不建，`thread-*` 的 item 序列与改动前完全一样。
      */
     resumeUnread: Boolean = false,
+    /**
+     * 上次记下的回帖数（`readMark`，在 `markRead` 之前取的）。
+     *
+     * 与 [resumeUnread] 配套：true 时才用得到的"精确位置"；`null` 时续读条只写「后面有新回复」。
+     */
+    resumeMark: Int? = null,
     /**
      * 这一次发送要挂到哪一楼下面（引用回复）；null 表示普通回帖。
      *
@@ -3691,14 +3770,27 @@ private fun PostThreadPane(
                         // 在 LazyColumn 的作用域之外），所以没有增量时这一格与改动前完全一样：
                         // 不占高度，也不留空 item。
                         if (resumeUnread) {
-                            val firstFloor = comments.firstOrNull()
+                            // 先落成非空/非委托的局部 val：`resumeMark` 是 `by remember` 的委托属性，
+                            // 直接在里面写 `if (resumeMark != null) shown.comments - resumeMark`
+                            // 拿不到 smart cast（委托属性一律不能），会编译不过。
+                            val mark = resumeMark
+                            // 目标：有 `mark` 时是"上次看到的那一条之下第一条"（精确续读），
+                            // 没 `mark` 时退回第一层楼。两种都走 `jumpToFloorId`，与
+                            // 「回复 #N」指示条、目录面板、帖内搜索同一个落位函数。
+                            val target = mark
+                                ?.let { seen -> comments.getOrNull(seen) }
+                                ?: comments.firstOrNull()
                             ThreadResumeBar(
-                                onClick = if (firstFloor != null) {
-                                    // 目标 = 第一层楼（也就是 `FLOORS_FIRST` 那一格）。
-                                    // 跳转统一走 `jumpToFloorId`：过滤态下它会先撤过滤、
-                                    // 下一帧再按全量索引滚过去，与「回复 #N」指示条、
-                                    // 目录面板、帖内搜索用的是同一个函数。
-                                    { jumpToFloorId(firstFloor.id) }
+                                mark = mark,
+                                unseen = if (mark != null) {
+                                    (shown.comments - mark).coerceAtLeast(0)
+                                } else {
+                                    // 没有精确数字时至少说清"这条帖子有多少条回复"这个语境，
+                                    // 而不是编一个"后面 N 条"。
+                                    shown.comments
+                                },
+                                onClick = if (target != null) {
+                                    { jumpToFloorId(target.id) }
                                 } else {
                                     // 一层楼都没有（`comments` 空）时算不出目标：
                                     // 胶囊置灰、整条不挂点击，不做"点了没反应"的东西。
@@ -4985,18 +5077,16 @@ private fun FloorFilterBanner(name: String, count: Int, onClear: () -> Unit) {
  * 塞进已有的那个 item（`PostSectionHeader` 上面）则**一个索引都不用动**：LazyColumn 的
  * item 序列与改动前逐项相同，跳楼 / 日期分隔 / 只看此人 / 目录 / 帖内搜索全部落在正确楼层。
  *
- * ## 为什么没有 `#N`、没有「后面 M 条」（退回只写"有新回复"）
+ * ## `#N` /「后面 M 条」从哪来
  *
- * [PostReadStore] 只公开 `hasHistory` / `isUnread` / `markRead`：它记的那个 `comments` 数
- * （`Entry.comments`）连同 `blob()` 都是 private，接口只能回答"比记下来的多不多"。
- * 更麻烦的是打开详情时会立刻 `markRead(当前回帖数)` 把数字对齐，对齐之后连这个布尔量都
- * 恒为 false —— 所以调用方是"打开之前问一次，只把答案（有没有增量）带进来"（见
- * `PostsScreen` 的 `resumeUnread`；"有没有新回复"与"第一次读"是两次 `isUnread` 分开问的，
- * 后一次传 0 当探针，因为 `isUnread` 对没记录过的帖子一律回答 true）。
- * 拿不到具体数字就不编数字：文案写「后面有新回复」，
- * 跳转目标退回**第一层楼**（`comments.first()`，也就是 `FLOORS_FIRST` 那一格），
- * 至少省掉"从标题一路划到第一层"那一段。
- * 不为了凑出 `#N` 在本地另存一份 mark —— 那是第二份真相，写读两条路早晚会分叉。
+ * 从 `PostReadStore.readMark(postId)`：它直接给出"上次记下的回帖数"，命中不了时是 `null`
+ * （与"记过 0 条"分开）。**关键是时序** —— 打开详情时会立刻 `markRead(当前回帖数)` 把数字
+ * 对齐，对齐之后这个方法返回的就是当前值；所以 `PostsScreen` 必须在 `markRead` **之前**把
+ * 它取下来，与"有没有增量"一起带进来（见那边的 `resumeUnread` / `resumeMark`）。
+ *
+ * 拿不到（`null`：第一次读、或已被已读上限淘汰）就不编数字：文案退回「后面有新回复」，
+ * 跳转目标退回**第一层楼**，至少省掉"从标题一路划到第一层"那一段。
+ * 不做"本地另存一份 mark"这种第二份真相。
  *
  * ## 行为边界
  *
@@ -5006,6 +5096,15 @@ private fun FloorFilterBanner(name: String, count: Int, onClear: () -> Unit) {
  */
 @Composable
 private fun ThreadResumeBar(
+    /**
+     * 上次记下的回帖数（`PostReadStore.readMark`，在 `markRead` **之前**取）。
+     *
+     * null = 这台机器上没有这条帖子的精确记录（第一次读、或被已读上限淘汰）：文案退回
+     * 「后面有新回复」，不编 `#N` / `M`。
+     */
+    mark: Int? = null,
+    /** 没看到的条数：精确时有 `mark` 就按它算，没有时给当前回帖数当语境。 */
+    unseen: Int = 0,
     /** 目标楼层算不出来时为 null：胶囊置灰、整条不挂点击。 */
     onClick: (() -> Unit)?,
 ) {
@@ -5013,6 +5112,16 @@ private fun ThreadResumeBar(
     // 置灰只压前景、不换底色：这一条仍然是"这里有个入口"，只是这一次点不动。
     val ink = if (onClick != null) scheme.onSurface else scheme.onSurface.copy(alpha = 0.38f)
     val accent = if (onClick != null) scheme.primary else scheme.primary.copy(alpha = 0.38f)
+    // 楼层号换算：`mark` 条回复看过了，其中最后一条的位置是 `#(mark + 1)`
+    // （主楼是 #1、第 i 条回复是 `#(i + 2)`，所以看过 `mark` 条 = 看到 `#(mark + 1)`）。
+    val text = if (mark != null && mark > 0) {
+        "上次读到 #${mark + 1} · 后面 $unseen 条没看"
+    } else if (mark != null) {
+        // `mark == 0`：读过但一条回复都没有 —— 说"读到 #1"（主楼）是准的。
+        "上次读到 #1 · 后面 $unseen 条没看"
+    } else {
+        "后面有新回复"
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -5047,7 +5156,7 @@ private fun ThreadResumeBar(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "后面有新回复",
+            text = text,
             style = MaterialTheme.typography.labelMedium,
             color = ink,
             maxLines = 1,
