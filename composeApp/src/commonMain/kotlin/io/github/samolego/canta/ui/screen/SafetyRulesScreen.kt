@@ -220,7 +220,9 @@ fun SafetyRulesScreen(
     // Every model the backend has plans for, with the counts its chips print.
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
     // 「上一次认出来的范围」：目录为空的那一帧（从详情返回、正在重拉）要沿用它，不能退成全部机型。
-    var resolvedScope by remember { mutableStateOf(PlanScope.All) }
+    // 显式写 PlanScope：`mutableStateOf(PlanScope.All)` 会把类型参数推断成子类型 `PlanScope.All`，
+    // 下面赋 `PlanScope.ThisPhone` 就编译不过（2026-11-27 CI 报的那个 Assignment type mismatch）。
+    var resolvedScope by remember { mutableStateOf<PlanScope>(PlanScope.All) }
     // **必须在 `catalog` / `resolvedScope` 之后**：下面的 `planScope` 要读它们。
     var catalogLoading by remember { mutableStateOf(true) }
     var pickerOpen by remember { mutableStateOf(false) }
