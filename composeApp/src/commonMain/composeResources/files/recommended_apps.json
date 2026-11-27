@@ -1,6 +1,6 @@
 {
- "version": 4,
- "updated": "2026-11-20",
+ "version": 5,
+ "updated": "2026-11-27",
  "apps": [
   {
    "id": "via",
@@ -447,6 +447,25 @@
    "accent": "#0284C7",
    "url": "https://github.com/VREMSoftwareDevelopment/WiFiAnalyzer",
    "summary": "把周围每个 Wi-Fi 的信号强度和信道占用画成曲线：一眼看出哪个信道最挤，路由器该挪到哪一段。"
+  },
+  {
+   "id": "cyime",
+   "name": "CyIME 输入法",
+   "author": "Cyletix",
+   "category": "tools",
+   "license": "GPL-3.0",
+   "mark": "Cy",
+   "accent": "#0F766E",
+   "url": "https://github.com/Cyletix/CyIME",
+   "replacesPackages": [
+    "com.sohu.inputmethod.sogou",
+    "com.sohu.inputmethod.sogouoem",
+    "com.sohu.inputmethod.sogou.oem",
+    "com.sohu.inputmethod.sogou.xiaomi",
+    "com.sohu.inputmethod.sogou.meizu",
+    "com.sohu.inputmethod.sogou.nubia"
+   ],
+   "summary": "Rime 系的开源中文输入法，26 键 / 九键 / 双拼五笔都支持，词库和皮肤全本地；装它就能把预装的搜狗输入法卸掉。"
   }
  ]
 }
