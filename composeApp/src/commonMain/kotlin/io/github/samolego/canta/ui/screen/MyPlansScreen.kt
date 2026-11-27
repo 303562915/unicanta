@@ -240,15 +240,14 @@ fun MyPlansScreen(
             //
             // 「什么时候拿到的」不是装饰：这一页排查过两次「上传了但看不见」，而屏幕上分不清
             // 是数据没到、还是自己没刷新。写着「3 分钟前」，就知道该不该点右上角那个刷新。
-            if (myPlans.isNotEmpty()) {
+            //
+            // **空列表时更要显示**（2026-11-27 修）：原来这里套了 `myPlans.isNotEmpty()`，
+            // 于是「一个方案都没传过」的人看到的是一片空白，连「这份数据有多新」都没有 ——
+            // 而空列表恰恰是最需要证明「我真去问了，是库那边没有」的那种情况。
+            // 只要这一趟真的问到过答案（fetchedAt > 0），就把 0 和时间都写出来。
+            if (!loading && fetchedAt > 0L) {
                 Text(
-                    text = buildString {
-                        append("共 ${myPlans.size} 个方案")
-                        if (fetchedAt > 0L) {
-                            append(" · ")
-                            append(ageLabel(now - fetchedAt))
-                        }
-                    },
+                    text = "共 ${myPlans.size} 个方案 · ${ageLabel(now - fetchedAt)}",
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
                     color = MaterialTheme.colorScheme.outline,
