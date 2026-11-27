@@ -1,10 +1,16 @@
 package io.github.samolego.canta.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.minimumInteractiveComponentSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -59,11 +66,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
@@ -72,6 +81,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -562,6 +572,15 @@ fun ChatScreen(
      */
     var imageHint by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
+    /**
+     * 群公告横幅这一趟被关掉了没有。
+     *
+     * 只记这一次进入页面：公告本身是长期的东西，下次进来该再看见一眼；但人正在聊天时它挡着一行，
+     * 关掉就该关掉，不该因为滚动或新消息又弹回来。
+     */
+    var announcementDismissed by remember(conversationId) { mutableStateOf(false) }
+    /** 公告全文对话框开没开：横幅点一下看全文（横幅只显示两三行）。 */
+    var showAnnouncement by remember { mutableStateOf(false) }
     /** 刚复制的是哪一条：不是 null 的时候底部亮一句「已复制」，过一会儿自己灭掉。 */
     var copiedId by remember { mutableStateOf<Long?>(null) }
     // 跨平台剪贴板：与 TweaksScreen 里复制命令用的是同一个（LocalClipboardManager.setText）。
@@ -1291,6 +1310,20 @@ fun ChatScreen(
                 muted = muted,
                 onTogglePin = { togglePin() },
                 onToggleMute = { toggleMute() },
+                // 群公告：从会话详情里拿。私聊没有公告，传空串就是「还没有公告」。
+                announcement = if (grouped) detail?.announcement.orEmpty() else "",
+                // 置顶消息与收藏：数据在下一批接（后端的置顶消息 / 本机收藏），这里先给空列表，
+                // 入口行那两格点了会老实说「还没有」。
+                pinnedMessages = emptyList(),
+                savedMessages = emptyList(),
+                // 「聊天」那一下：入口行收起 + 回到最新一条（reverseLayout 里 0 就是尾巴）。
+                onJumpToLatest = { scope.launch { listState.animateScrollToItem(0) } },
+                // 只有群主能改公告；别人（和私聊）不给这个入口。
+                onEditAnnouncement = if (grouped && detail?.isOwner(owner) == true) {
+                    { onOpenGroupInfo() }
+                } else {
+                    null
+                },
             )
         },
         // 底部 inset 只留一份。Scaffold 默认已经给内容一份 navigationBars，内容里再来一次
@@ -1313,6 +1346,18 @@ fun ChatScreen(
                         .only(WindowInsetsSides.Bottom),
                 ),
         ) {
+            // 群公告横幅：群里发过公告就一直挂在消息上面（微信就是这个位置），点开看全文。
+            // 顶栏那排入口里的「公告」格子是同一个内容的第二个入口——横幅会被往下翻走，格子不会。
+            if (grouped && !announcementDismissed) {
+                val notice = detail?.announcement.orEmpty()
+                if (notice.isNotBlank()) {
+                    ChatAnnouncementBanner(
+                        text = notice,
+                        onOpen = { showAnnouncement = true },
+                        onClose = { announcementDismissed = true },
+                    )
+                }
+            }
             loadError?.let { reason -> ChatErrorLine(reason) }
             // 翻译失败那句只借一次机会：它和 loadError 同一个样式，两秒后自己收走。
             translateHint?.let { line -> ChatErrorLine(line) }
@@ -1735,6 +1780,42 @@ fun ChatScreen(
         )
     }
 
+    // 公告全文：横幅只放两三行，点开看完整那份。和群设置里编辑的是同一段文字。
+    if (showAnnouncement) {
+        Dialog(onDismissRequest = { showAnnouncement = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(18.dp),
+            ) {
+                Text(
+                    text = "群公告",
+                    style = FlText.headline,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = detail?.announcement.orEmpty().ifBlank { "这个群还没有公告。" },
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                Text(
+                    text = "知道了",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(top = 14.dp)
+                        .clickable { showAnnouncement = false },
+                )
+            }
+        }
+    }
+
     // 转发去哪：列出所有会话让人点一个。对话框本身画在页面之外，所以它放在根作用域里，
     // 不进上面那个 Column——进去会被当成最后一行内容排版。
     forwarding?.let { message ->
@@ -1757,15 +1838,30 @@ fun ChatScreen(
 }
 
 /**
- * 顶栏：回去的箭头 + 首字头像 + 名字（群聊挂人数）+ 右边两个圆按钮。
+ * 顶栏下面那一排入口里，此刻展开的是哪一块。
  *
- * 图标集里没有电话和相机，通话用 [FlGlyphs.profiles]、更多用 [FlGlyphs.more]。
- * [FlGlyphs.profiles] 直接走 [onOpenGroupInfo]（这一层没有通话实现，点开的是群资料）；
- * [FlGlyphs.more] 不再直接跳页，而是展开一列操作（置顶 / 免打扰 / 群设置），照抖音群聊那一下。
+ * [Chat] 不是"聊天页"，而是"什么都别展开"：入口行还开着的时候，点第一个格子就是把下面那块收掉、
+ * 顺手回到最新一条消息。和抖音群聊那一下一致——顶上那排是开关，不是第二个页面。
+ */
+private enum class ChatHeaderSection { Chat, Announcement, Pinned, Saved }
+
+/**
+ * 顶栏：回去的箭头 + 圆头像 + 名字（群聊挂人数）+ 右边一颗折叠按钮。
+ *
+ * 右边以前是两个圆按钮（通话 / 更多），现在合成一颗：灰底圆里一个实心三角，收着时朝下、展开时朝上。
+ * 点开在顶栏下面铺一排入口——聊天 / 公告 / 置顶消息 / 收藏 / 设置，照微信、抖音的群聊：
+ * 群公告、置顶消息这类"整个群都该看见"的东西从顶栏进，而不是藏在右上角某个菜单的第三项里。
+ *
+ * 公告、置顶、收藏三格右上角各有一颗红点：有内容就亮，一眼看出这个群有没有新公告、有没有置顶。
+ * 「设置」不进展开区，直接走 [onOpenGroupInfo]——群名、群头像、公告、我的群昵称、进群码都在那一页，
+ * 在顶栏里再抄一遍只会两处各改一半。
  *
  * 左边的圆头像和标题也是一块入口：群聊点进群资料（[onOpenGroupInfo]），
  * 私聊点进对面那个人的主页（[onOpenProfile]，身份用 [peerOwner]）。私聊还没拿到对方身份时
  * 这一块不挂点击——空身份只会推开一张空主页。
+ *
+ * [pinned] / [muted] / [onTogglePin] / [onToggleMute] 暂时留着但不画：「置顶聊天」「免打扰」两个开关
+ * 在群设置页里（`GroupSettingsScreen`），顶栏不再重复一遍。
  */
 @Composable
 private fun ChatTopBar(
@@ -1782,20 +1878,26 @@ private fun ChatTopBar(
     onNavigateBack: () -> Unit,
     onOpenGroupInfo: () -> Unit,
     onOpenProfile: (String) -> Unit,
-    /**
-     * 这一页的置顶 / 免打扰现状。菜单按它说话：「置顶聊天」还是「取消置顶」。
-     *
-     * 两个回调都可空：私聊那一侧将来若不给，菜单里就少那一项，而不是留一个点了没反应的入口。
-     */
     pinned: Boolean = false,
     muted: Boolean = false,
     onTogglePin: (() -> Unit)? = null,
     onToggleMute: (() -> Unit)? = null,
+    /** 群公告正文；空串 = 没设过。私聊恒为空，入口行那格点了就写「还没有公告」。 */
+    announcement: String = "",
+    /** 群置顶消息：有内容时「置顶消息」那格亮红点，展开那一块把它们列出来。 */
+    pinnedMessages: List<ChatMessage> = emptyList(),
+    /** 本机收藏的消息（和「置顶」分开：收藏只对自己可见）。 */
+    savedMessages: List<ChatMessage> = emptyList(),
+    /** 点「聊天」：把入口行收起来并回到最新一条。null 时只收起入口行。 */
+    onJumpToLatest: (() -> Unit)? = null,
+    /** 点公告卡片右上角的「编辑」：去群设置里写公告。null 表示不给这个入口（非群主/私聊）。 */
+    onEditAnnouncement: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
-    // 右上角那个「更多」菜单开没开。锚在按钮上的 DropdownMenu：抖音把这几项展开成一列，
-    // 而不是直接跳页——跳转本身没变，只是先让人看见有哪些动作。
-    var topMenuOpen by remember { mutableStateOf(false) }
+    // 入口行开没开：那颗三角按钮是它的唯一开关。
+    var entriesOpen by remember { mutableStateOf(false) }
+    // 入口行开着时，下面展开的是哪一块。默认 [ChatHeaderSection.Chat]＝什么都不展开。
+    var section by remember { mutableStateOf(ChatHeaderSection.Chat) }
     // 标题就是群名，**不挂人数**：内测群人少，人数不该出现在顶栏（见 ChatScreen 里 members 的注释）。
     val heading = title
     // 私聊的入口需要一个具体的人：拿不到身份（空串）就返回 null，整块不响应。
@@ -1864,64 +1966,401 @@ private fun ChatTopBar(
                     )
                 }
             }
-            FlBarButton(
-                glyph = FlGlyphs.profiles,
-                contentDescription = "通话",
-                onClick = onOpenGroupInfo,
-                size = 36.dp,
-                iconSize = 18.dp,
+            Spacer(Modifier.width(4.dp))
+            ChatFoldButton(
+                expanded = entriesOpen,
+                dot = announcement.isNotBlank() ||
+                    pinnedMessages.isNotEmpty() ||
+                    savedMessages.isNotEmpty(),
+                onClick = {
+                    entriesOpen = !entriesOpen
+                    // 收起来时连展开的那一块也一起收掉：下次点开是干净的一排入口。
+                    if (!entriesOpen) section = ChatHeaderSection.Chat
+                },
             )
-            Spacer(Modifier.width(2.dp))
-            // 右上角这个圆按钮照抖音群聊：点开在右侧展开一列操作（置顶 / 免打扰 / 群设置），
-            // 而不是像以前那样整块直接跳资料页——那两个入口现在都在这个菜单里，跳转逻辑一模一样。
-            Box {
-                FlBarButton(
-                    glyph = FlGlyphs.more,
-                    contentDescription = "更多",
-                    onClick = { topMenuOpen = true },
-                    size = 36.dp,
-                    iconSize = 18.dp,
+        }
+        AnimatedVisibility(visible = entriesOpen) {
+            ChatHeaderEntries(
+                section = section,
+                hasAnnouncement = announcement.isNotBlank(),
+                pinnedCount = pinnedMessages.size,
+                savedCount = savedMessages.size,
+                onPick = { picked ->
+                    when (picked) {
+                        ChatHeaderSection.Chat -> {
+                            entriesOpen = false
+                            section = ChatHeaderSection.Chat
+                            onJumpToLatest?.invoke()
+                        }
+                        else -> section = picked
+                    }
+                },
+                onOpenSettings = {
+                    entriesOpen = false
+                    section = ChatHeaderSection.Chat
+                    onOpenGroupInfo()
+                },
+            )
+        }
+        // 展开区的正文：公告全文、置顶消息、收藏，三块共用同一个位置，选哪块显示哪块。
+        // 只在入口行开着时画——入口行收起来，下面这一块跟着一起收，不留一条没来由的卡片。
+        if (entriesOpen) {
+            when (section) {
+                ChatHeaderSection.Announcement -> ChatAnnouncementCard(
+                    text = announcement,
+                    canEdit = isGroup && onEditAnnouncement != null,
+                    onEdit = onEditAnnouncement,
                 )
-                DropdownMenu(
-                    expanded = topMenuOpen,
-                    onDismissRequest = { topMenuOpen = false },
-                ) {
-                    onTogglePin?.let { toggle ->
-                        DropdownMenuItem(
-                            text = { Text(if (pinned) "取消置顶" else "置顶聊天", fontSize = 14.sp) },
-                            onClick = {
-                                topMenuOpen = false
-                                toggle()
-                            },
-                        )
-                    }
-                    onToggleMute?.let { toggle ->
-                        DropdownMenuItem(
-                            text = { Text(if (muted) "取消消息免打扰" else "消息免打扰", fontSize = 14.sp) },
-                            onClick = {
-                                topMenuOpen = false
-                                toggle()
-                            },
-                        )
-                    }
-                    // 群聊这一项是群设置；私聊没有群设置，给的是对面那个人的主页。
-                    val secondary: (() -> Unit)? = if (isGroup) {
-                        onOpenGroupInfo
-                    } else if (openPeer != null) {
-                        openPeer
-                    } else {
-                        null
-                    }
-                    secondary?.let { open ->
-                        DropdownMenuItem(
-                            text = { Text(if (isGroup) "群设置" else "查看资料", fontSize = 14.sp) },
-                            onClick = {
-                                topMenuOpen = false
-                                open()
-                            },
-                        )
-                    }
-                }
+                ChatHeaderSection.Pinned -> ChatMessageListCard(
+                    title = "置顶消息",
+                    messages = pinnedMessages,
+                    emptyText = "这个群还没有置顶消息。",
+                )
+                ChatHeaderSection.Saved -> ChatMessageListCard(
+                    title = "我收藏的消息",
+                    messages = savedMessages,
+                    emptyText = "还没有收藏的消息：长按一条消息就能收进来。",
+                )
+                ChatHeaderSection.Chat -> Unit
+            }
+        }
+    }
+}
+
+/**
+ * 顶栏右边那颗折叠按钮：灰色圆底 + 一个实心三角。
+ *
+ * 三角而不是折线 chevron：这个按钮只表示"这一排收起来 / 放下去"，实心三角一眼能看出朝哪边；
+ * 展开时朝上（再点一下就是收起来），收起时朝下（点一下放出来）。红点表示收起状态里也有新东西
+ * （新公告、置顶消息、收藏），不然收着的时候什么提示都没有。
+ */
+@Composable
+private fun ChatFoldButton(
+    expanded: Boolean,
+    dot: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.9f else 1f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 700f),
+        label = "fold-button-press",
+    )
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .minimumInteractiveComponentSize()
+            .scale(pressScale)
+            .clip(CircleShape)
+            .background(scheme.surfaceVariant)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = if (expanded) "收起群功能" else "展开群功能",
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(12.dp)) {
+            val triangle = Path()
+            if (expanded) {
+                // 展开时朝上：尖在中间偏上，底边贴着下面。
+                triangle.moveTo(0f, size.height * 0.74f)
+                triangle.lineTo(size.width, size.height * 0.74f)
+                triangle.lineTo(size.width / 2f, size.height * 0.26f)
+            } else {
+                triangle.moveTo(0f, size.height * 0.26f)
+                triangle.lineTo(size.width, size.height * 0.26f)
+                triangle.lineTo(size.width / 2f, size.height * 0.74f)
+            }
+            triangle.close()
+            drawPath(triangle, scheme.onSurfaceVariant)
+        }
+        if (dot) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(scheme.error),
+            )
+        }
+    }
+}
+
+/**
+ * 顶栏下面那一排入口：聊天 / 公告 / 置顶消息 / 收藏 / 设置，五格均分，一格一个动作。
+ *
+ * 第五格「设置」不在这里展开任何东西，它把入口行收起来直接进群设置页——那一页要滚，塞在顶栏里
+ * 会把消息压到看不见。
+ */
+@Composable
+private fun ChatHeaderEntries(
+    section: ChatHeaderSection,
+    hasAnnouncement: Boolean,
+    pinnedCount: Int,
+    savedCount: Int,
+    onPick: (ChatHeaderSection) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChatEntryCell(
+            label = "聊天",
+            selected = section == ChatHeaderSection.Chat,
+            dot = false,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Chat) },
+        )
+        ChatEntryCell(
+            label = "公告",
+            selected = section == ChatHeaderSection.Announcement,
+            dot = hasAnnouncement,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Announcement) },
+        )
+        ChatEntryCell(
+            label = "置顶消息",
+            selected = section == ChatHeaderSection.Pinned,
+            dot = pinnedCount > 0,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Pinned) },
+        )
+        ChatEntryCell(
+            label = "收藏",
+            selected = section == ChatHeaderSection.Saved,
+            dot = savedCount > 0,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Saved) },
+        )
+        ChatEntryCell(
+            label = "设置",
+            selected = false,
+            dot = false,
+            modifier = Modifier.weight(1f),
+            onClick = onOpenSettings,
+        )
+    }
+}
+
+/** 入口行里的一格：文字居中，选中时主色加粗，右上角可选一颗红点。 */
+@Composable
+private fun ChatEntryCell(
+    label: String,
+    selected: Boolean,
+    dot: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClickLabel = label, onClick = onClick)
+            .padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) scheme.primary else scheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (dot) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 8.dp)
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(scheme.error),
+            )
+        }
+    }
+}
+
+/**
+ * 聊天区上方的群公告横幅：一个喇叭 + 两行字 + 右边一颗关闭。
+ *
+ * 微信把群公告放在这个位置，因为它是"整个群"的信息，不该只在设置里藏一份。点一下看全文，
+ * 右边的叉只关这一趟——下次进这个群还该看见。
+ */
+@Composable
+private fun ChatAnnouncementBanner(
+    text: String,
+    onOpen: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(scheme.secondaryContainer.copy(alpha = 0.55f))
+            .clickable(onClickLabel = "看群公告全文", onClick = onOpen)
+            .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        FlGlyphIcon(glyph = FlGlyphs.info, size = 16.dp, tint = scheme.primary)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            color = scheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        FlBarButton(
+            glyph = FlGlyphs.close,
+            contentDescription = "关闭公告",
+            onClick = onClose,
+            size = 26.dp,
+            iconSize = 12.dp,
+            filled = false,
+        )
+    }
+}
+
+/**
+ * 公告卡片：群公告全文，三行以后自己收成「展开全文」。
+ *
+ * 没有公告的时候也说一句（而不是画一个空白框）：这一格点了要有回应，不然人以为按钮坏了；
+ * 群主那一侧多一个「编辑」，点了去群设置里写。
+ */
+@Composable
+private fun ChatAnnouncementCard(
+    text: String,
+    canEdit: Boolean,
+    onEdit: (() -> Unit)?,
+) {
+    val scheme = MaterialTheme.colorScheme
+    var expanded by remember(text) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(scheme.surfaceVariant.copy(alpha = 0.55f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "群公告",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.primary,
+            )
+            Spacer(Modifier.weight(1f))
+            if (canEdit && onEdit != null) {
+                Text(
+                    text = "编辑",
+                    fontSize = 12.sp,
+                    color = scheme.primary,
+                    modifier = Modifier.clickable(onClickLabel = "编辑群公告", onClick = onEdit),
+                )
+            }
+        }
+        Text(
+            text = text.ifBlank { "这个群还没有公告。" },
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            color = if (text.isBlank()) scheme.onSurfaceVariant else scheme.onSurface,
+            maxLines = if (expanded) Int.MAX_VALUE else 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        // 短公告不给「展开全文」：点了没变化比没这个入口更让人困惑。
+        if (text.length > 60) {
+            Text(
+                text = if (expanded) "收起" else "展开全文",
+                fontSize = 12.sp,
+                color = scheme.primary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable(
+                        onClickLabel = if (expanded) "收起公告" else "展开公告全文",
+                        onClick = { expanded = !expanded },
+                    ),
+            )
+        }
+    }
+}
+
+/**
+ * 置顶消息 / 收藏共用的一张卡片：标题 + 每一行「谁说的：摘要」，最多五条。
+ *
+ * 两种东西一个样子，是因为它们要回答的是同一个问题——"这个群里有几条被挑出来的话"；
+ * 收藏多一句"只对自己可见"的区分写在标题里，不另做一种排版。
+ */
+@Composable
+private fun ChatMessageListCard(
+    title: String,
+    messages: List<ChatMessage>,
+    emptyText: String,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(scheme.surfaceVariant.copy(alpha = 0.55f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = title,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.primary,
+        )
+        if (messages.isEmpty()) {
+            Text(
+                text = emptyText,
+                fontSize = 13.sp,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            return@Column
+        }
+        messages.take(5).forEach { message ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = message.label,
+                    fontSize = 12.sp,
+                    color = scheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = when {
+                        message.removed -> "该消息已撤回"
+                        message.kind == "image" -> "[图片]"
+                        message.body.isBlank() -> "[消息]"
+                        else -> message.body
+                    },
+                    fontSize = 12.sp,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
