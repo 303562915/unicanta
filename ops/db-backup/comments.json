@@ -5364,6 +5364,30 @@
   "target": "92"
  },
  {
+  "author": "Starking^",
+  "author_id": "12063",
+  "body": "卸载会影响锁屏设置的动态壁纸…",
+  "created_at": "2026-11-27T12:33:24.939414+00:00",
+  "device_model": "真我Neo8",
+  "id": 791,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "ColorOS 17.0.0",
+  "target": "com.heytap.colorfulengine"
+ },
+ {
+  "author": "默默闪",
+  "author_id": "12072",
+  "body": "你们删除他，用什么清理手机的",
+  "created_at": "2026-11-27T12:34:55.54862+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 792,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.308",
+  "target": "com.miui.cleanmaster"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
