@@ -5508,6 +5508,18 @@
   "target": "com.miui.thirdappassistant"
  },
  {
+  "author": "Nearly",
+  "author_id": "13992",
+  "body": "会丢指纹支付",
+  "created_at": "2026-11-27T15:12:10.252246+00:00",
+  "device_model": "Xiaomi 14 Ultra",
+  "id": 803,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.308",
+  "target": "35"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
