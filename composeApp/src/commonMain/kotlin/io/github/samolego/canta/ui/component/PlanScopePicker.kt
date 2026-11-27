@@ -92,59 +92,103 @@ fun PlanScope.label(ownLabel: String): String = when (this) {
 }
 
 /**
- * 存进设置的写法：`型号 | 版本`；全部机型是空串，本机是 `|`（型号与版本都空）。
+ * 存进设置的写法：`型号 | 版本 key | 营销名 | 品牌`，全部机型是空串，「本机」是 `|||`。
  *
- * 只存「型号」和「版本」两段字符串，不存整个 [CatalogModel]：目录随时会重建（后端一变它就变），
- * 反解时再按型号去目录里找回那一条，找不到就当成没有被选过——不为了一个记忆值让页面崩。
+ * 老写法只有 `型号 | 版本`。新写法把**判定顶部那行字要用的东西一起存下来**，这是这次改动的关键：
+ *
+ *  * 以前顶部显示什么，靠「拿存下的型号回目录里反查那一条」。目录是异步来的、返回时会重拉，
+ *    目录一空 / 一变动，反查就失败，顶部当场换一台机器 —— 用户说的「切换过来是啥意思」。
+ *  * 现在存的是**选择本身**：型号、版本、营销名、品牌。页面不再需要问目录"我选的是哪台"，
+ *    顶部那行字直接来自这份记忆。用户不点胶囊，它就一直是那一台。
+ *
+ * 老写法（只有两段）仍然能读，读到时按两段处理并回目录反查一次；那次失败也只退到「该型号的
+ * 全部版本」，不会退成「全部机型」。
  */
 private const val SCOPE_SEPARATOR = "|"
 
 /**
- * 「本机」在设置里存成什么样：只有分隔符，型号与版本两段都空。
+ * 「本机」在设置里存成什么样：型号、版本、营销名、品牌四段全空，只留三个分隔符。
  *
  * 公开出来是因为调用方（规则页）要做「不查目录就能认下的两个范围」这件事：空串 = 全部机型，
- * 这一串 = 本机，其余才是他机、必须查目录。两处各写一个 `"|"` 迟早会写歪一个。
+ * 这一串 = 本机，其余才是他机。两处各写一个分隔符迟早会写歪一个。
  */
-const val SCOPE_THIS_PHONE = SCOPE_SEPARATOR
+const val SCOPE_THIS_PHONE = "$SCOPE_SEPARATOR$SCOPE_SEPARATOR$SCOPE_SEPARATOR"
 
 fun PlanScope.toStoredValue(): String = when (this) {
     PlanScope.All -> ""
     PlanScope.ThisPhone -> SCOPE_THIS_PHONE
-    is PlanScope.Other -> model.model + SCOPE_SEPARATOR + (build?.key ?: "")
+    // 营销名和品牌也存：顶部那行字（"Redmi K70"）就靠它，不必再回目录找工作那一行。
+    is PlanScope.Other -> listOf(
+        model.model,
+        build?.key ?: "",
+        model.marketName,
+        model.brand,
+    ).joinToString(SCOPE_SEPARATOR) { it.replace(SCOPE_SEPARATOR, "/") }
 }
 
 /**
- * 把 [toStoredValue] 存下来的那串东西还原成范围；认不出来（存的是别的写法、目录里没这台机器）
- * 就回答 [PlanScope.All]，与「没选过」同一个结果。
+ * 把 [toStoredValue] 存下来的那串东西还原成范围。
  *
- * 匹配是**大小写不敏感**的，理由见下面的注释：精确比等会让「返回之后又变成全部机型」这件事
- * 每重新拉一次目录就复现一次。
+ * 关键点：**这份记忆自己就能说明"选了哪台"，不必等目录**（[storedScopeOf] 会优先用它）。
+ * 只有在老写法（2 段）、或存的时候没带营销名/品牌时，才需要 [models] 来补齐显示名与 build —
+ * 而那时候目录缺失也不会退成「全部机型」，最多是显示零售编号。
  *
- * 版本那一段存的是 [CatalogBuild.key]（`rom/版本号/build`）：同一个型号的不同系统版本各有自己的
- * 方案，只存一个版本数字会把两个 build 混成一条。
+ * 匹配是**大小写不敏感**的：型号在目录里是按 `lowercase()` 分组的，精确比等会让「返回之后又变成
+ * 全部机型」每重拉一次目录就复现一次。
  */
 fun planScopeOfStored(stored: String, models: List<CatalogModel>): PlanScope {
     val raw = stored.trim()
     if (raw.isEmpty()) return PlanScope.All
-    if (raw == SCOPE_SEPARATOR) return PlanScope.ThisPhone
-    val split = raw.indexOf(SCOPE_SEPARATOR)
-    if (split < 0) return PlanScope.All
-    val rawModel = raw.substring(0, split)
-    // **大小写不敏感**：存的是上一次目录里那行的 `model` 原文（后端给的是 "23113RKC6C"、
-    // "SM-F9710" 这种，大小写并不保证），而 `toCatalogModels` 是按 `model.lowercase()` 分组的。
-    // 每次重拉目录，后端下发的这条数据大小写一变（或本来就是另一台机器报的），精确比等就会
-    // 匹配不上 → 这里回落到 `PlanScope.All`，用户看到的就是「退出来，上面又自动变成全部机型」。
-    // 用 `equals(ignoreCase = true)` 匹配，命中不了再退一步比营销名。
-    val model = models.firstOrNull { it.model.equals(rawModel, ignoreCase = true) }
+    val parts = raw.split(SCOPE_SEPARATOR)
+    val rawModel = parts.getOrNull(0).orEmpty()
+    // 「本机」：四段全空（新写法 `|||`）或老写法的单分隔符。
+    if (rawModel.isEmpty() && parts.drop(1).all { it.isEmpty() }) return PlanScope.ThisPhone
+    if (rawModel.isEmpty()) return PlanScope.All
+    val storedKey = parts.getOrNull(1).orEmpty()
+    // 老写法与"目录缺失"共用这一条：用记忆里的型号去目录里找工作那一行，取它的 build 与名字。
+    val catalogModel = models.firstOrNull { it.model.equals(rawModel, ignoreCase = true) }
         ?: models.firstOrNull { it.label.equals(rawModel, ignoreCase = true) }
-        ?: return PlanScope.All
-    val key = raw.substring(split + 1)
-    if (key.isEmpty()) return PlanScope.Other(model)
-    // 版本那一段也要能容得下大小写与"这一版没了"：认不出就退到「这台机器的全部版本」，
-    // 而不是整页退到「全部机型」——后者看起来像用户的选择被清掉了。
-    val build = model.builds.firstOrNull { it.key.equals(key, ignoreCase = true) }
+    val storedMarket = parts.getOrNull(2).orEmpty()
+    val storedBrand = parts.getOrNull(3).orEmpty()
+    // 目录里没有这台机器时**不再退回全部机型**：记忆本身就是用户的选择，照着它显示。
+    val model = catalogModel ?: CatalogModel(
+        brand = storedBrand,
+        model = rawModel,
+        marketName = storedMarket.ifBlank { rawModel },
+    )
+    if (storedKey.isEmpty()) return PlanScope.Other(model)
+    // 版本 key 优先按记忆里的原文比；目录里没有这台机器时直接把选择立起来（老写法存的就是这个 key），
+    // 这样顶部那行字仍然说得出"HyperOS 16.0.3"，而不是退到「全部版本」。
+    val build = model.builds.firstOrNull { it.key.equals(storedKey, ignoreCase = true) }
+        ?: decodeBuildKey(storedKey, model, model.marketName)
     return PlanScope.Other(model, build)
 }
+
+/**
+ * 老写法只存了 `rom/版本号/build` 三段而没有整行：[model] 的 builds 里找不到时，用它把选择直接
+ * 立起来，让顶部那行字仍然说得出"HyperOS 16.0.3"，而不是退到「全部版本」。
+ */
+private fun decodeBuildKey(key: String, model: CatalogModel, marketName: String): CatalogBuild? {
+    val parts = key.split("/")
+    if (parts.size < 3) return null
+    return CatalogBuild(
+        brand = model.brand,
+        model = model.model,
+        marketName = marketName,
+        rom = parts[0],
+        romVersion = parts[1].toIntOrNull() ?: 0,
+        romBuild = parts.drop(2).joinToString("/"),
+    )
+}
+
+/**
+ * 「只靠记忆就能认出来」的那部分：不查目录。
+ *
+ * 规则页首帧、以及从详情页返回的那一帧，要的就是这个 —— 顶部左上角显示哪台，由上一次的选择说了算，
+ * 不由"目录到了没有"说了算。目录缺席时它给的 `Other` 已经带着完整型号与名字，`builds` 是空的，
+ * 所以胶囊行在目录回来之前不会画版本胶囊（画出来也点不了），但**名字是对的**，不会换台。
+ */
+fun storedScopeOf(stored: String): PlanScope = planScopeOfStored(stored, emptyList())
 
 /**
  * 「这一份列表」的标识，给滚动位置记忆当键用（见 `rememberRememberedListState`）。

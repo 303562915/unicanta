@@ -101,11 +101,10 @@ import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.PlanScope
 import io.github.samolego.canta.ui.component.PlanScopeBar
 import io.github.samolego.canta.ui.component.PlanScopeDialog
-import io.github.samolego.canta.ui.component.SCOPE_THIS_PHONE
 import io.github.samolego.canta.ui.component.label
 import io.github.samolego.canta.ui.component.memoryKey
-import io.github.samolego.canta.ui.component.planScopeOfStored
 import io.github.samolego.canta.ui.component.rememberRememberedListState
+import io.github.samolego.canta.ui.component.storedScopeOf
 import io.github.samolego.canta.ui.component.toStoredValue
 import io.github.samolego.canta.ui.fl.FlSegment
 import io.github.samolego.canta.ui.fl.FlSegmentedControl
@@ -146,6 +145,18 @@ private const val PROFILE_ATTEMPTS = 5
 
 /** A line under the header: what the last upload or delete said. */
 private data class Notice(val text: String, val error: Boolean = false)
+
+/**
+ * 下拉框要画的机型列表：目录 + 「当前选中的那台」。
+ *
+ * 目录里没有它（行被后端删了、这一版没人上传、目录还没回来）时，把它接在最前面，这样「当前选中」
+ * 那一格永远画得出来。已经在目录里的就不重复插——目录那份带着计数与全部版本，更好。
+ */
+private fun pickerModels(catalog: List<CatalogModel>, opened: CatalogModel?): List<CatalogModel> {
+    if (opened == null) return catalog
+    val present = catalog.any { it.model.equals(opened.model, ignoreCase = true) }
+    return if (present) catalog else listOf(opened) + catalog
+}
 
 /** One upload the dialog is about: what it may contain, and what is already ticked. */
 private data class UploadRequest(
@@ -219,51 +230,28 @@ fun SafetyRulesScreen(
     val storedScope by settings.planScopeFlow.collectAsStateWithLifecycle(initialValue = "")
     // Every model the backend has plans for, with the counts its chips print.
     var catalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
-    // 「上一次认出来的范围」：目录为空的那一帧（从详情返回、正在重拉）要沿用它，不能退成全部机型。
-    // 显式写 PlanScope：`mutableStateOf(PlanScope.All)` 会把类型参数推断成子类型 `PlanScope.All`，
-    // 下面赋 `PlanScope.ThisPhone` 就编译不过（2026-11-27 CI 报的那个 Assignment type mismatch）。
-    var resolvedScope by remember { mutableStateOf<PlanScope>(PlanScope.All) }
-    // **必须在 `catalog` / `resolvedScope` 之后**：下面的 `planScope` 要读它们。
+    // **必须在 `catalog` 之下**：`planScope` 要读它。
     var catalogLoading by remember { mutableStateOf(true) }
     var pickerOpen by remember { mutableStateOf(false) }
-    // 目录里认不出存的那台机器（型号改名、方案删光）就退到「全部机型」：和没选过一样，不会崩。
+    // 页面显示哪个机型：**只看上一次的选择**，不看目录。
     //
-    // 还有第三个洞，比前两个更容易被看见：**存的是「本机」（`|`）时它也要等目录**，而「本机」这个
-    // 范围根本不依赖目录里的任何一行。目录是异步来的、返回时还会整段重拉，所以从应用详情退回来的
-    // 一瞬间 `catalog` 是空的 → 退回「全部机型」→ 顶部胶囊变一下、底下列表换一份 → 这就是用户说的
-    // 「退出来它闪一下 / 上面又自动选」。
+    // 这是这次改动的核心。以前是「拿存下的型号回目录里反查那一行」，而目录是异步来的、返回时还会
+    // 重拉，于是同一份选择在不同帧里可能反查失败 → `PlanScope.All` → 顶部胶囊当场换一台机器。
+    // 用户的话就是「你要记住顶部左上角选中的是哪个，他就是哪个，你现在切换过来是啥意思」——
+    // 对，选择是用户给的，不是目录推出来的。
     //
-    // 修法：已知的范围在目录到位前直接认下，不经过目录。
-    //  * `storedScope` 为空 → 全部机型（默认，本来就不用查目录）；
-    //  * `storedScope` 是 `|` → 本机（不需要目录）；
-    //  * 其余（他机）才需要目录来还原型号 —— 目录空了（刚返回、还在拉）就沿用上一份认出来的，
-    //    不把"这一帧认不出"当成"用户选了全部机型"。
-    // 换范围之后的「清旧行 + 立加载中」写在下面 `plans` / `loading` / `notice` 之后那个
-    // `LaunchedEffect(planScope)` 里，原因见那里。
-    val storedTrim = storedScope.trim()
-    val planScope: PlanScope = when (storedTrim) {
-        "" -> PlanScope.All
-        SCOPE_THIS_PHONE -> PlanScope.ThisPhone
-        else -> {
-            val fromCatalog = if (catalog.isEmpty()) null else planScopeOfStored(storedTrim, catalog)
-            when {
-                fromCatalog == null -> resolvedScope
-                fromCatalog == PlanScope.All -> resolvedScope.takeIf { it != PlanScope.All } ?: PlanScope.All
-                else -> fromCatalog
-            }
-        }
+    // 现在已经不需要目录参与判定：`storedScopeOf` 从记忆本身还原型号、版本、营销名、品牌，目录只在
+    // 后面用来画版本胶囊与计数（见 `openedModel`），缺了也不影响"选的是哪台"。
+    val planScope: PlanScope = remember(storedScope) { storedScopeOf(storedScope) }
+    // 目录回来之后，把"他机"那个选择换成目录里的那一条：版本胶囊要 builds 与计数才画得出，而
+    // `storedScopeOf` 给的那条是空的。**只补这一项、不改选择本身**——型号还是记忆里的那个，
+    // 所以顶部那行字不会因为目录到了/没到而换成另一台机器（这正是要修的病）。
+    val openedModel: CatalogModel? = remember(planScope, catalog) {
+        val opened = planScope as? PlanScope.Other ?: return@remember null
+        catalog.firstOrNull { it.model.equals(opened.model.model, ignoreCase = true) } ?: opened.model
     }
-    // 认出来的结果记下来，给「目录为空的那一帧」用（返回、重拉目录的一瞬间）：`planScope` 本身是
-    // 纯函数、不持有可变态，回退得靠这一份。
-    LaunchedEffect(storedScope, catalog) {
-        val trim = storedScope.trim()
-        when {
-            trim.isEmpty() -> resolvedScope = PlanScope.All
-            trim == SCOPE_THIS_PHONE -> resolvedScope = PlanScope.ThisPhone
-            catalog.isNotEmpty() -> planScopeOfStored(trim, catalog)
-                .takeIf { it != PlanScope.All }
-                ?.let { resolvedScope = it }
-        }
+    val resolvedScope: PlanScope = remember(planScope, openedModel) {
+        (planScope as? PlanScope.Other)?.let { PlanScope.Other(openedModel ?: it.model, it.build) } ?: planScope
     }
     // The package filter of the list under the switch: the switch says which phone, this says
     // which package in it. Not remembered across a reload — a stale filter looks like a shorter
@@ -314,6 +302,8 @@ fun SafetyRulesScreen(
     //
     // 放在这一组 `remember` 之后，是因为它要读 `plans` / `loading` / `notice`。
     var lastScope by remember { mutableStateOf<PlanScope?>(null) }
+    // 键用记忆里的 `planScope`（而非 `resolvedScope`）：目录补上计数/版本胶囊不算"换了范围"，
+    // 不该因此清空列表。真正换了机型，`planScope` 必然变。
     LaunchedEffect(planScope) {
         val previous = lastScope
         lastScope = planScope
@@ -348,7 +338,7 @@ fun SafetyRulesScreen(
      * 看着像回退。
      */
     val persistPlans: suspend (List<CommunityPlan>) -> Unit = { next ->
-        when (planScope) {
+        when (resolvedScope) {
             PlanScope.All -> planCache?.writeAll(next)
             PlanScope.ThisPhone -> profile?.let { planCache?.write(it, next) }
             is PlanScope.Other -> Unit
@@ -410,8 +400,10 @@ fun SafetyRulesScreen(
         catalogLoading = false
     }
 
+    // 键用 `planScope`（记忆里的选择）：目录补齐 `resolvedScope` 的计数不该触发重新拉取，
+    // 那会让列表重画一次。真正换机型时 `planScope` 一定变。
     LaunchedEffect(profile, reloads, planScope, identity) {
-        when (val scope = planScope) {
+        when (val scope = resolvedScope) {
             PlanScope.All -> {
                 // 上一份先画出来再问后端：「全部机型」是默认范围，这一页永远用它打开，没缓存就等于
                 // 每次进来都要盯着加载符等一圈网络。排行和方案读的是同一份，所以两页一起受益。
@@ -596,11 +588,15 @@ fun SafetyRulesScreen(
     // 现在只写设置这一处：`planScope` 由 `storedScope` 派生，清列表与"加载中"由上面那个
     // `LaunchedEffect(planScope)` 做——同一次动作只有一条写入路径，不会出现"点了没生效"或者
     // 中间拿旧数据顶着新名字的一帧。
+    //
+    // 比较用 `resolvedScope`：它就是当前显示的那一台（含目录补齐后的计数/版本），
+    // 这样点同一台机器上的另一个版本胶囊才算"变了"。
     val pickScope: (PlanScope) -> Unit = { picked ->
-        if (picked != planScope) onScopeRemember(picked.toStoredValue())
+        if (picked.toStoredValue() != planScope.toStoredValue()) onScopeRemember(picked.toStoredValue())
     }
-    val opened = planScope as? PlanScope.Other
-    val allModels = planScope == PlanScope.All
+    // 页面显示的那台：顶部标题、胶囊行、下拉框、空状态全用它。
+    val opened = resolvedScope as? PlanScope.Other
+    val allModels = resolvedScope == PlanScope.All
     // The band names whatever the list below is about. This phone keeps the wording it had; an
     // opened model says so, because a plan read here may be for a phone that is not in hand.
     val heroTitle = when {
@@ -686,14 +682,14 @@ fun SafetyRulesScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     PlanScopeBar(
-                        scope = planScope,
+                        scope = resolvedScope,
                         ownLabel = ownLabel,
                         onOpen = { pickerOpen = true },
                         // The builds are capsules of their own: picking one changes the list on the
                         // spot instead of making the reader open the sheet for a value the bar can
                         // already show.
                         onSelectBuild = { build ->
-                            (planScope as? PlanScope.Other)?.let { open ->
+                            (resolvedScope as? PlanScope.Other)?.let { open ->
                                 pickScope(PlanScope.Other(open.model, build))
                             }
                         },
@@ -795,7 +791,7 @@ fun SafetyRulesScreen(
                     query = packageQuery,
                     // 位置记忆按「哪个范围」分开存：本机、全部机型、某一台他机，三者的列表不是同一份，
                     // 共用一个键会让从应用详情返回时落到另一份列表的第 N 行。
-                    page = "ranking:" + planScope.memoryKey(),
+                    page = "ranking:" + resolvedScope.memoryKey(),
                     onOpenApp = onOpenApp,
                     onRetry = { reloads++ },
                 )
@@ -810,7 +806,7 @@ fun SafetyRulesScreen(
                     offline = offline,
                     widerScope = opened != null || allModels,
                     query = packageQuery,
-                    page = "plans:" + planScope.memoryKey(),
+                    page = "plans:" + resolvedScope.memoryKey(),
                     onOpenPlan = onOpenPlan,
                     onVote = vote,
                     onDelete = { pendingDelete = it },
@@ -822,10 +818,12 @@ fun SafetyRulesScreen(
 
     if (pickerOpen) {
         PlanScopeDialog(
-            models = catalog,
+            // 记忆里那台一定要在列表里：目录缺它（后端删了行、这一版没人上传、目录还没回来）时
+            // 下拉框里也得能看见"当前选中的是这台"，而不是让用户以为选择丢了。
+            models = pickerModels(catalog, openedModel),
             ownLabel = ownLabel,
             loading = catalogLoading,
-            scope = planScope,
+            scope = resolvedScope,
             onSelect = { picked ->
                 pickerOpen = false
                 pickScope(picked)
@@ -902,7 +900,7 @@ fun SafetyRulesScreen(
                         // 发布的是本机这一份：范围还停在「他机 / 全部机型」时，先把范围切回本机，
                         // 否则下面那句 plansFor(target) 会把屏幕上的名单换成自己的，标题却还写着
                         // 别人的机型。切范围本身会触发一次本机列表的重新读取。
-                        if (planScope == PlanScope.ThisPhone) {
+                        if (resolvedScope == PlanScope.ThisPhone) {
                             val refreshed = repo.plansFor(target).withoutDuplicates()
                             plans = refreshed
                             if (refreshed.isNotEmpty()) persistPlans(refreshed)
@@ -934,7 +932,7 @@ fun SafetyRulesScreen(
                             }
                             // Re-read the same list that is on screen: under "全部机型" that is every
                             // model's, and reloading this phone's instead would silently narrow it.
-                            val refreshed = when (val current = planScope) {
+                            val refreshed = when (val current = resolvedScope) {
                                 PlanScope.All -> repo.plansAll()
                                 PlanScope.ThisPhone -> profile?.let { repo.plansFor(it) }
                                 is PlanScope.Other -> repo.plansForModel(
