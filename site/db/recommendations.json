@@ -1,5 +1,19 @@
 [
  {
+  "agrees": 61,
+  "applied": true,
+  "author": "阿方",
+  "author_id": "10543",
+  "category": "tools",
+  "created_at": "2026-11-27T05:01:51.603087+00:00",
+  "disagrees": 0,
+  "id": 31,
+  "license": "",
+  "name": "CyIME输入法",
+  "summary": "自定义程度很高，但是储存占用大",
+  "url": "https://github.com/Cyletix/CyIME"
+ },
+ {
   "agrees": 45,
   "applied": true,
   "author": "开发者",
@@ -390,20 +404,6 @@
   "name": "GKD-XA",
   "summary": "比原版好用一点",
   "url": "https://github.com/84593320z/GKD-XA"
- },
- {
-  "agrees": 1,
-  "applied": false,
-  "author": "阿方",
-  "author_id": "10543",
-  "category": "tools",
-  "created_at": "2026-11-27T05:01:51.603087+00:00",
-  "disagrees": 0,
-  "id": 31,
-  "license": "",
-  "name": "CyIME输入法",
-  "summary": "自定义程度很高，但是储存占用大",
-  "url": "https://github.com/Cyletix/CyIME"
  },
  {
   "agrees": 0,
