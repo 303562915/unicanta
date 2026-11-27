@@ -240,10 +240,10 @@ class SettingsViewModel(
      * 已经读好的那一份，不会先画一遍「全部机型」。
      *
      * **初值必须是存储里的现有值**，不能写 `state("")`：那个空串就是「全部机型」，首帧照样会先画
-     * 全部再跳回来。`planScopeFlow.value` 是 `StateFlow` 的现有值（存储构造时就已从磁盘同步读完），
+     * 全部再跳回来。`settingsStore.planScopeNow` 是同步读的现有值（存储构造时就已从磁盘读完），
      * 所以拿到的是真值。
      */
-    val planScope = settingsStore.planScopeFlow.state(settingsStore.planScopeFlow.value)
+    val planScope = settingsStore.planScopeFlow.state(settingsStore.planScopeNow)
 
     /**
      * Whether the lock has been answered in this process.

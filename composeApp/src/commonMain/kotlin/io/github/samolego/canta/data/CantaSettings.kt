@@ -155,6 +155,15 @@ class CantaSettings(storage: AppBlobStorage) {
     val planScopeFlow: Flow<String> = field { it.planScope }
 
     /**
+     * 「选择机型」当前的存储值，**同步**读（空串 = 全部机型）。
+     *
+     * 存在的理由：`planScopeFlow` 是派生出来的冷 `Flow`，没有 `value`；而界面需要"第一帧就知道选的是
+     * 哪台"，不能先去订阅、等一帧。底层 `store.state` 是 `StateFlow`，而且构造时已从磁盘同步读完，
+     * 所以这里读到的就是真值 —— 不是猜测，也不会先给个空串再跳。
+     */
+    val planScopeNow: String get() = store.state.value.planScope
+
+    /**
      * 各会话没发出去的草稿，已经是解好的 `会话号 -> 正文`，最近写的在最后。
      *
      * 解在 flow 这一层而不是让调用方自己解析原始 JSON：只有这里的 [setChatDraft] 知道格式，

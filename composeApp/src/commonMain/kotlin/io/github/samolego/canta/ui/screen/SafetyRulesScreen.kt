@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -121,6 +122,7 @@ import io.github.samolego.canta.util.romLabelOf
 import io.github.samolego.canta.util.romName
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -169,28 +171,43 @@ private data class UploadRequest(
 /**
  * 「上次挑的机型」从哪来。
  *
- * 由调用方传一个 `StateFlow` 进来（见 [io.github.samolego.canta.ui.viewmodel.SettingsViewModel.planScope]），
- * **不要**在这个页面里用 `collectAsStateWithLifecycle(initialValue = "")` 去订阅存储：
- * 页面每次重新进入（从应用详情返回、切 tab）都会重新收集，第一帧拿到的就是那个空串 =
- * 「全部机型」，然后才换成真正选的那台 —— 用户看到的就是「每次都先显示全部，再跳回之前选的」。
- * 传进来的 `StateFlow` 在 App 启动时就读好了，页面任何时候读到的都是真值。
+ * 由调用方传一个 `StateFlow` 进来（见 [io.github.samolego.canta.ui.viewmodel.SettingsViewModel.planScope]）。
+ * 那个 `StateFlow` 的初值就是存储里的真值，页面第一帧读到的就是上次那台。
  *
- * 兜底：调用方没传（测试、网页版、别的入口）时 flow 是空的，那就退回存储的
- * `planScopeFlow.value` —— 它是 `StateFlow`，**同步**就有现有值，同样不会先画一帧「全部机型」。
- * 注意这里刻意不写 `initialValue`：那个参数就是"空串先顶一帧"的根源。
+ * 为什么不用 `collectAsStateWithLifecycle`：本项目依赖的 `androidx.lifecycle.compose` 里，
+ * `Flow.collectAsStateWithLifecycle` 必需 `initialValue`（还要求 `lifecycle`），漏传就编译不过
+ * （2026-11-27 CI 的两个报错就是它）。而且它的语义是「先画 initialValue，等收集到才换」——
+ * 给空串就会先画一帧「全部机型」，再跳成上次那台，正是用户报的现象。
+ *
+ * 这里改用 [rememberStateFlowValue]：以 `flow.value` 起步，第一帧就是真值，语义上不可能先空后跳。
  */
 @Composable
 private fun rememberedScope(flow: StateFlow<String>, settings: CantaSettings): String {
-    // 两个都是 `StateFlow`：用**无参**的 `collectAsStateWithLifecycle()`，它的初值就是 `value`
-    // （项目里别处也这么用，见 `CantaApp` 的 `themeAccent`），所以第一帧就是真值，不存在
-    // 「先空串、再跳」那一帧。带 `initialValue = ""` 的写法恰恰会造出那一帧，别改回去。
-    return if (flow.value.isNotEmpty()) {
-        flow.collectAsStateWithLifecycle().value
-    } else {
-        // 只有调用方没给 App 级 flow（测试、网页版）时才走这里；存储的 `value` 同样是同步真值。
-        settings.planScopeFlow.collectAsStateWithLifecycle().value
-    }
+    // 调用方没给 App 级 flow（测试、网页版、别的入口）时 flow 是空串；那时退回存储的同步读取值，
+    // 并照样订阅存储的变化。
+    if (flow.value.isNotEmpty()) return rememberStateFlowValue(flow)
+    val fallback = remember(settings) { settings.planScopeNow }
+    return rememberFlowValue(settings.planScopeFlow, fallback)
 }
+
+/**
+ * 订阅一个 `StateFlow<String>` 并跟随它的变化，**第一帧就用 [initial] 起步**。
+ *
+ * 用 `produceState` 而不是 `collectAsStateWithLifecycle(initialValue = "")`：后者那个空串参数
+ * 会在页面重新进入时先顶一帧，那一帧就是「全部机型」，随后才跳到上次那台——用户报的就是它。
+ */
+@Composable
+private fun rememberStateFlowValue(flow: StateFlow<String>): String =
+    produceState(initialValue = flow.value, flow) {
+        flow.collect { value = it }
+    }.value
+
+/** 同上，但接收任意 `Flow`：`initial` 由调用方从存储里**同步**读出来，保证第一帧是真的。 */
+@Composable
+private fun rememberFlowValue(flow: Flow<String>, initial: String): String =
+    produceState(initialValue = initial, flow) {
+        flow.collect { value = it }
+    }.value
 
 /**
  * Two views of the same question, scoped to one phone at a time.
