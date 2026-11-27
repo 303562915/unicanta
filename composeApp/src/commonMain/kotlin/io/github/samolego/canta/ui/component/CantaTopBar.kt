@@ -92,7 +92,7 @@ fun CantaTopBar(
                     }
                 },
             )
-            // 一个图标、两个状态：亮=只显示系统应用，暗=显示全部。
+            // 一个图标、三个状态循环：系统应用 → 全部应用 → 分类面板 → 回到系统应用。
             FilterToggleButton(appListViewModel = appListViewModel)
             FlBarButton(
                 glyph = FlGlyphs.more,

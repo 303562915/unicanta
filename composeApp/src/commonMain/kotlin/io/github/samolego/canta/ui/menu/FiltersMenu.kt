@@ -45,12 +45,14 @@ import io.github.samolego.canta.ui.viewmodel.AppListViewModel
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 应用列表顶栏那一个筛选按钮：**一个点击，三个状态**。
+ * 应用列表顶栏那一个筛选按钮：**一个点击，三个状态，循环**。
  *
- * 1. 亮着的机器人 = 只显示系统应用（默认）。
+ * 1. 亮着的机器人 = 只显示系统应用。
  * 2. 点一下 → 暗着的九宫格 = 显示全部（系统 + 用户应用）。
  * 3. 再点一下 → **打开分类面板**：全部 / 用户应用 / 未分类 / 推荐卸载 / 进阶 / 专家 / 有风险。
  *    选一个分类之后图标变成漏斗，带颜色，表示"正在按分类筛"。
+ * 4. 再点一下 → 清掉分类、回到状态 1（机器人），于是 系统 → 全部 → 筛选 → 系统 绕回原点。
+ *    面板被点外面关掉也算走完第 3 步，同样回到状态 1：不允许停在"全部"上反复弹面板。
  *
  * 三个 tab（已安装 / 未安装 / 已停用）共用同一份筛选状态，所以切 tab 时选中的分类留着，
  * 只是每页按自己能匹配上的条目筛。
@@ -94,10 +96,13 @@ fun FilterToggleButton(appListViewModel: AppListViewModel) {
                     onClickLabel = description,
                     onClick = {
                         when {
-                            // 已经在筛分类：再点一下就清掉分类、回到只看系统。
-                            filtering -> appListViewModel.selectedFilter = Filter.any
+                            // 分类筛完再点：清掉分类、同时退回只看系统，状态 3 → 状态 1，闭环。
+                            filtering -> {
+                                appListViewModel.selectedFilter = Filter.any
+                                appListViewModel.onlySystem = true
+                            }
                             onlySystem -> appListViewModel.onlySystem = false
-                            // 全部 → 分类面板。
+                            // 全部 → 分类面板（状态 3）。
                             else -> showMenu = true
                         }
                     },
@@ -130,7 +135,11 @@ fun FilterToggleButton(appListViewModel: AppListViewModel) {
         CategoryFilterMenu(
             expanded = showMenu,
             selected = filter,
-            onDismiss = { showMenu = false },
+            // 没选分类就关掉面板：退回状态 1，别停在"全部"上反复弹面板。
+            onDismiss = {
+                showMenu = false
+                appListViewModel.onlySystem = true
+            },
             onPick = { picked ->
                 appListViewModel.selectedFilter = picked
                 showMenu = false
