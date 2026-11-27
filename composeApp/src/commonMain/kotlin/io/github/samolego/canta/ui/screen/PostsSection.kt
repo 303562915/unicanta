@@ -36,6 +36,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
@@ -66,7 +67,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -113,6 +113,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -138,12 +139,14 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -205,6 +208,7 @@ import io.github.samolego.canta.util.BeijingTime
 import io.github.samolego.canta.util.IdentitySetup
 import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.util.currentTimeMillis
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.toLocalDateTime
@@ -251,7 +255,7 @@ private const val POST_BODY_LIMIT = 8000
  * （空列表时 3 是 `thread-empty`，回复从 3 开始，公式照样对）。
  *
  * 能写成常量、不用 `Map<Long, Int>` 的原因是：**日期分隔不是独立 item**，它和楼层共用
- * 一个 `item(key = "c-…")`（见 `itemsIndexed` 里的注释）。于是"第 i 条回复"的索引恒为
+ * 一个 `item(key = "c-…")`（见 `items(floorRows)` 里的注释）。于是"第 i 条回复"的索引恒为
  * `FLOORS_FIRST + i`，与跨天分隔的条数无关。哪天往楼层前面再插一项，改这个数就行。
  */
 private const val FLOORS_FIRST = 3
@@ -970,6 +974,14 @@ internal fun PostsScreen(
     var tagInput by remember { mutableStateOf("") }
     /** 最后一次自动保存的时刻（epoch 毫秒）；0 表示这次还没存过。 */
     var savedAt by remember { mutableStateOf(0L) }
+    /**
+     * 目录面板开着没有（[PostTocSheet]，入口在详情顶栏的「更多」菜单里）。
+     *
+     * 状态放在这一层而不是 `PostThreadPane` 里：入口在顶栏（`DetailMoreMenu`），
+     * 而 `listState`（面板要用它算"我在第几层"）在 `PostThreadPane` 里 —— 一边一半，
+     * 只能把开关提上来。关帖时一并收掉，免得下次点开别的帖子面板还盖在上面。
+     */
+    var tocOpen by remember { mutableStateOf(false) }
     var posting by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
     /**
@@ -1469,6 +1481,8 @@ internal fun PostsScreen(
         threadError = null
         reply = ""
         replyTo = null
+        // 目录面板跟着关：它是"这一帖的楼层索引"，帖子关掉之后留着只会盖在列表上。
+        tocOpen = false
         // 独立详情那一页（`Screen.PostDetail`）：没有"列表"可以退回页内，所以直接把自己弹回去。
         // 页内切换时这里是 null，什么都不做。
         onThreadClosed?.invoke()
@@ -1657,6 +1671,7 @@ internal fun PostsScreen(
                                     platform.copyToClipboard(copyablePost(open))
                                     platform.showMessage("帖子已复制")
                                 },
+                                onOpenToc = { tocOpen = true },
                             )
                         }
                     },
@@ -1807,7 +1822,19 @@ else -> Column {
                         platform.showMessage("帖子已复制")
                     }
                 },
+                // 复制某一楼：与上面那条「复制帖子」同一个落点（platform 只在 PostsScreen 手里），
+                // 文本换成 [copyableFloor]（`#N` + 作者 + 日期 + 正文）。
+                // 楼层号由 `PostThreadPane` 里 `items(floorRows)` 那个 `index + 2` 传上来，
+                // 所以复出来的 `#N` 与卡片上画的、与跳转用的那一个数完全一致。
+                onCopyFloor = { comment, floor ->
+                    platform.copyToClipboard(copyableFloor(floor, comment))
+                    platform.showMessage("已复制")
+                },
                 onOpenRelated = { post -> startThread(post) },
+                // 目录面板：开关在 `PostsScreen`（顶栏入口也在这儿），面板本体画在
+                // `PostThreadPane` 里（它才拿着 `listState`，算得出"现在在第几层"）。
+                tocOpen = tocOpen,
+                onDismissToc = { tocOpen = false },
                 modifier = Modifier.padding(padding),
             )
 
@@ -2741,6 +2768,39 @@ private fun copyablePost(post: CommunityPost): String = buildString {
 }
 
 /**
+ * 复制**某一楼**到剪贴板的那一份：楼层号、作者、日期、正文。
+ *
+ * 与 [copyablePost] 同一套写法（日期取 `createdAt` 前 10 位那个绝对值，不用「3 分钟前」：
+ * 复制出去的字可能是过几天才被人看到），只是把「标题 + 分类 + 标签」换成了 `#N`。
+ *
+ * 楼层号由调用点传进来（[PostThreadPane] 里 `items(floorRows)` 那个 `index + 2`，和卡片上
+ * 画出来的 `#N` 是**同一个表达式**）：在这边重新按 `comments` 扫一遍也算得出来，但那样
+ * 就多了一份"楼层号怎么算"的实现；而这正是本文件反复强调只该有一处的知识
+ * （见 [FLOORS_FIRST] 那段注释）。
+ *
+ * 参考 fluxdo 那一侧的剪贴板动作（`post_footer_section/actions/menu_actions.dart:320-348`：
+ * 动作就是 `Clipboard.setData` + 一条成功 toast）：那边菜单里只有调试用的 cooked HTML /
+ * 签名，**没有**"复制这一楼"；本仓补上它，并把楼层号与日期一起拼进去 ——
+ * 复制出去的字常被转到别处（群里、文档里），"第几楼 + 哪天"是它唯一还能对回原帖的凭据。
+ */
+private fun copyableFloor(floor: Int, comment: PostComment): String = buildString {
+    append("#$floor")
+    append(" —— ")
+    append(comment.author.ifBlank { "匿名" })
+    // 绝对日期（ISO 前 10 位就是 yyyy-MM-dd）；解析不出形状时干脆不写这一段。
+    val day = comment.createdAt.take(10)
+    if (day.length == 10) {
+        append(" · ")
+        append(day)
+    }
+    appendLine()
+    if (comment.body.isNotBlank()) {
+        appendLine()
+        appendLine(comment.body.trim())
+    }
+}
+
+/**
  * 一条帖子的详情：主楼 + 回帖按楼层排，底下吸着一个回复栏。
  *
  * 用整页而不是对话框：回帖一多，对话框里那点高度连三层都看不完，「楼层」这个概念也就没了。
@@ -2770,7 +2830,22 @@ private fun PostThreadPane(
     onToggleSave: () -> Unit,
     onQuote: (PostComment) -> Unit,
     onCopy: () -> Unit,
+    /**
+     * 复制**某一楼**（`#N` + 作者 + 日期 + 正文）。
+     *
+     * 为什么是回调而不是在这里直接摸 platform：本文件里 [PostThreadPane] 是 private composable，
+     * 手上没有 `CantaPlatform`（那一路上来的是数据与动作，不是平台句柄）。把 platform 顺着
+     * `PostsScreen → PostThreadPane` 塞进去，等于让每个 composable 都能随手弹 toast、写剪贴板，
+     * 与 [onCopy]（复制整帖）这条已经存在的链路保持同一种形状：**动作在 PostsScreen 里落地**。
+     *
+     * 楼层号一起传：卡片上写的 `#N` 和复制出来的 `#N` 只能是同一个表达式算的，
+     * 让接收方自己再扫一遍 `comments` 就多了一份实现。
+     */
+    onCopyFloor: (PostComment, Int) -> Unit,
     onOpenRelated: (CommunityPost) -> Unit,
+    /** 目录面板开着没有（[PostTocSheet]）：入口在顶栏「更多」里，开关状态由 `PostsScreen` 持有。 */
+    tocOpen: Boolean = false,
+    onDismissToc: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -2793,7 +2868,7 @@ private fun PostThreadPane(
     // LazyColumn 的 item 顺序是固定的：0 = `thread-header`、1 = `op`、2 = `thread-head`、
     // 3.. = 每一条回复（空列表时 3 = `thread-empty`），再往后是 `related-head` / 每一条相关帖子
     // / `thread-foot`。**没有独立的日期分隔 item**：分隔线并进楼层自己的 item 里
-    // （见下面 `itemsIndexed` 里的注释），所以"第 i 条回复"的索引恒为 `FLOORS_FIRST + i`，
+    // （见下面 `items(floorRows)` 里的注释），所以"第 i 条回复"的索引恒为 `FLOORS_FIRST + i`，
     // 与日期分隔无关。以后往楼层前面插 item，只改 [FLOORS_FIRST] 这一个数就够。
     //
     // 用 id 而不是用 index 找目标：列表会被 `stableMerge` / 刷新换血，引用指示条上写着
@@ -2852,29 +2927,158 @@ private fun PostThreadPane(
      */
     var highlightedFloorId by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
+
+    // ------------------------------------------------------------------ 只看此人（楼层过滤）
+    //
+    // 过滤**只影响渲染**：`comments` 一个字都不动，`floorRows` 只是"按当前条件挑出来的那些
+    // 「全量索引 + 楼层」"。
+    //
+    // 为什么**不**用"被过滤的楼层渲染成 0 高度空 Box、好让 item 索引继续与全量一一对应"
+    // 那条路（看起来最省事，实际最贵）：
+    //  1. `verticalArrangement = spacedBy(4.dp)` 是按 **item 个数** 给的，0 高度的 item 也照样
+    //     吃一份 4dp：连着藏 40 层就凭空多出 160dp 可滚动的空白 —— 不漏内容，但整段是空的；
+    //  2. 要让那 160dp 消失，就得在过滤态把 `spacedBy` 换成 0、再把间距塞进每个可见楼层内部，
+    //     于是"层间距"变成随开关取两个值的一份知识，而它本来是 LazyColumn 的一行参数；
+    //  3. 索引之所以要对得上，只是因为**跳转**要算 `FLOORS_FIRST + i`；那就只在跳转这一处
+    //     处理（见 [jumpToFloorId]：目标正被藏起来时先撤过滤、下一帧再滚），而不是让 200 层楼
+    //     全部参与组合、只为维持一个没人读的索引。
+    //
+    // 反过来，过滤态下**楼层号**（`#${index + 2}`）与**日期分隔**的判断仍然用全量索引：
+    // `floorRows` 里带的就是全量索引，所以"#N 与不过滤时一致""跨天分隔与不过滤时一致"两条
+    // 一个都没丢（参考 fluxdo `topic_post_list.dart:234-235`：那边把 `postNumber` 与列表里的
+    // `postIndex` 分成两张表，楼层号从来不等于"列表里的第几行"）。
+    var authorFilter by remember(post?.id) { mutableStateOf("") }
+    // 撤过滤之后要落回的位置（过滤前那一刻的 firstVisible + offset），由下面的 LaunchedEffect 消费。
+    //
+    // 键跟着帖子（`post?.id`）：换帖时上面那个 `authorFilter` 会被重置成空，若这里还留着上一条
+    // 帖子的位置，那个 `LaunchedEffect` 就会在新帖上"撤过滤"一次、把人滚到旧帖的索引上。
+    var pendingRestore by remember(post?.id) { mutableStateOf<Pair<Int, Int>?>(null) }
+    // 过滤态下跳到了被藏起来的楼层：先撤过滤，下一帧再按全量索引滚过去。键同上。
+    var pendingJumpId by remember(post?.id) { mutableStateOf(0L) }
+
+    /** 楼层作者的身份键：优先身份码（改名后仍认得出），没有身份码（匿名 / 老数据）时退回署名。 */
+    fun authorKeyOf(comment: PostComment): String = comment.authorId.ifBlank { comment.author }
+
+    /**
+     * 渲染用的楼层序列：`(全量索引, 楼层)`。
+     *
+     * 不过滤时就是 `comments.withIndex()`，所以"第 i 条回复 → `FLOORS_FIRST + i`"这个前提
+     * 在默认状态下与上一版**完全一样**；过滤时只把不匹配的挑掉，`index` 仍然是全量的那个。
+     */
+    val floorRows: List<IndexedValue<PostComment>> = remember(comments, authorFilter) {
+        if (authorFilter.isBlank()) {
+            comments.withIndex().toList()
+        } else {
+            comments.withIndex().filter { authorKeyOf(it.value) == authorFilter }
+        }
+    }
+
+    /**
+     * 跳到某一层楼：滚到它自己的 item，并让它左边那根竖条亮起来 —— 与"跳到被回复的楼层"
+     * 同一套行为（[HIGHLIGHT_HOLD_MS] 之后由 `LaunchedEffect` 收掉）。
+     *
+     * 索引有两套，别混：
+     *  - `floorIndexOf` 给的是**全量**序列里的位置（`FLOORS_FIRST + i`，见它上面的注释）；
+     *  - 过滤态下真正能滚的是**渲染**序列里的位置（它是 `floorRows` 里的第几行）。
+     *
+     * 目标被过滤掉时渲染序列里没有它：这时**先撤过滤**，把 id 交给 [pendingJumpId]，
+     * 由下面的 `LaunchedEffect` 在全量 item 回来之后的下一帧再滚。为什么不在这里
+     * `authorFilter = ""` 之后立刻 `animateScrollToItem(全量索引)`：同一帧里 LazyColumn 的
+     * item 序列还是过滤后的那几十行，那个索引会落在完全不相干的一层上 —— 不报错，
+     * 只是"点了跳到别处"，最难查的那种。
+     */
+    fun jumpToFloorId(id: Long) {
+        // 走 `floorIndexOf` 而不是在这里再写一遍 `FLOORS_FIRST + indexOfFirst`：
+        // "日期分隔并进楼层 item"这个前提只该有**一处**实现。抄成两份的话，
+        // 哪天有人把分隔改回独立 item，改了这处漏了那处，跳转就会悄悄偏一层 ——
+        // 而且没有编译错误，只有"跳少一格"的体验 bug。
+        val absolute = floorIndexOf(id)
+        if (absolute < FLOORS_FIRST) return   // 不在 `comments` 里（被删了 / 还没拉到）
+        // 先清 0 再置 id：连着点同一个目标时，`highlightedFloorId` 的值会从 0 → id
+        // 变一次，下面那个计时 `LaunchedEffect` 重新起一轮，竖条重新亮起来，而不是"没反应"。
+        highlightedFloorId = 0L
+        highlightedFloorId = id
+        val rendered = if (authorFilter.isBlank()) {
+            absolute
+        } else {
+            FLOORS_FIRST + floorRows.indexOfFirst { it.index == absolute - FLOORS_FIRST }
+        }
+        if (rendered >= FLOORS_FIRST) {
+            // `animateScrollToItem` 是挂起函数：在 `launch` 里滚，不挡当前帧。
+            scope.launch { listState.animateScrollToItem(rendered) }
+        } else {
+            // 被藏起来了：撤过滤 + 记账，落位交给 LaunchedEffect。
+            // `pendingRestore` 一并作废，否则"撤过滤"那一轮会先把人滚回过滤前的位置、
+            // 再被这里的目标覆盖成两次滚动。
+            pendingRestore = null
+            authorFilter = ""
+            pendingJumpId = id
+        }
+    }
+
+    /**
+     * 「只看此人」：记下当前滚动位置，换成过滤序列，并滚到这个人的第一层楼。
+     *
+     * 记住位置是为了「看全部」能原样落回去：过滤前后 item 数量差得远，
+     * 只靠 LazyColumn 自己按 key 保位，落点会跑到"现在这一屏里还剩的那一层"上。
+     */
+    fun applyAuthorFilter(key: String) {
+        if (key.isBlank() || key == authorFilter) return
+        // 先记位置再换序列：换完之后 `firstVisibleItemIndex` 已经是过滤序列里的序号了。
+        // 已经在过滤态时**不覆盖**：这张记事要留的是"回到全量序列之后该落在哪"，
+        // 记成过滤序列里的序号会在"看全部"那一刻偏到别的楼层去。
+        if (authorFilter.isBlank()) {
+            pendingRestore = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
+        authorFilter = key
+        // 这个人的第一层楼在过滤序列里固定是 `FLOORS_FIRST`（header / op / thread-head 三格之后）：
+        // 过滤完先给人看见他写的那一楼，而不是停在原地（原地那层可能已经被藏掉了）。
+        //
+        // 用 `scrollToItem` 而不是 `animateScrollToItem`：序列刚被换掉，原来的像素位置在新序列里
+        // 没有对应物，动画会先滚一段"已经不存在的内容"再落下 —— 直接落位更老实。
+        scope.launch { listState.scrollToItem(FLOORS_FIRST) }
+    }
+
+    /** 「看全部」：撤掉过滤让全量序列回来，落位交给下面的 `LaunchedEffect`。 */
+    fun clearAuthorFilter() {
+        if (authorFilter.isBlank()) return
+        authorFilter = ""
+    }
+
+    // 过滤开关与"跨过滤跳转"的**落位**：都在序列换好之后才滚。
+    // 键里带 `authorFilter` 就是为了等那一帧 —— 改过滤的同一帧里 LazyColumn 还是旧序列。
+    LaunchedEffect(authorFilter, pendingRestore, pendingJumpId) {
+        // 还在过滤态：要落的目标（过滤前的位置 / 被藏起来的楼层）现在都不存在，等撤过滤。
+        if (authorFilter.isNotBlank()) return@LaunchedEffect
+        val restore = pendingRestore
+        if (restore != null) {
+            // `scrollToItem` 而不是 `animateScrollToItem`：这是"回到原处分"，动画会让人
+            // 以为自己按错了；而且过滤前后可能差上百格，动画要跑很久。
+            listState.scrollToItem(restore.first, restore.second)
+            // **滚完再清这张记事**：这两个状态都是本 effect 的键，先清会让键变化、把正在跑的
+            // 这个协程直接取消掉（`animateScrollToItem` 那种慢动画会被砍在半路）。
+            pendingRestore = null
+            return@LaunchedEffect
+        }
+        val id = pendingJumpId
+        if (id != 0L) {
+            val absolute = floorIndexOf(id)
+            if (absolute >= FLOORS_FIRST) listState.animateScrollToItem(absolute)
+            pendingJumpId = 0L
+        }
+    }
+
     // 点「回复 #N」要跳的层：null = 不挂 clickable（不做"点了没反应"的东西）。
     // 目标楼不在 `comments` 里（被删了 / 还没拉到）时也返回 null —— 同上。
-    // 依赖 `comments` 与 `listState`：列表换血之后这个 lambda 会用新的列表重新算索引。
-    val onJumpToFloor: ((Long) -> Unit)? = remember(comments, listState) {
-        if (comments.isEmpty()) {
-            null
-        } else {
-            { target ->
-                // 走 `floorIndexOf` 而不是在这里再写一遍 `FLOORS_FIRST + indexOfFirst`：
-                // "日期分隔并进楼层 item"这个前提只该有**一处**实现。抄成两份的话，
-                // 哪天有人把分隔改回独立 item，改了这处漏了那处，跳转就会悄悄偏一层 ——
-                // 而且没有编译错误，只有"跳少一格"的体验 bug。
-                val absolute = floorIndexOf(target)
-                if (absolute >= FLOORS_FIRST) {
-                    // 先清 0 再置 id：连着点同一个目标时，`highlightedFloorId` 的值会从 0 → id
-                    // 变一次，`LaunchedEffect` 重新起一轮计时，竖条重新亮起来，而不是"没反应"。
-                    highlightedFloorId = 0L
-                    highlightedFloorId = target
-                    // `animateScrollToItem` 是挂起函数：在 `launch` 里滚，不挡当前帧。
-                    scope.launch { listState.animateScrollToItem(absolute) }
-                }
-            }
-        }
+    //
+    // **不再 `remember`**（上一版是 `remember(comments, listState)`）：这个 lambda 现在还要读
+    // 过滤状态与 `floorRows`（渲染序列），记住它就会在换了过滤之后拿着上一份 `floorRows` 算位置。
+    // 代价只是每次重组新建一个 lambda（楼层里那几处 `replyIndicator` 跟着重建），
+    // 比"跳错一层"便宜得多。
+    val onJumpToFloor: ((Long) -> Unit)? = if (comments.isEmpty()) {
+        null
+    } else {
+        { target: Long -> jumpToFloorId(target) }
     }
     // 竖条到点收掉：`LaunchedEffect` 以 id 为键，跳转 lambda 会先把 id 清成 0 再置回来，
 // 所以连点同一个目标也能重新起一轮计时（不会因为"键没变"而不重跑）。
@@ -2904,306 +3108,363 @@ private fun PostThreadPane(
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                state = listState,
-                contentPadding = PaddingValues(bottom = 16.dp),
-                // 间距 4 而不是 8：楼层本身已经是一条通栏（自己带 12/12 的上下留白 + 底部 0.5dp 分隔线），
-                // 8dp 的层间缝会把那条线推到两层中间悬着。4dp 刚好留一口气，又让分隔线读作"下边界"。
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                // 顶上那块「标题 + 标签 + 元信息 + 参与者」：discourse 的话题页第一屏就是它，
-                // 楼层从它下面开始数。
-                item(key = "thread-header") {
-                    ThreadHeader(
-                        post = shown,
-                        comments = comments,
-                    )
-                }
-
-                item(key = "op") {
-                    PostFloorCard(
-                        floorLabel = "#1",
-                        author = shown.author,
-                        authorSeed = shown.authorId.ifEmpty { shown.author },
-                        stamp = relativeStamp(shown.createdAt),
-                        body = shown.body,
-                        badges = buildList {
-                            if (shown.pinned) add("置顶")
-                            if (shown.locked) add("已锁")
-                            if (authorId.isNotBlank() && shown.authorId == authorId) add("我")
-                        },
-                        // 主楼永远不引用别的楼：引用只在同一帖子的楼层之间成立。
-                        replyIndicator = null,
-                        // 主楼的 id 就是帖子的 id：跳转锚点用的是"这一楼"的 id，
-                        // 而主楼不在 `comments` 里，所以单独用帖子 id 参与高亮判定。
-                        highlighted = highlightedFloorId != 0L && highlightedFloorId == shown.id,
-                        footer = {
-                            // 顺序照 fluxdo `post_action_bar.dart:263-281`：
-                            //   Row { [leftButton = 回复胶囊] + 12, Expanded(Wrap(end){ 其它动作 }) }
-                            // 也就是**回复胶囊在左、其余动作靠右**。上一版是"赞在最左"，与源码相反。
-                            //
-                            // fluxdo 那颗左胶囊点开的是"内联回复"；本仓没有内联回复，
-                            // 所以它的 `onClick` 直接打开底部的回复面板 —— 位置照抄，行为落到
-                            // 本仓真实有的功能上，不做成点了没反应的装饰。
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                FloorPill(
-                                    label = "${shown.comments} 条回复",
-                                    icon = {
-                                        Icon(
-                                            imageVector = Icons.Rounded.ChatBubble,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(15.dp),
-                                            tint = scheme.onSurfaceVariant,
-                                        )
-                                    },
-                                    active = composerOpen,
-                                    // 锁帖 / 认不出身份时不能开面板：胶囊跟着置灰，
-                                    // 而不是点下去弹一个"回不了"。
-                                    enabled = !shown.locked && authorId.isNotBlank(),
-                                    onClick = { composerOpen = true },
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                FloorPill(
-                                    label = if (busyKey == "like:${shown.id}") "…"
-                                    else "${shown.likes}",
-                                    icon = {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Favorite,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(15.dp),
-                                            tint = if (shown.mineLike) {
-                                                scheme.primary
-                                            } else {
-                                                scheme.onSurfaceVariant
-                                            },
-                                        )
-                                    },
-                                    active = shown.mineLike,
-                                    enabled = busyKey == null,
-                                    onClick = onToggleLike,
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                // 复制整帖（标题、作者、正文、标签）：「这帖转给我看看」最省事的做法。
-                                FloorCircleButton(
-                                    label = "复制帖子",
-                                    tint = scheme.onSurfaceVariant,
-                                    onClick = onCopy,
-                                ) {
-                                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp))
-                                }
-                                // 收藏放在这里而不是顶栏：顶栏已经有删除，再挤一个按钮标题就要被压扁了。
-                                // 已收藏时星实心 + 主色，与 fluxdo 的选中态同一个表达式。
-                                FloorCircleButton(
-                                    label = if (saved) "取消收藏" else "收藏",
-                                    tint = if (saved) scheme.primary else scheme.onSurfaceVariant,
-                                    onClick = onToggleSave,
-                                ) {
-                                    Icon(Icons.Rounded.Star, null, Modifier.size(18.dp))
-                                }
-                            }
-                        },
-                    )
-                }
-
-                item(key = "thread-head") {
-                    PostSectionHeader(label = "回复", count = shown.comments)
-                }
-
-                if (comments.isEmpty()) {
-                    item(key = "thread-empty") {
-                        // 这一层 `item` 覆盖 `FLOORS_FIRST(3)` 那个位置，回复从 4 开始数；
-                        // 没有回复时 `onJumpToFloor` 本来就是 null，索引算不到这里来。
-                        PostNote(text = "还没有人回。")
+            // 楼层列表外面多这一层 `Box`，只为了给右侧那条**阅读进度轨**（[FloorProgressTrack]）
+            // 一个坐标系：它是 `Alignment.CenterEnd` 盖在列表上的，不参与列表的测量，
+            // 也就不会让楼层的高度/宽度跟着它变（把它塞进 LazyColumn 的 contentPadding 里
+            // 会让每一层楼都窄 2dp，而且贴不到"整条列表"的那个高度上）。
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 16.dp),
+                    // 间距 4 而不是 8：楼层本身已经是一条通栏（自己带 12/12 的上下留白 + 底部 0.5dp 分隔线），
+                    // 8dp 的层间缝会把那条线推到两层中间悬着。4dp 刚好留一口气，又让分隔线读作"下边界"。
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // 顶上那块「标题 + 标签 + 元信息 + 参与者」：discourse 的话题页第一屏就是它，
+                    // 楼层从它下面开始数。
+                    item(key = "thread-header") {
+                        ThreadHeader(
+                            post = shown,
+                            comments = comments,
+                        )
                     }
-                }
 
-                // 楼层号就是时间序里的位置：后端按时间正序给，这里 index + 1 直接对得上。
-                itemsIndexed(comments, key = { _, item -> "c-${item.id}" }) { index, comment ->
-                    // 跨天的第一层（以及紧跟在主楼下面那层）前面加一条日期分隔线：
-                    // 后面的回复和上一条不是同一天时，才值得说一声"从这天起"。
-                    // 主楼自己的日期在 header 里，所以 `index == 0` 时始终和主楼那一天比。
-                    //
-                    // **不拿 `comments[index - 1]` 当"前一层"就完事**：这个列表会被
-                    // `stableMerge` 就地合并、也可能因为刷新换血，索引相邻不等于时间相邻。
-                    // 先比较时间戳，只有"上一条真的更早"时才把它的日期当作前一层；
-                    // 否则退回主楼那一天 —— 那样至少不会插在错误的位置上。
-                    val previousDay = if (index == 0) {
-                        BeijingTime.dayKey(shown.createdAt)
-                    } else {
-                        val prev = comments[index - 1]
-                        if (prev.createdAt <= comment.createdAt) {
-                            BeijingTime.dayKey(prev.createdAt)
-                        } else {
-                            BeijingTime.dayKey(shown.createdAt)
-                        }
-                    }
-                    val thisDay = BeijingTime.dayKey(comment.createdAt)
-                    // 两边都解析不出日期（后端给了怪形状）时不画，免得插一条空标签。
-                    //
-                    // 分隔线并进**这一层自己的**那个「楼层 item」里，不再单独 `item(key = "date-…")`：
-                    //  1. `itemsIndexed` 的 itemContent 的 receiver 是 `LazyItemScope`，它带 scope
-                    //     marker，外面那层 `LazyListScope` 被挡住，`item()` 在里面根本调不到；
-                    //     就算调到了也是"组成一个条目的时候再往列表里插条目"，运行期一样错。
-                    //  2. 更重要的：跳转要用绝对索引。只要日期分隔是**独立 item**，"第 i 条回复"
-                    //     的索引就会随跨天分隔的条数漂移（`FLOORS_FIRST + i` 立刻是错的）。
-                    //     把分隔线和楼层放进同一个 item，楼层索引恒为 `FLOORS_FIRST + i`，
-                    //     与有没有分隔无关 —— 这就是下面 `floorIndexOf` 敢用加法算的前提。
-                    // 同一个 item 内先后 emit 的两块内容，LazyColumn 照样按垂直方向上下摆，
-                    // 线上位置与原来那条独立条目一致。
-                    if (thisDay.isNotEmpty() && thisDay != previousDay) {
-                        FloorDateSeparator(iso = comment.createdAt)
-                    }
-                    // 被回复的那一楼的作者名与头像种子：优先取**当前列表里**那一行
-                    // （名字可能已经改过），列表里没有时才退回后端抄在 replyToAuthor 上的那份。
-                    //
-                    // **键里不放 `comments`**：放了之后任何一次刷新都会让这 200 层的
-                    // remember 全部失效、各扫一遍列表，变成 O(n²)；而我们要的只是
-                    // "这个名字在不在列表里"。`replyToAuthor` 语义上就是"当时那一份"，
-                    // 刷新后仍显示旧名是可接受的（引用本来指的就是当时那一句）。
-                    val quotedRow = remember(comment.replyToId) {
-                        if (comment.replyToId <= 0L) {
-                            null
-                        } else {
-                            comments.firstOrNull { it.id == comment.replyToId }
-                        }
-                    }
-                    val quotedAuthor = quotedRow?.author?.takeIf { it.isNotBlank() }
-                        ?: comment.replyToAuthor
-                    // 头像种子与别处同一个口径（`authorId.ifEmpty { author }`）：图床地址是按
-                    // 身份码推出来的，名字只作兜底里的首字。
-                    val quotedSeed = quotedRow?.let { it.authorId.ifEmpty { it.author } }
-                        .orEmpty()
-                        .ifEmpty { comment.authorId.ifEmpty { comment.author } }
-                    PostFloorCard(
-                        floorLabel = "#${index + 2}",
-                        author = comment.author,
-                        authorSeed = comment.authorId.ifEmpty { comment.author },
-                        stamp = relativeStamp(comment.createdAt),
-                        body = comment.body,
-                        badges = if (authorId.isNotBlank() && comment.authorId == authorId) {
-                            listOf("我")
-                        } else {
-                            emptyList()
-                        },
-                        // 引用指示条：这一楼在回哪一楼。`replyToId <= 0` 时整个 lambda 是 null，
-                        // `PostFloorCard` 里那一段就一个组合项都不建（与没有功能时完全一样）。
-                        //
-                        // 点击 = 滚到被回复的那一层。**跳转回调本身可能为 null**
-                        // （列表里还没有那一楼），那时指示条照样画（信息有用），但不挂 clickable
-                        // —— 不做"点了没反应"的东西。
-                        //
-                        // 这里**不套 `derivedStateOf`**：`floorLabelOf(target)` 每次重组扫一遍
-                        // `comments` 也就几十次整数比较，比多一层快照订阅便宜。
-                        replyIndicator = if (comment.replyToId > 0L) {
-                            val target = comment.replyToId
-                            val jump = onJumpToFloor
-                            val floorOfTarget = floorLabelOf(target)
-                            // 显式声明成 composable lambda 再交给参数：直接写 `{ … }` 紧跟在
-                            // `val floorOfTarget = …` 后面，Kotlin 会把它当成上一行的尾随 lambda
-                            // 参数（`floorLabelOf(target) { … }`），于是既报"类型不匹配"，又让
-                            // 块里的 `floorOfTarget` 落到作用域外。
-                            val block: @Composable () -> Unit = {
-                                FloorReplyIndicator(
-                                    floor = floorOfTarget,
-                                    author = quotedAuthor,
-                                    authorSeed = quotedSeed,
-                                    // 跳转的**实质**条件：目标楼真的在列表里（`floorOfTarget`
-                                    // 能算出号来，即找到过它）。找不到时 `jump` 也可能非空，
-                                    // 所以两道都过才挂手势。
-                                    onClick = if (floorOfTarget >= 2 && jump != null) {
-                                        { jump(target) }
-                                    } else {
-                                        null
-                                    },
-                                )
-                            }
-                            block
-                        } else {
-                            null
-                        },
-                        highlighted = highlightedFloorId != 0L && highlightedFloorId == comment.id,
-                        footer = {
-                            // 动作行左起：**「N 条回复」胶囊**（有子回复时才有）+ 「引用回复」圆钮。
-                            // 参考里"查看直接回复"是动作行上单独一颗按钮（`post_action_bar.dart`
-                            // 的 replies 按钮 + `post_replies_list.dart` 的收起按钮），
-                            // 本仓用同一颗胶囊管开关：展开时文案变「收起」并吃 `active` 底色。
-                            val kids = repliesOf[comment.id].orEmpty()
-                            val expanded = expandedRepliesFloor == comment.id
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (kids.isNotEmpty()) {
+                    item(key = "op") {
+                        PostFloorCard(
+                            floorLabel = "#1",
+                            author = shown.author,
+                            authorSeed = shown.authorId.ifEmpty { shown.author },
+                            stamp = relativeStamp(shown.createdAt),
+                            body = shown.body,
+                            badges = buildList {
+                                if (shown.pinned) add("置顶")
+                                if (shown.locked) add("已锁")
+                                if (authorId.isNotBlank() && shown.authorId == authorId) add("我")
+                            },
+                            // 主楼永远不引用别的楼：引用只在同一帖子的楼层之间成立。
+                            replyIndicator = null,
+                            // 主楼的 id 就是帖子的 id：跳转锚点用的是"这一楼"的 id，
+                            // 而主楼不在 `comments` 里，所以单独用帖子 id 参与高亮判定。
+                            highlighted = highlightedFloorId != 0L && highlightedFloorId == shown.id,
+                            footer = {
+                                // 顺序照 fluxdo `post_action_bar.dart:263-281`：
+                                //   Row { [leftButton = 回复胶囊] + 12, Expanded(Wrap(end){ 其它动作 }) }
+                                // 也就是**回复胶囊在左、其余动作靠右**。上一版是"赞在最左"，与源码相反。
+                                //
+                                // fluxdo 那颗左胶囊点开的是"内联回复"；本仓没有内联回复，
+                                // 所以它的 `onClick` 直接打开底部的回复面板 —— 位置照抄，行为落到
+                                // 本仓真实有的功能上，不做成点了没反应的装饰。
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     FloorPill(
-                                        label = if (expanded) "收起" else "${kids.size} 条回复",
+                                        label = "${shown.comments} 条回复",
                                         icon = {
                                             Icon(
-                                                imageVector = if (expanded) {
-                                                    Icons.Rounded.KeyboardArrowUp
-                                                } else {
-                                                    Icons.Rounded.ChatBubble
-                                                },
+                                                imageVector = Icons.Rounded.ChatBubble,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(15.dp),
-                                                tint = if (expanded) {
+                                                tint = scheme.onSurfaceVariant,
+                                            )
+                                        },
+                                        active = composerOpen,
+                                        // 锁帖 / 认不出身份时不能开面板：胶囊跟着置灰，
+                                        // 而不是点下去弹一个"回不了"。
+                                        enabled = !shown.locked && authorId.isNotBlank(),
+                                        onClick = { composerOpen = true },
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    FloorPill(
+                                        label = if (busyKey == "like:${shown.id}") "…"
+                                        else "${shown.likes}",
+                                        icon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Favorite,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(15.dp),
+                                                tint = if (shown.mineLike) {
                                                     scheme.primary
                                                 } else {
                                                     scheme.onSurfaceVariant
                                                 },
                                             )
                                         },
-                                        active = expanded,
-                                        enabled = true,
-                                        onClick = {
-                                            expandedRepliesFloor = if (expanded) 0L else comment.id
-                                        },
+                                        active = shown.mineLike,
+                                        enabled = busyKey == null,
+                                        onClick = onToggleLike,
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                }
-                                if (!shown.locked) {
-                                    // 「引用回复」= 一颗 36dp 正圆（照 `post_action_bar.dart:386-397`
-                                    // 的 `reply_rounded` 圆形按钮）。本仓的引用是"把原文塞进回复框"
-                                    // 而不是内联展开，所以这一颗是**动作**，与源码同一个位置、同一个形状。
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    // 复制整帖（标题、作者、正文、标签）：「这帖转给我看看」最省事的做法。
                                     FloorCircleButton(
-                                        label = "引用回复",
+                                        label = "复制帖子",
                                         tint = scheme.onSurfaceVariant,
-                                        onClick = { onQuote(comment) },
+                                        onClick = onCopy,
                                     ) {
-                                        Icon(Icons.Rounded.FormatQuote, null, Modifier.size(18.dp))
+                                        Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp))
+                                    }
+                                    // 收藏放在这里而不是顶栏：顶栏已经有删除，再挤一个按钮标题就要被压扁了。
+                                    // 已收藏时星实心 + 主色，与 fluxdo 的选中态同一个表达式。
+                                    FloorCircleButton(
+                                        label = if (saved) "取消收藏" else "收藏",
+                                        tint = if (saved) scheme.primary else scheme.onSurfaceVariant,
+                                        onClick = onToggleSave,
+                                    ) {
+                                        Icon(Icons.Rounded.Star, null, Modifier.size(18.dp))
                                     }
                                 }
-                            }
-                        },
-                        // 展开的那一串直接回复。收起时传 null —— 这一层楼的高度与没有子回复时一模一样。
-                        replies = if (expandedRepliesFloor == comment.id &&
-                            repliesOf[comment.id].orEmpty().isNotEmpty()
-                        ) {
-                            {
-                                NestedRepliesList(
-                                    replies = repliesOf[comment.id].orEmpty(),
-                                    floorLabelOf = floorLabelOf,
-                                    onJump = onJumpToFloor,
-                                    onCollapse = { expandedRepliesFloor = 0L },
-                                )
-                            }
+                            },
+                        )
+                    }
+
+                    item(key = "thread-head") {
+                        PostSectionHeader(label = "回复", count = shown.comments)
+                        // 「只看此人」开着时的说明条：200 层的帖子里只剩三层，不写清楚"为什么"，
+                        // 看的人只会以为楼层丢了。出口（「看全部」）就放在同一行 ——
+                        // 不让人再回去翻某一层楼的菜单找出口。
+                        //
+                        // 名字与层数直接读 `floorRows`：过滤态下它全是同一个人、且就是**留下**的
+                        // 那些楼，正好是这里要说的两个数（不必再扫一遍全量 `comments`）。
+                        if (authorFilter.isNotBlank()) {
+                            FloorFilterBanner(
+                                name = floorRows.firstOrNull()?.value?.author?.ifBlank { "匿名" }
+                                    ?: "匿名",
+                                count = floorRows.size,
+                                onClear = { clearAuthorFilter() },
+                            )
+                        }
+                    }
+
+                    if (comments.isEmpty()) {
+                        item(key = "thread-empty") {
+                            // 这一层 `item` 覆盖 `FLOORS_FIRST(3)` 那个位置，回复从 4 开始数；
+                            // 没有回复时 `onJumpToFloor` 本来就是 null，索引算不到这里来。
+                            PostNote(text = "还没有人回。")
+                        }
+                    }
+
+                    // 楼层号就是时间序里的位置：后端按时间正序给，这里 index + 1 直接对得上。
+                    //
+                    // 遍历 `floorRows`（`(全量索引, 楼层)`）而不是直接 `itemsIndexed(comments)`：
+                    // 「只看此人」开着时它只含匹配的那些楼，但每一行的 `index` 仍然是**全量位置** ——
+                    // 楼层号 `#${index + 2}`、下面那段跨天判断（`comments[index - 1]`）、
+                    // 以及 `floorIndexOf` 算出的跳转索引因此全部照旧成立，过滤没有改变任何一处的含义。
+                    // 不过滤时 `floorRows` 就是 `comments.withIndex()`，与上一版逐项等价。
+                    items(floorRows, key = { "c-${it.value.id}" }) { row ->
+                        val index = row.index
+                        val comment = row.value
+                        // 跨天的第一层（以及紧跟在主楼下面那层）前面加一条日期分隔线：
+                        // 后面的回复和上一条不是同一天时，才值得说一声"从这天起"。
+                        // 主楼自己的日期在 header 里，所以 `index == 0` 时始终和主楼那一天比。
+                        //
+                        // **不拿 `comments[index - 1]` 当"前一层"就完事**：这个列表会被
+                        // `stableMerge` 就地合并、也可能因为刷新换血，索引相邻不等于时间相邻。
+                        // 先比较时间戳，只有"上一条真的更早"时才把它的日期当作前一层；
+                        // 否则退回主楼那一天 —— 那样至少不会插在错误的位置上。
+                        val previousDay = if (index == 0) {
+                            BeijingTime.dayKey(shown.createdAt)
                         } else {
-                            null
-                        },
-                    )
+                            val prev = comments[index - 1]
+                            if (prev.createdAt <= comment.createdAt) {
+                                BeijingTime.dayKey(prev.createdAt)
+                            } else {
+                                BeijingTime.dayKey(shown.createdAt)
+                            }
+                        }
+                        val thisDay = BeijingTime.dayKey(comment.createdAt)
+                        // 两边都解析不出日期（后端给了怪形状）时不画，免得插一条空标签。
+                        //
+                        // 分隔线并进**这一层自己的**那个「楼层 item」里，不再单独 `item(key = "date-…")`：
+                        //  1. `items`/`itemsIndexed` 的 itemContent 的 receiver 是 `LazyItemScope`，它带 scope
+                        //     marker，外面那层 `LazyListScope` 被挡住，`item()` 在里面根本调不到；
+                        //     就算调到了也是"组成一个条目的时候再往列表里插条目"，运行期一样错。
+                        //  2. 更重要的：跳转要用绝对索引。只要日期分隔是**独立 item**，"第 i 条回复"
+                        //     的索引就会随跨天分隔的条数漂移（`FLOORS_FIRST + i` 立刻是错的）。
+                        //     把分隔线和楼层放进同一个 item，楼层索引恒为 `FLOORS_FIRST + i`，
+                        //     与有没有分隔无关 —— 这就是下面 `floorIndexOf` 敢用加法算的前提。
+                        // 同一个 item 内先后 emit 的两块内容，LazyColumn 照样按垂直方向上下摆，
+                        // 线上位置与原来那条独立条目一致。
+                        if (thisDay.isNotEmpty() && thisDay != previousDay) {
+                            FloorDateSeparator(iso = comment.createdAt)
+                        }
+                        // 被回复的那一楼的作者名与头像种子：优先取**当前列表里**那一行
+                        // （名字可能已经改过），列表里没有时才退回后端抄在 replyToAuthor 上的那份。
+                        //
+                        // **键里不放 `comments`**：放了之后任何一次刷新都会让这 200 层的
+                        // remember 全部失效、各扫一遍列表，变成 O(n²)；而我们要的只是
+                        // "这个名字在不在列表里"。`replyToAuthor` 语义上就是"当时那一份"，
+                        // 刷新后仍显示旧名是可接受的（引用本来指的就是当时那一句）。
+                        val quotedRow = remember(comment.replyToId) {
+                            if (comment.replyToId <= 0L) {
+                                null
+                            } else {
+                                comments.firstOrNull { it.id == comment.replyToId }
+                            }
+                        }
+                        val quotedAuthor = quotedRow?.author?.takeIf { it.isNotBlank() }
+                            ?: comment.replyToAuthor
+                        // 头像种子与别处同一个口径（`authorId.ifEmpty { author }`）：图床地址是按
+                        // 身份码推出来的，名字只作兜底里的首字。
+                        val quotedSeed = quotedRow?.let { it.authorId.ifEmpty { it.author } }
+                            .orEmpty()
+                            .ifEmpty { comment.authorId.ifEmpty { comment.author } }
+                        PostFloorCard(
+                            floorLabel = "#${index + 2}",
+                            author = comment.author,
+                            authorSeed = comment.authorId.ifEmpty { comment.author },
+                            stamp = relativeStamp(comment.createdAt),
+                            body = comment.body,
+                            badges = if (authorId.isNotBlank() && comment.authorId == authorId) {
+                                listOf("我")
+                            } else {
+                                emptyList()
+                            },
+                            // 引用指示条：这一楼在回哪一楼。`replyToId <= 0` 时整个 lambda 是 null，
+                            // `PostFloorCard` 里那一段就一个组合项都不建（与没有功能时完全一样）。
+                            //
+                            // 点击 = 滚到被回复的那一层。**跳转回调本身可能为 null**
+                            // （列表里还没有那一楼），那时指示条照样画（信息有用），但不挂 clickable
+                            // —— 不做"点了没反应"的东西。
+                            //
+                            // 这里**不套 `derivedStateOf`**：`floorLabelOf(target)` 每次重组扫一遍
+                            // `comments` 也就几十次整数比较，比多一层快照订阅便宜。
+                            replyIndicator = if (comment.replyToId > 0L) {
+                                val target = comment.replyToId
+                                val jump = onJumpToFloor
+                                val floorOfTarget = floorLabelOf(target)
+                                // 显式声明成 composable lambda 再交给参数：直接写 `{ … }` 紧跟在
+                                // `val floorOfTarget = …` 后面，Kotlin 会把它当成上一行的尾随 lambda
+                                // 参数（`floorLabelOf(target) { … }`），于是既报"类型不匹配"，又让
+                                // 块里的 `floorOfTarget` 落到作用域外。
+                                val block: @Composable () -> Unit = {
+                                    FloorReplyIndicator(
+                                        floor = floorOfTarget,
+                                        author = quotedAuthor,
+                                        authorSeed = quotedSeed,
+                                        // 跳转的**实质**条件：目标楼真的在列表里（`floorOfTarget`
+                                        // 能算出号来，即找到过它）。找不到时 `jump` 也可能非空，
+                                        // 所以两道都过才挂手势。
+                                        onClick = if (floorOfTarget >= 2 && jump != null) {
+                                            { jump(target) }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                }
+                                block
+                            } else {
+                                null
+                            },
+                            highlighted = highlightedFloorId != 0L && highlightedFloorId == comment.id,
+                            footer = {
+                                // 动作行左起：**「N 条回复」胶囊**（有子回复时才有）+ 「引用回复」圆钮，
+                                // 右端一颗「更多」（`MoreVert`）。
+                                // 参考里"查看直接回复"是动作行上单独一颗按钮（`post_action_bar.dart`
+                                // 的 replies 按钮 + `post_replies_list.dart` 的收起按钮），
+                                // 本仓用同一颗胶囊管开关：展开时文案变「收起」并吃 `active` 底色。
+                                //
+                                // 右端那颗「更多」的位置照 `post_action_bar.dart:263-281` 的左右分组：
+                                // `Row { [左组] + Expanded { 右组靠 end } }` —— 所以这里用
+                                // `Spacer(weight(1f))` 把右侧动作顶到行尾（主楼的动作行也是这么写的）。
+                                val kids = repliesOf[comment.id].orEmpty()
+                                val expanded = expandedRepliesFloor == comment.id
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (kids.isNotEmpty()) {
+                                        FloorPill(
+                                            label = if (expanded) "收起" else "${kids.size} 条回复",
+                                            icon = {
+                                                Icon(
+                                                    imageVector = if (expanded) {
+                                                        Icons.Rounded.KeyboardArrowUp
+                                                    } else {
+                                                        Icons.Rounded.ChatBubble
+                                                    },
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(15.dp),
+                                                    tint = if (expanded) {
+                                                        scheme.primary
+                                                    } else {
+                                                        scheme.onSurfaceVariant
+                                                    },
+                                                )
+                                            },
+                                            active = expanded,
+                                            enabled = true,
+                                            onClick = {
+                                                expandedRepliesFloor = if (expanded) 0L else comment.id
+                                            },
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    if (!shown.locked) {
+                                        // 「引用回复」= 一颗 36dp 正圆（照 `post_action_bar.dart:386-397`
+                                        // 的 `reply_rounded` 圆形按钮）。本仓的引用是"把原文塞进回复框"
+                                        // 而不是内联展开，所以这一颗是**动作**，与源码同一个位置、同一个形状。
+                                        FloorCircleButton(
+                                            label = "引用回复",
+                                            tint = scheme.onSurfaceVariant,
+                                            onClick = { onQuote(comment) },
+                                        ) {
+                                            Icon(Icons.Rounded.FormatQuote, null, Modifier.size(18.dp))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    // 「更多」：复制本楼 / 跳到本楼顶部 / 只看此人（看全部）。
+                                    // 三种动作全部是**只读**的，所以锁帖也照给 —— 与顶栏那颗
+                                    // `DetailMoreMenu` 同一个口径（锁帖只挡编辑与删除）。
+                                    FloorMoreMenu(
+                                        floorLabel = "#${index + 2}",
+                                        author = comment.author,
+                                        filteredBy = authorFilter,
+                                        onCopy = { onCopyFloor(comment, index + 2) },
+                                        onJumpToSelf = { jumpToFloorId(comment.id) },
+                                        onOnlyThisAuthor = { applyAuthorFilter(authorKeyOf(comment)) },
+                                        onShowAll = { clearAuthorFilter() },
+                                    )
+                                }
+                            },
+                            // 展开的那一串直接回复。收起时传 null —— 这一层楼的高度与没有子回复时一模一样。
+                            replies = if (expandedRepliesFloor == comment.id &&
+                                repliesOf[comment.id].orEmpty().isNotEmpty()
+                            ) {
+                                {
+                                    NestedRepliesList(
+                                        replies = repliesOf[comment.id].orEmpty(),
+                                        floorLabelOf = floorLabelOf,
+                                        onJump = onJumpToFloor,
+                                        onCollapse = { expandedRepliesFloor = 0L },
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+
+                    if (related.isNotEmpty()) {
+                        item(key = "related-head") {
+                            PostSectionHeader(label = "相关帖子", count = related.size)
+                        }
+                        items(related, key = { "rel-${it.id}" }) { rel ->
+                            RelatedPostRow(post = rel, onClick = { onOpenRelated(rel) })
+                        }
+                    }
+
+                    item(key = "thread-foot") {
+                        PostNote(
+                            text = "回帖按时间正序，最多显示 200 层；正文支持 Markdown（标题、列表、引用、代码块）。",
+                        )
+                    }
                 }
 
-                if (related.isNotEmpty()) {
-                    item(key = "related-head") {
-                        PostSectionHeader(label = "相关帖子", count = related.size)
-                    }
-                    items(related, key = { "rel-${it.id}" }) { rel ->
-                        RelatedPostRow(post = rel, onClick = { onOpenRelated(rel) })
-                    }
-                }
-
-                item(key = "thread-foot") {
-                    PostNote(
-                        text = "回帖按时间正序，最多显示 200 层；正文支持 Markdown（标题、列表、引用、代码块）。",
-                    )
-                }
+                // 阅读进度轨（右侧那根 3dp 细条）：画在列表**之上**、贴右边缘，
+                // 不挡正文 —— 它只有 3dp，外面那圈 16dp 的点击热区是透明的。
+                // `align` 是 BoxScope 的扩展，所以由调用点给（见 [FloorProgressTrack] 的注释）。
+                FloorProgressTrack(
+                    listState = listState,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                )
             }
 
             // 锁帖不另起一条横带：fluxdo 是把"话题已关闭"写进回复胶囊的文案里
@@ -3233,6 +3494,41 @@ private fun PostThreadPane(
                 onChange = onReplyChange,
                 onSend = onSend,
             )
+
+            // ---- 目录面板（[PostTocSheet]）----
+            //
+            // 放在这一层是因为只有这里拿得到 `listState`：面板要把"你正在看第几层"高亮出来。
+            // 开关状态在 `PostsScreen`（顶栏「更多」里的入口在那儿），这边只负责画。
+            if (tocOpen) {
+                // 当前视口所在楼层：`firstVisibleItemIndex` 是**渲染序列**里的位置 ——
+                // 过滤态下它同样是 `floorRows` 的下标（见 `floorRows` 的注释），两种状态通用。
+                // 前三格（thread-header / op / thread-head）都算"在主楼"，交给面板画在「主楼」行上。
+                val currentFloorId by remember(floorRows) {
+                    derivedStateOf {
+                        val first = listState.firstVisibleItemIndex
+                        if (first < FLOORS_FIRST) {
+                            0L
+                        } else {
+                            floorRows.getOrNull(first - FLOORS_FIRST)?.value?.id ?: 0L
+                        }
+                    }
+                }
+                PostTocSheet(
+                    comments = comments,
+                    floorLabelOf = floorLabelOf,
+                    currentFloorId = currentFloorId,
+                    onJump = { id ->
+                        if (id == 0L) {
+                            // 主楼：item 1 是 `op`（item 0 是标题区，滚到那里等于把标题顶上去）。
+                            scope.launch { listState.animateScrollToItem(1) }
+                        } else {
+                            // 与「回复 #N」那条指示条同一个落位逻辑：过滤态下会先撤过滤再滚。
+                            jumpToFloorId(id)
+                        }
+                    },
+                    onDismiss = onDismissToc,
+                )
+            }
         }
         }
     }
@@ -3608,6 +3904,8 @@ private fun DetailMoreMenu(
     onDelete: () -> Unit,
     /** 复制整帖（标题、作者、正文、标签）。 */
     onCopy: () -> Unit,
+    /** 打开目录面板（[PostTocSheet]）：楼层一多，"翻回某一楼"就只剩这一条路了。 */
+    onOpenToc: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     var menuOpen by remember { mutableStateOf(false) }
@@ -3626,6 +3924,21 @@ private fun DetailMoreMenu(
             Icon(Icons.Rounded.MoreVert, null, Modifier.size(24.dp), tint = scheme.onSurface)
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            // 第一项固定是「目录」：它是**读类**动作，作者与非作者都用得上，所以放在
+            // `canManage` 那个分叉**之前**（编辑/删除只有作者有，复制帖子两边都有）。
+            // 图标用 `FormatListBulleted` 而不是 `Icons.Rounded.List`：后者会把 `List`
+            // 这个名字带进作用域，与 `List<PostComment>` 这种类型名同形，读代码时容易误会。
+            MenuRow(
+                icon = Icons.Rounded.FormatListBulleted,
+                label = "目录",
+                tint = scheme.onSurface,
+                enabled = true,
+                onClick = {
+                    menuOpen = false
+                    onOpenToc()
+                },
+            )
+            HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
             if (canManage) {
                 // 第一项：编辑话题（作者本人 / 有编辑权）。
                 MenuRow(
@@ -3844,6 +4157,330 @@ private fun FloorCircleButton(
             }
         }
     }
+}
+
+/**
+ * 一层楼右端那颗「更多」（`MoreVert`）圆钮 + 落下的小菜单。
+ *
+ * 形状照同文件的 [DetailMoreMenu]：外层一个 `Box`，触发件复用 [FloorCircleButton]
+ * （36dp 正圆 / 图标 18dp，照 fluxdo `post_action_bar.dart:409-437` 的 `_iconCircle`），
+ * 菜单里每行都走 [MenuRow]（图标 20dp + 12dp 间距 + 最小 48dp 高 + 圆角 4dp）。
+ * 同一个文件里已经有一套菜单皮肤了，这里只复用、不另起一套。
+ *
+ * 三项的来源与理由（参考 fluxdo 的楼层菜单 `post_footer_section/actions/menu_actions.dart`
+ * —— 那边是按 `canRecover` / `canDelete` 之类的**能力开关**逐项决定画不画（`:265-319`），
+ * 以及 `post_flag_sheet.dart:127-138` 那种"先把操作对象写在标题里"的抬头）：
+ *  - 「复制本楼」：楼层是帖子里最常被单独转走的一段（"你看这层说的"）；顶栏那颗「复制帖子」
+ *    复制的是整帖。文本在 [copyableFloor] 里拼，剪贴板由 [PostsScreen] 的 `onCopyFloor` 落地
+ *    —— 本 composable 没有 platform，也不该有（见 `PostThreadPane` 那个参数的注释）。
+ *  - 「跳到本楼顶部」：长楼层（一段代码块、一张长图）滚到一半时，回到这一层的开头要往上推很久。
+ *    行为与"跳到被回复的楼层"完全同一套（见 `PostThreadPane` 里的 `jumpToFloorId`）：
+ *    滚到这一层自己的 item + 左边竖条亮 1.5s（[HIGHLIGHT_HOLD_MS]）。
+ *  - 「只看此人」/「看全部」：200 层长帖里只追一个人说的话。过滤只改渲染、不重排 `comments`
+ *    （见 `PostThreadPane` 里 `floorRows` 那段注释），所以菜单文案随过滤状态在两者之间切换。
+ *
+ * 抬头那一行（`#N` + 作者）**不可点**：它是"这个菜单在操作哪一层"，不是动作 ——
+ * 所以不挂 `clickable`，只吃 `labelSmall` + `onSurfaceVariant`。
+ */
+@Composable
+private fun FloorMoreMenu(
+    /** 这一层的楼层号（`#N`，与卡片上画出来的是同一个表达式）。 */
+    floorLabel: String,
+    author: String,
+    /** 当前「只看此人」的键（空 = 看全部）；决定最后一项写「只看此人」还是「看全部」。 */
+    filteredBy: String,
+    onCopy: () -> Unit,
+    onJumpToSelf: () -> Unit,
+    onOnlyThisAuthor: () -> Unit,
+    onShowAll: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        FloorCircleButton(
+            label = "本楼更多",
+            tint = scheme.onSurfaceVariant,
+            onClick = { menuOpen = true },
+        ) {
+            // 图标 18dp：与「引用回复」那颗同一档（`FloorCircleButton` 自己会再包一层 18dp 的 Box）。
+            Icon(Icons.Rounded.MoreVert, null, Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            // 抬头：这一层是谁、是第几楼。不挂 `clickable`，只是给人对一眼。
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = floorLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = author.ifBlank { "匿名" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // 长名字（"某某的测试小号二号"）会把菜单撑宽：菜单宽度由最长的一行决定，
+                    // 而下面三项都是四个字，抬头不该比动作行宽出一截。
+                    modifier = Modifier.widthIn(max = 150.dp),
+                )
+            }
+            HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+            MenuRow(
+                icon = Icons.Rounded.ContentCopy,
+                label = "复制本楼",
+                tint = scheme.onSurface,
+                enabled = true,
+                onClick = {
+                    menuOpen = false
+                    onCopy()
+                },
+            )
+            MenuRow(
+                icon = Icons.Rounded.ArrowUpward,
+                label = "跳到本楼顶部",
+                tint = scheme.onSurface,
+                enabled = true,
+                onClick = {
+                    menuOpen = false
+                    onJumpToSelf()
+                },
+            )
+            HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+            if (filteredBy.isNotBlank()) {
+                // 过滤态：这一层就是"被留下来的那一批"，出口是「看全部」。
+                MenuRow(
+                    icon = Icons.Rounded.Visibility,
+                    label = "看全部",
+                    tint = scheme.onSurface,
+                    enabled = true,
+                    onClick = {
+                        menuOpen = false
+                        onShowAll()
+                    },
+                )
+            } else {
+                MenuRow(
+                    icon = Icons.Rounded.Person,
+                    label = "只看此人",
+                    tint = scheme.onSurface,
+                    enabled = true,
+                    onClick = {
+                        menuOpen = false
+                        onOnlyThisAuthor()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 「回复」标题下面那条**过滤说明**：现在只看谁、留下几层、怎么退出。
+ *
+ * 为什么需要它：楼层过滤是"列表里少了一大半"的效果，如果不留一行字，人只会觉得楼层丢了
+ * （200 层里只剩三层）；而唯一出口藏在某一层楼的「更多」菜单里 —— 那正好是"被过滤掉之后
+ * 最不容易想起来的地方"。所以把名字、层数和「看全部」摆在同一行。
+ *
+ * 尺寸与语气都跟着楼层里的小字走（`labelSmall` / `onSurfaceVariant`），不抢标题：
+ * 它是一条状态说明，不是一个区块。参考 fluxdo `topic_filter_controls.dart` 的做法
+ * （筛选态在列表头附近给一枚带名字的胶囊 + 一个清空入口）。
+ */
+@Composable
+private fun FloorFilterBanner(name: String, count: Int, onClear: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 与 [PostSectionHeader] 的 16dp 内容区对齐；顶部不用留 —— header 自己带了 8dp 底距。
+            .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Person,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = scheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            // 名字长的（"某某的测试小号二号"）要能省略，不能把「看全部」顶出行外。
+            text = "只看 $name（$count 层）",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        // 行内的小胶囊：最小高 32（比楼层动作行那 36 矮一档，因为它是说明不是动作），
+        // 热区靠 `heightIn` 兜住 —— 一行小字直接挂 clickable 的话按起来太窄。
+        Box(
+            modifier = Modifier
+                .heightIn(min = 32.dp)
+                .clip(RoundedCornerShape(50))
+                .background(scheme.primaryContainer.copy(alpha = 0.3f))
+                .clickable(role = Role.Button, onClickLabel = "看全部", onClick = onClear)
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "看全部",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.primary,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * 详情页右侧那条**阅读进度轨**：3dp 宽的竖条，贴右边缘，表示"读到哪儿了"。
+ *
+ * 形态照 fluxdo `topic_progress_track.dart:9-30` 的 `sidebar` 档（`restThickness = 3`、
+ * `vertical = true`、贴边、不挡内容），本仓把数值收窄成下面这一组：
+ *
+ * ```
+ * 条宽        3dp
+ * 距右边缘    2dp          （撑到屏幕边上会像一条边框）
+ * 上下留白    8dp
+ * 轨道色      onSurfaceVariant α0.12
+ * 已读色      primary α0.5
+ * 点击热区    16dp 宽       （3dp 按不中手指；源码 sidebar 的 grip 也只有 10~17dp）
+ * 首屏        alpha 0      （刚进来就竖一根线是纯噪音）
+ * ```
+ *
+ * 比例怎么算：用 `listState.layoutInfo` 里**第一项**的 `index` 和 `offset`（这一项已经滚出
+ * 视口多少像素）估出"第一屏往后第几个 item"，再除以 `totalItemsCount - 1`
+ * —— `topic_progress_track.dart:94-95` 的 `fraction(index, total)` 就是同一个式子
+ * （`total > 1` 才除、结果 clamp 到 0..1，这里照抄这两条边界）。
+ * **不**靠 `animateScrollToItem` 去"量"位置：那等于让读代码的人以为它在偷偷滚列表，
+ * 而且滚动本身会触发重组、读数又变。
+ *
+ * 首屏整条 `alpha 0` 用 `animateFloatAsState` 过渡，而不是 `if` 直接抽掉节点：
+ * 一进一出不会闪，且 `alpha == 0` 时连点击手势都不挂（看不见的东西不该吃点击）。
+ *
+ * 点击定位照 `topic_progress_track.dart`（轨道本身可点），落点换算与
+ * `topic_reading_rail.dart:86-91` 的 `_commit` 同一件事：按比例挑 item 再滚过去。
+ * 注意这是**比例定位**而不是精确落点 —— 楼层高度差得远（三行和三十行都有），
+ * 精确映射需要整条列表的高度，那正是 LazyColumn 不肯给的东西。
+ */
+@Composable
+private fun FloorProgressTrack(
+    listState: LazyListState,
+    /** 对齐由调用点给（`Modifier.align(Alignment.CenterEnd)`，`align` 只有 BoxScope 才有）。 */
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    // 只在**读数变了**才重组：滚动时 `layoutInfo` 每帧都在变，直接在组合里读它会让这条轨道
+    // 每帧重组一次（它很小，但它是叠在 200 层列表上的一层，能省就省）。
+    val progress by remember(listState) {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val total = info.totalItemsCount
+            val first = info.visibleItemsInfo.firstOrNull()
+            if (total <= 1 || first == null) {
+                0f
+            } else {
+                // 第一项自己滚出去了多少（0..1）。`size <= 0`（还没量出来）时按 0 算：
+                // 除出 NaN 会让后面那两段 `drawRoundRect` 拿到 NaN 尺寸（画不出来，还会污染
+                // 整层的绘制缓存），所以分母必须先兜住。
+                val inside = if (first.size <= 0) {
+                    0f
+                } else {
+                    (-first.offset).toFloat() / first.size
+                }
+                ((first.index + inside.coerceIn(0f, 1f)) / (total - 1)).coerceIn(0f, 1f)
+            }
+        }
+    }
+    // 首屏（第一项是 index 0 且一点都没滚）—— 连"还没量出来"（没有可见项）也算首屏。
+    val atTop by remember(listState) {
+        derivedStateOf {
+            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            first == null || (first.index == 0 && first.offset == 0)
+        }
+    }
+    val trackAlpha by animateFloatAsState(
+        targetValue = if (atTop) 0f else 1f,
+        animationSpec = tween(durationMillis = 200),
+        label = "floor-progress-track",
+    )
+    // 总数只用于点击换算，单独取：它一帖之内只在换帖/换过滤时变，不该跟着滚动重组。
+    val total by remember(listState) {
+        derivedStateOf { listState.layoutInfo.totalItemsCount }
+    }
+    val scope = rememberCoroutineScope()
+    val trackColor = scheme.onSurfaceVariant.copy(alpha = 0.12f)
+    val fillColor = scheme.primary.copy(alpha = 0.5f)
+    // 用 `Spacer` 而不是空内容的 `Box`：这一层只有"尺寸 + 手势 + 绘制"，没有任何子项，
+    // `Spacer` 就是为这种"只占位、自己画"的节点准备的（也省掉一次布局节点的语义开销）。
+    Spacer(
+        modifier = modifier
+            // **热区 16dp**：3dp 的细条手指按不中，外面这一圈要够宽；它整块透明，
+            // 所以视觉上还是一条 3dp 的线（见下面 `drawBehind` 里那 2dp 的右侧内缩）。
+            .width(16.dp)
+            .fillMaxHeight()
+            // 手势挂在 `padding` 之前：热区包含上下那 8dp 留白，手指更好按。
+            // 条还没到 alpha 1（首屏 / 没有列表）时整块不挂手势 —— 看不见的东西不该吃点击。
+            .then(
+                if (trackAlpha > 0.01f && total > 1) {
+                    // 键只用 `total`：点击换算要读它，而它在一次滚动里不变，
+                    // 所以这个 pointerInput 不会跟着滚动重建。
+                    Modifier.pointerInput(total) {
+                        detectTapGestures { offset ->
+                            val height = size.height.toFloat().coerceAtLeast(1f)
+                            val fraction = (offset.y / height).coerceIn(0f, 1f)
+                            val target = (fraction * (total - 1))
+                                .roundToInt()
+                                .coerceIn(0, total - 1)
+                            scope.launch { listState.animateScrollToItem(target) }
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            // 上下各留 8dp：贴到顶栏 / 回复栏上会读成一条边框。
+            .padding(top = 8.dp, bottom = 8.dp)
+            .alpha(trackAlpha)
+            // 两根条都画在这一层里，不用两个 `Box` 叠：
+            //  - 轨道是"满高"的一段，已读是"从顶边往下 progress"的一段，两者左边缘对齐；
+            //  - `.drawBehind` 排在 `padding` 之后，所以 `size` 是**去掉上下留白**之后的那段高度，
+            //    progress 与点击换算用的是同一个高度口径；
+            //  - 读 `progress` 发生在绘制阶段（draw phase），滚动只让这一层重绘，
+            //    不会把整棵组合树重跑一遍。
+            .drawBehind {
+                val barWidth = 3.dp.toPx()
+                // 右侧内缩 2dp：贴到屏幕边上会读成"这条是边框"，留一口气才显得是叠加的一条轨。
+                val x = size.width - 2.dp.toPx() - barWidth
+                val radius = CornerRadius(barWidth / 2f, barWidth / 2f)
+                // 轨道：整条淡色垫底。
+                drawRoundRect(
+                    color = trackColor,
+                    topLeft = Offset(x, 0f),
+                    size = Size(barWidth, size.height),
+                    cornerRadius = radius,
+                )
+                // 已读：从顶边往下这么多（`progress` 已 clamp 在 0..1；0 时高度为 0，不画）。
+                val filled = size.height * progress
+                if (filled > 0f) {
+                    drawRoundRect(
+                        color = fillColor,
+                        topLeft = Offset(x, 0f),
+                        size = Size(barWidth, filled),
+                        cornerRadius = radius,
+                    )
+                }
+            },
+    )
 }
 
 /**

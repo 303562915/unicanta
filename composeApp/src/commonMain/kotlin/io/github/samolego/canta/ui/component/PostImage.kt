@@ -3,22 +3,35 @@ package io.github.samolego.canta.ui.component
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrokenImage
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,8 +39,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -43,6 +59,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
+/** 方图墙的格子间距。参考 fluxdo 的网格（`image_grid_builder.dart:51` 是 6.0），这里缩小一档。 */
+private val PostImageGridSpacing = 4.dp
+
+/** 方图墙的圆角。Flutter 那边是 4（`image_grid_builder.dart:184`），按本仓库正文图的 8dp 统一。 */
+private val PostImageGridShape = RoundedCornerShape(8.dp)
+
+/**
+ * 方图墙最多铺几格。
+ *
+ * 三列 × 三行 = 9，正好三整行；第 10 张往后折进第 9 格的「+N」，点进去在查看器里左右翻，
+ * 墙本身不变长。
+ */
+private const val PostImageGridMaxTiles = 9
+
+/** 查看器的最大放大倍数，与聊天那条（`ChatScreen.kt` 的 `ChatImageMaxZoom`）保持一致。 */
+private const val PostImageViewerMaxZoom = 4f
+
+/** 双击放大到几倍，与聊天那条（`ChatScreen.kt:334` 的 `ChatImageDoubleTapZoom`）一致。 */
+private const val PostImageViewerDoubleTapZoom = 2.5f
+
 /**
  * 正文里的一张图（Markdown 的 `![说明](地址)`）。
  *
@@ -57,6 +93,8 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
  *  * 失败   → 同一个灰框上写「图片加载失败」，点一下重试。
  *
  * 点图片进全屏（[PostImageViewer]）：正文宽度只有屏宽减 32，长截图在楼里读不清。
+ *
+ * 多张图请用 [PostImageGrid]：一张一张按内容宽铺满，一楼的长度会翻几倍。
  *
  * [alt] 是 Markdown 里那句说明，用作无障碍描述；空的时候退回「图片」。
  */
@@ -155,40 +193,370 @@ fun PostImage(
         }
     }
 
-    // 全屏：已经解码好的那张直接画，不再下一次网络。
+    // 全屏：已经解码好的那张直接从缓存取（[PostImageCache.get] 命中），不再下一次网络。
     if (zoomed && loaded != null) {
-        PostImageViewer(bitmap = loaded, onDismiss = { zoomed = false })
+        PostImageViewer(urls = listOf(address), startIndex = 0, onDismiss = { zoomed = false })
     }
 }
 
 /**
- * 一张图的全屏查看：黑底铺满、按 `Fit` 居中，点任意处关掉。
+ * 正文里的一组图：同一楼贴了好几张时排成方图墙，点任意一格从那一张开始看大图。
  *
- * 只做"看得清"，不做相册：不挂缩放与拖动 —— 那需要一个完整的变换状态机，而这里要解决的是
- * 长截图在楼层宽度里读不清。关掉后回到原来的滚动位置（Dialog 不参与列表布局）。
+ * 为什么要有它：`MiniMarkdown` 把每张图分别交给 [PostImage] 时，每张都按内容宽铺满，
+ * 一楼五张图就是五个整屏高的长条；而 fluxdo 是把连续的图收进一个网格
+ * （`image_grid_builder.dart:42-90`：解析 `data-columns`，默认 2 列，`Wrap` 铺格子，
+ * 每格 `BoxFit.cover` + 圆角，见 `:184`）。这里按 Compose 的做法用 `Column` + `Row` 自己铺：
+ * 正文本身已经在一个纵向滚动容器里，再套一个 `LazyVerticalGrid` 会拿到无限高约束，直接崩。
+ *
+ * 规则（与需求一致，不再额外加"第几张"角标）：
+ *  * 1 张 → 原样交给 [PostImage]，比例、灰底、点开全屏都和以前一模一样；
+ *  * 2~4 张 → 2 列；
+ *  * 5 张以上 → 3 列；
+ *  * 第 10 张往后不铺格子，折进第 9 格的「+N」蒙层（[PostImageGridMaxTiles]），
+ *    点它打开查看器并停在第九张 —— 37 张图也不会把一楼拉成相册。
+ *
+ * 加载中/失败沿用正文图的灰底占位（[PostImageGridTile]）：某一格失败只是那一格空着，
+ * 不挡其它格，也不挡点开查看器。
  */
 @Composable
-private fun PostImageViewer(bitmap: ImageBitmap, onDismiss: () -> Unit) {
+fun PostImageGrid(
+    urls: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    // 空串（`![]( )`）在 MiniMarkdown 那边已经挡过一次，这里再滤一遍：空格子会让整行错位。
+    val images = remember(urls) { urls.map { it.trim() }.filter { it.isNotEmpty() } }
+    if (images.isEmpty()) return
+    if (images.size == 1) {
+        // 一张不排墙：行为完全交给 PostImage，别人依赖的那条路径一行都不动。
+        PostImage(url = images.first(), modifier = modifier)
+        return
+    }
+
+    // 从哪一张点开。null = 查看器没开：查看器整棵子树只在非 null 时进 composition，
+    // 关掉即销毁，pager 与缩放状态跟着一起走（不会残留上一次停在第几页）。
+    var viewerStart by remember(images) { mutableStateOf<Int?>(null) }
+
+    // 2~4 张两列、5 张以上三列。参照 fluxdo 默认 2 列（`image_grid_builder.dart:42-44`），
+    // 三列只在张数多到两列会把楼层拉太长时才上。
+    val columns = if (images.size <= 4) 2 else 3
+    val shown = images.size.coerceAtMost(PostImageGridMaxTiles)
+    val hidden = images.size - shown
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(PostImageGridSpacing),
+    ) {
+        (0 until shown).chunked(columns).forEach { rowIndexes ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(PostImageGridSpacing),
+            ) {
+                rowIndexes.forEach { index ->
+                    PostImageGridTile(
+                        url = images[index],
+                        // 「+N」只挂最后一格，且只在实际有折叠时才挂。
+                        badge = if (hidden > 0 && index == shown - 1) "+$hidden" else null,
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewerStart = index },
+                    )
+                }
+                // 末行不满要补空位：不补的话最后一张会被 weight 拉成整行宽，看着像另一张图。
+                repeat(columns - rowIndexes.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+
+    val start = viewerStart
+    if (start != null) {
+        PostImageViewer(
+            urls = images,
+            startIndex = start,
+            onDismiss = { viewerStart = null },
+        )
+    }
+}
+
+/**
+ * 方图墙里的一格：1:1、`Crop`、圆角 8dp，右下角什么都不放（除了整组折叠时的「+N」）。
+ *
+ * 为什么固定 1:1 而不是跟图片比例走：一堆不同比例的图混在一行里，格子高度各不相同，
+ * 墙会变成锯齿。Flutter 那边是"按列宽 × 图片比例算高度再夹 80..300"
+ * （`image_grid_builder.dart:208-217`），在方图形态下等价于把比例钉成 1。
+ *
+ * 三态与 [PostImage] 同源：灰底 → 图；失败就只是这一格变成灰底 + 破图图标，
+ * 点一下重试（不打开查看器，因为查看器里也是"图片加载失败"）。
+ *
+ * [badge] 非空时在格子上盖一层半透明黑 + 白字（"+N"）。盖层不带手势，
+ * 点击仍旧落到外层 [Box] 的 clickable 上，所以点「+N」等于点这一格。
+ */
+@Composable
+private fun PostImageGridTile(
+    url: String,
+    modifier: Modifier = Modifier,
+    badge: String? = null,
+    onClick: () -> Unit,
+) {
+    val address = url.trim()
+    var bitmap by remember(address) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(address) { mutableStateOf(false) }
+    var attempt by remember(address) { mutableIntStateOf(0) }
+
+    LaunchedEffect(address, attempt) {
+        if (address.isEmpty()) {
+            failed = true
+            return@LaunchedEffect
+        }
+        val cached = PostImageCache.get(address)
+        if (cached != null) {
+            bitmap = cached
+            failed = false
+            return@LaunchedEffect
+        }
+        bitmap = null
+        failed = false
+        val decoded = PostImageCache.load(address)
+        if (decoded == null) {
+            failed = true
+        } else {
+            bitmap = decoded
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(PostImageGridShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .then(
+                if (failed) {
+                    Modifier.clickable(onClickLabel = "重试") { attempt++ }
+                } else {
+                    Modifier.clickable(onClickLabel = "查看大图", onClick = onClick)
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        val loaded = bitmap
+        if (loaded != null) {
+            Image(
+                bitmap = loaded,
+                contentDescription = "图片",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (failed) {
+            Icon(
+                imageVector = Icons.Rounded.BrokenImage,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (badge != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = badge,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 全屏看一组图：黑底、按 `Fit` 居中、可左右翻页、可缩放拖动，点空白或右上角 × 关掉。
+ *
+ * 结构照 fluxdo 的查看器：一个横向 PageView 承载画廊（`image_viewer_page.dart:1248-1275`），
+ * 页码提示用 `1 / N` 计数器（`image_carousel_builder.dart:296-303`），左右翻页与缩放/平移的
+ * 手势冲突靠"放大时禁掉翻页"解决 —— Flutter 那边是把下滑关闭限制成只走纵向并让页面自己
+ * reset 缩放（`image_viewer_page.dart:1174`、`:1253-1255`），这里落到 Compose 就是
+ * `userScrollEnabled = !zoomed`。
+ *
+ * 手势分两层挂，用法与 `ChatScreen` 的 `ChatImageViewer`（`ChatScreen.kt:3339-3440`）一致：
+ *  * `detectTapGestures`：单击关闭，双击在 1f ↔ [PostImageViewerDoubleTapZoom] 之间切；
+ *  * `detectTransformGestures`：捏合缩放 + 拖动。`zoom` 是相对上一次的增量，所以乘上去而
+ *    不是赋值；缩回 ≤1f 时把位移清零并夹回 1f —— 图小于画面时还留着位移会歪在一边。
+ *
+ * 唯一的差别是缩放那一层还多一个开关条件（`pointerInput(zoomed)`）：没放大时
+ * `detectTransformGestures` 会把单指横向拖动 consume 掉，pager 就再也翻不动了，所以没放大时
+ * 只挂点击层、把拖动整个让给 pager；放大后 pager 的 `userScrollEnabled` 关掉，拖动才归缩放层
+ * 做平移。代价是首次放大要双击（或先双击再捏合微调），换来的是两条手势永远不打架。
+ *
+ * 图仍然从 [PostImageCache] 取：正文里已经解过的那张直接命中，不重复下载。
+ * 取不到就只画灰底占位 + 「图片加载失败」，右上角的 × 是唯一能看见的出口。
+ */
+@Composable
+private fun PostImageViewer(
+    urls: List<String>,
+    startIndex: Int,
+    onDismiss: () -> Unit,
+) {
+    val start = startIndex.coerceIn(0, (urls.size - 1).coerceAtLeast(0))
     Dialog(
         onDismissRequest = onDismiss,
         // 只关掉 Dialog 自己的默认窄边；不写 `decorFitsSystemWindows`（那是 Android 版独有的参数，
         // Compose Multiplatform 这份没有，写了必编译不过 —— 见 ChatScreen 里同一处注释）。
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = "图片",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
-            // 满屏透明层接点击：黑底 Box 只有子元素的位置能点，不铺这一层就只能点在图本身上。
-            // 用 `Spacer` 而不是空 `Box`：`Box` 的 `content` 没有默认值，空着调用编译不过。
-            Spacer(
+        // 状态按 (这组地址, 起始页) 分桶：换一组图或换起始页就是另一份 pager/缩放，
+        // 关掉 Dialog 整棵子树离开 composition，连这份分桶一起丢，下次点开是干净的。
+        key(urls, start) {
+            val pagerState = rememberPagerState(initialPage = start, pageCount = { urls.size })
+            var scale by remember { mutableStateOf(1f) }
+            var offset by remember { mutableStateOf(Offset.Zero) }
+            val zoomed = scale > 1f
+
+            // 翻到另一页就把缩放归位：Flutter 那边是离场页 reset（`image_viewer_page.dart:1253-1255`），
+            // 不归位的话下一张会接着上一张的倍数显示。
+            LaunchedEffect(pagerState.currentPage) {
+                scale = 1f
+                offset = Offset.Zero
+            }
+
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clickable(onClickLabel = "关闭", onClick = onDismiss),
+                    .background(Color.Black)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onDismiss() },
+                            onDoubleTap = {
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                } else {
+                                    scale = PostImageViewerDoubleTapZoom
+                                }
+                            },
+                        )
+                    }
+                    .pointerInput(zoomed) {
+                        // 没放大就不挂变换层：单指拖动必须留给 pager（见上面的说明）。
+                        if (!zoomed) return@pointerInput
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val next = (scale * zoom).coerceIn(1f, PostImageViewerMaxZoom)
+                            scale = next
+                            offset = if (next <= 1f) Offset.Zero else offset + pan
+                        }
+                    },
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    // 放大状态下横向拖动是平移图片，不能同时翻页。
+                    userScrollEnabled = !zoomed,
+                ) { page ->
+                    PostImageViewerPage(url = urls[page], scale = scale, offset = offset)
+                }
+
+                // 页码只在多图时出现：单图写个「1 / 1」是噪音。底部不放任何按钮。
+                if (urls.size > 1) {
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${urls.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .windowInsetsPadding(WindowInsets.statusBars)
+                            .padding(top = 16.dp),
+                    )
+                }
+
+                // 44dp 是触达尺寸（图标 22dp）：加载失败时这也是唯一的明确出口。
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(10.dp)
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(onClickLabel = "关闭", onClick = onDismiss),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "关闭",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 查看器里的一页：从 [PostImageCache] 取图，取不到就画灰底占位。
+ *
+ * 缩放/位移由外层持有（[PostImageViewer]）并作为参数送进来：pager 要读同一个缩放值来决定
+ * 是否接受翻页手势，所以它不能只待在这一页里面。
+ */
+@Composable
+private fun PostImageViewerPage(url: String, scale: Float, offset: Offset) {
+    val address = url.trim()
+    var bitmap by remember(address) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(address) { mutableStateOf(false) }
+
+    LaunchedEffect(address) {
+        // 先看缓存：正文里那张已经解好的直接拿来画，不再下一次网络。
+        val cached = PostImageCache.get(address)
+        if (cached != null) {
+            bitmap = cached
+            failed = false
+            return@LaunchedEffect
+        }
+        bitmap = null
+        failed = false
+        val decoded = PostImageCache.load(address)
+        if (decoded == null) {
+            failed = true
+        } else {
+            bitmap = decoded
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val loaded = bitmap
+        if (loaded != null) {
+            Image(
+                bitmap = loaded,
+                contentDescription = "图片",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offset.x
+                        translationY = offset.y
+                    },
             )
+        } else {
+            // 占位沿用正文的灰底（`PostImage` 的三态之一），只是在黑底上收成一块方框，
+            // 免得整屏变灰。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (failed) "图片加载失败" else "加载中…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
         }
     }
 }
@@ -205,6 +573,7 @@ private fun PostImageViewer(bitmap: ImageBitmap, onDismiss: () -> Unit) {
  *  * 缓存上限 [CACHE_ENTRIES]，满了整表丢掉重来（与头像表同一个策略：不做 LRU）。
  *
  * 只读网络、不写盘：帖子本来就是联网才有的内容，这张表只负责"滚动时别把同一张再下一次"。
+ * 方图墙的格子与查看器的每一页都走这张表，所以同一张图在墙里和在查看器里只下一次。
  */
 internal object PostImageCache {
 
