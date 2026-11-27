@@ -1,5 +1,24 @@
 package io.github.samolego.canta.ui.screen
 
+// ───────────────────────────────────────────────────────────────
+// 图标口径：本文件的图标**一律用 Material Symbols Rounded**。
+//
+// fluxdo 那一整套图标都是 `Symbols.xxx_rounded`（`post_action_bar.dart` 的
+// `favorite_rounded` / `chat_bubble_rounded`，`topic_statistics.dart` 的
+// `menu_book_rounded`，`editor_tools.dart` 的格式化图标）。Compose 的
+// `materialIconsExtended` 里对应的就是 `Icons.Rounded.*`：笔画圆、粗细一致。
+//
+// 曾经混用过三套（`Icons.Outlined` 的空心笔画 + 自绘 `FlGlyphs` 的 FlClash 几何风 +
+// 个别 `Icons.Filled`），结果是一条动作行上三种粗细，看着像三张图拼起来的。
+// 现在统一成：
+//   1. `Icons.Rounded.*` —— 有对应 Material Symbols 的一律用它；
+//   2. `Icons.AutoMirrored.Rounded.*` —— 有方向语义的（发送 / 回复）；
+//   3. `FlGlyphs` 已从本文件**全部撤出**（自绘图标留给了代理设置那些 FlClash 页面，
+//      那儿的视觉语言才是它的主场）。
+//
+// 改图标时别再用 `Icons.Outlined.*`：那个是细笔画空心版，和 Rounded 摆一起很显眼。
+// ───────────────────────────────────────────────────────────────
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.CubicBezierEasing
@@ -59,9 +78,45 @@ import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.rounded.Reply
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Drafts
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.DataObject
+import androidx.compose.material.icons.rounded.FormatBold
+import androidx.compose.material.icons.rounded.FormatItalic
+import androidx.compose.material.icons.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.FormatListNumbered
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.FormatStrikethrough
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.HorizontalRule
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.Title
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
@@ -142,9 +197,6 @@ import io.github.samolego.canta.ui.component.parseHexColor
 import io.github.samolego.canta.ui.component.readableBrandColor
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.component.rememberRememberedListState
-import io.github.samolego.canta.ui.fl.FlGlyph
-import io.github.samolego.canta.ui.fl.FlGlyphIcon
-import io.github.samolego.canta.ui.fl.FlGlyphs
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.BeijingTime
@@ -246,7 +298,7 @@ private enum class ToolGroup(val label: String) {
  */
 private class EditorTool(
     val label: String,
-    val glyph: FlGlyph,
+    val icon: ImageVector,
     val group: ToolGroup,
     val snippet: String,
     val action: EditorToolAction = EditorToolAction.Insert,
@@ -260,31 +312,31 @@ private class EditorTool(
  * 行内代码之外的代码块、分隔线、表格骨架。图片/附件/上传全没放——本仓没有上传通道，
  * 点了只能弹一句"做不到"，那种按钮比没有更糟。
  *
- * 图标一律用 [FlGlyphs] 自绘：编辑器和顶栏、FAB 在同一屏里，图标族的笔画粗细必须一致
- * （FlGlyph 是 1.8/24 的中心线，Material 的 outlined 在 16dp 下会掉到 1.3px，混着摆一眼能看出
+ * 图标一律走 `Icons.Rounded.*`（Material Symbols Rounded，与 fluxdo 同一套）：
+ * （全是 `Icons.Rounded.*`：同一套 Material Symbols，笔画粗细一致，16dp 下也不会糊。
  * 两套粗细）。`bold / italic / heading / bulletList / quote / strikethrough / orderedList /
  * codeBlock / horizontalRule / table` 是本仓新补的，FlClash 原版没有写作工具；
  * `code / link` 用的是它原有的那两个。
  */
 private val EDITOR_TOOLS = listOf(
-    EditorTool("粗体", FlGlyphs.bold, ToolGroup.Format, "**粗体**"),
-    EditorTool("斜体", FlGlyphs.italic, ToolGroup.Format, "*斜体*"),
-    EditorTool("删除线", FlGlyphs.strikethrough, ToolGroup.Format, "~~删除线~~"),
-    EditorTool("标题", FlGlyphs.heading, ToolGroup.Format, "## 小标题"),
-    EditorTool("有序列表", FlGlyphs.orderedList, ToolGroup.Format, "1. 一项"),
-    EditorTool("列表", FlGlyphs.bulletList, ToolGroup.Format, "- 一项"),
-    EditorTool("链接", FlGlyphs.link, ToolGroup.Insert, "[文字](https://)"),
-    EditorTool("引用", FlGlyphs.quote, ToolGroup.Insert, "> 引用"),
-    EditorTool("代码", FlGlyphs.code, ToolGroup.Insert, "`代码`"),
-    EditorTool("代码块", FlGlyphs.codeBlock, ToolGroup.Insert, "\n```\n代码\n```"),
-    EditorTool("分隔线", FlGlyphs.horizontalRule, ToolGroup.Insert, "\n---\n"),
+    EditorTool("粗体", Icons.Rounded.FormatBold, ToolGroup.Format, "**粗体**"),
+    EditorTool("斜体", Icons.Rounded.FormatItalic, ToolGroup.Format, "*斜体*"),
+    EditorTool("删除线", Icons.Rounded.FormatStrikethrough, ToolGroup.Format, "~~删除线~~"),
+    EditorTool("标题", Icons.Rounded.Title, ToolGroup.Format, "## 小标题"),
+    EditorTool("有序列表", Icons.Rounded.FormatListNumbered, ToolGroup.Format, "1. 一项"),
+    EditorTool("列表", Icons.Rounded.FormatListBulleted, ToolGroup.Format, "- 一项"),
+    EditorTool("链接", Icons.Rounded.Link, ToolGroup.Insert, "[文字](https://)"),
+    EditorTool("引用", Icons.Rounded.FormatQuote, ToolGroup.Insert, "> 引用"),
+    EditorTool("代码", Icons.Rounded.Code, ToolGroup.Insert, "`代码`"),
+    EditorTool("代码块", Icons.Rounded.DataObject, ToolGroup.Insert, "\n```\n代码\n```"),
+    EditorTool("分隔线", Icons.Rounded.HorizontalRule, ToolGroup.Insert, "\n---\n"),
     EditorTool(
         "表格",
-        FlGlyphs.table,
+        Icons.Rounded.TableChart,
         ToolGroup.Insert,
         "\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |",
     ),
-    EditorTool("清空正文", FlGlyphs.delete, ToolGroup.Editing, "", EditorToolAction.Clear),
+    EditorTool("清空正文", Icons.Rounded.Delete, ToolGroup.Editing, "", EditorToolAction.Clear),
 )
 
 /** 工具栏一项点下去干什么：[Insert] 往游标处插 [EditorTool.snippet]，[Clear] 清空正文。 */
@@ -426,7 +478,7 @@ private fun PostsToolbar(
         // ☰ 分类入口：打开 fluxdo 那条从左侧滑出的分类侧栏（见 [PostCategoryDrawer]）。
         // 图标必须是**三条等长横线**：`appsList` 那种"左三块右三线"的格子看着像应用列表。
         TopBarIconButton(
-            glyph = FlGlyphs.menu,
+            icon = Icons.Rounded.Menu,,
             label = "浏览分类",
             active = category.isNotBlank() || tag.isNotBlank(),
             onClick = onOpenCategories,
@@ -486,12 +538,7 @@ private fun PostsToolbar(
                     .background(orb),
                 contentAlignment = Alignment.Center,
             ) {
-                FlGlyphIcon(
-                    glyph = FlGlyphs.chevronDown,
-                    size = 15.dp,
-                    tint = if (menuOpen) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
-                    modifier = Modifier.rotate(turn),
-                )
+                Icon(Icons.Rounded.ExpandMore, null, Modifier.size(15.dp).rotate(turn), tint = if (menuOpen) scheme.onSecondaryContainer else scheme.onSurfaceVariant)
             }
         }
 
@@ -503,20 +550,20 @@ private fun PostsToolbar(
             WeeklyRankIconButton(onClick = onOpenWeeklyRank)
         }
         // 「创建话题」：一颗直达的写作入口，照 fluxdo 首页工具栏右端的创作按钮。
-        // 图标用 [FlGlyphs.edit]（笔），和 FAB 菜单里「写新帖」同一颗——同一件事在哪儿都是同一件图标。
+        // 图标用 [Icons.Rounded.Edit]（笔），和 FAB 菜单里「写新帖」同一颗——同一件事在哪儿都是同一件图标。
         // 身份没认出来时（[onCompose] 由调用方传 null）不画：那颗按钮点了也只能说"还没认出身份"。
         if (onCompose != null) {
             TopBarIconButton(
-                glyph = FlGlyphs.edit,
+                icon = Icons.Rounded.Edit,,
                 label = "创建话题",
                 onClick = onCompose,
             )
         }
         // 搜索：把焦点交给工具栏下面那颗常驻胶囊（[onSearch] 由调用方绑 `searchFocus`）。
-        // `FlGlyphs.search` 的主笔画是 `GlyphRole.Line`，`fill = 0f` 也画得出来（Body 才是画不出来的那种）。
+        // `Icons.Rounded.Search` 是官方 Material Symbols，不像自绘 glyph 那样有 `fill = 0f` 下不显示的坑。
         if (onSearch != null) {
             TopBarIconButton(
-                glyph = FlGlyphs.search,
+                icon = Icons.Rounded.Search,,
                 label = "搜索话题",
                 onClick = onSearch,
             )
@@ -536,7 +583,7 @@ private fun PostsToolbar(
  */
 @Composable
 private fun TopBarIconButton(
-    glyph: FlGlyph,
+    icon: ImageVector,
     label: String,
     active: Boolean = false,
     onClick: () -> Unit,
@@ -548,8 +595,9 @@ private fun TopBarIconButton(
             .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        FlGlyphIcon(
-            glyph = glyph,
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
             size = 24.dp,
             tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
@@ -614,7 +662,7 @@ private fun PostsFab(
         // 弹出：每项从 0.2 缩放到 1 并淡入，收起时反向（`m3e_fab_menu.dart` 的 `_buildItem`）。
         FabAction(
             visible = open,
-            glyph = FlGlyphs.refresh,
+            icon = Icons.Rounded.Refresh,,
             label = "刷新",
             onClick = onRefresh,
         )
@@ -622,13 +670,13 @@ private fun PostsFab(
             // 顺序照 `M3eFabMenu`：离 FAB 最近的是"写新帖"（主动作），草稿在它上面一格。
             FabAction(
                 visible = open,
-                glyph = FlGlyphs.edit,
+                icon = Icons.Rounded.Edit,,
                 label = "写新帖",
                 onClick = onNewPost,
             )
             FabAction(
                 visible = open,
-                glyph = FlGlyphs.drafts,
+                icon = Icons.Rounded.Drafts,,
                 label = if (draftCount > 0) "草稿 ($draftCount)" else "草稿",
                 onClick = onDrafts,
             )
@@ -642,12 +690,8 @@ private fun PostsFab(
             contentAlignment = Alignment.Center,
         ) {
             // ＋ / × 走自绘：这颗 FAB 两态要同一个族，而 Material 的 Add/Close 笔画粗细
-            // 和 FlGlyph 的 1.8/24 对不上（24→20 缩放后 Material 是 2.5 个逻辑像素）。
-            FlGlyphIcon(
-                glyph = if (open) FlGlyphs.close else FlGlyphs.add,
-                size = (24f - 4f * tint).dp,
-                tint = ink,
-            )
+            // 两态用同一套 `Icons.Rounded`（Close / Add），缩放到 20dp 仍是同一款笔画。
+            Icon(Icons.Rounded.Close.takeIf { open } ?: Icons.Rounded.Add, null, Modifier.size((24f - 4f * tint).dp), tint = ink)
         }
     }
 }
@@ -664,7 +708,7 @@ private fun PostsFab(
  * 而 FAB 自己已经带上了回弹 —— 一动一静，看着像两个组件。
  */
 @Composable
-private fun FabAction(visible: Boolean, glyph: FlGlyph, label: String, onClick: () -> Unit) {
+private fun FabAction(visible: Boolean, icon: ImageVector, label: String, onClick: () -> Unit) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(
@@ -704,8 +748,9 @@ private fun FabAction(visible: Boolean, glyph: FlGlyph, label: String, onClick: 
                     maxLines = 1,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                FlGlyphIcon(
-                    glyph = glyph,
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
                     size = 24.dp,
                     tint = scheme.onPrimaryContainer,
                 )
@@ -1598,7 +1643,7 @@ else -> Column {
                                         filterMenuOpen = false
                                     },
                                     trailingIcon = if (entry == board) {
-                                        { FlGlyphIcon(glyph = FlGlyphs.check, size = 16.dp) }
+                                        { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
                                     } else {
                                         null
                                     },
@@ -1913,11 +1958,7 @@ private fun SearchCapsule(
             ) {
                 Spacer(modifier = Modifier.width(16.dp))
                 // 放大镜用自绘的：`CantaTopBar` 那颗搜索也是它，两颗得同族。
-                FlGlyphIcon(
-                    glyph = FlGlyphs.search,
-                    size = 20.dp,
-                    tint = scheme.primary,
-                )
+                Icon(Icons.Rounded.Search, null, Modifier.size(20.dp), tint = scheme.primary)
                 Spacer(modifier = Modifier.width(8.dp))
                 Box(
                     modifier = Modifier.weight(1f),
@@ -1944,13 +1985,9 @@ private fun SearchCapsule(
                         contentAlignment = Alignment.Center,
                     ) {
                         // `clearField` 的外圈是 `GlyphCircle`（默认 `GlyphRole.Body`，`fill = 0f` 画不出来），
-                        // 但中间那个 × 是两条 `GlyphRole.Line` 的折线——有 Line 笔画，`FlGlyphIcon` 的
+                        // `Icons.Rounded.Cancel` 是官方 Material Symbols，没有自绘 glyph 那套 `GlyphRole` 陷阱，
                         // 默认 `fill = 0f` 照样出图（缺的只是外圈实心圆，胶囊底色本来就托住了这一格）。
-                        FlGlyphIcon(
-                            glyph = FlGlyphs.clearField,
-                            size = 20.dp,
-                            tint = scheme.onSurfaceVariant,
-                        )
+                        Icon(Icons.Rounded.Cancel, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
                     }
                 } else {
                     Spacer(modifier = Modifier.width(12.dp))
@@ -2281,11 +2318,11 @@ private fun PostCard(
             verticalAlignment = Alignment.Top,
         ) {
             if (post.pinned) {
-                FlGlyphIcon(glyph = FlGlyphs.pin, size = 13.dp, tint = PostPinned)
+                Icon(Icons.Rounded.PushPin, null, Modifier.size(13.dp), tint = PostPinned)
                 Spacer(modifier = Modifier.width(4.dp))
             }
             if (post.locked) {
-                FlGlyphIcon(glyph = FlGlyphs.lock, size = 13.dp, tint = titleColor.copy(alpha = 0.6f))
+                Icon(Icons.Rounded.Lock, null, Modifier.size(13.dp), tint = titleColor.copy(alpha = 0.6f))
                 Spacer(modifier = Modifier.width(4.dp))
             }
             Text(
@@ -2381,10 +2418,10 @@ private fun PostCard(
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    PostMetric(glyph = Icons.Outlined.FavoriteBorder, count = post.likes, active = post.mineLike)
+                    PostMetric(glyph = Icons.Rounded.Favorite, count = post.likes, active = post.mineLike)
                     Spacer(modifier = Modifier.width(10.dp))
                     // 回复数用主色：一列里它是最想让人点进去的那个数。
-                    PostMetric(glyph = Icons.Outlined.ChatBubbleOutline, count = post.comments, active = true)
+                    PostMetric(glyph = Icons.Rounded.ChatBubble, count = post.comments, active = true)
                 }
             }
         }
@@ -2394,7 +2431,7 @@ private fun PostCard(
 /**
  * 卡片右下角的一个统计：一个小图标 + 数字。
  *
- * 不用 [FlGlyphIcon]：那套是 FlClash 的线框图标，没有爱心和气泡；这里要的是 Discourse 那两个
+ * 用 `Icons.Rounded.*`：爱心与气泡是 fluxdo 同一套（`favorite_rounded` / `chat_bubble_rounded`），
  * 一眼认得出的形状，所以用 Material 的 outlined 版，颜色跟着主题走。
  */
 @Composable
@@ -2554,7 +2591,7 @@ private fun RelatedPostRow(post: CommunityPost, onClick: () -> Unit) {
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 Icon(
-                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                    imageVector = Icons.Rounded.ChatBubble,
                     contentDescription = null,
                     modifier = Modifier.size(12.dp),
                     tint = metaTint(scheme.onSurfaceVariant, 0.8f),
@@ -2780,7 +2817,7 @@ private fun PostThreadPane(
                                     else "${shown.likes}",
                                     icon = {
                                         Icon(
-                                            imageVector = Icons.Outlined.FavoriteBorder,
+                                            imageVector = Icons.Rounded.Favorite,
                                             contentDescription = null,
                                             modifier = Modifier.size(15.dp),
                                             tint = if (shown.mineLike) {
@@ -2801,7 +2838,7 @@ private fun PostThreadPane(
                                     label = "${shown.comments} 条回复",
                                     icon = {
                                         Icon(
-                                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                                            imageVector = Icons.Rounded.ChatBubble,
                                             contentDescription = null,
                                             modifier = Modifier.size(15.dp),
                                             tint = scheme.onSurfaceVariant,
@@ -2818,7 +2855,7 @@ private fun PostThreadPane(
                                     tint = scheme.onSurfaceVariant,
                                     onClick = onCopy,
                                 ) {
-                                    FlGlyphIcon(glyph = FlGlyphs.copy, size = 18.dp)
+                                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp))
                                 }
                                 // 收藏放在这里而不是顶栏：顶栏已经有删除，再挤一个按钮标题就要被压扁了。
                                 // 已收藏时星实心 + 主色，与 fluxdo 的选中态同一个表达式。
@@ -2827,11 +2864,7 @@ private fun PostThreadPane(
                                     tint = if (saved) scheme.primary else scheme.onSurfaceVariant,
                                     onClick = onToggleSave,
                                 ) {
-                                    FlGlyphIcon(
-                                        glyph = FlGlyphs.star,
-                                        size = 18.dp,
-                                        fill = if (saved) 1f else 0f,
-                                    )
+                                    Icon(Icons.Rounded.Star, null, Modifier.size(18.dp))
                                 }
                             }
                         },
@@ -2965,7 +2998,7 @@ private fun PostThreadPane(
                                     tint = scheme.onSurfaceVariant,
                                     onClick = { onQuote(comment) },
                                 ) {
-                                    FlGlyphIcon(glyph = FlGlyphs.quote, size = 18.dp)
+                                    Icon(Icons.Rounded.FormatQuote, null, Modifier.size(18.dp))
                                 }
                             }
                         },
@@ -3059,11 +3092,7 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
             // 每屏白占一行，而锁本来就是标题的属性。
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (post.locked) {
-                    FlGlyphIcon(
-                        glyph = FlGlyphs.lock,
-                        size = 20.dp,
-                        tint = scheme.outline,
-                    )
+                    Icon(Icons.Rounded.Lock, null, Modifier.size(20.dp), tint = scheme.outline)
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(
@@ -3099,13 +3128,13 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
         // 元信息：回复 / 赞 / 时间。三件事挤一行，用中点分开——比三行小字省地方。
         Row(verticalAlignment = Alignment.CenterVertically) {
             ThreadMeta(
-                glyph = Icons.Outlined.ChatBubbleOutline,
+                glyph = Icons.Rounded.ChatBubble,
                 text = "${post.comments} 回复",
                 tint = scheme.onSurfaceVariant,
             )
             ThreadMetaDivider()
             ThreadMeta(
-                glyph = Icons.Outlined.FavoriteBorder,
+                glyph = Icons.Rounded.Favorite,
                 text = "${post.likes} 赞",
                 tint = if (post.mineLike) scheme.primary else scheme.onSurfaceVariant,
             )
@@ -3155,7 +3184,7 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
                 if (readMinutes > READ_MINUTES_MIN) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Outlined.MenuBook,
+                            imageVector = Icons.Rounded.MenuBook,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
                             tint = metaTint(scheme.onSurfaceVariant, 0.8f),
@@ -3370,17 +3399,13 @@ private fun DetailMoreMenu(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            FlGlyphIcon(
-                glyph = FlGlyphs.more,
-                size = 24.dp,
-                tint = scheme.onSurface,
-            )
+            Icon(Icons.Rounded.MoreVert, null, Modifier.size(24.dp), tint = scheme.onSurface)
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             if (canManage) {
                 // 第一项：编辑话题（作者本人 / 有编辑权）。
                 MenuRow(
-                    glyph = FlGlyphs.edit,
+                    icon = Icons.Rounded.Edit,,
                     label = "编辑话题",
                     tint = if (open.locked) scheme.onSurfaceVariant.copy(alpha = 0.38f) else scheme.onSurface,
                     enabled = !busy && !open.locked,
@@ -3391,7 +3416,7 @@ private fun DetailMoreMenu(
                 )
                 // 「复制整帖」对谁都有用（把这条转给别处看），不分作者。
                 MenuRow(
-                    glyph = FlGlyphs.copy,
+                    icon = Icons.Rounded.ContentCopy,,
                     label = "复制帖子",
                     tint = scheme.onSurface,
                     enabled = true,
@@ -3403,7 +3428,7 @@ private fun DetailMoreMenu(
                 HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
                 // 最后一项：删除（红色）。放在分隔线下面，和上面的常用项隔开。
                 MenuRow(
-                    glyph = FlGlyphs.delete,
+                    icon = Icons.Rounded.Delete,,
                     label = "删除",
                     tint = scheme.error,
                     enabled = !busy,
@@ -3416,7 +3441,7 @@ private fun DetailMoreMenu(
                 // 不是作者：fluxdo 那边这一档只有读类动作。本仓能给的也就「复制帖子」，
                 // 所以菜单只有这一项 —— 不放灰掉的编辑/删除，那会像"我应该能点"。
                 MenuRow(
-                    glyph = FlGlyphs.copy,
+                    icon = Icons.Rounded.ContentCopy,,
                     label = "复制帖子",
                     tint = scheme.onSurface,
                     enabled = true,
@@ -3438,7 +3463,7 @@ private fun DetailMoreMenu(
  */
 @Composable
 private fun MenuRow(
-    glyph: FlGlyph,
+    icon: ImageVector,
     label: String,
     tint: Color,
     enabled: Boolean,
@@ -3463,7 +3488,7 @@ private fun MenuRow(
             .padding(horizontal = 12.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FlGlyphIcon(glyph = glyph, size = 20.dp, tint = ink)
+        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = ink)
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = label,
@@ -3698,9 +3723,9 @@ private fun FloorReplyIndicator(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // `fill = 0` 默认值对 `FlGlyphs.reply` 这种整条 Line 的 glyph 是有效的（Body 才是
+        // 官方图标没有自绘 glyph 的 `fill = 0f` 陷阱（那条只影响 `GlyphRole.Body`），这里不必再操心。//
         // "fill=0 画不出来"的那一档，见 Glyph.kt 的 drawBody）。
-        FlGlyphIcon(glyph = FlGlyphs.reply, size = 14.dp, tint = scheme.primary)
+        Icon(Icons.AutoMirrored.Rounded.Reply, null, Modifier.size(14.dp), tint = scheme.primary)
         Spacer(modifier = Modifier.width(6.dp))
         PostAvatar(name = name, seed = authorSeed.ifEmpty { name }, size = 20.dp)
         Spacer(modifier = Modifier.width(4.dp))
@@ -4004,11 +4029,7 @@ private fun ReplyBar(
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FlGlyphIcon(
-                    glyph = FlGlyphs.edit,
-                    size = 18.dp,
-                    tint = if (enabled && !locked) scheme.onSurfaceVariant else scheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
+                Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp), tint = if (enabled && !locked) scheme.onSurfaceVariant else scheme.onSurfaceVariant.copy(alpha = 0.6f))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
@@ -4227,9 +4248,10 @@ private fun ComposerPreviewButton(previewing: Boolean, onClick: () -> Unit) {
             .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        FlGlyphIcon(
-            glyph = if (previewing) FlGlyphs.edit else FlGlyphs.eye,
-            size = 21.dp,
+        Icon(
+            imageVector = if (previewing) Icons.Rounded.Edit else Icons.Rounded.Visibility,
+            contentDescription = label,
+            modifier = Modifier.size(21.dp),
             // 预览中染 primary：一眼看得出"现在看到的是渲染后的样子"，
             // 而不是以为自己还在编辑、敲了字却没反应。
             tint = if (previewing) scheme.primary else scheme.onSurface,
@@ -4262,7 +4284,7 @@ private fun ComposerDraftMenuButton(savedAt: Long) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         TopBarIconButton(
-            glyph = FlGlyphs.more,
+            icon = Icons.Rounded.MoreVert,,
             label = "更多",
             onClick = { menuOpen = true },
         )
@@ -4298,14 +4320,10 @@ private fun ComposerDraftMenuRow(savedAt: Long) {
             .padding(start = 12.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 云朵：存过用 `cloudDownload`（FlGlyph 里唯一那颗云），没存过用 `drafts`。
+        // 云朵：存过用 `Icons.Rounded.CloudDownload`，没存过用 `Icons.Rounded.Drafts`。
         // 本仓没有 `cloud_done` / `cloud_upload` / `cloud_off` 三种云，所以只按"存过没有"
         // 分两个图标，不假装有第三档。
-        FlGlyphIcon(
-            glyph = if (clock.isNotEmpty()) FlGlyphs.cloudDownload else FlGlyphs.drafts,
-            size = 21.dp,
-            tint = scheme.onSurfaceVariant,
-        )
+        Icon(if (clock.isNotEmpty()) Icons.Rounded.CloudDownload else Icons.Rounded.Drafts, null, Modifier.size(21.dp), tint = scheme.onSurfaceVariant)
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = if (clock.isNotEmpty()) "草稿自动保存 · $clock" else "草稿自动保存",
@@ -4347,13 +4365,9 @@ private fun PublishCircleButton(busy: Boolean, enabled: Boolean, onClick: () -> 
                     strokeWidth = 2.dp,
                 )
             } else {
-                // 与详情页吸底回复栏那颗发送同一个 glyph（`ReplyBar` 用的是 `FlGlyphs.send`）：
+                // 与详情页吸底回复栏那颗发送同一个图标（`ReplyBar` 用的是 `Icons.AutoMirrored.Rounded.Send`）：
                 // 同一个页面里两个"发送"不能一个 Material 纸飞机、一个自绘纸飞机。
-                FlGlyphIcon(
-                    glyph = FlGlyphs.send,
-                    size = 21.dp,
-                    tint = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
-                )
+                Icon(Icons.AutoMirrored.Rounded.Send, null, Modifier.size(21.dp), tint = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant)
             }
         }
     }
@@ -4841,7 +4855,7 @@ private fun ComposerPickerSheet(
                                 .clickable(role = Role.Button, onClickLabel = "关闭", onClick = onDismiss),
                             contentAlignment = Alignment.Center,
                         ) {
-                            FlGlyphIcon(glyph = FlGlyphs.close, size = 20.dp, tint = scheme.onSurfaceVariant)
+                            Icon(Icons.Rounded.Close, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
                         }
                     }
                     Text(
@@ -4932,7 +4946,7 @@ private fun PickerOptionRow(
         )
         if (picked) {
             Spacer(modifier = Modifier.width(8.dp))
-            FlGlyphIcon(glyph = FlGlyphs.check, size = 20.dp, tint = scheme.primary)
+            Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), tint = scheme.primary)
         }
     }
 }
@@ -5013,11 +5027,7 @@ private fun ComposerPill(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // 下拉小三角：告诉人"这里点开是一个面板"，不是一个开关。
-                    FlGlyphIcon(
-                        glyph = FlGlyphs.chevronDown,
-                        size = 16.dp,
-                        tint = if (accent) scheme.primary else scheme.onSurfaceVariant,
-                    )
+                    Icon(Icons.Rounded.ExpandMore, null, Modifier.size(16.dp), tint = if (accent) scheme.primary else scheme.onSurfaceVariant)
                 }
             }
         }
@@ -5035,9 +5045,10 @@ private fun EditorToolButton(tool: EditorTool, size: Dp, onClick: () -> Unit) {
             .clickable(role = Role.Button, onClickLabel = tool.label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        FlGlyphIcon(
-            glyph = tool.glyph,
-            size = 16.dp,
+        Icon(
+            imageVector = tool.icon,
+            contentDescription = tool.label,
+            modifier = Modifier.size(16.dp),
             tint = scheme.onSurfaceVariant,
         )
     }
@@ -5075,7 +5086,7 @@ private fun EditorPinnedToolRow(onTool: (EditorTool) -> Unit) {
  * 「更多工具」那一颗：常驻排最右端，展开/收起上面那块 [EditorToolsPanel]。
  *
  * 位置照 fluxdo `composer_tool_style.dart:16-18` 的 `IconButton`：**48dp 见方**、图标 16dp。
- * 展开时换成 [FlGlyphs.close] 并铺 `secondaryContainer` 底色 —— fluxdo 用底色的变化告诉人
+ * 展开时换成 [Icons.Rounded.Close] 并铺 `secondaryContainer` 底色 —— fluxdo 用底色的变化告诉人
  * "现在这排上面那块是我开出来的"；只换图标的话，点完会以为按钮变成了别的东西。
  * 动画 150ms，与 fluxdo 那个切换同一个时长。
  */
@@ -5104,11 +5115,7 @@ private fun EditorMoreToolsButton(expanded: Boolean, onClick: () -> Unit) {
             ),
         contentAlignment = Alignment.Center,
     ) {
-        FlGlyphIcon(
-            glyph = if (expanded) FlGlyphs.close else FlGlyphs.grid2x2,
-            size = 16.dp,
-            tint = if (expanded) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
-        )
+        Icon(if (expanded) Icons.Rounded.Close else Icons.Rounded.GridView, null, Modifier.size(16.dp), tint = if (expanded) scheme.onSecondaryContainer else scheme.onSurfaceVariant)
     }
 }
 
@@ -5191,7 +5198,7 @@ private fun EditorToolsPanel(
                     tools.forEach { tool ->
                         Box(modifier = Modifier.width(columnWidth)) {
                             ToolCellBody(
-                                glyph = tool.glyph,
+                                icon = tool.icon,
                                 label = tool.label,
                                 pinned = pinnedTools.any { it === tool },
                                 onClick = { onTool(tool) },
@@ -5213,7 +5220,7 @@ private fun EditorToolsPanel(
  */
 @Composable
 private fun ToolCellBody(
-    glyph: FlGlyph,
+    icon: ImageVector,
     label: String,
     pinned: Boolean,
     onClick: () -> Unit,
@@ -5243,9 +5250,10 @@ private fun ToolCellBody(
                 .background(tile),
             contentAlignment = Alignment.Center,
         ) {
-            FlGlyphIcon(
-                glyph = glyph,
-                size = 20.dp,
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(20.dp),
                 // 置顶那格用 `onPrimaryContainer`：`primaryContainer` 上再压一层
                 // `onSurfaceVariant` 的灰，对比度会掉到看不见。
                 tint = if (pinned) scheme.onPrimaryContainer else scheme.onSurfaceVariant,
@@ -5535,11 +5543,7 @@ private fun PostSectionHeader(label: String, count: Int? = null) {
             .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FlGlyphIcon(
-            glyph = FlGlyphs.star,
-            size = 16.dp,
-            tint = MaterialTheme.colorScheme.primary,
-        )
+        Icon(Icons.Rounded.Star, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = label,
@@ -5611,12 +5615,7 @@ private fun PinnedTopicsHeader(
             )
         }
         Spacer(modifier = Modifier.width(4.dp))
-        FlGlyphIcon(
-            glyph = FlGlyphs.chevronDown,
-            size = 20.dp,
-            tint = scheme.onSurfaceVariant,
-            modifier = Modifier.rotate(turns),
-        )
+        Icon(Icons.Rounded.ExpandMore, null, Modifier.size(20.dp).rotate(turns), tint = scheme.onSurfaceVariant)
     }
 }
 
@@ -5648,13 +5647,9 @@ private fun FreshTopicsBanner(count: Int, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 向上的箭头用自绘：FlGlyphs 有四个方向的 chevron，但没有直箭头，所以新补了
+        // 向上的箭头用 `Icons.Rounded.ArrowUpward`（与 fluxdo 的 `arrow_upward_rounded` 同一个）：
         // `arrowUpward`（与 `arrowBack` 同构，转 90°）。
-        FlGlyphIcon(
-            glyph = FlGlyphs.arrowUpward,
-            size = 14.dp,
-            tint = scheme.primary,
-        )
+        Icon(Icons.Rounded.ArrowUpward, null, Modifier.size(14.dp), tint = scheme.primary)
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = "查看 $count 个新的或更新的话题",
@@ -5723,12 +5718,7 @@ private fun PostNote(text: String, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.Top,
     ) {
         // 图标与首行文字顶端对齐：18dp 的图标比 20sp 的行高略矮，往下压 1dp 才和字头齐。
-        FlGlyphIcon(
-            glyph = FlGlyphs.info,
-            size = 18.dp,
-            tint = scheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 1.dp),
-        )
+        Icon(Icons.Rounded.Info, null, Modifier.size(18.dp).padding(top = 1.dp), tint = scheme.onSurfaceVariant)
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = text,
