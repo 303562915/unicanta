@@ -547,6 +547,24 @@ code 取值：检查 `UpdateFailure`（`RATE_LIMITED`/`TIMEOUT`/`NETWORK`/`SERVE
 5. 版本号没变但用户说「没更新」→ 看 `stage=check/outcome=ok` 的 `version`，再看 `skippedAutoInstallVersion`
    （自动安装失败过的版本会被记下来，停在关于页手动安装）。
 
+### 12.6 日志页的「更新」筛选：在手机上看这一整轮更新（2026-11-27 加）
+
+以前「某条通道报了错，但最后还是装上了」只能靠后台 `update_reports` 反推：屏幕上是一串
+「××装不上」，然后对话框没了。现在这一整轮更新在**日志页**里能自己看：
+
+- 更新链路所有日志统一用 `LogUtils.UPDATE_TAG`（`"Update"`），两边一起写：`UpdateCenter`
+  （检查 → 决定 → 下载 → 安装的开始/阶段/结果）与 `AndroidCantaPlatform`（下载重试、清旧包、
+  每条通道的尝试与拒绝原文、`pm 说失败但包已被替换`）。
+- 日志页顶部有两个 chip：「全部」「更新」。选「更新」只剩这条链路，时间线式的：检查 → 下载 →
+  试通道 → 哪条装上了 / 交系统安装器。
+- **落盘**：`UpdateLogFile.android.kt` 把 `Update` 开头的行同步追加到 `filesDir/update-log.txt`
+  （超过 256 KB 才截断到 400 行）。理由是安装成功那一刻 `pm install` 会把进程换掉，内存日志
+  （`LogUtils.logs`）跟着消失，只看内存永远看不到最后那几行。日志页「更新」筛选里那些带
+  `·上次` 后缀的条目就是从这份文件读回来的（上次运行）。桌面/网页没有这条需求，`nonAndroid`
+  里是空实现。
+- 想在手机上定位一句报错的出处：日志页 → 更新 → 展开那一行（点击）+ 长按复制，整段原文就是
+  `update_reports.detail` 里的同一份。
+
 ---
 
 ## 13. Bug 反馈群：用户贴问题，AI 自己读、自己修

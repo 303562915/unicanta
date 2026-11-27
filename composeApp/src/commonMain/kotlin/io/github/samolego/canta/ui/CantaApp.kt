@@ -165,6 +165,7 @@ import io.github.samolego.canta.util.CrashReportStore
 import io.github.samolego.canta.util.DeviceIdentity
 import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.IdentitySetup
+import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.SafetyRules
 import io.github.samolego.canta.util.ShareCode
 import io.github.samolego.canta.util.currentTimeMillis
@@ -692,12 +693,14 @@ private fun CantaNavigation(
         // that is already here fresher.
         // 已经提醒过「自动装不上」的版本：只 toast 一次，别每轮轮询都说一遍。
         val warnedSkipped = mutableSetOf<String>()
+        LogUtils.i(LogUtils.UPDATE_TAG, "启动自动更新：开始轮询（每 ${UPDATE_CHECK_INTERVAL_MILLIS} ms）")
         while (true) {
             if (appVisible) {
                 // 读法只有一份（UpdateCenter.poll）：读发布页、失败吞掉；关于页也用同一份状态。
                 val release = updateCenter.poll()
                 if (release != null && release.isNewerThanInstalled()) {
                     val label = updateLabel(release)
+                    LogUtils.i(LogUtils.UPDATE_TAG, "启动轮询发现新版本：$label")
                     // This exact build already failed to install on its own. Another download and
                     // another "正在安装" would be the loop this mark exists to break: say it once,
                     // point at the page that can still do it by hand, and stop asking.

@@ -38,6 +38,7 @@ import io.github.samolego.canta.ui.screen.latestRelease
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
 import io.github.samolego.canta.ui.screen.releaseHistory
 import io.github.samolego.canta.ui.screen.updateLabel
+import io.github.samolego.canta.util.LogUtils
 import io.github.samolego.canta.util.PackageTelemetry
 import io.github.samolego.canta.util.UpdateReport
 import io.github.samolego.canta.util.currentTimeMillis
@@ -215,11 +216,13 @@ internal class UpdateCenter(
             val target = channel()
             val channelName = channelName(target)
             val startedAt = TimeSource.Monotonic.markNow()
+            LogUtils.i(LogUtils.UPDATE_TAG, "检查更新（渠道 $channelName）")
             val found = try {
                 latestRelease(client, target)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: UpdateCheckException) {
+                LogUtils.w(LogUtils.UPDATE_TAG, "检查失败：${e.failure}（${startedAt.elapsedNow().inWholeMilliseconds} ms）")
                 state = UpdateState.Failed(e.failure)
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_CHECK,
@@ -230,6 +233,7 @@ internal class UpdateCenter(
                 )
                 return@launch
             } catch (e: Exception) {
+                LogUtils.w(LogUtils.UPDATE_TAG, "检查失败（未归类）：$e")
                 state = UpdateState.Failed(UpdateFailure.UNKNOWN)
                 telemetry?.recordUpdate(
                     stage = UpdateReport.STAGE_CHECK,
@@ -242,6 +246,11 @@ internal class UpdateCenter(
                 return@launch
             }
             val label = updateLabel(found)
+            LogUtils.i(
+                LogUtils.UPDATE_TAG,
+                "检查结果：$label（是否比当前新：${found.isNewerThanInstalled()}，" +
+                    "${startedAt.elapsedNow().inWholeMilliseconds} ms）",
+            )
             telemetry?.recordUpdate(
                 stage = UpdateReport.STAGE_CHECK,
                 outcome = UpdateReport.OUTCOME_OK,
@@ -257,15 +266,24 @@ internal class UpdateCenter(
                 // 已经是这一版了（或更新）：什么都不做。稳定包以前永远走进下面那条分支 ——
                 // `isNewerThanInstalled` 对同版本号的稳定包恒为 true，于是装着 4.3.10 的人
                 // 一直在下 4.3.10（2026-11-27 修）。
-                !found.isNewerThanInstalled() -> state = UpdateState.Latest
+                !found.isNewerThanInstalled() -> {
+                    LogUtils.i(LogUtils.UPDATE_TAG, "决定：已经是最新，不下也不装")
+                    state = UpdateState.Latest
+                }
                 // 检测到新版本就**直接下**。以前这里还要过一遍「自动下载更新包」开关：关掉它的机器
                 // 点一次检查，只得到一张「点击前往下载」的卡片，还得再点一次——"检测到了却不下载"
                 // 就是那么来的。现在那个开关只管**启动后要不要自己查**（后台轮询），查到了就下。
                 // 例外：上次自动安装失败过的这一版，再下一遍只会再失败一次，留成手点。
-                label == skipped -> state = UpdateState.Available(label, found)
+                label == skipped -> {
+                    LogUtils.i(LogUtils.UPDATE_TAG, "决定：$label 上次自动安装失败过，停在「可下载」等手点")
+                    state = UpdateState.Available(label, found)
+                }
                 // 这一版已经因为「运行时没就绪」失败够多次了：包本身在本地还剩着，再下载一遍
                 // 只是同一份字节、同一个结果。停在「可以下载」，让用户明确点一下再决定。
-                failureGateClosed(label) -> state = UpdateState.Available(label, found)
+                failureGateClosed(label) -> {
+                    LogUtils.i(LogUtils.UPDATE_TAG, "决定：$label 失败次数到顶，停在「可下载」不自动再下")
+                    state = UpdateState.Available(label, found)
+                }
                 else -> startDownload(found, auto = true)
             }
         }
@@ -295,6 +313,7 @@ internal class UpdateCenter(
         }
         downloadJob?.cancel()
         lastRelease = release
+        LogUtils.i(LogUtils.UPDATE_TAG, "开始下载 $label（自动=$auto，直链 ${release.fileUrl}）")
         state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
         // 下载在后台跑，唯一能说一句的就是 toast。
         scope.launch { platform.showMessage(getString(Res.string.about_update_download_toast, label)) }
@@ -360,6 +379,10 @@ internal class UpdateCenter(
                         elapsedMs = elapsed,
                     )
                     val ready = UpdateState.ReadyToInstall(label, result.path)
+                    LogUtils.i(
+                        LogUtils.UPDATE_TAG,
+                        "下载完成：$label → ${result.path}（${result.bytes} 字节，${elapsed} ms）",
+                    )
                     state = ready
                     // Asking first is a switch, off by default: the download only ran because
                     // automatic updates are on, so the install is the thing that was asked for.
@@ -367,6 +390,10 @@ internal class UpdateCenter(
                 }
                 is UpdateDownload.Failed -> {
                     val reason = getString(result.failure.reason())
+                    LogUtils.w(
+                        LogUtils.UPDATE_TAG,
+                        "下载失败：$label（${result.failure}，停在 ${reached}%，${elapsed} ms）",
+                    )
                     telemetry?.recordUpdate(
                         stage = UpdateReport.STAGE_DOWNLOAD,
                         outcome = UpdateReport.OUTCOME_FAILED,
@@ -401,6 +428,7 @@ internal class UpdateCenter(
         startedAt: TimeMark,
     ) {
         state = UpdateState.Available(label, release)
+        LogUtils.w(LogUtils.UPDATE_TAG, "下载太慢，停掉：$label（停在 $reached%）")
         platform.showMessage(getString(Res.string.about_download_too_slow))
         if (!auto) platform.openUrl(DOWNLOAD_PAGE_URL)
         telemetry?.recordUpdate(
@@ -457,7 +485,10 @@ internal class UpdateCenter(
             // Every route `pm install` is offered to is reported back here, so the record names the
             // route the failure happened on; the card only draws the stage as progress.
             var lastStage = InstallStage.PREPARING
+            LogUtils.i(LogUtils.UPDATE_TAG, "开始安装 ${ready.version}：${ready.path}")
             val attempt = platform.installUpdate(ready.path) { stage, percent ->
+                // 只记阶段变化：推送阶段每 64 KB 回调一次，逐条记会把整页日志冲掉。
+                if (stage != lastStage) LogUtils.i(LogUtils.UPDATE_TAG, "安装阶段：$stage")
                 lastStage = stage
                 state = UpdateState.Installing(ready.version, ready.path, stage, percent)
             }
@@ -472,6 +503,7 @@ internal class UpdateCenter(
             }
             if (failure == null) {
                 // 装上了：这一版的失败计数立刻清掉，别留到下一次误伤。
+                LogUtils.i(LogUtils.UPDATE_TAG, "装上了：${ready.version}（${elapsed} ms）")
                 settings.clearInstallFailureCount(ready.version)
                 refreshFailureCount(ready.version)
                 telemetry?.recordUpdate(
@@ -489,6 +521,10 @@ internal class UpdateCenter(
                 // 桌面 / 网页版里 exitApp 不会真的结束进程：把闸门放开，手动重试还能用。
                 installing = false
             } else if (attempt.retryable && retryWait > 0L) {
+                LogUtils.w(
+                    LogUtils.UPDATE_TAG,
+                    "没装上（运行时没就绪，${retryWait} ms 后自己再试）：$failure",
+                )
                 // 环境没就绪：这个包本身没问题。记一条之后把卡片退回「已下载」，隔一会儿自己再来
                 // 一次 —— 绝大多数情况是 App 先起来了、Shizuku 的用户服务还在绑。
                 //
@@ -516,6 +552,7 @@ internal class UpdateCenter(
                     if (state is UpdateState.ReadyToInstall) install(ready)
                 }
             } else {
+                LogUtils.w(LogUtils.UPDATE_TAG, "没装上（这一版不再自动装）：$failure")
                 // This build will not install itself on this phone: a foreign signature, a ROM that
                 // refuses `pm install`, a runtime that stopped. Remembering the version is what
                 // stops the next launch from downloading it again and showing the same endless
@@ -533,6 +570,7 @@ internal class UpdateCenter(
                 // 一直退出、以为装好了、还是原来那个」。所以失败之后不再回到「可以下载」那张
                 // 卡片，而是停在「已下载，去点安装」——包在本地，主动权交给用户。
                 if (platform.requestInstall(ready.path)) {
+                    LogUtils.i(LogUtils.UPDATE_TAG, "交给系统安装器：${ready.version}")
                     telemetry?.recordUpdate(
                         stage = UpdateReport.STAGE_HANDOFF,
                         outcome = UpdateReport.OUTCOME_OK,

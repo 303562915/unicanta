@@ -77,6 +77,9 @@
     <string name="back">Back</string>
     <string name="copy_logs">Copy logs</string>
     <string name="log_copied">Log copied to clipboard</string>
+    <string name="logs_filter_all">All</string>
+    <string name="logs_filter_update">Update</string>
+    <string name="logs_filter_update_empty">No update lines yet. Check for an update on the About page, and the check → download → install steps show up here.</string>
     <plurals name="clear_selected_apps">
         <item quantity="one">Clear %1$d selected</item>
         <item quantity="two">Clear %1$d selected</item>

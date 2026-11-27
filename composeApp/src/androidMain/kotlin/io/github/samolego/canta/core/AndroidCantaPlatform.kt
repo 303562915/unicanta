@@ -1019,7 +1019,7 @@ class AndroidCantaPlatform(
     ): UpdateDownload = withContext(Dispatchers.IO) {
         val directory = context.getExternalFilesDir("updates") ?: context.filesDir
         if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
-            LogUtils.e(TAG, "Could not create ${directory.absolutePath}")
+            LogUtils.e(LogUtils.UPDATE_TAG, "建不了更新目录 ${directory.absolutePath}")
             return@withContext UpdateDownload.Failed(UpdateDownloadFailure.STORAGE)
         }
         // The first caller may already have fetched this release while the second one waited for
@@ -1048,9 +1048,10 @@ class AndroidCantaPlatform(
             recordHash(landed)
             val length = landed.length()
             onProgress(length, length)
-            LogUtils.i(TAG, "Resumed a finished download at ${landed.absolutePath}")
+            LogUtils.i(LogUtils.UPDATE_TAG, "续传完成：${landed.absolutePath}")
             return@withContext UpdateDownload.Done(landed.absolutePath, length)
         }
+        LogUtils.i(LogUtils.UPDATE_TAG, "开始下载 $url → $fileName（已有 ${partial.length()} 字节）")
         val client = newDownloadClient()
         var failure = UpdateDownloadFailure.UNKNOWN
         // What the partial held before the last attempt: a file that ends without being an APK is
@@ -1068,7 +1069,7 @@ class AndroidCantaPlatform(
                         // appended its own error page, a range answered from another revision.
                         // Nothing that is not an APK may reach `pm install`.
                         val length = partial.length()
-                        LogUtils.w(TAG, "Attempt $attempt from $url did not produce an APK at $length bytes")
+                        LogUtils.w(LogUtils.UPDATE_TAG, "第 $attempt 次下载拿到的不是 APK（${length} 字节）：$url")
                         if (length <= previousLength) partial.delete()
                         previousLength = length
                         failure = UpdateDownloadFailure.NETWORK
@@ -1084,10 +1085,10 @@ class AndroidCantaPlatform(
                         deleteStaleUpdateApks(directory, landed)
                         recordHash(landed)
                         onProgress(written, written)
-                        LogUtils.i(TAG, "Downloaded $written bytes to ${landed.absolutePath}")
+                        LogUtils.i(LogUtils.UPDATE_TAG, "下载完成：$written 字节 → ${landed.absolutePath}")
                         return@withContext UpdateDownload.Done(landed.absolutePath, written)
                     } else {
-                        LogUtils.e(TAG, "Downloaded an empty file from $url")
+                        LogUtils.e(LogUtils.UPDATE_TAG, "下到空文件：$url")
                         partial.delete()
                         failure = UpdateDownloadFailure.NETWORK
                     }
@@ -1095,7 +1096,7 @@ class AndroidCantaPlatform(
                     throw e
                 } catch (e: Exception) {
                     failure = classifyDownloadFailure(e)
-                    LogUtils.w(TAG, "Attempt $attempt of $DOWNLOAD_ATTEMPTS failed for $url: $e")
+                    LogUtils.w(LogUtils.UPDATE_TAG, "下载第 $attempt/${DOWNLOAD_ATTEMPTS} 次失败（$failure）：$url → $e")
                     // A full disk or a build without a downloader will not get better by waiting,
                     // and neither will a release GitHub says does not exist.
                     val permanent = failure == UpdateDownloadFailure.STORAGE ||
@@ -1270,7 +1271,7 @@ class AndroidCantaPlatform(
                 (file.name.endsWith(".apk") || file.name.endsWith(HASH_SUFFIX))
         }?.forEach { file ->
             if (file.delete()) {
-                LogUtils.i(TAG, "Removed the stale update file ${file.name}")
+                LogUtils.i(LogUtils.UPDATE_TAG, "清掉旧的更新包 ${file.name}")
             }
         }
     }
@@ -1296,7 +1297,7 @@ class AndroidCantaPlatform(
     private fun recordHash(file: File) {
         val hash = hashOf(file) ?: return
         runCatching { sidecarOf(file).writeText(hash) }
-            .onFailure { LogUtils.w(TAG, "Could not record the checksum of ${file.name}: $it") }
+            .onFailure { LogUtils.w(LogUtils.UPDATE_TAG, "记不下 ${file.name} 的校验值：$it") }
     }
 
     /**
@@ -1312,7 +1313,7 @@ class AndroidCantaPlatform(
             return true
         }
         if (recorded == actual) return true
-        LogUtils.w(TAG, "Checksum mismatch for ${file.name}: recorded $recorded, actual $actual")
+        LogUtils.w(LogUtils.UPDATE_TAG, "校验值对不上，丢掉重下：${file.name}（记录 $recorded，实际 $actual）")
         runCatching { record.delete() }
         return false
     }
@@ -1369,6 +1370,7 @@ class AndroidCantaPlatform(
             // The bound is this attempt, not this process: `now - elapsedRealtime` names the boot,
             // and any update since the phone started would be read as "this one landed".
             val startedAt = System.currentTimeMillis()
+            LogUtils.i(LogUtils.UPDATE_TAG, "开始自动安装：$path")
             onStage(InstallStage.PREPARING, INSTALL_PROGRESS_UNKNOWN)
             val attempt = installUpdateLocked(path, onStage)
             // `pm install` replaces the package under this very process, and Android kills the
@@ -1378,7 +1380,7 @@ class AndroidCantaPlatform(
             // short" — without it the system installer is opened over an update that is already
             // in place, which is read as "又弹安装，还没装上".
             if (!attempt.succeeded && wasReplacedSince(startedAt)) {
-                LogUtils.i(TAG, "pm install reported a failure but this app was replaced anyway: ${attempt.failure}")
+                LogUtils.i(LogUtils.UPDATE_TAG, "pm 说失败，但包已经被替换了（说明装上了）：${attempt.failure}")
                 // 这种情况屏幕上一定有"××装不上"的 toast（可能三四条），但包其实已经换掉了。
                 // 不补这一句，用户会以为安装失败了：必须明说"已经装上了"。
                 withContext(Dispatchers.Main) { showMessage("其实已经装上了（pm 被切断，包已替换）") }
@@ -1439,13 +1441,14 @@ class AndroidCantaPlatform(
          */
         suspend fun announceSuccess(channel: String) {
             if (attempts.isEmpty()) return
-            LogUtils.i(TAG, "installed through $channel after: ${attempts.keys.joinToString()}")
+            LogUtils.i(LogUtils.UPDATE_TAG, "走 $channel 装上了（前面失败过：${attempts.keys.joinToString()}）")
             toast("$channel 装上了（前面 ${attempts.size} 条通道没成）")
         }
 
         suspend fun tryChannel(channel: String, install: suspend () -> String?): Boolean {
             // A channel that throws is a channel that failed: an out-of-memory base64 push or a
             // runtime that dies mid-call must become one report line, not an aborted batch.
+            LogUtils.i(LogUtils.UPDATE_TAG, "试通道：$channel")
             val failure = try {
                 install()
             } catch (e: CancellationException) {
@@ -1459,7 +1462,7 @@ class AndroidCantaPlatform(
             attempts[channel] = summarized(failure)
             // 这一条通道没成，用户要看得见：以前只写 LogUtils（"print"），屏幕上什么也没有，
             // 于是整个安装过程像卡住。一句话说完一条通道，下一条通道接着试。
-            LogUtils.w(TAG, "$channel refused the install: $failure")
+            LogUtils.w(LogUtils.UPDATE_TAG, "$channel 装不上：$failure")
             toast("$channel 装不上：${summarized(failure).take(60)}")
             return false
         }
@@ -1472,6 +1475,7 @@ class AndroidCantaPlatform(
         //   ③ 白等三次超时，安装明显变慢。
         // 运行时不在了就是不在，直接把包交给系统安装器，那才是这台手机上唯一能成的路。
         if (!ShizukuPermission.isRuntimeRunning()) {
+            LogUtils.w(LogUtils.UPDATE_TAG, "Shizuku 没在运行：三条 Shizuku 通道都不试，交给系统安装器")
             attempts["Shizuku"] = "没在运行：已改用系统安装器"
         } else {
             if (tryChannel("Shizuku·应用目录") {
@@ -1550,8 +1554,10 @@ class AndroidCantaPlatform(
         val runtimeAbsentOnly = attempts.keys.all { it == "Shizuku" } &&
             attempts["Shizuku"].orEmpty().startsWith("没在运行")
         if (!runtimeAbsentOnly && attempts.isNotEmpty() && attempts.values.all { looksLikeRuntimeNotReady(it) }) {
+            LogUtils.w(LogUtils.UPDATE_TAG, "判定：运行时没就绪（会自己再试）\n$report")
             InstallAttempt.notReady(report)
         } else {
+            LogUtils.w(LogUtils.UPDATE_TAG, "判定：这个包装不上（交给系统安装器）\n$report")
             InstallAttempt.refused(report)
         }
     }
@@ -1802,7 +1808,7 @@ class AndroidCantaPlatform(
             context.startActivity(intent)
             true
         } catch (e: Exception) {
-            LogUtils.w(TAG, "No installer could take the update: $e")
+            LogUtils.w(LogUtils.UPDATE_TAG, "没有安装器接这个更新包：$e")
             false
         }
     }

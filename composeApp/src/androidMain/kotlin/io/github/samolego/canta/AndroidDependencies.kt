@@ -13,6 +13,7 @@ import io.github.samolego.canta.core.root.RootCantaHandler
 import io.github.samolego.canta.core.root.RootTransport
 import io.github.samolego.canta.core.root.hasSuBinary
 import io.github.samolego.canta.data.FileAppStorage
+import io.github.samolego.canta.util.attachLogSink
 import java.io.File
 
 /**
@@ -25,6 +26,9 @@ fun provideAndroidDependencies(context: Context, platform: AndroidCantaPlatform)
     // Dhizuku needs the app context before the first status read, which can come from the settings
     // page or from a notification tap, not only from the handler below.
     DhizukuPrivilege.attach(appContext)
+    // 更新链路（检查 → 下载 → 安装）的日志另落一份盘：`pm install` 装成功那一刻进程会被换掉，
+    // 日志页内存里那些行跟着消失，事后就没法回答「到底哪条通道报了错、最后又是怎么装上的」。
+    attachLogSink(File(appContext.filesDir, "update-log.txt").absolutePath)
     // Settings and presets stay where the DataStore-based releases wrote them,
     // so existing data is picked up in place.
     val legacyDataStoreDirectory = File(appContext.filesDir, "datastore")

@@ -73,6 +73,9 @@
     <string name="back">返回</string>
     <string name="copy_logs">复制日志</string>
     <string name="log_copied">日志已复制到剪贴板</string>
+    <string name="logs_filter_all">全部</string>
+    <string name="logs_filter_update">更新</string>
+    <string name="logs_filter_update_empty">还没有更新相关的日志。在「关于」页点一次「检查更新」，检查 → 下载 → 安装的每一步都会出现在这里。</string>
     <plurals name="clear_selected_apps">
         <item quantity="other">清除对 %1$d 个应用的选中</item>
     </plurals>

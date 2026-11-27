@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +35,9 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.copy_logs
 import io.github.samolego.canta.generated.resources.log_copied
 import io.github.samolego.canta.generated.resources.logs
+import io.github.samolego.canta.generated.resources.logs_filter_all
+import io.github.samolego.canta.generated.resources.logs_filter_update
+import io.github.samolego.canta.generated.resources.logs_filter_update_empty
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.util.LogUtils
 
@@ -46,14 +51,45 @@ fun LogsScreen(
     val logs by LogUtils.logs.collectAsStateWithLifecycle()
     val logsCopiedText = stringResource(Res.string.log_copied)
 
+    // 「更新」只看这一条链路（检查 → 下载 → 安装）：它横跨 UpdateCenter 与 AndroidCantaPlatform，
+    // 平时混在设备/包列表那几千行里，事后找不到「哪条通道报了错、最后又是怎么装上的」。
+    var onlyUpdate by remember { mutableStateOf(false) }
+    // 上一次运行落盘的那一份（tag 带 `·上次`）：装成功时进程会被换掉，本次的内存日志到不了这里。
+    var persisted by remember { mutableStateOf<List<LogUtils.LogEntry>>(emptyList()) }
+    LaunchedEffect(Unit) { persisted = LogUtils.persistedUpdateEntries() }
+    val shown = remember(logs, onlyUpdate, persisted) {
+        if (onlyUpdate) {
+            persisted + logs.filter { it.tag.startsWith(LogUtils.UPDATE_TAG) }
+        } else {
+            logs
+        }
+    }
+
     Scaffold(
         topBar = {
-            ScreenTopBar(onNavigateBack = onNavigateBack, title = stringResource(Res.string.logs))
+            Column {
+                ScreenTopBar(onNavigateBack = onNavigateBack, title = stringResource(Res.string.logs))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = !onlyUpdate,
+                        onClick = { onlyUpdate = false },
+                        label = { Text(stringResource(Res.string.logs_filter_all)) },
+                    )
+                    FilterChip(
+                        selected = onlyUpdate,
+                        onClick = { onlyUpdate = true },
+                        label = { Text(stringResource(Res.string.logs_filter_update)) },
+                    )
+                }
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    platform.copyToClipboard(logs.joinToString("\n") { it.format() })
+                    platform.copyToClipboard(shown.joinToString("\n") { it.format() })
                     platform.showMessage(logsCopiedText)
                 }
             ) {
@@ -65,10 +101,19 @@ fun LogsScreen(
         }
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (shown.isEmpty() && onlyUpdate) {
+                item {
+                    Text(
+                        text = stringResource(Res.string.logs_filter_update_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
             // 序号进 key：同一毫秒同一 tag 的两行在旧写法里会撞 key，LazyColumn 会直接抛。
-        itemsIndexed(logs, key = { index, entry -> "$index:${entry.timestamp}:${entry.tag}" }) { _, logEntry ->
-            LogEntryChip(logEntry, platform)
-        }
+            itemsIndexed(shown, key = { index, entry -> "$index:${entry.timestamp}:${entry.tag}" }) { _, logEntry ->
+                LogEntryChip(logEntry, platform)
+            }
         }
     }
 }
