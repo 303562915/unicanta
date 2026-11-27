@@ -161,20 +161,19 @@ private val SponsorAvatar = 34.dp
  *
  * 榜是公开的、与"谁在看"无关，所以**不分人一格**（商城页的余额要分人，这里不用）。
  *
- * `:money-first` 后缀是为了一次性的顺序切换：后端改成"资金赞助排在 token 赞助前面"之后，
- * 老缓存里还是旧顺序，而 [mergeSponsors] 的规则是"老位置不动"，光靠刷新永远换不过来。
- * 换个键名让老缓存作废，下一次加载就按新顺序画。
- * `:tokencount` 是第二次切换：补录的两条归属互换（十元那条换了人），位置也跟着变了，
- * 同样得让老缓存作废，否则画出来的还是互换前的顺序。
+ * 后面两个后缀是两次顺序切换留下的（`money-first`：资金赞助排在 token 赞助前面；
+ * `tokencount`：补录的归属互换）。现在 [mergeSponsors] 以服务端顺序为准，顺序本身就跟着刷新走，
+ * 所以键名不用再跟着改——后缀留着只是因为改回去等于让老用户回到更旧的一格，没有好处。
  */
 private const val SPONSOR_WALL_CACHE = "screen:sponsors:money-first:tokencount"
 
 /**
- * 把这次拉到的榜并到已经画出来的那份上：**老的一个不动，新来的人接在后面**。
+ * 把这次拉到的榜并到已经画出来的那份上：**顺序以服务端这次返回的为准，老缓存只用来补人**。
  *
- * 为什么不直接换成 [fresh]：整块替换等于每刷新一次就重排一遍，人一多看起来就是"人变了"，
- * 而且网络抖一下（fresh 只剩几条）会把已经看到的人全抹掉。按 id 合并之后，同一个人还在原位、
- * 只是金额按最新的更新，新出现的排在最后。
+ * 以前是"老的一个不动、新来的人接在后面"，理由是整块替换会每刷新一次重排一遍，看起来像"人变了"。
+ * 但榜单的排序本身就是后端说了算（资金赞助在前、金额/token 倒序），只要有人补录或金额变了，
+ * "老位置不动"就会把错误顺序一直画下去：新上榜的人永远排在老用户看到的最后一格，哪怕他是第一名。
+ * 现在改成 [fresh] 的顺序直接生效，只把这次没返回、但已经画过的人接在末尾（网络抖一下不丢人）。
  *
  * 已经被撤掉（`hidden`）的人这一趟不会被移除：榜很少撤人，而"用缓存兜底"是这一块的主要诉求；
  * 真要清掉某人，把这一格的缓存键改个名字即可（见 [SPONSOR_WALL_CACHE]）。
@@ -182,11 +181,8 @@ private const val SPONSOR_WALL_CACHE = "screen:sponsors:money-first:tokencount"
 private fun mergeSponsors(old: List<SponsorEntry>, fresh: List<SponsorEntry>): List<SponsorEntry> {
     if (fresh.isEmpty()) return old
     if (old.isEmpty()) return fresh
-    val latest = fresh.associateBy { it.id }
-    // 老位置不动，数据用这次的最新值。
-    val kept = old.map { latest[it.id] ?: it }
-    val seen = old.mapTo(mutableSetOf()) { it.id }
-    return kept + fresh.filter { it.id !in seen }
+    val freshIds = fresh.mapTo(mutableSetOf()) { it.id }
+    return fresh + old.filter { it.id !in freshIds }
 }
 
 /** 「我也赞助」小窗里那张收款码的边长：够扫，又不至于把整屏占满。 */
