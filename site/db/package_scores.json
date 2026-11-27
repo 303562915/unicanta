@@ -223,8 +223,8 @@
    {
     "pkg": "com.android.microdroid.empty_payload",
     "small_batch": true,
-    "uninstalls": 5,
-    "updated_at": "2026-11-27T15:42:22.358176+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "SAFE"
    },
    {
@@ -335,8 +335,8 @@
    {
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": true,
-    "uninstalls": 3,
-    "updated_at": "2026-11-27T15:38:23.757676+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1056,8 +1056,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 5,
-    "updated_at": "2026-11-27T14:35:51.697138+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T16:13:03.775945+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -1140,8 +1140,8 @@
    {
     "pkg": "com.oplus.appdetail",
     "small_batch": false,
-    "uninstalls": 14,
-    "updated_at": "2026-11-27T14:48:10.446198+00:00",
+    "uninstalls": 15,
+    "updated_at": "2026-11-27T16:11:42.192081+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -1644,8 +1644,8 @@
    {
     "pkg": "com.oplus.themestore",
     "small_batch": true,
-    "uninstalls": 3,
-    "updated_at": "2026-11-27T15:34:29.292327+00:00",
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1826,8 +1826,8 @@
    {
     "pkg": "com.qualcomm.qti.devicestatisticsservice",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1910,15 +1910,15 @@
    {
     "pkg": "com.qualcomm.uimremoteclient",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T11:27:52.585272+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.qualcomm.uimremoteserver",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T11:27:52.585272+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1959,9 +1959,9 @@
    {
     "pkg": "com.wapi.wapicertmanage",
     "small_batch": true,
-    "uninstalls": 4,
-    "updated_at": "2026-11-27T15:34:29.292327+00:00",
-    "verdict": "INSUFFICIENT"
+    "uninstalls": 5,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
+    "verdict": "BREAKS"
    },
    {
     "pkg": "com.yuemeng.speechsuite",
@@ -4062,8 +4062,8 @@
    {
     "pkg": "com.android.microdroid.empty_payload",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -4139,8 +4139,8 @@
    {
     "pkg": "com.android.systemui.accessibility.accessibilitymenu",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -4888,8 +4888,8 @@
    {
     "pkg": "com.oplus.themestore",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-26T23:00:00.806123+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -4986,8 +4986,8 @@
    {
     "pkg": "com.qualcomm.qti.devicestatisticsservice",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -5021,15 +5021,15 @@
    {
     "pkg": "com.qualcomm.uimremoteclient",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
     "pkg": "com.qualcomm.uimremoteserver",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -5049,8 +5049,8 @@
    {
     "pkg": "com.wapi.wapicertmanage",
     "small_batch": true,
-    "uninstalls": 0,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T16:12:44.145482+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -5741,8 +5741,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 5,
-    "updated_at": "2026-11-27T14:35:51.697138+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T16:13:03.775945+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -5825,9 +5825,9 @@
    {
     "pkg": "com.oplus.appdetail",
     "small_batch": false,
-    "uninstalls": 8,
-    "updated_at": "2026-11-27T11:27:52.585272+00:00",
-    "verdict": "SAFE"
+    "uninstalls": 9,
+    "updated_at": "2026-11-27T16:11:42.192081+00:00",
+    "verdict": "UNCLEAR"
    },
    {
     "pkg": "com.oplus.beaconlink",
@@ -18327,8 +18327,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 615,
-    "updated_at": "2026-11-27T15:56:47.491284+00:00",
+    "uninstalls": 616,
+    "updated_at": "2026-11-27T16:11:22.242617+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -18873,8 +18873,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 537,
-    "updated_at": "2026-11-27T15:56:47.491284+00:00",
+    "uninstalls": 538,
+    "updated_at": "2026-11-27T16:14:24.17977+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25232,8 +25232,8 @@
    {
     "pkg": "com.mobiletools.systemhelper",
     "small_batch": true,
-    "uninstalls": 435,
-    "updated_at": "2026-11-27T15:56:28.552636+00:00",
+    "uninstalls": 436,
+    "updated_at": "2026-11-27T16:11:22.242617+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25673,8 +25673,8 @@
    {
     "pkg": "com.xiaomi.gamecenter.sdk.service",
     "small_batch": false,
-    "uninstalls": 381,
-    "updated_at": "2026-11-27T15:38:20.148003+00:00",
+    "uninstalls": 382,
+    "updated_at": "2026-11-27T16:14:24.17977+00:00",
     "verdict": "BREAKS"
    },
    {
