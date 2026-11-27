@@ -5232,6 +5232,18 @@
   "target": "com.mobiletools.systemhelper"
  },
  {
+  "author": "Jamin",
+  "author_id": "12860",
+  "body": "卸载了不能用windows互联投屏",
+  "created_at": "2026-11-27T08:54:28.458869+00:00",
+  "device_model": "Xiaomi 17",
+  "id": 780,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.305",
+  "target": "com.xiaomi.mi_connect_service"
+ },
+ {
   "author": "#10762",
   "author_id": "10762",
   "body": "OS3 卸载会导致护眼模式磁贴变暗，介意可冻结",

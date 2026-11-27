@@ -101,20 +101,6 @@
   "agrees": 36,
   "applied": false,
   "author": "开发者",
-  "author_id": "official",
-  "category": "system",
-  "created_at": "2026-11-23T12:33:40.366141+00:00",
-  "disagrees": 5,
-  "id": 10,
-  "license": "GPL-3.0",
-  "name": "LSPosed",
-  "summary": "Xposed 模块框架的正统续作，改行为不用改 APK，模块生态最全。",
-  "url": "https://github.com/LSPosed/LSPosed"
- },
- {
-  "agrees": 35,
-  "applied": false,
-  "author": "开发者",
   "author_id": "10003",
   "category": "files",
   "created_at": "2026-11-22T08:44:54.633742+00:00",
@@ -124,6 +110,20 @@
   "name": "Neo Backup",
   "summary": "一键备份和恢复应用与数据，动手精简之前先留退路。",
   "url": "https://github.com/NeoApplications/Neo-Backup"
+ },
+ {
+  "agrees": 36,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "official",
+  "category": "system",
+  "created_at": "2026-11-23T12:33:40.366141+00:00",
+  "disagrees": 5,
+  "id": 10,
+  "license": "GPL-3.0",
+  "name": "LSPosed",
+  "summary": "Xposed 模块框架的正统续作，改行为不用改 APK，模块生态最全。",
+  "url": "https://github.com/LSPosed/LSPosed"
  },
  {
   "agrees": 32,
@@ -425,6 +425,20 @@
   "author": "Algernon",
   "author_id": "14979",
   "category": "tools",
+  "created_at": "2026-11-27T08:35:50.104201+00:00",
+  "disagrees": 0,
+  "id": 33,
+  "license": "AGPL-3.0 许可证",
+  "name": "RustDesk",
+  "summary": "一款开源远程桌面应用程序，专为自托管设计，作为 TeamViewer 的替代方案。",
+  "url": "https://github.com/rustdesk/rustdesk"
+ },
+ {
+  "agrees": 1,
+  "applied": false,
+  "author": "Algernon",
+  "author_id": "14979",
+  "category": "tools",
   "created_at": "2026-11-27T08:43:28.63979+00:00",
   "disagrees": 0,
   "id": 34,
@@ -460,19 +474,5 @@
   "name": "ShizuCoreFetch",
   "summary": "一个ADB权限应用商店，具备Ai能力。",
   "url": "https://github.com/elhizazi1/ShizuCoreFetch"
- },
- {
-  "agrees": 0,
-  "applied": false,
-  "author": "Algernon",
-  "author_id": "14979",
-  "category": "tools",
-  "created_at": "2026-11-27T08:35:50.104201+00:00",
-  "disagrees": 0,
-  "id": 33,
-  "license": "AGPL-3.0 许可证",
-  "name": "RustDesk",
-  "summary": "一款开源远程桌面应用程序，专为自托管设计，作为 TeamViewer 的替代方案。",
-  "url": "https://github.com/rustdesk/rustdesk"
  }
 ]
