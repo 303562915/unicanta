@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +53,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -262,6 +265,14 @@ fun SafetyRulesScreen(
     onNavigateBack: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
+
+    // 两格也能左右滑：点标签换一格，手指左右滑也换。`tabs` 只管手势，`tab` 仍然是"现在看的是哪一格"——
+    // 上面那些 `tab == 0/1` 与「上传本机方案」那个按钮的判断都还读它，滑动只负责把它改掉。
+    val tabs = rememberPagerState(initialPage = tab, pageCount = { 2 })
+    LaunchedEffect(tab) { if (tabs.currentPage != tab) tabs.animateScrollToPage(tab) }
+    LaunchedEffect(tabs) {
+        snapshotFlow { tabs.currentPage }.collect { shown -> if (shown != tab) tab = shown }
+    }
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
     var rules by remember { mutableStateOf<SafetyRules?>(null) }
     // Which phone's plans are on screen. Every model by default: with a young community this
@@ -829,40 +840,46 @@ fun SafetyRulesScreen(
                     },
                 )
             }
-            if (tab == 0) {
-                RankingTab(
-                    plans = plans,
-                    loading = loading,
-                    apps = apps,
-                    rules = rules,
-                    profile = profile,
-                    deviceLabel = listLabel,
-                    otherDevice = opened != null,
-                    offline = offline,
-                    query = packageQuery,
-                    // 位置记忆按「哪个范围」分开存：本机、全部机型、某一台他机，三者的列表不是同一份，
-                    // 共用一个键会让从应用详情返回时落到另一份列表的第 N 行。
-                    page = "ranking:" + resolvedScope.memoryKey(),
-                    onOpenApp = onOpenApp,
-                    onRetry = { reloads++ },
-                )
-            } else {
-                PlansTab(
-                    plans = plans,
-                    loading = loading,
-                    profile = profile,
-                    deviceLabel = listLabel,
-                    owner = owner,
-                    liked = liked,
-                    offline = offline,
-                    widerScope = opened != null || allModels,
-                    query = packageQuery,
-                    page = "plans:" + resolvedScope.memoryKey(),
-                    onOpenPlan = onOpenPlan,
-                    onVote = vote,
-                    onDelete = { pendingDelete = it },
-                    onRetry = { reloads++ },
-                )
+            // 两格各占一页：内容自己纵向滚，横向这一档留给翻页。
+            HorizontalPager(
+                state = tabs,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) { shown ->
+                if (shown == 0) {
+                    RankingTab(
+                        plans = plans,
+                        loading = loading,
+                        apps = apps,
+                        rules = rules,
+                        profile = profile,
+                        deviceLabel = listLabel,
+                        otherDevice = opened != null,
+                        offline = offline,
+                        query = packageQuery,
+                        // 位置记忆按「哪个范围」分开存：本机、全部机型、某一台他机，三者的列表不是同一份，
+                        // 共用一个键会让从应用详情返回时落到另一份列表的第 N 行。
+                        page = "ranking:" + resolvedScope.memoryKey(),
+                        onOpenApp = onOpenApp,
+                        onRetry = { reloads++ },
+                    )
+                } else {
+                    PlansTab(
+                        plans = plans,
+                        loading = loading,
+                        profile = profile,
+                        deviceLabel = listLabel,
+                        owner = owner,
+                        liked = liked,
+                        offline = offline,
+                        widerScope = opened != null || allModels,
+                        query = packageQuery,
+                        page = "plans:" + resolvedScope.memoryKey(),
+                        onOpenPlan = onOpenPlan,
+                        onVote = vote,
+                        onDelete = { pendingDelete = it },
+                        onRetry = { reloads++ },
+                    )
+                }
             }
         }
     }

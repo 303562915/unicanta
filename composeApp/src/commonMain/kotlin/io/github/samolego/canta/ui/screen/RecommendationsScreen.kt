@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -54,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -270,6 +273,14 @@ fun RecommendationsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     /** Which half is showing. The list is what the bar leads here for, so it opens first. */
     var tab by rememberSaveable { mutableIntStateOf(TAB_LIST) }
+
+    // 四格也能左右滑：点标签换一格，手指左右滑也换。`tabs` 只管手势，`tab` 仍然是"现在看的是哪一格"——
+    // 顶栏那个版式按钮、投票那一格的点、以及各分支的判断都还读 `tab`，滑动只负责把它改掉。
+    val tabs = rememberPagerState(initialPage = tab, pageCount = { 4 })
+    LaunchedEffect(tab) { if (tabs.currentPage != tab) tabs.animateScrollToPage(tab) }
+    LaunchedEffect(tabs) {
+        snapshotFlow { tabs.currentPage }.collect { shown -> if (shown != tab) tab = shown }
+    }
     // One scroll position per half, kept here rather than inside the tab: rebuilt on every switch,
     // a list would come back to its top and lose the row the reader was on.
     //
@@ -458,167 +469,174 @@ fun RecommendationsScreen(
             onOpenDetail(RECOMMEND_SOURCE_SUGGESTION, app.id.toString())
         }
 
-        if (tab == TAB_AIRPORT) {
-            // 机场与积分：钱包、投票、商城、兑换中心都在这一块里，各自从后端拿自己的那份。
-            RecommendationsAirportTab(
-                repository = repository,
-                platform = platform,
-                author = author,
-                authorId = authorId,
-                state = airportState,
-                modifier = Modifier.fillMaxSize().padding(padding),
-                setupGate = setupGate,
-                onOpenAirport = onOpenAirport,
-            )
-        } else if (tab == TAB_AIRPORT_VOTE) {
-            // 机场投票榜：同一份 airports、同一个 [AirportTabState]，只是换个画法。state 共用是
-            // 有意的——在榜单里投一票再切回机场那一格，票数是同一个数，不用等它重拉一遍。
-            // 滚动位置另给一个键，不然第四格会接着机场那一格的滚动位置往上长。
-            RecommendationsAirportTab(
-                repository = repository,
-                platform = platform,
-                author = author,
-                authorId = authorId,
-                state = airportState,
-                modifier = Modifier.fillMaxSize().padding(padding),
-                setupGate = setupGate,
-                board = true,
-                stateKey = "airport-vote",
-                onOpenAirport = onOpenAirport,
-            )
-        } else if (tab == TAB_VOTE) {
-            // The queue on its own page: what others filed, one line each, and the form that adds
-            // one. Nothing of the catalog here — this half is a list to work through.
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                state = voteQueueState,
-                contentPadding = PaddingValues(bottom = BarRoom),
-            ) {
-                item(key = "suggest-new") { SuggestEntryRow(onClick = openSuggest, inset = 16.dp) }
-                if (suggested.isNotEmpty()) {
-                    item(key = "community-head") {
-                        SectionHeader(label = "大家推荐的", count = suggested.size, inset = 16.dp)
-                    }
-                    items(suggested.size, key = { "suggest-$it" }) { index ->
-                        val entry = suggested[index]
-                        SuggestedRow(
-                            app = entry,
-                            voting = votingId == entry.id,
-                            canVote = canVote,
-                            inset = 16.dp,
-                            onVote = { agree -> vote(entry, agree) },
-                            onOpen = { openSuggestion(entry) },
-                        )
-                    }
-                } else if (suggestError != null) {
-                    item(key = "suggest-error") {
-                        CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 16.dp)
-                    }
-                }
-                item(key = "community-foot") { CommunityFoot(inset = 16.dp) }
-            }
-        } else if (asGrid) {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = MinCellWidth),
-                modifier = Modifier.fillMaxSize().padding(padding),
-                state = listGridState,
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, bottom = BarRoom),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
-                    CatalogSearchField(query = query, onQueryChange = { query = it })
-                }
-
-                if (loaded.apps.isEmpty()) {
-                    item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
-                }
-
-                if (searching) {
-                    if (found.isEmpty()) {
-                        item(key = "no-hits", span = { GridItemSpan(maxLineSpan) }) {
-                            NoHits(query = query)
+        // 每一格各占一页：内容自己纵向滚，横向这一档留给翻页。`padding` 由各分支自己带，
+        // 所以这里不再叠一层，否则翻页时左右两页的留白会对不齐。
+        HorizontalPager(
+            state = tabs,
+            modifier = Modifier.fillMaxSize(),
+        ) { shown ->
+            if (shown == TAB_AIRPORT) {
+                // 机场与积分：钱包、投票、商城、兑换中心都在这一块里，各自从后端拿自己的那份。
+                RecommendationsAirportTab(
+                    repository = repository,
+                    platform = platform,
+                    author = author,
+                    authorId = authorId,
+                    state = airportState,
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    setupGate = setupGate,
+                    onOpenAirport = onOpenAirport,
+                )
+            } else if (shown == TAB_AIRPORT_VOTE) {
+                // 机场投票榜：同一份 airports、同一个 [AirportTabState]，只是换个画法。state 共用是
+                // 有意的——在榜单里投一票再切回机场那一格，票数是同一个数，不用等它重拉一遍。
+                // 滚动位置另给一个键，不然第四格会接着机场那一格的滚动位置往上长。
+                RecommendationsAirportTab(
+                    repository = repository,
+                    platform = platform,
+                    author = author,
+                    authorId = authorId,
+                    state = airportState,
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    setupGate = setupGate,
+                    board = true,
+                    stateKey = "airport-vote",
+                    onOpenAirport = onOpenAirport,
+                )
+            } else if (shown == TAB_VOTE) {
+                // The queue on its own page: what others filed, one line each, and the form that adds
+                // one. Nothing of the catalog here — this half is a list to work through.
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    state = voteQueueState,
+                    contentPadding = PaddingValues(bottom = BarRoom),
+                ) {
+                    item(key = "suggest-new") { SuggestEntryRow(onClick = openSuggest, inset = 16.dp) }
+                    if (suggested.isNotEmpty()) {
+                        item(key = "community-head") {
+                            SectionHeader(label = "大家推荐的", count = suggested.size, inset = 16.dp)
                         }
-                    }
-                    gridItems(found, key = { "hit-${it.id}" }) { app ->
-                        AppGridCell(app = app, featured = app.featured, onClick = { openDetails(app) })
-                    }
-                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
-                        FooterNote(found.size)
-                    }
-                } else {
-                    if (featured.isNotEmpty()) {
-                        item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(
-                                label = stringResource(Res.string.recommend_featured),
-                                count = featured.size,
-                            )
-                        }
-                        gridItems(featured, key = { "featured-${it.id}" }) { app ->
-                            AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
-                        }
-                    }
-
-                    groups.forEach { (category, apps) ->
-                        item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(label = categoryLabel(category), count = apps.size)
-                        }
-                        gridItems(apps, key = { it.id }) { app ->
-                            AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
-                        }
-                    }
-
-                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
-                        FooterNote(loaded.apps.size)
-                    }
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                state = listColumnState,
-                contentPadding = PaddingValues(bottom = BarRoom),
-            ) {
-                item(key = "search") {
-                    CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp)
-                }
-
-                if (loaded.apps.isEmpty()) {
-                    item(key = "empty") { EmptyNote() }
-                }
-
-                if (searching) {
-                    if (found.isEmpty()) {
-                        item(key = "no-hits") { NoHits(query = query, inset = 16.dp) }
-                    }
-                    items(found, key = { "hit-${it.id}" }) { app ->
-                        RecommendationCard(app = app, featured = app.featured, onClick = { openDetails(app) })
-                    }
-                    item(key = "footer") { FooterNote(found.size, inset = 16.dp) }
-                } else {
-                    if (featured.isNotEmpty()) {
-                        item(key = "featured-head") {
-                            SectionHeader(
-                                label = stringResource(Res.string.recommend_featured),
-                                count = featured.size,
+                        items(suggested.size, key = { "suggest-$it" }) { index ->
+                            val entry = suggested[index]
+                            SuggestedRow(
+                                app = entry,
+                                voting = votingId == entry.id,
+                                canVote = canVote,
                                 inset = 16.dp,
+                                onVote = { agree -> vote(entry, agree) },
+                                onOpen = { openSuggestion(entry) },
                             )
                         }
-                        items(featured, key = { "featured-${it.id}" }) { app ->
-                            RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
+                    } else if (suggestError != null) {
+                        item(key = "suggest-error") {
+                            CommunityHint(text = "社区推荐暂时没拉到：$suggestError", inset = 16.dp)
                         }
                     }
-
-                    groups.forEach { (category, apps) ->
-                        item(key = "head-$category") {
-                            SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
-                        }
-                        items(apps, key = { it.id }) { app ->
-                            RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
-                        }
+                    item(key = "community-foot") { CommunityFoot(inset = 16.dp) }
+                }
+            } else if (asGrid) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = MinCellWidth),
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    state = listGridState,
+                    contentPadding = PaddingValues(start = 10.dp, end = 10.dp, bottom = BarRoom),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
+                        CatalogSearchField(query = query, onQueryChange = { query = it })
                     }
 
-                    item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
+                    if (loaded.apps.isEmpty()) {
+                        item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyNote() }
+                    }
+
+                    if (searching) {
+                        if (found.isEmpty()) {
+                            item(key = "no-hits", span = { GridItemSpan(maxLineSpan) }) {
+                                NoHits(query = query)
+                            }
+                        }
+                        gridItems(found, key = { "hit-${it.id}" }) { app ->
+                            AppGridCell(app = app, featured = app.featured, onClick = { openDetails(app) })
+                        }
+                        item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                            FooterNote(found.size)
+                        }
+                    } else {
+                        if (featured.isNotEmpty()) {
+                            item(key = "featured-head", span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(
+                                    label = stringResource(Res.string.recommend_featured),
+                                    count = featured.size,
+                                )
+                            }
+                            gridItems(featured, key = { "featured-${it.id}" }) { app ->
+                                AppGridCell(app = app, featured = true, onClick = { openDetails(app) })
+                            }
+                        }
+
+                        groups.forEach { (category, apps) ->
+                            item(key = "head-$category", span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(label = categoryLabel(category), count = apps.size)
+                            }
+                            gridItems(apps, key = { it.id }) { app ->
+                                AppGridCell(app = app, featured = false, onClick = { openDetails(app) })
+                            }
+                        }
+
+                        item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                            FooterNote(loaded.apps.size)
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    state = listColumnState,
+                    contentPadding = PaddingValues(bottom = BarRoom),
+                ) {
+                    item(key = "search") {
+                        CatalogSearchField(query = query, onQueryChange = { query = it }, inset = 16.dp)
+                    }
+
+                    if (loaded.apps.isEmpty()) {
+                        item(key = "empty") { EmptyNote() }
+                    }
+
+                    if (searching) {
+                        if (found.isEmpty()) {
+                            item(key = "no-hits") { NoHits(query = query, inset = 16.dp) }
+                        }
+                        items(found, key = { "hit-${it.id}" }) { app ->
+                            RecommendationCard(app = app, featured = app.featured, onClick = { openDetails(app) })
+                        }
+                        item(key = "footer") { FooterNote(found.size, inset = 16.dp) }
+                    } else {
+                        if (featured.isNotEmpty()) {
+                            item(key = "featured-head") {
+                                SectionHeader(
+                                    label = stringResource(Res.string.recommend_featured),
+                                    count = featured.size,
+                                    inset = 16.dp,
+                                )
+                            }
+                            items(featured, key = { "featured-${it.id}" }) { app ->
+                                RecommendationCard(app = app, featured = true, onClick = { openDetails(app) })
+                            }
+                        }
+
+                        groups.forEach { (category, apps) ->
+                            item(key = "head-$category") {
+                                SectionHeader(label = categoryLabel(category), count = apps.size, inset = 16.dp)
+                            }
+                            items(apps, key = { it.id }) { app ->
+                                RecommendationCard(app = app, featured = false, onClick = { openDetails(app) })
+                            }
+                        }
+
+                        item(key = "footer") { FooterNote(loaded.apps.size, inset = 16.dp) }
+                    }
                 }
             }
         }
