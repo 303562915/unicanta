@@ -27,7 +27,10 @@ object FlGlyphs {
     val profiles = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphPolyline(listOf(GlyphVertex(5f, 3f, 2.5f), GlyphVertex(13.5f, 3f, 1f), GlyphVertex(19f, 8.5f, 1f), GlyphVertex(19f, 21f, 2.5f), GlyphVertex(5f, 21f, 2.5f)), closed = true),
+            // 外框必须是 `Line`（见文件里其它 glyph 的同类注释）：`FlGlyphIcon` 默认 fill=0f，
+            // 而 `drawBody` 在 fill<=0f 时直接 return —— 留默认 Body 的话信封轮廓不画，
+            // 只剩里面两道横线，「还没有好友」那块会像两根悬空短线。
+            GlyphPolyline(listOf(GlyphVertex(5f, 3f, 2.5f), GlyphVertex(13.5f, 3f, 1f), GlyphVertex(19f, 8.5f, 1f), GlyphVertex(19f, 21f, 2.5f), GlyphVertex(5f, 21f, 2.5f)), closed = true, role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(13.5f, 3.2f, 0f), GlyphVertex(13.5f, 8.5f, 1.5f), GlyphVertex(18.8f, 8.5f, 0f)), role = GlyphRole.Detail),
             GlyphPolyline(listOf(GlyphVertex(8.5f, 12.5f, 0f), GlyphVertex(15.5f, 12.5f, 0f)), role = GlyphRole.Detail),
             GlyphPolyline(listOf(GlyphVertex(8.5f, 16f, 0f), GlyphVertex(13f, 16f, 0f)), role = GlyphRole.Detail),
@@ -294,6 +297,162 @@ object FlGlyphs {
             GlyphPolyline(
                 listOf(GlyphVertex(8.6f, 15.6f, 0f), GlyphVertex(19.4f, 15.6f, 0f)),
                 role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /**
+     * 删除线：一个被两道短杠「划断」的 S 形折线。
+     *
+     * 读法是"这行字被划掉了"：主体是一条 6.4 到 17.6 的 S（上端往右、下端也往右，中间一道
+     * 反向的腰），两道水平短杠从 4.2 划到 19.8，比 S 还宽出一点——线要"越过"字才像划掉，
+     * 卡在字里像装饰。两杠在 y 10.4 与 y 13.6，正好夹住那道腰（y=12），
+     * 所以 16dp 下即使 S 糊了，人读到的仍是"被两道横线划过的字"。
+     */
+    val strikethrough = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(17.4f, 6.4f, 1.6f),
+                    GlyphVertex(9.6f, 6.4f, 2.2f),
+                    GlyphVertex(6.6f, 12f, 2.2f),
+                    GlyphVertex(9.6f, 17.6f, 2.2f),
+                    GlyphVertex(17.4f, 17.6f, 1.6f),
+                ),
+                role = GlyphRole.Line,
+            ),
+            // 两道横杠比字形略宽（4.2 到 19.8）：线要"越过"字才像划掉，卡在字里像装饰。
+            GlyphPolyline(
+                listOf(GlyphVertex(4.2f, 10.4f, 0f), GlyphVertex(19.8f, 10.4f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(4.2f, 13.6f, 0f), GlyphVertex(19.8f, 13.6f, 0f)),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /**
+     * 有序列表：左侧三个序号（1、2、3，画成「竖干 + 右下小勾」的极简数字）+ 右侧三根短线。
+     *
+     * 和无序列表 [bulletList] 是同一套栅格：点/序号在 x≈5.4，文字在 x 9.4 到 19.4，
+     * 三行 y 7、12、17，这样两颗图标并排放在面板里不会被看成两种不同的列表。
+     * 序号只画到 16dp 下还看得见的程度（3 格宽、4 格高），再多细节就糊成方块了。
+     */
+    val orderedList = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            // 1：一根竖干，左上带一小段起笔。
+            GlyphPolyline(
+                listOf(GlyphVertex(6.4f, 5.2f, 0.6f), GlyphVertex(5.2f, 6.2f, 0f)),
+                role = GlyphRole.Detail,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(6.4f, 5.2f, 0f), GlyphVertex(6.4f, 9f, 0f)),
+                role = GlyphRole.Detail,
+            ),
+            // 2：上弧 + 斜下 + 底横。
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(4.6f, 11.2f, 0.6f),
+                    GlyphVertex(5.8f, 10.2f, 0.9f),
+                    GlyphVertex(7.2f, 11.2f, 0.9f),
+                    GlyphVertex(4.6f, 14.4f, 0.4f),
+                ),
+                role = GlyphRole.Detail,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(4.6f, 14.4f, 0f), GlyphVertex(7.6f, 14.4f, 0f)),
+                role = GlyphRole.Detail,
+            ),
+            // 3：两道上弧叠成 "3"。不用两道独立笔画是因为 16dp 下中间那道缝会消失，
+            // 连成一条 S 形折线反而更稳。
+            GlyphPolyline(
+                listOf(
+                    GlyphVertex(4.8f, 15.8f, 0.6f),
+                    GlyphVertex(6.2f, 16.8f, 0.9f),
+                    GlyphVertex(7.4f, 17.8f, 0.9f),
+                    GlyphVertex(6.2f, 19f, 0.9f),
+                    GlyphVertex(4.8f, 19.2f, 0.4f),
+                ),
+                role = GlyphRole.Detail,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(9.4f, 7f, 0f), GlyphVertex(19.4f, 7f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(9.4f, 12f, 0f), GlyphVertex(19.4f, 12f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(9.4f, 17f, 0f), GlyphVertex(19.4f, 17f, 0f)),
+                role = GlyphRole.Line,
+            ),
+        ),
+    )
+
+    /**
+     * 代码块：一个方框（四个围栏）里两条短横线（里面的代码行），和 [code] 的尖括号区分开。
+     *
+     * 外框**必须显式写 `role = GlyphRole.Line`**：`GlyphBox` 默认是 `Body`，而
+     * `FlGlyphIcon` 默认 `fill = 0f`，`drawBody` 在 `fill <= 0f` 时直接 return ——
+     * 漏了这个参数，画出来只剩框里那两条线（和 [drafts] 踩过的是同一个坑）。
+     * 框 3.2 到 20.8 宽、4.4 到 19.6 高、圆角 2.4，比 [code] 的 3..21 略窄一点，靠"是个闭合框"来区分。
+     */
+    val codeBlock = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphBox(3.2f, 4.4f, 20.8f, 19.6f, 2.4f, role = GlyphRole.Line),
+            GlyphPolyline(
+                listOf(GlyphVertex(6.8f, 9.6f, 0f), GlyphVertex(17.2f, 9.6f, 0f)),
+                role = GlyphRole.Detail,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(6.8f, 14.2f, 0f), GlyphVertex(13.4f, 14.2f, 0f)),
+                role = GlyphRole.Detail,
+            ),
+        ),
+    )
+
+    /**
+     * 分隔线：一道通长横线 + 右上角一颗小方块 —— "这一行只是一条线，不是字"。
+     *
+     * 横线画在 y=12（网格正中），两端各留 3.6 的边距（3.6 到 20.4），与 `GlyphBox(3.2…20.8)`
+     * 是同一档内框。只用一条横线会和 `- ` 那个连字符撞脸，所以右端压一颗
+     * 15.4 到 20.4 宽、9.4 到 14.6 高 的小方块（`Detail`），让右半边"有个块"，一眼不像减号。
+     */
+    val horizontalRule = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphPolyline(
+                listOf(GlyphVertex(3.6f, 12f, 0f), GlyphVertex(20.4f, 12f, 0f)),
+                role = GlyphRole.Line,
+            ),
+            GlyphBox(15.4f, 9.4f, 20.4f, 14.6f, 1.2f, role = GlyphRole.Detail),
+        ),
+    )
+
+    /**
+     * 表格骨架：外框 + 一横一竖两道内线（2×2 四格）。
+     *
+     * 只切 2×2：再细分就成了 3×3 的蜘蛛网，16dp 缩放下内线会糊成一块灰。
+     * 内线端点与外框边线重合（3.2 到 20.8 宽、4.4 到 19.6 高），靠描边的圆头把接头补平。
+     * 外框同样**必须显式 `role = GlyphRole.Line`**（见 [codeBlock] 那段）。
+     */
+    val table = FlGlyph(
+        matchTextDirection = false,
+        shapes = listOf(
+            GlyphBox(3.2f, 4.4f, 20.8f, 19.6f, 2f, role = GlyphRole.Line),
+            GlyphPolyline(
+                listOf(GlyphVertex(3.2f, 12f, 0f), GlyphVertex(20.8f, 12f, 0f)),
+                role = GlyphRole.Detail,
+            ),
+            GlyphPolyline(
+                listOf(GlyphVertex(12f, 4.4f, 0f), GlyphVertex(12f, 19.6f, 0f)),
+                role = GlyphRole.Detail,
             ),
         ),
     )
@@ -703,14 +862,19 @@ object FlGlyphs {
         ),
     )
 
-    /** 四宫格：聊天输入栏最左边那个入口（「更多」面板）。 */
+    /**
+     * 四宫格：聊天输入栏最左边那个入口（「更多」面板），也是编辑器工具栏的「更多工具」。
+     *
+     * 四个方块都是 `Line` 而不是默认的 `Body`：这个 glyph 的**全部**笔画就是这四个框，
+     * 留 Body 的话 `fill = 0f` 下一个都画不出来，整颗图标是空的。
+     */
     val grid2x2 = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphBox(3.6f, 3.6f, 10.4f, 10.4f, 2f),
-            GlyphBox(13.6f, 3.6f, 20.4f, 10.4f, 2f),
-            GlyphBox(3.6f, 13.6f, 10.4f, 20.4f, 2f),
-            GlyphBox(13.6f, 13.6f, 20.4f, 20.4f, 2f),
+            GlyphBox(3.6f, 3.6f, 10.4f, 10.4f, 2f, role = GlyphRole.Line),
+            GlyphBox(13.6f, 3.6f, 20.4f, 10.4f, 2f, role = GlyphRole.Line),
+            GlyphBox(3.6f, 13.6f, 10.4f, 20.4f, 2f, role = GlyphRole.Line),
+            GlyphBox(13.6f, 13.6f, 20.4f, 20.4f, 2f, role = GlyphRole.Line),
         ),
     )
 
@@ -757,9 +921,11 @@ object FlGlyphs {
     val appsList = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphBox(3.5f, 3.3f, 6.9f, 6.7f, 1f),
-            GlyphBox(3.5f, 10.3f, 6.9f, 13.7f, 1f),
-            GlyphBox(3.5f, 17.3f, 6.9f, 20.7f, 1f),
+            // 三个小方块必须是 `Line`：这颗图标只靠它们和右侧三条线撑形状，
+            // 留默认 `Body` 在 fill=0f 下三个方块全不画，只剩右边三根线（左侧一片空）。
+            GlyphBox(3.5f, 3.3f, 6.9f, 6.7f, 1f, role = GlyphRole.Line),
+            GlyphBox(3.5f, 10.3f, 6.9f, 13.7f, 1f, role = GlyphRole.Line),
+            GlyphBox(3.5f, 17.3f, 6.9f, 20.7f, 1f, role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(10.5f, 5f, 0f), GlyphVertex(20.5f, 5f, 0f)), role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(10.5f, 12f, 0f), GlyphVertex(20.5f, 12f, 0f)), role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(10.5f, 19f, 0f), GlyphVertex(20.5f, 19f, 0f)), role = GlyphRole.Line),
@@ -785,7 +951,9 @@ object FlGlyphs {
     val iconTile = FlGlyph(
         matchTextDirection = false,
         shapes = listOf(
-            GlyphBox(3f, 3f, 21f, 21f, 5f),
+            // 外框 `Line`：这颗的主体就是那个圆角方框，留 Body 只剩里面那道折线，
+            // 看着像"一张图破了"。
+            GlyphBox(3f, 3f, 21f, 21f, 5f, role = GlyphRole.Line),
             GlyphPolyline(listOf(GlyphVertex(5.6f, 16.8f, 0f), GlyphVertex(9.6f, 12.8f, 0.8f), GlyphVertex(12.8f, 16f, 0.8f), GlyphVertex(14.6f, 14.2f, 0.8f), GlyphVertex(18.4f, 18f, 0f)), role = GlyphRole.Detail),
             GlyphCircle(15.2f, 8.8f, 1.5f, role = GlyphRole.Detail, solid = true),
         ),
