@@ -1151,9 +1151,13 @@ private fun CantaNavigation(
                 // 证明身份号的 token（删除自己写的评论要它）。
                 var detailAuthor by remember { mutableStateOf("") }
                 var detailIdentity by remember { mutableStateOf(Identity("")) }
+                // 机型与系统：评论挂在这一页上，评论行前面那一列（「Redmi K70 · HyperOS 2」）就是
+                // 从这里去的。取法与方案详情、应用详情完全一样，拿不到时留 null、评论就不带这一列。
+                var detailProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 LaunchedEffect(Unit) {
                     detailAuthor = DeviceIdentity.displayName(deps.settings)
                     detailIdentity = DeviceIdentity.current(deps.settings)
+                    detailProfile = handler.deviceProfile()
                 }
                 RecommendDetailScreen(
                     source = detailSource,
@@ -1165,6 +1169,8 @@ private fun CantaNavigation(
                     author = detailAuthor,
                     authorId = detailIdentity.owner.ifEmpty { detailIdentity.token },
                     token = detailIdentity.token,
+                    // 评论里带上机型 / 系统：这一格问的是「这条在自己手机上好不好用」，没有机型就答不了。
+                    profile = detailProfile,
                     onNavigateBack = { navController.navigateUp() },
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     // 认同 / 不认同：与推荐页那半用的是同一个后端调用，身份也取同一份
@@ -1188,9 +1194,12 @@ private fun CantaNavigation(
                 } ?: 0L
                 var airportAuthor by remember { mutableStateOf("") }
                 var airportIdentity by remember { mutableStateOf(Identity("")) }
+                // 机型与系统：评论行前面那一列，取法与推荐详情、应用详情同一份。
+                var airportProfile by remember { mutableStateOf<DeviceProfile?>(null) }
                 LaunchedEffect(airportId) {
                     airportAuthor = DeviceIdentity.displayName(deps.settings)
                     airportIdentity = DeviceIdentity.current(deps.settings)
+                    airportProfile = handler.deviceProfile()
                 }
                 AirportDetailScreen(
                     airportId = airportId,
@@ -1201,7 +1210,13 @@ private fun CantaNavigation(
                     author = airportAuthor,
                     authorId = airportIdentity.owner.ifEmpty { airportIdentity.token },
                     token = airportIdentity.token,
+                    // 机型 / 系统同上：这一格说的是「哪条线路在什么机器上掉了」，不带机型就只是抱怨。
+                    profile = airportProfile,
                     onNavigateBack = { navController.navigateUp() },
+                    // 点「由 X 分享」去他的主页：与方案详情页点上传者是同一个页面，看他还分享过什么。
+                    onOpenUploader = { owner ->
+                        if (owner.isNotEmpty()) navController.navigate(Screen.Uploader.routeFor(owner))
+                    },
                     setupGate = setupGate,
                 )
             }

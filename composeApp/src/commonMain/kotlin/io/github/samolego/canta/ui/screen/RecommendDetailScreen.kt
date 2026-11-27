@@ -75,6 +75,7 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.threadKey
+import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -164,6 +165,9 @@ private fun detailOf(app: SuggestedApp): DetailEntry = DetailEntry(
  * @param author 署名；[authorId] 为空时也当身份用。
  * @param authorId 身份号：评论挂在这上面，删除和点赞也按它算。
  * @param token 证明这个身份号的秘密；删除自己写的评论要它。
+ * @param profile 本机机型与系统。发评论时一起交给后端，别人看到的评论行才有「Redmi K70 · HyperOS 2」
+ *   那一列——取法与 [AppDetailScreen]、方案详情页相同（都是 `CantaHandler.deviceProfile()`）；拿不到时
+ *   是 null，那时评论就不带这一列，而不是写一个假机型。
  * @param onVoteSuggestion 给社区条目投认同 / 不认同，返回投完之后的三个数；null 表示没投上。
  *   由调用方接（`CantaApp` 里就是 `communityRepository.voteSuggestedApp(...)`）：这一页是独立路由，
  *   拿不到推荐页里那份"正在投哪一条"的状态，所以投票这一件事走回调，两个页面用同一个后端调用。
@@ -179,6 +183,8 @@ fun RecommendDetailScreen(
     author: String = "",
     authorId: String = "",
     token: String = "",
+    /** 本机机型与系统：发评论时带上，评论行才有那一列机型 / 系统（见上面的 `@param`）。 */
+    profile: DeviceProfile? = null,
     onNavigateBack: () -> Unit = {},
     /** 打开一个包的详情页：那些「还能替换掉」的包从这里去卸载。 */
     onOpenApp: (String) -> Unit = {},
@@ -305,6 +311,10 @@ fun RecommendDetailScreen(
                 author = authorLabel,
                 authorId = me,
                 replyTo = answered?.id ?: 0L,
+                // 机型与系统：评论行前面那一小列。原来在弹窗里写评论时没带上，于是这一格的评论
+                // 全都只有名字和时间，问「这台机器上行不行」的时候看不出问的是哪台。
+                deviceModel = profile?.displayModel.orEmpty(),
+                systemName = profile?.systemLabel().orEmpty(),
             )
             sending = false
             submitFailed = id == null
@@ -542,6 +552,11 @@ fun RecommendDetailScreen(
                         commentThreads(
                             threads = threads,
                             me = me,
+                            // 提交人自己的那几条回复带红色的「作者」徽章：与方案详情页同一套判据
+                            // （先认身份号，老评论没有号时退回名字）。目录条目没有提交人，两个都是空串，
+                            // 那时一行徽章也不会画。
+                            authorId = loaded.suggestion?.authorId.orEmpty(),
+                            authorName = loaded.suggestion?.author.orEmpty(),
                             onReply = { comment ->
                                 replyTo = comment
                                 submitFailed = false

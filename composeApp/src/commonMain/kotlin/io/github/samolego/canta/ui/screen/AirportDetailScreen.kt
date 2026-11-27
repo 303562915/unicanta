@@ -73,8 +73,10 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.threadKey
+import io.github.samolego.canta.ui.component.text.UrlText
 import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.colorOf
+import io.github.samolego.canta.util.DeviceProfile
 import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -104,6 +106,11 @@ private val FieldLabelWidth = 56.dp
  * @param author 署名；[authorId] 为空时也当身份用。
  * @param authorId 身份号：投票、打分、评论都挂在它上面。
  * @param token 证明这个身份号的秘密；删除自己写的评论要它。
+ * @param profile 本机机型与系统。发评论时一起交给后端，别人看到的评论行才有「Redmi K70 · HyperOS 2」
+ *   那一列——取法与 [AppDetailScreen]、方案详情页相同（都是 `CantaHandler.deviceProfile()`）；拿不到时
+ *   是 null，那时评论就不带这一列，而不是写一个假机型。
+ * @param onOpenUploader 点「由 X 分享」时去哪：分享者的主页（`Screen.Uploader`）。null 或那条没有身份号
+ *   时这一行只是文字，"该不该信他分享的其他几条"就走不过去。
  */
 @Composable
 fun AirportDetailScreen(
@@ -114,6 +121,10 @@ fun AirportDetailScreen(
     author: String = "",
     authorId: String = "",
     token: String = "",
+    /** 本机机型与系统：发评论时带上，评论行才有那一列机型 / 系统（见上面的 `@param`）。 */
+    profile: DeviceProfile? = null,
+    /** 点分享者那一行去哪：他的主页（见上面的 `@param`）。 */
+    onOpenUploader: ((String) -> Unit)? = null,
     onNavigateBack: () -> Unit = {},
     /** 名字与头像设过了没有：没设过这条线程收不了评论（见 [IdentitySetup]）。 */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
@@ -299,6 +310,10 @@ fun AirportDetailScreen(
                 author = authorLabel,
                 authorId = who,
                 replyTo = answered?.id ?: 0L,
+                // 机型与系统：评论行前面那一小列。原来在弹窗里写评论时没带上，于是这一格的评论
+                // 全都只有名字和时间，说「这条线路在某某机器上掉线」的时候看不出是哪台机器。
+                deviceModel = profile?.displayModel.orEmpty(),
+                systemName = profile?.systemLabel().orEmpty(),
             )
             sending = false
             submitFailed = id == null
@@ -469,13 +484,29 @@ fun AirportDetailScreen(
                                         color = scheme.onSurfaceVariant,
                                     )
                                     if (loaded.author.isNotBlank()) {
+                                        // 分享者那一行：有身份号、调用方也接了「去主页」，它就是一个入口——
+                                        // 「他还分享过哪几条、信不信得过」是看完一条之后的下一个问题，
+                                        // 与方案详情页点上传者是同一个动作。缺一样就只是文字。
+                                        val toProfile = onOpenUploader
+                                        val sharerId = loaded.authorId
+                                        val openable = toProfile != null && sharerId.isNotEmpty()
                                         Text(
                                             text = stringResource(
                                                 Res.string.airport_detail_shared_by,
                                                 loaded.author,
                                             ),
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = scheme.onSurfaceVariant,
+                                            color = if (openable) scheme.primary else scheme.onSurfaceVariant,
+                                            modifier = if (openable) {
+                                                Modifier
+                                                    .clip(RoundedCornerShape(percent = 50))
+                                                    // toProfile 是可空的函数值：这里用 ?.invoke，
+                                                    // 而不是指望上面的 openable 替它做智能转换。
+                                                    .clickable(role = Role.Button) { toProfile?.invoke(sharerId) }
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                            } else {
+                                                Modifier
+                                            },
                                         )
                                     }
                                 }
@@ -536,18 +567,18 @@ fun AirportDetailScreen(
                                         color = scheme.primary,
                                     )
                                     if (loaded.summary.isNotBlank()) {
-                                        Text(
+                                        // 介绍里常贴着官网、邀请页、汇率说明那种带地址的原文：与应用详情页
+                                        // 的描述同一套排版（[UrlText]），地址可以点，别的字照常换行。
+                                        UrlText(
                                             text = loaded.summary,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = scheme.onSurface,
                                         )
                                     }
                                     if (loaded.detail.note.isNotBlank()) {
                                         // 整页自己会滚，所以这里不再做"展开全文"：那一段本来就该读完。
-                                        Text(
+                                        UrlText(
                                             text = loaded.detail.note,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = scheme.onSurfaceVariant,
                                         )
                                     }
                                 }
@@ -730,6 +761,10 @@ fun AirportDetailScreen(
                         commentThreads(
                             threads = threads,
                             me = who,
+                            // 分享者自己的那几条回复带红色的「作者」徽章：与方案详情页同一套判据
+                            // （先认身份号，老评论没有号时退回名字）。
+                            authorId = loaded.authorId,
+                            authorName = loaded.author,
                             onReply = { comment ->
                                 replyTo = comment
                                 submitFailed = false
