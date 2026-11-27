@@ -18152,8 +18152,8 @@
    {
     "pkg": "com.miui.misightservice",
     "small_batch": false,
-    "uninstalls": 460,
-    "updated_at": "2026-11-27T21:12:08.169967+00:00",
+    "uninstalls": 461,
+    "updated_at": "2026-11-27T22:17:05.069857+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -18866,8 +18866,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 323,
-    "updated_at": "2026-11-27T21:12:08.169967+00:00",
+    "uninstalls": 324,
+    "updated_at": "2026-11-27T22:18:04.236145+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25442,8 +25442,8 @@
    {
     "pkg": "com.miui.misightservice",
     "small_batch": false,
-    "uninstalls": 347,
-    "updated_at": "2026-11-27T21:12:08.169967+00:00",
+    "uninstalls": 348,
+    "updated_at": "2026-11-27T22:17:05.069857+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25960,8 +25960,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 254,
-    "updated_at": "2026-11-27T21:12:08.169967+00:00",
+    "uninstalls": 255,
+    "updated_at": "2026-11-27T22:18:04.236145+00:00",
     "verdict": "BREAKS"
    },
    {
