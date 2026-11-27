@@ -9668,8 +9668,8 @@
    {
     "pkg": "com.vivo.hybrid",
     "small_batch": true,
-    "uninstalls": 19,
-    "updated_at": "2026-11-27T12:03:24.413025+00:00",
+    "uninstalls": 20,
+    "updated_at": "2026-11-27T21:57:18.468662+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -15430,9 +15430,9 @@
    },
    {
     "pkg": "com.vivo.hybrid",
-    "small_batch": false,
-    "uninstalls": 3,
-    "updated_at": "2026-11-24T11:32:37.732266+00:00",
+    "small_batch": true,
+    "uninstalls": 4,
+    "updated_at": "2026-11-27T21:57:18.468662+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -16668,8 +16668,8 @@
    {
     "pkg": "com.android.egg",
     "small_batch": false,
-    "uninstalls": 427,
-    "updated_at": "2026-11-27T19:45:53.435123+00:00",
+    "uninstalls": 428,
+    "updated_at": "2026-11-27T21:56:59.884092+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19188,8 +19188,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 416,
-    "updated_at": "2026-11-27T20:56:58.36467+00:00",
+    "uninstalls": 417,
+    "updated_at": "2026-11-27T21:49:41.095496+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22153,8 +22153,8 @@
    {
     "pkg": "com.android.egg",
     "small_batch": false,
-    "uninstalls": 84,
-    "updated_at": "2026-11-27T18:48:46.400443+00:00",
+    "uninstalls": 85,
+    "updated_at": "2026-11-27T21:56:59.884092+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24092,8 +24092,8 @@
    {
     "pkg": "com.xiaomi.registration",
     "small_batch": false,
-    "uninstalls": 104,
-    "updated_at": "2026-11-27T20:56:58.36467+00:00",
+    "uninstalls": 105,
+    "updated_at": "2026-11-27T21:49:41.095496+00:00",
     "verdict": "BREAKS"
    },
    {
