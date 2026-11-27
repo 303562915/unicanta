@@ -28,13 +28,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -136,10 +134,13 @@ private val AirportKinds = listOf(
 )
 
 /**
- * 推荐页的第三块：机场投票。
+ * 推荐页里的两格机场，共用这一份数据：[board] 为 false 是「机场推荐」，true 是「机场投票」。
  *
- * 一件事说完：谁都能把自己在用的机场贴上来；别人认同/不认同决定它排多前，打星决定它多好用。
- * 订阅链接不在列表里——投过票或打过分才取得出来，这就是"投票"在这里的实际作用。
+ *   * **机场推荐**：别人贴过的机场，一行一个，**点一下直接去它的网站**。这一格只做"在推荐"这件事，
+ *     不在行里塞投票、打分、取订阅、官网这些入口——一条能点的行里有五个按钮，点哪儿算点哪儿就
+ *     说不清了。
+ *   * **机场投票**：同一批机场按认同票排成榜单，点一条进整页详情（[AirportDetailScreen]），
+ *     投票、打分、取订阅、评论全在那里。
  *
  * **积分与兑换不在这里**：那是商城，自己一页（[StoreScreen]）。以前两块挤在同一条列表上，
  * 看起来像"商城是机场榜单的一部分"，所以拆开了。
@@ -147,7 +148,7 @@ private val AirportKinds = listOf(
  * @param repository 社区后端；null 时这一块只显示说明，不装作有数据。
  * @param platform 用来提示、复制、开链接。
  * @param author 署名，[authorId] 为空时当身份用。
- * @param authorId 身份码：投票挂在它上面。
+ * @param authorId 身份码：分享的机场挂在它上面。
  */
 @Composable
 internal fun RecommendationsAirportTab(
@@ -160,10 +161,10 @@ internal fun RecommendationsAirportTab(
     /** 名字与头像设过了没有：没设过能看能投能兑换，但分享不了新机场（见 [IdentitySetup]）。 */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
     /**
-     * true = 「机场投票」那一格：同一份机场数据，按认同票排成榜单，不再是分享/收录的列表。
+     * true = 「机场投票」那一格：同一份机场数据，按认同票排成榜单，点一条进整页详情。
      *
-     * 两种模式共用这一个 composable 而不是各写一份：拉数据、投票、打分、取订阅、详情弹窗
-     * 全都一样，差的是列表本身画什么。分成两份就等于把这些各抄一遍，改一处漏一处。
+     * 两种模式共用这一个 composable 而不是各写一份：拉数据、分页、分享表单全都一样，差的是列表
+     * 本身画什么、点一条去哪。分成两份就等于把这些各抄一遍，改一处漏一处。
      */
     board: Boolean = false,
     /** 滚动位置存在哪一格：两个 tab 各给一个键，不然第四个 tab 会接着机场的滚动位置往上长。 */
@@ -185,10 +186,6 @@ internal fun RecommendationsAirportTab(
     var loading by remember(state) { mutableStateOf(state.loading) }
     var error by remember(state) { mutableStateOf(state.error) }
     var reloadKey by remember(state) { mutableIntStateOf(state.reloadKey) }
-    /** 正在进行的那一件事：`airport:7`——同一个 id 只发一趟。 */
-    var busyKey by remember { mutableStateOf<String?>(null) }
-    /** 已经取到的订阅链接，按条目 id 存：再点一次就不再跑一趟网络。 */
-    var subscriptions by remember(state) { mutableStateOf(state.subscriptions) }
     var airportComposer by remember { mutableStateOf(false) }
     var airportBusy by remember { mutableStateOf(false) }
     var airportError by remember { mutableStateOf<String?>(null) }
@@ -196,14 +193,16 @@ internal fun RecommendationsAirportTab(
     var visiblePages by remember { mutableIntStateOf(1) }
 
     // 每次拿到新的一屏就写回外层：切走再回来先画它，而不是从空列表开始转圈。
-    LaunchedEffect(airports, loading, error, subscriptions, reloadKey) {
+    //
+    // 订阅链接不在这里写回：取订阅已经搬到详情页，这一层手里那一份只会是旧的，写回去会把详情页
+    // 刚记下的链接盖掉。
+    LaunchedEffect(airports, loading, error, reloadKey) {
         // 列表换了（投过票重排、刚分享完又拉了一趟）就从第一页重来：翻到第 5 页的人，
         // 对着一份重排过的榜单继续往下划，看到的不是他想看的顺序。
         visiblePages = 1
         state.airports = airports
         state.loading = loading
         state.error = error
-        state.subscriptions = subscriptions
         state.reloadKey = reloadKey
     }
 
@@ -227,88 +226,12 @@ internal fun RecommendationsAirportTab(
         state.loadedKey = reloadKey
     }
 
-    val vote: (CommunityAirport, Boolean) -> Unit = vote@{ entry, agree ->
-        val repo = repository
-        if (repo == null) {
-            platform.showMessage("社区后端没连上，投票没发出去。")
-            return@vote
-        }
-        if (busyKey != null) return@vote
-        busyKey = "airport:${entry.id}"
-        scope.launch {
-            val fresh = repo.voteAirport(entry.id, who, agree)
-            busyKey = null
-            if (fresh == null) {
-                platform.showMessage("没投上：${repo.lastError ?: "检查一下网络再试"}")
-            } else {
-                reloadKey++
-            }
-        }
-    }
-
-    val rate: (CommunityAirport, Int) -> Unit = rate@{ entry, stars ->
-        val repo = repository
-        if (repo == null) {
-            platform.showMessage("社区后端没连上，评分没发出去。")
-            return@rate
-        }
-        if (busyKey != null) return@rate
-        busyKey = "airport:${entry.id}"
-        scope.launch {
-            val fresh = repo.rateAirport(entry.id, who, stars)
-            busyKey = null
-            if (fresh == null) {
-                platform.showMessage("没评上：${repo.lastError ?: "检查一下网络再试"}")
-            } else {
-                reloadKey++
-            }
-        }
-    }
-
-    val subscription: (CommunityAirport) -> Unit = sub@{ entry ->
-        subscriptions[entry.id]?.let { link ->
-            platform.copyToClipboard(link)
-            platform.showMessage("订阅链接已复制")
-            return@sub
-        }
-        // 不解锁也照样问一次：门槛由服务端按身份判断，本地那面 `unlocked` 只是上一次列表的
-        // 快照，拿着它挡人会把"已经投过票、但列表还没刷新"的人挡在门外。
-        val repo = repository ?: return@sub
-        scope.launch {
-            val fresh = repo.airportSubscription(entry.id, who)
-            when {
-                fresh == null -> platform.showMessage("订阅没取到：${repo.lastError ?: "检查一下网络"}")
-                fresh.unlocked && fresh.subscribeUrl.isNotBlank() -> {
-                    subscriptions = subscriptions + (entry.id to fresh.subscribeUrl)
-                    platform.copyToClipboard(fresh.subscribeUrl)
-                    platform.showMessage("订阅链接已复制")
-                }
-                else -> platform.showMessage("先投一票或打个星，才能取订阅")
-            }
-        }
-    }
-
     when {
         loading -> Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
 
         else -> Column(modifier = modifier.fillMaxSize()) {
-            // 「划到底了没有」用的是 listState 的布局信息，所以它得在 LazyColumn 外面算完再给
-            // 懒列表用：放在 item 里算，等于让每一帧的组合去读它自己的测量结果。
-            val shownCount = (visiblePages * AirportPageSize).coerceAtMost(airports.size)
-            val hasMore = shownCount < airports.size
-            val atEnd by remember(shownCount, hasMore) {
-                derivedStateOf {
-                    val info = listState.layoutInfo
-                    val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-                    hasMore && last >= info.totalItemsCount - 2
-                }
-            }
-            LaunchedEffect(atEnd, shownCount, hasMore) {
-                if (atEnd) visiblePages++
-            }
-
             // 榜单的顺序：认同票多的排前面；票一样多时看评分人数（评的人多说明更被用过），
             // 再一样就按创建时间——先上来的排前面，免得同票的两家每次刷新都换位置。
             // 后端给的是 ISO 时间串，升序即「早的在先」；缺时间的排到最后，不抢位置。
@@ -320,6 +243,11 @@ internal fun RecommendationsAirportTab(
                 )
             }
             val boardTitle = stringResource(Res.string.recommend_tab_airport_vote)
+            // 两个 tab 用的是同一份机场，但画的东西不一样：投票榜按票排，推荐列表按后端的顺序
+            // （新的在前）。所以「一共几条」也得跟着各自那一份算，否则页脚会报错数。
+            val ordered: List<CommunityAirport> = if (board) ranked else airports
+            val shownCount = (visiblePages * AirportPageSize).coerceAtMost(ordered.size)
+            val hasMore = shownCount < ordered.size
 
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -327,8 +255,8 @@ internal fun RecommendationsAirportTab(
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
                 if (board) {
-                    // 投票榜：只有排名、名字和那一行小字。投票、打分、取订阅、评论都在点开的
-                    // 详情里——同一层操作在两个 tab 上必须完全一样，所以弹的是同一个弹窗。
+                    // 投票榜：名次、名字、一行小字。点一条进整页详情——投票、打分、取订阅、
+                    // 评论都在那里，这一层只负责排名。
                     item(key = "airport-vote-head") {
                         AirportSectionHeader(label = boardTitle, count = ranked.size)
                     }
@@ -343,7 +271,7 @@ internal fun RecommendationsAirportTab(
                     }
 
                     itemsIndexed(
-                        ranked.take(visiblePages * AirportPageSize),
+                        ranked.take(shownCount),
                         key = { _, entry -> "airport-rank-${entry.id}" },
                     ) { index, entry ->
                         AirportVoteRow(
@@ -354,13 +282,13 @@ internal fun RecommendationsAirportTab(
                     }
 
                     item(key = "airport-vote-foot") {
-                        Note(
-                            text = if (hasMore) {
-                                "已经拉出 $shownCount / ${ranked.size} 家，继续往下划就再来一页。"
-                            } else {
-                                stringResource(Res.string.recommend_airport_vote_foot)
-                            },
-                            inset = 16.dp,
+                        AirportFoot(
+                            hasMore = hasMore,
+                            shown = shownCount,
+                            total = ranked.size,
+                            doneLabel = stringResource(Res.string.recommend_airport_vote_foot),
+                            moreLabel = "已经拉出 $shownCount / ${ranked.size} 家",
+                            onLoadMore = { visiblePages++ },
                         )
                     }
                 } else {
@@ -377,7 +305,10 @@ internal fun RecommendationsAirportTab(
                     }
 
                     item(key = "airport-head") {
-                        AirportSectionHeader(label = "机场投票", count = airports.size)
+                        AirportSectionHeader(
+                            label = stringResource(Res.string.recommend_tab_airport),
+                            count = airports.size,
+                        )
                     }
 
                     if (airports.isEmpty()) {
@@ -389,35 +320,31 @@ internal fun RecommendationsAirportTab(
                         }
                     }
 
-                    items(airports.take(visiblePages * AirportPageSize), key = { "airport-${it.id}" }) { entry ->
-                        AirportCard(
+                    // 推荐这一格只做一件事：把别人贴过的机场列出来，点一下直接去它的网站。
+                    // 投票、打分、订阅、评论都在「机场投票」点进去的那一页，这里不重复一遍——
+                    // 一条能点的行里再塞四五个小按钮，点哪儿算点哪儿就说不清了。
+                    items(airports.take(shownCount), key = { "airport-${it.id}" }) { entry ->
+                        AirportRecommendRow(
                             entry = entry,
-                            busy = busyKey == "airport:${entry.id}",
-                            canAct = who.isNotEmpty(),
-                            subscribeUrl = subscriptions[entry.id].orEmpty(),
                             inset = 16.dp,
-                            onOpenDetail = { onOpenAirport(entry) },
-                            onVote = { agree -> vote(entry, agree) },
-                            onRate = { stars -> rate(entry, stars) },
-                            onSubscribe = { subscription(entry) },
                             onOpenUrl = {
-                                if (entry.url.isNotBlank()) platform.openUrl(entry.url)
+                                if (entry.url.isNotBlank()) {
+                                    platform.openUrl(entry.url)
+                                } else {
+                                    platform.showMessage("这一条还没填官网，去「机场投票」里补一下。")
+                                }
                             },
                         )
                     }
 
-                    // 一次只画 AirportPageSize 条，多的划到底再给一页：一口气画 60 张卡片，
-                    // 每一张都带可点区域，组合和测量都在争帧。判据是「划到了列表末尾」，
-                    // 用 `lastVisibleItemIndex` 而不是在页脚上做 `LaunchedEffect`——后者在列表
-                    // 短到根本滚不动时会立刻再给一页，等于没分页。
                     item(key = "board-foot") {
-                        Note(
-                            text = if (hasMore) {
-                                "已经拉出 $shownCount / ${airports.size} 家，继续往下划就再来一页。"
-                            } else {
-                                "认同 / 不认同决定它排多前，五星决定它多好用；投过票或打过星，才取得到订阅。"
-                            },
-                            inset = 16.dp,
+                        AirportFoot(
+                            hasMore = hasMore,
+                            shown = shownCount,
+                            total = airports.size,
+                            doneLabel = "想让哪家排前面，就去「机场投票」投一票。",
+                            moreLabel = "已经拉出 $shownCount / ${airports.size} 家",
+                            onLoadMore = { visiblePages++ },
                         )
                     }
                 }
@@ -644,185 +571,127 @@ private fun AirportVoteRow(
             )
         }
         Spacer(modifier = Modifier.width(6.dp))
+        // 整行可点，右边只画一个「›」：再写「详情」两个字，等于在一件事上放两个入口。
         Text(
-            text = "详情",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = scheme.primary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(percent = 50))
-                .background(scheme.primary.copy(alpha = 0.10f))
-                .padding(horizontal = 9.dp, vertical = 3.dp),
+            text = "›",
+            fontSize = 18.sp,
+            color = scheme.onSurfaceVariant,
         )
     }
 }
 
-/** 一条机场：名字、类型、评分、票，以及一条能点的星和订阅。 */
+/**
+ * 列表最后一格：还有下一批就顺手再拉一批，拉完就摆一句说明。
+ *
+ * **触发点就是这一格被组合**——它只在划到底时才会出现，所以「划到底就把下一页接上」不需要去
+ * 算 `layoutInfo` 的索引。以前那套算法（`lastVisibleItemIndex >= 总数 - 2`）在两个 tab 上
+ * 各有各的前置项，少算一格就永远差一条，表现正是「明明写着再往下划就有，可划到底什么也没发生」。
+ *
+ * 也不怕"列表短到滚不动"：那时这一格本来就在屏幕上，直接就把下一批拉进来，直到填满屏幕；
+ * 每拉一次 `shown` 就变，`LaunchedEffect` 重新跑，`hasMore` 一假就停。
+ */
 @Composable
-private fun AirportCard(
+private fun AirportFoot(
+    hasMore: Boolean,
+    shown: Int,
+    total: Int,
+    doneLabel: String,
+    moreLabel: String,
+    onLoadMore: () -> Unit,
+) {
+    LaunchedEffect(shown, hasMore) {
+        if (hasMore) onLoadMore()
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp)) {
+        if (hasMore) {
+            Text(
+                text = "$moreLabel，继续往下划就再来一页。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // 手点一下也管用：划不动、或者只差最后几条的时候，不必再去猜手势。
+            TextButton(onClick = onLoadMore) {
+                Text("再看一批", style = MaterialTheme.typography.labelSmall)
+            }
+        } else {
+            Text(
+                text = doneLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** 推荐那一格的一行：只有名字、类型和一行小字，整行点开是它的网站。 */
+@Composable
+private fun AirportRecommendRow(
     entry: CommunityAirport,
-    busy: Boolean,
-    canAct: Boolean,
-    subscribeUrl: String,
     inset: Dp,
-    onOpenDetail: () -> Unit,
-    onVote: (Boolean) -> Unit,
-    onRate: (Int) -> Unit,
-    onSubscribe: () -> Unit,
     onOpenUrl: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = inset, end = inset, top = 6.dp)
+            .padding(start = inset, end = inset, top = 4.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(scheme.surfaceContainerLow)
-            .padding(horizontal = 11.dp, vertical = 9.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+            .clickable(role = Role.Button, onClick = onOpenUrl)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(AirportTileSize)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(scheme.primary.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center,
-            ) {
+        Box(
+            modifier = Modifier
+                .size(AirportTileSize)
+                .clip(RoundedCornerShape(10.dp))
+                .background(scheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = entry.tileMark,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = scheme.primary,
+            )
+        }
+        Spacer(modifier = Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = entry.tileMark,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = scheme.primary,
-                )
-            }
-            Spacer(modifier = Modifier.width(9.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = entry.name,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .clickable(role = Role.Button, onClick = onOpenDetail),
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = entry.kindLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSecondaryContainer,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(scheme.secondaryContainer)
-                            .padding(horizontal = 5.dp, vertical = 1.dp),
-                    )
-                }
-                Text(
-                    text = entry.metaLine.ifEmpty { "还没人评" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
+                    text = entry.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
-                if (entry.summary.isNotBlank()) {
-                    Text(
-                        text = entry.summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        // 卡片只放两行：完整的那段话在详情弹窗里。
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(6.dp))
-            AirportVotePill(
-                label = "认同",
-                count = entry.agrees,
-                selected = entry.mine == true,
-                color = AirportAgree,
-                enabled = canAct && !busy,
-                onClick = { onVote(true) },
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            AirportVotePill(
-                label = "不认同",
-                count = entry.disagrees,
-                selected = entry.mine == false,
-                color = AirportDisagree,
-                enabled = canAct && !busy,
-                onClick = { onVote(false) },
-            )
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StarRow(myStars = entry.myStars, enabled = canAct && !busy, onRate = onRate)
-            Spacer(modifier = Modifier.width(8.dp))
-            if (entry.hasSubscription) {
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(
-                    text = if (subscribeUrl.isNotEmpty()) "复制订阅" else "取订阅",
+                    text = entry.kindLabel,
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.primary,
+                    color = scheme.onSecondaryContainer,
                     modifier = Modifier
                         .clip(RoundedCornerShape(percent = 50))
-                        .background(scheme.primary.copy(alpha = 0.10f))
-                        .clickable(role = Role.Button, onClick = onSubscribe)
-                        .padding(horizontal = 9.dp, vertical = 3.dp),
+                        .background(scheme.secondaryContainer)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
                 )
             }
-            if (entry.url.isNotBlank()) {
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "官网",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(percent = 50))
-                        .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
-                        .clickable(role = Role.Button, onClick = onOpenUrl)
-                        .padding(horizontal = 9.dp, vertical = 3.dp),
-                )
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            if (!canAct) {
-                Text(
-                    text = "认不出身份，只能看",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                )
-            } else {
-                Text(
-                    text = "详情",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(percent = 50))
-                        .background(scheme.primary.copy(alpha = 0.10f))
-                        .clickable(role = Role.Button, onClick = onOpenDetail)
-                        .padding(horizontal = 9.dp, vertical = 3.dp),
-                )
-            }
-        }
-
-        if (subscribeUrl.isNotEmpty()) {
             Text(
-                text = subscribeUrl,
+                text = entry.metaLine.ifEmpty { "还没人评" },
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
             )
         }
+        Spacer(modifier = Modifier.width(6.dp))
+        // 一个「›」而不是「官网」两个字：这一行整条都是入口，再写一个按钮像是有两件事。
+        Text(
+            text = "›",
+            fontSize = 18.sp,
+            color = scheme.onSurfaceVariant,
+        )
     }
 }
 

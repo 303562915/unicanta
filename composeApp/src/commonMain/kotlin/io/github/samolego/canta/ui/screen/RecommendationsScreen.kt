@@ -138,14 +138,18 @@ private const val TAB_LIST = 0
 /** The second half: the community's queue — the form that files one, and the votes it collects. */
 private const val TAB_VOTE = 1
 
-/** The third half: 机场分享、评分、订阅、积分（见 [RecommendationsAirportTab]）。 */
+/**
+ * 第三格「机场推荐」：别人贴过的机场列成一页，点一下直接去它的网站（见 [RecommendationsAirportTab]）。
+ *
+ * 这一格只做"在推荐"这件事：投票、打分、取订阅、评论都不在这里，那些在第四格点进去的详情页里。
+ */
 private const val TAB_AIRPORT = 2
 
 /**
- * 第四块：机场投票榜。同一份机场数据，按认同票排名，点开与机场那一格是同一个详情弹窗。
+ * 第四格「机场投票」：同一份机场数据，按认同票排名，点一条进整页详情。
  *
- * 为什么单开一格：机场那一格要放「分享一个机场」的入口、订阅与钱包，列表本身反而被挤到下面；
- * 想「看哪家现在最被认」的人，得先划过分享入口。投票是另一件事，各占一格谁也不挡谁。
+ * 为什么单开一格：推荐那一格是"看有哪些、点进去用它"，投票是"哪家最被认"，两件事各占一格谁也
+ * 不挡谁；塞在一起时，想投票的人得先划过一长串推荐。
  */
 private const val TAB_AIRPORT_VOTE = 3
 
@@ -216,10 +220,11 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  * Both halves are read from the state of this one composable, so switching between them costs
  * nothing: the catalog is read once, the queue once, and the scroll position of each half is its own.
  *
- * 分格：应用推荐 / 投票 / 机场 / 机场投票。后两格是同一份机场数据的两种画法（分享与收录 vs 按票
- * 排名），共用 [AirportTabState]，滚动位置各自存一份。四格里的条目点开都是**整页详情**
- * （[RecommendDetailScreen] / [AirportDetailScreen]），而详情里都带评论区——「点进去能评论」在
- * 这四格上是同一件事，不是三格有、第四格没有。
+ * 分格：应用推荐 / 应用投票 / 机场推荐 / 机场投票。后两格是同一份机场数据的两种画法（推荐列表 vs 按票
+ * 排名），共用 [AirportTabState]，滚动位置各自存一份。**前三格里的条目点开是整页详情**
+ * （[RecommendDetailScreen] / [AirportDetailScreen]），详情里都带评论区；**「机场推荐」那一格例外**：
+ * 它只做推荐，点一条直接打开它的网站，不在行里再塞投票、打分、订阅、官网这些入口——想投票就切到
+ * 「机场投票」，点进去的那一页什么都有。
  *
  * 详情不再是弹窗：评论要读、要回、要滚，弹窗放不下（见 [Screen.RecommendDetail]）。
  * 这一页只负责"点了哪个条目"，把「来源 + id」交回调用方，由它去导航。

@@ -640,10 +640,10 @@
     <string name="recommend_switch_grid">Switch to grid layout</string>
     <string name="recommend_switch_list">Switch to list layout</string>
     <string name="recommend_tab_list">Apps</string>
-    <string name="recommend_tab_vote">Votes</string>
-    <string name="recommend_tab_airport">Airports</string>
+    <string name="recommend_tab_vote">App votes</string>
+    <string name="recommend_tab_airport">Airport picks</string>
     <string name="recommend_tab_airport_vote">Ranking</string>
-    <string name="recommend_airport_vote_empty">Nobody has shared an airport yet. Post the one you use in the Airports tab and the first row shows up here.</string>
+    <string name="recommend_airport_vote_empty">Nobody has shared an airport yet. Post the one you use under Airport picks and the first row shows up here.</string>
     <string name="recommend_airport_vote_foot">Ranked by agree votes; ties go to the entry with more ratings, then to the older one. Open a row to vote, rate, get the subscription link and comment.</string>
     <string name="recommend_comment_empty">No comments yet. One sentence from someone who used it saves everyone else the trial.</string>
     <string name="recommend_comment_placeholder">Used it? Say a word</string>
