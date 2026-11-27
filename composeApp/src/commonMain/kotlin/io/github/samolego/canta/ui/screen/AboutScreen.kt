@@ -862,17 +862,8 @@ private fun SponsorWallCard(
                     )
                     Spacer(Modifier.height(4.dp))
                 }
-                Text(
-                    text = stringResource(
-                        Res.string.about_sponsors_total,
-                        // `%N$d` 只认整数：Long 传进 compose resources 的格式化器没有先例，这里按
-                        // Int 交出去。榜上总额按元计，一万个人各给一万也还在 Int 里。
-                        (wall?.totalYuan ?: 0L).toInt(),
-                        wall?.count ?: 0,
-                    ),
-                    style = FlText.caption1,
-                    color = scheme.primary,
-                )
+                // 这里原来还有一行「累计 ¥N · M 位」的统计。按维护者的意思，总额不公开统计展示，
+                // 所以整行去掉；人数还在上面那个「展开榜单（N 位）」的按钮文案里（[about_sponsors_expand]）。
                 entries.chunked(SponsorsPerRow).forEach { row ->
                     Spacer(Modifier.height(10.dp))
                     Row(
