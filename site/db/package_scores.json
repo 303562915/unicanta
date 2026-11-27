@@ -963,6 +963,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.oplus.crashbox",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T08:30:54.630684+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.oplus.customize.coreapp",
     "small_batch": false,
     "uninstalls": 8,
@@ -1371,8 +1378,8 @@
    {
     "pkg": "com.qti.qcc",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-27T08:32:34.683201+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -1422,6 +1429,13 @@
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.qualcomm.qti.ims",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T08:30:54.630684+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -2570,6 +2584,13 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.oplus.crashbox",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T08:30:54.630684+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.oplus.location",
     "small_batch": true,
     "uninstalls": 1,
@@ -2598,10 +2619,24 @@
     "verdict": "INSUFFICIENT"
    },
    {
+    "pkg": "com.qti.qcc",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T08:32:34.683201+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
     "pkg": "com.qualcomm.atfwd",
     "small_batch": true,
     "uninstalls": 1,
     "updated_at": "2026-11-27T08:29:27.180545+00:00",
+    "verdict": "INSUFFICIENT"
+   },
+   {
+    "pkg": "com.qualcomm.qti.ims",
+    "small_batch": true,
+    "uninstalls": 1,
+    "updated_at": "2026-11-27T08:30:54.630684+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -7295,8 +7330,8 @@
    {
     "pkg": "com.vivo.browser",
     "small_batch": true,
-    "uninstalls": 15,
-    "updated_at": "2026-11-25T14:44:33.941632+00:00",
+    "uninstalls": 16,
+    "updated_at": "2026-11-27T08:31:32.102466+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -11806,8 +11841,8 @@
    {
     "pkg": "com.vivo.browser",
     "small_batch": true,
-    "uninstalls": 1,
-    "updated_at": "2026-11-24T10:26:46.202014+00:00",
+    "uninstalls": 2,
+    "updated_at": "2026-11-27T08:31:32.102466+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -16276,8 +16311,8 @@
    {
     "pkg": "com.qualcomm.qti.xrvd.service",
     "small_batch": false,
-    "uninstalls": 135,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 136,
+    "updated_at": "2026-11-27T08:31:32.889162+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -22740,8 +22775,8 @@
    {
     "pkg": "com.qualcomm.qti.xrvd.service",
     "small_batch": false,
-    "uninstalls": 116,
-    "updated_at": "2026-11-27T08:14:49.030698+00:00",
+    "uninstalls": 117,
+    "updated_at": "2026-11-27T08:31:32.889162+00:00",
     "verdict": "BREAKS"
    },
    {
