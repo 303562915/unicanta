@@ -1410,6 +1410,8 @@ private fun CantaNavigation(
                     onOpenAbout = { navController.navigate(Screen.About.route) },
                     // 身份卡点一下进个人主页：改名与换头像都在那一页。
                     onOpenProfile = { navController.navigate(Screen.Profile.route) },
+                    // 商城入口在这一页（底栏那一格已经撤掉）：积分、积分商城、兑换中心都在那一页。
+                    onOpenStore = { navController.navigate(Screen.Store.route) { launchSingleTop = true } },
                     // 兜底过的地址（存着为空就按身份号推），清完应用数据这张卡也不会退回首字。
                     avatarUrl = shownAvatarUrl,
                     unreadReplies = unreadReplies,
@@ -1568,8 +1570,6 @@ private fun CantaNavigation(
                 SettingsScreen(
                     platform = platform,
                     onNavigateBack = { navController.navigateUp() },
-                    // 商城从这一页进：底栏那一格已经撤掉了（见 `bottomBarItems`）。
-                    onOpenStore = { navController.navigate(Screen.Store.route) { launchSingleTop = true } },
                     settingsViewModel = settingsViewModel,
                     deviceUsers = deviceUsers,
                     selectedUserId = selectedUserId,

@@ -98,6 +98,13 @@ fun MineScreen(
     onOpenAbout: () -> Unit = {},
     /** 打开个人主页：头像、名字、身份号都在那儿改；这一页的身份卡点一下就进去。 */
     onOpenProfile: () -> Unit = {},
+    /**
+     * 打开商城：积分、积分商城、兑换中心（CDK 码池）。
+     *
+     * 商城原来占底栏的一格，2026-11-27 撤掉了；入口放在**这一页**而不是设置页——它是"我有什么"
+     * 的一件（积分、我的码、我挂的东西），不是"怎么改应用"的设置项。
+     */
+    onOpenStore: () -> Unit = {},
     /** 自己设的头像直链；空串就是没设过（卡片画首字母圆，见 `UserAvatar`）。 */
     avatarUrl: String = "",
     /** 还没打开过的回复数；大于 0 时「我的方案」那行点一个红点，提醒去消息页看。 */
@@ -194,6 +201,16 @@ fun MineScreen(
                 subtitle = "我上传过的方案，点进去管理和删除",
                 onClick = onOpenMyComments,
                 trailing = planCount?.let { "$it 个" } ?: "",
+            )
+            Spacer(Modifier.height(10.dp))
+
+            // 商城：积分、积分商城、兑换中心。底栏那一格撤掉之后，入口在这里——
+            // 和「我的方案」挨着，因为两者都是"我在这台手机上攒下的东西"。
+            AppLinkCard(
+                glyph = FlGlyphs.profiles,
+                title = "商城",
+                subtitle = "积分、积分商城与兑换中心",
+                onClick = onOpenStore,
             )
             Spacer(Modifier.height(10.dp))
 

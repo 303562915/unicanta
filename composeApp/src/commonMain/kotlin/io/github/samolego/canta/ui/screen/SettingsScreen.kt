@@ -127,8 +127,6 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     /** 打开主题页：配色与深浅色在那页里选，这里只写当前值。 */
     onOpenTheme: () -> Unit = {},
-    /** 打开商城页（积分、积分商城、兑换中心）；它以前是底栏的一格，现在从这一页进。 */
-    onOpenStore: () -> Unit = {},
     /** 打开卸载记录页：一份份方案，导出 JSON、导入、整份装回来（见 [DeletionListScreen]）。 */
     onOpenDeletionList: () -> Unit = {},
     /**
@@ -344,17 +342,8 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(CardGap))
 
-            // 商城：积分、积分商城、兑换中心（CDK 码池）。
-            //
-            // 它以前是底栏的一格，2026-11-27 挪到这里：底栏留给每天都要点的几页，而商城是偶尔
-            // 去一趟的。点这一行进那一页，那一页顶栏带返回箭头（它是二级页了）。
-            AppLinkCard(
-                glyph = FlGlyphs.profiles,
-                title = "商城",
-                subtitle = "积分、积分商城与兑换中心",
-                onClick = onOpenStore,
-            )
-            Spacer(Modifier.height(CardGap))
+            // 商城不在这张卡里，也不在这一页：它的入口在「我的」页（和「我的方案」挨着），
+            // 见 `MineScreen` 的 onOpenStore。
 
             // 安全页顶部的名字与机型照片：两者都是装饰，机型串有些人不想露在外面，
             // 所以合成一个开关，出厂关着。第二格是列表里点一个包去哪——都只有一行标题。
