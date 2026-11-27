@@ -1218,9 +1218,6 @@ private fun CantaNavigation(
                     authorId = storeIdentity,
                     // 名字/头像没设完：能看能买能兑换，但上不了架。
                     setupGate = setupGate,
-                    // 贡献值那一栏的赞助榜：点一行进那个人的主页。
-                    sponsors = sponsorStore,
-                    onOpenProfile = { person -> navController.navigate(Screen.Uploader.routeFor(person)) },
                 )
             }
             composable(route = Screen.Logs.route) {
@@ -1230,6 +1227,10 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.About.route) {
+                // 关于页的赞助榜要的名字：这一次只读名字（商城页那次还要身份号，这里不需要）。
+                // 读不到就是空串，榜上落回身份号，不影响这一页别的功能。
+                var aboutAuthor by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) { aboutAuthor = DeviceIdentity.displayName(deps.settings) }
                 AboutScreen(
                     platform = platform,
                     settingsViewModel = settingsViewModel,
@@ -1241,6 +1242,11 @@ private fun CantaNavigation(
                     // 所以这里不再传 onVersionTap（默认空实现），关于页照样只画版本号。
                     // 更新的那份实现与状态：这一页只画它，不再自己发请求，所以自动下载也有动画。
                     updateCenter = updateCenter,
+                    // 「贡献者」那一行现在是赞助榜：点开就地展开（与「最近更新」同一个做法）。
+                    // 只在展开时才去拉榜，折叠时不发请求。
+                    sponsors = sponsorStore,
+                    author = aboutAuthor,
+                    onOpenProfile = { person -> navController.navigate(Screen.Uploader.routeFor(person)) },
                 )
             }
             composable(route = Screen.Theme.route) {

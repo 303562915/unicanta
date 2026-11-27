@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,15 +22,19 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,6 +42,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.samolego.canta.APP_NAME
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.community.SponsorEntry
+import io.github.samolego.canta.data.community.SponsorStore
+import io.github.samolego.canta.data.community.SponsorWall
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.about_check_update
 import io.github.samolego.canta.generated.resources.about_check_update_action
@@ -60,6 +68,13 @@ import io.github.samolego.canta.generated.resources.about_latest_download
 import io.github.samolego.canta.generated.resources.about_qq_group
 import io.github.samolego.canta.generated.resources.about_qq_group_copied
 import io.github.samolego.canta.generated.resources.about_qq_group_hint
+import io.github.samolego.canta.generated.resources.about_sponsors_add
+import io.github.samolego.canta.generated.resources.about_sponsors_collapse
+import io.github.samolego.canta.generated.resources.about_sponsors_empty
+import io.github.samolego.canta.generated.resources.about_sponsors_expand
+import io.github.samolego.canta.generated.resources.about_sponsors_expand_open
+import io.github.samolego.canta.generated.resources.about_sponsors_loading
+import io.github.samolego.canta.generated.resources.about_sponsors_total
 import io.github.samolego.canta.generated.resources.about_tagline
 import io.github.samolego.canta.generated.resources.about_title
 import io.github.samolego.canta.generated.resources.about_update_available
@@ -83,6 +98,7 @@ import io.github.samolego.canta.ui.component.AppCardCorner
 import io.github.samolego.canta.ui.component.AppCardInset
 import io.github.samolego.canta.ui.component.AppLinkCard
 import io.github.samolego.canta.ui.component.AppToggleCard
+import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
 import io.github.samolego.canta.ui.component.UnreadDot
@@ -94,12 +110,13 @@ import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.update.UpdateCenter
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-/** Where the app is published: the only repository the page points at. */
-private const val REPO_URL = "https://github.com/303562915/unicanta"
-private const val CONTRIBUTORS_URL = "$REPO_URL/graphs/contributors"
+// 「贡献者」原来是一个跳 `github.com/303562915/unicanta/graphs/contributors` 的外链。
+// 现在那一行画的是赞助榜（见 [SponsorWallCard]），两样（这个地址与它的 `REPO_URL` 前缀）都不再有
+// 人用，常量一起去了。
 /** The author's Coolapk page, and the number at the end of it. */
 private const val COOLAPK_UID = "43186862"
 private const val COOLAPK_URL = "https://www.coolapk.com/u/$COOLAPK_UID"
@@ -154,6 +171,16 @@ internal fun AboutScreen(
      * 这一页照样有进度条在动，而不是"只有手点才有动画"。
      */
     updateCenter: UpdateCenter,
+    /**
+     * 赞助榜（贡献值那一栏）的数据层；null 时那张卡片只说一句为什么看不见，不装作有数据。
+     *
+     * 带默认值是为了不逼所有调用点都改：这一页只读它，不承担"连不上就报错"的责任。
+     */
+    sponsors: SponsorStore? = null,
+    /** 提交这一刻的名字（榜上显示它）。身份由 token 认，不用自报号码。 */
+    author: String = "",
+    /** 点赞助榜上那一行：进那个人的主页（与互动页、群成员网格同一条路由）。 */
+    onOpenProfile: (String) -> Unit = {},
 ) {
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
@@ -164,6 +191,8 @@ internal fun AboutScreen(
     val qqGroupSeen by settingsViewModel.qqGroupSeen.collectAsStateWithLifecycle()
     // 页面最下面那张「最近更新」展开没展开；记在设置里，重进这一页还是上次选的样子。
     val historyExpanded by settingsViewModel.updateHistoryExpanded.collectAsStateWithLifecycle()
+    // 「赞助者（贡献值）」那一块展开没展开；和「最近更新」同一个做法，记在设置里。
+    val sponsorsExpanded by settingsViewModel.sponsorsExpanded.collectAsStateWithLifecycle()
 
     // 更新只有一份实现（UpdateCenter）：启动时的自动下载和这里的手点，走的是同一条路、同一个状态，
     // 所以自动下载进来时这张卡片照样有进度条在动，不再只有手点才看得见。
@@ -311,10 +340,15 @@ internal fun AboutScreen(
                     }
                 },
             )
-            AppLinkCard(
-                glyph = FlGlyphs.profiles,
-                title = stringResource(Res.string.about_contributors),
-                onClick = { platform.openUrl(CONTRIBUTORS_URL) },
+            // 「贡献者」那一行原来是 GitHub contributors 的外链。现在它是赞助榜：点一下就地展开，
+            // 和下面「最近更新」同一个做法——人点它是想看看"都有谁在支持"，而不是跳到另一个网站。
+            SponsorWallCard(
+                store = sponsors,
+                platform = platform,
+                author = author,
+                expanded = sponsorsExpanded,
+                onToggle = { settingsViewModel.saveSponsorsExpanded(!sponsorsExpanded) },
+                onOpenProfile = onOpenProfile,
             )
             AppLinkCard(
                 glyph = FlGlyphs.cloudDownload,
@@ -638,6 +672,267 @@ private fun UpdateHistoryCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * 关于页的「赞助者（贡献值）」：一行标题，点开就地展开赞助榜。
+ *
+ * 为什么做成折叠而不是直接堆一屏：这一页是"关于这个软件"的一页，赞助榜是它的证据之一，
+ * 不是主角。默认折叠、点开就显示，与下面那张「最近更新」一个做法——两个都是"想知道才展开"。
+ *
+ * 展开后：顶部一行总额与人数，下面一位一行（头像、名字、形式、金额），点一行进那个人的主页。
+ * 头像按身份号从图床取（见 `PersonAvatar`），所以设过头像的人显示照片，没设过的是名字首字。
+ */
+@Composable
+private fun SponsorWallCard(
+    store: SponsorStore?,
+    platform: CantaPlatform,
+    author: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpenProfile: (String) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+
+    var wall by remember(store) { mutableStateOf<SponsorWall?>(null) }
+    var loading by remember(store) { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reloadKey by remember(store) { mutableIntStateOf(0) }
+    var composer by remember { mutableStateOf(false) }
+    var submitting by remember { mutableStateOf(false) }
+    var submitError by remember { mutableStateOf<String?>(null) }
+
+    // 只在展开时才去拉：折叠状态下这一页不该为一块看不见的东西多发一次请求。
+    LaunchedEffect(store, expanded, reloadKey) {
+        val s = store ?: return@LaunchedEffect
+        if (!expanded) {
+            // 收起来时把「正在读」收掉：下次展开会重新置位，否则会一直停在转圈的字上。
+            loading = false
+            return@LaunchedEffect
+        }
+        // 每次展开都重新读一遍（榜是会变的），且这里无条件置位——以前写成 `if (wall == null)`，
+        // 收起来再展开时界面没有任何"在刷新"的提示，一次失败还会被旧数据盖住。
+        loading = true
+        val fresh = s.wall()
+        loading = false
+        if (fresh != null) {
+            wall = fresh
+            error = null
+        } else {
+            // 旧榜留着看，但这次没刷到要说得出来（下面非空分支也会把这句话画出来）。
+            error = if (s.functionMissing) {
+                "这一版的社区后端还没有赞助榜，等一次服务端更新。"
+            } else {
+                s.lastError ?: "榜没拉到，检查一下网络或代理。"
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppCardInset)
+            .clip(RoundedCornerShape(AppCardCorner))
+            .background(FlSurfaceLevel.Card.colorOf(scheme))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.about_contributors),
+                style = FlText.subheadline.copy(fontWeight = FontWeight.Medium),
+                color = scheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            // 折叠时写「N 位赞助者」，展开时换成「收起」：两种状态各自说清点一下会怎样。
+            Text(
+                text = if (expanded) {
+                    stringResource(Res.string.about_sponsors_collapse)
+                } else {
+                    val count = wall?.count ?: 0
+                    if (count > 0) {
+                        stringResource(Res.string.about_sponsors_expand, count)
+                    } else {
+                        stringResource(Res.string.about_sponsors_expand_open)
+                    }
+                },
+                style = FlText.caption1,
+                color = scheme.primary,
+            )
+        }
+
+        if (expanded) {
+            // 首拉才画「正在读取」：收起来再展开时旧榜还在，转圈那行只会闪一下。
+            if (loading && wall == null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(Res.string.about_sponsors_loading),
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            val entries = wall?.entries.orEmpty()
+            // 旧榜还在、但这次没刷到：这一句必须画出来，否则界面看起来就是"刷新成功了"。
+            val staleNote = error?.takeIf { entries.isNotEmpty() }
+            if (entries.isEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = error ?: stringResource(Res.string.about_sponsors_empty),
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                )
+            } else {
+                Spacer(Modifier.height(8.dp))
+                staleNote?.let { line ->
+                    Text(
+                        text = line,
+                        style = FlText.caption2,
+                        color = scheme.error,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                Text(
+                    text = stringResource(
+                        Res.string.about_sponsors_total,
+                        // `%N$d` 只认整数：Long 传进 compose resources 的格式化器没有先例，这里按
+                        // Int 交出去。榜上总额按元计，一万个人各给一万也还在 Int 里。
+                        (wall?.totalYuan ?: 0L).toInt(),
+                        wall?.count ?: 0,
+                    ),
+                    style = FlText.caption1,
+                    color = scheme.primary,
+                )
+                entries.forEach { entry ->
+                    Spacer(Modifier.height(6.dp))
+                    SponsorWallRow(entry = entry, onOpenProfile = onOpenProfile)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            // 记账入口：钱在群里收，这张表只把它记进榜，所以按钮写「记上」不写「支付」。
+            TextButton(
+                onClick = {
+                    submitError = null
+                    composer = true
+                },
+                contentPadding = PaddingValues(horizontal = 0.dp),
+            ) {
+                Text(stringResource(Res.string.about_sponsors_add))
+            }
+        }
+    }
+
+    if (composer) {
+        SponsorComposerDialog(
+            submitting = submitting,
+            error = submitError,
+            defaultName = author,
+            onDismiss = {
+                composer = false
+                submitError = null
+            },
+            onSubmit = submit@{ amount, kind, note, anonymous ->
+                val s = store
+                if (s == null) {
+                    submitError = "社区后端没连上，这一笔没记上。"
+                    return@submit
+                }
+                submitting = true
+                submitError = null
+                scope.launch {
+                    val result = s.add(
+                        amountYuan = if (kind == "money") amount else 0,
+                        kind = kind,
+                        name = author,
+                        note = note,
+                        anonymous = anonymous,
+                    )
+                    submitting = false
+                    when {
+                        result == null -> submitError = s.lastError ?: "没记上：检查一下网络再试"
+                        result.duplicate -> {
+                            composer = false
+                            platform.showMessage("这一笔已经在榜上了")
+                        }
+                        else -> {
+                            composer = false
+                            reloadKey++
+                            platform.showMessage(
+                                if (kind == "money") "谢谢！已记上 ¥$amount" else "谢谢！已记上 AI 邀请",
+                            )
+                        }
+                    }
+                }
+            },
+        )
+    }
+}
+
+/** 榜上的一位：头像、名字、形式与金额，整行可点（进那个人的主页）。 */
+@Composable
+private fun SponsorWallRow(entry: SponsorEntry, onOpenProfile: (String) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val shownName = when {
+        entry.anonymous -> "匿名"
+        entry.name.isNotBlank() -> entry.name
+        else -> "#${entry.owner}"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                enabled = entry.canOpenProfile,
+                role = Role.Button,
+                onClick = { if (entry.canOpenProfile) onOpenProfile(entry.owner) },
+            )
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 匿名的头像不给照片：名字都藏了，脸还挂着等于没藏。
+        if (entry.anonymous) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(scheme.surfaceContainerHighest.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = "匿", style = FlText.caption2, color = scheme.onSurfaceVariant)
+            }
+        } else {
+            PersonAvatar(
+                name = shownName,
+                owner = entry.owner,
+                size = 28.dp,
+                background = scheme.primary.copy(alpha = 0.9f),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = shownName,
+            style = FlText.caption1,
+            color = scheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = entry.kindLabel,
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            // 出钱的写金额，AI 邀请写「邀请」：两者不是一回事，用一个数糊住会让人以为是 ¥0。
+            text = entry.badge,
+            style = FlText.caption1,
+            color = if (entry.amountYuan > 0) scheme.primary else scheme.onSurfaceVariant,
+        )
     }
 }
 

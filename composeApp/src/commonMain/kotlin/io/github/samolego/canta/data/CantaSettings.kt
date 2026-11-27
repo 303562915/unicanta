@@ -165,6 +165,8 @@ class CantaSettings(storage: AppBlobStorage) {
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** 关于页最下面那张「最近更新」是否展开；出厂折叠，见 [AppSettingsProto.updateHistoryExpanded]。 */
     val updateHistoryExpandedFlow: Flow<Boolean> = field { it.updateHistoryExpanded }
+    /** 关于页「赞助者（贡献值）」是否展开；出厂折叠，与「最近更新」同一个做法。 */
+    val sponsorsExpandedFlow: Flow<Boolean> = field { it.sponsorsExpanded }
     /** Whether the records tab empties itself at the next system start; off by default. */
     val clearRecordsAfterBootFlow = field { it.clearRecordsAfterBoot }
     /**
@@ -333,6 +335,10 @@ class CantaSettings(storage: AppBlobStorage) {
     /** 记住关于页最下面那张「最近更新」是展开还是折叠。 */
     suspend fun setUpdateHistoryExpanded(expanded: Boolean) = update {
         it.copy(updateHistoryExpanded = expanded)
+    }
+    /** 记住关于页「赞助者（贡献值）」那一块是展开还是折叠。 */
+    suspend fun setSponsorsExpanded(expanded: Boolean) = update {
+        it.copy(sponsorsExpanded = expanded)
     }
     suspend fun setClearRecordsAfterBoot(clear: Boolean) = update { it.copy(clearRecordsAfterBoot = clear) }
     /** 列表里点一个包：弹小窗（`true`）或直接进详情页（`false`，出厂）。 */

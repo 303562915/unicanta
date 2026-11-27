@@ -277,8 +277,18 @@ data class AppSettingsProto(
      *
      * 记在设置里而不是页面的 `remember`：它是"这个人选择怎么看这一页"，关掉应用再进来应该还是那个样子；
      * 折叠是默认，因为更新说明有一整屏，压在最下面的位置本来就不该一进来就占屏幕。
+     *
+     * **编号是 53，不是 46**：46 已经被上面的 [showPostsTab] 占了（两个字段同号会让它们在同一个
+     * protobuf 槽上互相覆盖）。这一格以前写的就是 46，于是「帖子页那一格开着」被读成「最近更新
+     * 展开着」——只影响首屏展开态，所以一直没被发现。
      */
-    @ProtoNumber(46) val updateHistoryExpanded: Boolean = false,
+    @ProtoNumber(53) val updateHistoryExpanded: Boolean = false,
+    /**
+     * 关于页「赞助者（贡献值）」那一块是不是展开着；出厂是折叠。
+     *
+     * 与 [updateHistoryExpanded] 同一个做法：折叠是默认，展开与否是这个人的选择，记在设置里。
+     */
+    @ProtoNumber(52) val sponsorsExpanded: Boolean = false,
     /**
      * 上一次拉「分级修正表」的本地日期（`YYYY-MM-DD`）；空串 = 从没拉过。
      *

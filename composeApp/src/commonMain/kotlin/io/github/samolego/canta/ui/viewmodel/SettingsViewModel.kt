@@ -199,6 +199,8 @@ class SettingsViewModel(
 
     /** 关于页最下面那张「最近更新」是否展开；出厂折叠，展开与否记在设置里。 */
     val updateHistoryExpanded = settingsStore.updateHistoryExpandedFlow.state(false)
+    /** 关于页「赞助者（贡献值）」展开没展开；出厂折叠。 */
+    val sponsorsExpanded = settingsStore.sponsorsExpandedFlow.state(false)
 
     /**
      * 各会话没发出去的草稿，`会话号 -> 正文`，最近写的在最后。
@@ -225,6 +227,20 @@ class SettingsViewModel(
      * 安全页顶部机型胶囊是不是点过了。出厂是没点过（`false`），点一次就永久停止呼吸提示。
      */
     val scopeHintSeen = settingsStore.scopeHintSeenFlow.state(false)
+
+    /**
+     * 「选择机型」上一次挑的是哪一台（见 `PlanScope.toStoredValue`，空串 = 全部机型）。
+     *
+     * **为什么放在这里而不是页面自己订阅**：页面级的 `collectAsStateWithLifecycle(initialValue = "")`
+     * 在页面重新进入时（从应用详情返回、切 tab）第一帧拿到的是那个 `initialValue`，也就是空串 =
+     * 「全部机型」，要等协程把存储读回来才换成真正选的那台。那一段中间态就是用户说的
+     * 「每次退出来都先显示全部，然后再跳到我们之前选的」。
+     *
+     * 这个 ViewModel 跟着导航图活，比页面久：它一早就把值收进 `StateFlow`，页面任何时候读到的都是
+     * 已经读好的那一份，不会先画一遍「全部机型」。设置存储本身在构造时就已从磁盘读完，所以这里
+     * 的初值不是猜测，是真实值。
+     */
+    val planScope = settingsStore.planScopeFlow.state("")
 
     /**
      * Whether the lock has been answered in this process.
@@ -354,6 +370,8 @@ class SettingsViewModel(
 
     /** 记住「最近更新」那张卡片是展开还是折叠。 */
     fun saveUpdateHistoryExpanded(expanded: Boolean) = save { setUpdateHistoryExpanded(expanded) }
+    /** 记住关于页「赞助者（贡献值）」是展开还是折叠。 */
+    fun saveSponsorsExpanded(expanded: Boolean) = save { setSponsorsExpanded(expanded) }
 
     /** 记下（或清掉，传空串）一个会话的草稿；防抖在调用方那边，这里每次都落盘。 */
     fun saveChatDraft(conversationId: Long, text: String) = save { setChatDraft(conversationId, text) }
