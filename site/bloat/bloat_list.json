@@ -1,4 +1,84 @@
 {
+  "com.xiaomi.registration": {
+    "list": "Carrier",
+    "description": "China Telecom (CT) self-registration component on Xiaomi / Redmi / POCO firmware. Registers the device with the carrier in the background and reports device data; no launcher entry. Safe to remove on phones that do not rely on carrier auto-provisioning. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "com.miui.dmregservice": {
+    "list": "Carrier",
+    "description": "China Mobile (CMCC) DM / auto-registration service on Xiaomi / Redmi / POCO. Reports terminal and SIM data to the carrier device-management platform. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "com.huawei.android.UEInfoCheck": {
+    "list": "Carrier",
+    "description": "Huawei China Telecom UE information check: collects device / UE identity data for carrier registration. No launcher entry. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "com.huawei.android.AutoRegSms": {
+    "list": "Carrier",
+    "description": "Huawei China Telecom automatic registration SMS handler: sends and parses provisioning SMS in the background. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "com.hihonor.android.UEInfoCheck": {
+    "list": "Carrier",
+    "description": "Honor China Telecom UE information check, same role as the Huawei component of the same name. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "com.hihonor.android.AutoRegSms": {
+    "list": "Carrier",
+    "description": "Honor China Telecom automatic registration SMS handler. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "com.hihonor.regservice": {
+    "list": "Carrier",
+    "description": "Honor China Mobile (CMCC) RegService: silent terminal registration and telemetry. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "com.meizu.regservice": {
+    "list": "Carrier",
+    "description": "Meizu / Flyme China Mobile RegService: silent terminal registration and telemetry. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Recommended"
+  },
+  "cn.nubia.register": {
+    "list": "Carrier",
+    "description": "Nubia / Red Magic China Telecom registration component. Reported as removable by the TelemetryCleaner project, but verified on few devices. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Advanced"
+  },
+  "cn.richinfo.dm": {
+    "list": "Carrier",
+    "description": "China Mobile DM client (Richinfo) bundled for carrier device management: loads hot-patch code at runtime and reports device data. Same family as Huawei HwCmccDm. (Source: Eynnzerr/TelemetryCleaner)",
+    "dependencies": [],
+    "neededBy": [],
+    "labels": [],
+    "removal": "Advanced"
+  },
   "org.lineageos.jelly": {
     "list": "Oem",
     "description": "LineageOS Browser App, based on chromium.\nSafe to remove if you don't need it or have replaced it with another app.\nOtherwise there will be no browser app on your device.",

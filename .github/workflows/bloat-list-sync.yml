@@ -101,6 +101,26 @@ jobs:
           set -euo pipefail
           mkdir -p site/bloat
           cp /tmp/uad_lists.json "$TARGET_PATH"
+
+          # 上游名单里没有、但这个仓库要认识的包（运营商遥测组件等）放在
+          # `site/bloat/bloat_extra.json`：上游是 `cp` 覆盖式的，不合并就会被冲掉。
+          # 已在上游里的包一律以上游为准，本地补充只补缺。
+          python3 - <<'PY'
+          import json, os
+          target = os.environ['TARGET_PATH']
+          extra_path = 'site/bloat/bloat_extra.json'
+          if os.path.exists(extra_path):
+              data = json.load(open(target, encoding='utf-8'))
+              extra = json.load(open(extra_path, encoding='utf-8')).get('packages', {})
+              added = [p for p in extra if p not in data]
+              for p in added:
+                  data[p] = extra[p]
+              if added:
+                  with open(target, 'w', encoding='utf-8') as f:
+                      json.dump(data, f, ensure_ascii=False, indent=2)
+                      f.write('\n')
+              print(f'local extras: merged {len(added)}, total {len(data)}')
+          PY
           python3 - <<'PY'
           import json, os, datetime
           data = json.load(open(os.environ['TARGET_PATH'], encoding='utf-8'))
