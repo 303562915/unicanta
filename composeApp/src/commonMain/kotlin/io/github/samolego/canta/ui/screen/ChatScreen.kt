@@ -537,6 +537,28 @@ fun ChatScreen(
             if (!ok) muted = !target
         }
     }
+
+    /**
+     * 钉住 / 取消钉住一条消息。
+     *
+     * 没有乐观更新：置顶是"整个群都能看见"的动作，先画上再退回去会让人以为钉成了。所以等后端
+     * 回话，再重拉一次置顶列表——顺带把别人刚钉的那条也带回来。
+     */
+    fun togglePinMessage(message: ChatMessage) {
+        val target = pinnedMessages.none { it.id == message.id }
+        scope.launch {
+            val ok = runCatching { repository.pinMessage(owner, message.id, target) }
+                .getOrDefault(false)
+            if (ok) {
+                pinnedMessages = runCatching {
+                    repository.pinnedMessages(owner, conversationId)
+                }.getOrDefault(pinnedMessages)
+                actionHint = if (target) "已置顶这条消息" else "已取消置顶"
+            } else {
+                actionHint = "没钉上，检查代理后再试"
+            }
+        }
+    }
     /**
      * 这一条草稿里点名了谁，存身份号码而不是名字：人可能在发出之前改名，号码不会。
      *
@@ -572,6 +594,15 @@ fun ChatScreen(
      */
     var imageHint by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<ConversationDetail?>(null) }
+    /**
+     * 这个群钉住的消息，最新钉的在前。
+     *
+     * 和聊天记录分开存：置顶那几条可能在很久以前，不在刚拉回来的这一页里；[togglePinMessage]
+     * 改完会重新拉一次，所以这里始终是服务端那一份，不做本地乐观拼接。
+     */
+    var pinnedMessages by remember(conversationId) { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    /** 置顶/取消置顶的一句话结果；和图片那句反馈共用输入框上方那一行。 */
+    var actionHint by remember { mutableStateOf<String?>(null) }
     /**
      * 群公告横幅这一趟被关掉了没有。
      *
@@ -682,6 +713,12 @@ fun ChatScreen(
         loading = false
         markReadNow()
         detail = repository.conversationDetail(owner, conversationId)
+        // 群置顶消息：和详情一起问一次就够。置顶不常变，改的那一下自己会重拉（见 togglePinMessage）。
+        pinnedMessages = if (detail?.isGroup == true) {
+            runCatching { repository.pinnedMessages(owner, conversationId) }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
         // 顺手把「我把它置顶了没有 / 免打扰了没有」取回来：顶栏菜单的那两项要按它写文案。
         // 失败就当没有（保持不置顶、不免打扰），点一下仍然会真的改一次。
         val row = runCatching { repository.conversationsFor(owner) }
@@ -1203,6 +1240,14 @@ fun ChatScreen(
         }
     }
 
+    // 置顶/取消置顶那一句结果：和「转发成不成」同一套，两秒后自己收走。
+    LaunchedEffect(actionHint) {
+        if (actionHint != null) {
+            delay(2000L)
+            actionHint = null
+        }
+    }
+
     // ---------------------------------------------------------------- 已读回执 / 正在输入 / 翻译
     //
     // 一次调用两样东西：别人的读位置和谁在打字（见 `SocialRepository.conversationLive`）。
@@ -1312,9 +1357,8 @@ fun ChatScreen(
                 onToggleMute = { toggleMute() },
                 // 群公告：从会话详情里拿。私聊没有公告，传空串就是「还没有公告」。
                 announcement = if (grouped) detail?.announcement.orEmpty() else "",
-                // 置顶消息与收藏：数据在下一批接（后端的置顶消息 / 本机收藏），这里先给空列表，
-                // 入口行那两格点了会老实说「还没有」。
-                pinnedMessages = emptyList(),
+                // 置顶消息：进页面时拉一次，钉/取消钉之后由 togglePinMessage 重拉。
+                pinnedMessages = pinnedMessages,
                 savedMessages = emptyList(),
                 // 「聊天」那一下：入口行收起 + 回到最新一条（reverseLayout 里 0 就是尾巴）。
                 onJumpToLatest = { scope.launch { listState.animateScrollToItem(0) } },
@@ -1495,6 +1539,14 @@ fun ChatScreen(
                                         onReply = { replyTarget = message },
                                         // 转发：也是谁的都行——转发别人的话是最常见的用法。
                                         onForward = { openForward(message) },
+                                        // 置顶消息：只有群里才有这一项（私聊没有"群里那条"可言）；
+                                        // 已经在置顶里的那条，菜单写「取消置顶」。
+                                        onPin = if (grouped) {
+                                            { togglePinMessage(message) }
+                                        } else {
+                                            null
+                                        },
+                                        pinned = pinnedMessages.any { it.id == message.id },
                                         // 删除（只本机）：只对自己的。它和能不能撤回无关：
                                         // 老消息撤不了了，但自己仍然可以从这一侧把它拿掉。
                                         onHide = if (message.sender == owner) {
@@ -1687,9 +1739,10 @@ fun ChatScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                 )
-            } else if (imageHint != null) {
+            } else if (imageHint != null || actionHint != null) {
                 Text(
-                    text = imageHint.orEmpty(),
+                    // 两句话共用这一行：一句是图片/发送的结果，一句是置顶的结果，同时只会有一句。
+                    text = imageHint ?: actionHint.orEmpty(),
                     fontSize = 10.sp,
                     lineHeight = 13.sp,
                     color = MaterialTheme.colorScheme.error,
@@ -2525,6 +2578,10 @@ private fun ChatBubble(
     onReply: (() -> Unit)? = null,
     /** 转发这一条到别的会话。 */
     onForward: (() -> Unit)? = null,
+    /** 钉住 / 取消钉住这一条；只有群聊会给（私聊没有"群里那条消息"）。 */
+    onPin: (() -> Unit)? = null,
+    /** 这一条此刻在不在置顶里：菜单那一项按它说「置顶消息」还是「取消置顶」。 */
+    pinned: Boolean = false,
     /** 只在自己这一侧删掉（对所有人还在）；只有自己的消息才给。 */
     onHide: (() -> Unit)? = null,
     /**
@@ -2557,7 +2614,7 @@ private fun ChatBubble(
 ) {
     val colors = MaterialTheme.colorScheme
     val menuable = onLongPress != null || onReply != null || onForward != null ||
-        onDelete != null || onHide != null || onTranslate != null
+        onDelete != null || onHide != null || onTranslate != null || onPin != null
     var menuOpen by remember { mutableStateOf(false) }
     val longPress = if (menuable) ({ menuOpen = true }) else null
     // 图片不是文字：气泡的底色和 12 的内边距会在图四周多出一圈主色，那一路换成一张裸图。
@@ -2681,12 +2738,15 @@ private fun ChatBubble(
                             canRetract = onDelete != null,
                             canReply = onReply != null,
                             canForward = onForward != null,
+                            canPin = onPin != null,
                             canHide = onHide != null,
                             onDismiss = { menuOpen = false },
                             onCopy = { onLongPress?.invoke() },
                             onDelete = onDelete,
                             onReply = onReply,
                             onForward = onForward,
+                            pinned = pinned,
+                            onPin = onPin,
                             onHide = onHide,
                         )
                     }
@@ -2731,12 +2791,15 @@ private fun ChatBubble(
                             canRetract = onDelete != null,
                             canReply = onReply != null,
                             canForward = onForward != null,
+                            canPin = onPin != null,
                             canHide = onHide != null,
                             onDismiss = { menuOpen = false },
                             onCopy = { onLongPress?.invoke() },
                             onDelete = onDelete,
                             onReply = onReply,
                             onForward = onForward,
+                            pinned = pinned,
+                            onPin = onPin,
                             onHide = onHide,
                         )
                     }
@@ -2791,6 +2854,7 @@ private fun ChatBubble(
                             canRetract = onDelete != null,
                             canReply = onReply != null,
                             canForward = onForward != null,
+                            canPin = onPin != null,
                             canHide = onHide != null,
                             canTranslate = onTranslate != null,
                             onDismiss = { menuOpen = false },
@@ -2798,6 +2862,8 @@ private fun ChatBubble(
                             onDelete = onDelete,
                             onReply = onReply,
                             onForward = onForward,
+                            pinned = pinned,
+                            onPin = onPin,
                             onHide = onHide,
                             onTranslate = onTranslate,
                         )
@@ -3014,6 +3080,8 @@ private fun ChatBubbleMenu(
     canRetract: Boolean = false,
     canReply: Boolean = false,
     canForward: Boolean = false,
+    /** 群聊才有「置顶消息」这一项。 */
+    canPin: Boolean = false,
     canHide: Boolean = false,
     /** 有没有「翻译」这一项：只有文字消息给。 */
     canTranslate: Boolean = false,
@@ -3022,6 +3090,9 @@ private fun ChatBubbleMenu(
     onDelete: (() -> Unit)? = null,
     onReply: (() -> Unit)? = null,
     onForward: (() -> Unit)? = null,
+    onPin: (() -> Unit)? = null,
+    /** 这一条已经在置顶里：那一项写「取消置顶」，不然每次点都像第一次钉。 */
+    pinned: Boolean = false,
     onHide: (() -> Unit)? = null,
     onTranslate: (() -> Unit)? = null,
 ) {
@@ -3063,6 +3134,16 @@ private fun ChatBubbleMenu(
                 onClick = {
                     onDismiss()
                     onForward()
+                },
+            )
+        }
+        // 置顶消息：群聊里挑一条钉到顶上。和"置顶聊天"不是一件事——那个在群设置里。
+        if (canPin && onPin != null) {
+            DropdownMenuItem(
+                text = { Text(if (pinned) "取消置顶" else "置顶消息", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onPin()
                 },
             )
         }

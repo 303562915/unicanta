@@ -789,6 +789,44 @@ class SocialRepository(
      * （用 offset 翻历史会被刚到的消息挤动，所以有这两个入口）。
      * [beforeId] 传 0 就是"从最新一条往前"，后端按同一件事处理。
      */
+    /**
+     * 这个群的置顶消息，最新钉的在前。
+     *
+     * 和聊天记录分开问：置顶那几条很可能在很久以前（往上翻几百条才见得到），跟着每一页历史一起
+     * 拉不会多看到什么；置顶一般只有几条，一次问全便宜得多。
+     *
+     * 字段与 [messagesFor] 逐字一致，所以解析也走同一个 [messageOf]——置顶卡片和聊天气泡画的
+     * 是同一条消息的两种样子。
+     */
+    suspend fun pinnedMessages(owner: String, conversation: Long): List<ChatMessage> {
+        if (owner.isEmpty() || conversation <= 0L) return emptyList()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+        }.toString()
+        val text = rpc("messages_pinned", body) ?: return emptyList()
+        return rowsOf(text).mapNotNull { row -> messageOf(row) }
+    }
+
+    /**
+     * 钉住 / 取消钉住一条消息，回答服务端认不认。
+     *
+     * 后端只允许本会话成员动、撤回过的钉不上；这里不预判，失败就是 false，界面据此把那一项
+     * 改回原来的样子（和置顶会话、免打扰同一套乐观更新）。
+     */
+    suspend fun pinMessage(owner: String, messageId: Long, pin: Boolean): Boolean {
+        if (owner.isEmpty() || messageId <= 0L) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_message", messageId)
+            put("p_pin", pin)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("message_pin", body) ?: return false
+        return booleanFrom(text, "message_pin") ?: false
+    }
+
     suspend fun messagesBefore(
         owner: String,
         conversation: Long,
