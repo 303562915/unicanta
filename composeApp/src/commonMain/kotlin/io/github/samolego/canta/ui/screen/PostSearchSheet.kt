@@ -16,13 +16,17 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
@@ -105,6 +110,29 @@ import io.github.samolego.canta.ui.fl.colorOf
  *
  * `imePadding()` 垫在**面板内容**上而不是整个 `Dialog` 上（照 `PostsSection.kt:5904-5907`）：
  * 键盘弹起时只有内容区缩上去，遮罩与圆角不动，看起来才是"键盘把面板顶起来"。
+ *
+ * ## 命中之间「上一处 / 下一处」：为什么循环，而不是到头禁灰
+ *
+ * 输入框右侧挂着两颗 32dp 的小圆钮（`KeyboardArrowUp` / `KeyboardArrowDown`），夹着 `3 / 12`
+ * 计数；按「下一处」越过最后一条就**回到第一条**，一直循环。
+ *
+ * 到头禁灰看起来更"安全"，实际是把一个问题拆成两个：按到按不动的那一刻，人分不清是"已经到底"
+ * 还是"这条帖子里就这么点东西"，还得回头去读计数。而这个面板的列表本来就是个环 —— 第一条就在
+ * 列表顶上，循环回去的成本只是一次滚动。键盘上那个「搜索」键也是「接着找下一条」的连续动作，
+ * 一旦禁灰，连续按到一半就断在那里，得换手去点列表。
+ *
+ * 参考侧没有这条交互可抄：`topic_search_view.dart:167-182` 只报「共 N 条结果」，没有"第几条"
+ * 这种下标概念，也就没有"到头"的语义；它那边跳到某一楼只有 tap 一条路（`:209-212`），
+ * 这里多补的是键盘可达的步进。
+ *
+ * ## 为什么"选中"不自动跳楼层
+ *
+ * 选中（那一行铺一层 `primary` α0.12 的底）只是「我现在看的是这一条」的标记，**不**调 `onJump`。
+ * 面板是盖在正文上的：一边打字一边被拽走，正文每滚一次屏幕就抖一下，人还看不清滚到了哪；而
+ * "跳楼层"是这个面板唯一的重动作，只该由一次明确的点击触发。参考侧同样只在 tap 到卡片时才
+ * `onJumpToPost(post.postNumber)`（`topic_search_view.dart:209-212`），没有任何"选中即跳"的路径。
+ * 所以连按「下一处」到同一条（只有一条命中时会一直停在第 1 条）不产生额外的滚动或跳转 ——
+ * 选中 ≠ 跳转。
  *
  * @param topicTitle 帖子标题：抬头写它，让人确认"我是在哪条帖子里找"。
  * @param comments 回帖，后端按时间正序（主楼**不在**里面，见 `PostThread`）。
@@ -168,6 +196,48 @@ internal fun PostSearchSheet(
     // 在低端机上是肉眼可见的卡顿，而"翻到第 150 条命中"这种需求本来也罕见。
     val shown: List<PostComment> = remember(hits) { hits.take(RESULT_LIMIT) }
 
+    // 结果列的滚动状态：导航到某一条时用它把那一行带进可见区。只滚这颗 `LazyColumn`，
+    // 不碰正文页（见文件头「为什么选中不自动跳楼层」）。
+    val listState = rememberLazyListState()
+
+    // 当前选中的命中（`shown` 的 0 基下标）。键挂 `query`：关键词改一个字就回到第 1 条 ——
+    // 换了词之后"第 3 条命中"指的就是另一批行了，留着旧下标只会选到一条碰巧同号的无关行。
+    //
+    // 用 `remember(query)` 而不是在 `LaunchedEffect` 里只写 `selected = 0`：状态对象跟着关键词
+    // 一起换掉，换词的**那一帧**读到的就已经是 0，不会先画一次"还停在第 3 条、列表却已经换了内容"。
+    var selected by remember(query) { mutableStateOf(0) }
+    val hitTotal = shown.size
+    // 分母取 `shown.size` 而不是 `hits.size`：导航只在**画出来的** ≤[RESULT_LIMIT] 行之间走，
+    // 分母写 `hits.size` 会算出"201 / 250"这种跳不过去的序号（超出的那一行列表里根本没有）。
+    // 头部 [SearchCountRow] 仍然报 `hits.size`（真命中数），两者管的是两件事。
+    val canNavigate = hitTotal > 0
+    // `shown` 只随 `comments` / `query` 变：前一种已经 coerce 过，后一种由上面的 `remember(query)`
+    // 直接归零。这层 coerce 是兜底 —— 回帖被删、列表缩短而关键词没变时下标会越界。
+    val selectedIndex = if (canNavigate) selected.coerceIn(0, hitTotal - 1) else -1
+    // 选中行的 id：行内拿它比较（比传下标稳，`items` 的 key 本来就是 id）。
+    val selectedId: Long? = if (selectedIndex >= 0) shown[selectedIndex].id else null
+
+    // 换词：序号回 1 并跳回列表顶部。用 `scrollToItem`（无动画）—— 一边打字一边看列表滑一段，
+    // 打完这个词之前那几次滑动全是噪音。
+    LaunchedEffect(query) {
+        selected = 0
+        if (hitTotal > 0) listState.scrollToItem(0)
+    }
+
+    // 序号变了就把那一行带进视野。锚点仍然在列表里，不在正文页。
+    LaunchedEffect(selectedIndex, hitTotal) {
+        if (selectedIndex >= 0) listState.animateScrollToItem(selectedIndex)
+    }
+
+    // 「上一处 / 下一处」：到头**循环**回去，不禁灰（理由见文件头「为什么循环」）。只有一条命中时
+    // 两边都原地不动，于是 `selected` 不变、上面那个滚动 effect 也不会重跑 —— 连按不会让列表抖。
+    val goNext: () -> Unit = {
+        if (canNavigate) selected = if (selectedIndex >= hitTotal - 1) 0 else selectedIndex + 1
+    }
+    val goPrev: () -> Unit = {
+        if (canNavigate) selected = if (selectedIndex <= 0) hitTotal - 1 else selectedIndex - 1
+    }
+
     BasicAlertDialog(
         onDismissRequest = close,
         // 对话框自己占满窗口：平台默认宽度只有屏幕中间一条，而结果行是按"整宽一行"排的
@@ -208,11 +278,16 @@ internal fun PostSearchSheet(
                         query = query,
                         onQueryChange = { query = it.take(QUERY_MAX) },
                         focusRequester = focusRequester,
-                        // 键盘上的「搜索」键：结果本来就是边打边出，这个键唯一的作用是收键盘
-                        // 把结果露出来——配 `ImeAction.Search` 却不接 `KeyboardActions` 的话，
-                        // 按下去什么都不发生，比不给这个键更糟（同一套判断见
+                        // 计数与两颗钮只认"画出来的那几行"：0 条命中时计数不画、两颗钮禁用。
+                        position = selectedIndex + 1,
+                        total = hitTotal,
+                        onPrev = goPrev,
+                        // 键盘上的「搜索」键也走这里：从"收键盘"改成**跳下一处** —— 边打边出
+                        // 结果的时候，最顺手的下一步是"看下一条命中"，而收键盘本来也不是这里
+                        // 缺的能力（点遮罩或 × 都会收，见 `close`）。配 `ImeAction.Search` 却
+                        // 不接 `KeyboardActions` 的话按下去什么都不发生（同一套判断见
                         // `PostsSection.kt:5807-5813` 对 `ImeAction.Next` 的说明）。
-                        onSubmit = { focusManager.clearFocus() },
+                        onNext = goNext,
                     )
                     when {
                         // 空查询不画结果区，只给一句提示：一行"0 条命中"会让人以为搜过、没搜到。
@@ -228,6 +303,8 @@ internal fun PostSearchSheet(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(max = RESULT_MAX_HEIGHT),
+                                // 让「上一处 / 下一处」能把某一行滚进来（`animateScrollToItem`）。
+                                state = listState,
                                 contentPadding = PaddingValues(vertical = 4.dp),
                             ) {
                                 // `key = { it.id }`：结果集随关键词变，行按 id 复用才不会把上一条
@@ -240,6 +317,10 @@ internal fun PostSearchSheet(
                                     //  - 摘要与高亮按 `(id, query)` 缓存。回帖只有"发"和"删"两个接口
                                     //    （`PostStore.kt:91-104` 那六个 RPC），没有编辑，id 不变则正文不变，
                                     //    所以 id + 关键词就够做键，不必再把 body 列进去。
+                                    //
+                                    // **键里没有"当前序号"**：选中只是给这一行加一层底（`selected`），
+                                    // 走的是一条不参与缓存的参数；按 ↑↓ 时这些 `remember` 全部命中，
+                                    // 只重画背景色，不重算剥标记 / 找位置 / 切窗口。
                                     val floor = remember(comment.id, floorLabelOf) { floorLabelOf(comment.id) }
                                     val accent = scheme.primary
                                     val rowText = remember(comment.id, query) {
@@ -255,6 +336,7 @@ internal fun PostSearchSheet(
                                         floorText = searchFloorText(floor),
                                         author = authorText,
                                         summary = summaryText,
+                                        selected = comment.id == selectedId,
                                         onClickLabel = if (floor > 0) "跳到第 $floor 层" else "跳到这一楼",
                                         onClick = {
                                             focusManager.clearFocus()
@@ -307,6 +389,30 @@ private val RESULT_MAX_HEIGHT = 360.dp
 
 /** 命中那一段的字重：`Medium` 与参考的 `w500` 对齐（`search_post_card.dart:444`）。 */
 private val HIT_WEIGHT = FontWeight.Medium
+
+/** 「上一处 / 下一处」小圆钮的直径：比 40dp 的关闭钮小一档，它是输入框里的配件，不是面板级按钮。 */
+private val NAV_BUTTON_SIZE = 32.dp
+
+/** 清空钮的占位边长：沿用原来那颗 36dp，只是改成"永远占位"（见 [SearchInput] 的 KDoc）。 */
+private val CLEAR_SLOT_SIZE = 36.dp
+
+/**
+ * `3 / 12` 那一格的最小宽度：`labelSmall` 下 5 个字符大约 34dp，留 44dp 让 `12 / 200` 也放得下。
+ * 有了这块最小宽度，0 条命中（计数不画）与 3 条命中之间不会把两颗钮推着横移。
+ */
+private val COUNTER_MIN_WIDTH = 44.dp
+
+/** 没有命中时两颗钮的透明度：与 Material 的 disabled 一档，看着是"现在没得翻"而不是"坏了"。 */
+private const val NAV_DISABLED_ALPHA = 0.38f
+
+/**
+ * 选中那一行的底色透明度。
+ *
+ * 0.12 是"一眼看得出、又不至于被当成正文高亮"的那一档：命中词本身用的是 `primary` **字色**
+ * （`FontWeight.Medium`，见 [highlighted]），底色再重就会盖过它。整行铺淡底而不是画一条边：
+ * 行是 48dp 高的可点区域，边上一条线在滚动时容易和分隔线混在一起。
+ */
+private const val SELECTED_ROW_ALPHA = 0.12f
 
 // ------------------------------------------------------------------ 文本剥标记
 //
@@ -504,22 +610,34 @@ private fun SearchSheetTitle(title: String) {
 }
 
 /**
- * 那一格真输入框：左放大镜、右清空（有字才出现）。
+ * 那一格真输入框：左放大镜，右侧从右往左是「清空」→「下一处」→ 计数 →「上一处」。
  *
  * 样式照 `ComposerPickerSheet` 里的标签输入格（`PostsSection.kt:5777-5816`）：`singleLine` +
- * `bodyMedium` + 边框 `outlineVariant`（未聚焦再淡一档）。差别两处：
+ * `bodyMedium` + 边框 `outlineVariant`（未聚焦再淡一档）。差别三处：
  *  - 清空按钮在这个面板里是**必需**的（搜索词是临时状态，没有"提交"这一步来清空它）；
+ *  - 右边多了「上一处 / 下一处」两颗 32dp 小圆钮和 `3 / 12` 计数（见文件头「为什么循环」）；
  *  - 左边那颗放大镜是装饰，`contentDescription = null` —— 它不承载动作，念屏器念它就多余了。
  *
+ * **两颗钮放在清空按钮左边**，清空仍然钉在最右：那是它现在的位置（`PostsSection.kt:5813` 起
+ * 同一套排法），一次改动不该顺手把手感挪走；而两颗钮要成组（↑ 计数 ↓），贴着清空右边放会把
+ * "清空"夹进这组中间、读起来像第三颗导航钮。清空外壳固定占 36dp、只在有字时才画出来，
+ * 于是打字第一下不会把 ↑↓ 推着横移。
+ *
  * @param focusRequester 由调用方创建并自动请求一次焦点（见 [PostSearchSheet] 的 `LaunchedEffect`）。
- * @param onSubmit 键盘「搜索」键：收焦点把结果露出来（结果本来就是边打边出）。
+ * @param position 当前是第几条命中（1 基）；`<= 0` 表示没有选中（此时计数不画）。
+ * @param total 可导航的命中条数；0 时两颗钮禁用（α0.38）。
+ * @param onPrev / @param onNext 上一处 / 下一处，到头循环（不禁灰）；[onNext] 同时挂在键盘的
+ *   「搜索」键上（[ImeAction.Search] + `KeyboardActions`）。
  */
 @Composable
 private fun SearchInput(
     query: String,
     onQueryChange: (String) -> Unit,
     focusRequester: FocusRequester,
-    onSubmit: () -> Unit,
+    position: Int,
+    total: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     OutlinedTextField(
@@ -542,27 +660,105 @@ private fun SearchInput(
             Icon(Icons.Rounded.Search, null, Modifier.size(18.dp), tint = scheme.onSurfaceVariant)
         },
         trailingIcon = {
-            // 只在有字时出现：空框右边挂一颗"清空"是个按了没反应的按钮。
-            if (query.isNotEmpty()) {
-                Box(
+            Row(
+                modifier = Modifier.padding(end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SearchNavButton(
+                    icon = Icons.Rounded.KeyboardArrowUp,
+                    onClickLabel = "上一处",
+                    enabled = total > 0,
+                    onClick = onPrev,
+                )
+                // 计数夹在两颗钮中间（`3 / 12`），`labelSmall` + `onSurfaceVariant`：它是导航的
+                // 读数，不是标题，字号与颜色都跟着结果区那行「N 条命中」走。没有命中时**不画**，
+                // 但这一格带一个最小宽度（[COUNTER_MIN_WIDTH]）：否则命中一出现，两颗钮会横移一格。
+                Text(
+                    text = if (total > 0) "$position / $total" else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
                     modifier = Modifier
-                        .padding(end = 4.dp)
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(50))
-                        .clickable(role = Role.Button, onClickLabel = "清空", onClick = { onQueryChange("") }),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.Close, null, Modifier.size(18.dp), tint = scheme.onSurfaceVariant)
+                        .widthIn(min = COUNTER_MIN_WIDTH)
+                        .padding(horizontal = 2.dp),
+                )
+                SearchNavButton(
+                    icon = Icons.Rounded.KeyboardArrowDown,
+                    onClickLabel = "下一处",
+                    enabled = total > 0,
+                    onClick = onNext,
+                )
+                // 清空：外壳永远占 36dp（见 KDoc），有字时才画那颗 ×，空框上不留"按了没反应"的钮。
+                Box(modifier = Modifier.size(CLEAR_SLOT_SIZE), contentAlignment = Alignment.Center) {
+                    if (query.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .size(CLEAR_SLOT_SIZE)
+                                .clip(RoundedCornerShape(50))
+                                .clickable(
+                                    role = Role.Button,
+                                    onClickLabel = "清空",
+                                    onClick = { onQueryChange("") },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.Close, null, Modifier.size(18.dp), tint = scheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+        keyboardActions = KeyboardActions(onSearch = { onNext() }),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = scheme.outlineVariant,
             unfocusedBorderColor = scheme.outlineVariant.copy(alpha = 0.6f),
         ),
     )
+}
+
+/**
+ * 输入框里那颗「上一处 / 下一处」小圆钮：32dp 的圆、`onSurfaceVariant` 前景。
+ *
+ * 自己用 `Box` + `clickable` 拼，不用 `IconButton`：`IconButton` 会把最小触控尺寸撑到 48dp
+ * （`minimumInteractiveComponentSize`），两颗并排就吃掉 96dp 的输入框宽度，写字的格子剩不了多少。
+ * 同一套自绘见右上角那颗 ×（[SearchSheetTopBar]，`PostsSection.kt:5918-5928`）。
+ *
+ * 禁用态只降透明度、**不**加一层灰底：面板上本来就没有"禁用样式"的第二种画法，跟着父级的
+ * `onSurfaceVariant` 淡下去最省事，也不会在深色主题里冒出一块浅色块。
+ *
+ * @param icon 图标（调用方显式传 `Icons.Rounded.KeyboardArrowUp` / `KeyboardArrowDown`）。
+ * @param onClickLabel 无障碍读出来的动作名（「上一处」/「下一处」）。
+ * @param enabled 没有命中时为 false：点了没反应，也不吃水波纹。
+ */
+@Composable
+private fun SearchNavButton(
+    icon: ImageVector,
+    onClickLabel: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .size(NAV_BUTTON_SIZE)
+            .clip(RoundedCornerShape(50))
+            .clickable(
+                role = Role.Button,
+                onClickLabel = onClickLabel,
+                enabled = enabled,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = scheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else NAV_DISABLED_ALPHA),
+        )
+    }
 }
 
 /**
@@ -602,6 +798,8 @@ private fun SearchCountRow(count: Int) {
  * @param floorText 楼层号文字（`#N` / `—`，见 [searchFloorText]）。
  * @param author 作者名（已带高亮）。
  * @param summary 摘要（已带高亮）；空串时这一格不画（纯代码块/纯图片的正文剥完就是空）。
+ * @param selected 是不是「上一处 / 下一处」当前指到的那一行：只多铺一层 `primary` α0.12 的底，
+ *   不改变任何文字 —— 命中词自己已经用 `primary` 字色标出来了，选中若也改字色，两者就分不开。
  * @param onClickLabel 无障碍读出来的动作名。
  */
 @Composable
@@ -609,6 +807,7 @@ private fun SearchResultRow(
     floorText: String,
     author: AnnotatedString,
     summary: AnnotatedString,
+    selected: Boolean,
     onClickLabel: String,
     onClick: () -> Unit,
 ) {
@@ -619,7 +818,12 @@ private fun SearchResultRow(
             .padding(horizontal = 8.dp)
             // `clip` 必须在 `clickable` **之前**：水波纹跟着 8dp 圆角走，否则点下去是一块方角
             // 高亮压在圆角底上（同一顺序见 `PostTocSheet.kt:389-399`）。
+            // 选中底色夹在两者中间：先被 `clip` 裁成 8dp 圆角，又在水波纹**下面**（水波纹盖在
+            // 底色上才看得见），所以顺序只能是 clip → background → clickable。
             .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (selected) scheme.primary.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent,
+            )
             .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
             .padding(horizontal = 8.dp)
             .heightIn(min = 48.dp),
