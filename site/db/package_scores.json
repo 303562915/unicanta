@@ -13016,8 +13016,8 @@
    {
     "pkg": "com.android.federatedcompute.services",
     "small_batch": false,
-    "uninstalls": 187,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 188,
+    "updated_at": "2026-11-27T04:18:19.090752+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -13170,8 +13170,8 @@
    {
     "pkg": "com.android.microdroid.empty_payload",
     "small_batch": false,
-    "uninstalls": 217,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 218,
+    "updated_at": "2026-11-27T04:15:11.801308+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -13219,8 +13219,8 @@
    {
     "pkg": "com.android.ondevicepersonalization.services",
     "small_batch": false,
-    "uninstalls": 192,
-    "updated_at": "2026-11-27T00:32:40.364144+00:00",
+    "uninstalls": 193,
+    "updated_at": "2026-11-27T04:13:33.97617+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -13521,7 +13521,7 @@
     "pkg": "com.android.updater",
     "small_batch": true,
     "uninstalls": 35,
-    "updated_at": "2026-11-27T03:46:59.302211+00:00",
+    "updated_at": "2026-11-27T04:13:05.487877+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -13807,8 +13807,8 @@
    {
     "pkg": "com.google.android.gms.location.history",
     "small_batch": false,
-    "uninstalls": 232,
-    "updated_at": "2026-11-27T03:57:19.216227+00:00",
+    "uninstalls": 233,
+    "updated_at": "2026-11-27T04:12:59.00893+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19809,8 +19809,8 @@
    {
     "pkg": "com.android.federatedcompute.services",
     "small_batch": false,
-    "uninstalls": 152,
-    "updated_at": "2026-11-26T23:39:47.855709+00:00",
+    "uninstalls": 153,
+    "updated_at": "2026-11-27T04:18:19.090752+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19935,8 +19935,8 @@
    {
     "pkg": "com.android.microdroid.empty_payload",
     "small_batch": false,
-    "uninstalls": 175,
-    "updated_at": "2026-11-26T23:39:47.855709+00:00",
+    "uninstalls": 176,
+    "updated_at": "2026-11-27T04:15:11.801308+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19970,8 +19970,8 @@
    {
     "pkg": "com.android.ondevicepersonalization.services",
     "small_batch": false,
-    "uninstalls": 147,
-    "updated_at": "2026-11-26T23:39:47.855709+00:00",
+    "uninstalls": 148,
+    "updated_at": "2026-11-27T04:13:33.97617+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20174,7 +20174,7 @@
     "pkg": "com.android.updater",
     "small_batch": true,
     "uninstalls": 22,
-    "updated_at": "2026-11-27T01:56:01.078398+00:00",
+    "updated_at": "2026-11-27T04:13:05.487877+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -20327,8 +20327,8 @@
    {
     "pkg": "com.google.android.gms.location.history",
     "small_batch": false,
-    "uninstalls": 184,
-    "updated_at": "2026-11-27T03:16:01.836537+00:00",
+    "uninstalls": 185,
+    "updated_at": "2026-11-27T04:12:59.00893+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -21922,8 +21922,8 @@
    {
     "pkg": "com.hihonor.android.chr",
     "small_batch": true,
-    "uninstalls": 5,
-    "updated_at": "2026-11-26T01:16:32.521845+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T04:15:30.487764+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -24809,8 +24809,8 @@
    {
     "pkg": "com.hihonor.android.chr",
     "small_batch": true,
-    "uninstalls": 5,
-    "updated_at": "2026-11-26T01:16:32.521845+00:00",
+    "uninstalls": 6,
+    "updated_at": "2026-11-27T04:15:30.487764+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -26041,7 +26041,7 @@
     "pkg": "com.android.carrierdefaultapp",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T03:57:59.584175+00:00",
+    "updated_at": "2026-11-27T04:13:41.281809+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -27105,7 +27105,7 @@
     "pkg": "com.mediatek.omacp",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T03:59:10.190563+00:00",
+    "updated_at": "2026-11-27T04:13:41.281809+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -27119,7 +27119,7 @@
     "pkg": "com.mediatek.telephony",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T03:57:59.584175+00:00",
+    "updated_at": "2026-11-27T04:13:41.281809+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -31557,7 +31557,7 @@
     "pkg": "com.android.carrierdefaultapp",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T03:57:59.584175+00:00",
+    "updated_at": "2026-11-27T04:13:41.281809+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -32243,7 +32243,7 @@
     "pkg": "com.mediatek.omacp",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-27T03:59:10.190563+00:00",
+    "updated_at": "2026-11-27T04:13:41.281809+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -32257,7 +32257,7 @@
     "pkg": "com.mediatek.telephony",
     "small_batch": true,
     "uninstalls": 3,
-    "updated_at": "2026-11-27T03:57:59.584175+00:00",
+    "updated_at": "2026-11-27T04:13:41.281809+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -44368,7 +44368,7 @@
     "pkg": "com.coloros.directui",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T04:10:58.288703+00:00",
+    "updated_at": "2026-11-27T04:17:25.373489+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -44613,7 +44613,7 @@
     "pkg": "com.finshell.wallet",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T04:04:37.426652+00:00",
+    "updated_at": "2026-11-27T04:17:25.373489+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -46027,7 +46027,7 @@
     "pkg": "com.oplus.apprecover",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T04:06:03.250367+00:00",
+    "updated_at": "2026-11-27T04:17:25.373489+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -48525,7 +48525,7 @@
     "pkg": "com.coloros.directui",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T04:10:58.288703+00:00",
+    "updated_at": "2026-11-27T04:17:25.373489+00:00",
     "verdict": "BOOTLOOP"
    },
    {
@@ -48770,7 +48770,7 @@
     "pkg": "com.finshell.wallet",
     "small_batch": true,
     "uninstalls": 2,
-    "updated_at": "2026-11-27T04:04:37.426652+00:00",
+    "updated_at": "2026-11-27T04:17:25.373489+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -50177,7 +50177,7 @@
     "pkg": "com.oplus.apprecover",
     "small_batch": true,
     "uninstalls": 5,
-    "updated_at": "2026-11-27T04:06:03.250367+00:00",
+    "updated_at": "2026-11-27T04:17:25.373489+00:00",
     "verdict": "BREAKS"
    },
    {

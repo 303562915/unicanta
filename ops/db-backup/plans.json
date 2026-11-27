@@ -6382,7 +6382,7 @@
   "reboot_verified": true,
   "rebooted_at": "2026-11-26T14:36:32.11929+00:00",
   "rom": "hyperos",
-  "rom_build": "",
+  "rom_build": "OS4.0.8.0.XPBCNXM",
   "rom_version": 4,
   "sdk": 37,
   "title": "日常"
@@ -9001,7 +9001,7 @@
   "reboot_verified": true,
   "rebooted_at": "2026-11-22T04:16:19.996465+00:00",
   "rom": "hyperos",
-  "rom_build": "",
+  "rom_build": "OS4.0.8.0.XPBCNXM",
   "rom_version": 4,
   "sdk": 37,
   "title": "不卡米"
