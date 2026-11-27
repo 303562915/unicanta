@@ -104,10 +104,24 @@ object ShizukuPermission {
         return checkRequirements() && isPermissionGranted()
     }
 
-    /** 授权确认走完之后，清掉"被拒"标记，让界面按最新状态显示。 */
+    /**
+     * 授权确认走完之后，清掉"被拒"标记，让界面按最新状态显示。 */
     fun clearDenial() {
         lastDenialSeen = false
     }
+
+    /**
+     * Shizuku 现在**在运行吗**（binder 在且能读到 uid）—— 与「有没有授权」是两件事。
+     *
+     * 安装流程用它决定要不要去试那三条 Shizuku 通道：运行时不在了，试也只会得到一句
+     * `requires permission`（服务端任何拒绝都是这个文案，分不出"没运行"和"没授权"），
+     * 还会顺带弹一次没有意义的授权框 —— 用户把 Shizuku 关掉之后 Canta 还一直要授权就是这么来的。
+     *
+     * **不看 `lastDenialSeen`**：那是"授权状态过期"的标记，和"进程在不在"无关。
+     */
+    fun isRuntimeRunning(): Boolean =
+        runCatching { binderStatus && Shizuku.pingBinder() && Shizuku.getUid() != -1 }
+            .getOrDefault(false)
 
     fun privilegeStatus(packageManager: PackageManager): PrivilegeStatus {
         // 熟人的 fork（Stellar / Sui）先判：它们复用同一个 binder，系统里查不到"正在运行"以外的

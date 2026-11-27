@@ -139,7 +139,20 @@ class ShizukuShell private constructor(private val context: Context) {
      * all. Callers that run something long pass their own number; everything else keeps the default.
      */
     suspend fun run(script: String, timeoutMs: Long = RUN_TIMEOUT_MS): TweakRun {
-        val remote = binder ?: bind()
+        val remote = binder ?: run {
+            // Shizuku 根本没在运行（没启动 / 用户关掉了）：连 `bindUserService` 都不必试。
+            //
+            // 这一步以前没有，代价是"关了 Shizuku 还在被要授权"：绑定会抛一句
+            // `requires permission`（服务端任何拒绝都是这个文案，它分不出"没运行"和"没授权"），
+            // 于是每跑一条通道就弹一次授权框，弹几次都不可能好。
+            // 现在先行判断，运行时不在了就直接把结论交回去，由上层走系统安装器兜底。
+            if (!runtimeAlive()) {
+                lastBindError = "Shizuku 没在运行"
+                lastBindDenied = null
+                return TweakRun(ok = false, output = lastBindError, failure = TweakFailure.NoPrivilege)
+            }
+            bind()
+        }
         if (remote == null) {
             // 把「为什么没绑上」原样带出去：这句话会进安装失败的 detail / update_reports，
             // 下次不用再让人读屏幕，报告本身就写着是权限、版本还是进程起不来。
@@ -230,14 +243,22 @@ class ShizukuShell private constructor(private val context: Context) {
                     // 在管理器里获得授权，也不会自动同步到已经 attach 的 ClientRecord 上 —— 所以必须
                     // 主动重新走一次授权确认，让服务端重建这个 ClientRecord，而不是傻等重试。
                     if (isPermissionDenial(why)) {
-                        // 让界面的授权状态也回到「未授权」：否则用户在设置里看到的是"已授权"，
-                        // 却怎么也装不上，这是最难自查的一种状态。
+                        // 只有在 Shizuku **真的在运行**时才值得弹授权框。
+                        //
+                        // 用户把 Shizuku 关掉之后，`bindUserService` 抛的也是这句 `requires
+                        // permission`（服务端侧的任何拒绝都是同一个 SecurityException 文案），
+                        // 以前这里照样去 `requestPermission` —— 于是"明明关了 Shizuku，
+                        // Canta 还一直要授权"，弹多少遍都不可能成功。运行时不在了就该安静地
+                        // 把失败交回上层，由上层走系统安装器兜底。
+                        val aliveNow = runtimeAlive()
                         runCatching { ShizukuPermission.noteServerDenied() }
-                        // 弹框之后不能立刻重绑：用户还在看管理器的确认框，这一刻服务端仍然认为
-                        // Canta 没授权。给它一段真的等待时间，用户点完"允许"再重试才有意义。
-                        requestPermissionAgain()
-                        delay(PERMISSION_PROMPT_WAIT_MS)
-                        if (!runtimeAlive()) return@withLock null
+                        if (aliveNow) {
+                            // 弹框之后不能立刻重绑：用户还在看管理器的确认框，这一刻服务端仍然
+                            // 认为 Canta 没授权。给它一段真的等待时间，用户点完"允许"再重试才有意义。
+                            requestPermissionAgain()
+                            delay(PERMISSION_PROMPT_WAIT_MS)
+                            if (!runtimeAlive()) return@withLock null
+                        }
                     }
                     continue
                 }

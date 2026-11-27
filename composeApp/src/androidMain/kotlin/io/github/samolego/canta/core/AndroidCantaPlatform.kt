@@ -1464,37 +1464,48 @@ class AndroidCantaPlatform(
             return false
         }
 
-        if (tryChannel("Shizuku·应用目录") {
-                onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
-                runInstall(file.absolutePath)
-            }) {
-            announceSuccess("Shizuku·应用目录")
-            file.delete()
-            return@withContext InstallAttempt.Success
-        }
-
-        // The public Downloads folder is one MediaStore write away and readable by the shell.
-        onStage(InstallStage.STAGING, INSTALL_PROGRESS_UNKNOWN)
-        val staged = stageInDownloads(file)
-        if (staged != null) {
-            val (stagedPath, stagedUri) = staged
-            val installed = tryChannel("Shizuku·下载目录") {
-                onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
-                runInstall(stagedPath)
-            }
-            runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
-            if (installed) {
-                announceSuccess("Shizuku·下载目录")
+        // Shizuku 没在运行（被关掉 / 没启动）：那三条通道**一条都不用试**。
+        //
+        // 以前是硬试三条，每条都抛 `requires permission`（服务端任何拒绝都是这个文案），于是：
+        //   ① 每条都弹一次「装不上」toast —— 用户看到三条红字，其实只是 Shizuku 没开；
+        //   ② 每条的失败都会触发一次授权申请 ——「明明关了 Shizuku，它还一直要授权」；
+        //   ③ 白等三次超时，安装明显变慢。
+        // 运行时不在了就是不在，直接把包交给系统安装器，那才是这台手机上唯一能成的路。
+        if (!ShizukuPermission.isRuntimeRunning()) {
+            attempts["Shizuku"] = "没在运行：已改用系统安装器"
+        } else {
+            if (tryChannel("Shizuku·应用目录") {
+                    onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                    runInstall(file.absolutePath)
+                }) {
+                announceSuccess("Shizuku·应用目录")
                 file.delete()
                 return@withContext InstallAttempt.Success
             }
-        }
 
-        // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
-        if (tryChannel("Shizuku·临时目录") { installViaTmp(file, onStage) }) {
-            announceSuccess("Shizuku·临时目录")
-            file.delete()
-            return@withContext InstallAttempt.Success
+            // The public Downloads folder is one MediaStore write away and readable by the shell.
+            onStage(InstallStage.STAGING, INSTALL_PROGRESS_UNKNOWN)
+            val staged = stageInDownloads(file)
+            if (staged != null) {
+                val (stagedPath, stagedUri) = staged
+                val installed = tryChannel("Shizuku·下载目录") {
+                    onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                    runInstall(stagedPath)
+                }
+                runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
+                if (installed) {
+                    announceSuccess("Shizuku·下载目录")
+                    file.delete()
+                    return@withContext InstallAttempt.Success
+                }
+            }
+
+            // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
+            if (tryChannel("Shizuku·临时目录") { installViaTmp(file, onStage) }) {
+                announceSuccess("Shizuku·临时目录")
+                file.delete()
+                return@withContext InstallAttempt.Success
+            }
         }
 
         // A rooted phone can install what the shell cannot read, but not a build the package
@@ -1532,7 +1543,13 @@ class AndroidCantaPlatform(
             listOfNotNull(rootSkipped.ifBlank { null })).joinToString("\n")
         // "这一次运行时根本没就绪" 与 "这个包 pm 不接受" 是两件事：前者重试可能就好，后者重试只会
         // 得到同一句话。每一条通道的失败都只是"运行时不在"，才算前者。
-        if (attempts.isNotEmpty() && attempts.values.all { looksLikeRuntimeNotReady(it) }) {
+        //
+        // **但 Shizuku 压根没在运行时不算前者**：那不是"绑一下就好"，是用户把它关了。
+        // 以前这里归成 notReady，于是等 20/30/60/120 秒重试四轮、每轮都失败，用户看到的是
+        // 「一直要授权、一直装不上」。现在这种直接算 refused，交给系统安装器 —— 一次就到位。
+        val runtimeAbsentOnly = attempts.keys.all { it == "Shizuku" } &&
+            attempts["Shizuku"].orEmpty().startsWith("没在运行")
+        if (!runtimeAbsentOnly && attempts.isNotEmpty() && attempts.values.all { looksLikeRuntimeNotReady(it) }) {
             InstallAttempt.notReady(report)
         } else {
             InstallAttempt.refused(report)
