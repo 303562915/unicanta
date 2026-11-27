@@ -27,6 +27,8 @@ data class SponsorEntry(
     val owner: String,
     val name: String,
     val amountYuan: Int,
+    /** token 赞助的数量（[kind] = `ai`）；资金赞助恒为 0（金额走 [amountYuan]）。 */
+    val tokenCount: Int = 0,
     val kind: String,
     val anonymous: Boolean,
     val createdAt: String,
@@ -39,9 +41,21 @@ data class SponsorEntry(
             else -> "打赏"
         }
 
-    /** 榜上那一格下面写什么：出钱的写金额，没出钱的写赞助方式。 */
+    /**
+     * 榜上那一格下面写什么：出钱的写金额，token 赞助写出数量，两者都没有才写赞助方式。
+     *
+     * 只写「token 赞助」看不出帮了多少，6000 和 6 万在同一格子里长得一样。
+     */
     val badge: String
-        get() = if (amountYuan > 0) "¥$amountYuan" else "token 赞助"
+        get() = when {
+            amountYuan > 0 -> "¥$amountYuan"
+            tokenCount > 0 -> "$tokenCount token"
+            else -> "token 赞助"
+        }
+
+    /** 这一格有没有具体数量（钱或 token）：有就用强调色，没有用次要色。 */
+    val hasCount: Boolean
+        get() = amountYuan > 0 || tokenCount > 0
 
     /** 身份号能不能点（进主页）：空串、或者不是数字（老客户端的自报号码）都不给入口。 */
     val canOpenProfile: Boolean
@@ -194,6 +208,7 @@ class SponsorStore(private val rpc: CommunityRpc) {
             owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             name = o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             amountYuan = o["amount_yuan"]?.jsonPrimitive?.intOrNull ?: 0,
+            tokenCount = o["token_count"]?.jsonPrimitive?.intOrNull ?: 0,
             kind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "money" },
             anonymous = o["anonymous"]?.jsonPrimitive?.booleanOrNull == true,
             createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),

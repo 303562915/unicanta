@@ -164,8 +164,10 @@ private val SponsorAvatar = 34.dp
  * `:money-first` 后缀是为了一次性的顺序切换：后端改成"资金赞助排在 token 赞助前面"之后，
  * 老缓存里还是旧顺序，而 [mergeSponsors] 的规则是"老位置不动"，光靠刷新永远换不过来。
  * 换个键名让老缓存作废，下一次加载就按新顺序画。
+ * `:tokencount` 是第二次切换：补录的两条归属互换（十元那条换了人），位置也跟着变了，
+ * 同样得让老缓存作废，否则画出来的还是互换前的顺序。
  */
-private const val SPONSOR_WALL_CACHE = "screen:sponsors:money-first"
+private const val SPONSOR_WALL_CACHE = "screen:sponsors:money-first:tokencount"
 
 /**
  * 把这次拉到的榜并到已经画出来的那份上：**老的一个不动，新来的人接在后面**。
@@ -1038,10 +1040,11 @@ private fun SponsorWallCell(
         )
         Spacer(Modifier.height(1.dp))
         Text(
-            // 出钱的写「¥N」，没出钱的写「token 赞助」：两者不是一回事，用一个数糊住会让人以为是 ¥0。
+            // 出钱的写「¥N」，token 赞助写出数量（「6000 token」），都没有才写「token 赞助」：
+            // 这几样不是一回事，用一个数糊住会让人以为是 ¥0。
             text = entry.badge,
             style = FlText.caption2,
-            color = if (entry.amountYuan > 0) scheme.primary else scheme.onSurfaceVariant,
+            color = if (entry.hasCount) scheme.primary else scheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
