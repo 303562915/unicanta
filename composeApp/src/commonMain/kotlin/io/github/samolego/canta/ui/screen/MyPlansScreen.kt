@@ -85,7 +85,14 @@ fun MyPlansScreen(
     owner: String = "",
     /** This install's secret, needed to delete a plan and to ask as this identity. */
     token: String = "",
-    /** This phone: what "my plans" falls back to when the deployment has no `plans_by_owner`. */
+    /**
+     * This phone's profile — **保留在签名里，但这一页不再用它**。
+     *
+     * 「我上传过的方案」现在只查数据库（`plans_by_owner`）：那一条本来就精确、条数也少，
+     * 不需要拿机型去全社区快照里再筛一遍（那样反而会把「换过 ROM 的自己」筛丢，
+     * 见下面 `LaunchedEffect` 里那段注释）。留着参数是为了不动所有调用方。
+     */
+    @Suppress("UNUSED_PARAMETER")
     profile: DeviceProfile? = null,
     onOpenPlan: (Long) -> Unit = {},
     onNavigateBack: () -> Unit,
@@ -105,9 +112,18 @@ fun MyPlansScreen(
         // 不点 loading：点刷新不该把已经画着的列表换成那个「…」，那是后台替换。
         // 「第一次进来什么都没有」由 `loading` 的初值（`cached == null`）管。
         loadError = null
-        val fetched = repository.plansByOwner(owner).ifEmpty {
-            repository.plansFor(profile).filter { it.owner == owner }
-        }
+        // **「我上传过的方案」只认数据库那一条路。**
+        //
+        // 以前这里是 `plansByOwner(owner).ifEmpty { plansFor(profile).filter { it.owner == owner } }`，
+        // 那个兜底是错的、而且是 2026-11-27「点进我的方案是空的」的直接原因：
+        // `plansFor` 现在**先读 GitHub 快照**并在命中时调 `markAnswered()` 把 `lastError` 清成 null，
+        // 于是下面那句 `lastError == null` 判成「后端答了」，把快照里**按机型筛不出来**的空列表
+        // 当成真答案写进 `myPlans` —— 把 `plansByOwner` 刚拿到的真实结果盖掉了。
+        // （真我 Neo8 那次：库里 `plans_by_owner` 明明返回了 id=400，页面却是空的。）
+        //
+        // 这也是整份代码里唯一一处「我自己传的」列表：条数屈指可数，直接查库最准，
+        // 不必也不能从全社区的快照里再筛一遍。快照那份本来就不该包含「谁传的」这种判断。
+        val fetched = repository.plansByOwner(owner)
         // A backend that is missing the function, or a phone that is offline, must not read as
         // "you never uploaded anything": say which one it was.
         loadError = repository.lastError
