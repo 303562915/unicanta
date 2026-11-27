@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
@@ -50,6 +51,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -116,6 +119,9 @@ import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
+import io.github.samolego.canta.ui.component.DanmakuSettingsDialog
+import io.github.samolego.canta.ui.component.DanmakuStyle
+import io.github.samolego.canta.ui.component.DefaultDanmakuStyle
 import io.github.samolego.canta.ui.component.WIDE_DIALOG_WIDTH
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -293,6 +299,28 @@ fun PlanDetailScreen(
      * 又冒出来。它不是一项全局设置，所以只记在这一次页面里，退出页面就回到默认的开。
      */
     var danmakuOn by rememberSaveable(planId) { mutableStateOf(true) }
+    /**
+     * 弹幕长什么样、飘多快（见 [DanmakuStyle]）。长按顶栏那个图标改的就是这三样。
+     *
+     * 拆成三个基本类型存，是为了让 [rememberSaveable] 直接认得它们——[DanmakuStyle] 是个 data
+     * class，要存得自带 Saver，为三个数写一个 Saver 不划算。拼回来的那一份只在三者真的变了时重建。
+     */
+    var danmakuColor by rememberSaveable(planId) { mutableIntStateOf(DefaultDanmakuStyle.colorArgb) }
+    var danmakuFontSize by rememberSaveable(planId) {
+        mutableFloatStateOf(DefaultDanmakuStyle.fontSizeSp)
+    }
+    var danmakuSpeed by rememberSaveable(planId) {
+        mutableFloatStateOf(DefaultDanmakuStyle.speedDpPerSec)
+    }
+    val danmakuStyle = remember(danmakuColor, danmakuFontSize, danmakuSpeed) {
+        DanmakuStyle(
+            colorArgb = danmakuColor,
+            fontSizeSp = danmakuFontSize,
+            speedDpPerSec = danmakuSpeed,
+        )
+    }
+    /** 弹幕设置面板开着没有；长按顶栏图标打开。 */
+    var danmakuSettingsOpen by remember { mutableStateOf(false) }
     /** The scroll of the page's list: opening the filter scrolls the packages into view. */
     val listState = rememberLazyListState()
     /**
@@ -687,6 +715,7 @@ fun PlanDetailScreen(
                     planId = planId,
                     loading = loading,
                     danmakuOn = danmakuOn,
+                    danmakuStyle = danmakuStyle,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -703,16 +732,24 @@ fun PlanDetailScreen(
                 height = FlTopBarCompactHeight,
                 actions = {
                     plan?.let { current ->
-                        // 弹幕开关：亮着就是开着，暗下去就是关掉了。放在搜索左边、贴着它，是为了
-                        // 让「这个页面能怎么调」集中在同一撮——分享、搜索这两个都在这里，读者要
-                        // 关弹幕时眼睛已经在往这片区域找了。
-                        IconButton(
-                            onClick = { danmakuOn = !danmakuOn },
-                            modifier = Modifier.size(32.dp),
+                        // 弹幕开关：点一下开关，长按调颜色 / 大小 / 速度。图标亮着就是开着，暗下去
+                        // 就是关掉了。放在搜索左边、贴着它，是为了让「这一页能怎么调」集中在同一撮
+                        // ——分享、搜索都在这儿，读者要关弹幕时眼睛已经往这片区域找了。
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(percent = 50))
+                                .combinedClickable(
+                                    onClickLabel = if (danmakuOn) "关闭弹幕" else "打开弹幕",
+                                    onLongClickLabel = "弹幕设置",
+                                    onLongClick = { danmakuSettingsOpen = true },
+                                    onClick = { danmakuOn = !danmakuOn },
+                                ),
+                            contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Subtitles,
-                                contentDescription = if (danmakuOn) "关闭弹幕" else "打开弹幕",
+                                contentDescription = null,
                                 modifier = Modifier.size(17.dp),
                                 tint = if (danmakuOn) {
                                     MaterialTheme.colorScheme.primary
@@ -760,6 +797,20 @@ fun PlanDetailScreen(
                 },
             )
         }
+    }
+
+    // 长按顶栏那个图标进来的弹幕设置：改完立刻生效——对话框后面的卡片还在飘，选颜色选大小的时候
+    // 看得见结果。
+    if (danmakuSettingsOpen) {
+        DanmakuSettingsDialog(
+            style = danmakuStyle,
+            onStyleChange = { changed ->
+                danmakuColor = changed.colorArgb
+                danmakuFontSize = changed.fontSizeSp
+                danmakuSpeed = changed.speedDpPerSec
+            },
+            onDismiss = { danmakuSettingsOpen = false },
+        )
     }
 
     // The one place a plan becomes a selection on this phone: say whose phone it was proven on and
@@ -970,6 +1021,8 @@ private fun PlanDetailContent(
     loading: Boolean = false,
     /** 卡片顶部那条评论弹幕开着没有；开关在页面顶栏。 */
     danmakuOn: Boolean = true,
+    /** 弹幕的颜色、大小、速度；长按顶栏那个图标改。 */
+    danmakuStyle: DanmakuStyle = DefaultDanmakuStyle,
     modifier: Modifier = Modifier,
 ) {
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -1092,6 +1145,7 @@ private fun PlanDetailContent(
                 // 读得出这是回上面那句的，但滚法和其他弹幕完全一样。
                 danmaku = remember(comments) { danmakuRows(comments) },
                 danmakuOn = danmakuOn,
+                danmakuStyle = danmakuStyle,
             )
         }
 
@@ -1279,8 +1333,10 @@ private fun PlanHero(
     onMessage: (String) -> Unit = {},
     /** 下面那些评论的正文，一句一条：卡片顶部那条弹幕带飘的就是它们。 */
     danmaku: List<String> = emptyList(),
-    /** 弹幕开着没有（开关在顶栏，默认开）。关掉时整条带子不占高度。 */
+    /** 弹幕开着没有（开关在顶栏，默认开）。 */
     danmakuOn: Boolean = true,
+    /** 弹幕的颜色、大小、速度：顶栏那个图标长按进来的面板改的就是它。 */
+    danmakuStyle: DanmakuStyle = DefaultDanmakuStyle,
 ) {
     val colors = MaterialTheme.colorScheme
     val mine = plan.owner.isNotEmpty() && me.isNotEmpty() && plan.owner == me
@@ -1306,15 +1362,6 @@ private fun PlanHero(
             Column(
                 modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
             ) {
-                // 弹幕带排在这一列的最前面，所以它只让卡片高一点，不盖住下面任何一个字：作者行、
-                // 方案名、包数都还在原位。没评论、或者读者用顶栏那个按钮关掉了，这里整段不画，
-                // 卡片回到原来那个高度。
-                if (danmakuOn && danmaku.isNotEmpty()) {
-                    PlanDanmaku(
-                        lines = danmaku,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    )
-                }
                 // Who wrote it: a plan is advice from a person on the same phone, and the avatar is the
                 // first character of that person's name, like everywhere else. The name leads the line;
                 // the badge, if there is one, stands at the end of it. Tapping it opens the uploader's
@@ -1574,6 +1621,21 @@ private fun PlanHero(
                     VoteAction(liked = liked, votes = plan.votes, onVote = onVote)
                 }
             }
+        }
+        // 弹幕盖在整张卡片上：画在 Surface 之后，所以压在正文上面；尺寸用 matchParentSize，
+        // 卡片多高它就多高，卡片不会因为它长出一条带子。裁到卡片那个圆角里，越过圆角和边缘的
+        // 部分跟卡片一起被吃掉，看着才是从卡片边缘冒出来、而不是一张浮贴上去的纸。
+        //
+        // 从这里进来而不是在卡片里面：这一层和卡片一样宽，弹幕从它的右边缘外起步，也就是从屏幕
+        // 右边往左走，横跨整个蓝色区域。
+        if (danmakuOn && danmaku.isNotEmpty()) {
+            PlanDanmaku(
+                lines = danmaku,
+                style = danmakuStyle,
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(20.dp)),
+            )
         }
         // 卸得太多的披带，压在卡片右上角（裁切框见上面那个 Box）。
         if (heavy) {
