@@ -446,6 +446,14 @@ fun ChatScreen(
      * 区别只是这句话领人去「我的 → 个人主页」。默认"没设过"，漏接的调用点宁可发不出去。
      */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
+    /**
+     * 本机收藏的这个会话的消息，收得最晚的在最后（见 `CantaSettings.chatSavedFlow`）。
+     *
+     * 收藏只对自己可见：不进后端、不在群设置里，入口是长按菜单和顶栏那排的「收藏」格子。
+     */
+    savedMessages: List<ChatMessage> = emptyList(),
+    /** 收藏 / 取消收藏一条；[keep] 为 true 是收进来。null 表示这一层不做持久化。 */
+    onToggleSaved: ((ChatMessage, Boolean) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     // 上一次看过的这一屏先画出来：从消息页点进来时不该再看一次「… → 等网络」。
@@ -1359,7 +1367,8 @@ fun ChatScreen(
                 announcement = if (grouped) detail?.announcement.orEmpty() else "",
                 // 置顶消息：进页面时拉一次，钉/取消钉之后由 togglePinMessage 重拉。
                 pinnedMessages = pinnedMessages,
-                savedMessages = emptyList(),
+                // 收藏：本机那一份（上层按会话号筛好传进来）。
+                savedMessages = savedMessages,
                 // 「聊天」那一下：入口行收起 + 回到最新一条（reverseLayout 里 0 就是尾巴）。
                 onJumpToLatest = { scope.launch { listState.animateScrollToItem(0) } },
                 // 只有群主能改公告；别人（和私聊）不给这个入口。
@@ -1547,6 +1556,18 @@ fun ChatScreen(
                                             null
                                         },
                                         pinned = pinnedMessages.any { it.id == message.id },
+                                        // 收藏：只在本机，只给文字消息（图片和卡片收进列表里也没法看，
+                                        // 真正要留的是那句话）。已经在收藏里就说「取消收藏」。
+                                        onSave = if (message.kind == "text" && onToggleSaved != null) {
+                                            {
+                                                val keep = savedMessages.none { it.id == message.id }
+                                                onToggleSaved.invoke(message, keep)
+                                                actionHint = if (keep) "已收藏这条消息" else "已取消收藏"
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                        saved = savedMessages.any { it.id == message.id },
                                         // 删除（只本机）：只对自己的。它和能不能撤回无关：
                                         // 老消息撤不了了，但自己仍然可以从这一侧把它拿掉。
                                         onHide = if (message.sender == owner) {
@@ -2582,6 +2603,10 @@ private fun ChatBubble(
     onPin: (() -> Unit)? = null,
     /** 这一条此刻在不在置顶里：菜单那一项按它说「置顶消息」还是「取消置顶」。 */
     pinned: Boolean = false,
+    /** 收藏 / 取消收藏这一条（只在本机）；null 表示不给这个入口（图片、卡片）。 */
+    onSave: (() -> Unit)? = null,
+    /** 这一条已经在收藏里：菜单那一项写「取消收藏」。 */
+    saved: Boolean = false,
     /** 只在自己这一侧删掉（对所有人还在）；只有自己的消息才给。 */
     onHide: (() -> Unit)? = null,
     /**
@@ -2614,7 +2639,7 @@ private fun ChatBubble(
 ) {
     val colors = MaterialTheme.colorScheme
     val menuable = onLongPress != null || onReply != null || onForward != null ||
-        onDelete != null || onHide != null || onTranslate != null || onPin != null
+        onDelete != null || onHide != null || onTranslate != null || onPin != null || onSave != null
     var menuOpen by remember { mutableStateOf(false) }
     val longPress = if (menuable) ({ menuOpen = true }) else null
     // 图片不是文字：气泡的底色和 12 的内边距会在图四周多出一圈主色，那一路换成一张裸图。
@@ -2747,6 +2772,9 @@ private fun ChatBubble(
                             onForward = onForward,
                             pinned = pinned,
                             onPin = onPin,
+                            canSave = onSave != null,
+                            saved = saved,
+                            onSave = onSave,
                             onHide = onHide,
                         )
                     }
@@ -2800,6 +2828,9 @@ private fun ChatBubble(
                             onForward = onForward,
                             pinned = pinned,
                             onPin = onPin,
+                            canSave = onSave != null,
+                            saved = saved,
+                            onSave = onSave,
                             onHide = onHide,
                         )
                     }
@@ -2864,6 +2895,9 @@ private fun ChatBubble(
                             onForward = onForward,
                             pinned = pinned,
                             onPin = onPin,
+                            canSave = onSave != null,
+                            saved = saved,
+                            onSave = onSave,
                             onHide = onHide,
                             onTranslate = onTranslate,
                         )
@@ -3093,8 +3127,13 @@ private fun ChatBubbleMenu(
     onPin: (() -> Unit)? = null,
     /** 这一条已经在置顶里：那一项写「取消置顶」，不然每次点都像第一次钉。 */
     pinned: Boolean = false,
+    /** 有没有「收藏」这一项：只在本机，图片/卡片不给。 */
+    canSave: Boolean = false,
+    /** 这一条已经在收藏里：那一项写「取消收藏」。 */
+    saved: Boolean = false,
     onHide: (() -> Unit)? = null,
     onTranslate: (() -> Unit)? = null,
+    onSave: (() -> Unit)? = null,
 ) {
     DropdownMenu(
         expanded = open,
@@ -3144,6 +3183,16 @@ private fun ChatBubbleMenu(
                 onClick = {
                     onDismiss()
                     onPin()
+                },
+            )
+        }
+        // 收藏：只在这台设备上留着，别人看不见；放在置顶后面——它比"全群都看见"轻一档。
+        if (canSave && onSave != null) {
+            DropdownMenuItem(
+                text = { Text(if (saved) "取消收藏" else "收藏", fontSize = 14.sp) },
+                onClick = {
+                    onDismiss()
+                    onSave()
                 },
             )
         }

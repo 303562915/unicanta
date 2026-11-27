@@ -335,6 +335,16 @@ data class AppSettingsProto(
      * 序号：清单以后会增减，序号一挪，已经选过的人就被换到别的语言上。
      */
     @ProtoNumber(54) val appLanguage: String = "",
+    /**
+     * 本机收藏的聊天消息，`[{c,id,s,n,b,t}]` 一段 JSON；空串 = 一条都没收。
+     *
+     * 只在这台设备上：群里的「收藏」是本人挑出来留着看的几条，后端没有这一列，和帖子收藏
+     * （[io.github.samolego.canta.data.community.PostReadStore]）同一个性质。
+     *
+     * 存的是**收藏那一刻**的正文：原消息后来被撤回、或者被删掉，收藏里那句话仍然在——收藏要的是
+     * "我当时留着的那句话"，不是"现在还剩什么"。
+     */
+    @ProtoNumber(53) val chatSaved: String = "",
 )
 
 /**

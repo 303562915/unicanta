@@ -61,6 +61,7 @@ import io.github.samolego.canta.core.PrivilegeKind
 import io.github.samolego.canta.data.community.BackendHealth
 import io.github.samolego.canta.data.community.CdkStore
 import io.github.samolego.canta.data.community.ChatLiveSource
+import io.github.samolego.canta.data.community.ChatMessage
 import io.github.samolego.canta.data.community.ChatRealtimeHub
 import io.github.samolego.canta.data.community.ChatUnread
 import io.github.samolego.canta.data.community.CommunityRpc
@@ -71,6 +72,7 @@ import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.SponsorStore
 import io.github.samolego.canta.data.community.unreadSince
+import io.github.samolego.canta.data.SavedChat
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.data.history.RestoreMode
 import io.github.samolego.canta.data.imagebed.ImageBed
@@ -1955,6 +1957,8 @@ private fun CantaNavigation(
                 // 草稿按会话存：离开这一页再回来，上次没说完的话还在。读取用 StateFlow，
                 // 所以在别处改了草稿这里也会跟着刷新。
                 val chatDrafts by settingsViewModel.chatDrafts.collectAsStateWithLifecycle()
+                // 本机收藏的聊天消息：这个会话的那几条在下面按会话号筛出来（收藏只对自己可见）。
+                val chatSaved by settingsViewModel.chatSaved.collectAsStateWithLifecycle()
                 val chatBlockedPeers by settingsViewModel.blockedPeers.collectAsStateWithLifecycle()
                 LaunchedEffect(conversationId) {
                     chatName = DeviceIdentity.displayName(deps.settings)
@@ -1999,6 +2003,31 @@ private fun CantaNavigation(
                     // 草稿：进来时把这一条上次没发完的话填回去，改动由页面防抖后写回。
                     initialDraft = chatDrafts.firstOrNull { it.first == conversationId }?.second.orEmpty(),
                     onDraftPersist = { text -> settingsViewModel.saveChatDraft(conversationId, text) },
+                    // 收藏只在本机：存的是收藏那一刻的正文，原消息后来被撤回也还在。
+                    savedMessages = chatSaved
+                        .filter { it.conversationId == conversationId }
+                        .map { entry ->
+                            ChatMessage(
+                                id = entry.id,
+                                sender = entry.sender,
+                                senderName = entry.senderName,
+                                body = entry.body,
+                                createdAt = entry.createdAt,
+                            )
+                        },
+                    onToggleSaved = { message, keep ->
+                        settingsViewModel.saveChatSaved(
+                            SavedChat(
+                                conversationId = conversationId,
+                                id = message.id,
+                                sender = message.sender,
+                                senderName = message.senderName,
+                                body = message.body,
+                                createdAt = message.createdAt,
+                            ),
+                            keep,
+                        )
+                    },
                     // 拉黑只对私聊有意义：群里没有"那个人"，群不受本机名单影响。
                     blocked = !chatIsGroup && chatPeer.isNotEmpty() && chatPeer in chatBlockedPeers,
                     // 名字/头像没设过：发不了言，输入栏整条换成一行说明。

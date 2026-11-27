@@ -28,6 +28,70 @@ private const val MAX_CHAT_DRAFTS = 20
 /** 单条草稿最多存多少字：一条消息本身就被后端截到 4000，草稿存一半足够了。 */
 private const val MAX_CHAT_DRAFT_CHARS = 2000
 
+/** 本机最多留几条收藏的聊天消息：再多也不会回头翻。 */
+private const val MAX_CHAT_SAVED = 100
+
+/** 收藏里那条正文最多存多少字：和聊天正文同一档，防的是被手改过的超大值。 */
+private const val MAX_CHAT_SAVED_CHARS = 4000
+
+/**
+ * 一条被本机收藏的聊天消息。
+ *
+ * 只活在这台设备上（见 [AppSettingsProto.chatSaved]），所以字段按"重新打开时画得出来"来定：
+ * [conversationId] 用来筛这个会话的，[id] 用来去重，其余几项就是那一行的全部内容。
+ */
+data class SavedChat(
+    val conversationId: Long,
+    val id: Long,
+    val sender: String,
+    val senderName: String,
+    val body: String,
+    val createdAt: String,
+)
+
+/** 解 [AppSettingsProto.chatSaved]；坏数据给空列表——一条收藏撑不起一次崩溃。 */
+private fun decodeChatSaved(raw: String): List<SavedChat> =
+    if (raw.isBlank()) {
+        emptyList()
+    } else {
+        runCatching {
+            Json.Default.parseToJsonElement(raw).jsonArray.mapNotNull { element ->
+                val row = element.jsonObject
+                val id = row["id"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+                val conversationId = row["c"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+                SavedChat(
+                    conversationId = conversationId,
+                    id = id,
+                    sender = row["s"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    senderName = row["n"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    body = row["b"]?.jsonPrimitive?.contentOrNull.orEmpty().take(MAX_CHAT_SAVED_CHARS),
+                    createdAt = row["t"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+/** [decodeChatSaved] 的反向；一条都没有就存空串，和这个字段的出厂值一致。 */
+private fun encodeChatSaved(saved: List<SavedChat>): String =
+    if (saved.isEmpty()) {
+        ""
+    } else {
+        buildJsonArray {
+            saved.forEach { entry ->
+                add(
+                    buildJsonObject {
+                        put("c", entry.conversationId)
+                        put("id", entry.id)
+                        put("s", entry.sender)
+                        put("n", entry.senderName)
+                        put("b", entry.body.take(MAX_CHAT_SAVED_CHARS))
+                        put("t", entry.createdAt)
+                    },
+                )
+            }
+        }.toString()
+    }
+
 /**
  * 把 [AppSettingsProto.chatDrafts] 那段 JSON 解回 `会话号 -> 正文`，最近的在后。
  *
@@ -180,6 +244,12 @@ class CantaSettings(storage: AppBlobStorage) {
      * 界面不该跟着一起背。坏数据当空列表——一段草稿不值得让页面崩。
      */
     val chatDraftsFlow: Flow<List<Pair<Long, String>>> = field { decodeChatDrafts(it.chatDrafts) }
+    /**
+     * 本机收藏的聊天消息，收得最晚的在最后。
+     *
+     * 和草稿一样解在 flow 这一层：只有 [setChatSaved] 知道那段 JSON 的形状。坏数据当空列表。
+     */
+    val chatSavedFlow: Flow<List<SavedChat>> = field { decodeChatSaved(it.chatSaved) }
     /** Fresh installs follow the rolling dev build; an explicit stable choice is still stored and honoured. */
     val updateChannelFlow = field { it.updateChannel.ifBlank { "dev" } }
     /** 关于页最下面那张「最近更新」是否展开；出厂折叠，见 [AppSettingsProto.updateHistoryExpanded]。 */
@@ -357,6 +427,20 @@ class CantaSettings(storage: AppBlobStorage) {
     }
     suspend fun setUpdateChannel(channel: String) = update {
         it.copy(updateChannel = if (channel == "dev") "dev" else "stable")
+    }
+
+    /**
+     * 收藏 / 取消收藏一条聊天消息。[keep] 为 false 就是删掉这一条。
+     *
+     * 同一条消息重复收藏不会在列表里堆两行（先按消息号过滤再按需追加）；超过
+     * [MAX_CHAT_SAVED] 从头部裁——收藏是"最近留着的那些"，先丢最旧的。
+     */
+    suspend fun setChatSaved(entry: SavedChat, keep: Boolean) {
+        update { current ->
+            val kept = decodeChatSaved(current.chatSaved).filterNot { it.id == entry.id }
+            val next = if (keep) kept + entry else kept
+            current.copy(chatSaved = encodeChatSaved(next.takeLast(MAX_CHAT_SAVED)))
+        }
     }
     /** 记住关于页最下面那张「最近更新」是展开还是折叠。 */
     suspend fun setUpdateHistoryExpanded(expanded: Boolean) = update {
