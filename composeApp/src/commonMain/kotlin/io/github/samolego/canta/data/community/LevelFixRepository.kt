@@ -123,9 +123,84 @@ class LevelFixRepository(private val repository: PlanRepository) {
         }
     }
 
-    /** 一行 [fixes] 的答复；每个字段都可缺省，老答复照样读得懂。 */
-    private fun parseLevelFix(element: kotlinx.serialization.json.JsonElement): LevelFix {
+    /**
+     * 三个维度（级别 / 后果 / 系统应用）现在的票数与本人投的选项；null = 这次没问到。
+     *
+     * 与 [fixes] 分开一趟：那一趟是历史记录（谁提过什么），这一趟才是页面上百分比的数据。
+     * 两者同样只在打开这一页时才请求。
+     */
+    suspend fun ballots(packageName: String, viewer: String = ""): LevelBallots? {
+        if (packageName.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_pkg", packageName)
+            put("p_voter", viewer)
+        }.toString()
+        val text = repository.levelFixBallotsFor(body) ?: return null
+        return runCatching {
+            val element = JSON.parseToJsonElement(text)
+            if (element is JsonNull) null else parseBallots(element)
+        }.getOrNull()
+    }
+
+    /**
+     * 投一个维度的一票，返回投完之后三个维度的完整计数。
+     *
+     * [dimension] 是 `level` / `impact` / `system`，[choice] 是该维度的选项（后端有约束，只有
+     * 那一套值接受）。每人每维度一票，重复投 = 改票；[note] 只有级别维度会存下来当下发依据。
+     */
+    suspend fun voteBallot(
+        packageName: String,
+        dimension: String,
+        choice: String,
+        note: String = "",
+        voter: String = "",
+    ): LevelFixResult<LevelBallots> {
+        if (packageName.isEmpty()) return LevelFixResult.Failed("没有包名", network = false)
+        if (dimension.isEmpty() || choice.isEmpty()) {
+            return LevelFixResult.Failed("还没选选项", network = false)
+        }
+        if (voter.isEmpty()) return LevelFixResult.Failed("本机还没有身份", network = false)
+        val proof = repository.callerTokenForLevelFix()
+        val payload = buildJsonObject {
+            put("p_pkg", packageName)
+            put("p_dimension", dimension)
+            put("p_choice", choice)
+            put("p_note", note)
+            put("p_voter", voter)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = repository.voteLevelFixBallot(payload) ?: return repository.failureReason()
+        val parsed = runCatching {
+            val element = JSON.parseToJsonElement(text)
+            if (element is JsonNull) null else parseBallots(element)
+        }.getOrNull()
+        return if (parsed == null) {
+            LevelFixResult.Failed("后端没接受这一票（选项不合法或被限速）", network = false)
+        } else {
+            LevelFixResult.Ok(parsed)
+        }
+    }
+
+    /** 三个维度的答复；字段都可缺省，后端没给就按 0 画。 */
+    private fun parseBallots(element: kotlinx.serialization.json.JsonElement): LevelBallots? = runCatching {
         val o = element.jsonObject
+        val votes = o["votes"]?.jsonObject?.mapValues { (_, dimension) ->
+            dimension.jsonObject.mapValues { (_, count) -> count.jsonPrimitive.longOrNull?.toInt() ?: 0 }
+        }.orEmpty()
+        val mine = o["mine"]?.jsonObject?.mapValues { (_, choice) ->
+            choice.jsonPrimitive.contentOrNull.orEmpty()
+        }.orEmpty()
+        LevelBallots(
+            votes = votes,
+            mine = mine,
+            needed = o["needed"]?.jsonPrimitive?.longOrNull?.toInt() ?: LevelFix.VOTES_NEEDED,
+            shareNeeded = o["share"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: LevelFix.SHARE_NEEDED,
+            applied = o["applied"]?.jsonPrimitive?.booleanOrNull == true,
+        )
+    }.getOrNull()
+
+    /** 一行 [fixes] 的答复；每个字段都可缺省，老答复照样读得懂。 */
+    private fun parseLevelFix(element: kotlinx.serialization.json.JsonElement): LevelFix {        val o = element.jsonObject
         val notes = o["notes"]?.let { notesElement ->
             runCatching {
                 notesElement.jsonObject.mapValues { (_, value) -> value.jsonPrimitive.contentOrNull.orEmpty() }

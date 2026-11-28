@@ -512,6 +512,16 @@ class PlanRepository(
     suspend fun voteLevelFix(body: String): String? = rpc("level_fix_vote", body)
 
     /**
+     * 三个维度（级别 / 后果 / 系统应用）的投票现状（`level_fix_ballots_for`），原样返回 JSON。
+     *
+     * 解析在 [LevelFixRepository] 里做，与上面三条同一个分工：这里只管发请求。
+     */
+    suspend fun levelFixBallotsFor(body: String): String? = rpc("level_fix_ballots_for", body)
+
+    /** 投三个维度里的一个（`level_fix_ballot_vote`），返回投完之后三个维度的完整计数。 */
+    suspend fun voteLevelFixBallot(body: String): String? = rpc("level_fix_ballot_vote", body)
+
+    /**
      * Why the last call came back empty: the backend's own message when it refused (a missing
      * function, a rejected upload, a bad key), or the network error. "上传失败" without this is a
      * dead end, so the pages that can fail show it.
@@ -2112,6 +2122,8 @@ class PlanRepository(
                 agrees = o["agrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 disagrees = o["disagrees"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
                 mine = o["mine"]?.jsonPrimitive?.booleanOrNull,
+                // 老后端没有这个键：false 就是"没结算"，与它现在的行为一致。
+                approved = o["approved"]?.jsonPrimitive?.booleanOrNull == true,
             )
         }.getOrNull()
     }
@@ -2416,6 +2428,8 @@ class PlanRepository(
             ratingCount = o["rating_count"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             myStars = o["my_stars"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
             hasSubscription = o["has_subscription"]?.jsonPrimitive?.booleanOrNull == true,
+            // 老后端没有这一格：false = 还在候选池里，正好是它当时的样子（两格画的是同一份）。
+            approved = o["approved"]?.jsonPrimitive?.booleanOrNull == true,
             detail = parseAirportDetail(o["detail"]),
         )
     }
