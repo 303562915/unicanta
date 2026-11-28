@@ -2475,18 +2475,26 @@ private fun MutualFollowTag() {
 private fun clockOf(stamp: String): String = BeijingTime.listStamp(stamp)
 
 /**
- * 互动消息那一行的副标题：调用方没有现成的一句时，用后端已经数好的四个数字拼一句。
+ * 互动消息那一行的副标题：调用方没有现成的一句时，用后端已经数好的几个数字拼一句。
  *
  * 顺序按读者关心的先后：有人回复你比有人点了个赞要紧。一个数字都没有就等于没有新闻，
  * 这时说「还没有新的互动」比列四个 0 诚实。
+ *
+ * **每一项都要说清"是什么"**。原来这里写的是「回复 2 · 评论 1 · 赞 3」——「赞 3」看不出是赞了
+ * 方案还是赞了评论，而点进去那一行写的是「等 3 人认同了你的方案」，两处对不上，于是那三个数字
+ * 对读的人等于没说。现在照互动列表的说法写：认同的是**方案**，赞的是**评论**，各算各的。
+ *
+ * 为什么不在这里写「谁」：这一行只有后端数好的条数，要拿到"谁做的"就得再拉一次互动列表。消息页
+ * 本来是每分钟都在轮询的一页（见类注释里那串请求量），为一个副标题多一次请求不划算——点进去就是
+ * 那张带人名的列表。
  */
 private fun inboxLine(summary: InboxSummary): String {
     if (summary.total <= 0) return "还没有新的互动"
     val parts = buildList {
-        if (summary.replies > 0) add("回复 ${summary.replies}")
-        if (summary.planComments > 0) add("评论 ${summary.planComments}")
-        val hearts = summary.commentHearts + summary.planHearts
-        if (hearts > 0) add("赞 $hearts")
+        if (summary.replies > 0) add("${summary.replies} 条回复")
+        if (summary.planComments > 0) add("${summary.planComments} 条评论")
+        if (summary.planHearts > 0) add("${summary.planHearts} 人认同了你的方案")
+        if (summary.commentHearts > 0) add("你的评论获赞 ${summary.commentHearts}")
     }
     return parts.joinToString(" · ").ifBlank { "还没有新的互动" }
 }
