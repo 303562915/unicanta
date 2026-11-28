@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -27,7 +28,12 @@ data class SponsorEntry(
     val owner: String,
     val name: String,
     val amountYuan: Int,
-    /** token 赞助的数量（[kind] = `ai`）；资金赞助恒为 0（金额走 [amountYuan]）。 */
+    /**
+     * 带小数的金额（`amount_exact`）：8.8 这种扫码赞助记不进整数那一栏。
+     * 老后端没有这个键时退回 [amountYuan]，页面行为与以前一致。
+     */
+    val amountExact: Double = 0.0,
+    /** token 赞助的数量（[kind] = `ai`）；资金赞助恒为 0（金额走 [amountExact]）。 */
     val tokenCount: Int = 0,
     val kind: String,
     val anonymous: Boolean,
@@ -48,6 +54,7 @@ data class SponsorEntry(
      */
     val badge: String
         get() = when {
+            amountExact > 0.0 -> "¥${yuanText(amountExact)}"
             amountYuan > 0 -> "¥$amountYuan"
             tokenCount > 0 -> "$tokenCount token"
             else -> "token 赞助"
@@ -55,7 +62,7 @@ data class SponsorEntry(
 
     /** 这一格有没有具体数量（钱或 token）：有就用强调色，没有用次要色。 */
     val hasCount: Boolean
-        get() = amountYuan > 0 || tokenCount > 0
+        get() = amountExact > 0.0 || amountYuan > 0 || tokenCount > 0
 
     /** 身份号能不能点（进主页）：空串、或者不是数字（老客户端的自报号码）都不给入口。 */
     val canOpenProfile: Boolean
@@ -70,6 +77,8 @@ data class SponsorEntry(
 @Serializable
 data class SponsorWall(
     val totalYuan: Long = 0L,
+    /** 带小数的总额（`total_exact`）；老后端没有这个键时退回 [totalYuan]。 */
+    val totalExact: Double = 0.0,
     val count: Int = 0,
     val moneyCount: Int = 0,
     val aiCount: Int = 0,
@@ -80,6 +89,8 @@ data class SponsorWall(
 data class SponsorMine(
     val id: Long,
     val amountYuan: Int,
+    /** 带小数的金额（`amount_exact`）：8.8 这种记不进整数那一栏。 */
+    val amountExact: Double = 0.0,
     val kind: String,
     val hidden: Boolean,
     val createdAt: String,
@@ -120,6 +131,8 @@ class SponsorStore(private val rpc: CommunityRpc) {
             val o = json.parseToJsonElement(text).jsonObject
             SponsorWall(
                 totalYuan = o["total_yuan"]?.jsonPrimitive?.longOrNull ?: 0L,
+                totalExact = o["total_exact"]?.jsonPrimitive?.doubleOrNull
+                    ?: (o["total_yuan"]?.jsonPrimitive?.longOrNull?.toDouble() ?: 0.0),
                 count = o["count"]?.jsonPrimitive?.intOrNull ?: 0,
                 moneyCount = o["money_count"]?.jsonPrimitive?.intOrNull ?: 0,
                 aiCount = o["ai_count"]?.jsonPrimitive?.intOrNull ?: 0,
@@ -131,11 +144,11 @@ class SponsorStore(private val rpc: CommunityRpc) {
     /**
      * 记一笔赞助。
      *
-     * [amountYuan] 只在 [kind] 是 `money` 时生效；[anonymous] 为真时榜上显示「匿名」。
+     * [amountYuan] 只在 [kind] 是 `money` 时生效（可以带小数，8.8 这种）；[anonymous] 为真时榜上显示「匿名」。
      * 后端认不出身份时返回 null（也拿不到署名），这里同样返回 null。
      */
     suspend fun add(
-        amountYuan: Int,
+        amountYuan: Double,
         kind: String,
         name: String,
         note: String = "",
@@ -192,6 +205,8 @@ class SponsorStore(private val rpc: CommunityRpc) {
                 SponsorMine(
                     id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
                     amountYuan = o["amount_yuan"]?.jsonPrimitive?.intOrNull ?: 0,
+                    amountExact = o["amount_exact"]?.jsonPrimitive?.doubleOrNull
+                        ?: (o["amount_yuan"]?.jsonPrimitive?.intOrNull?.toDouble() ?: 0.0),
                     kind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     hidden = o["hidden"]?.jsonPrimitive?.booleanOrNull == true,
                     createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
@@ -203,15 +218,34 @@ class SponsorStore(private val rpc: CommunityRpc) {
     /** 榜上的一行；字段缺了就退回默认值，老回答仍然画得出来。 */
     private fun parseEntry(element: kotlinx.serialization.json.JsonElement): SponsorEntry {
         val o = element.jsonObject
+        val amountYuan = o["amount_yuan"]?.jsonPrimitive?.intOrNull ?: 0
         return SponsorEntry(
             id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
             owner = o["owner"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             name = o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            amountYuan = o["amount_yuan"]?.jsonPrimitive?.intOrNull ?: 0,
+            amountYuan = amountYuan,
+            amountExact = o["amount_exact"]?.jsonPrimitive?.doubleOrNull ?: amountYuan.toDouble(),
             tokenCount = o["token_count"]?.jsonPrimitive?.intOrNull ?: 0,
             kind = o["kind"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "money" },
             anonymous = o["anonymous"]?.jsonPrimitive?.booleanOrNull == true,
             createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
         )
+    }
+}
+
+/**
+ * 金额写成页面上的样子：整数不带小数点（`¥10`），有角有分才补上（`¥8.8`、`¥8.85`）。
+ *
+ * 不用 `String.format`：commonMain 里没有它（那是 JVM 的），KMP 上要自己拼。
+ */
+private fun yuanText(value: Double): String {
+    val cents = kotlin.math.round(value * 100).toLong()
+    val whole = cents / 100
+    val frac = (cents % 100).toInt()
+    return when {
+        frac == 0 -> whole.toString()
+        frac % 10 == 0 -> "$whole.${frac / 10}"
+        frac < 10 -> "$whole.0$frac"
+        else -> "$whole.$frac"
     }
 }

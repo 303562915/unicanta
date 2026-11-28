@@ -163,11 +163,12 @@ private val SponsorAvatar = 34.dp
  *
  * 榜是公开的、与"谁在看"无关，所以**不分人一格**（商城页的余额要分人，这里不用）。
  *
- * 后面两个后缀是两次顺序切换留下的（`money-first`：资金赞助排在 token 赞助前面；
- * `tokencount`：补录的归属互换）。现在 [mergeSponsors] 以服务端顺序为准，顺序本身就跟着刷新走，
+ * 后面几个后缀是几次顺序切换留下的（`money-first`：资金赞助排在 token 赞助前面；
+ * `tokencount`：补录的归属互换；`decimal`：金额支持小数，旧缓存里没有 `amount_exact`，
+ * 不换键会一直画成 `¥8`）。现在 [mergeSponsors] 以服务端顺序为准，顺序本身就跟着刷新走，
  * 所以键名不用再跟着改——后缀留着只是因为改回去等于让老用户回到更旧的一格，没有好处。
  */
-private const val SPONSOR_WALL_CACHE = "screen:sponsors:money-first:tokencount"
+private const val SPONSOR_WALL_CACHE = "screen:sponsors:money-first:tokencount:decimal"
 
 /**
  * 把这次拉到的榜并到已经画出来的那份上：**顺序以服务端这次返回的为准，老缓存只用来补人**。
