@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Column
@@ -1175,30 +1176,9 @@ private fun AppHero(
             }
         }
 
-        // 社区盖的章：票够了才有。斜着压在应用信息下面，用印章的形状（双线、旋转、淡墨）而不是
-        // 又一枚圆角标签——它说的是"认定"，不是"属性"。没盖就整块不画：没被盖本身就说明还没有人
-        // 认定它有问题，这里不出现"清白""正常"这种反向章。
+        // 社区盖的章：票够了才有。它不占单独一行、也不带说明文字——章是压在介绍那一层上的，
+        // 多一行"社区盖的章 / N 票认定"就把盖章变成了又一条信息。没盖就什么都不画。
         val appliedStamp = stamp?.applied?.takeIf { it.isNotEmpty() }
-        if (appliedStamp != null) {
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StampMark(text = appliedStamp, size = 84.dp)
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "社区盖的章",
-                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                        color = scheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "${stamp?.appliedVotes ?: 0} 票认定 · 在「级别修正」里可以改投",
-                        style = FlText.caption1,
-                        color = scheme.onSurface,
-                    )
-                }
-            }
-        }
 
         // 说明和它的修正排成一条轮播：第一页是现在生效的那一段，后面几页是社区提了还没通过的
         // 改写。默认停在第一页、不自动翻——这一段是要读的，自动翻页等于替人决定他看到哪一版；
@@ -1247,7 +1227,29 @@ private fun AppHero(
         }
         if (descriptionPages.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            DescriptionCarousel(pages = descriptionPages, onExpand = { expandedPage = it })
+            // 章盖在**介绍这一层上面**：Box 叠一层，不占布局高度，所以有没有章，下面的卡片都
+            // 停在原位。透明度 0.86 让底下的字还看得见——它是压上去的，不是贴上去的。
+            Box(modifier = Modifier.fillMaxWidth()) {
+                DescriptionCarousel(pages = descriptionPages, onExpand = { expandedPage = it })
+                if (appliedStamp != null) {
+                    StampMark(
+                        text = appliedStamp,
+                        size = 76.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            // 往里收一点再压低一点：落在卡片右上角的空白处，压住标题行而不是正文。
+                            .offset(x = (-10).dp, y = 8.dp),
+                    )
+                }
+            }
+        } else if (appliedStamp != null) {
+            // 没有介绍可压（这个包连说明都没有）：那就单独画一枚，别让章凭空消失。
+            Spacer(Modifier.height(8.dp))
+            StampMark(
+                text = appliedStamp,
+                size = 76.dp,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
         }
 
         if (app != null) {
