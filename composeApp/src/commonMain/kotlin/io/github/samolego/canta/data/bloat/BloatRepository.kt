@@ -85,6 +85,17 @@ data class BloatData(
  * [descriptions] is this build's translation of the list's English wording; it is applied to the
  * parsed entries, so everything downstream (the badge, the app page, the list) sees one language.
  */
+/**
+ * 缓存文件的第一行：写它那一刻「随包名单」的指纹（`bloat_list.json` 的 hashCode）。
+ *
+ * 为什么要这个头：说明改在随包里、缓存还压着上一次从 GitHub 拉下来的旧文案时，用户装的
+ * 明明是新的，点一个包看到的还是老话。头对不上就说明这份 APK 换了名单，缓存作废。
+ *
+ * 放在类外（`internal`）是为了测试也能照产品格式写缓存：把裸 JSON 塞进盘上的用例会一律走进
+ * 「老格式，作废」那条分支，看起来像是产品坏了，其实只是测试没跟着格式走。
+ */
+internal const val CACHE_STAMP_PREFIX = "#bloat-stamp:"
+
 class BloatRepository(
     private val client: HttpClient,
     private val cache: AppBlobStorage,
@@ -142,14 +153,6 @@ class BloatRepository(
          * 一起核对，所以手机真正联网的次数**没有增加**。
          */
         const val CORRECTIONS_INTERVAL_DAYS = 7L
-
-        /**
-         * 缓存文件的第一行：写它那一刻「随包名单」的指纹（`bloat_list.json` 的 hashCode）。
-         *
-         * 为什么要这个头：说明改在随包里、缓存还压着上一次从 GitHub 拉下来的旧文案时，用户装的
-         * 明明是新的，点一个包看到的还是老话。头对不上就说明这份 APK 换了名单，缓存作废。
-         */
-        const val CACHE_STAMP_PREFIX = "#bloat-stamp:"
     }
 
     /** Resolved once: the table is a bundled file, it does not change while the app runs. */

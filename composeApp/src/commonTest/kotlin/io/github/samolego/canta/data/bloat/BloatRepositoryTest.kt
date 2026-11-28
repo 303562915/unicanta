@@ -78,6 +78,21 @@ class BloatRepositoryTest {
         fun shaJson(sha: String) = "[{\"sha\": \"" + sha + "\"}]"
     }
 
+    /**
+     * 盘上那份缓存的原文，**带上产品写它的那个头**。
+     *
+     * 从 `7cf2963a` 起缓存的第一行是 `#bloat-stamp:<随包名单指纹>`：头对不上（包括"根本没有头"
+     * 的老格式）就一律当作废、退回随包名单。测试这边直接塞裸 JSON 的话，每条"该读缓存"的用例
+     * 都会走到那条作废分支上，于是 11 条用例一起红（CI 46102779744 / 46103004865 / 46103589162）。
+     *
+     * [bundled] 要和构造 [BloatRepository] 时传进去的那份随包名单是同一个字符串——指纹按它算。
+     * 传入 `null` 就是"这个构建没有随包名单"（仓库里那份在 desktop 测试里读出来是空串），
+     * 这时产品记录的指纹也是空串，两边照样对得上。
+     */
+    private fun stampedCache(json: String, bundled: String? = null): ByteArray =
+        (BloatRepository.CACHE_STAMP_PREFIX + (bundled?.hashCode()?.toString().orEmpty()) + "\n" + json)
+            .encodeToByteArray()
+
     private suspend fun settings(latestHash: String = "", autoUpdate: Boolean = true) =
         CantaSettings(MemoryStorage()).apply {
             setLatestCommitHash(latestHash)
@@ -96,14 +111,14 @@ class BloatRepositoryTest {
         val bloat = BloatRepository(server.client, cache, settings).load()
 
         assertEquals(setOf("com.a"), bloat.keys)
-        assertEquals(listJson, cache.content?.decodeToString())
+        assertEquals(stampedCache(listJson).decodeToString(), cache.content?.decodeToString())
         assertEquals("new", settings.latestCommitHashFlow.first())
     }
 
     @Test
     fun usesCacheWhenUpToDate() = runTest {
         val server = Server(sha = "same", list = listJson)
-        val bloat = BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings("same")).load()
+        val bloat = BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings("same")).load()
 
         assertEquals(setOf("com.cached"), bloat.keys)
         assertEquals(0, server.listDownloads)
@@ -112,12 +127,13 @@ class BloatRepositoryTest {
     @Test
     fun keepsCacheWhenDownloadFails() = runTest {
         val server = Server(sha = "newer", listOk = false, list = listJson)
-        val cache = MemoryStorage(cachedJson.encodeToByteArray())
+        val cache = MemoryStorage(stampedCache(cachedJson))
 
         val bloat = BloatRepository(server.client, cache, settings("old")).load()
 
         assertEquals(setOf("com.cached"), bloat.keys)
-        assertEquals(cachedJson, cache.content?.decodeToString())
+        // 下载失败什么都没下到，盘上那份不该被动过：仍是**带头**的原样。
+        assertEquals(stampedCache(cachedJson).decodeToString(), cache.content?.decodeToString())
     }
 
     @Test
@@ -135,15 +151,15 @@ class BloatRepositoryTest {
 
         val bloat = BloatRepository(server.client, cache, settings("old")).load()
 
-        // 坏缓存被换掉了，换成了刚下到的那份。
+        // 坏缓存被换掉了，换成了刚下到的那份（带上这一次的随包指纹头）。
         assertEquals(setOf("com.bundled"), bloat.keys)
-        assertEquals(bundledJson, cache.content?.decodeToString())
+        assertEquals(stampedCache(bundledJson).decodeToString(), cache.content?.decodeToString())
     }
 
     @Test
     fun noNetworkWhenAutoUpdateIsOffAndCacheExists() = runTest {
         val server = Server(list = listJson)
-        BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings(autoUpdate = false)).load()
+        BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings(autoUpdate = false)).load()
         assertTrue(server.requests.isEmpty())
     }
 
@@ -177,7 +193,8 @@ class BloatRepositoryTest {
         ).load()
 
         assertEquals(setOf("com.a"), bloat.keys)
-        assertEquals(listJson, cache.content?.decodeToString())
+        // 这条用例塞了随包名单，所以缓存头里记的是**那份**的指纹。
+        assertEquals(stampedCache(listJson, bundledJson).decodeToString(), cache.content?.decodeToString())
     }
 
     // ---- 本地先答、一天核对一次 -------------------------------------------------------------
@@ -187,7 +204,7 @@ class BloatRepositoryTest {
     fun theLocalListIsAnsweredWithoutAnyRequest() = runTest {
         val server = Server(list = listJson)
 
-        val bloat = BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings()).local()
+        val bloat = BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings()).local()
 
         assertEquals(setOf("com.cached"), bloat.keys)
         assertTrue(server.requests.isEmpty(), "the local answer must not touch the network")
@@ -199,7 +216,7 @@ class BloatRepositoryTest {
         val server = Server(sha = "newer", list = listJson)
         val settings = settings("old").apply { setBloatListCheckedDay(today()) }
 
-        val fresh = BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+        val fresh = BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings).refresh()
 
         assertNull(fresh, "nothing new is a null answer, not an empty list")
         assertTrue(server.requests.isEmpty())
@@ -211,7 +228,7 @@ class BloatRepositoryTest {
         val server = Server(sha = "same", list = listJson)
         val settings = settings("same")
 
-        BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+        BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings).refresh()
 
         assertEquals(today(), settings.bloatListCheckedDayFlow.first())
     }
@@ -222,7 +239,7 @@ class BloatRepositoryTest {
         val server = Server(sha = null, listOk = false, list = listJson)
         val settings = settings("old")
 
-        BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+        BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings).refresh()
 
         assertEquals("", settings.bloatListCheckedDayFlow.first())
     }
@@ -235,7 +252,7 @@ class BloatRepositoryTest {
         val server = Server(sha = "newer", list = listJson)
         val settings = settings("old").apply { setBloatListCheckedDay(dayOffset(6)) }
 
-        val fresh = BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+        val fresh = BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings).refresh()
 
         assertNull(fresh, "nothing new is a null answer, not an empty list")
         assertTrue(server.requests.isEmpty(), "a check six days old is still fresh")
@@ -247,7 +264,7 @@ class BloatRepositoryTest {
         val server = Server(sha = "newer", list = listJson)
         val settings = settings("old").apply { setBloatListCheckedDay(dayOffset(8)) }
 
-        BloatRepository(server.client, MemoryStorage(cachedJson.encodeToByteArray()), settings).refresh()
+        BloatRepository(server.client, MemoryStorage(stampedCache(cachedJson)), settings).refresh()
 
         assertTrue(server.requests.isNotEmpty(), "a check eight days old has to be redone")
     }
@@ -279,7 +296,7 @@ class BloatRepositoryTest {
         val fixes = MemoryStorage()
         val repository = BloatRepository(
             server.client,
-            MemoryStorage(cachedJson.encodeToByteArray()),
+            MemoryStorage(stampedCache(cachedJson)),
             settings("same"),
             overrides = { correctionsBundled() },
             // 修正表现在是仓库里的静态文件：地址给一个占位，真正的内容由 MockEngine 按 URL 返回。
@@ -302,7 +319,7 @@ class BloatRepositoryTest {
 
         val list = BloatRepository(
             server.client,
-            MemoryStorage(cachedJson.encodeToByteArray()),
+            MemoryStorage(stampedCache(cachedJson)),
             settings,
             overrides = { correctionsBundled() },
             correctionsUrl = { error("the stored table has to be enough") },
@@ -333,7 +350,7 @@ class BloatRepositoryTest {
 
         val repository = BloatRepository(
             server.client,
-            MemoryStorage(cachedJson.encodeToByteArray()),
+            MemoryStorage(stampedCache(cachedJson)),
             settings,
             overrides = { correctionsBundled() },
             correctionsUrl = { unreachable },
@@ -358,7 +375,7 @@ class BloatRepositoryTest {
         var fetches = 0
         val repository = BloatRepository(
             server.client,
-            MemoryStorage(cachedJson.encodeToByteArray()),
+            MemoryStorage(stampedCache(cachedJson)),
             settings,
             overrides = { correctionsBundled() },
             correctionsUrl = { fetches++; fixesUrl },
@@ -379,7 +396,7 @@ class BloatRepositoryTest {
         var refetches = 0
         BloatRepository(
             server.client,
-            MemoryStorage(cachedJson.encodeToByteArray()),
+            MemoryStorage(stampedCache(cachedJson)),
             stale,
             overrides = { correctionsBundled() },
             correctionsUrl = { refetches++; fixesUrl },
