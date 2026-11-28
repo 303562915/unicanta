@@ -53,8 +53,12 @@ object ImageBed {
     /**
      * 群头像的目录。
      *
-     * 传成 `[GROUP_AVATAR_FOLDER]/<会话号>.jpg`（见 [groupAvatarId]），**覆盖式写**：同一个群重传就是换
-     * 头像，不生成新名字——所以客户端不需要后端多加一列，按会话号就能推出地址。
+     * 传成 `[GROUP_AVATAR_FOLDER]/<会话号>-<时间戳>-<随机数>.jpg`（见 [groupAvatarNewId]）。
+     *
+     * **2026-11-28 之前是 `<会话号>.jpg` 覆盖式写**，配合写死在这里的上传 token，等于任何人按会话号
+     * 就能把任何群的头像换掉（对象名能推、token 在 APK 里、还带 `overwrite=1`）。现在改成每次上传
+     * 都是一个新对象名，地址由后端 `group_set_avatar` 存进 `conversations.avatar`、只有群主能写；
+     * 旧的固定名不再被任何地方引用。
      */
     const val GROUP_AVATAR_FOLDER = "$ROOT/群头像"
 
@@ -114,12 +118,14 @@ object ImageBed {
     fun avatarId(owner: String): String = "$AVATAR_FOLDER/${owner.trim()}.jpg"
 
     /**
-     * 群头像的 id：`unicanta/群头像/<会话号>.jpg`，**一个群一个名字**（覆盖式）。
+     * 群头像的 id：`unicanta/群头像/<会话号>-<时间戳>-<随机数>.jpg`，**换一次落一个新对象**。
      *
-     * 和个人头像同一个道理：名字固定，重传就是换一张，所以后端不必存这一列——谁拿到会话号都能算出
-     * 地址，没传过的群那个地址就是 404，界面退回成员拼图。
+     * 和 [avatarId] 相反，这里刻意不做"固定名 + 覆盖"：固定名能被任何人按会话号推出来，
+     * 而上传 token 是写死在客户端里的匿名 token，覆盖式写就等于"谁都能换任何群的头像"。
+     * 名字每次都不一样，旧对象留着也无害（没人引用它），地址由 `group_set_avatar` 存进库。
      */
-    fun groupAvatarId(conversationId: Long): String = "$GROUP_AVATAR_FOLDER/$conversationId.jpg"
+    fun groupAvatarNewId(conversationId: Long, stamp: Long, salt: Int): String =
+        "$GROUP_AVATAR_FOLDER/$conversationId-$stamp-$salt.jpg"
 
     /** [id] 里目录那一段（没有目录就是空串）。上传时要单独交给 `folder` 字段。 */
     fun folderOf(id: String): String = id.substringBeforeLast('/', "")

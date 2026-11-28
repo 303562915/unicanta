@@ -2260,7 +2260,7 @@ private fun ConversationRow(
                 if (conversation.isGroup) {
                     GroupAvatarView(
                         name = conversation.label,
-                        conversationId = conversation.id,
+                        avatarUrl = conversation.avatar,
                         members = emptyList(),
                         size = 44.dp,
                     )

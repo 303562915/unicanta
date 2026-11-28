@@ -1529,6 +1529,8 @@ fun ChatScreen(
                 // 群头像拼九宫格要用成员名单；私聊传空（那边画对方一个人的头像）。
                 groupMembers = detail?.members.orEmpty(),
                 conversationId = conversationId,
+                // 群头像地址来自会话详情；空串就是没设过，画群名首字。
+                groupAvatar = detail?.avatar.orEmpty(),
                 typingLine = typingLine,
                 onNavigateBack = onNavigateBack,
                 onOpenGroupInfo = onOpenGroupInfo,
@@ -2162,8 +2164,10 @@ private fun ChatTopBar(
     peerOwner: String,
     /** 群成员名单：已经不再参与画头像（见 [GroupAvatarView]），留着只是为了不改调用点。 */
     groupMembers: List<ConversationMember> = emptyList(),
-    /** 会话号：群头像按它推图床地址（设过群头像就显示那张图）。 */
+    /** 会话号：只用来当那几个 `rememberSaveable` 的 key（入口行展开状态跟着会话走）。 */
     conversationId: Long = 0L,
+    /** 群头像直链；空串表示没设过（画群名首字）。地址由后端给，客户端不再按会话号推。 */
+    groupAvatar: String = "",
     /** 「X 正在输入…」；空串表示没人打字（这时群聊退回写「群聊」）。 */
     typingLine: String = "",
     onNavigateBack: () -> Unit,
@@ -2235,6 +2239,7 @@ private fun ChatTopBar(
                 peerOwner = peerOwner,
                 groupMembers = groupMembers,
                 conversationId = conversationId,
+                groupAvatar = groupAvatar,
                 size = ChatHeaderAvatarSize,
                 onClick = openHeader,
             )
@@ -2682,8 +2687,10 @@ private fun ChatHeaderAvatar(
     peerOwner: String = "",
     /** 群成员名单：已经不再参与画头像（见 [GroupAvatarView]），留着只是为了不改调用点。 */
     groupMembers: List<ConversationMember> = emptyList(),
-    /** 会话号：群头像按它推图床地址——设过群头像就显示那张图，没设过是群名首字。 */
-    conversationId: Long = 0L,
+    /** 会话号：留着的唯一用处是与 [groupAvatar] 一起表达"哪个群"，地址本身来自后端。 */
+    @Suppress("UNUSED_PARAMETER") conversationId: Long = 0L,
+    /** 群头像直链；空串表示没设过（画群名首字）。 */
+    groupAvatar: String = "",
     /**
      * 圆的直径。顶栏那一处用 [ChatHeaderAvatarSize]（比正文里的行内头像大一圈），
      * 其它地方不传就是原来那个 40。
@@ -2704,7 +2711,7 @@ private fun ChatHeaderAvatar(
     if (isGroup) {
         GroupAvatarView(
             name = title.ifBlank { chatInitial(title = title, isGroup = true) },
-            conversationId = conversationId,
+            avatarUrl = groupAvatar,
             members = groupMembers,
             size = size,
             modifier = Modifier.clip(CircleShape).then(clickModifier),

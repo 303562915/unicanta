@@ -16,13 +16,16 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import io.github.samolego.canta.data.community.ConversationMember
-import io.github.samolego.canta.data.imagebed.ImageBed
 
 /**
  * 一个群的群头像：**设过就显示那张图，没设过就是群名首字的方块**。
  *
- * 地址不用后端存：群头像是覆盖式上传的固定对象名（见 [ImageBed.groupAvatarId]），按会话号就能算出来；
- * 没上传过的群那个地址是 404，于是退回方块——两种样子之间的切换不需要任何新字段。
+ * 地址由后端给（`conversations.avatar` / `conversation_detail.avatar`），[avatarUrl] 是空串就画首字。
+ *
+ * **2026-11-28 之前地址是客户端按会话号算出来的**（`unicanta/群头像/<会话号>.jpg`，覆盖式写），
+ * 好处是不用后端存字段，代价是上传 token 写死在客户端、对象名可推、还能覆盖——等于任何人
+ * 都能换任何群的头像。现在地址存在库里、只有群主能写（`group_set_avatar`），换一次一个新对象名，
+ * 所以这个组件只认传进来的 url，不再自己拼。
  *
  * **不再拼成员头像**（2026-11-26 改）：群里大多数人没设过头像，九宫格拼出来就是一堆放大的名字首字，
  * 看着又花又不认识；而且消息页拿不到成员名单、聊天页拿得到，同一个群在两处长不一样。现在两处
@@ -36,13 +39,13 @@ import io.github.samolego.canta.data.imagebed.ImageBed
 @Composable
 fun GroupAvatarView(
     name: String,
-    conversationId: Long,
+    avatarUrl: String = "",
     @Suppress("UNUSED_PARAMETER") members: List<ConversationMember> = emptyList(),
     size: Dp,
     modifier: Modifier = Modifier,
     @Suppress("UNUSED_PARAMETER") systemSize: Dp = size,
 ) {
-    val url = if (conversationId > 0L) ImageBed.fileUrl(ImageBed.groupAvatarId(conversationId)) else ""
+    val url = avatarUrl.trim()
     // 缓存命中就直接画，不再闪一下拼图。
     var bitmap by remember(url) { mutableStateOf(cachedAvatar(url)) }
 

@@ -2,6 +2,8 @@ package io.github.samolego.canta.data.community
 
 import io.github.samolego.canta.data.imagebed.ImageBed
 import io.github.samolego.canta.util.TelemetryConfig
+import io.github.samolego.canta.util.currentTimeMillis
+import kotlin.random.Random
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -97,6 +99,13 @@ data class Conversation(
     val id: Long,
     val kind: String,
     val title: String,
+    /**
+     * 群头像直链，空串表示没设过（界面画群名首字）。
+     *
+     * 以前客户端按会话号自己拼图床地址，代价是"谁都换得了"——固定对象名 + 写死在上传端点的匿名
+     * token。2026-11-28 起地址由后端给（`conversations.avatar`，只有群主能写）。
+     */
+    val avatar: String = "",
     val peer: String = "",
     val peerName: String = "",
     val lastBody: String = "",
@@ -286,6 +295,13 @@ data class ConversationDetail(
     val createdAt: String = "",
     /** 群公告，空串表示没设过。只有建群的人能改（见 `group_set_announcement`）。 */
     val announcement: String = "",
+    /**
+     * 群头像直链，空串表示没设过（资料页画群名首字）。
+     *
+     * 和 [Conversation.avatar] 同一份东西，两处都从后端读：只有群主能换（`group_set_avatar`），
+     * 换一次换一个对象名，所以旧地址不会被人拿固定路径覆盖。
+     */
+    val avatar: String = "",
     /**
      * 建群的人的身份号码。资料页拿它和 [ConversationDetail] 的访客身份比对，决定显示不显示
      * 「编辑公告」「踢人」——**这只是画不画按钮**，真正的裁决在后端：自报身份不可信。
@@ -651,6 +667,7 @@ class SocialRepository(
             members = membersOf(row),
             createdAt = row.textOf("created_at"),
             announcement = row.textOf("announcement"),
+            avatar = row.textOf("avatar"),
             createdBy = row.textOf("created_by"),
             intro = row.textOf("intro"),
             myNickname = row.textOf("my_nickname"),
@@ -1236,6 +1253,25 @@ class SocialRepository(
     }
 
     /**
+     * 把这个群的群头像换成 [url]。只有建群的人能改，别人调用后端返回 false。
+     *
+     * **地址必须落库**（`conversations.avatar`）：客户端不再按会话号推图床地址了，没这一步
+     * 上传上去的图谁也不会看到。后端同时把这次变更记进 `group_avatar_log`。
+     */
+    suspend fun setGroupAvatar(owner: String, conversation: Long, url: String): Boolean {
+        if (owner.isEmpty() || conversation <= 0L || url.isEmpty()) return false
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_owner", owner)
+            put("p_conversation", conversation)
+            put("p_url", url)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val response = rpc("group_set_avatar", body) ?: return false
+        return booleanFrom(response, "group_set_avatar") ?: false
+    }
+
+    /**
      * 打开/关掉这个群的「允许发图片」。只有建群的人能改，别人调用后端返回 false。
      *
      * 关着的时候成员发图会被 `message_send_image` 拒掉，建群的人自己不受限——他得能先把图放进群里。
@@ -1613,19 +1649,29 @@ class SocialRepository(
     }
 
     /**
-     * 换一个群的头像：[bytes] 传到 `unicanta/群头像/<会话号>.jpg`，返回图床直链；失败返回 null，
-     * 原因照旧进 [lastError]。
+     * 换一个群的群头像：上传到 `unicanta/群头像/<会话号>-<时间戳>-<随机数>.jpg`，返回图床直链；
+     * 失败返回 null，原因照旧进 [lastError]。
      *
-     * 和个人头像同一套：id 固定、覆盖式上传，所以同一个群重传就是换一张，图床上的对象不会越攒越多。
+     * **名字每次都新**（2026-11-28 改）：以前是按会话号固定的覆盖式写，等于谁都能换任何群的头像。
+     * 现在上传只是拿到一个新地址，**还得把这个地址落库**——那是 [setGroupAvatar] 的事，
+     * 后端在那里判"是不是群主"。两步分开是因为失败要分开说：传不上去是网络，
+     * 存不进库是没权限。
+     *
      * 大小与压缩不在这里做（要动平台层的解码器），调用方先裁好压好再进来。
      */
     suspend fun uploadGroupAvatar(conversationId: Long, bytes: ByteArray): String? {
         if (conversationId <= 0L || bytes.isEmpty()) return null
         return uploadChatImageToImageBed(
-            id = ImageBed.groupAvatarId(conversationId),
+            id = ImageBed.groupAvatarNewId(
+                conversationId = conversationId,
+                stamp = currentTimeMillis(),
+                salt = Random.nextInt(1_000_000),
+            ),
             bytes = bytes,
             contentType = "image/jpeg",
-            overwrite = true,
+            // 新名字不会撞车，所以不让它覆盖任何东西：真撞上了（概率可以不管）该是这一次失败，
+            // 而不是悄悄把别人那张图换掉。
+            overwrite = false,
         )
     }
 
@@ -1897,6 +1943,7 @@ class SocialRepository(
             id = id,
             kind = row.textOf("kind"),
             title = row.textOf("title"),
+            avatar = row.textOf("avatar"),
             peer = row.textOf("peer"),
             peerName = row.textOf("peer_name"),
             lastBody = row.textOf("last_body"),

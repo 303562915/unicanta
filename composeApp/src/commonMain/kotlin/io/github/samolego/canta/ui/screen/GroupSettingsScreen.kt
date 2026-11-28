@@ -124,6 +124,8 @@ private data class GroupSettingsSnapshot(
     val pinned: Boolean,
     /** 群主开的「允许群成员发图片」：不进这一页的开关组，但缓存不带它，下一次进来会先画成关着。 */
     val allowImage: Boolean = false,
+    /** 群头像直链：不带它，从缓存画出来的这一页会先掉回群名首字，像头像丢了。 */
+    val avatar: String = "",
 ) {
     /** 还原成页面用的详情；会话号不在快照里，由调用方按当前的 [conversationId] 补上。 */
     fun toDetail(conversationId: Long): ConversationDetail = ConversationDetail(
@@ -133,6 +135,7 @@ private data class GroupSettingsSnapshot(
         members = members,
         createdAt = createdAt,
         announcement = announcement,
+        avatar = avatar,
         createdBy = createdBy,
         intro = intro,
         myNickname = myNickname,
@@ -162,6 +165,7 @@ private fun settingsSnapshotOf(
     folded = folded,
     pinned = pinned,
     allowImage = detail.allowImage,
+    avatar = detail.avatar,
 )
 
 /**
@@ -281,10 +285,15 @@ fun GroupSettingsScreen(
                     val url = repository.uploadGroupAvatar(conversationId, ready)
                     if (url == null) {
                         onMessage(repository.lastError?.takeIf { it.isNotBlank() } ?: "群头像没上传成，检查代理后再试")
+                    } else if (!repository.setGroupAvatar(owner, conversationId, url)) {
+                        // 传上去了但存不进库：后端按 created_by 裁决，不是群主就是这里。
+                        // 不把新地址摆在屏幕上——别人看不到那张图，摆出来等于骗自己。
+                        onMessage("只有群主能换群头像")
                     } else {
-                        // 覆盖式上传：地址不变，把新字节盖进缓存，再把组件重建一次。
+                        // 每次换都是新对象名：把新字节按新地址盖进缓存，再把组件重建一次。
                         runCatching { ready.decodeToImageBitmap() }.getOrNull()
                             ?.let { bitmap -> cacheAvatar(url, bitmap) }
+                        detail = detail?.copy(avatar = url)
                         avatarVersion += 1
                         onMessage("群头像已更新")
                     }
@@ -922,7 +931,7 @@ private fun GroupHeadCard(
                 key(avatarVersion) {
                     GroupAvatarView(
                         name = detail.label,
-                        conversationId = conversationId,
+                        avatarUrl = detail.avatar,
                         members = detail.members,
                         size = 56.dp,
                         modifier = Modifier
