@@ -1171,7 +1171,7 @@ private fun AppHero(
             if (badge != null) {
                 Spacer(Modifier.height(2.dp))
                 EntriesRow(
-                    label = "级别标错了？提一条修正、让别人投票",
+                    label = "级别标错了？提一条修正、按档位投票",
                     accepted = false,
                     onClick = onOpenLevelFixes,
                 )

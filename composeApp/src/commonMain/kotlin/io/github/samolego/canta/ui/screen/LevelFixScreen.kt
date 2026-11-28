@@ -110,6 +110,33 @@ fun LevelFixScreen(
     val mine = fixes.firstOrNull { it.authorId.isNotEmpty() && it.authorId == authorId && !it.superseded }
     val chosenFix = fixes.firstOrNull { !it.superseded && !it.applied }
 
+    // 门槛由后端给（同一个包统一），这里只用来把"还差多少"说清楚。
+    val needed = fixes.firstOrNull()?.needed ?: LevelFix.VOTES_NEEDED
+    val shareNeeded = fixes.firstOrNull()?.shareNeeded ?: LevelFix.SHARE_NEEDED
+
+    // 与后端 `private.level_fix_settle` 同一个口径：按档位聚合，而不是按单条提案。
+    // 两处口径必须一致，否则会出现"页面说还差 12 票、后端已经通过了"这种自相矛盾的画面。
+    val ballot = remember(fixes) {
+        fixes.asSequence()
+            .filter { !it.applied && !it.superseded && it.removal.isNotEmpty() }
+            .groupBy { it.removal }
+            .map { (removal, rows) ->
+                LevelBallot(
+                    removal = removal,
+                    agrees = rows.sumOf { it.agrees },
+                    disagrees = rows.sumOf { it.disagrees },
+                    firstAt = rows.map { it.createdAt }.minOrNull().orEmpty(),
+                )
+            }
+            .sortedWith(
+                compareByDescending<LevelBallot> { it.net }
+                    .thenByDescending { it.agrees }
+                    .thenBy { it.firstAt },
+            )
+    }
+    val leader = ballot.firstOrNull()
+    val passedRemoval = fixes.firstOrNull { it.applied && !it.superseded }?.removal
+
     fun submit() {
         if (sending) return
         // 名字/头像没设完：发送键已经是灰的，这里再挡一次。
@@ -124,7 +151,7 @@ fun LevelFixScreen(
         scope.launch {
             when (val result = repository.propose(packageName, removal, note.trim(), author, authorId)) {
                 is LevelFixResult.Ok -> {
-                    notice = "已提交。别人可以投票；票数够了会由工作流合并进名单"
+                    notice = "已提交。同一档位的票会合起来算；票最多的那一档到门槛后由工作流合并进名单"
                     note = ""
                     reloads++
                 }
@@ -210,10 +237,46 @@ fun LevelFixScreen(
                             color = scheme.onSurfaceVariant,
                         )
                     }
+                    if (ballot.isNotEmpty()) {
+                        Spacer(Modifier.height(9.dp))
+                        Text(
+                            text = "大家投出来的档位",
+                            style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+                            color = scheme.onSurface,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        ballot.take(3).forEach { row ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AppBadgeInfo.byNameIgnoreCaseOrNull(row.removal)?.let { badge ->
+                                    AppBadge(badge)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = stringResource(badge.nameRes),
+                                        style = FlText.caption2,
+                                        color = scheme.onSurface,
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    text = buildString {
+                                        append("认同 ${row.agrees} · 不认同 ${row.disagrees}")
+                                        if (row == leader) {
+                                            append(" · 票最多")
+                                            if (row.agrees < needed) append("，还差 ${needed - row.agrees} 票")
+                                        }
+                                    },
+                                    style = FlText.caption2,
+                                    color = if (row == leader) scheme.primary else scheme.onSurfaceVariant,
+                                )
+                            }
+                            Spacer(Modifier.height(3.dp))
+                        }
+                    }
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        text = "票数够之后，工作流把它合并进仓库里的 level_fixes.json，" +
-                            "手机下一次核对（一周内）才看到新级别——不是立刻生效。",
+                        text = "票最多的那一档：认同到 $needed 票、且认同率到 " +
+                            "${(shareNeeded * 100).toInt()}% 时才算通过，之后工作流把它合并进仓库里的 " +
+                            "level_fixes.json，手机下一次核对（一周内）才看到新级别——不是立刻生效。",
                         style = FlText.caption2,
                         color = scheme.onSurfaceVariant,
                     )
@@ -257,9 +320,13 @@ fun LevelFixScreen(
                             textStyle = FlText.caption1,
                             minLines = 2,
                             maxLines = 4,
+                            // 这个框是**选填**：不填也能提交，填了别人投票时多一条依据。
+                            label = {
+                                Text(text = "依据（选填）", style = FlText.caption2)
+                            },
                             placeholder = {
                                 Text(
-                                    text = "删了会怎样？例如「这台机器删掉它，深色模式自动切换失效」",
+                                    text = "可以不填。想写就写删了会怎样，例如「这台机器删掉它，深色模式自动切换失效」",
                                     style = FlText.caption1,
                                     color = scheme.outline,
                                 )
@@ -337,8 +404,14 @@ fun LevelFixScreen(
                         }
                     }
                     items(fixes, key = { it.id }) { fix ->
+                        // 这一条所在档位的合计票（同档几条提案相加）；单条票数与它可能不一样，
+                        // 页面两个都写出来，"票怎么算的"才不用猜。
+                        val level = ballot.firstOrNull { it.removal == fix.removal }
                         LevelFixCard(
                             fix = fix,
+                            levelAgrees = level?.agrees ?: fix.agrees,
+                            levelDisagrees = level?.disagrees ?: fix.disagrees,
+                            passedRemoval = passedRemoval,
                             voting = votingId == fix.id,
                             canVote = authorId.isNotEmpty(),
                             onVote = { agree -> vote(fix, agree) },
@@ -348,6 +421,26 @@ fun LevelFixScreen(
             }
         }
     }
+}
+
+/**
+ * 同一个档位（`removal`）下所有还悬着的提案合起来算的票。
+ *
+ * 后端的结算（`private.level_fix_settle`）就是按这个口径：同档几条提案的票相加，过门槛、且净票
+ * 最多的那一档胜出。页面必须用同一个口径，"哪个档位票最多""还差几票"才不会和后端说的相反。
+ *
+ * 净票（认同减不认同）比单纯的认同票更能反映"这一档到底有没有争议"：一档 40 认同 30 不认同，
+ * 不如一档 35 认同 2 不认同。
+ */
+private data class LevelBallot(
+    val removal: String,
+    val agrees: Int,
+    val disagrees: Int,
+    /** 这一档最早被提出的时间；同票时先到先得，与后端 `order by` 的最后一把标尺一致。 */
+    val firstAt: String,
+) {
+    val votes: Int get() = agrees + disagrees
+    val net: Int get() = agrees - disagrees
 }
 
 /** 名单的五个档位，顺序就是从严到宽再从严之外的那一档。 */
@@ -363,6 +456,12 @@ private val LEVELS = listOf(
 @Composable
 private fun LevelFixCard(
     fix: LevelFix,
+    /** 这一条所在档位的认同票合计（同档多条提案相加）。 */
+    levelAgrees: Int,
+    /** 同一档位的不认同票合计。 */
+    levelDisagrees: Int,
+    /** 同包已经通过的那一档；用来把「被取代」和「票并进了通过的那一档」分开说。 */
+    passedRemoval: String?,
     voting: Boolean,
     canVote: Boolean,
     onVote: (Boolean) -> Unit,
@@ -405,7 +504,13 @@ private fun LevelFixCard(
                 )
 
                 fix.superseded -> Text(
-                    text = "已被后来的取代",
+                    // 同一档几条提案各自算票时，同一档永远凑不够门槛；所以结算按档聚合，
+                    // 被并掉的那几条要说清是"票并进去了"，不是"被否了"。
+                    text = if (passedRemoval != null && passedRemoval == fix.removal) {
+                        "票已并入通过的这一档"
+                    } else {
+                        "已被后来的取代"
+                    },
                     style = FlText.caption2,
                     color = scheme.outline,
                 )
@@ -439,11 +544,18 @@ private fun LevelFixCard(
 
         Spacer(Modifier.height(7.dp))
         Text(
+            // 两条数字都写：「本条」是这条提案自己的票，「这一档」是同档所有提案合起来的票——
+            // 后端按后者结算，所以"还差几票"只能拿后者算。
             text = buildString {
-                append("认同 ${fix.agrees} · 不认同 ${fix.disagrees}")
+                append("本条 认同 ${fix.agrees} · 不认同 ${fix.disagrees}")
                 if (!fix.applied && !fix.superseded) {
-                    append(" · 还差 ${fix.missingVotes} 票")
-                    fix.share?.let { append(" · 认同率 ${(it * 100).toInt()}%") }
+                    append(" ｜ 这一档 认同 $levelAgrees · 不认同 $levelDisagrees")
+                    val missing = (fix.needed - levelAgrees).coerceAtLeast(0)
+                    if (missing > 0) append(" · 还差 $missing 票")
+                    val levelVotes = levelAgrees + levelDisagrees
+                    if (levelVotes > 0) {
+                        append(" · 认同率 ${(levelAgrees * 100 / levelVotes)}%")
+                    }
                 }
             },
             style = FlText.caption2,
