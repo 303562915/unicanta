@@ -1,7 +1,7 @@
 {
   "com.xiaomi.registration": {
     "list": "Carrier",
-    "description": "China Telecom (CT) self-registration component on Xiaomi / Redmi / POCO firmware. Registers the device with the carrier in the background and reports device data; no launcher entry. Safe to remove on phones that do not rely on carrier auto-provisioning. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "AutoRegistration: China Telecom self-registration on Xiaomi firmware; registers the device with the carrier in the background. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -9,7 +9,7 @@
   },
   "com.miui.dmregservice": {
     "list": "Carrier",
-    "description": "China Mobile (CMCC) DM / auto-registration service on Xiaomi / Redmi / POCO. Reports terminal and SIM data to the carrier device-management platform. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "RegService: China Mobile DM self-registration on Xiaomi firmware; reports terminal and SIM data to the carrier. Verified removable and listed in the project's auto-cleanup set. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -17,7 +17,7 @@
   },
   "com.huawei.android.UEInfoCheck": {
     "list": "Carrier",
-    "description": "Huawei China Telecom UE information check: collects device / UE identity data for carrier registration. No launcher entry. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "Huawei UEInfoCheck: collects device / UE identity data for China Telecom self-registration. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -25,7 +25,7 @@
   },
   "com.huawei.android.AutoRegSms": {
     "list": "Carrier",
-    "description": "Huawei China Telecom automatic registration SMS handler: sends and parses provisioning SMS in the background. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "Huawei AutoRegSms: handles China Telecom provisioning SMS in the background. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -33,7 +33,7 @@
   },
   "com.hihonor.android.UEInfoCheck": {
     "list": "Carrier",
-    "description": "Honor China Telecom UE information check, same role as the Huawei component of the same name. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "Honor UEInfoCheck: same role as the Huawei component, collecting UE identity data for China Telecom registration. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -41,7 +41,7 @@
   },
   "com.hihonor.android.AutoRegSms": {
     "list": "Carrier",
-    "description": "Honor China Telecom automatic registration SMS handler. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "Honor AutoRegSms: handles China Telecom provisioning SMS in the background. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -49,7 +49,7 @@
   },
   "com.hihonor.regservice": {
     "list": "Carrier",
-    "description": "Honor China Mobile (CMCC) RegService: silent terminal registration and telemetry. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "Honor China Mobile RegService: terminal registration and data reporting. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -57,7 +57,7 @@
   },
   "com.meizu.regservice": {
     "list": "Carrier",
-    "description": "Meizu / Flyme China Mobile RegService: silent terminal registration and telemetry. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "Meizu / Flyme China Mobile RegService: terminal registration and data reporting. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -65,7 +65,7 @@
   },
   "cn.nubia.register": {
     "list": "Carrier",
-    "description": "Nubia / Red Magic China Telecom registration component. Reported as removable by the TelemetryCleaner project, but verified on few devices. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "RegisterApplication: Nubia / Red Magic China Telecom registration component. Reported removable, verified on few devices. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -73,7 +73,7 @@
   },
   "cn.richinfo.dm": {
     "list": "Carrier",
-    "description": "China Mobile DM client (Richinfo) bundled for carrier device management: loads hot-patch code at runtime and reports device data. Same family as Huawei HwCmccDm. (Source: Eynnzerr/TelemetryCleaner)",
+    "description": "China Mobile DM client (Richinfo), same family as Huawei HwCmccDm: carrier device management that can load hot-patch code at runtime and report device data. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -505,7 +505,7 @@
   },
   "com.miui.misightservice": {
     "list": "Oem",
-    "description": "Telemetry and diagnostics collector app that sends analytics to Xiaomi servers and has almost no use for user.\nSomething on the level of com.miui.msa or com.miui.daemon. Worth deleting.\nConstantly connects somewhere and sends/receives up to 100KB of data per day to/from an unknown source. This also means it often runs in background.\nIt's labeled as Blur and has orange-white MI icon, but it just hides under it. No blur/ui/any other issues seen after around a month of use of HyperOS 2.0 with this removed.",
+    "description": "MiSightService: Xiaomi's telemetry and diagnostics collector, reporting analytics to Xiaomi servers and staying resident in the background. Listed as removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -2123,7 +2123,7 @@
   },
   "com.xiaomi.security.onetrack": {
     "list": "Oem",
-    "description": "SecurityOnetrackService\nOnly uses MIUI analytics.",
+    "description": "SecurityOnetrackService: MIUI's system-level OneTrack telemetry, recording feature usage and page paths. Listed as removable vendor telemetry. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -2147,7 +2147,7 @@
   },
   "com.mobiletools.systemhelper": {
     "list": "Oem",
-    "description": "SystemHelper\nNot available for users, has something about dual sim, App Info.",
+    "description": "Unicom SystemHelper: carrier terminal-management component that collects device and installed-app data in the background, with no launcher entry. Verified removable on real devices. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -10808,7 +10808,7 @@
   },
   "com.qualcomm.qti.devicestatisticsservice": {
     "list": "Misc",
-    "description": "Device statistics service Statistics of the phone's usage:data, Wifi, battery, the use of various software, number of SMS and emails sent, etc.\nis not very useful, can be removed.",
+    "description": "Qualcomm device-statistics service: counts data/Wi-Fi/battery usage and per-app usage and reports it; holds READ_PRIVILEGED_PHONE_STATE. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -14384,7 +14384,7 @@
   },
   "com.qti.qcc": {
     "list": "Misc",
-    "description": "QCC\nHave a lot of stuff about logs, testing framework for Android with Robolectric, LTE Broadcast.\nIntroduced in android 13.\nHave png file qdma = Qualcomm Device Management and Analytics.\nSo it's only spyware.",
+    "description": "Qualcomm QCC / QDMA (Device Management and Analytics): chip-level telemetry that records device and firmware traits and reports to qcc.qualcomm.cn. Present only on some Qualcomm-platform devices. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -16648,7 +16648,7 @@
   },
   "com.miui.analytics": {
     "list": "Oem",
-    "description": "Xiaomi Analytics\nThis app is shady. According to a guy who tried to reverse engineer the app, Xiaomi Analytics can replace any (signed?) package\nthey want silently on your device within 24 hours. Maybe that no longer the case now but... you don't want analytics anyway.\nSource : http://blog.thijsbroenink.com/2016/09/xiaomis-analytics-app-reverse-engineered/\n",
+    "description": "Analytics: Xiaomi usage and crash reporting. Vendor telemetry, listed as removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -22770,7 +22770,7 @@
     "labels": []
   },
   "com.oppo.ctautoregist": {
-    "description": "Has something related to IMS SMS",
+    "description": "CTAutoRegist: China Telecom self-registration on ColorOS firmware; registers the device with the carrier and reports device data. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "removal": "Advanced",
     "list": "Oem",
     "dependencies": [],
@@ -23180,7 +23180,7 @@
     "labels": []
   },
   "com.coloros.regservice": {
-    "description": "Mobile DM authentication related (recommended to be uninstalled)",
+    "description": "ColorOS China Mobile RegService: terminal registration and data reporting. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "removal": "Recommended",
     "list": "Oem",
     "dependencies": [],
@@ -25621,7 +25621,7 @@
     "labels": []
   },
   "com.vivo.devicereg": {
-    "description": "Hidden debugging app ims.",
+    "description": "Device Management: carries China Mobile DM and China Telecom self-registration, including satellite SMS self-registration; it can pull cloud configuration and self-update. Shell removal is blocked by vivo's PMS protection list (DELETE_FAILED_USER_RESTRICTED; disabling fails with 'Cannot disable ... no root permission'). Root removal and 'pm install-existing' restore are verified; the Dhizuku route has no confirmed report yet. (Source: Eynnzerr/TelemetryCleaner)",
     "removal": "Recommended",
     "list": "Oem",
     "dependencies": [],
@@ -25653,7 +25653,7 @@
     "labels": []
   },
   "com.vivo.epm": {
-    "description": "EPM\nUseless crash app notify.",
+    "description": "EPM (Exception Policy Manager): vivo's exception and performance monitoring uploader. (Source: Eynnzerr/TelemetryCleaner)",
     "removal": "Recommended",
     "list": "Oem",
     "dependencies": [],
@@ -25813,7 +25813,7 @@
     "labels": []
   },
   "com.vivo.networkimprove": {
-    "description": "NetworkImprove\nMay be only for China because of non-English words. Also has logs.",
+    "description": "NetworkImprove: samples cell/signal parameters together with the foreground app at that moment and reports to moni-*stsdk.vivo.com.cn; its local database grows to tens of MB. (Source: Eynnzerr/TelemetryCleaner)",
     "removal": "Recommended",
     "list": "Oem",
     "dependencies": [],
@@ -26337,7 +26337,7 @@
     "labels": []
   },
   "com.vivo.magazine": {
-    "description": "Lockscreen Poster Service\nUseless things to lockscreen also it has trackers",
+    "description": "Magazine: vivo's lock-screen poster service, including exposure tracking. (Source: Eynnzerr/TelemetryCleaner)",
     "removal": "Recommended",
     "list": "Oem",
     "dependencies": [],
@@ -27763,7 +27763,7 @@
     "labels": []
   },
   "com.oplus.olc": {
-    "description": "Olc\nLogger, a new appearance in F.05, the domestic special, and all say that they are log core.",
+    "description": "OLC, ColorOS's log service in /system_ext. Its APK ships ForbidUninstall=true, so ColorOS rejects shell (UID 2000) removal from pm / Shizuku / app_process; Dhizuku (Device Owner) uninstalls it through PackageInstaller without root and it can be restored the same way. Disabling or hiding is refused even through Dhizuku; the work profile needs root. (Source: Eynnzerr/TelemetryCleaner)",
     "removal": "Recommended",
     "list": "Oem",
     "dependencies": [],
@@ -32663,7 +32663,7 @@
   },
   "com.bbk.iqoo.logsystem": {
     "list": "Oem",
-    "description": "User experience service\nTelemetry app.\nNote:Disabling this will break trial version system upgrade feature.",
+    "description": "BBKLOG: vivo / iQOO's log system, recording per-app usage time and reporting to f-up.vivo.com.cn; declares PACKAGE_USAGE_STATS and READ_PRIVILEGED_PHONE_STATE. Persistent app: restart once after disabling so it leaves memory. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -37414,7 +37414,7 @@
   },
   "com.huawei.regservice": {
     "list": "Oem",
-    "description": "RegService\nRegister for celluar network services, not needed.",
+    "description": "Huawei China Mobile RegService: terminal registration and data reporting. Verified removable. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
@@ -38022,7 +38022,7 @@
   },
   "com.vivo.nps": {
     "list": "Oem",
-    "description": "iQOO, vivo experience assessment.\nThis app has nothing necessary in the code.",
+    "description": "NPS: vivo's experience-survey telemetry, polling survey configuration in the background with no launcher entry. (Source: Eynnzerr/TelemetryCleaner)",
     "dependencies": [],
     "neededBy": [],
     "labels": [],
