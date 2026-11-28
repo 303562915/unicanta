@@ -286,15 +286,17 @@ fun RecommendationsScreen(
     // `animateScrollToPage`——翻页动画走到一半，`currentPage` 先跳到目标页，写回 `tab`，于是又起一次
     // 动画去同一个地方，前一次被取消。手指离开时动画已经没人推了，页面就停在两张中间。
     //
-    // 现在：**只有停稳之后**才把页码写回 `tab`（滚动过程中 `isScrollInProgress` 为真，一律不理）；
-    // 反过来，`tab` 被改（点标签）时才由程序翻页，而手指正按着屏幕时不抢。
+    // 现在：**只有停稳之后**才把页码写回 `tab`（滚动过程中 `isScrollInProgress` 为真，一律不理）。
     LaunchedEffect(tabs) {
         snapshotFlow { tabs.currentPage to tabs.isScrollInProgress }.collect { (shown, scrolling) ->
             if (!scrolling && shown != tab) tab = shown
         }
     }
+    // 反向：`tab` 被改（点标签）就翻过去，**不再看 `isScrollInProgress`**。加那道门会漏掉一种情况：
+    // 惯性还在滑的时候点标签，程序跳过不翻页，紧接着上面那条写回把 `tab` 改回落稳的那一页——
+    // 用户看到的是"点了没反应，标签自己弹回去"。这条路径不会成环：写回只在停稳时发生。
     LaunchedEffect(tab, tabs) {
-        if (!tabs.isScrollInProgress && tabs.currentPage != tab) tabs.animateScrollToPage(tab)
+        if (tabs.currentPage != tab) tabs.animateScrollToPage(tab)
     }
     // One scroll position per half, kept here rather than inside the tab: rebuilt on every switch,
     // a list would come back to its top and lose the row the reader was on.

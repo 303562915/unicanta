@@ -108,7 +108,7 @@ data class CommunityAirport(
  * 上榜，机场却另有一套数字，只会让人以为是两个系统在各自计票。哪儿都不用改的时候，直接引常量。
  */
 object AirportBallot {
-    /** 需要多少张认同票。 */
+    /** 门槛票数：两边一起算（与 [SuggestedApp.VOTES_NEEDED] 的注释同一口径，是总票数不是认同票）。 */
     const val VOTES_NEEDED: Int = SuggestedApp.VOTES_NEEDED
 
     /** 认同率要到多少（含）。 */

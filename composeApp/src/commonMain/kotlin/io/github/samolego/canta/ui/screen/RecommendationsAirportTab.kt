@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.core.CantaPlatform
+import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.AirportBallot
 import io.github.samolego.canta.data.recommend.CommunityAirport
@@ -128,6 +129,14 @@ internal val AirportTileSize = 34.dp
  */
 private const val AirportPageSize = 10
 
+/**
+ * 分页深度存在哪一格。
+ *
+ * 与滚动位置分开两格：`scroll:page` 记的是"停在哪一行"，这一格记的是"列表画到第几页"——两件事，
+ * 但必须在同一帧就读到，否则第一帧量到的列表比记忆的位置短，位置会被 `ScrollMemory` 顶到最后一条。
+ */
+private fun airportPagesKey(stateKey: String): String = "airport:pages:$stateKey"
+
 /** 机场类型：值 → 页面上的名字，顺序就是选择器的顺序。 */
 private val AirportKinds = listOf(
     "airport" to "机场",
@@ -191,23 +200,44 @@ internal fun RecommendationsAirportTab(
     var airportComposer by remember { mutableStateOf(false) }
     var airportBusy by remember { mutableStateOf(false) }
     var airportError by remember { mutableStateOf<String?>(null) }
-    /** 正在向 airport-head 之后追加的那一页位置：首页 10 条，往下划一页给 `pageSize` 条。 */
-    var visiblePages by remember { mutableIntStateOf(1) }
+    /**
+     * 摊开到第几页。**首帧就要对**，所以跟着滚动位置一起落盘、首帧同步读回来。
+     *
+     * 只按"这次划了几页"从 1 起步是不行的：滚动位置是记着的（[rememberRememberedListState]），
+     * 带着 index≈30 回来、列表却只画 10 条时，`guardIndex` 会在第一帧就把位置顶回最后一条
+     * （`ScrollMemory.kt` 的量测值那时只有 12），紧接着保存副作用把新位置写盘——旧位置就真的丢了。
+     * 所以深度也存一份：上次停在第六页，这次首帧就画到第六页。
+     *
+     * 不读 `listState.firstVisibleItemIndex`：那个值每滚一行就变，在组合里读它等于整块每帧重组。
+     */
+    var visiblePages by remember(stateKey) {
+        mutableIntStateOf(
+            (ScreenCache.get<Int>(airportPagesKey(stateKey)) ?: 1).coerceAtLeast(1),
+        )
+    }
+    LaunchedEffect(stateKey, visiblePages) {
+        ScreenCache.put(airportPagesKey(stateKey), visiblePages)
+    }
     /** 正在投的那一条：同一个 id 只发一趟，别的行照常可点。 */
     var votingId by remember { mutableStateOf(0L) }
 
     // 每次拿到新的一屏就写回外层：切走再回来先画它，而不是从空列表开始转圈。
     //
+    // **不在这里把 `visiblePages` 打回 1**：行内投一票也会改 `airports`，一改就缩回一页，正在第 3 页
+    // 投票的人会看到列表突然变短、位置被顶到最后一条。页数只增不减；真需要从头看的场合（分享成功）
+    // 自己滚回顶部（见下面分享那个分支）。
+    //
     // 订阅链接不在这里写回：取订阅已经搬到详情页，这一层手里那一份只会是旧的，写回去会把详情页
     // 刚记下的链接盖掉。
-    LaunchedEffect(airports, loading, error, reloadKey) {
-        // 列表换了（投过票重排、刚分享完又拉了一趟）就从第一页重来：翻到第 5 页的人，
-        // 对着一份重排过的榜单继续往下划，看到的不是他想看的顺序。
-        visiblePages = 1
+    //
+    // `reloadKey` 两头对齐用「取大」：详情页 `publish` 会把它 +1（表示"后端变了，回来要重拉"），
+    // 无条件写回本地值会把那次 +1 压掉，重拉就永远不发生。
+    LaunchedEffect(airports, loading, error, reloadKey, state.reloadKey) {
+        if (state.reloadKey > reloadKey) reloadKey = state.reloadKey
         state.airports = airports
         state.loading = loading
         state.error = error
-        state.reloadKey = reloadKey
+        if (reloadKey > state.reloadKey) state.reloadKey = reloadKey
     }
 
     LaunchedEffect(repository, who, reloadKey) {
@@ -365,7 +395,11 @@ internal fun RecommendationsAirportTab(
                                 if (entry.url.isNotBlank()) {
                                     platform.openUrl(entry.url)
                                 } else {
-                                    platform.showMessage("这一条还没填官网，去「机场投票」里补一下。")
+                                    // 详情页是只读的，那里补不了官网；能补的是上面那张「分享一个机场」
+                                    // 表单——后端按「同一身份 + 同一个名字」认成修改，不会多出一条。
+                                    platform.showMessage(
+                                        "这一条还没填官网；用同一个名字在「分享一个机场」里重发一次就能补上。",
+                                    )
                                 }
                             },
                         )
@@ -420,6 +454,9 @@ internal fun RecommendationsAirportTab(
                     if (id != null) {
                         airportComposer = false
                         reloadKey++
+                        // 刚分享完就想看自己那条：它排在列表最前面，所以顺手回到顶部，
+                        // 不然人还停在中间，只看到列表抖了一下。
+                        listState.scrollToItem(0)
                         platform.showMessage("已分享，等大家来评")
                     } else {
                         airportError = repo.lastError ?: "没发出去：检查一下网络再试"
@@ -434,7 +471,7 @@ internal fun RecommendationsAirportTab(
     // 回来时这一页还在原来的滚动位置上——滚动位置记在 [listState] 里，由 rememberRememberedListState 存着。
 }
 
-/** 钱包卡：余额、今天领没领、连签几天，以及"这些分哪来的"。 */
+/** 列表最上面那一行入口：加号 + 标题 + 一句说明（「分享一个机场」用的就是它）。 */
 @Composable
 private fun EntryRow(
     title: String,
@@ -753,7 +790,13 @@ private fun AirportRecommendRow(
                 )
             }
             Text(
-                text = entry.metaLine.ifEmpty { "还没人评" },
+                text = if (entry.votes == 0 && entry.ratingCount == 0) {
+                    // metaLine 的头一项恒是类型标签，永远不会是空串，所以兜底只能自己判：
+                    // 一票一星都没有时才知道"还没人评"。
+                    "还没人评"
+                } else {
+                    entry.metaLine
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
@@ -929,5 +972,3 @@ private fun AirportComposerDialog(
         }
     }
 }
-
-/** 发布商品的表单。 */

@@ -206,7 +206,10 @@ fun AirportDetailScreen(
         val current = entry
         when {
             repo == null -> platform.showMessage("社区后端没连上，投票没发出去。")
-            current == null || busy -> Unit
+            // `ballotSettled` 也挡住：按钮在结算后会换成「投票结束」，但两台设备/刚拉过列表时会
+            // 出现"屏幕上还是按钮、服务端已经过线"，而 `airport_vote` 照收不误——那一票会把刚
+            // 结束的一轮又推回未结算，两个按钮重新冒出来。与榜单那一行同一个判断。
+            current == null || busy || current.ballotSettled -> Unit
             else -> {
                 // busy 在协程外面置上：同一帧里点两下都会走到这里，第二下会把第一下的标记覆盖掉。
                 busy = true
