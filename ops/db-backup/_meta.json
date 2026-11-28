@@ -1,9 +1,9 @@
 {
   "_about": "User-contributed community content, exported from the Supabase project by .github/workflows/db-backup.yml. Identity, device and telemetry tables are deliberately excluded — see the workflow header for the exact list.",
   "project_ref": "axuhfogeovtsbxokqccf",
-  "exported_at": "2026-11-28T04:30:38Z",
+  "exported_at": "2026-11-28T04:45:30Z",
   "tables": {
-    "plans": 198,
+    "plans": 197,
     "plan_votes": 4443,
     "comments": 489,
     "recommendations": 34,
@@ -11,7 +11,7 @@
     "level_fixes": 4
   },
   "digests": {
-    "plans": "c6b0b276af7b1978",
+    "plans": "f394b7d303441fca",
     "plan_votes": "dd66080483657b9f",
     "comments": "fa54309875be768b",
     "recommendations": "57f03f0c07ca53d3",
@@ -19,9 +19,9 @@
     "level_fixes": "04b44d5c346d2374"
   },
   "previous_counts": {
-    "plans": 197,
+    "plans": 198,
     "plan_votes": 4443,
-    "comments": 488,
+    "comments": 489,
     "recommendations": 34,
     "description_fixes": 12,
     "level_fixes": 4
