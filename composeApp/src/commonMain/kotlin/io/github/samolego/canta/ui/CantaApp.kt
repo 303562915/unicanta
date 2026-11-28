@@ -147,6 +147,7 @@ import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
 import io.github.samolego.canta.ui.screen.TweaksScreen
+import io.github.samolego.canta.ui.screen.TelemetryGuideScreen
 import io.github.samolego.canta.ui.screen.MineScreen
 import io.github.samolego.canta.ui.screen.ProfileScreen
 import io.github.samolego.canta.ui.screen.SettingsScreen
@@ -1422,7 +1423,12 @@ private fun CantaNavigation(
                     // 只在展开时才去拉榜，折叠时不发请求。
                     sponsors = sponsorStore,
                     onOpenProfile = { person -> navController.navigate(Screen.Uploader.routeFor(person)) },
+                    // 关于页那一行「遥测组件卸载指南」：按厂商列出运营商/行为采集组件与各通道的结论。
+                    onOpenTelemetryGuide = { navController.navigate(Screen.TelemetryGuide.route) },
                 )
+            }
+            composable(route = Screen.TelemetryGuide.route) {
+                TelemetryGuideScreen(onNavigateBack = { navController.navigateUp() })
             }
             composable(route = Screen.Theme.route) {
                 ThemeScreen(

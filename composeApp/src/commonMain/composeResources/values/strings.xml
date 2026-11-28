@@ -489,6 +489,9 @@
     <string name="about_sponsors_howto_note">Goes to servers and tokens</string>
     <string name="about_source_repo">Source code</string>
     <string name="about_latest_download">Latest download</string>
+    <string name="about_telemetry_guide">Telemetry components</string>
+    <string name="about_telemetry_guide_hint">What each vendor ships, what it can see, and which route can remove it</string>
+    <string name="telemetry_guide_title">Telemetry components</string>
     <string name="description_source">Description from the UAD list, published in English</string>
     <string name="description_translated_source">Description translated by Canta from the UAD list</string>
     <string name="bloat_description_language">en</string>

@@ -38,6 +38,15 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     data object About : Screen("about")
 
     /**
+     * 遥测组件指南：各厂商预置的运营商 / 行为采集组件、它们要的权限，以及三条通道
+     * （Shizuku / Dhizuku / Root）下的卸载结论。
+     *
+     * 从 [About] 进。单独一页而不是关于页上的一段：内容是按厂商分组的几十行，
+     * 塞进关于页会把那一页的卡片流打断，而且这块是"查资料"用的，不是每次进关于页都要看的。
+     */
+    data object TelemetryGuide : Screen("telemetry-guide")
+
+    /**
      * 卸载记录：一份份「方案」——本机的卸载记录算一份，导入进来的每一份各算一份。
      *
      * 可以导出、导入、点开看包含哪些包、整份装回来。从 [Settings] 那一页进，不占底栏。

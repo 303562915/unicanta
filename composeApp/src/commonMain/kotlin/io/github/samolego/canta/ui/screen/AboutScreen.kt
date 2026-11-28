@@ -68,6 +68,8 @@ import io.github.samolego.canta.generated.resources.about_contributors
 import io.github.samolego.canta.generated.resources.about_coolapk
 import io.github.samolego.canta.generated.resources.about_coolapk_hint
 import io.github.samolego.canta.generated.resources.about_latest_download
+import io.github.samolego.canta.generated.resources.about_telemetry_guide
+import io.github.samolego.canta.generated.resources.about_telemetry_guide_hint
 import io.github.samolego.canta.generated.resources.about_qq_group
 import io.github.samolego.canta.generated.resources.about_qq_group_copied
 import io.github.samolego.canta.generated.resources.about_qq_group_hint
@@ -239,6 +241,13 @@ internal fun AboutScreen(
      * 所以这里不再需要"提交者叫什么名字"。
      */
     onOpenProfile: (String) -> Unit = {},
+    /**
+     * 进「遥测组件卸载指南」：各厂商运营商/行为采集组件的清单、它们要的权限，以及
+     * Shizuku / Dhizuku / Root 三条通道下的卸载结论。
+     *
+     * 默认空实现：关于页只负责画那一行，路由由 `CantaApp` 给。
+     */
+    onOpenTelemetryGuide: () -> Unit = {},
 ) {
     val autoInstallUpdates by settingsViewModel.autoInstallUpdates.collectAsStateWithLifecycle()
     val confirmBeforeInstall by settingsViewModel.confirmBeforeInstall.collectAsStateWithLifecycle()
@@ -414,6 +423,14 @@ internal fun AboutScreen(
                 title = stringResource(Res.string.about_latest_download),
                 subtitle = DOWNLOAD_PAGE_URL,
                 onClick = { platform.openUrl(DOWNLOAD_PAGE_URL) },
+            )
+            // 遥测组件指南：群里反复问的「这个包能不能删」「为什么删了报失败」在这里一次说清，
+            // 按厂商分段，每一行给出 Shizuku / Dhizuku / Root 三条通道的结论。
+            AppLinkCard(
+                glyph = FlGlyphs.warning,
+                title = stringResource(Res.string.about_telemetry_guide),
+                subtitle = stringResource(Res.string.about_telemetry_guide_hint),
+                onClick = onOpenTelemetryGuide,
             )
             // 「最近更新」放最下面，而且默认折叠：它答的是「最近几版改了什么」，是翻到底才要找的东西，
             // 不该压在版本号和更新卡片上面。展开与否记在设置里，下次进来还是这个样子。

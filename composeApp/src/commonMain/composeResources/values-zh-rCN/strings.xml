@@ -295,6 +295,9 @@
     <string name="about_sponsors_howto_note">赞助用于服务器和 token</string>
     <string name="about_source_repo">开源项目</string>
     <string name="about_latest_download">最新版本下载</string>
+    <string name="about_telemetry_guide">遥测组件卸载指南</string>
+    <string name="about_telemetry_guide_hint">各厂商装了什么、能看见哪些权限、哪条通道能卸掉</string>
+    <string name="telemetry_guide_title">遥测组件指南</string>
     <string name="description_source">描述来自 UAD 标注库，原文为英文</string>
     <string name="description_translated_source">描述由本应用译自 UAD 标注库</string>
     <string name="bloat_description_language">zh</string>
