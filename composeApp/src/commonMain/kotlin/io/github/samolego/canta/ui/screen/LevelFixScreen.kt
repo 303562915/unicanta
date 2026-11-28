@@ -1,10 +1,13 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -65,6 +68,7 @@ private val LEVEL_DISAGREE = Color(0xFFC0564C)
  *
  * 只在真正打开这一页时联网：应用列表页每进一次已经四个请求了，级别修正不能再多一个。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LevelFixScreen(
     packageName: String,
@@ -292,24 +296,59 @@ fun LevelFixScreen(
                             color = scheme.onSurface,
                         )
                         Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // 档位用和「已安装」列表同一个徽标：同一枚图标、同一个缩写、同一种颜色。
+                        // 别在这一页另造一套视觉——用户在列表里看到绿色 `rec`，到这里选的必须是同一枚
+                        // 绿色 `rec`，否则两处说的是两个世界。
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
                             LEVELS.forEach { level ->
                                 val picked = (chosen.ifEmpty { mine?.removal.orEmpty() }) == level.listName
-                                Box(
+                                Row(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(percent = 50))
-                                        .background(if (picked) scheme.primary else scheme.surfaceContainerHighest)
+                                        .background(
+                                            if (picked) scheme.surfaceContainerLow else scheme.surfaceContainerHighest,
+                                        )
+                                        // 选中时用这一档自己的徽标色描边：黄色 adv、红色 exp、品红 no，
+                                        // 和列表上"这包有多危险"是同一个色号。
+                                        .border(
+                                            width = if (picked) 1.5.dp else 1.dp,
+                                            color = if (picked) level.badgeColor else Color.Transparent,
+                                            shape = RoundedCornerShape(percent = 50),
+                                        )
                                         .clickable { chosen = level.listName }
-                                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                                        .padding(start = 5.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    AppBadge(level)
+                                    Spacer(Modifier.width(5.dp))
                                     Text(
                                         text = stringResource(level.nameRes),
                                         style = FlText.caption1.copy(
                                             fontWeight = if (picked) FlText.emphasized else null,
                                         ),
-                                        color = if (picked) scheme.onPrimary else scheme.onSurfaceVariant,
+                                        color = if (picked) scheme.onSurface else scheme.onSurfaceVariant,
                                     )
                                 }
+                            }
+                        }
+                        // 选中哪一档，下面就说清这一档意味着什么（会不会破坏功能、会不会开不了机）。
+                        // 这段就是「已安装」列表里点徽标看到的同一句，不另写一份。
+                        val pickedLevel = AppBadgeInfo.byNameIgnoreCaseOrNull(
+                            chosen.ifEmpty { mine?.removal.orEmpty() },
+                        ) ?: publishedBadge
+                        if (pickedLevel != null) {
+                            Spacer(Modifier.height(6.dp))
+                            Row(verticalAlignment = Alignment.Top) {
+                                AppBadge(pickedLevel)
+                                Spacer(Modifier.width(7.dp))
+                                Text(
+                                    text = stringResource(pickedLevel.description),
+                                    style = FlText.caption2,
+                                    color = scheme.onSurfaceVariant,
+                                )
                             }
                         }
                         Spacer(Modifier.height(6.dp))
@@ -530,6 +569,18 @@ private fun LevelFixCard(
                 Spacer(Modifier.width(6.dp))
                 Text(text = stringResource(badge.nameRes), style = FlText.caption1, color = scheme.onSurface)
             }
+        }
+        // 这一档在「已安装」列表里意味着什么，这里照原话写一遍：看历史的人要判断的是
+        // 「这个包到底能不能删」，光知道档位名叫"专家"没有意义。
+        AppBadgeInfo.byNameIgnoreCaseOrNull(fix.removal)?.let { badge ->
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(badge.description),
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 
         val why = fix.note("zh").ifBlank { fix.note("en") }
