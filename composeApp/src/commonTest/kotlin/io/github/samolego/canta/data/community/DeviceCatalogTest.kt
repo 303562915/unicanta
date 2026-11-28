@@ -30,6 +30,26 @@ class DeviceCatalogTest {
         modelPeople = modelPeople,
     )
 
+    /**
+     * 同一台机器报了两种 brand，列表里只能是一条。
+     *
+     * 真实数据：`25102RKBEC`（REDMI K90 Pro Max）有人报 `ro.product.manufacturer = Xiaomi`、
+     * 有人报 `Redmi`，后端因此给了两行；用 `(brand, model)` 当聚合键的话，机型列表里就是
+     * 两个一模一样的「REDMI K90 Pro Max」（2026-11-28 用户报的）。
+     */
+    @Test
+    fun sameModelUnderTwoBrandsIsOneModel() {
+        val models = listOf(
+            build(brand = "Xiaomi", model = "25102RKBEC", marketName = "REDMI K90 Pro Max", romVersion = 4),
+            build(brand = "Redmi", model = "25102RKBEC", marketName = "REDMI K90 Pro Max", romVersion = 4),
+        ).toCatalogModels()
+
+        assertEquals(1, models.size)
+        assertEquals("REDMI K90 Pro Max", models.single().label)
+        // 两个 brand 说的是同一个 build：去重之后只留一条，而不是两条一模一样的版本。
+        assertEquals(1, models.single().builds.size)
+    }
+
     @Test
     fun buildsOfOneModelFoldIntoOneModel() {
         val models = listOf(

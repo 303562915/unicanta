@@ -64,10 +64,20 @@ data class CatalogModel(
  * how a phone's builds are read.
  */
 fun List<CatalogBuild>.toCatalogModels(): List<CatalogModel> {
-    val order = mutableListOf<Pair<String, String>>()
-    val byModel = linkedMapOf<Pair<String, String>, MutableList<CatalogBuild>>()
+    val order = mutableListOf<String>()
+    val byModel = linkedMapOf<String, MutableList<CatalogBuild>>()
     for (build in this) {
-        val key = build.brand.lowercase() to build.model.lowercase()
+        // 聚合键**只用 model**，不用 (brand, model)。
+        //
+        // `brand` 存的是手机自报的 `ro.product.manufacturer`，同一台机器会报出两个值来：
+        // Redmi 是小米子品牌，`25102RKBEC`（REDMI K90 Pro Max）有人报 `Xiaomi`、有人报 `Redmi`。
+        // 拿它进聚合键，机型列表里就出现两个一模一样的「REDMI K90 Pro Max」——两边的 build
+        // 还是同一批（2026-11-28 用户报的）。一台机器的身份是 `model`（零售编号，一台一个），
+        // 厂商字符串不是身份。
+        //
+        // 后端 `plan_catalog_realtime()` 那边已经按 model 归一了 brand；这里再收一道，
+        // 是为了**存量数据**：目录缓存里可能还留着旧的重复行，客户端不该把它画成两个。
+        val key = build.model.lowercase()
         val list = byModel.getOrPut(key) {
             order += key
             mutableListOf()
@@ -82,13 +92,19 @@ fun List<CatalogBuild>.toCatalogModels(): List<CatalogModel> {
             model = first.model,
             // Any build carries the model's marketing name; the newest one wins.
             marketName = builds.firstOrNull { it.marketName.isNotBlank() }?.marketName.orEmpty(),
-            builds = builds.sortedWith(
-                // Newest build first: "16.0.501" above "16.0.3", and the rows that carry no build
-                // (uploaded before builds were stored) settle at the bottom of the model.
-                compareByDescending<CatalogBuild> { it.romVersion }
-                    .thenByDescending { it.romBuild }
-                    .thenBy { it.rom }
-            ),
+            builds = builds
+                // 合并 brand 之后，同一个 build 可能来两遍（Xiaomi 一行、Redmi 一行，版本完全一样）。
+                // 不去重的话，点进这台机器会看到两个相同的「OS4.0.8.0.XPMCNXM」。
+                .distinctBy {
+                    Triple(it.rom.lowercase(), it.romVersion, it.romBuild.lowercase())
+                }
+                .sortedWith(
+                    // Newest build first: "16.0.501" above "16.0.3", and the rows that carry no build
+                    // (uploaded before builds were stored) settle at the bottom of the model.
+                    compareByDescending<CatalogBuild> { it.romVersion }
+                        .thenByDescending { it.romBuild }
+                        .thenBy { it.rom }
+                ),
         )
     }
 }
