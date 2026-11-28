@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import io.github.samolego.canta.ui.component.rememberRememberedListState
+import io.github.samolego.canta.ui.component.scrollCacheKey
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -274,15 +275,16 @@ internal fun RecommendationsAirportTab(
             if (fresh == null) {
                 platform.showMessage("没投上：${repo.lastError ?: "检查一下网络再试"}")
             } else {
-                // 先把这一行的三个数就地换掉：重拉整张榜会让已经翻到第几页的人回到第一页，
-                // 而且票一投完列表就重排，手指还停在原来那一行上，看着像点错了行。
+                // 这一行的三个数就地换掉，**不碰 `reloadKey`**：投票的回答已经是最新的
+                // `agrees / disagrees / mine`，再让后端整张榜重拉一趟，只是把刚拿到的同样数字再取一次，
+                // 顺带把榜单重排一遍。写回外层那一份靠上面的 effect（`airports` 变了它就同步），
+                // 所以另一个 tab 切过去也是新票数。
                 val updated = entry.copy(
                     agrees = fresh.agrees,
                     disagrees = fresh.disagrees,
                     mine = fresh.mine,
                 )
                 airports = airports.map { if (it.id == updated.id) updated else it }
-                state.publish(updated)
             }
         }
     }
@@ -457,6 +459,9 @@ internal fun RecommendationsAirportTab(
                         // 刚分享完就想看自己那条：它排在列表最前面，所以顺手回到顶部，
                         // 不然人还停在中间，只看到列表抖了一下。
                         listState.scrollToItem(0)
+                        // 顶部不记账（`ScrollMemory` 见 index<=0 就不写），所以盘上那份还停在上次的深处；
+                        // 不清掉的话，切走再回来会落回老位置、而不是刚分享完的顶部。
+                        ScreenCache.remove(scrollCacheKey(stateKey))
                         platform.showMessage("已分享，等大家来评")
                     } else {
                         airportError = repo.lastError ?: "没发出去：检查一下网络再试"
