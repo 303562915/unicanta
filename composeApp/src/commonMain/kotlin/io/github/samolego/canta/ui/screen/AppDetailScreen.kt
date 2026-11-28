@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.samolego.canta.data.app.AppInfo
+import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.cache.ScreenCache
 import io.github.samolego.canta.data.cache.stableMerge
 import kotlinx.serialization.Serializable
@@ -374,6 +375,15 @@ fun AppDetailScreen(
      * 的评论。上层传的是 `settingsViewModel.identitySetup`，改完名字当场就放开。
      */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
+    /**
+     * 这台手机**没有**这个包时，用来画说明与级别的那条总库条目。
+     *
+     * 为什么需要它：方案详情里点一个包就进这一页，而方案常常带着别的机型才有的包
+     * （比如 `com.qti.qcc` 这种高通平台组件）。那种包在本机扫不到，[app] 是 null，于是
+     * 「这个包是什么」整段不画——用户看到的就是点进来一片空白。总库是按包名索引的，
+     * 与这台机器装没装无关，所以拿它兜底：没有包，也还有“它是什么、能不能删”。
+     */
+    fallback: BloatData? = null,
 ) {
     val scope = rememberCoroutineScope()
     // 这个包上一次画出来的那一份（进程级，见 [ScreenCache]）：有它就先画它，网络回来的那一版再
@@ -853,6 +863,8 @@ fun AppDetailScreen(
                     onOpenLevelFixes = { onOpenLevelFixes(packageName) },
                     onUninstall = onUninstall,
                     onReinstall = onReinstall,
+                    // 本机没有这个包（方案里带着别的机型的包）时，说明与级别从总库那条取。
+                    fallback = fallback,
                 )
             }
             item { SectionHeading("评论 · ${visibleComments.size}") }
@@ -1022,6 +1034,8 @@ private fun AppHero(
     onUninstall: (() -> Unit)? = null,
     /** 把已卸载的包装回去；null 与 [onUninstall] 同理。 */
     onReinstall: (() -> Unit)? = null,
+    /** 本机没有这个包时，总库里那一条（说明与级别都从它取）。 */
+    fallback: BloatData? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val recommended = remember(recommendations, packageName) {
@@ -1029,6 +1043,8 @@ private fun AppHero(
     }
     val appliedFix = remember(fixes) { fixes.firstOrNull { it.applied } }
     val uninstalled = app?.isUninstalled == true
+    // 本机扫不到这个包，但总库认识它：级别与说明照样画出来，别让人点进来只看到一行包名。
+    val badge = app?.badgeInfo ?: fallback?.badgeInfo
     Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // 图标和它的状态一起：那个「未卸载 / 已卸载」的胶囊就贴在图标底下，说明的是这颗
@@ -1098,13 +1114,13 @@ private fun AppHero(
             ReplacementRow(suggestion = suggestion, onOpen = { onOpenRecommendation(suggestion) })
         }
 
-        app?.badgeInfo?.let { badge ->
+        badge?.let { shown ->
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AppBadge(badge)
+                AppBadge(shown)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = stringResource(badge.description),
+                    text = stringResource(shown.description),
                     style = FlText.caption1,
                     color = scheme.onSurfaceVariant,
                 )
@@ -1116,6 +1132,7 @@ private fun AppHero(
         // words these are.
         val shownDescription = appliedFix?.body?.takeIf { it.isNotBlank() }
             ?: app?.description?.takeIf { it.isNotBlank() }
+            ?: fallback?.description?.takeIf { it.isNotBlank() }
         if (shownDescription != null) {
             Spacer(Modifier.height(8.dp))
             io.github.samolego.canta.ui.component.text.UrlText(
@@ -1129,8 +1146,12 @@ private fun AppHero(
                         "${appliedFix.agrees}/${appliedFix.votes} 人认同"
                 } else {
                     stringResource(
-                        if (app?.descriptionTranslated == true) Res.string.description_translated_source
-                        else Res.string.description_source
+                        // 本机没装、说明来自总库那条时，仍然如实标「来自名单」，而不是假装是这台机器报的。
+                        if ((app?.descriptionTranslated ?: fallback?.translated) == true) {
+                            Res.string.description_translated_source
+                        } else {
+                            Res.string.description_source
+                        }
                     )
                 },
                 style = FlText.caption2,
@@ -1147,7 +1168,7 @@ private fun AppHero(
             )
             // 级别那一行紧跟在徽标与说明下面：读的人刚看完「这包标成推荐卸载」，下一个问题
             // 通常就是「这台机器上真的能删吗」。
-            if (app.badgeInfo != null) {
+            if (badge != null) {
                 Spacer(Modifier.height(2.dp))
                 EntriesRow(
                     label = "级别标错了？提一条修正、让别人投票",

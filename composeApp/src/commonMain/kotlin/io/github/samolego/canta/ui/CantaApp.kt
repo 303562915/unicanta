@@ -28,12 +28,14 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import io.github.samolego.canta.data.app.BackupApp
 import io.github.samolego.canta.data.app.toBackupApp
+import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import androidx.compose.ui.Alignment
@@ -2584,6 +2586,11 @@ private fun AppDetailRoute(
     var appVoter by remember { mutableStateOf("") }
     // The secret that proves the number, needed to delete a comment of this install.
     var appToken by remember { mutableStateOf("") }
+    // 本机扫不到这个包时的那条总库条目：方案里带着别的机型才有的包时，点进来仍然要有说明
+    // （`com.qti.qcc` 这类高通组件在小米机上就是扫不到的）。
+    val appFallback by produceState<BloatData?>(initialValue = null, packageName) {
+        value = runCatching { deps.bloatRepository.local()[packageName] }.getOrNull()
+    }
     LaunchedEffect(Unit) {
         appProfile = handler.deviceProfile()
         appAuthor = DeviceIdentity.displayName(deps.settings)
@@ -2618,6 +2625,7 @@ private fun AppDetailRoute(
         onReinstall = { mainViewModel.reinstallPackage(packageName) },
         // 名字/头像没设过：这一页收不了评论，发送键灰掉并说一句为什么。
         setupGate = setupGate,
+        fallback = appFallback,
     )
     // 上面那两个动作的弹窗由主屏用的那份实现来画：同一个 dialog 状态，同样的措辞。
     MainDialogs(
