@@ -154,6 +154,7 @@ class LevelFixRepository(private val repository: PlanRepository) {
         choice: String,
         note: String = "",
         voter: String = "",
+        name: String = "",
     ): LevelFixResult<LevelBallots> {
         if (packageName.isEmpty()) return LevelFixResult.Failed("没有包名", network = false)
         if (dimension.isEmpty() || choice.isEmpty()) {
@@ -167,6 +168,8 @@ class LevelFixRepository(private val repository: PlanRepository) {
             put("p_choice", choice)
             put("p_note", note)
             put("p_voter", voter)
+            // 显示名只为「修正历史」里能认出是谁；旧 APK 不带，历史里就是"匿名"。
+            put("p_name", name)
             if (proof.isNotEmpty()) put("p_token", proof)
         }.toString()
         val text = repository.voteLevelFixBallot(payload) ?: return repository.failureReason()
@@ -179,6 +182,38 @@ class LevelFixRepository(private val repository: PlanRepository) {
         } else {
             LevelFixResult.Ok(parsed)
         }
+    }
+
+    /**
+     * 最近的投票记录（谁、在哪个维度、投了什么、写了什么依据），用于「修正历史」。
+     *
+     * 与 [ballots] 分开一趟：那个给百分比与"我投了什么"，这个给人名、时间和依据。
+     * null = 这次没问到（断网、后端还没这个函数）。
+     */
+    suspend fun history(packageName: String, limit: Int = 30): List<LevelBallotEntry>? {
+        if (packageName.isEmpty()) return null
+        val body = buildJsonObject {
+            put("p_pkg", packageName)
+            put("p_limit", limit)
+        }.toString()
+        val text = repository.levelFixBallotHistory(body) ?: return null
+        return runCatching {
+            val element = JSON.parseToJsonElement(text)
+            if (element is JsonNull) {
+                emptyList()
+            } else {
+                element.jsonArray.map { row ->
+                    val o = row.jsonObject
+                    LevelBallotEntry(
+                        dimension = o["dimension"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        choice = o["choice"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        name = o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        note = o["note"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        at = o["at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    )
+                }
+            }
+        }.getOrNull()
     }
 
     /** 三个维度的答复；字段都可缺省，后端没给就按 0 画。 */

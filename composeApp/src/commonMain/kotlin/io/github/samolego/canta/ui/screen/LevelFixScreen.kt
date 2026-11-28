@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.community.LevelBallotDimensions
+import io.github.samolego.canta.data.community.LevelBallotEntry
 import io.github.samolego.canta.data.community.LevelBallots
 import io.github.samolego.canta.data.community.LevelFix
 import io.github.samolego.canta.data.community.LevelFixRepository
@@ -50,10 +51,8 @@ import io.github.samolego.canta.ui.component.BadgeImpact
 import io.github.samolego.canta.ui.component.BadgeImpactTag
 import io.github.samolego.canta.ui.component.BadgeImpactTags
 import io.github.samolego.canta.ui.component.DisabledBadge
-import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SystemBadge
-import io.github.samolego.canta.ui.component.avatarColorOf
 import io.github.samolego.canta.ui.component.badgeRiskSummary
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.fl.FlBarButton
@@ -65,8 +64,6 @@ import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 
-/** Green for「这条改得对」，与描述修正那一页同一个色。 */
-private val LEVEL_AGREE = Color(0xFF2FA84F)
 
 /**
  * 「这个包该被标成什么级别」：现在是哪一档、谁提过什么、票数到哪了、以及自己要投哪一边。
@@ -102,37 +99,31 @@ fun LevelFixScreen(
 ) {
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
-    var fixes by remember(packageName) {
-        mutableStateOf(repository.cachedLevelFixes(packageName))
-    }
-    var loading by remember(packageName) { mutableStateOf(fixes.isEmpty()) }
-    var reloads by remember { mutableIntStateOf(0) }
     var ballots by remember(packageName) { mutableStateOf<LevelBallots?>(null) }
+    var history by remember(packageName) { mutableStateOf<List<LevelBallotEntry>>(emptyList()) }
+    var loading by remember(packageName) { mutableStateOf(true) }
+    var reloads by remember { mutableIntStateOf(0) }
     var note by remember { mutableStateOf("") }
     var votingBallot by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(packageName, authorId, reloads) {
-        if (fixes.isEmpty()) loading = true
-        val fetched = repository.fixes(packageName, authorId)
-        if (fetched == null) {
+        // 两个请求一起发：一个给三组的票数与"我投了什么"，一个给「修正历史」里的人和依据。
+        val freshBallots = repository.ballots(packageName, authorId)
+        if (freshBallots == null) {
             loadError = "没拉到最新的一版（网络或后端没通）"
         } else {
-            fixes = fetched
+            ballots = freshBallots
             loadError = null
-            repository.remember(packageName, fetched)
         }
-        // 三个维度（级别 / 后果 / 系统应用）的票数与"我投了什么"：和上面那趟一起取，
-        // 进这一页只多一个请求，不会变成两个页面轮着问。
-        ballots = repository.ballots(packageName, authorId) ?: ballots
+        history = repository.history(packageName) ?: history
         loading = false
     }
 
     // 门槛由后端给（同一个包统一），这里只用来把"还差多少"说清楚。
-    val needed = ballots?.needed ?: fixes.firstOrNull()?.needed ?: LevelFix.VOTES_NEEDED
-    val shareNeeded = ballots?.shareNeeded ?: fixes.firstOrNull()?.shareNeeded ?: LevelFix.SHARE_NEEDED
-    val passedRemoval = fixes.firstOrNull { it.applied && !it.superseded }?.removal
+    val needed = ballots?.needed ?: LevelFix.VOTES_NEEDED
+    val shareNeeded = ballots?.shareNeeded ?: LevelFix.SHARE_NEEDED
 
     fun pick(dimension: String, choice: String) {
         if (votingBallot) return
@@ -155,14 +146,17 @@ fun LevelFixScreen(
                 choice = choice,
                 note = if (dimension == LevelBallotDimensions.LEVEL) note.trim() else "",
                 voter = authorId,
+                // 显示名只为历史里认得出是谁；没有名字就写"匿名"。
+                name = author,
             )
             when (result) {
                 is LevelFixResult.Ok -> {
                     ballots = result.value
                     if (dimension == LevelBallotDimensions.LEVEL) {
                         notice = "已记下你选的一档；票够了会由工作流合并进名单"
-                        reloads++
                     }
+                    // 三组都要刷新历史：这一票刚进去，历史里该多一行（或那一行改了选项）。
+                    reloads++
                 }
                 // 原因原样显示：网络没通 / 后端拒绝的原话 / 选项不合法，必须是不同的字。
                 is LevelFixResult.Failed -> notice = "没记上：${result.reason}"
@@ -175,7 +169,7 @@ fun LevelFixScreen(
      * 只把「依据」写进已经投过的那一票。
      *
      * 选项点是即投，但依据是一段文字：写完了要重新提交同一票，后端才会更新 note
-     * （`level_fix_ballot_vote` 对同一身份同一维度是 upsert）。还没选级别就没有可挂的地方。
+     * （`level_fix_ballot_vote_v2` 对同一身份同一维度是 upsert）。还没选级别就没有可挂的地方。
      */
     fun submitNote() {
         if (votingBallot) return
@@ -201,10 +195,13 @@ fun LevelFixScreen(
                 choice = level,
                 note = note.trim(),
                 voter = authorId,
+                name = author,
             )) {
                 is LevelFixResult.Ok -> {
                     ballots = result.value
                     notice = "依据已提交"
+                    // 历史里那条记录现在带着依据，重新拉一趟让它显示出来。
+                    reloads++
                 }
                 is LevelFixResult.Failed -> notice = "没提交上：${result.reason}"
             }
@@ -298,7 +295,7 @@ fun LevelFixScreen(
                 item {
                     Card {
                         Text(
-                            text = "投票",
+                            text = if (ballots?.applied == true) "投票 · 已通过，等待下发" else "投票",
                             style = FlText.caption1.copy(fontWeight = FlText.emphasized),
                             color = scheme.onSurface,
                         )
@@ -429,7 +426,7 @@ fun LevelFixScreen(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "${fixes.size}",
+                        text = "${history.size}",
                         style = FlText.caption2,
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier
@@ -441,7 +438,7 @@ fun LevelFixScreen(
             }
 
             when {
-                loading && fixes.isEmpty() -> item {
+                loading && history.isEmpty() -> item {
                     Text(
                         text = "…",
                         style = FlText.footnote,
@@ -449,9 +446,9 @@ fun LevelFixScreen(
                     )
                 }
 
-                fixes.isEmpty() -> item {
+                history.isEmpty() -> item {
                     Text(
-                        text = loadError ?: "还没有人提过这个包的级别修正。你是第一个用这版系统的人。",
+                        text = loadError ?: "还没有人投过。投完就会出现在这里（待通过的也在）。",
                         style = FlText.footnote,
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 6.dp),
@@ -469,10 +466,10 @@ fun LevelFixScreen(
                             )
                         }
                     }
-                    items(fixes, key = { it.id }) { fix ->
-                        // 历史只读：投票在上面的三组里（每个维度一人一票）。再给旧提案留一套
-                        // "认同 / 不认同"会把两套口径混在一起，页面自己先说不清哪个算数。
-                        LevelFixCard(fix = fix, passedRemoval = passedRemoval)
+                    // 每一条就是"某人在某组投了什么"：待通过的、没通过的、已经下发的都在里面，
+                    // 顺序按投票时间倒序。页面不在这里判断通过与否，那是顶部门槛那条线的事。
+                    items(history) { entry ->
+                        BallotHistoryRow(entry)
                     }
                 }
             }
@@ -603,130 +600,67 @@ private fun BallotGroup(
     }
 }
 
-/** 一条级别提案：谁提的、要改成哪档、依据，以及当时有多少人认同。 */
-@OptIn(ExperimentalLayoutApi::class)
+/** 一条投票记录：某人在某一组投了什么、什么时候，以及（级别组）写下的依据。 */
 @Composable
-private fun LevelFixCard(
-    fix: LevelFix,
-    /** 同包已经通过的那一档；用来把「被取代」和「票并进了通过的那一档」分开说。 */
-    passedRemoval: String?,
-) {
+private fun BallotHistoryRow(entry: LevelBallotEntry) {
     val scheme = MaterialTheme.colorScheme
-    val levelBadge = AppBadgeInfo.byNameIgnoreCaseOrNull(fix.removal)
+    val badge = when (entry.dimension) {
+        LevelBallotDimensions.LEVEL -> AppBadgeInfo.byNameIgnoreCaseOrNull(entry.choice)
+        else -> null
+    }
+    val impact = when (entry.dimension) {
+        LevelBallotDimensions.IMPACT -> when (entry.choice) {
+            "bootloop" -> BadgeImpact.BOOTLOOP
+            else -> BadgeImpact.BREAKS_FEATURES
+        }
+        else -> null
+    }
+    val label = when (entry.dimension) {
+        LevelBallotDimensions.LEVEL -> badge?.let { stringResource(it.nameRes) } ?: entry.choice
+        LevelBallotDimensions.IMPACT -> impact?.label ?: entry.choice
+        LevelBallotDimensions.SYSTEM -> if (entry.choice == "yes") "是" else "否"
+        else -> entry.choice
+    }
     Card {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PersonAvatar(
-                name = fix.author.ifEmpty { "?" },
-                owner = fix.authorId,
-                size = 20.dp,
-                background = avatarColorOf(fix.author),
-                letterColor = Color.White,
-            )
-            Spacer(Modifier.width(7.dp))
+            when {
+                badge != null -> {
+                    AppBadge(badge)
+                    Spacer(Modifier.width(5.dp))
+                }
+                impact != null -> {
+                    BadgeImpactTag(impact)
+                    Spacer(Modifier.width(5.dp))
+                }
+                entry.dimension == LevelBallotDimensions.SYSTEM && entry.choice == "yes" -> {
+                    SystemBadge()
+                    Spacer(Modifier.width(5.dp))
+                }
+            }
             Text(
-                text = fix.author.ifEmpty { "匿名" },
+                text = "$label · ${entry.name.ifBlank { "匿名" }}",
                 style = FlText.caption1.copy(fontWeight = FlText.emphasized),
                 color = scheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                text = relativeStamp(fix.createdAt),
+                text = relativeStamp(entry.at),
                 style = FlText.caption2,
                 color = scheme.outline,
                 maxLines = 1,
             )
-            Spacer(Modifier.weight(1f))
-            when {
-                fix.applied -> Text(
-                    text = "已通过 · 待合并",
-                    style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                    color = scheme.onPrimary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(percent = 50))
-                        .background(LEVEL_AGREE)
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                )
-
-                fix.superseded -> Text(
-                    // 同一档几条提案各自算票时，同一档永远凑不够门槛；所以结算按档聚合，
-                    // 被并掉的那几条要说清是"票并进去了"，不是"被否了"。
-                    text = if (passedRemoval != null && passedRemoval == fix.removal) {
-                        "票已并入通过的这一档"
-                    } else {
-                        "已被后来的取代"
-                    },
-                    style = FlText.caption2,
-                    color = scheme.outline,
-                )
-            }
         }
-
-        Spacer(Modifier.height(7.dp))
-        // 一行里放齐：建议标成 + 档位徽标 + 名称 + 两枚后果标记。形状与列表 item 的徽标一致，
-        // 换行由 FlowRow 决定（小屏放不下"徽标 + 两枚标记"时折行，而不是把标记藏起来）。
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = "建议标成",
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            levelBadge?.let { badge ->
-                AppBadge(badge)
-                Text(
-                    text = stringResource(badge.nameRes),
-                    style = FlText.caption1,
-                    color = scheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 2.dp),
-                )
-                BadgeImpactTags(badge)
-            }
-        }
-        // 这一档意味着什么，这里写两行：第一行是「这台机器会发生什么」（会不会破坏功能、
-        // 会不会卡在开机），第二行才是名单自己的定义。看历史的人要判断的是「这个包到底能不能删」，
-        // 光知道档位名叫"专家"没有意义。
-        levelBadge?.let { badge ->
+        if (entry.note.isNotBlank()) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = badgeRiskSummary(badge),
-                style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                color = scheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = stringResource(badge.description),
+                text = entry.note,
                 style = FlText.caption2,
                 color = scheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         }
-
-        val why = fix.note("zh").ifBlank { fix.note("en") }
-        if (why.isNotBlank()) {
-            Spacer(Modifier.height(5.dp))
-            Text(
-                text = why,
-                style = FlText.footnote,
-                color = scheme.onSurface,
-            )
-        }
-
-        // 票数只作记录：这一条当时有多少人认同 / 不认同。现在只有上面三组投票才算数，
-        // 所以这里不再给"认同 / 不认同"按钮——两套口径同时存在，页面自己会说不清哪个是结果。
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "当时 ${fix.agrees} 人认同 · ${fix.disagrees} 人不认同",
-            style = FlText.caption2,
-            color = scheme.onSurfaceVariant,
-        )
     }
 }
 

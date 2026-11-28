@@ -518,8 +518,11 @@ class PlanRepository(
      */
     suspend fun levelFixBallotsFor(body: String): String? = rpc("level_fix_ballots_for", body)
 
-    /** 投三个维度里的一个（`level_fix_ballot_vote`），返回投完之后三个维度的完整计数。 */
-    suspend fun voteLevelFixBallot(body: String): String? = rpc("level_fix_ballot_vote", body)
+    /** 投三个维度里的一个（`level_fix_ballot_vote_v2`：带显示名），返回投完之后三个维度的完整计数。 */
+    suspend fun voteLevelFixBallot(body: String): String? = rpc("level_fix_ballot_vote_v2", body)
+
+    /** 最近的投票记录（`level_fix_ballot_history`），原样返回 JSON：谁在哪个维度投了什么。 */
+    suspend fun levelFixBallotHistory(body: String): String? = rpc("level_fix_ballot_history", body)
 
     /**
      * Why the last call came back empty: the backend's own message when it refused (a missing

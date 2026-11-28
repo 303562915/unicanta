@@ -12,6 +12,20 @@ object LevelBallotDimensions {
     const val SYSTEM = "system"
 }
 
+/** 一条投票记录：谁、在哪个维度、投了什么、写了什么依据。 */
+data class LevelBallotEntry(
+    /** level / impact / system。 */
+    val dimension: String,
+    /** 该维度的选项 key。 */
+    val choice: String,
+    /** 投票人显示名；旧版客户端不带名字，这里是空串。 */
+    val name: String,
+    /** 级别维度选填的依据。 */
+    val note: String,
+    /** 投票/改票时间（ISO）。 */
+    val at: String,
+)
+
 /**
  * 三个维度现在的票数与本机投了什么。
  *
