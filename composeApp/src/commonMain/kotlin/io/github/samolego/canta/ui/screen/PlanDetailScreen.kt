@@ -1,13 +1,13 @@
 package io.github.samolego.canta.ui.screen
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,9 +36,12 @@ import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.ThumbUp as OutlinedThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,7 +53,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,8 +65,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -104,11 +109,9 @@ import io.github.samolego.canta.generated.resources.plan_detail_ranking_title
 import io.github.samolego.canta.generated.resources.plan_detail_stats_comments
 import io.github.samolego.canta.generated.resources.plan_detail_stats_packages
 import io.github.samolego.canta.generated.resources.plan_detail_stats_votes
-import io.github.samolego.canta.generated.resources.plan_detail_title
 import io.github.samolego.canta.generated.resources.plan_detail_uploader
 import io.github.samolego.canta.generated.resources.plan_upload_failed
 import io.github.samolego.canta.generated.resources.plan_verified_chip
-import io.github.samolego.canta.generated.resources.plan_vote
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentOrderRow
 import io.github.samolego.canta.ui.component.CommentComposer
@@ -334,14 +337,6 @@ fun PlanDetailScreen(
     var danmakuSettingsOpen by remember { mutableStateOf(false) }
     /** The scroll of the page's list: opening the filter scrolls the packages into view. */
     val listState = rememberLazyListState()
-    /**
-     * True once the hero has scrolled away. The bar then shows the plan's own name instead of the
-     * generic page title: a hundred package rows later, "方案详情" no longer says which plan this
-     * is, and the reader who forgot has to scroll all the way back up to find out.
-     */
-    val heroScrolledAway by remember(listState) {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 }
-    }
 
     // The install's own code (see DeviceIdentity): one stable name per phone, no account.
     val commentAuthor = author.ifEmpty { "u-anon" }
@@ -734,12 +729,7 @@ fun PlanDetailScreen(
             // no background of its own — with the page's name and its way out.
             ScreenTopBar(
                 onNavigateBack = onNavigateBack,
-                // The plan's name takes over once the hero is gone; see [heroScrolledAway].
-                title = if (heroScrolledAway) {
-                    plan?.title.orEmpty().ifBlank { stringResource(Res.string.plan_detail_title) }
-                } else {
-                    stringResource(Res.string.plan_detail_title)
-                },
+                title = "",
                 height = FlTopBarCompactHeight,
                 actions = {
                     plan?.let { current ->
@@ -1432,12 +1422,12 @@ private fun PlanHero(
                         name = uploaderName,
                         // 方案带着上传者的身份号：设过头像就显示照片，没设过是名字首字。
                         owner = plan.owner,
-                        size = 20.dp,
+                        size = 34.dp,
                         background = colors.primary,
                         // 首字压在 primary 上：用 onPrimary 才和改之前那一版一样清楚（深色主题尤其）。
                         letterColor = colors.onPrimary,
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         text = stringResource(Res.string.plan_detail_uploader, uploaderName),
                         fontSize = 11.sp,
@@ -1508,53 +1498,6 @@ private fun PlanHero(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                // The plan names the phone it was proven on. When that is not this one, the page says
-                // it twice: once as the mismatch, once as what will happen (nothing will stop it).
-                //
-                // Same phone and same major ROM, different build ("16.0.3" against "16.0.501") is the
-                // case the page used to hide: the plan was still listed as if it were this phone's, and
-                // the package list of one build is not the package list of the next. It stays listed —
-                // emptying the page on every point update would be worse — and says which build it is.
-                if (!foreign && profile != null && !plan.sameBuild(profile)) {
-                    Text(
-                        text = "该方案在「${romLabelOf(plan.rom, plan.romVersion, plan.romBuild)}」上验证，" +
-                            "本机为「${romLabelOf(profile.rom, profile.romVersion, profile.romBuild)}」。" +
-                            "同一机型的不同系统版本可能对应不同应用清单，使用前请先核对。",
-                        fontSize = 10.sp,
-                        lineHeight = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.error,
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
-                    )
-                }
-                if (foreign) {
-                    Column(
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                    ) {
-                        Text(
-                            // The phone is already named on the line right above; repeating it here
-                            // made the warning read as a second device line instead of a warning.
-                            text = "这不是本机机型的方案",
-                            fontSize = 11.sp,
-                            lineHeight = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = colors.error,
-                        )
-                        Text(
-                            text = "不会被阻止：Canta 只执行你所选的应用包，不会因机型不一致而中止。",
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            color = colors.onPrimaryContainer.copy(alpha = 0.8f),
-                            modifier = Modifier.padding(top = 3.dp),
-                        )
-                    }
-                }
                 if (plan.note.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -1609,36 +1552,19 @@ private fun PlanHero(
                     )
                 }
 
-                Spacer(Modifier.height(12.dp))
-                // 三个数一行读完：赞、包数、评论。投票按钮挪到下一行去左右两头——它和「赞」这个数
-                // 说的是同一件事，拴在数字尾巴上只会让这一行既像表又像按钮排。
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Stat(
-                        value = "${plan.votes}",
-                        label = stringResource(Res.string.plan_detail_stats_votes),
-                        modifier = Modifier.weight(1f),
+                if (foreign) {
+                    PlanWarning(
+                        title = "这不是本机机型的方案",
+                        message = "Canta 只执行你所选的应用包，不会因机型不一致而中止。",
                     )
-                    StatDivider()
-                    Stat(
-                        value = "${plan.packages.size}",
-                        label = stringResource(Res.string.plan_detail_stats_packages),
-                        modifier = Modifier.weight(1f),
-                    )
-                    StatDivider()
-                    Stat(
-                        value = "${plan.comments}",
-                        label = stringResource(Res.string.plan_detail_stats_comments),
-                        modifier = Modifier.weight(1f),
+                } else if (profile != null && !plan.sameBuild(profile)) {
+                    PlanWarning(
+                        title = "系统版本与本机不同",
+                        message = "该方案在「${romLabelOf(plan.rom, plan.romVersion, plan.romBuild)}」上验证，" +
+                            "本机为「${romLabelOf(profile.rom, profile.romVersion, profile.romBuild)}」。" +
+                            "使用前请先核对应用清单。",
                     )
                 }
-                // 真正的两个动作：左边把清单变成这台手机上的勾选（去应用列表卸载），右边是「有用」。
-                //
-                // 主按钮只占自己那几个字：上面那排数刚说过「多少个包」，按钮里再写一遍是同一句话说
-                // 两次，还顺手把它撑成横贯卡片的一条横幅，比页面上任何东西都抢眼——可它不是这一页
-                // 唯一的去处，也不该长得像唯一去处。
                 Row(
                     modifier = Modifier
                         .padding(top = 10.dp)
@@ -1669,6 +1595,20 @@ private fun PlanHero(
                     }
                     Spacer(Modifier.weight(1f))
                     VoteAction(liked = liked, votes = plan.votes, onVote = onVote)
+                    PlanCount(
+                        icon = Icons.Outlined.Inventory2,
+                        label = stringResource(Res.string.plan_detail_stats_packages),
+                        count = plan.packages.size,
+                        color = colors.onPrimaryContainer,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                    PlanCount(
+                        icon = Icons.Outlined.ChatBubbleOutline,
+                        label = stringResource(Res.string.plan_detail_stats_comments),
+                        count = plan.comments,
+                        color = colors.onPrimaryContainer,
+                        modifier = Modifier.padding(start = 12.dp),
+                    )
                 }
             }
         }
@@ -1737,79 +1677,65 @@ private fun BoxScope.CornerSash(count: Int, onClick: () -> Unit) {
     }
 }
 
-/**
- * One big number over its label, left-aligned on the card's shared left edge — the way an
- * editorial stat line reads, top to bottom, rather than a row of little centred islands.
- */
 @Composable
-private fun Stat(
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier,
-) {
+private fun PlanWarning(title: String, message: String) {
     val colors = MaterialTheme.colorScheme
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = colors.onPrimaryContainer,
-        )
-        Text(
-            text = label,
-            fontSize = 9.sp,
-            color = colors.onPrimaryContainer.copy(alpha = 0.72f),
-        )
-    }
-}
-
-/** A hairline between two stats, as tall as the numbers it separates. */
-@Composable
-private fun StatDivider() {
-    Box(
-        modifier = Modifier
-            .padding(horizontal = 8.dp)
-            .width(1.dp)
-            .height(22.dp)
-            .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.18f)),
-    )
-}
-
-/** The like button of the detail page: filled once this install voted, springing when tapped. */
-@Composable
-private fun VoteAction(liked: Boolean, votes: Int, onVote: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val scale = remember { Animatable(1f) }
-    val colors = MaterialTheme.colorScheme
-    val container = if (liked) colors.primary else colors.surface
-    val content = if (liked) colors.onPrimary else colors.primary
     Row(
         modifier = Modifier
-            .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
-            }
-            .clip(RoundedCornerShape(50))
-            .background(container)
-            .clickable {
-                scope.launch {
-                    scale.animateTo(1.3f, spring(stiffness = 900f))
-                    scale.animateTo(1f, spring(stiffness = 420f))
-                }
-                onVote()
-            }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(top = 12.dp)
+            .fillMaxWidth()
+            .background(colors.error.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(Icons.Default.Warning, null, Modifier.size(14.dp), tint = colors.error)
+        Spacer(Modifier.width(7.dp))
+        Column {
+            Text(title, color = colors.error, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = message,
+                color = colors.onPrimaryContainer.copy(alpha = 0.8f),
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlanCount(
+    icon: ImageVector,
+    label: String,
+    count: Int,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Default.ThumbUp,
-            contentDescription = stringResource(Res.string.plan_vote),
-            modifier = Modifier.size(13.dp),
-            tint = content,
-        )
-        Spacer(Modifier.width(5.dp))
-        Text(text = stringResource(Res.string.plan_vote), fontSize = 11.sp, color = content)
+        Icon(icon, contentDescription = label, modifier = Modifier.size(15.dp), tint = color)
+        Spacer(Modifier.width(4.dp))
+        Text(count.toString(), color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
+}
+
+@Composable
+private fun VoteAction(liked: Boolean, votes: Int, onVote: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    PlanCount(
+        icon = if (liked) Icons.Filled.ThumbUp else Icons.Outlined.OutlinedThumbUp,
+        label = stringResource(Res.string.plan_detail_stats_votes),
+        count = votes,
+        color = if (liked) colors.primary else colors.onPrimaryContainer,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .clickable(enabled = !liked, role = Role.Button, onClick = onVote)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .padding(horizontal = 8.dp),
+    )
 }
 
 /** A small label: "测试", "重启验证", "我的方案". */
