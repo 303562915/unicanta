@@ -120,21 +120,6 @@ object AudioWhitelist {
     )
 
     /**
-     * 免 root 到底能做什么：**没有「解除」，只有绕开**。
-     *
-     * 这几句是对着那份清单核过的，不是通用建议：抖音极速版（`com.ss.android.ugc.aweme.lite`）和
-     * 抖音火山版都不在那 51 个点名里，所以同一台机器上它们的外放不被乘 0.447；而快手和快手极速版
-     * （`com.smile.gifmaker` / `com.kuaishou.nebula`）在名单里，换过去没用。
-     */
-    val NO_ROOT_OPTIONS: List<String> = listOf(
-        "换不在这份清单里的同类应用：抖音极速版、抖音火山版都不在 51 个点名里，它们的外放不被压；" +
-            "快手 / 快手极速版在名单里，换了没用。",
-        "走蓝牙或 USB 输出：那条链路不走扬声器这层音量系数。",
-        "系统升级后小米可能调整这份清单，值得隔一阵再看一次。",
-        "不要试的两条：改包名重装（签名变了，应用起不来）、只拉 EQ（压的是音量 0.447，不是低频，拉高只会削波）。",
-    )
-
-    /**
      * One app the phone's config names, with the words a user recognises it by.
      *
      * @param label the Chinese name when this build knows the package, the package name otherwise.

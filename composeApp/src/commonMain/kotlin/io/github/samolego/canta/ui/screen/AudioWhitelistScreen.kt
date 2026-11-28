@@ -200,11 +200,13 @@ fun AudioWhitelistScreen(
                     loading = loading,
                     failure = failure,
                     busy = busy,
-                    // 名单文件找不到也允许解除：是不是「空转」由脚本自己的输出和用户听感说明。
-                    // **有低功耗清单也不置灰**：灰按钮只会让用户觉得「连点都点不了了」（群里那位 K90pm 的原话），
-                    // 而且他没法从灰色看出原因；点亮它、点完照实说「这条属性你这台机器不读，要改的是下面那份」，
-                    // 比一个灰按钮有用。
-                    canBypass = bypass != null && current != null && current.bypassed != true,
+                    // 名单文件找不到也允许解除：是不是「空转」由脚本自己的输出和用户听感说明，
+                    // 不该由我们替他把按钮置灰（K90 Pro Max 就是这种机器）。恢复同样始终允许——
+                    // 这台机器上可能已经被人点过解除，得留一条路改回 1。
+                    // 「解除」在有低功耗清单的机器上不点亮：它写的是场景开关，而这类机器的引擎根本不读那条属性
+                    // ——点亮它只会让人再点一次、再失望一次。恢复仍可点：万一之前被写成了 -1，得留一条改回去的路。
+                    canBypass = bypass != null && current != null && current.bypassed != true &&
+                        !current.hasLowPower,
                     canRestore = restore != null && current?.bypassed == true,
                     onBypass = { run("解除", bypass) },
                     onRestore = { run("恢复", restore) },
@@ -393,11 +395,10 @@ private fun StatusCard(
                     )
                 }
             }
-            // 有低功耗清单时把这个开关为什么没用说清楚——按钮不灰，但点之前就得知道结果。
-            if (state?.hasLowPower == true) {
+            // 有低功耗清单时把这个开关为什么点不亮说清楚，不然置灰本身又成了一个「用不了」。
+            if (state?.hasLowPower == true && state.bypassed != true) {
                 Text(
-                    text = "上面这个「解除」对你这台机器不会有任何变化：它写的是场景开关，而你机器的引擎不读那条属性，" +
-                        "压你外放的是下面那份低功耗清单。点它只会看到开关变成 -1，声音不会变。",
+                    text = "这个「解除」对你这台机器无效（引擎不读这条属性），所以没点亮——要动的是下面那份低功耗清单。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
@@ -580,22 +581,6 @@ private fun LowPowerCard(
                 ) {
                     TextButton(onClick = onDisable, enabled = canDisable && busy == null) { Text("解除清单") }
                     TextButton(onClick = onRestore, enabled = canRestore && busy == null) { Text("恢复清单") }
-                }
-                // 不想 root 的人问得最多的就是这一句，所以把「免 root 到底能做什么」摆出来，
-                // 而不是让他反复点按钮试。里面每条都是这份清单能对上的事实。
-                Text(
-                    text = "不想 root 的话，只有这几种（都不是「解除」，是绕开）：",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = scheme.onSurface,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-                AudioWhitelist.NO_ROOT_OPTIONS.forEach { line ->
-                    Text(
-                        text = "· $line",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
                 }
             }
         }
