@@ -203,7 +203,10 @@ fun AudioWhitelistScreen(
                     // 名单文件找不到也允许解除：是不是「空转」由脚本自己的输出和用户听感说明，
                     // 不该由我们替他把按钮置灰（K90 Pro Max 就是这种机器）。恢复同样始终允许——
                     // 这台机器上可能已经被人点过解除，得留一条路改回 1。
-                    canBypass = bypass != null && current != null && current.bypassed != true,
+                    // 「解除」在有低功耗清单的机器上不点亮：它写的是场景开关，而这类机器的引擎根本不读那条属性
+                    // ——点亮它只会让人再点一次、再失望一次。恢复仍可点：万一之前被写成了 -1，得留一条改回去的路。
+                    canBypass = bypass != null && current != null && current.bypassed != true &&
+                        !current.hasLowPower,
                     canRestore = restore != null && current?.bypassed == true,
                     onBypass = { run("解除", bypass) },
                     onRestore = { run("恢复", restore) },
@@ -328,10 +331,12 @@ private fun StatusCard(
     val headline = when {
         failure != null -> "读不到状态"
         state == null -> if (loading) "读取中…" else "读不到状态"
+        // 有低功耗清单的机器必须排在最前面：这类机器的开关往往已经被点成 -1（`bypassed`），
+        // 如果把 `!supported && bypassed` 放前面，就永远显示「多半没有效果」，看不到「要改的是下面那份」
+        // —— 群里那位 K90pm 骂的「还是一样」就是这个分支顺序的锅。
+        !state.supported && state.hasLowPower -> "这台机器没有场景名单：要改的是下面那份「低功耗应用清单」"
         // 没有名单文件时，属性值说明不了「效果如何」：名单可能由云控下发，本机没有文件不等于这道处理不存在。
         !state.supported && state.bypassed -> "开关已经是 -1，但这台机器上没有名单文件：多半没有效果，自己听一遍"
-        // 有低功耗清单的机器，答案不在这张卡上：真正压外放的是下面那份清单，别再让人点「解除」白试一次。
-        !state.supported && state.hasLowPower -> "这台机器没有场景名单：要改的是下面那份「低功耗应用清单」"
         !state.supported -> "这台机器上没有名单文件：解除多半是空转，可以点一次试，没变化就点「恢复」"
         state.bypassed -> "已解除：名单里的应用也按原始信号输出"
         state.active -> "按名单处理：名单里的应用被切低频、压低音量"
@@ -389,6 +394,15 @@ private fun StatusCard(
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 }
+            }
+            // 有低功耗清单时把这个开关为什么点不亮说清楚，不然置灰本身又成了一个「用不了」。
+            if (state?.hasLowPower == true && state.bypassed != true) {
+                Text(
+                    text = "这个「解除」对你这台机器无效（引擎不读这条属性），所以没点亮——要动的是下面那份低功耗清单。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
