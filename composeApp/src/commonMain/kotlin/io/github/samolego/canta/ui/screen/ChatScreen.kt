@@ -923,6 +923,31 @@ fun ChatScreen(
         }
     }
 
+    // 滚到底了没有：reverseLayout 下压在视口下沿的是索引 0，那就是最新一条。
+    val atBottom by remember {
+        derivedStateOf {
+            listState.layoutInfo.totalItemsCount > 0 && listState.firstVisibleItemIndex == 0
+        }
+    }
+    /**
+     * 基线：这一条及更早的都已经看过了。首屏落底时钉住，之后只前进不后退。
+     *
+     * 胶囊上的数字**不**看滚动位置。以前那个数是直接取 `firstVisibleItemIndex` 的，于是往上翻
+     * 历史时索引越涨数字越大（滑得越多，「新消息」越多）——那是把「翻到了第几条历史」当成了未读。
+     */
+    var seenTailId by remember(conversationId) { mutableStateOf<Long?>(null) }
+    /** 不在底部时新到的消息 id：去重后的大小就是胶囊上的数字，滚到底清空。 */
+    var unseenNew by remember(conversationId) { mutableStateOf<Set<Long>>(emptySet()) }
+    /**
+     * 「这些都已经看过了」：滚到底或者点了胶囊之后调用一次。
+     *
+     * 先在动画之前清：胶囊在滚动动画期间还会画一帧，不清就会先亮一个旧计数。
+     */
+    val settleSeen: () -> Unit = {
+        seenTailId = messages.lastOrNull()?.id
+        unseenNew = emptySet()
+    }
+
     /**
      * 新消息落到最下面才看得见；列表正序 + `reverseLayout`，所以`scrollToItem(0)` 就是落到最新那条。
      *
@@ -1036,34 +1061,10 @@ fun ChatScreen(
         }
     }
 
-    // 滚到底了没有：reverseLayout 下压在视口下沿的是索引 0，那就是最新一条。
-    val atBottom by remember {
-        derivedStateOf {
-            listState.layoutInfo.totalItemsCount > 0 && listState.firstVisibleItemIndex == 0
-        }
-    }
-    /**
-     * 基线：这一条及更早的都已经看过了。首屏落底时钉住，之后只前进不后退。
-     *
-     * 胶囊上的数字**不**看滚动位置。以前那个数是直接取 `firstVisibleItemIndex` 的，于是往上翻
-     * 历史时索引越涨数字越大（滑得越多，「新消息」越多）——那是把「翻到了第几条历史」当成了未读。
-     */
-    var seenTailId by remember(conversationId) { mutableStateOf<Long?>(null) }
-    /** 不在底部时新到的消息 id：去重后的大小就是胶囊上的数字，滚到底清空。 */
-    var unseenNew by remember(conversationId) { mutableStateOf<Set<Long>>(emptySet()) }
     // 首屏落到底就把基线钉在这里：进来时已经在屏幕上的那些不叫「新消息」。
     // 依赖 messages 的尾巴：首屏那段 effect 跑完之前消息可能还没到，晚一步也要补上。
     LaunchedEffect(conversationId, firstPaintDone, messages.lastOrNull()?.id) {
         if (firstPaintDone && seenTailId == null) seenTailId = messages.lastOrNull()?.id
-    }
-    /**
-     * 「这些都已经看过了」：滚到底或者点了胶囊之后调用一次。
-     *
-     * 先在动画之前清：胶囊在滚动动画期间还会画一帧，不清就会先亮一个旧计数。
-     */
-    val settleSeen: () -> Unit = {
-        seenTailId = messages.lastOrNull()?.id
-        unseenNew = emptySet()
     }
 
     /** 基线与未读集合只管「页面里的新消息」，换一个会话就从头算。 */
