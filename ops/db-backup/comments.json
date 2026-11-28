@@ -6012,6 +6012,30 @@
   "target": "com.miui.analytics"
  },
  {
+  "author": "大大怪",
+  "author_id": "10970",
+  "body": "老哥真胆大",
+  "created_at": "2026-11-28T16:38:04.941933+00:00",
+  "device_model": "Redmi K70E",
+  "id": 847,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.305",
+  "target": "417"
+ },
+ {
+  "author": "大大怪",
+  "author_id": "10970",
+  "body": "可以的，不过你可以把系统更新到305看下我的方案",
+  "created_at": "2026-11-28T16:41:39.681109+00:00",
+  "device_model": "Redmi K70E",
+  "id": 848,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.305",
+  "target": "523"
+ },
+ {
   "author": "听风说你",
   "author_id": "10049",
   "body": "我之前是澎湃3的时候测试的，因为看到酷安有人说这个卸载会导致关联启动增加息屏功耗的问题，你可以自己复测一下看看现在澎湃4还会不会这样，至于关联启动的APP名字我也记不住啊，小米一堆乱七八糟英文字母的软件，而且有的是搜不到的那种",
