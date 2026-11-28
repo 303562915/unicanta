@@ -3,6 +3,7 @@ package io.github.samolego.canta.ui.component
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -311,6 +312,12 @@ fun UserAvatar(
     letterStyle: TextStyle? = null,
     /** 外形：默认圆形；群头像传方形圆角（见 [GroupAvatarView]）。 */
     shape: Shape = CircleShape,
+    /**
+     * 点这张照片要干什么（一般是打开 [AvatarViewerDialog]）。**只有照片真的画出来了才会响应**：
+     * 首字圆、加载中、404 都不触发——那时候屏幕上根本没有"图"可看，点了只会弹一个空框。
+     * 默认 null：评论列表、聊天气泡这些地方的头像保持原来的不可点。
+     */
+    onPhotoClick: ((ImageBitmap) -> Unit)? = null,
 ) {
     val key = url.trim()
     // 这个地址被写过几次。有人把新图塞进缓存（换头像）时它 +1，只有**看着同一个地址**的头像会重读
@@ -360,7 +367,23 @@ fun UserAvatar(
         animationSpec = tween(durationMillis = 220),
         label = "avatar-fade",
     )
-    Box(modifier = modifier.size(size).clip(shape)) {
+    // 点开预览：整个圆都是热区，但**只在有照片时**才可点（理由见参数 [onPhotoClick]）。
+    val photoToOpen = picture
+    val clickToOpen = onPhotoClick
+    val previewModifier = if (photoToOpen != null && clickToOpen != null) {
+        Modifier.clickable(
+            onClickLabel = "查看头像大图",
+            onClick = { clickToOpen(photoToOpen) },
+        )
+    } else {
+        Modifier
+    }
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(shape)
+            .then(previewModifier),
+    ) {
         LetterAvatar(
             name = name,
             size = size,
@@ -403,6 +426,8 @@ fun PersonAvatar(
     letterStyle: TextStyle? = null,
     /** 外形：默认圆形；群头像九宫格里传方形。 */
     shape: Shape = CircleShape,
+    /** 点照片的出口，见 [UserAvatar.onPhotoClick]；主页那两处传它打开 [AvatarViewerDialog]。 */
+    onPhotoClick: ((ImageBitmap) -> Unit)? = null,
 ) {
     UserAvatar(
         name = name,
@@ -413,5 +438,6 @@ fun PersonAvatar(
         letterColor = letterColor,
         letterStyle = letterStyle,
         shape = shape,
+        onPhotoClick = onPhotoClick,
     )
 }

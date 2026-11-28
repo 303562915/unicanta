@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +59,7 @@ import io.github.samolego.canta.data.community.PlanSavedStore
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.SocialUserProfile
 import io.github.samolego.canta.ui.component.AuthorLabel
+import io.github.samolego.canta.ui.component.AvatarViewerDialog
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.PickConversationDialog
@@ -510,6 +512,12 @@ private fun ProfileCover(
     onMore: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    // 点了封面上的头像照片：整块照片丢给全屏预览（见 [AvatarViewerDialog]）。没设过头像的人不会
+    // 走到这里——[PersonAvatar] 只在照片真的画出来之后才可点。
+    var photoPreview by remember { mutableStateOf<ImageBitmap?>(null) }
+    photoPreview?.let { photo ->
+        AvatarViewerDialog(bitmap = photo, name = name, onDismiss = { photoPreview = null })
+    }
     Box(modifier = Modifier.fillMaxWidth().height(CoverHeight)) {
         Box(
             modifier = Modifier
@@ -563,7 +571,11 @@ private fun ProfileCover(
         ) {
             // 头像整个往下挪半截：上半截在封面上，下半截压进下面的白底。
             Box(modifier = Modifier.offset(y = AvatarHang)) {
-                HeroAvatar(name = name, owner = owner)
+                HeroAvatar(
+                    name = name,
+                    owner = owner,
+                    onPhotoClick = { photoPreview = it },
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -609,7 +621,12 @@ private fun GlassBarButton(glyph: FlGlyph, contentDescription: String, onClick: 
  * 两态由组件自己决定，这一页不必关心"他到底传没传"。
  */
 @Composable
-private fun HeroAvatar(name: String, owner: String) {
+private fun HeroAvatar(
+    name: String,
+    owner: String,
+    /** 点了头像照片：把那张位图交出去做全屏预览。 */
+    onPhotoClick: (ImageBitmap) -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
@@ -627,6 +644,7 @@ private fun HeroAvatar(name: String, owner: String) {
             background = scheme.primary.copy(alpha = 0.9f),
             letterColor = Color.White,
             letterStyle = FlText.title1,
+            onPhotoClick = onPhotoClick,
         )
     }
 }

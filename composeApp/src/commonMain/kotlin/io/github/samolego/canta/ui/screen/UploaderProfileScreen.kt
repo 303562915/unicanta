@@ -39,7 +39,9 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
+import androidx.compose.ui.graphics.ImageBitmap
 import io.github.samolego.canta.ui.component.AuthorLabel
+import io.github.samolego.canta.ui.component.AvatarViewerDialog
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.fl.FlText
@@ -100,6 +102,13 @@ fun UploaderProfileScreen(
     val name = plans?.firstNotNullOfOrNull { it.uploader.ifEmpty { null } }
         ?: if (owner.isNotEmpty()) "#$owner" else ""
 
+    // 点了头像上的照片：全屏看大图（见 [AvatarViewerDialog]）。状态放在这一层而不是列表 item 里，
+    // 这样滚动把头部回收时预览不会跟着消失。
+    var photoPreview by remember(owner) { mutableStateOf<ImageBitmap?>(null) }
+    photoPreview?.let { photo ->
+        AvatarViewerDialog(bitmap = photo, name = name, onDismiss = { photoPreview = null })
+    }
+
     Scaffold(
         topBar = {
             ScreenTopBar(
@@ -124,7 +133,14 @@ fun UploaderProfileScreen(
             contentPadding = PaddingValues(start = 13.dp, end = 13.dp, top = 6.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            item(key = "header") { UploaderHeader(name = name, owner = owner, plans = loaded) }
+            item(key = "header") {
+                UploaderHeader(
+                    name = name,
+                    owner = owner,
+                    plans = loaded,
+                    onPhotoClick = { photoPreview = it },
+                )
+            }
 
             if (loaded.isEmpty()) {
                 item(key = "empty") {
@@ -146,7 +162,13 @@ fun UploaderProfileScreen(
 
 /** Who this is: the avatar, the name, and the numbers their plans add up to. */
 @Composable
-private fun UploaderHeader(name: String, owner: String, plans: List<CommunityPlan>) {
+private fun UploaderHeader(
+    name: String,
+    owner: String,
+    plans: List<CommunityPlan>,
+    /** 点了头像照片：交给外面的全屏预览。 */
+    onPhotoClick: (ImageBitmap) -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     val votes = plans.sumOf { it.votes }
     val comments = plans.sumOf { it.comments }
@@ -162,6 +184,7 @@ private fun UploaderHeader(name: String, owner: String, plans: List<CommunityPla
                     owner = owner,
                     size = 34.dp,
                     background = scheme.primary,
+                    onPhotoClick = onPhotoClick,
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {

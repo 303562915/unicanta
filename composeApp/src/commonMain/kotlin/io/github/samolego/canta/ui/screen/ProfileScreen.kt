@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +58,7 @@ import io.github.samolego.canta.generated.resources.profile_name_hint
 import io.github.samolego.canta.generated.resources.profile_name_title
 import io.github.samolego.canta.ui.component.AvatarCropDialog
 import io.github.samolego.canta.ui.component.AvatarCropSource
+import io.github.samolego.canta.ui.component.AvatarViewerDialog
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.SettingsChevron
@@ -153,6 +155,8 @@ fun ProfileScreen(
     }
     // 已经选好、正等着摆裁剪框的那张图：原图字节（下刀用）与缩过的位图（摆框用）。
     var cropTarget by remember { mutableStateOf<AvatarCropSource?>(null) }
+    // 点了头像上的照片：那张已经解码好的位图交给全屏预览（见 [AvatarViewerDialog]）。
+    var photoPreview by remember { mutableStateOf<ImageBitmap?>(null) }
 
     val identityTag = if (owner.isNotBlank()) "#${owner.trim()}" else ""
     val shownName = userName.trim().ifEmpty { identityTag.ifEmpty { defaultName } }
@@ -265,6 +269,11 @@ fun ProfileScreen(
         )
     }
 
+    // 头像大图：既然这一页的头像就是自己的照片，点开看一眼大图比"再看一眼 96dp 的圆"有用得多。
+    photoPreview?.let { photo ->
+        AvatarViewerDialog(bitmap = photo, name = shownName, onDismiss = { photoPreview = null })
+    }
+
     Scaffold(
         topBar = { ScreenTopBar(onNavigateBack = onNavigateBack, title = "个人主页") },
     ) { padding ->
@@ -283,6 +292,7 @@ fun ProfileScreen(
                     version = avatarVersion,
                     uploading = uploading,
                     onChangeAvatar = changeAvatar,
+                    onPhotoClick = { photoPreview = it },
                 )
             }
 
@@ -403,6 +413,8 @@ private fun AvatarWithBadge(
     version: Int,
     uploading: Boolean,
     onChangeAvatar: () -> Unit,
+    /** 点了照片本身：打开全屏预览。换头像仍然是右下角那支笔，两者不抢同一个热区。 */
+    onPhotoClick: (ImageBitmap) -> Unit,
 ) {
     Box(
         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
@@ -415,7 +427,13 @@ private fun AvatarWithBadge(
             contentAlignment = Alignment.Center,
         ) {
             key(version) {
-                UserAvatar(name = name, url = url, size = AvatarSize)
+                UserAvatar(
+                    name = name,
+                    url = url,
+                    size = AvatarSize,
+                    // 上传中不给点：那时屏幕上是旧图 + 转圈，点开看到的是上一张。
+                    onPhotoClick = if (uploading) null else onPhotoClick,
+                )
             }
             if (uploading) {
                 CircularProgressIndicator(
