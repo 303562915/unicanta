@@ -44,8 +44,10 @@ import io.github.samolego.canta.data.community.LevelFix
 import io.github.samolego.canta.data.community.LevelFixRepository
 import io.github.samolego.canta.data.community.LevelFixResult
 import io.github.samolego.canta.ui.component.AppBadge
+import io.github.samolego.canta.ui.component.DisabledBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.SystemBadge
 import io.github.samolego.canta.ui.component.avatarColorOf
 import io.github.samolego.canta.ui.component.badgeRiskSummary
 import io.github.samolego.canta.ui.component.relativeStamp
@@ -77,6 +79,15 @@ fun LevelFixScreen(
     appName: String,
     /** 名单现在给的级别；null = 这个包不在名单里，页面只能说"没有可改的"。 */
     publishedBadge: AppBadgeInfo?,
+    /**
+     * 名单之外、列表上会贴在它身上的那枚标签：系统预装应用。
+     *
+     * 列表里一个包**最多两枚**（名单档位 + 这一枚），这一页照同一套画法，免得"列表上写着系统应用、
+     * 到这里只看见一个级别"。
+     */
+    systemApp: Boolean = false,
+    /** 已停用：与 [systemApp] 同时成立时优先画这一枚（「已经停了」比「是系统应用」更影响判断）。 */
+    disabled: Boolean = false,
     repository: LevelFixRepository,
     /** 本机签名用的显示名。 */
     author: String = "",
@@ -227,6 +238,12 @@ fun LevelFixScreen(
                                 style = FlText.footnote,
                                 color = scheme.onSurface,
                             )
+                            // 列表上这个包最多两枚标签：名单档位 + 这一枚。顺序照 [AppTile]：
+                            // 先系统、后停用；两枚都成立时只画停用那枚，别把一行塞满。
+                            if (disabled || systemApp) {
+                                Spacer(Modifier.width(6.dp))
+                                if (disabled) DisabledBadge() else SystemBadge()
+                            }
                         }
                         // 名单现在这一档意味着什么，就写在档位名后面：读的人第一件事是
                         // 「这个包现在标成推荐卸载，那我删了会不会出事」。
@@ -259,7 +276,9 @@ fun LevelFixScreen(
                             color = scheme.onSurface,
                         )
                         Spacer(Modifier.height(4.dp))
-                        ballot.take(3).forEach { row ->
+                        // 最多两档：与列表"一个包最多两枚标签"同一个口径，也免得尾巴那几档
+                        // 只有 1、2 票的档位反而看起来像候选。
+                        ballot.take(2).forEach { row ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 AppBadgeInfo.byNameIgnoreCaseOrNull(row.removal)?.let { badge ->
                                     AppBadge(badge)

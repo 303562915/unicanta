@@ -1854,6 +1854,10 @@ private fun CantaNavigation(
                     appName = levelApp?.name ?: packageName,
                     // 名单现在给的级别：从列表里那份已经叠好修正的徽标读，界面和列表页一致。
                     publishedBadge = levelApp?.badgeInfo,
+                    // 列表里这个包身上的第二枚标签（系统应用 / 已停用）也照过来：
+                    // 一页最多两枚，和列表那边同一个口径。
+                    systemApp = levelApp?.isSystemApp == true,
+                    disabled = levelApp?.isDisabled == true,
                     repository = LevelFixRepository(communityRepository),
                     author = levelAuthor,
                     authorId = levelIdentity,
