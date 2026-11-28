@@ -121,6 +121,7 @@ import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
 import io.github.samolego.canta.ui.component.DanmakuLine
+import io.github.samolego.canta.ui.component.DanmakuOrder
 import io.github.samolego.canta.ui.component.DanmakuSettingsDialog
 import io.github.samolego.canta.ui.component.DanmakuStyle
 import io.github.samolego.canta.ui.component.DefaultDanmakuStyle
@@ -314,11 +315,19 @@ fun PlanDetailScreen(
     var danmakuSpeed by rememberSaveable(planId) {
         mutableFloatStateOf(DefaultDanmakuStyle.passSeconds)
     }
-    val danmakuStyle = remember(danmakuColor, danmakuFontSize, danmakuSpeed) {
+    // 排列方式存名字而不是枚举：rememberSaveable 认得 String，枚举要自带 Saver。
+    var danmakuOrderName by rememberSaveable(planId) {
+        mutableStateOf(DefaultDanmakuStyle.order.name)
+    }
+    val danmakuOrder = remember(danmakuOrderName) {
+        DanmakuOrder.entries.firstOrNull { it.name == danmakuOrderName } ?: DanmakuOrder.MIXED
+    }
+    val danmakuStyle = remember(danmakuColor, danmakuFontSize, danmakuSpeed, danmakuOrder) {
         DanmakuStyle(
             colorArgb = danmakuColor,
             fontSizeSp = danmakuFontSize,
             passSeconds = danmakuSpeed,
+            order = danmakuOrder,
         )
     }
     /** 弹幕设置面板开着没有；长按顶栏图标打开。 */
@@ -810,6 +819,7 @@ fun PlanDetailScreen(
                 danmakuColor = changed.colorArgb
                 danmakuFontSize = changed.fontSizeSp
                 danmakuSpeed = changed.passSeconds
+                danmakuOrderName = changed.order.name
             },
             onDismiss = { danmakuSettingsOpen = false },
         )
@@ -1145,7 +1155,9 @@ private fun PlanDetailContent(
                 // 弹幕飘的是评论正文，一级和它下面的回复都在里面（见 [danmakuRows]）；作者名不飘
                 // ——弹幕是「这里有人在说话」的动静，不是一份带署名的目录。回复前面挂一个「↳」，
                 // 读得出这是回上面那句的，但滚法和其他弹幕完全一样。
-                danmaku = remember(comments) { danmakuRows(comments) },
+                danmaku = remember(comments, danmakuStyle.order) {
+                    danmakuRows(comments, danmakuStyle.order)
+                },
                 danmakuOn = danmakuOn,
                 danmakuStyle = danmakuStyle,
             )
@@ -1291,44 +1303,60 @@ private fun otherDevices(
  * every line into its own little island and buries the order the reader needs.
  */
 /**
- * 弹幕池：一级评论一句一条，它下面的回复紧跟在后面，一级二级混着轮播。
+ * 弹幕池：一级评论和它们下面的回复按 [order] 排列，一层不变的是「回复头上挂 ↳」。
  *
- * **交错而不是分批**：以前是「所有一级在前、所有二级在后」，于是屏幕上先是一整波一级评论，等它们
- * 全走完才轮到回复——看着就是"一波一波"。现在每条一级后面紧跟它自己的回复（一个线程最多带
- * [DANMAKU_REPLIES_PER_THREAD] 条，免得前几条评论就把池子占满），剩下的回复按顺序补在最后，
- * 一条都不丢。
- *
- * 回复头上那个「↳」是它和一级唯一的区别：滚法、字号、速度完全一样。回的是另一条回复时把对象也
- * 写上（`CommentThread.markerFor`），否则「↳ 嗯」这种一句话读不出在对谁说。
+ * 三种排法都在长按面板里让读者自己选（[DanmakuOrder]）：
+ * - [DanmakuOrder.MIXED]（默认）：一级一条、回复一条，交替往外取，屏幕上同时看得到两种；
+ * - [DanmakuOrder.THREADED]：每条一级后面紧跟它自己的回复，像读楼层；
+ * - [DanmakuOrder.GROUPED]：一级全排在前面，回复排在后面。
  *
  * 每条都带上自己的赞数，并且标出「这批里点赞最多的是哪些」（并列的算同一条，见 [DanmakuLine]）：
  * 弹幕层据此给它们换金色、加粗、在尾巴上挂赞数。
  */
-private fun danmakuRows(comments: List<PlanComment>): List<DanmakuLine> {
+private fun danmakuRows(comments: List<PlanComment>, order: DanmakuOrder): List<DanmakuLine> {
     if (comments.isEmpty()) return emptyList()
     // 这批里最高的赞数；0 表示一条赞都没有，那就谁都不算「最多」——全屏金色等于没有区分。
     val best = comments.maxOf { it.likes }
     fun line(text: String, likes: Int): DanmakuLine =
         DanmakuLine(text = text, likes = likes, top = likes > 0 && likes >= best)
-    fun answerText(thread: CommentThread, answer: PlanComment): String {
+    fun replyText(thread: CommentThread, answer: PlanComment): String {
         val to = thread.markerFor(answer)
         return if (to.isNotEmpty()) "↳ 回 @$to：${answer.body}" else "↳ ${answer.body}"
     }
 
-    val mixed = ArrayList<DanmakuLine>()
-    val rest = ArrayList<DanmakuLine>()
-    comments.threads().forEach { thread ->
-        mixed += line(thread.comment.body, thread.comment.likes)
-        thread.replies.forEachIndexed { index, answer ->
-            val row = line(answerText(thread, answer), answer.likes)
-            if (index < DANMAKU_REPLIES_PER_THREAD) mixed += row else rest += row
-        }
+    val threads = comments.threads()
+    val starters = threads.map { line(it.comment.body, it.comment.likes) }
+    val answers = threads.flatMap { thread ->
+        thread.replies.map { answer -> line(replyText(thread, answer), answer.likes) }
     }
-    return mixed + rest
+
+    return when (order) {
+        DanmakuOrder.MIXED -> interleave(starters, answers)
+
+        DanmakuOrder.THREADED -> buildList {
+            threads.forEach { thread ->
+                add(line(thread.comment.body, thread.comment.likes))
+                thread.replies.forEach { answer ->
+                    add(line(replyText(thread, answer), answer.likes))
+                }
+            }
+        }
+
+        DanmakuOrder.GROUPED -> starters + answers
+    }
 }
 
-/** 一个评论线程最多带几条回复进弹幕池：不限的话，头两条评论的几十条回复就能把池子占满。 */
-private const val DANMAKU_REPLIES_PER_THREAD = 2
+/** 两份清单交替着取：一级一条、回复一条；某一边取完，另一边的剩下顺次接上。 */
+private fun interleave(first: List<DanmakuLine>, second: List<DanmakuLine>): List<DanmakuLine> {
+    val out = ArrayList<DanmakuLine>(first.size + second.size)
+    var i = 0
+    var j = 0
+    while (i < first.size || j < second.size) {
+        if (i < first.size) out += first[i++]
+        if (j < second.size) out += second[j++]
+    }
+    return out
+}
 
 @Composable
 private fun PlanHero(

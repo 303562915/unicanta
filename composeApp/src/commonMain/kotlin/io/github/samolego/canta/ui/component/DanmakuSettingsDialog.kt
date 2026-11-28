@@ -111,6 +111,26 @@ fun DanmakuSettingsDialog(
             }
         }
 
+        // 排列：一级和回复怎么往外取。默认「混排」，想读楼层就切「跟帖」。
+        DialogGroup(label = "排列") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DanmakuOrder.entries.forEach { order ->
+                    ChoiceChip(
+                        label = order.label,
+                        selected = style.order == order,
+                        onClick = { onStyleChange(style.copy(order = order)) },
+                    )
+                }
+            }
+            Text(
+                text = style.order.hint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+
         // 速度：一条弹幕走完全程要几秒（越小越快）。
         DialogGroup(label = "速度") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

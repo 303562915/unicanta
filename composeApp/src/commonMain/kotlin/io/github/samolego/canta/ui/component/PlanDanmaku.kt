@@ -45,10 +45,27 @@ data class DanmakuLine(
 )
 
 /**
- * 弹幕长什么样、飘多快。
+ * 弹幕往外出的时候怎么排。
  *
- * 三样都是读者自己在面板里调的（长按顶栏那个图标），所以它只是个纯数据袋：页面持有当前这一份，
- * 改动后马上传给 [PlanDanmaku]，下一帧的绘制就是新的样子。
+ * 众口难调：有人要一级二级混成一锅，有人要每条一级后面跟自己的回复，也有人只想先看一级的。
+ * 所以在长按面板里让人自己选，默认 [MIXED]。
+ */
+enum class DanmakuOrder(val label: String, val hint: String) {
+    /** 一级一条、回复一条，交替往外取：屏幕上同时看得到两种，最"弹幕"。 */
+    MIXED("混排", "一级和回复交替出现，混在一起"),
+
+    /** 每条一级后面紧跟它自己的回复，像读楼层一样。 */
+    THREADED("跟帖", "每条评论后面跟着它自己的回复"),
+
+    /** 一级全部排在前面，回复排在后面。 */
+    GROUPED("分级", "先上一级评论，再上回复"),
+}
+
+/**
+ * 弹幕长什么样、飘多快、按什么顺序往外取。
+ *
+ * 都是读者自己在面板里调的（长按顶栏那个图标），所以它只是个纯数据袋：页面持有当前这一份，
+ * 改动后马上传给 [PlanDanmaku]／`danmakuRows`，下一次取数就是新的样子。
  */
 @Immutable
 data class DanmakuStyle(
@@ -63,6 +80,8 @@ data class DanmakuStyle(
      * 轨道排队的后面那几条就全被推后，「这会儿好挤、一会儿全空」的忽快忽慢就是从这来的。
      */
     val passSeconds: Float = 9f,
+    /** 一级评论和回复按什么顺序往外取；见 [DanmakuOrder]。 */
+    val order: DanmakuOrder = DanmakuOrder.MIXED,
 )
 
 /** 没调过的样子：跟随主题、12 号字、一条走九秒。 */
@@ -145,8 +164,8 @@ private const val DANMAKU_LINES_PER_LANE = 3
 /** 一条弹幕最多几个字：三十多个字在手机上已经横跨一屏，再多就只剩尾巴。 */
 private const val DANMAKU_MAX_CHARS = 34
 
-/** 同一条轨道上，前一条完全离开左边之后，空这么久再放下一条进场：留这一口气，弹幕才不像排队。 */
-private const val DANMAKU_GAP_MS = 1400L
+/** 同一条轨道上，前一条完全离开左边之后，空这么久再放下一条进场：留一口气，又不至于断档。 */
+private const val DANMAKU_GAP_MS = 900L
 
 /** 一条弹幕里，开头这一段（占全程的比例）从全透明升到不透明。 */
 private const val DANMAKU_FADE_IN = 0.16f
