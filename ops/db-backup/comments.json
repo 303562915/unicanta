@@ -5652,6 +5652,30 @@
   "target": "com.oplus.uiengine"
  },
  {
+  "author": "#12252",
+  "author_id": "12252",
+  "body": "智能",
+  "created_at": "2026-11-28T03:47:15.985021+00:00",
+  "device_model": "REDMI K90 Max",
+  "id": 817,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 4",
+  "target": "9"
+ },
+ {
+  "author": "Nearly",
+  "author_id": "13976",
+  "body": "com.tencent.soter.soterserver，有这个的就别抄作业了",
+  "created_at": "2026-11-28T03:53:54.58977+00:00",
+  "device_model": "一加 Ace 6",
+  "id": 818,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "ColorOS 17.0.0",
+  "target": "9"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",

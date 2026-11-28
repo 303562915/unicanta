@@ -213,7 +213,7 @@
  },
  {
   "brand": "Xiaomi",
-  "comments": 3,
+  "comments": 5,
   "created_at": "2026-11-20T10:00:05.192639+00:00",
   "id": 9,
   "is_test": false,
@@ -537,6 +537,32 @@
   "votes": 57
  },
  {
+  "brand": "Vivo",
+  "comments": 0,
+  "created_at": "2026-11-22T07:15:12.717548+00:00",
+  "id": 63,
+  "is_test": false,
+  "market_name": "vivo S19",
+  "model": "V2364A",
+  "note": "",
+  "owner": "10288",
+  "owner_name": "",
+  "packages": [
+   "com.vivo.are",
+   "com.mobiletools.systemhelper",
+   "com.vivo.devicereg",
+   "com.sohu.inputmethod.sogou.vivo",
+   "com.android.browser"
+  ],
+  "rebooted_at": "2026-11-22T07:15:13.067756+00:00",
+  "rom": "funtouch",
+  "rom_build": "14.1",
+  "rom_version": 14,
+  "sdk": 34,
+  "title": "隐私提升",
+  "votes": 54
+ },
+ {
   "brand": "Xiaomi",
   "comments": 0,
   "created_at": "2026-11-22T17:48:45.466262+00:00",
@@ -738,32 +764,6 @@
   "sdk": 37,
   "title": "C17省电",
   "votes": 54
- },
- {
-  "brand": "Vivo",
-  "comments": 0,
-  "created_at": "2026-11-22T07:15:12.717548+00:00",
-  "id": 63,
-  "is_test": false,
-  "market_name": "vivo S19",
-  "model": "V2364A",
-  "note": "",
-  "owner": "10288",
-  "owner_name": "",
-  "packages": [
-   "com.vivo.are",
-   "com.mobiletools.systemhelper",
-   "com.vivo.devicereg",
-   "com.sohu.inputmethod.sogou.vivo",
-   "com.android.browser"
-  ],
-  "rebooted_at": "2026-11-22T07:15:13.067756+00:00",
-  "rom": "funtouch",
-  "rom_build": "14.1",
-  "rom_version": 14,
-  "sdk": 34,
-  "title": "隐私提升",
-  "votes": 53
  },
  {
   "brand": "OnePlus",
