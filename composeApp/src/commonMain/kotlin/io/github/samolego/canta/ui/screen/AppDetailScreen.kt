@@ -89,6 +89,7 @@ import io.github.samolego.canta.data.community.updatedComment
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.ui.component.AppBadge
+import io.github.samolego.canta.ui.component.badgeRiskSummary
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.dismissInputOnTap
@@ -1116,14 +1117,25 @@ private fun AppHero(
 
         badge?.let { shown ->
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.Top) {
                 AppBadge(shown)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(shown.description),
-                    style = FlText.caption1,
-                    color = scheme.onSurfaceVariant,
-                )
+                Column {
+                    // 先一句「这台机器会怎样」：会不会破坏功能、会不会卡在开机。名单自己的定义
+                    // （"breaks obscure or minor parts of functionality"）放在它下面当补充——
+                    // 定义解释的是档位，这句解释的是删了之后会发生什么。
+                    Text(
+                        text = badgeRiskSummary(shown),
+                        style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+                        color = scheme.onSurface,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(shown.description),
+                        style = FlText.caption1,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 

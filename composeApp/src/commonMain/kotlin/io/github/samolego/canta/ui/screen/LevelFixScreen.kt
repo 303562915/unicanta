@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -46,6 +47,7 @@ import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.avatarColorOf
+import io.github.samolego.canta.ui.component.badgeRiskSummary
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -226,6 +228,14 @@ fun LevelFixScreen(
                                 color = scheme.onSurface,
                             )
                         }
+                        // 名单现在这一档意味着什么，就写在档位名后面：读的人第一件事是
+                        // 「这个包现在标成推荐卸载，那我删了会不会出事」。
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = badgeRiskSummary(publishedBadge),
+                            style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                            color = scheme.onSurfaceVariant,
+                        )
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = "名单是按包名定的，它不知道这台机器往同一个包里塞了什么。" +
@@ -340,7 +350,30 @@ fun LevelFixScreen(
                             chosen.ifEmpty { mine?.removal.orEmpty() },
                         ) ?: publishedBadge
                         if (pickedLevel != null) {
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(7.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(RoundedCornerShape(percent = 50))
+                                        .background(pickedLevel.badgeColor),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = "选这一档会发生什么",
+                                    style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                                    color = scheme.onSurfaceVariant,
+                                )
+                            }
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
+                                // 名单那段定义放在它下面当补充。
+                                text = badgeRiskSummary(pickedLevel),
+                                style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+                                color = scheme.onSurface,
+                            )
+                            Spacer(Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.Top) {
                                 AppBadge(pickedLevel)
                                 Spacer(Modifier.width(7.dp))
@@ -570,10 +603,19 @@ private fun LevelFixCard(
                 Text(text = stringResource(badge.nameRes), style = FlText.caption1, color = scheme.onSurface)
             }
         }
-        // 这一档在「已安装」列表里意味着什么，这里照原话写一遍：看历史的人要判断的是
-        // 「这个包到底能不能删」，光知道档位名叫"专家"没有意义。
+        // 这一档意味着什么，这里写两行：第一行是「这台机器会发生什么」（会不会破坏功能、
+        // 会不会卡在开机），第二行才是名单自己的定义。看历史的人要判断的是「这个包到底能不能删」，
+        // 光知道档位名叫"专家"没有意义。
         AppBadgeInfo.byNameIgnoreCaseOrNull(fix.removal)?.let { badge ->
             Spacer(Modifier.height(4.dp))
+            Text(
+                text = badgeRiskSummary(badge),
+                style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                color = scheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = stringResource(badge.description),
                 style = FlText.caption2,
