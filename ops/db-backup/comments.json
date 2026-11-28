@@ -5676,6 +5676,18 @@
   "target": "9"
  },
  {
+  "author": "饮月x8u",
+  "author_id": "11669",
+  "body": "删了这个i nit进程会占用百分之百。",
+  "created_at": "2026-11-28T03:57:18.477808+00:00",
+  "device_model": "OPPO Find X8 Ultra",
+  "id": 819,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "ColorOS 17.0.0",
+  "target": "com.oplus.location"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
