@@ -97,6 +97,18 @@ jobs:
           cd dist
           sha256sum "androidApp-release-${RUN_NUMBER}.apk" > "SHA256SUMS-${RUN_NUMBER}.txt"
 
+      - name: Upload R8 mapping (retrace crash stacks)
+        # 混淆之后线上堆栈只剩 `dp.l`、`yi3.setValue` 这种名字，光看堆栈定不到源码行
+        # （2026-11-28 那次「启动就闪退」就卡在这里）。mapping.txt 只有几十 KB，和这一版
+        # APK 一一对应，挂成 artifact 就能把堆栈原位翻回真名。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping
+          path: androidApp/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Skip publication if this is no longer master HEAD
         id: current
         env:
