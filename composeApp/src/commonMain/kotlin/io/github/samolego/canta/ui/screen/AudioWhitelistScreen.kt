@@ -272,9 +272,9 @@ fun AudioWhitelistScreen(
                     Text(
                         text = if (current.hasLowPower) {
                             // 已经有低功耗清单的机器：不要再引导他去点上面那个开关，答案在下面那张卡里。
-                            "这台机器上没有 trackefx 名单，场景开关对它无效——真正压外放的是上面那份「低功耗应用清单」，"
-                                + "要动的是那一份。清单在 /odm 只读分区，改它需要 root；"
-                                + "如果这台机器没有 root，那条路走不通，诊断信息里的 lowpower 属性是找免 root 入口的唯一线索。"
+                            "这台机器上没有 trackefx 名单，场景开关对它无效——真正压外放的是上面那份「低功耗应用清单」，" +
+                                "要动的是那一份。清单在 /odm 只读分区，改它需要 root；" +
+                                "如果这台机器没有 root，那条路走不通，诊断信息里的 lowpower 属性是找免 root 入口的唯一线索。"
                         } else {
                             "这台机器上没找到名单文件：按名字（trackefx_config.xml）、按目录（odm / vendor / system_ext / product / my_product）、" +
                                 "按内容都翻过一遍，odm 的 audio 目录里到底有什么，下面那栏诊断信息里列着。" +
@@ -446,11 +446,11 @@ private fun ExplainCard() {
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "澎湃OS / MIUI 的音频引擎按 /odm/etc/audio/trackefx_config.xml 处理这批应用：短视频、电商、"
-                    + "资讯类切掉 280 Hz 以下低频并压低 3.5 dB，导航类压低 4.5 dB。开关为 -1 时整张名单一起跳过。"
-                    + "所以没出现在下面的应用（爱奇艺、腾讯视频、优酷、喜马拉雅、网易云、酷狗、红果这些）本来就不处理，"
-                    + "解锁前后都是原始信号；把它们加进名单，得到的反而是被压。"
-                    + "真要按应用挑，只能 root 后改 /odm 里那个文件，系统升级会被覆盖。",
+                text = "澎湃OS / MIUI 的音频引擎按 /odm/etc/audio/trackefx_config.xml 处理这批应用：短视频、电商、" +
+                    "资讯类切掉 280 Hz 以下低频并压低 3.5 dB，导航类压低 4.5 dB。开关为 -1 时整张名单一起跳过。" +
+                    "所以没出现在下面的应用（爱奇艺、腾讯视频、优酷、喜马拉雅、网易云、酷狗、红果这些）本来就不处理，" +
+                    "解锁前后都是原始信号；把它们加进名单，得到的反而是被压。" +
+                    "真要按应用挑，只能 root 后改 /odm 里那个文件，系统升级会被覆盖。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
@@ -495,9 +495,9 @@ private fun LowPowerCard(
                 modifier = Modifier.padding(top = 6.dp),
             )
             Text(
-                text = "被点名的应用在播放时，系统会压低功率（声音小、低频少）。它和上面的场景开关是两条机制："
-                    + "这台机器没有 trackefx 名单，写那个开关不会改变这份清单——所以上面「解除」点了不会有变化，"
-                    + "真正要动的是这一份。",
+                text = "被点名的应用在播放时，系统会压低功率（声音小、低频少）。它和上面的场景开关是两条机制：" +
+                    "这台机器没有 trackefx 名单，写那个开关不会改变这份清单——所以上面「解除」点了不会有变化，" +
+                    "真正要动的是这一份。",
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
@@ -539,8 +539,8 @@ private fun LowPowerCard(
                 }
             } else {
                 Text(
-                    text = "找到了这份清单文件，但没能从里面解析出包名（格式可能是二进制，或者名字不在这里）。"
-                        + "把下面那栏诊断发给开发者，用 root 直接看这个文件更准。",
+                    text = "找到了这份清单文件，但没能从里面解析出包名（格式可能是二进制，或者名字不在这里）。" +
+                        "把下面那栏诊断发给开发者，用 root 直接看这个文件更准。",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
@@ -563,12 +563,12 @@ private fun LowPowerCard(
                 }
                 Text(
                     text = if (state.rootAccess == "no") {
-                        "所以外放小不是「坏了」，是系统把这几组的音量乘了上面那个系数。要改这份清单："
-                            + "它在 /odm 只读分区，只能用 KernelSU / Magisk 模块做 bind mount 覆盖，而且必须在开机阶段"
-                            + "（audioserver 起来之前）挂上去——运行中改文件它也不读。这台机器没有 root，所以按钮点不动。"
+                        "所以外放小不是「坏了」，是系统把这几组的音量乘了上面那个系数。要改这份清单：" +
+                            "它在 /odm 只读分区，只能用 KernelSU / Magisk 模块做 bind mount 覆盖，而且必须在开机阶段" +
+                            "（audioserver 起来之前）挂上去——运行中改文件它也不读。这台机器没有 root，所以按钮点不动。"
                     } else {
-                        "要改这份清单：它在 /odm 只读分区。脚本会先备份，再尝试清掉里面点名的应用并重启 audioserver；"
-                            + "/odm 被 AVB 保护写不进去时会明确报 ODM_WRITE_BLOCKED——那种情况只能靠模块在开机阶段 bind mount。"
+                        "要改这份清单：它在 /odm 只读分区。脚本会先备份，再尝试清掉里面点名的应用并重启 audioserver；" +
+                            "/odm 被 AVB 保护写不进去时会明确报 ODM_WRITE_BLOCKED——那种情况只能靠模块在开机阶段 bind mount。"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
