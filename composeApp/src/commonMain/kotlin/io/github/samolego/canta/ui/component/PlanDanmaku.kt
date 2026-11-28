@@ -340,12 +340,17 @@ private fun scheduleDanmaku(
     passMs: Long,
 ): List<DanmakuSlot> {
     if (lanes <= 0 || widths.isEmpty() || passMs <= 0L) return emptyList()
+    val period = passMs + DANMAKU_GAP_MS
+    // 每条轨道的第一条错开出发：所有轨道都从 0 开始的话，八条弹幕会一起从右边冲进来、一起走完
+    // 消失，屏幕上就成了「一波一波」，而不是一直有字在飘。按轨道号摊开一个周期，任意时刻都有
+    // 一半左右的轨道正在走。
+    val offsets = LongArray(lanes) { lane -> lane * period / lanes }
     // 每条轨道排到哪里了：下一条同轨道的弹幕从这里出发。
-    val cursor = LongArray(lanes)
+    val cursor = offsets.copyOf()
     val drafted = widths.mapIndexed { index, width ->
         val lane = index % lanes
         val start = cursor[lane]
-        cursor[lane] = start + passMs + DANMAKU_GAP_MS
+        cursor[lane] = start + period
         DanmakuSlot(
             lane = lane,
             travelPx = spanPx + width,
@@ -354,8 +359,11 @@ private fun scheduleDanmaku(
             cycleMs = 0L,
         )
     }
-    // 一条轨道的循环周期 = 这条轨道上所有条走完（含间隔）的总和：cursor 在这一轮里被推到了那儿。
-    return drafted.map { slot -> slot.copy(cycleMs = cursor[slot.lane]) }
+    // 一条轨道的循环周期 = 这条轨道上所有条走完（含间隔）的总和，不把开头那段错开的偏移算进去，
+    // 否则每条轨道的第一条都会在下一次循环里越错越远。
+    return drafted.map { slot ->
+        slot.copy(cycleMs = cursor[slot.lane] - offsets[slot.lane])
+    }
 }
 
 /** 评论正文整理成能飘的一行一句：去换行、去空、截断、去重，最多 [DANMAKU_MAX_LINES] 条。 */

@@ -78,6 +78,7 @@ import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.AppNoteStore
 import io.github.samolego.canta.data.community.CommentOrder
+import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.DeviceCoverage
 import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
 import io.github.samolego.canta.data.community.NEXT_REPLY_BATCH
@@ -1290,15 +1291,15 @@ private fun otherDevices(
  * every line into its own little island and buries the order the reader needs.
  */
 /**
- * 弹幕池：一级评论一句一条，它下面的回复也一句一条，两级都在。
+ * 弹幕池：一级评论一句一条，它下面的回复紧跟在后面，一级二级混着轮播。
  *
- * 顺序是「所有一级，然后所有二级」，不是按线程交错：弹幕池有条数上限（[PlanDanmaku] 里的
- * `DANMAKU_MAX_LINES`），交错排的话前几条评论底下回复一多，后面的评论就整条轮不上；先排一级，
- * 「这个方案上有人说过话」这一层永远在，回复再按剩下的名额补进去。
+ * **交错而不是分批**：以前是「所有一级在前、所有二级在后」，于是屏幕上先是一整波一级评论，等它们
+ * 全走完才轮到回复——看着就是"一波一波"。现在每条一级后面紧跟它自己的回复（一个线程最多带
+ * [DANMAKU_REPLIES_PER_THREAD] 条，免得前几条评论就把池子占满），剩下的回复按顺序补在最后，
+ * 一条都不丢。
  *
- * 回复头上那个「↳」是它和一级唯一的区别：滚法、字号、速度完全一样（要的就是「所有弹幕都这么
- * 飘」）。回的是另一条回复时把对象也写上（`CommentThread.markerFor`），否则「↳ 嗯」这种一句话
- * 读不出在对谁说。
+ * 回复头上那个「↳」是它和一级唯一的区别：滚法、字号、速度完全一样。回的是另一条回复时把对象也
+ * 写上（`CommentThread.markerFor`），否则「↳ 嗯」这种一句话读不出在对谁说。
  *
  * 每条都带上自己的赞数，并且标出「这批里点赞最多的是哪些」（并列的算同一条，见 [DanmakuLine]）：
  * 弹幕层据此给它们换金色、加粗、在尾巴上挂赞数。
@@ -1309,17 +1310,25 @@ private fun danmakuRows(comments: List<PlanComment>): List<DanmakuLine> {
     val best = comments.maxOf { it.likes }
     fun line(text: String, likes: Int): DanmakuLine =
         DanmakuLine(text = text, likes = likes, top = likes > 0 && likes >= best)
-    val threads = comments.threads()
-    val starters = threads.map { line(it.comment.body, it.comment.likes) }
-    val answers = threads.flatMap { thread ->
-        thread.replies.map { answer ->
-            val to = thread.markerFor(answer)
-            val text = if (to.isNotEmpty()) "↳ 回 @$to：${answer.body}" else "↳ ${answer.body}"
-            line(text, answer.likes)
+    fun answerText(thread: CommentThread, answer: PlanComment): String {
+        val to = thread.markerFor(answer)
+        return if (to.isNotEmpty()) "↳ 回 @$to：${answer.body}" else "↳ ${answer.body}"
+    }
+
+    val mixed = ArrayList<DanmakuLine>()
+    val rest = ArrayList<DanmakuLine>()
+    comments.threads().forEach { thread ->
+        mixed += line(thread.comment.body, thread.comment.likes)
+        thread.replies.forEachIndexed { index, answer ->
+            val row = line(answerText(thread, answer), answer.likes)
+            if (index < DANMAKU_REPLIES_PER_THREAD) mixed += row else rest += row
         }
     }
-    return starters + answers
+    return mixed + rest
 }
+
+/** 一个评论线程最多带几条回复进弹幕池：不限的话，头两条评论的几十条回复就能把池子占满。 */
+private const val DANMAKU_REPLIES_PER_THREAD = 2
 
 @Composable
 private fun PlanHero(
