@@ -72,6 +72,18 @@
   "pkg": "com.oppo.ctautoregist"
  },
  {
+  "agrees": 0,
+  "applied": false,
+  "author": "tom",
+  "author_id": "13064",
+  "body": "耳机弹窗与快连：当你打开小米或Redmi蓝牙耳机充电盒时，手机弹出的连接窗口以及状态栏的耳机图标，都需要 com.xiaomi.hypercomm 参与才能正常显示。有用户反馈，如果这个组件缺失或版本异常，可能会出现耳机弹窗不出现的问题。",
+  "created_at": "2026-11-28T12:00:28.963296+00:00",
+  "disagrees": 0,
+  "id": 16,
+  "note": "",
+  "pkg": "com.xiaomi.hypercomm"
+ },
+ {
   "agrees": 50,
   "applied": true,
   "author": "开发者",

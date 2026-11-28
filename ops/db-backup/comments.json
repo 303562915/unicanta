@@ -5952,6 +5952,18 @@
   "target": "113"
  },
  {
+  "author": "tom",
+  "author_id": "13064",
+  "body": "耳机弹窗与快连：当你打开小米或Redmi蓝牙耳机充电盒时，手机弹出的连接窗口以及状态栏的耳机图标，都需要 com.xiaomi.hypercomm 参与才能正常显示。有用户反馈，如果这个组件缺失或版本异常，可能会出现耳机弹窗不出现的问题。",
+  "created_at": "2026-11-28T12:00:36.800256+00:00",
+  "device_model": "REDMI Turbo 5 Max",
+  "id": 842,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.4",
+  "target": "com.xiaomi.hypercomm"
+ },
+ {
   "author": "听风说你",
   "author_id": "10049",
   "body": "我之前是澎湃3的时候测试的，因为看到酷安有人说这个卸载会导致关联启动增加息屏功耗的问题，你可以自己复测一下看看现在澎湃4还会不会这样，至于关联启动的APP名字我也记不住啊，小米一堆乱七八糟英文字母的软件，而且有的是搜不到的那种",
