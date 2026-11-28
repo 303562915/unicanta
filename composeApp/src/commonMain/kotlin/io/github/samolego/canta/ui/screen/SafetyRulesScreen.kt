@@ -101,6 +101,7 @@ import io.github.samolego.canta.generated.resources.safety_tab_apps
 import io.github.samolego.canta.generated.resources.safety_tab_plans
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
+import io.github.samolego.canta.ui.component.dataAgeLabel
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.DeviceHero
 import io.github.samolego.canta.ui.component.PlanScope
@@ -298,6 +299,15 @@ fun SafetyRulesScreen(
     var catalogLoading by remember { mutableStateOf(true) }
     // 目录最近一次**真的**从后端拿到的时间（本机毫秒）；0 = 还没成功过。
     var catalogFetchedAt by remember { mutableLongStateOf(0L) }
+    // 「多久前拉的」这句话要自己走：时间过去不会触发重组，所以每分钟推一次本机时钟。
+    // 只在这一页活着，离开就停，不做常驻节拍。
+    var ageNow by remember { mutableLongStateOf(currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            ageNow = currentTimeMillis()
+        }
+    }
     var pickerOpen by remember { mutableStateOf(false) }
     // 页面显示哪个机型：**只看上一次的选择**，不看目录。
     //
@@ -741,6 +751,14 @@ fun SafetyRulesScreen(
                         if (awaitingFirstReboot > 0) {
                             add("$awaitingFirstReboot" to "待首次重启验证")
                         }
+                    }
+                    // 这一格答的是「我刚传的手机怎么还没有」：目录/方案是从后端拉的，隔了多久
+                    // 一眼能看见，就不用猜是数据旧了还是上游真的没有。加载中写「同步中」，
+                    // 一次都没成功过就整格不画——「-- 云端目录」只会让人以为坏了。
+                    if (catalogLoading) {
+                        add("同步中" to "云端目录")
+                    } else if (catalogFetchedAt > 0L) {
+                        add(dataAgeLabel(ageNow - catalogFetchedAt) to "云端目录")
                     }
                 },
                 footer = {
