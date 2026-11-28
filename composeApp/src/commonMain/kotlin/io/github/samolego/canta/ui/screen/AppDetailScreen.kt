@@ -10,6 +10,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -29,6 +30,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,6 +70,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.bloat.BloatData
 import io.github.samolego.canta.data.cache.ScreenCache
@@ -1046,6 +1050,10 @@ private fun AppHero(
     val uninstalled = app?.isUninstalled == true
     // 本机扫不到这个包，但总库认识它：级别与说明照样画出来，别让人点进来只看到一行包名。
     val badge = app?.badgeInfo ?: fallback?.badgeInfo
+    /** 徽标那一段的完整说明正开着没有；null 表示没开，值是开的那一档。 */
+    var badgeSheet by remember { mutableStateOf<AppBadgeInfo?>(null) }
+    /** 轮播里被点开看全文的那一页。 */
+    var expandedPage by remember { mutableStateOf<DescriptionPage?>(null) }
     Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // 图标和它的状态一起：那个「未卸载 / 已卸载」的胶囊就贴在图标底下，说明的是这颗
@@ -1115,78 +1123,97 @@ private fun AppHero(
             ReplacementRow(suggestion = suggestion, onOpen = { onOpenRecommendation(suggestion) })
         }
 
+        // 一档只留一枚彩色标签：这一档的定义和「删了会怎样」都不摆了，点开才看。头部原来被
+        // 两段解释文字占掉，投票和评论被挤到下面去。
         badge?.let { shown ->
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.Top) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { badgeSheet = shown },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 AppBadge(shown)
                 Spacer(Modifier.width(8.dp))
-                Column {
-                    // 先一句「这台机器会怎样」：会不会破坏功能、会不会卡在开机。名单自己的定义
-                    // （"breaks obscure or minor parts of functionality"）放在它下面当补充——
-                    // 定义解释的是档位，这句解释的是删了之后会发生什么。
-                    Text(
-                        text = badgeRiskSummary(shown),
-                        style = FlText.caption1.copy(fontWeight = FlText.emphasized),
-                        color = scheme.onSurface,
+                Text(
+                    text = "点开看说明",
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
+
+        // 说明和它的修正排成一条轮播：第一页是现在生效的那一段，后面几页是社区提了还没通过的
+        // 改写。默认停在第一页、不自动翻——这一段是要读的，自动翻页等于替人决定他看到哪一版；
+        // 想知道别人怎么改的，往左滑一下就是。
+        val shownDescription = appliedFix?.body?.takeIf { it.isNotBlank() }
+            ?: app?.description?.takeIf { it.isNotBlank() }
+            ?: fallback?.description?.takeIf { it.isNotBlank() }
+        val publishedSource = stringResource(
+            // 本机没装、说明来自总库那条时，仍然如实标「来自名单」，而不是假装是这台机器报的。
+            if ((app?.descriptionTranslated ?: fallback?.translated) == true) {
+                Res.string.description_translated_source
+            } else {
+                Res.string.description_source
+            }
+        )
+        val pendingFixes = remember(fixes) { fixes.filter { !it.applied && it.body.isNotBlank() } }
+        // 生效的那一条修正署上是谁提的、多少人认同；没有就用名单自己的来源那一行。
+        val appliedSource = appliedFix?.let { fix ->
+            "社区修正 · 由 ${fix.author.ifEmpty { "匿名" }} 提出 · ${fix.agrees}/${fix.votes} 人认同"
+        }
+        val descriptionPages = remember(shownDescription, pendingFixes, publishedSource, appliedSource) {
+            buildList {
+                if (shownDescription != null) {
+                    add(
+                        DescriptionPage(
+                            title = "应用介绍",
+                            body = shownDescription,
+                            footnote = appliedSource ?: publishedSource,
+                        ),
                     )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(shown.description),
-                        style = FlText.caption1,
-                        color = scheme.onSurfaceVariant,
+                }
+                pendingFixes.forEach { fix ->
+                    add(
+                        DescriptionPage(
+                            title = "社区修正",
+                            body = fix.body,
+                            footnote = buildString {
+                                append(fix.author.ifEmpty { "匿名" })
+                                append(" · ${fix.agrees}/${fix.votes} 人认同")
+                                if (fix.missingVotes > 0) append(" · 还差 ${fix.missingVotes} 票")
+                            },
+                        ),
                     )
                 }
             }
         }
-
-        // The accepted correction, when there is one, stands in for the published line: that is the
-        // whole point of voting on it. The source is named either way, so the reader knows whose
-        // words these are.
-        val shownDescription = appliedFix?.body?.takeIf { it.isNotBlank() }
-            ?: app?.description?.takeIf { it.isNotBlank() }
-            ?: fallback?.description?.takeIf { it.isNotBlank() }
-        if (shownDescription != null) {
+        if (descriptionPages.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            io.github.samolego.canta.ui.component.text.UrlText(
-                text = shownDescription,
-                style = FlText.footnote,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = if (appliedFix != null) {
-                    "社区修正 · 由 ${appliedFix.author.ifEmpty { "匿名" }} 提出 · " +
-                        "${appliedFix.agrees}/${appliedFix.votes} 人认同"
-                } else {
-                    stringResource(
-                        // 本机没装、说明来自总库那条时，仍然如实标「来自名单」，而不是假装是这台机器报的。
-                        if ((app?.descriptionTranslated ?: fallback?.translated) == true) {
-                            Res.string.description_translated_source
-                        } else {
-                            Res.string.description_source
-                        }
-                    )
-                },
-                style = FlText.caption2,
-                color = if (appliedFix != null) scheme.primary else scheme.onSurfaceVariant,
-            )
+            DescriptionCarousel(pages = descriptionPages, onExpand = { expandedPage = it })
         }
 
         if (app != null) {
-            Spacer(Modifier.height(8.dp))
-            DescriptionFixEntry(
-                fixCount = fixes.size,
-                accepted = appliedFix != null,
-                onClick = onOpenDescriptionFixes,
-            )
-            // 级别那一行紧跟在徽标与说明下面：读的人刚看完「这包标成推荐卸载」，下一个问题
-            // 通常就是「这台机器上真的能删吗」。
-            if (badge != null) {
-                Spacer(Modifier.height(2.dp))
-                EntriesRow(
-                    label = "级别标错了？提一条修正、按档位投票",
-                    accepted = false,
-                    onClick = onOpenLevelFixes,
+            Spacer(Modifier.height(10.dp))
+            // 两个入口并排两张卡，标题就四个字：描述修正 / 级别修正。原来那一行长句说清了
+            // 「怎么改、按什么投票」，但两行叠在一起读，读者只记住了一堆问号。
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FixCard(
+                    title = "描述修正",
+                    hint = if (fixes.isNotEmpty()) "${fixes.size} 条在投票" else "写一条",
+                    onClick = onOpenDescriptionFixes,
+                    modifier = Modifier.weight(1f),
                 )
+                if (badge != null) {
+                    FixCard(
+                        title = "级别修正",
+                        hint = "按档位投票",
+                        onClick = onOpenLevelFixes,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
 
@@ -1205,6 +1232,52 @@ private fun AppHero(
             voteError = voteError,
             onVote = onVote,
         )
+    }
+
+    // 徽标那一档的完整说明：名单自己的定义，加上「删了之后这台机器会怎样」。
+    badgeSheet?.let { level ->
+        CantaDialog(
+            onDismissRequest = { badgeSheet = null },
+            title = stringResource(level.nameRes),
+            buttons = {
+                TextButton(onClick = { badgeSheet = null }) { Text("知道了") }
+            },
+        ) {
+            Text(
+                text = badgeRiskSummary(level),
+                style = FlText.footnote.copy(fontWeight = FlText.emphasized),
+                color = scheme.onSurface,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(level.description),
+                style = FlText.caption1,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    // 轮播里点开的那一页的全文：卡片只放得下几行，读到一半被省略号截断时从这里看完整版。
+    expandedPage?.let { page ->
+        CantaDialog(
+            onDismissRequest = { expandedPage = null },
+            title = page.title,
+            scrollable = true,
+            buttons = {
+                TextButton(onClick = { expandedPage = null }) { Text("关闭") }
+            },
+        ) {
+            io.github.samolego.canta.ui.component.text.UrlText(
+                text = page.body,
+                style = FlText.footnote,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = page.footnote,
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -1246,6 +1319,14 @@ private fun VoteBlock(
     val share = if (total == 0) 0f else canRemove.toFloat() / total
 
     Column(modifier = Modifier.fillMaxWidth()) {
+        // 一条分隔线：「只看本机 / 全部机型」这一组属于投票，不是上面那些说明的续行。
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
+                .height(1.dp)
+                .background(scheme.outlineVariant),
+        )
         // Two pills instead of a segmented control: this sits inside the hero's own 16dp, and a
         // control with its own padding would end up too narrow to read.
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1552,101 +1633,151 @@ private fun recommendationAccent(app: RecommendedApp): Color {
     return Color(0xFF7A6FF0)
 }
 
+/** 轮播里的一页：现在生效的那段说明，或者社区提的一条改写。 */
+private data class DescriptionPage(
+    val title: String,
+    val body: String,
+    val footnote: String,
+)
+
+/** 轮播卡片的高度：几页一样高，往左滑的时候版面不会一顿一顿地跳。 */
+private val DESCRIPTION_PAGE_HEIGHT = 132.dp
+
 /**
- * 与 [DescriptionFixEntry] 同一行的样子，但只承担一件事：把「级别有异议」那一页的入口指出来。
+ * 应用说明的轮播：第一页是现在生效的那段说明，后面每页是一条社区提的改写。
  *
- * 单独抽出来是因为它不带计数——级别修正的票数只在打开那一页时才问后端（应用列表页每进一次已经
- * 四个请求了，不能再多一个），所以这一行只画一句固定的话。
+ * 默认停在第一页，**不自动翻页**：这一段是要读的，自动翻等于替人决定他看到哪一版。想知道
+ * 别人怎么改的，往左滑一下就是。卡片只放得下四行，点一下看全文（[onExpand]）。
  */
 @Composable
-private fun EntriesRow(label: String, accepted: Boolean, onClick: () -> Unit) {
+private fun DescriptionCarousel(pages: List<DescriptionPage>, onExpand: (DescriptionPage) -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Default.Edit,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = scheme.primary,
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = label,
-            style = FlText.caption1.copy(fontWeight = FlText.emphasized),
-            color = scheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        if (accepted) {
-            Text(
-                text = "已有修正生效",
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-            Spacer(Modifier.width(4.dp))
+    val pager = rememberPagerState(pageCount = { pages.size })
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HorizontalPager(
+            state = pager,
+            // 高度写死在这一层：页内的高度不参与测量，滑到短一点的修正时版面不会缩一下。
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(DESCRIPTION_PAGE_HEIGHT),
+        ) { index ->
+            val page = pages[index]
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 页距用页自己的内边距做：相邻两页之间空出 6dp，滑过去能看出是两张卡片。
+                    .padding(horizontal = 3.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
+                    .clickable { onExpand(page) }
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = page.title,
+                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                        color = scheme.primary,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "点开看全文",
+                        style = FlText.caption2,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = page.body,
+                    style = FlText.footnote,
+                    color = scheme.onSurface,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = page.footnote,
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = null,
-            modifier = Modifier.size(13.dp),
-            tint = scheme.primary,
-        )
+        if (pages.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                pages.indices.forEach { index ->
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (index == pager.currentPage) scheme.primary else scheme.outlineVariant,
+                            ),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "${pager.currentPage + 1}/${pages.size} · 左右滑动看修正",
+                    style = FlText.caption2,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
 /**
- * The way into the corrected descriptions: one row under the description itself, with the count of
- * rewrites already filed. It is always here — a description that everyone agrees with still benefits
- * from saying "you can propose a better one".
+ * 描述修正 / 级别修正的入口卡：标题四个字，副行一句「有几条 / 怎么改」。
+ *
+ * 两张并排，是因为它们是同一个问题「这条信息不对」的两个方向：说明写错了，或者档位标错了。
+ * 原来那两行长句把这个区别藏在句子中间，读者要读完整句才知道该点哪个。
  */
 @Composable
-private fun DescriptionFixEntry(fixCount: Int, accepted: Boolean, onClick: () -> Unit) {
+private fun FixCard(
+    title: String,
+    hint: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(FlSurfaceLevel.Page.raised.colorOf(scheme))
             .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
-        Icon(
-            imageVector = Icons.Default.Edit,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = scheme.primary,
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = if (fixCount > 0) "描述有误？看 $fixCount 条修正" else "描述有误？写一条修正",
-            style = FlText.caption1.copy(fontWeight = FlText.emphasized),
-            color = scheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        if (accepted) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = null,
+                modifier = Modifier.size(13.dp),
+                tint = scheme.primary,
+            )
+            Spacer(Modifier.width(5.dp))
             Text(
-                text = "已有修正生效",
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
+                text = title,
+                style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+                color = scheme.primary,
                 maxLines = 1,
             )
-            Spacer(Modifier.width(4.dp))
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = null,
-            modifier = Modifier.size(13.dp),
-            tint = scheme.primary,
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = hint,
+            style = FlText.caption2,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
