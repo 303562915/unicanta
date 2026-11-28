@@ -1102,7 +1102,11 @@ fun ChatScreen(
                     replyTo = replyTarget?.id,
                 )
                 if (sent != null) {
-                    messages = messages + sent
+                    // **不能直接 `+`**：这条消息可能已经被轮询/Realtime 先一步拉进来了（后端先
+                    // 落库、再把 id 返回，两件事不同步），直接追加就会让同一个 id 在列表里出现两次。
+                    // LazyColumn 的 key 是 `message.id`，重复 key 会让 Compose 当场抛
+                    // `Key "1105" was already used` 把整个页面带走（2026-11-28 群里发消息闪退）。
+                    messages = chatAppend(messages, sent)
                     draft = ""
                     // 名单跟着草稿一起清：下一条要 @ 谁得重新点。
                     pendingMentions = emptyList()
@@ -1143,8 +1147,8 @@ fun ChatScreen(
                 )
                 if (sent != null) {
                     // 打上本机标记：这一条画成大贴纸。后端不认这个 kind，刷新合并时由
-                    // [mergeMessages] 保住它。
-                    messages = messages + sent.copy(kind = StickerKind)
+                    // [mergeMessages] 保住它。同样走 [chatAppend] 去重——理由见上面那条发送。
+                    messages = chatAppend(messages, sent.copy(kind = StickerKind))
                     // 发过的进「最近使用」，和面板里点过一颗是同一种记法。
                     rememberEmotionPick(emotion.name)
                     replyTarget = null
@@ -1426,7 +1430,12 @@ fun ChatScreen(
 
     // 列表是从底部往上排的（LazyColumn 的 reverseLayout），所以喂给 items 的是倒过来的视图：
     // index 0 是最新那条、index + 1 才是更旧的那条。它只是个视图，不复制列表。
-    val ordered = messages.asReversed()
+    //
+    // `distinctBy` 是**兜底**，不是主要修法：真正的问题是某条路径把同一条消息插了两次
+    // （见发送那两处改成了 [chatAppend]）。但 `key = message.id` 一旦重复，Compose 抛的是
+    // `Key ... was already used`，整个聊天页当场消失——比少一条重复消息严重得多，
+    // 所以渲染这一层也去一次重，宁可少画一条也不要崩。
+    val ordered = messages.distinctBy { message -> message.id }.asReversed()
 
     // 已读回执挂在自己**最后一条**下面：微信、抖音都是这个位置，人也只在那儿找。
     // 判据是"别人的读位置比这条的创建时间晚"——后端每人只存一个 last_read_at，不存每条回执。
