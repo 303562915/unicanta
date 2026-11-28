@@ -777,14 +777,6 @@ private fun PostsToolbar(
     /** 开源周榜入口；null 时不画那颗按钮。 */
     onOpenWeeklyRank: (() -> Unit)? = null,
     /**
-     * 「创建话题」那颗图标；null 时不画。
-     *
-     * 为什么顶栏也要有一个：FAB 是"展开菜单再点第二下"的两段动作，而 fluxdo 的首页工具栏
-     * 右端就是一颗直达的创作按钮——新建话题是这一页最常用的写操作，不该只能从右下角绕进去。
-     * 两颗入口同时存在不是重复：FAB 那三个格（草稿 / 写新帖 / 刷新）仍然只有它给得了。
-     */
-    onCompose: (() -> Unit)? = null,
-    /**
      * 右端那颗搜索图标：null 时不画（胶囊自己就在下面一行，没有胶囊的形态不该有这颗入口）。
      *
      * 为什么顶栏要有一颗：fluxdo 的顶栏右簇本来就是「搜索落位格 + 🔔」，本仓没有 morph，
@@ -873,22 +865,10 @@ private fun PostsToolbar(
             }
         }
 
-        // 右端：开源周榜（有数据层才画）→ 「创建话题」→ 搜索 → 8dp 留白。
-        // fluxdo 右簇的顺序是「落位格（最左，所以贴在标题右侧）→ 🔔 → 8dp」，这里把那个
-        // 只在 morph 里有意义的落位格换成**真按钮**：搜索紧贴右缘（原 🔔 的位置），
-        // 「创建话题」是本仓多出来的一颗，排在搜索左边，免得它把搜索挤离右缘。
+        // 右端：开源周榜（有数据层才画）→ 搜索 → 8dp 留白。
+        // 顶栏不再有「创建话题」（铅笔）：写作入口只留右下角那颗 FAB。
         if (onOpenWeeklyRank != null) {
             WeeklyRankIconButton(onClick = onOpenWeeklyRank)
-        }
-        // 「创建话题」：一颗直达的写作入口，照 fluxdo 首页工具栏右端的创作按钮。
-        // 图标用 [Icons.Rounded.Edit]（笔），和 FAB 菜单里「写新帖」同一颗——同一件事在哪儿都是同一件图标。
-        // 身份没认出来时（[onCompose] 由调用方传 null）不画：那颗按钮点了也只能说"还没认出身份"。
-        if (onCompose != null) {
-            TopBarIconButton(
-                icon = Icons.Rounded.Edit,
-                label = "创建话题",
-                onClick = onCompose,
-            )
         }
         // 搜索：把焦点交给工具栏下面那颗常驻胶囊（[onSearch] 由调用方绑 `searchFocus`）。
         // `Icons.Rounded.Search` 是官方 Material Symbols，不像自绘 glyph 那样有 `fill = 0f` 下不显示的坑。
@@ -2199,9 +2179,6 @@ internal fun PostsScreen(
                             menuOpen = filterMenuOpen,
                             onOpenCategories = { drawerOpen = true },
                             onOpenFilters = { filterMenuOpen = true },
-                            // 「创建话题」：身份认出来了才画（发不了帖的按钮不如不放，
-                            // 点了只会说"还没认出身份"）。它和 FAB 的「写新帖」进同一个编辑器。
-                            onCompose = if (canWrite) ({ startCompose(null) }) else null,
                             // 开源周榜：入口搬到顶栏右上角（列表里那条 40dp 横条删掉了）。
                             onOpenWeeklyRank = if (weeklyRank != null) onOpenWeeklyRank else null,
                             // 搜索由上层同一颗胶囊完成，不再画第二颗搜索按钮。
@@ -2233,27 +2210,6 @@ internal fun PostsScreen(
                         }
                     }
                     Spacer(Modifier.height(48.dp * (1f - headerProgress)))
-                    Box(Modifier.fillMaxWidth().height(40.dp * (1f - headerProgress)).clipToBounds()) {
-                        Row(
-                            modifier = Modifier.height(40.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            (listOf("") + drawerCategories).forEach { item ->
-                                val selected = categoryPick == item && tagPick.isBlank()
-                                Text(
-                                    text = item.ifBlank { "全部话题" },
-                                    fontSize = 13.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.clip(RoundedCornerShape(16.dp))
-                                        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-                                        .clickable { categoryPick = item; tagPick = "" }
-                                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                                )
-                            }
-                        }
-                    }
                     }
                     Box(
                         Modifier.offset(x = capsuleX, y = 52.dp - 48.dp * morph)
@@ -3060,17 +3016,8 @@ private fun plainExcerpt(text: String): String {
 /**
  * 列表上的一张帖子卡片。
  *
- * 画出来三块：**标题**（15sp / 行高 1.3、最多 2 行）→ 间距 4 → **摘要**（`bodySmall` / 行高 1.3、
- * 最多 [POST_CARD_EXCERPT_LINES_PLAIN] 行、**空则不画**）→ 间距 8 → **署名块**（头像 32 +
- * 昵称/时间 + 分类标签/赞回复）。摘要取自列表回答里的 `excerpt`（`PostStore.kt:19`：列表只发
- * `excerpt`，`body` 是空的），先经 [plainExcerpt] 剥成纯文字再画。
- *
- * 有首图时右侧多一颗 [PostCardThumbSize] 的方缩略（[PostImageThumb]），首图由 [firstImageUrl] 认。
- * **缩略图不用行数**：标题仍是 `maxLines = 2` 那条上限（见本函数里那个 `Text`），只把可用宽度让出
- * 72 + 10dp，所以有图不会让标题多折一行。缩略图唯一改行数的地方是摘要：有缩略时
- * [POST_CARD_EXCERPT_LINES_WITH_THUMB] 行，没缩略时 [POST_CARD_EXCERPT_LINES_PLAIN] 行
- * （理由见两个常量的 KDoc）。没有首图时 `Row` 里只有内容列本身，连 `Spacer` 都不加 ——
- * 布局与加缩略图之前逐项相同。
+ * 画出来两块：**标题**（15sp / 行高 1.3、最多 2 行）→ 间距 8 → **署名块**（头像 32 +
+ * 昵称/时间 + 分类标签/赞回复）。正文摘要与正文首图缩略图都**不再画**：列表项只显示标题。
  *
  * [unread] 是"没看过 / 有新回复"：**卡片右上角**一颗 8dp 主色圆点（叠层画的，不参与布局），扫列表时先认它。
  */
@@ -3081,8 +3028,6 @@ private fun plainExcerpt(text: String): String {
  * ```
  * Column(
  * 行1: 标题（满宽，最多两行，15sp/1.3）
- *   间距 4
- *   行1.5: 摘要（满宽，最多 3 行 / 有缩略时 2 行，bodySmall/1.3，空则不画）
  *   间距 8
  *   行2: 头像 32 跨两行 + 右侧 Column(
  *         行A: 作者名（Expanded）+ 8 + 时间
@@ -3097,27 +3042,14 @@ private fun plainExcerpt(text: String): String {
  * `EdgeInsets.fromLTRB(12, 10, 12, 10)`），不是估的。**左右外留白不在卡上**，在列表的
  * `contentPadding` 上（见 [PostListPane]）。
  *
- * **摘要为什么是这个位置、这两个数**：位置与间距照 `topic_card.dart:486-496`（标题 → 4 → 摘要 →
- * 8 → 署名，官方注释写的是"Gmail snippet 的位置"）；**不要展开** —— 参考侧收起时靠 `TextPainter`
- * 测行、再挂渐隐 + `TextButton`（`topic_expandable_excerpt.dart:141-190`），列表里一张卡两种高度
- * 会让滚动中的位置一直跳，这里只做 `maxLines` 截断。**空摘要一个组合项都不建**（连那颗 4dp 的
- * Spacer 也不建），所以"没摘要 + 没缩略"的卡片与加摘要之前**逐项相同**。
+ * **摘要与缩略图都已移除**：列表项只显示标题 + 署名。原来的摘要段落与首图缩略图的取样逻辑
+ * （[plainExcerpt] / [firstImageUrl]）仍留在这个文件里备用，只是 `PostCard` 不再调用。
  *
  * **故意不跟 fluxdo 的项**：
- *  1. `TopicCardStyle.showExcerpt = false`、`showImages = false`（`topic_card_style.dart:54-55`）。
- *     fluxdo 默认不显示摘要，是因为它的摘要要**额外发请求**取首楼（`allowExcerptFetch`，
- *     `topic_card_style.dart:39-40` 明说"默认关闭以避免增加列表请求量"）。本仓的 `excerpt` 已经在
- *     `posts_for` 的列表回答里（后端 `left(body, 200)`），不发第二次请求，所以摘要**默认画**。
- *  2. `maxCollapsedLines = 3`（`topic_card_style.dart:57`）：这里只搬了"3"这个**行数**，没搬
- *     "点一下展开"那一套。而且有缩略时改成 2 行（[POST_CARD_EXCERPT_LINES_WITH_THUMB]）——
- *     缩略占了内容列 82dp 的宽度，三行会被切得只剩关键词。
- *  3. 未读点的**摆法**：fluxdo 把 `unreadIndicator` 摆进标题行右端的**固定槽位**
+ *  1. 未读点的**摆法**：fluxdo 把 `unreadIndicator` 摆进标题行右端的**固定槽位**
  *     （`topic_card.dart:296` 与 `:428-433` 的 `if (unreadIndicator != null) … Padding(top: …)`，
  *     `:879-886` 那颗 8×8 的蓝点），它参与布局 —— 所以"有未读"的标题比"已读"的少一截可用宽度，
  *     同一列里换行位置会不一样。本仓改成画在卡片背景层上（见下一段），标题永远满宽。
- *  4. `showImages = false` 这条**只跟了一半**：缩略图确实进卡了，但走的是右侧一颗
- *     [PostCardThumbSize] 方图（[PostImageThumb]），不是 fluxdo 那条"摘要下面按内容宽铺一行"
- *     （`topic_expandable_excerpt.dart:233-277` 的 `_buildImages`）。理由见 [PostCardThumbSize] 的 KDoc。
  *
  * 标题为什么独占一行：论坛列表以标题为主信息，照片和署名排在它后面，视线沿左边缘直扫。
  *
@@ -3168,23 +3100,7 @@ private fun PostCard(
 ) {
     val scheme = MaterialTheme.colorScheme
     val stamp = relativeStamp(post.createdAt)
-    // 首图：正文里第一条**整行**的 `![](https://…)`，规则与 `MiniMarkdown` 的 `ImagePattern` 一致
-    // （见 [PostCardImagePattern] 与 [firstImageUrl]）。
-    //
-    // 为什么还要看 `excerpt`：列表回答里 `body` 是**空的**（`PostStore.kt:19` 写明"列表只发
-    // `excerpt`"），只认 `body` 等于这条缩略图在实际列表里永远画不出来。`excerpt` 是后端对正文取的
-    // `left(body, 200)` 原文（`20261124160000_community_posts.sql:152`），Markdown 没被洗掉，
-    // 首图落在前 200 字里时照样能认出来；认不出就当这条帖没图。
-    //
-    // 为什么放进 `remember`：卡片是 `LazyColumn` 的项，滚动时反复重组；`remember(post.body,
-    // post.excerpt)` 让这两条正则**每条帖子只跑一次**（200 条列表 = 200 次，不是每帧 200 次）。
-    val thumbUrl = remember(post.body, post.excerpt) {
-        firstImageUrl(post.body) ?: firstImageUrl(post.excerpt)
-    }
-    // 摘要纯文字：`excerpt` 是后端 `left(body, 200)` 的**原文**（Markdown 没洗过），先经
-    // [plainExcerpt] 剥掉标记再画（为什么不渲染 `MiniMarkdown`、剥哪些标记，见那个函数的 KDoc）。
-    // 同样放进 `remember(post.excerpt)`：200 条列表每条只剥一遍，滚动时不重跑那串正则。
-    val excerpt = remember(post.excerpt) { plainExcerpt(post.excerpt) }
+    // 列表只画标题：正文摘要（`excerpt`）与正文首图缩略图都不再显示。
     // 三档颜色，照 `topic_card.dart:288-293`：
     //   未读       标题 onSurface             元信息 onSurfaceVariant ×0.8
     //   读过没读完 标题 onSurfaceVariant×0.75  元信息 onSurfaceVariant ×0.8
@@ -3199,21 +3115,6 @@ private fun PostCard(
         scheme.primary
     } else {
         metaTint(scheme.onSurfaceVariant, if (read) 0.6f else 0.8f)
-    }
-    // 摘要的字：`bodySmall`（卡内**不再放大** —— 它已经是本仓最小的一档正文，摘要不该和标题抢），
-    // 行高按卡内正文同一个比例 1.3 重算：`bodySmall` 自带 18sp（ratio 1.38），跟标题的
-    // 19.5/15 = 1.3 不是同一个行距，同一张卡里两种行距、有缩略时右边那段会显松。
-    // 13sp × 1.3 = 16.9sp；万一把这套排版换成非 sp 单位，退回同一个数。
-    val excerptBase = MaterialTheme.typography.bodySmall
-    val excerptStyle = excerptBase.copy(
-        lineHeight = if (excerptBase.fontSize.isSp) excerptBase.fontSize * 1.3f else 16.9.sp,
-    )
-    // 摘要色：`onSurfaceVariant`；读过的帖再褪一档 0.7（照 `topic_expandable_excerpt.dart:134-136`
-    // 的 `isFullyRead ? 0.7 : 1`）—— 否则一张"已读完"的卡里摘要比标题还亮，视线先落在摘要上。
-    val excerptColor = if (read) {
-        metaTint(scheme.onSurfaceVariant, 0.7f)
-    } else {
-        scheme.onSurfaceVariant
     }
     Column(
         modifier = Modifier
@@ -3269,16 +3170,9 @@ private fun PostCard(
             }
             .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
 ) {
-        // 内容列（原样）+ 右侧首图缩略：**没有首图时这一层不建**，见 [firstImageUrl] 与
-        // `if (thumbUrl != null)` —— 无图卡片的组合项、测量尺寸与改动前逐项相同。
-        //
-        // 为什么把原来那两行（标题 / 头像+元信息）包进一个 `Column(weight(1f))`：缩略图要占
-        // 右侧那一格，内容必须先有一个「可被挤压」的宽度；`weight(1f)` 让标题与署名行的可用宽度
-        // 自动变成「卡宽 - 缩略 - 间距」，不用在任何地方写一个写死的 dp。没有缩略图时这个 Column
-        // 独吃整行，两行内容的位置、行高、间距（8dp 的 Spacer）与改动前完全一致。
+        // 列表项只画两行：标题 → 8dp → 署名块。正文摘要与首图缩略都不再画。
         Row(
             modifier = Modifier.fillMaxWidth(),
-            // 顶对齐：缩略图与标题**首行**齐平，否则单行标题的卡片里缩略会浮在署名行上方。
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -3312,39 +3206,7 @@ private fun PostCard(
                     // 同一列里"有未读"和"已读"的标题换行位置就不一样了。
                 }
 
-                // 行1.5：摘要。位置与间距照参考 `topic_card.dart:486-496`（标题 → 4 → 摘要 → 8 → 署名，
-                // 那边注释写的是"Gmail snippet 的位置"）：所以下面那颗 8dp 的 Spacer 原封不动留着，
-                // 这里只补一颗 4dp 的。顺序是 标题 →[4]→ 摘要 →[8]→ 署名。
-                //
-                // **空摘要一个组合项都不建**，连这颗 4dp 的 Spacer 也不建 —— 于是"没摘要 + 没缩略"的
-                // 卡片与加摘要之前**逐项相同**（标题 → 8 → 署名还是原来那颗 Spacer），不会多出一层空
-                // Column、一个空 Text 或一截间距。
-                //
-                // 行数：无缩略 [POST_CARD_EXCERPT_LINES_PLAIN]、有缩略 [POST_CARD_EXCERPT_LINES_WITH_THUMB]
-                // （为什么两个数见两个常量的 KDoc）。高度**不写死**，靠 `maxLines` 自撑，卡片跟着长高。
-                //
-                // 读屏：这里**不加** `contentDescription` —— `Text` 自带 `text` 语义，再写一遍等于同一段
-                // 念两遍。也**没有**给整段 `invisibleToUser()`：卡片是 `combinedClickable` 合并出来的
-                // 一个节点，朗读顺序就是标题 → 摘要 → 署名（与视觉顺序一致）；而列表里不少帖子的标题
-                // 本身就是"求助""问一下"这种不自描述的短句，摘要是"这帖讲什么"的唯一信息源，藏掉之后
-                // 读屏用户只能靠点进去判断。代价是每条多念一两句（`excerpt` 最长 200 字），换的是
-                // 进不进得去由听的人自己判断。
-                if (excerpt.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = excerpt,
-                        style = excerptStyle,
-                        color = excerptColor,
-                        maxLines = if (thumbUrl != null) {
-                            POST_CARD_EXCERPT_LINES_WITH_THUMB
-                        } else {
-                            POST_CARD_EXCERPT_LINES_PLAIN
-                        },
-                        overflow = TextOverflow.Ellipsis,
-                        softWrap = true,
-                    )
-                }
-
+                // 行1.5 的摘要删掉了：列表项只显示标题（顺序回到 标题 →[8]→ 署名）。
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // 行2：头像跨两行（radius 16 = 直径 32），右边上下两行小字。
@@ -3460,13 +3322,6 @@ private fun PostCard(
                         }
                     }
                 }
-            }
-            // 有图才多这两个孩子：没图时 Row 里只有上面那个内容列，一个 Spacer 都不留。
-            if (thumbUrl != null) {
-                Spacer(modifier = Modifier.width(10.dp))
-                // 72dp 的来历见 [PostCardThumbSize]；缩略图自己**不挂手势**（见 PostImageThumb），
-                // 点击与长按照旧落在卡片这一层的 `combinedClickable` 上。
-                PostImageThumb(url = thumbUrl, size = PostCardThumbSize)
             }
         }
     }

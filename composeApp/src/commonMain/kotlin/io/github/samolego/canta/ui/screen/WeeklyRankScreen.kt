@@ -1,6 +1,5 @@
 package io.github.samolego.canta.ui.screen
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +19,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Leaderboard
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -38,11 +40,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -81,15 +78,14 @@ private val ChipOther = Color(0xFF7B52C4)
 private const val WEEK_MS = 604_800_000L
 
 /**
- * 帖子页顶栏右上角那个「开源周榜」按钮：一个 40dp 的圆，里头三条长短不一的短杠 + 一条上扬的折线
- * （"榜 / 趋势"的轮廓，用画布画，不再引一套图标）。
+ * 帖子页顶栏右上角那个「开源周榜」按钮：一个 40dp 的圆，里头是排行榜图标
+ * （[Icons.Rounded.Leaderboard]：三根高低不同的领奖台柱子，一看就是"榜"）。
  *
  * 为什么从列表里搬到顶栏：它原来是列表顶上一条 40dp 的横条，等于每屏少一条帖子；而它是一个
  * **入口**不是内容，入口归顶栏。
  */
 @Composable
 internal fun WeeklyRankIconButton(onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .size(40.dp)
@@ -97,33 +93,12 @@ internal fun WeeklyRankIconButton(onClick: () -> Unit) {
             .clickable(role = Role.Button, onClickLabel = "GitHub AI 开源周榜", onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(20.dp)) {
-            val w = size.width
-            val h = size.height
-            val stroke = 1.8f * (w / 20f)
-            // 左边三条短杠，一条比一条长
-            listOf(0.30f, 0.44f, 0.58f).forEachIndexed { index, fraction ->
-                val y = h * (0.82f - index * 0.24f)
-                drawLine(
-                    color = scheme.onSurface,
-                    start = Offset(w * 0.06f, y),
-                    end = Offset(w * fraction, y),
-                    strokeWidth = stroke,
-                    cap = StrokeCap.Round,
-                )
-            }
-            // 右边一条上扬的折线
-            val path = Path().apply {
-                moveTo(w * 0.10f, h * 0.92f)
-                lineTo(w * 0.62f, h * 0.44f)
-                lineTo(w * 0.94f, h * 0.62f)
-            }
-            drawPath(
-                path = path,
-                color = scheme.onSurface,
-                style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
-            )
-        }
+        Icon(
+            imageVector = Icons.Rounded.Leaderboard,
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
