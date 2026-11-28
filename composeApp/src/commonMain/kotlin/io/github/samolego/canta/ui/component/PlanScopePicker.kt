@@ -30,7 +30,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.BasicAlertDialog
@@ -338,14 +337,17 @@ fun PlanScopeBar(
             Spacer(Modifier.weight(1f))
         }
         if (onToggleDescriptions != null) {
-            // 一个图标切换就够：点亮（主题色）= 搜索也认应用介绍，暗色 = 只认名字与包名。
-            // 理由同上——它是一条全局规则，用文字胶囊占一行反而比图标更难认。
+            // 常驻在这儿而不是藏在搜索框里：它是一条全局规则（应用页顶栏的搜索同样吃它），
+            // 藏进搜索框就变成"只有打开了搜索的人才找得到"。
             IconButton(onClick = onToggleDescriptions) {
-                Icon(
-                    imageVector = Icons.Default.Description,
-                    contentDescription = if (descriptions) "搜索含应用介绍：开" else "搜索含应用介绍：关",
-                    modifier = Modifier.size(18.dp),
-                    tint = if (descriptions) colors.primary else colors.onSurfaceVariant,
+                // 一个汉字当图标：「全」= 连应用介绍一起搜（点亮，主题色），暗色 = 只搜名字与包名。
+                // 用字不用图形：这一行旁边就是「切换」「版本号」这些文字胶囊，一个汉字在那里比
+                // 任何含义暧昧的小图标都更容易读。
+                Text(
+                    text = "全",
+                    fontSize = 15.sp,
+                    fontWeight = if (descriptions) FontWeight.Bold else FontWeight.Normal,
+                    color = if (descriptions) colors.primary else colors.onSurfaceVariant,
                 )
             }
         }
