@@ -99,6 +99,9 @@ class AudioWhitelistParseTest {
         assertTrue(state.hasLowPower)
         // 场景开关那份没找到，但低功耗清单找到了：不能因为前者为空就把整页说成「不支持」。
         assertFalse(state.supported)
+        // 清单必须进诊断行，否则页面上看得见、数据库里永远是空的。
+        assertTrue(state.diagnostics.any { it.startsWith("lowpower: ") && it.contains("audio_lowpower_app_list.xml") })
+        assertTrue(state.diagnostics.any { it.startsWith("lowpower pkg: ") && it.contains("tv.danmaku.bili") })
     }
 
     @Test

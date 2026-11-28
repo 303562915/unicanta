@@ -70,6 +70,9 @@ fun AudioWhitelistScreen(
     var query by remember { mutableStateOf("") }
     var bypass by remember { mutableStateOf<String?>(null) }
     var restore by remember { mutableStateOf<String?>(null) }
+    /** 低功耗清单的两个脚本（K90 Pro Max 这一类真正压外放的那份）。 */
+    var lowPowerDisable by remember { mutableStateOf<String?>(null) }
+    var lowPowerRestore by remember { mutableStateOf<String?>(null) }
     /** 「本机没有名单文件」这一页已经报过一次了；同一次进入不重复写。 */
     var reportedUnsupported by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -150,6 +153,8 @@ fun AudioWhitelistScreen(
     LaunchedEffect(Unit) {
         bypass = runCatching { AudioWhitelist.bypassScript() }.getOrNull()
         restore = runCatching { AudioWhitelist.restoreScript() }.getOrNull()
+        lowPowerDisable = runCatching { AudioWhitelist.lowPowerDisableScript() }.getOrNull()
+        lowPowerRestore = runCatching { AudioWhitelist.lowPowerRestoreScript() }.getOrNull()
         refresh()
     }
 
@@ -163,8 +168,9 @@ fun AudioWhitelistScreen(
             busy = null
             refresh()
             // 报的是**操作之后**的状态：解除是否真的把开关写成了 -1。
+            // 「恢复清单」也是恢复，所以按前缀判，不按完全相等。
             report(
-                stage = if (label == "恢复") TweakReport.STAGE_RESTORE else TweakReport.STAGE_RUN,
+                stage = if (label.startsWith("恢复")) TweakReport.STAGE_RESTORE else TweakReport.STAGE_RUN,
                 result = result,
                 snapshot = state,
             )
@@ -213,9 +219,18 @@ fun AudioWhitelistScreen(
             item(key = "explain") { ExplainCard() }
 
             // K90 Pro Max 这一类：没有 trackefx 名单，但有一份低功耗外放清单，B 站/抖音的声音就是被它压的。
-            // 只读展示（文件在 /odm 只读分区，改它得 root 且系统升级会覆盖），但至少让人知道「压你的是这个」。
+            // 这份能改——清空清单里的包名（root，改前自动备份），不必再去点上面那个对它无效的开关。
             current?.takeIf { it.hasLowPower }?.let { snapshot ->
-                item(key = "lowpower") { LowPowerCard(snapshot) }
+                item(key = "lowpower") {
+                    LowPowerCard(
+                        state = snapshot,
+                        busy = busy,
+                        canDisable = lowPowerDisable != null,
+                        canRestore = lowPowerRestore != null,
+                        onDisable = { run("解除清单", lowPowerDisable) },
+                        onRestore = { run("恢复清单", lowPowerRestore) },
+                    )
+                }
             }
 
             if (entries.isNotEmpty()) {
@@ -305,6 +320,8 @@ private fun StatusCard(
         state == null -> if (loading) "读取中…" else "读不到状态"
         // 没有名单文件时，属性值说明不了「效果如何」：名单可能由云控下发，本机没有文件不等于这道处理不存在。
         !state.supported && state.bypassed -> "开关已经是 -1，但这台机器上没有名单文件：多半没有效果，自己听一遍"
+        // 有低功耗清单的机器，答案不在这张卡上：真正压外放的是下面那份清单，别再让人点「解除」白试一次。
+        !state.supported && state.hasLowPower -> "这台机器没有场景名单：要改的是下面那份「低功耗应用清单」"
         !state.supported -> "这台机器上没有名单文件：解除多半是空转，可以点一次试，没变化就点「恢复」"
         state.bypassed -> "已解除：名单里的应用也按原始信号输出"
         state.active -> "按名单处理：名单里的应用被切低频、压低音量"
@@ -421,11 +438,18 @@ private fun ExplainCard() {
 /**
  * 低功耗外放清单：K90 Pro Max 这一代真正把 B 站/抖音声音压小的东西。
  *
- * 只读。文件在 /odm 只读分区，只有 root 能改，而且系统升级会覆盖回来——所以这里不做按钮，
- * 只把它「是什么、点了哪儿、本机装了哪些」摆出来，免得用户继续在这页的「解除」按钮上找答案。
+ * 它有按钮，因为这是这台机器上**唯一**能让外放变响的动作：把清单里点名的应用清空（root，
+ * 改前自动备份，改完重启 audioserver）。上面那个场景开关对这类机器是空转，不在这里点它。
  */
 @Composable
-private fun LowPowerCard(state: AudioWhitelist.State) {
+private fun LowPowerCard(
+    state: AudioWhitelist.State,
+    busy: String?,
+    canDisable: Boolean,
+    canRestore: Boolean,
+    onDisable: () -> Unit,
+    onRestore: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
@@ -448,8 +472,8 @@ private fun LowPowerCard(state: AudioWhitelist.State) {
             )
             Text(
                 text = "被点名的应用在播放时，系统会压低功率（声音小、低频少）。它和上面的场景开关是两条机制："
-                    + "这台机器没有 trackefx 名单，写那个开关不会改变这份清单。"
-                    + "清单在 /odm 只读分区，只有 root 能改（改完系统升级会被覆盖回原样）。",
+                    + "这台机器没有 trackefx 名单，写那个开关不会改变这份清单——所以上面「解除」点了不会有变化，"
+                    + "真正要动的是这一份。",
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
@@ -497,6 +521,23 @@ private fun LowPowerCard(state: AudioWhitelist.State) {
                     color = scheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+            if (state.lowPowerPackages.isNotEmpty()) {
+                Text(
+                    text = "清空这份清单需要 root：脚本会先把原文件备份到 /data/local/tmp，再清掉里面点名的应用，"
+                        + "然后重启 audioserver。系统升级会把清单覆盖回出厂那份——那时再点一次就行。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 2.dp),
+                ) {
+                    TextButton(onClick = onDisable, enabled = canDisable && busy == null) { Text("解除清单") }
+                    TextButton(onClick = onRestore, enabled = canRestore && busy == null) { Text("恢复清单") }
+                }
             }
         }
     }
@@ -614,6 +655,8 @@ private fun codeOf(result: TweakRun?, failure: String?): String {
     val known = listOf(
         "STATE_FAIL", "SET_FAIL", "TIMEOUT",
         "RESTORE_FAIL", "RESTORE_SET_FAIL", "RESTORE_NO_KEY", "RESTORE_DELETE_FAIL",
+        // 低功耗清单那两个脚本自己的判定：没有 root、备份失败、/odm 写不进去、还原失败。
+        "BACKUP_FAIL", "ODM_WRITE_BLOCKED", "ODM_RESTORE_BLOCKED",
     )
     result.output.lineSequence().forEach { line ->
         known.firstOrNull { it in line }?.let { return it }

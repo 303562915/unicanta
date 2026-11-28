@@ -34,6 +34,15 @@ object AudioWhitelist {
     /** The script that puts the recorded original value back. */
     const val RESTORE_PATH = "files/audio_whitelist_restore.sh"
 
+    /**
+     * 低功耗外放清单的开关（K90 Pro Max 这一类）。
+     *
+     * 和上面那条属性是两回事：这条清单在 `/odm` 只读分区里，写它必须 root，而且系统升级会覆盖，
+     * 所以两个脚本都只做「改一份、留备份」，失败时明说原因，不假装成功。
+     */
+    const val LOWPOWER_DISABLE_PATH = "files/audio_lowpower_disable.sh"
+    const val LOWPOWER_RESTORE_PATH = "files/audio_lowpower_restore.sh"
+
     /** The one property the whole feature hangs on. */
     const val PROP = "persist.sys.scene.partition.level"
 
@@ -81,6 +90,11 @@ object AudioWhitelist {
     suspend fun bypassScript(): String = Res.readBytes(BYPASS_PATH).decodeToString()
 
     suspend fun restoreScript(): String = Res.readBytes(RESTORE_PATH).decodeToString()
+
+    /** 低功耗清单的两个脚本：同样从资源里读，shell 文本不进 Kotlin。 */
+    suspend fun lowPowerDisableScript(): String = Res.readBytes(LOWPOWER_DISABLE_PATH).decodeToString()
+
+    suspend fun lowPowerRestoreScript(): String = Res.readBytes(LOWPOWER_RESTORE_PATH).decodeToString()
 
     /**
      * One app the phone's config names, with the words a user recognises it by.
@@ -185,15 +199,27 @@ object AudioWhitelist {
             .map { Entry(packageName = it, label = labelOf(it), installed = it in installed) }
             .sortedWith(compareBy({ !it.installed }, { it.label.lowercase() }, { it.packageName }))
 
+        val lowPowerEntries = lowPowerPackages
+            .map { Entry(packageName = it, label = labelOf(it), installed = it in installed) }
+            .sortedWith(compareBy({ !it.installed }, { it.label.lowercase() }, { it.packageName }))
+
+        // 清单也要进诊断行，否则页面看到了、数据库永远是空的——「本机有没有低功耗清单、拦了哪些应用」
+        // 这类问题只能靠这些行回答，问一次用户拿一次结果，下次才不用再问。
+        // 包名最多带 30 个：诊断行在服务端会被截到 8000 字符，前面还有属性与目录列表。
+        if (lowPowerPath.isNotEmpty()) {
+            diagnostics += "lowpower: $lowPowerPath（${lowPowerEntries.size} 个应用，本机装了 ${lowPowerEntries.count { it.installed }} 个）"
+        }
+        if (lowPowerEntries.isNotEmpty()) {
+            diagnostics += "lowpower pkg: " + lowPowerEntries.take(30).joinToString(",") { it.packageName }
+        }
+
         return State(
             level = level,
             configPath = config,
             entries = entries,
             diagnostics = diagnostics,
             lowPowerPath = lowPowerPath,
-            lowPowerPackages = lowPowerPackages
-                .map { Entry(packageName = it, label = labelOf(it), installed = it in installed) }
-                .sortedWith(compareBy({ !it.installed }, { it.label.lowercase() }, { it.packageName })),
+            lowPowerPackages = lowPowerEntries,
         )
     }
 
