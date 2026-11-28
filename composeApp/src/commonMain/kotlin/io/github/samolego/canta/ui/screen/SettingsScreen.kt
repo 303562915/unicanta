@@ -118,6 +118,9 @@ private val CardGap = 10.dp
  *
  * 布局沿用关于页的卡片流——一张卡一个决定，比一张长表读得快；权限、多用户、主题、
  * 底栏槽位和启动锁这些原本散在设置页与关于页两头的东西，在这里合成一页。
+ *
+ * 这里也是「机场」那一整页的入口（推荐 / 投票 / 众筹，见 [AirportHubScreen]）：它不占底栏，
+ * 点这一行才进得去，与「主题」「卸载记录」是同一类二级页。
  */
 @Suppress("UNUSED_PARAMETER")
 @Composable
@@ -129,6 +132,12 @@ fun SettingsScreen(
     onOpenTheme: () -> Unit = {},
     /** 打开卸载记录页：一份份方案，导出 JSON、导入、整份装回来（见 [DeletionListScreen]）。 */
     onOpenDeletionList: () -> Unit = {},
+    /**
+     * 打开「机场」独立页：推荐 / 投票 / 众筹三格（见 [AirportHubScreen]）。
+     *
+     * 它不占底栏，也不在推荐页里：点这一行才出现，与「主题」「卸载记录」是同一类入口。
+     */
+    onOpenAirports: () -> Unit = {},
     /**
      * 现在实际生效的是哪一种特权运行时，以及走到哪一步。读 handler 而不是记着：
      * 昨天能 root、今天丢了的手机，得在这一页说清楚。
@@ -424,6 +433,17 @@ fun SettingsScreen(
                     onClick = onOpenDeletionList,
                 )
             }
+            Spacer(Modifier.height(CardGap))
+
+            // 机场：推荐、投票、众筹三格合成一整页。以前它在推荐页的分段控件上，和「按应用推荐 /
+            // 按应用投票」挤在同一条控件里；那两半读社区后端的一张表，机场读另一张，门槛、详情页、
+            // 评论区各有一套，所以整块搬出来，只在这里留一个入口——点一下才进得去，不占底栏。
+            AppLinkCard(
+                glyph = FlGlyphs.connections,
+                title = "机场",
+                subtitle = "推荐、投票与众筹合买；从这一行点进去",
+                onClick = onOpenAirports,
+            )
             Spacer(Modifier.height(CardGap))
 
             // 高级设置：地址和危险开关收在折叠里，平时看不见，免得一页里全是需要读的句子。

@@ -8,6 +8,8 @@ import io.github.samolego.canta.data.recommend.AirportSubscription
 import io.github.samolego.canta.data.recommend.AirportVoteResult
 import io.github.samolego.canta.data.recommend.CheckInResult
 import io.github.samolego.canta.data.recommend.CommunityAirport
+import io.github.samolego.canta.data.recommend.CrowdAirport
+import io.github.samolego.canta.data.recommend.CrowdPledgeResult
 import io.github.samolego.canta.data.recommend.PointLedgerEntry
 import io.github.samolego.canta.data.recommend.PointOffer
 import io.github.samolego.canta.data.recommend.PointOrder
@@ -523,6 +525,16 @@ class PlanRepository(
 
     /** 最近的投票记录（`level_fix_ballot_history`），原样返回 JSON：谁在哪个维度投了什么。 */
     suspend fun levelFixBallotHistory(body: String): String? = rpc("level_fix_ballot_history", body)
+
+    /**
+     * 一个包的印章票数（`stamp_votes_for`）：每枚章几票、我投了哪一枚、现在盖的是哪一枚。
+     *
+     * 解析在 [LevelFixRepository] 里做，与上面几条同一个分工。
+     */
+    suspend fun stampsFor(body: String): String? = rpc("stamp_votes_for", body)
+
+    /** 给一个包盖一枚章（`stamp_vote`）：一人一包一票，重复投 = 改票。 */
+    suspend fun voteStamp(body: String): String? = rpc("stamp_vote", body)
 
     /**
      * Why the last call came back empty: the backend's own message when it refused (a missing
@@ -2173,6 +2185,103 @@ class PlanRepository(
                 subscribeUrl = o["subscribe_url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
         }.getOrNull()
+    }
+
+    // ---------------------------------------------------------------- 众筹机场（合买）
+
+    /**
+     * 众筹列表，征集中、快凑够的在前。
+     *
+     * null 表示这一次没拿到（网络没通，或后端还没这张表）：页面说「还没拉到」，而不是
+     * 「一条都没有」——后者会让人以为这个功能坏了。
+     */
+    suspend fun crowdAirports(viewer: String = ""): List<CrowdAirport>? {
+        val proof = callerToken()
+        val body = buildJsonObject {
+            put("p_viewer", viewer)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("crowd_airports", body) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonArray.map { element -> parseCrowdAirport(element) }
+        }.getOrNull()
+    }
+
+    /**
+     * 发起一团众筹：同一家、同一个发起人再发一次是改，不是又挂一团（后端保证）。
+     *
+     * [share] 是原文（`¥18 / 人 / 季`），后端只截长度、不算汇率；[target] 是凑够几个人开团。
+     */
+    suspend fun addCrowdAirport(
+        name: String,
+        url: String = "",
+        share: String = "",
+        summary: String = "",
+        target: Int = 10,
+        author: String = "",
+        authorId: String = "",
+    ): Long? {
+        if (name.isBlank()) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_name", name)
+            put("p_url", url)
+            put("p_share", share)
+            put("p_summary", summary)
+            put("p_target", target.coerceIn(1, 999))
+            put("p_author", author)
+            put("p_author_id", authorId)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("crowd_airport_add", payload) ?: return null
+        return runCatching {
+            json.parseToJsonElement(text).jsonObject["id"]?.jsonPrimitive?.longOrNull
+        }.getOrNull()
+    }
+
+    /**
+     * 认筹一团：同一个身份重复点是一次，不是叠加（后端主键保证）。
+     *
+     * 拒绝（已关闭、自己发起的、不存在）不是网络失败，后端把理由写在 [lastError] 里。
+     */
+    suspend fun pledgeCrowdAirport(id: Long, owner: String = ""): CrowdPledgeResult? {
+        if (id <= 0L) return null
+        val proof = callerToken()
+        val payload = buildJsonObject {
+            put("p_id", id)
+            put("p_owner", owner)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = rpc("crowd_airport_pledge", payload) ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(text).jsonObject
+            CrowdPledgeResult(
+                joined = o["joined"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                target = o["target"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                status = o["status"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "open" },
+                pledged = o["pledged"]?.jsonPrimitive?.booleanOrNull == true,
+            )
+        }.getOrNull()
+    }
+
+    /** 一行众筹；字段缺了就退回默认值，老回答仍然画得出来。 */
+    private fun parseCrowdAirport(element: kotlinx.serialization.json.JsonElement): CrowdAirport {
+        val o = element.jsonObject
+        return CrowdAirport(
+            id = o["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+            name = o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            url = o["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            share = o["share"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            summary = o["summary"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            author = o["author"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            authorId = o["author_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            createdAt = o["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            target = o["target"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            joined = o["joined"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            status = o["status"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "open" },
+            pledged = o["pledged"]?.jsonPrimitive?.booleanOrNull == true,
+            mine = o["mine"]?.jsonPrimitive?.booleanOrNull == true,
+        )
     }
 
     /**

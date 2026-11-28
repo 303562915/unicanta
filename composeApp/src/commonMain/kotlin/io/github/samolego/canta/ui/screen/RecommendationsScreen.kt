@@ -77,7 +77,6 @@ import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.PlanRepository
-import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.data.recommend.SuggestedApp
@@ -97,8 +96,6 @@ import io.github.samolego.canta.generated.resources.recommend_featured
 import io.github.samolego.canta.generated.resources.recommend_footer
 import io.github.samolego.canta.generated.resources.recommend_switch_grid
 import io.github.samolego.canta.generated.resources.recommend_switch_list
-import io.github.samolego.canta.generated.resources.recommend_tab_airport
-import io.github.samolego.canta.generated.resources.recommend_tab_airport_vote
 import io.github.samolego.canta.generated.resources.recommend_tab_list
 import io.github.samolego.canta.generated.resources.recommend_tab_vote
 import io.github.samolego.canta.generated.resources.recommend_title
@@ -137,21 +134,6 @@ private const val TAB_LIST = 0
 
 /** The second half: the community's queue — the form that files one, and the votes it collects. */
 private const val TAB_VOTE = 1
-
-/**
- * 第三格「机场推荐」：别人贴过的机场列成一页，点一下直接去它的网站（见 [RecommendationsAirportTab]）。
- *
- * 这一格只做"在推荐"这件事：投票、打分、取订阅、评论都不在这里，那些在第四格点进去的详情页里。
- */
-private const val TAB_AIRPORT = 2
-
-/**
- * 第四格「机场投票」：同一份机场数据，按认同票排名，点一条进整页详情。
- *
- * 为什么单开一格：推荐那一格是"看有哪些、点进去用它"，投票是"哪家最被认"，两件事各占一格谁也
- * 不挡谁；塞在一起时，想投票的人得先划过一长串推荐。
- */
-private const val TAB_AIRPORT_VOTE = 3
 
 /** Green for "这个应用该进列表", the same pass colour the other votes use. */
 internal val SuggestAgree = Color(0xFF2FA84F)
@@ -220,11 +202,12 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  * Both halves are read from the state of this one composable, so switching between them costs
  * nothing: the catalog is read once, the queue once, and the scroll position of each half is its own.
  *
- * 分格：应用推荐 / 应用投票 / 机场推荐 / 机场投票。后两格是同一份机场数据的两种画法（推荐列表 vs 按票
- * 排名），共用 [AirportTabState]，滚动位置各自存一份。**前三格里的条目点开是整页详情**
- * （[RecommendDetailScreen] / [AirportDetailScreen]），详情里都带评论区；**「机场推荐」那一格例外**：
- * 它只做推荐，点一条直接打开它的网站，不在行里再塞投票、打分、订阅、官网这些入口——想投票就切到
- * 「机场投票」，点进去的那一页什么都有。
+ * 分格：应用推荐 / 应用投票。两格读的是同一份社区队列（推荐是目录 + 已上榜，投票是候选池），
+ * 共用一条快照。**机场不在这里**：推荐 / 投票 / 众筹三格搬到了独立页
+ * （[AirportHubScreen]，从设置页进），那一块读的是另一张表、另一套门槛，混在这条分段控件上
+ * 会让一页同时回答两个系统的问题。
+ *
+ * 两格里的条目点开是整页详情（[RecommendDetailScreen]）。
  *
  * 详情不再是弹窗：评论要读、要回、要滚，弹窗放不下（见 [Screen.RecommendDetail]）。
  * 这一页只负责"点了哪个条目"，把「来源 + id」交回调用方，由它去导航。
@@ -233,15 +216,11 @@ private fun recommendationsCacheKey(owner: String): String = "screen:recommendat
  * @param author the name this install's submissions are signed with.
  * @param authorId the identity number behind [author]: what "mine" and one vote per identity key on.
  * @param asGrid false for the one-card-per-app arrangement of the first half.
- * @param airportState 机场那一块的跨格状态。**由调用方持有**：机场详情是另一条路由
- *   （[AirportDetailScreen]），它要把详情里投的票、取到的订阅写回同一份，回来列表才是新的。
- *   默认自己造一个，只为"没接线也能跑"。
  * @param onOpenApp opens the app detail page of a package, which is where the removal controls are;
  *   nothing is uninstalled from this page itself.
  * @param onOpenDetail 条目被点开：参数是「来源 + id」（`app` / `suggestion`，见
- *   [Screen.RecommendDetail]）。四格共用这一个回调而不是四个：页面里"打开详情"这件事对目录条目、
- *   社区条目、机场条目是同一个动作，差的是来源那一段，而来源本来就是路由的一个参数。
- * @param onOpenAirport 机场条目被点开：交给调用方导航到 [Screen.AirportDetail]。
+ *   [Screen.RecommendDetail]）。两格共用这一个回调：页面里"打开详情"这件事对目录条目、
+ *   社区条目是同一个动作，差的是来源那一段，而来源本来就是路由的一个参数。
  * @param onVoteQueueSeen the queue as it stood when the vote tab was opened, so the caller can
  *   store it and put out the red dot that said somebody had voted.
  */
@@ -254,12 +233,9 @@ fun RecommendationsScreen(
     authorId: String = "",
     asGrid: Boolean = true,
     onToggleLayout: () -> Unit = {},
-    airportState: AirportTabState = remember { AirportTabState() },
     onOpenApp: (String) -> Unit = {},
     /** 条目被点开：`source` 是 `app` / `suggestion`，`key` 是那一条的 id。 */
     onOpenDetail: (String, String) -> Unit = { _, _ -> },
-    /** 机场条目被点开：导航到机场详情整页。 */
-    onOpenAirport: (CommunityAirport) -> Unit = {},
     /** 自上次看过投票那一格以来，新进精选的条目数：那个点就画在投票标签上。 */
     newApplied: Int = 0,
     onVoteQueueSeen: (String) -> Unit = {},
@@ -281,7 +257,7 @@ fun RecommendationsScreen(
 
     // 四格也能左右滑：点标签换一格，手指左右滑也换。`tabs` 只管手势，`tab` 仍然是"现在看的是哪一格"——
     // 顶栏那个版式按钮、投票那一格的点、以及各分支的判断都还读 `tab`，滑动只负责把它改掉。
-    val tabs = rememberPagerState(initialPage = tab, pageCount = { 4 })
+    val tabs = rememberPagerState(initialPage = tab, pageCount = { 2 })
     // 两个方向必须分开写，否则会互相打断：以前是 `currentPage` 一变就写回 `tab`，而 `tab` 一变又
     // `animateScrollToPage`——翻页动画走到一半，`currentPage` 先跳到目标页，写回 `tab`，于是又起一次
     // 动画去同一个地方，前一次被取消。手指离开时动画已经没人推了，页面就停在两张中间。
@@ -425,12 +401,10 @@ fun RecommendationsScreen(
     }
 
     val openSuggest: () -> Unit = { composerOpen = true }
-    // 四格时每格只有屏宽的四分之一（分段的槽宽是 maxWidth / segments.size），标签只能是短词：
-    // 数字拼进标签必被截断，所以计数一律画在各格内容区的 SectionHeader 里。
+    // 两格时每格有一半宽度，标签仍然只放短词；数字拼进标签会跟着字宽抖，计数一律画在内容区的
+    // SectionHeader 里。
     val listTabLabel = stringResource(Res.string.recommend_tab_list)
     val voteTabLabel = stringResource(Res.string.recommend_tab_vote)
-    val airportTabLabel = stringResource(Res.string.recommend_tab_airport)
-    val airportVoteTabLabel = stringResource(Res.string.recommend_tab_airport_vote)
 
     Scaffold(
         topBar = {
@@ -452,14 +426,12 @@ fun RecommendationsScreen(
                         }
                     },
                 )
-                // 四块当一个控制：应用目录、社区投票、机场、机场投票。标签只放短词——四格的槽宽
-                // 是屏宽的四分之一，把计数拼进标签必被截断；计数画在各格内容区的 SectionHeader 里。
+                // 两块当一个控制：应用目录、社区投票。机场那一整块（推荐 / 投票 / 众筹）在
+                // 设置页进去的独立页里（[AirportHubScreen]），不再挤在这条控件上。
                 FlSegmentedControl(
                     segments = listOf(
                         FlSegment("list", listTabLabel),
                         FlSegment("vote", voteTabLabel),
-                        FlSegment("airport", airportTabLabel),
-                        FlSegment("airport-vote", airportVoteTabLabel),
                     ),
                     selectedIndex = tab,
                     onSelect = { tab = it },
@@ -492,35 +464,7 @@ fun RecommendationsScreen(
             state = tabs,
             modifier = Modifier.fillMaxSize(),
         ) { shown ->
-            if (shown == TAB_AIRPORT) {
-                // 机场与积分：钱包、投票、商城、兑换中心都在这一块里，各自从后端拿自己的那份。
-                RecommendationsAirportTab(
-                    repository = repository,
-                    platform = platform,
-                    author = author,
-                    authorId = authorId,
-                    state = airportState,
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    setupGate = setupGate,
-                    onOpenAirport = onOpenAirport,
-                )
-            } else if (shown == TAB_AIRPORT_VOTE) {
-                // 机场投票榜：同一份 airports、同一个 [AirportTabState]，只是换个画法。state 共用是
-                // 有意的——在榜单里投一票再切回机场那一格，票数是同一个数，不用等它重拉一遍。
-                // 滚动位置另给一个键，不然第四格会接着机场那一格的滚动位置往上长。
-                RecommendationsAirportTab(
-                    repository = repository,
-                    platform = platform,
-                    author = author,
-                    authorId = authorId,
-                    state = airportState,
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    setupGate = setupGate,
-                    board = true,
-                    stateKey = "airport-vote",
-                    onOpenAirport = onOpenAirport,
-                )
-            } else if (shown == TAB_VOTE) {
+            if (shown == TAB_VOTE) {
                 // The queue on its own page: what others filed, one line each, and the form that adds
                 // one. Nothing of the catalog here — this half is a list to work through.
                 LazyColumn(

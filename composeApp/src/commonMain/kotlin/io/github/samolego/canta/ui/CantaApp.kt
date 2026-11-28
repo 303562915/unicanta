@@ -115,6 +115,7 @@ import io.github.samolego.canta.ui.navigation.ARG_POST_ID
 import io.github.samolego.canta.ui.navigation.Screen
 import io.github.samolego.canta.ui.screen.AboutScreen
 import io.github.samolego.canta.ui.screen.AirportDetailScreen
+import io.github.samolego.canta.ui.screen.AirportHubScreen
 import io.github.samolego.canta.ui.screen.AirportTabState
 import io.github.samolego.canta.ui.screen.AppDetailScreen
 import io.github.samolego.canta.ui.screen.AudioWhitelistScreen
@@ -1017,7 +1018,7 @@ private fun CantaNavigation(
         navController.navigate(Screen.PlanDetail.routeFor(planId))
     }
 
-    // 机场那一块的跨页快照：推荐页的「机场 / 机场投票」两格与机场详情页共用这一个实例。
+    // 机场那一块的跨页快照：机场独立页（推荐 / 投票 / 众筹）与机场详情页共用这一个实例。
     // 详情页里投的票、取到的订阅要写回列表那一份，返回时才不是旧票数（见 AirportTabState）。
     val airportTabState = remember { AirportTabState() }
 
@@ -1124,9 +1125,6 @@ private fun CantaNavigation(
                     authorId = recommendIdentity,
                     asGrid = !listMode,
                     onToggleLayout = { settingsViewModel.saveRecommendationsListMode(!listMode) },
-                    // 机场那一份快照由这里持有：机场详情页要把详情里投的票、取到的订阅写回同一个
-                    // 实例，返回列表才是新的（见 AirportTabState）。
-                    airportState = airportTabState,
                     onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
                     // 点条目 → 整页详情。四格共用这两个回调：来源（app / suggestion）本来就是
                     // 目标路由的一段路径参数（见 [Screen.RecommendDetail]），机场那条是另一条路由。
@@ -1135,11 +1133,8 @@ private fun CantaNavigation(
                             launchSingleTop = true
                         }
                     },
-                    onOpenAirport = { airport ->
-                        navController.navigate(Screen.AirportDetail.routeFor(airport.id)) {
-                            launchSingleTop = true
-                        }
-                    },
+                    // 机场那一整块（推荐 / 投票 / 众筹）已经搬到设置页进去的独立页，
+                    // 这一页不再画它，所以这里也没有 onOpenAirport。
                     // 新上榜的条数：那一个点画在投票那一格上（页内），底栏那格只在离开这一页时
                     // 还留着，两处说的是同一件事，不是两份消息。
                     newApplied = newVoteCount,
@@ -1235,6 +1230,30 @@ private fun CantaNavigation(
                     // 点「由 X 分享」去他的主页：与方案详情页点上传者是同一个页面，看他还分享过什么。
                     onOpenUploader = { owner ->
                         if (owner.isNotEmpty()) navController.navigate(Screen.Uploader.routeFor(owner))
+                    },
+                    setupGate = setupGate,
+                )
+            }
+            composable(route = Screen.Airports.route) {
+                // 机场独立页（推荐 / 投票 / 众筹）：从设置页那一行进来。
+                // 快照与机场详情页共用同一个实例，详情里投的票 / 取到的订阅回来直接是新的。
+                var hubAuthor by remember { mutableStateOf("") }
+                var hubIdentity by remember { mutableStateOf(Identity("")) }
+                LaunchedEffect(Unit) {
+                    hubAuthor = DeviceIdentity.displayName(deps.settings)
+                    hubIdentity = DeviceIdentity.current(deps.settings)
+                }
+                AirportHubScreen(
+                    platform = platform,
+                    repository = communityRepository,
+                    author = hubAuthor,
+                    authorId = hubIdentity.owner.ifEmpty { hubIdentity.token },
+                    state = airportTabState,
+                    onNavigateBack = { navController.navigateUp() },
+                    onOpenAirport = { airport ->
+                        navController.navigate(Screen.AirportDetail.routeFor(airport.id)) {
+                            launchSingleTop = true
+                        }
                     },
                     setupGate = setupGate,
                 )
@@ -1675,6 +1694,8 @@ private fun CantaNavigation(
                     },
                     onOpenTheme = { navController.navigate(Screen.Theme.route) },
                     onOpenDeletionList = { navController.navigate(Screen.DeletionList.route) },
+                    // 机场（推荐 / 投票 / 众筹）整页：从这一页那一行点进去，不占底栏。
+                    onOpenAirports = { navController.navigate(Screen.Airports.route) },
                     // 救急用的文件：删掉的包还在系统分区里，恢复命令得在电脑上跑。
                     // 生成的批处理交给分享面板（发到电脑），打不开面板的构建就留在下载目录。
                     onExportRestoreScript = { mode ->

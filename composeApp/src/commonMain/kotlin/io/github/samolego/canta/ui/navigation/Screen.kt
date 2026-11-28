@@ -110,6 +110,16 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
     }
 
     /**
+     * 「机场」独立页：推荐 / 投票 / 众筹三格（见 [io.github.samolego.canta.ui.screen.AirportHubScreen]）。
+     *
+     * 从 [Settings] 那一行点进来，不占底栏。以前机场两格挤在 [Recommendations] 的分段控件上，
+     * 后来又加了众筹——三格机场加两格应用，一条分段控件上就是四个系统，所以整块搬到这里。
+     *
+     * 路径不带参数：三格是同一页的三段，详情各有自己的路由（[AirportDetail]）。
+     */
+    data object Airports : Screen("airports")
+
+    /**
      * 社区帖子：一页自己的讨论区——发帖、看帖、回帖、点赞，带本地草稿。
      *
      * 从推荐页右上角的「帖子」进。不挂在推荐页的顶部分段里：那是一张要滚很久的列表，
