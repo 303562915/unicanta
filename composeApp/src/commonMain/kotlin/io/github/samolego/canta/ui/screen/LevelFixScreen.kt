@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -289,52 +289,6 @@ fun LevelFixScreen(
                             color = scheme.onSurfaceVariant,
                         )
                     }
-                    if (ballot.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = "大家投出来的档位",
-                            style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                            color = scheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(5.dp))
-                        // 最多两档：与列表"一个包最多两枚标签"同一个口径，也免得尾巴那几档
-                        // 只有 1、2 票的档位反而看起来像候选。
-                        ballot.take(2).forEach { row ->
-                            val rowBadge = AppBadgeInfo.byNameIgnoreCaseOrNull(row.removal)
-                            val rowColour = rowBadge?.badgeColor ?: scheme.primary
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (rowBadge != null) {
-                                    AppBadge(rowBadge)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        text = stringResource(rowBadge.nameRes),
-                                        style = FlText.caption2.copy(
-                                            fontWeight = if (row == leader) FlText.emphasized else null,
-                                        ),
-                                        color = scheme.onSurface,
-                                    )
-                                }
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    text = buildString {
-                                        append("认同 ${row.agrees} · 不认同 ${row.disagrees}")
-                                        if (row.agrees < needed) append(" · 差 ${needed - row.agrees}")
-                                        if (row == leader) append(" · 最多")
-                                    },
-                                    style = FlText.caption2,
-                                    color = if (row == leader) scheme.onSurface else scheme.onSurfaceVariant,
-                                )
-                            }
-                            Spacer(Modifier.height(3.dp))
-                            // 一根条就能回答"还差多少"：填充比例 = 认同票 / 门槛，
-                            // 颜色就是这一档自己的徽标色，和上面那枚标签对得上。
-                            VoteBar(
-                                fraction = row.agrees.toFloat() / needed.coerceAtLeast(1),
-                                colour = rowColour,
-                            )
-                            Spacer(Modifier.height(7.dp))
-                        }
-                    }
                     Spacer(Modifier.height(5.dp))
                     Text(
                         text = "票最多的那一档：认同到 $needed 票、且认同率到 " +
@@ -362,41 +316,62 @@ fun LevelFixScreen(
                             color = scheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(7.dp))
-                        // 档位用和「已安装」列表同一个徽标：同一枚图标、同一个缩写、同一种颜色。
-                        // 别在这一页另造一套视觉——用户在列表里看到绿色 `rec`，到这里选的必须是同一枚
-                        // 绿色 `rec`，否则两处说的是两个世界。
+                        // 五个档位各占一块，每块里就写着这一档现在有几票、离门槛还差多远：
+                        // 选项和票数本来就是同一个对象，分开摆（上面五个选项、下面另列两档）
+                        // 读起来像两份不相干的东西。点哪块就是选哪档，一行放两个或三个由 FlowRow 决定。
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             LEVELS.forEach { level ->
                                 val picked = (chosen.ifEmpty { mine?.removal.orEmpty() }) == level.listName
-                                Row(
+                                val rowBallot = ballot.firstOrNull { it.removal == level.listName }
+                                val agrees = rowBallot?.agrees ?: 0
+                                Column(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(percent = 50))
+                                        .widthIn(min = 92.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        // 选中用统一的主题色，不按档位换色：五块说的是同一件事
+                                        // （"选哪一档"），每块一个颜色反而像五类东西。
                                         .background(
-                                            if (picked) level.badgeColor.copy(alpha = 0.16f)
+                                            if (picked) scheme.primary.copy(alpha = 0.12f)
                                             else FlSurfaceLevel.Inset.colorOf(scheme),
                                         )
-                                        // 选中时用这一档自己的徽标色描边：黄色 adv、红色 exp、品红 no，
-                                        // 和列表上"这包有多危险"是同一个色号。
                                         .border(
                                             width = if (picked) 1.5.dp else 1.dp,
-                                            color = if (picked) level.badgeColor else Color.Transparent,
-                                            shape = RoundedCornerShape(percent = 50),
+                                            color = if (picked) scheme.primary else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp),
                                         )
                                         .clickable { chosen = level.listName }
-                                        .padding(start = 5.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
                                 ) {
-                                    AppBadge(level)
-                                    Spacer(Modifier.width(5.dp))
+                                    // 名字就是文字，前面不再放彩色块：色块留给上面的档位徽标，
+                                    // 这里每块只回答"选哪一档、现在几票"。
                                     Text(
                                         text = stringResource(level.nameRes),
                                         style = FlText.caption1.copy(
                                             fontWeight = if (picked) FlText.emphasized else null,
                                         ),
-                                        color = if (picked) scheme.onSurface else scheme.onSurfaceVariant,
+                                        color = if (picked) scheme.primary else scheme.onSurface,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = when {
+                                            // 已通过的那一档不在 `ballot` 里（那是"还悬着的"），
+                                            // 所以这里单独说一句，别让通过之后反倒显示"还没有票"。
+                                            passedRemoval == level.listName -> "已通过 · 待下发"
+                                            agrees <= 0 -> "还没有票"
+                                            rowBallot == leader -> "$agrees / $needed 票 · 最多"
+                                            else -> "$agrees / $needed 票"
+                                        },
+                                        style = FlText.caption2,
+                                        color = scheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    // 比例条：认同票 / 门槛。选中的那条跟着主题色走，其余用灰。
+                                    VoteBar(
+                                        fraction = agrees.toFloat() / needed.coerceAtLeast(1),
+                                        colour = if (picked) scheme.primary else scheme.outlineVariant,
                                     )
                                 }
                             }
@@ -407,45 +382,31 @@ fun LevelFixScreen(
                             chosen.ifEmpty { mine?.removal.orEmpty() },
                         ) ?: publishedBadge
                         if (pickedLevel != null) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-                                // 左边一条 3dp 的档位色：这段说的是"选这一档的后果"，
-                                // 用色条把它和上面的选择器连起来，比再写一行小标题更省地方。
-                                Box(
-                                    modifier = Modifier
-                                        .width(3.dp)
-                                        .fillMaxHeight()
-                                        .clip(RoundedCornerShape(percent = 50))
-                                        .background(pickedLevel.badgeColor),
+                            Spacer(Modifier.height(9.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "选这一档会发生什么",
+                                    style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                                    color = scheme.onSurfaceVariant,
                                 )
-                                Spacer(Modifier.width(9.dp))
-                                Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "选这一档会发生什么",
-                                            style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                                            color = scheme.onSurfaceVariant,
-                                        )
-                                        Spacer(Modifier.weight(1f))
-                                        // 两枚标记就在标题这一行：会破坏功能 / 可能卡在开机。
-                                        BadgeImpactTags(pickedLevel)
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
-                                        // 名单那段定义放在它下面当补充。
-                                        text = badgeRiskSummary(pickedLevel),
-                                        style = FlText.caption1.copy(fontWeight = FlText.emphasized),
-                                        color = scheme.onSurface,
-                                    )
-                                    Spacer(Modifier.height(3.dp))
-                                    Text(
-                                        text = stringResource(pickedLevel.description),
-                                        style = FlText.caption2,
-                                        color = scheme.onSurfaceVariant,
-                                    )
-                                }
+                                Spacer(Modifier.weight(1f))
+                                // 两枚标记就在标题这一行：会破坏功能 / 可能卡在开机。
+                                BadgeImpactTags(pickedLevel)
                             }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
+                                // 名单那段定义放在它下面当补充。
+                                text = badgeRiskSummary(pickedLevel),
+                                style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+                                color = scheme.onSurface,
+                            )
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                text = stringResource(pickedLevel.description),
+                                style = FlText.caption2,
+                                color = scheme.onSurfaceVariant,
+                            )
                         }
                         Spacer(Modifier.height(6.dp))
                         OutlinedTextField(
