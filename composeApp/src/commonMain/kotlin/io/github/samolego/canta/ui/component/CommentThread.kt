@@ -330,6 +330,14 @@ fun LazyListScope.commentThreads(
     hidden: Set<Long> = emptySet(),
     onHide: (Long) -> Unit = {},
     /**
+     * 点评论头像进这个人的主页（`Screen.Uploader`）。
+     *
+     * 为什么挂在头像上而不是整行：整行的手势已经被「点一下回复、长按菜单」占住了，再挂第三个
+     * 动作就会互相抢；头像本来就是"他是谁"的那一格，点它进他的主页是同一件事。
+     * 没有身份号的评论（老数据）不响应，退化成原来的样子。
+     */
+    onOpenProfile: (PlanComment) -> Unit = {},
+    /**
      * 从「我的评论 / 互动消息」点进来的那一条：[highlightId] 是它，[highlight] 是此刻的闪光强度。
      * 详情页把这一行滚到屏幕中间之后连闪两下，位置和亮度一起说明「就是这一条」。
      */
@@ -385,6 +393,7 @@ fun LazyListScope.commentThreads(
                 onLike = { onLike(starter) },
                 folded = starterHidden,
                 onHide = { onHide(hideKey(starter, key)) },
+                onOpenProfile = { onOpenProfile(starter) },
                 highlight = if (starter.id == highlightId) highlight else 0f,
             )
         }
@@ -403,6 +412,7 @@ fun LazyListScope.commentThreads(
                     onLike = { onLike(answer) },
                     folded = replyHideKey(key, answer, replyIndex) in hidden,
                     onHide = { onHide(replyHideKey(key, answer, replyIndex)) },
+                    onOpenProfile = { onOpenProfile(answer) },
                     highlight = if (answer.id == highlightId) highlight else 0f,
                 )
             }
@@ -653,6 +663,10 @@ fun CommentRow(
     onHide: () -> Unit = {},
     folded: Boolean = false,
     /**
+     * 点头像：进这条评论作者的主页。没有身份号的老评论不响应（头像保持不可点）。
+     */
+    onOpenProfile: () -> Unit = {},
+    /**
      * 0f..1f 的闪光强度：从消息页点进来时，目标那一行会闪两下，好让眼睛落在正确的那一行。
      * 0f 时叠上去的背景是全透明的，布局和颜色跟没这个参数时完全一样。
      */
@@ -678,7 +692,18 @@ fun CommentRow(
             .padding(start = if (indented) 48.dp else 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Box(modifier = Modifier.clip(CircleShape)) {
+        // 头像本身就是「他是谁」那一格，点它进那个人的主页；没有身份号的老数据不可点。
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .then(
+                    if (comment.authorId.isNotBlank()) {
+                        Modifier.clickable(onClickLabel = "看这个人的主页", onClick = onOpenProfile)
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
             PersonAvatar(
                 name = comment.author,
                 owner = comment.authorId,

@@ -3102,6 +3102,13 @@ private fun PostCard(
     saved: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    /**
+     * 收藏 / 取消收藏：右下角那颗星。
+     *
+     * 与长按是同一个动作（[onLongClick]），单给一颗星是因为「收藏这条帖子」本来就是列表上会
+     * 反复做的动作，藏在一个只有长按才知道的手势里等于没有按钮。
+     */
+    onToggleSave: () -> Unit = onLongClick,
 ) {
     val scheme = MaterialTheme.colorScheme
     val stamp = relativeStamp(post.createdAt)
@@ -3301,6 +3308,14 @@ private fun PostCard(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            // 「帖子」这一枚和方案卡上的「方案」是成对的两枚：收藏页把两类摆在一起时，
+                            // 读者靠这一枚分清这一行是什么。
+                            PostBadge(
+                                text = "帖子",
+                                color = scheme.primary.copy(alpha = 0.14f),
+                                foreground = scheme.primary,
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
                             AuthorLabel(
                                 name = post.author.ifBlank { "匿名" },
                                 // 署名行 **12sp / 行高 16**（`labelMedium` → FlTypography 的
@@ -3369,6 +3384,23 @@ private fun PostCard(
                             Spacer(modifier = Modifier.width(10.dp))
                             // 回复数用主色：一列里它是最想让人点进去的那个数。
                             PostMetric(glyph = Icons.Rounded.ChatBubble, count = post.comments, active = true)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // 收藏星：这一颗是按钮，不是统计。点一下收 / 取消收，和长按同一件事——
+                            // 原来只藏在长按里，等于"没有按钮"。
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(RoundedCornerShape(percent = 50))
+                                    .clickable(onClick = onToggleSave),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = if (saved) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                    contentDescription = if (saved) "取消收藏" else "收藏这条帖子",
+                                    modifier = Modifier.size(15.dp),
+                                    tint = if (saved) scheme.primary else metaTint(scheme.onSurfaceVariant, 0.75f),
+                                )
+                            }
                         }
                     }
                 }

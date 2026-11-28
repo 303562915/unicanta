@@ -135,6 +135,7 @@ import io.github.samolego.canta.ui.screen.FollowListScreen
 import io.github.samolego.canta.ui.screen.GroupsScreen
 import io.github.samolego.canta.ui.screen.InteractionsScreen
 import io.github.samolego.canta.ui.screen.MessagesScreen
+import io.github.samolego.canta.ui.screen.FavoritesScreen
 import io.github.samolego.canta.ui.screen.MyPlansScreen
 import io.github.samolego.canta.ui.screen.UserProfileScreen
 import io.github.samolego.canta.ui.screen.OnboardingScreen
@@ -1085,6 +1086,8 @@ private fun CantaNavigation(
                     // 这个值是 App 级 `StateFlow`：页面重新进入时首帧读到的就是上次那台，
                     // 不会先画一遍「全部机型」再跳回来（页面自己订阅存储就会有那一帧）。
                     storedScopeFlow = settingsViewModel.planScope,
+                    // 方案卡右上那颗星：收藏只写本机（见 PlanSavedStore）。
+                    savedPlans = deps.savedPlans,
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -1496,6 +1499,8 @@ private fun CantaNavigation(
                     updateAvailable = updateAvailable,
                     communityRepository = communityRepository,
                     owner = mineIdentity.owner.ifEmpty { mineIdentity.token },
+                    // 收藏页：方案与帖子两栏，都只在本机（见 PlanSavedStore / PostReadStore）。
+                    onOpenFavorites = { navController.navigate(Screen.Favorites.route) },
                 )
             }
             composable(route = Screen.Profile.route) {
@@ -1804,6 +1809,8 @@ private fun CantaNavigation(
                         navController.navigate(Screen.FollowList.routeFor(owner, followers))
                     },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
+                    // 主页作品与收藏都用方案卡，星写在本机（见 PlanSavedStore）。
+                    savedPlans = deps.savedPlans,
                 )
             }
             composable(route = Screen.DescriptionFix.route) { entry ->
@@ -1883,6 +1890,17 @@ private fun CantaNavigation(
                     token = myIdentity.token,
                     onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
                     profile = myProfile,
+                    onNavigateBack = { navController.navigateUp() },
+                )
+            }
+            composable(route = Screen.Favorites.route) {
+                FavoritesScreen(
+                    repository = communityRepository,
+                    posts = postStore,
+                    savedPlans = deps.savedPlans,
+                    postReads = deps.postReads,
+                    onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
+                    onOpenPost = { id -> navController.navigate(Screen.PostDetail.of(id)) },
                     onNavigateBack = { navController.navigateUp() },
                 )
             }
@@ -2662,6 +2680,10 @@ private fun AppDetailRoute(
         // A plan opened from this page's drawer: the same page the plans list opens, so the reader
         // can go back to the app they were reading about.
         onOpenPlan = { id -> navController.navigate(Screen.PlanDetail.routeFor(id)) },
+        // 点评论头像：看那个人的主页（作品＝他上传过的方案）。
+        onOpenProfile = { owner ->
+            if (owner.isNotEmpty()) navController.navigate(Screen.Uploader.routeFor(owner))
+        },
         anchorCommentId = anchorCommentId,
         // 卸载与恢复交给主屏那一个 view model：确认框、设备规则、占用检查、生物识别和结果
         // 提示因此和列表页是同一套代码，而不是这一页自己另写一遍。

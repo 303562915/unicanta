@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -77,6 +79,7 @@ import io.github.samolego.canta.data.community.CatalogModel
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PackageRank
 import io.github.samolego.canta.data.community.PlanCache
+import io.github.samolego.canta.data.community.PlanSavedStore
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.rankPackages
 import io.github.samolego.canta.data.community.toCatalogModels
@@ -104,6 +107,7 @@ import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.dataAgeLabel
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.DeviceHero
+import io.github.samolego.canta.ui.component.NameTag
 import io.github.samolego.canta.ui.component.PlanScope
 import io.github.samolego.canta.ui.component.PlanScopeBar
 import io.github.samolego.canta.ui.component.PlanScopeDialog
@@ -265,6 +269,12 @@ fun SafetyRulesScreen(
      * 传 `SettingsViewModel.planScope` 进来，它跟着 App 一起活，值早就在手上。
      */
     storedScopeFlow: StateFlow<String> = MutableStateFlow(""),
+    /**
+     * 收起来的方案（见 [PlanSavedStore]）：方案卡右上那颗星读它、写它。
+     *
+     * 收藏只在本机、不进后端，所以这一页不为此发任何请求；null 时卡片不画那颗星。
+     */
+    savedPlans: PlanSavedStore? = null,
     onNavigateBack: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -278,6 +288,18 @@ fun SafetyRulesScreen(
     }
     var profile by remember { mutableStateOf<DeviceProfile?>(null) }
     var rules by remember { mutableStateOf<SafetyRules?>(null) }
+    // 收藏只写本机（[PlanSavedStore]），所以页面自己留一个版本号：点了星，列表要当场重画，
+    // 而不是等下一次重新组合。
+    var savesVersion by remember { mutableIntStateOf(0) }
+    val savedPlanIds = remember(savedPlans, savesVersion) {
+        savedPlans?.savedIds()?.toSet().orEmpty()
+    }
+    val togglePlanSave: (CommunityPlan) -> Unit = { plan ->
+        savedPlans?.let { store ->
+            store.toggleSaved(plan.id)
+            savesVersion++
+        }
+    }
     // Which phone's plans are on screen. Every model by default: with a young community this
     // phone's own list is often empty, and an empty ranking says nothing useful about what the
     // community removes. A chip in the picker narrows it to this phone or to another model.
@@ -908,6 +930,8 @@ fun SafetyRulesScreen(
                         onOpenPlan = onOpenPlan,
                         onVote = vote,
                         onDelete = { pendingDelete = it },
+                        savedIds = savedPlanIds,
+                        onToggleSave = togglePlanSave,
                         onRetry = { reloads++ },
                     )
                 }
@@ -1372,6 +1396,10 @@ private fun PlansTab(
     onOpenPlan: (Long) -> Unit,
     onVote: (CommunityPlan) -> Unit,
     onDelete: (CommunityPlan) -> Unit,
+    /** 收藏了的方案编号：卡片右上那颗星靠它决定实心还是空心。 */
+    savedIds: Set<Long> = emptySet(),
+    /** 点星：收藏 / 取消收藏。默认什么都不做（这一页不接线时不画星）。 */
+    onToggleSave: (CommunityPlan) -> Unit = {},
     onRetry: () -> Unit,
 ) {
     val needle = query.trim()
@@ -1445,9 +1473,11 @@ private fun PlansTab(
                         // community trusts most, exactly like the package ranking does.
                         rank = index + 1,
                         liked = plan.id in liked,
+                        saved = plan.id in savedIds,
                         onOpen = { onOpenPlan(plan.id) },
                         onVote = { onVote(plan) },
                         onDelete = { onDelete(plan) },
+                        onToggleSave = { onToggleSave(plan) },
                     )
                 }
             }
@@ -1459,23 +1489,34 @@ private fun PlansTab(
  * One plan in the community ranking: its position, its title, what it holds, who uploaded it, and
  * how much people like it. The uploader is a name here — the avatar belongs to the plan's own page,
  * where there is room for it.
+ *
+ * 同一张卡也是「主页作品」与「收藏 · 方案」两栏的条目（`internal` 就是为了复用）：三处读起来必须
+ * 是同一个东西，否则同一条方案在不同页面像三份不同的数据。标题左边那枚「方案」标签说明这一行是
+ * 什么，右上那颗星是本机收藏（只写盘，不回后端）。
  */
 @Composable
-private fun PlanCard(
+internal fun PlanCard(
     plan: CommunityPlan,
     mine: Boolean,
     foreign: Boolean,
-    rank: Int?,
-    liked: Boolean,
+    /** 社区排名里的位置；null 表示这一份不是排名（主页作品、收藏页都用 null）。 */
+    rank: Int? = null,
+    liked: Boolean = false,
+    saved: Boolean = false,
     onOpen: () -> Unit,
-    onVote: () -> Unit,
-    onDelete: () -> Unit,
+    /** 点赞这一条；null 表示这里不投票（主页、收藏页）。 */
+    onVote: (() -> Unit)? = null,
+    /** 删除这一条（只有自己上传的方案才有）；null 表示不给这个入口。 */
+    onDelete: (() -> Unit)? = null,
+    /** 收藏 / 取消收藏；null 表示这一处不画星。 */
+    onToggleSave: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val author = plan.authorName
 
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        modifier = modifier.fillMaxWidth().clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         shape = RoundedCornerShape(16.dp),
@@ -1487,6 +1528,14 @@ private fun PlanCard(
                     RankBadge(position = rank)
                     Spacer(Modifier.width(8.dp))
                 }
+                // 这是什么：方案卡上立一枚「方案」标签，帖子那边立「帖子」，收藏页把两类混在一页
+                // 时读者才分得清（两栏各一张卡时也一样，标签是那一行的身份）。
+                NameTag(
+                    label = "方案",
+                    container = colors.primary.copy(alpha = 0.14f),
+                    content = colors.primary,
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = plan.title,
                     fontSize = 14.sp,
@@ -1505,7 +1554,17 @@ private fun PlanCard(
                     Spacer(Modifier.width(6.dp))
                     ForeignChip()
                 }
-                if (mine) {
+                if (onToggleSave != null) {
+                    IconButton(onClick = onToggleSave, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            imageVector = if (saved) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                            contentDescription = if (saved) "取消收藏" else "收藏这个方案",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (saved) colors.primary else colors.outline,
+                        )
+                    }
+                }
+                if (mine && onDelete != null) {
                     IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
                         Icon(
                             Icons.Default.Delete,
@@ -1552,7 +1611,7 @@ private fun PlanCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                VoteButton(votes = plan.votes, liked = liked, onVote = onVote)
+                if (onVote != null) VoteButton(votes = plan.votes, liked = liked, onVote = onVote)
             }
         }
     }

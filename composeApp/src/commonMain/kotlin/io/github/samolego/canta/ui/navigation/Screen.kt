@@ -69,6 +69,14 @@ sealed class Screen(val route: String) {    data object Main : Screen("main")
      */
     data object MyComments : Screen("my-comments")
 
+    /**
+     * 收藏：两栏——「方案」与「帖子」，都只在本机（`PlanSavedStore` / `PostReadStore`）。
+     *
+     * 单独一页而不是挂在「我的」下面：收藏是"我留着的东西"，数量会长，和设置项不是一类；
+     * 从 [Mine] 进，与「我的方案」「我的评论」并列。
+     */
+    data object Favorites : Screen("favorites")
+
     /** Open-source apps worth installing; the cards only link out to their project pages. */
     data object Recommendations : Screen("recommend")
 

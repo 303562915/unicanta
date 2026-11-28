@@ -349,6 +349,10 @@ fun AppDetailScreen(
      * 与 [onOpenDescriptionFixes] 分开两个入口：一个改说明、一个改徽标，门槛和生效方式都不同。
      */
     onOpenLevelFixes: (String) -> Unit = {},
+    /**
+     * 点评论头像：打开那个人的主页（`Screen.Uploader`）。空实现时头像不响应。
+     */
+    onOpenProfile: (String) -> Unit = {},
     /** Opens one of the plans that hold this app, from the related-plans drawer. */
     onOpenPlan: (Long) -> Unit = {},
     /**
@@ -914,6 +918,8 @@ fun AppDetailScreen(
                     },
                     highlightId = flashId,
                     highlight = flash.value,
+                    // 点头像＝看那个人的主页：评论里说的机型、他写过的其它方案都在那边。
+                    onOpenProfile = { comment -> onOpenProfile(comment.authorId) },
                 )
 
                 // Nothing from the community: what this install wrote itself is still worth

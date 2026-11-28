@@ -107,6 +107,8 @@ fun MineScreen(
     onOpenStore: () -> Unit = {},
     /** 自己设的头像直链；空串就是没设过（卡片画首字母圆，见 `UserAvatar`）。 */
     avatarUrl: String = "",
+    /** 打开收藏页：方案与帖子两栏，都只在本机（见 `FavoritesScreen`）。 */
+    onOpenFavorites: () -> Unit = {},
     /** 还没打开过的回复数；大于 0 时「我的方案」那行点一个红点，提醒去消息页看。 */
     unreadReplies: Int = 0,
     /** 有新版本：关于入口带同样的红点，和底栏那个一致。 */
@@ -201,6 +203,16 @@ fun MineScreen(
                 subtitle = "我上传过的方案，点进去管理和删除",
                 onClick = onOpenMyComments,
                 trailing = planCount?.let { "$it 个" } ?: "",
+            )
+            Spacer(Modifier.height(10.dp))
+
+            // 收藏：方案与帖子两栏。摆在「我的方案」下面，因为两者都是"我留着的那些东西"，
+            // 只是一个是自己传的、一个是别人写的。
+            AppLinkCard(
+                glyph = FlGlyphs.star,
+                title = "收藏",
+                subtitle = "收起来的方案与帖子，分两栏看",
+                onClick = onOpenFavorites,
             )
             Spacer(Modifier.height(10.dp))
 

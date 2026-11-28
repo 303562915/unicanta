@@ -17,6 +17,7 @@ import io.github.samolego.canta.data.community.ChatMessageStore
 import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
+import io.github.samolego.canta.data.community.PlanSavedStore
 import io.github.samolego.canta.data.community.PostDraftStore
 import io.github.samolego.canta.data.community.PostPositionStore
 import io.github.samolego.canta.data.community.PostReadStore
@@ -57,6 +58,8 @@ class CantaAppDependencies(
     val postDrafts: PostDraftStore,
     /** 帖子的已读痕迹与收藏：都写在本机，不进后端（见 [PostReadStore]）。 */
     val postReads: PostReadStore,
+    /** 收起来的方案（见 [PlanSavedStore]）：同样只在本机，收藏页拿着编号去问后端。 */
+    val savedPlans: PlanSavedStore,
     /** 每条帖子详情页上次滚到哪儿（见 [PostPositionStore]）：同样只在本机。 */
     val postPositions: PostPositionStore,
     /** 上次扫出来的包列表：进应用列表页的第一帧先把这张表画出来（见 [AppListSnapshotStore]）。 */
@@ -103,6 +106,9 @@ object StoredData {
 
     /** 帖子的已读痕迹与收藏（见 [PostReadStore]）：本机的东西，换机不跟着走。 */
     const val POST_READS = "post_reads.json"
+
+    /** 收藏的方案编号（见 [PlanSavedStore]）：同上，只在本机。 */
+    const val PLAN_SAVED = "plan_saved.json"
 
     /** 每条帖子的详情页滚动位置（见 [PostPositionStore]）：同上，只在本机。 */
     const val POST_POSITIONS = "post_positions.json"
@@ -180,6 +186,7 @@ fun cantaAppDependencies(
         ),
         postDrafts = PostDraftStore(storage(StoredData.POST_DRAFTS)),
         postReads = PostReadStore(storage(StoredData.POST_READS)),
+        savedPlans = PlanSavedStore(storage(StoredData.PLAN_SAVED)),
     postPositions = PostPositionStore(storage(StoredData.POST_POSITIONS)),
         appListSnapshot = AppListSnapshotStore(storage(StoredData.APP_LIST)),
         weeklyRank = WeeklyRankRepository(client, storage(StoredData.WEEKLY_RANK)),

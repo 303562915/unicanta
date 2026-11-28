@@ -34,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +54,7 @@ import io.github.samolego.canta.data.cache.ScreenCache
 import kotlinx.serialization.Serializable
 import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.PlanRepository
+import io.github.samolego.canta.data.community.PlanSavedStore
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.SocialUserProfile
 import io.github.samolego.canta.ui.component.AuthorLabel
@@ -89,8 +91,7 @@ private val ActionShape = RoundedCornerShape(10.dp)
 /** 「作品 / 收藏」页签下面那条选中下划线。 */
 private val TabUnderlineWidth = 28.dp
 
-/** 作品网格：三列，格子之间留两个点的缝，和抖音的个人主页一样贴边排。 */
-private const val GridColumns = 3
+/** 作品与收藏两栏的格子缝：一条一行，卡片之间留两个点的缝。 */
 private val GridGap = 2.dp
 
 /** 主页下面的两栏页签。 */
@@ -153,6 +154,12 @@ fun UserProfileScreen(
     /** 点「关注」或「粉丝」那一格：打开那一栏的名单，[followers] 为 true 时是粉丝。 */
     onOpenFollows: (followers: Boolean) -> Unit = {},
     onMessage: (String) -> Unit = {},
+    /**
+     * 收起来的方案（见 [PlanSavedStore]）：主页这一栏的星读它、写它。
+     *
+     * 收藏只在本机；null 时这里不画星、"收藏"那一栏也就只有一句空态。
+     */
+    savedPlans: PlanSavedStore? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -173,6 +180,32 @@ fun UserProfileScreen(
     var bioDraft by remember(owner, viewer) { mutableStateOf("") }
     var savingBio by remember(owner, viewer) { mutableStateOf(false) }
     var problem by remember(owner, viewer) { mutableStateOf<String?>(null) }
+    // 收藏只写本机（[PlanSavedStore]），所以这一页自己留一份编号与一个版本号：点了星当场重画。
+    var savedPlanIds by remember(owner) { mutableStateOf(savedPlans?.savedIds().orEmpty()) }
+    var savesVersion by remember(owner) { mutableIntStateOf(0) }
+    // 「收藏」那一栏要画出方案本身，而这台机器上只存了编号：编号逐条去问后端，问不到的跳过。
+    var savedPlanRows by remember(owner) { mutableStateOf<List<CommunityPlan>>(emptyList()) }
+    var savedLoading by remember(owner) { mutableStateOf(false) }
+    val toggleSaved: (CommunityPlan) -> Unit = { plan ->
+        savedPlans?.let { store ->
+            store.toggleSaved(plan.id)
+            savedPlanIds = store.savedIds()
+            savesVersion++
+        }
+    }
+
+    LaunchedEffect(savedPlanIds, savesVersion, tab) {
+        if (tab != ProfileTab.Favorites) return@LaunchedEffect
+        val wanted = savedPlanIds
+        if (wanted.isEmpty()) {
+            savedPlanRows = emptyList()
+            return@LaunchedEffect
+        }
+        savedLoading = savedPlanRows.isEmpty()
+        val rows = wanted.take(20).mapNotNull { id -> repository.planById(id) }
+        if (rows.isNotEmpty()) savedPlanRows = rows
+        savedLoading = false
+    }
 
     // 一次把两样都问完再画：先画骨架再补数字，这一页会闪两下，和消息页同一个理由。
     //
@@ -219,11 +252,13 @@ fun UserProfileScreen(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(GridColumns),
+                // 作品与收藏都是**方案卡**，一条一行：和「安全规则」页那份方案列表同一张卡
+                // （`PlanCard`），所以同一条方案在三个地方读起来是同一个东西。
+                columns = GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(GridGap),
-                verticalArrangement = Arrangement.spacedBy(GridGap),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // 封面、数字、简介、按钮、页签全是这一格：它们横跨三列，跟着同一只手一起滚。
                 item(key = "profile-head", span = { GridItemSpan(maxLineSpan) }) {
@@ -305,6 +340,7 @@ fun UserProfileScreen(
                         )
                         ProfileTabs(
                             planCount = planCount,
+                            savedCount = savedPlanIds.size,
                             selected = tab,
                             onSelect = { tab = it },
                         )
@@ -333,15 +369,56 @@ fun UserProfileScreen(
                                 ProfileEmptyNote(text = "还没有上传过方案")
                             }
                         } else {
-                            items(plans, key = { plan -> plan.id }) { plan ->
-                                PlanGridCell(plan = plan, onClick = { onOpenPlan(plan.id) })
+                            items(
+                                items = plans,
+                                key = { plan -> "plan-${plan.id}" },
+                                span = { GridItemSpan(maxLineSpan) },
+                            ) { plan ->
+                                PlanCard(
+                                    plan = plan,
+                                    // 别人的主页：删不了、也不用在这里投票——票属于那份方案自己的页面。
+                                    mine = false,
+                                    foreign = false,
+                                    saved = plan.id in savedPlanIds,
+                                    onOpen = { onOpenPlan(plan.id) },
+                                    onToggleSave = { toggleSaved(plan) },
+                                )
                             }
                         }
                     }
-                    // 收藏还没有后端：这一栏只说明「这里本来就是空的」，不借作品的格子充数。
+                    // 收藏只在本机：编号拿得到、方案本身要从后端逐条问回（见上面那个 effect）。
+                    // 问不回来的那几条不画——收藏一个已经删掉的方案，画出来也点不开。
                     ProfileTab.Favorites -> {
-                        item(key = "empty-favorites", span = { GridItemSpan(maxLineSpan) }) {
-                            ProfileEmptyNote(text = "还没有收藏的方案")
+                        val rows = savedPlanRows.filter { it.id in savedPlanIds }
+                        when {
+                            savedPlanIds.isEmpty() -> item(
+                                key = "empty-favorites",
+                                span = { GridItemSpan(maxLineSpan) },
+                            ) {
+                                ProfileEmptyNote(text = "还没有收藏的方案：在方案卡右上点一下星")
+                            }
+                            rows.isEmpty() -> item(
+                                key = "loading-favorites",
+                                span = { GridItemSpan(maxLineSpan) },
+                            ) {
+                                ProfileEmptyNote(
+                                    text = if (savedLoading) "正在读收藏的方案…" else "收藏的方案暂时读不到",
+                                )
+                            }
+                            else -> items(
+                                items = rows,
+                                key = { plan -> "saved-${plan.id}" },
+                                span = { GridItemSpan(maxLineSpan) },
+                            ) { plan ->
+                                PlanCard(
+                                    plan = plan,
+                                    mine = false,
+                                    foreign = false,
+                                    saved = true,
+                                    onOpen = { onOpenPlan(plan.id) },
+                                    onToggleSave = { toggleSaved(plan) },
+                                )
+                            }
                         }
                     }
                 }
@@ -744,9 +821,14 @@ private fun ProfileActionRow(
     }
 }
 
-/** 两栏页签：「作品 N ▾」与「收藏」；选中的那一栏加粗，下面压一条红下划线。 */
+/** 两栏页签：「作品 N ▾」与「收藏 N」；选中的那一栏加粗，下面压一条红下划线。 */
 @Composable
-private fun ProfileTabs(planCount: Int, selected: ProfileTab, onSelect: (ProfileTab) -> Unit) {
+private fun ProfileTabs(
+    planCount: Int,
+    savedCount: Int,
+    selected: ProfileTab,
+    onSelect: (ProfileTab) -> Unit,
+) {
     Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
         ProfileTabCell(
             label = "作品 $planCount ▾",
@@ -755,7 +837,7 @@ private fun ProfileTabs(planCount: Int, selected: ProfileTab, onSelect: (Profile
             modifier = Modifier.weight(1f),
         )
         ProfileTabCell(
-            label = "收藏",
+            label = if (savedCount > 0) "收藏 $savedCount" else "收藏",
             selected = selected == ProfileTab.Favorites,
             onClick = { onSelect(ProfileTab.Favorites) },
             modifier = Modifier.weight(1f),
@@ -792,36 +874,6 @@ private fun ProfileTabCell(
                     color = if (selected) UnreadRed else Color.Transparent,
                     shape = RoundedCornerShape(1.dp),
                 ),
-        )
-    }
-}
-
-/** 作品格：正方形，标题最多两行，票数压在格子底部。 */
-@Composable
-private fun PlanGridCell(plan: CommunityPlan, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(4.dp))
-            .background(scheme.surfaceContainerLow)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = plan.title.ifBlank { "未命名方案" },
-            style = FlText.caption1,
-            color = scheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = "${plan.votes} 票",
-            style = FlText.caption2,
-            color = scheme.onSurfaceVariant,
-            maxLines = 1,
         )
     }
 }

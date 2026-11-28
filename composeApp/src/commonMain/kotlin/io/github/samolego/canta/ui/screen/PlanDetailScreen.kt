@@ -1260,6 +1260,9 @@ private fun PlanDetailContent(
             onHide = onHideComment,
             highlightId = flashId,
             highlight = flash.value,
+            // 评论头像进作者主页。这一页本来就有「看上传者主页」的入口（onOpenUploader），
+            // 头像走的是同一条路：不给就维持原来的不可点。
+            onOpenProfile = { comment -> onOpenUploader?.invoke(comment.authorId) },
             // 让评论线程也认领自己这一格：首帧网络那批还没到（loading）时，先拿上一次画过的垫上。
             cacheTarget = planId.toString(),
             loading = loading,
