@@ -12,6 +12,21 @@ object LevelBallotDimensions {
     const val SYSTEM = "system"
 }
 
+/**
+ * 各维度共用的「不知道」选项。
+ *
+ * 加它是因为三个维度都是"要么选这个、要么选那个"：一个没见过的包，用户其实分不清该标哪一档，
+ * 硬选就等于往票箱里塞噪声，而且选完还会在历史里挂着。所以每个维度最后都有一项「不知道」，
+ * 投了表示**我了解过、但不表态**——它和"还没投"是两件事（这里能看出自己已经表过态），
+ * 但**不进任何百分比的分母**（见 [LevelBallots.percent]）：投票箱里只数确定的票，
+ * 不数"我不知道"，否则一票不确定就能把 70% 的占比门槛稀释掉。
+ *
+ * 后端约束里这个 key 就是 `unknown`（三个维度都接受），结算时排除掉，不下发给名单。
+ */
+object LevelBallotChoices {
+    const val UNKNOWN = "unknown"
+}
+
 /** 一条投票记录：谁、在哪个维度、投了什么、写了什么依据。 */
 data class LevelBallotEntry(
     /** level / impact / system。 */
@@ -44,12 +59,24 @@ data class LevelBallots(
     /** 级别维度已经通过（⇒ 等着工作流合并进 level_fixes.json）。 */
     val applied: Boolean = false,
 ) {
-    /** 这一维度全部票数（各项相加）。 */
+    /** 这一维度全部票数（各项相加，含「不知道」）。 */
     fun totalOf(dimension: String): Int = votes[dimension]?.values?.sum() ?: 0
 
-    /** 某一项在本维度里的百分比，四舍五入到整数；本维度还没人投时是 0。 */
+    /** 这一维度里算进百分比的分母：全票减去「不知道」（它是一句弃权，不是一个选项）。 */
+    fun decidedTotalOf(dimension: String): Int {
+        val all = votes[dimension] ?: return 0
+        val undecided = all[LevelBallotChoices.UNKNOWN] ?: 0
+        return (all.values.sum() - undecided).coerceAtLeast(0)
+    }
+
+    /**
+     * 某一项在本维度里的百分比，四舍五入到整数；本维度还没人投时是 0。
+     *
+     * 分母不含 [LevelBallotChoices.UNKNOWN]：否则"我不知道"越多、每个真实选项的占比越低，
+     * 一票弃权就能拖住 70% 的门槛。`unknown` 自己也不参与这个算法，页面直接显示它的票数。
+     */
     fun percent(dimension: String, choice: String): Int {
-        val total = totalOf(dimension)
+        val total = decidedTotalOf(dimension)
         if (total <= 0) return 0
         val votes = votes[dimension]?.get(choice) ?: 0
         return (votes * 100 + total / 2) / total

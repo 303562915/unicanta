@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
 import io.github.samolego.canta.data.app.AppBadgeInfo
+import io.github.samolego.canta.data.community.LevelBallotChoices
 import io.github.samolego.canta.data.community.LevelBallotDimensions
 import io.github.samolego.canta.data.community.LevelBallotEntry
 import io.github.samolego.canta.data.community.LevelBallots
@@ -139,12 +140,18 @@ fun LevelFixScreen(
         votingBallot = true
         notice = null
         scope.launch {
-            // 级别那一票顺手带上下面的"依据"（选填）；后果与系统应用不带。
+            // 级别那一票顺手带上下面的"依据"（选填）；后果与系统应用不带，「不知道」也不带。
             val result = repository.voteBallot(
                 packageName = packageName,
                 dimension = dimension,
                 choice = choice,
-                note = if (dimension == LevelBallotDimensions.LEVEL) note.trim() else "",
+                note = if (dimension == LevelBallotDimensions.LEVEL &&
+                    choice != LevelBallotChoices.UNKNOWN
+                ) {
+                    note.trim()
+                } else {
+                    ""
+                },
                 voter = authorId,
                 // 显示名只为历史里认得出是谁；没有名字就写"匿名"。
                 name = author,
@@ -153,7 +160,12 @@ fun LevelFixScreen(
                 is LevelFixResult.Ok -> {
                     ballots = result.value
                     if (dimension == LevelBallotDimensions.LEVEL) {
-                        notice = "已记下你选的一档；票够了会由工作流合并进名单"
+                        // 「不知道」不是一档，别再说"记下你选的一档"——那句话只对真实档位成立。
+                        notice = if (choice == LevelBallotChoices.UNKNOWN) {
+                            "已记下：你不确定这一档（不计入百分比，随时可以改）"
+                        } else {
+                            "已记下你选的一档；票够了会由工作流合并进名单"
+                        }
                     }
                     // 三组都要刷新历史：这一票刚进去，历史里该多一行（或那一行改了选项）。
                     reloads++
@@ -176,6 +188,10 @@ fun LevelFixScreen(
         val level = ballots?.mineOf(LevelBallotDimensions.LEVEL)
         if (level == null) {
             notice = "先在上面选一个级别，依据跟着那一票一起存"
+            return
+        }
+        if (level == LevelBallotChoices.UNKNOWN) {
+            notice = "选了「不知道」就没有级别可挂依据；先从上面选一档"
             return
         }
         if (note.isBlank()) {
@@ -328,9 +344,13 @@ fun LevelFixScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         // 「选这一档会发生什么」跟着**我投的级别**走；我还没投就用名单现在那一档。
-                        val pickedLevel = ballots?.mineOf(LevelBallotDimensions.LEVEL)
+                        // 投的是「不知道」时这一块整块不画：它不是一档，硬拿名单那一档顶上，
+                        // 等于替用户说他自己没说的话。
+                        val myLevel = ballots?.mineOf(LevelBallotDimensions.LEVEL)
+                        val pickedLevel = myLevel
+                            ?.takeIf { it != LevelBallotChoices.UNKNOWN }
                             ?.let { AppBadgeInfo.byNameIgnoreCaseOrNull(it) }
-                            ?: publishedBadge
+                            ?: publishedBadge.takeIf { myLevel == null }
                         if (pickedLevel != null) {
                             Spacer(Modifier.height(9.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -376,7 +396,7 @@ fun LevelFixScreen(
                                 text = notice ?: if (votingBallot) {
                                     "正在记录…"
                                 } else {
-                                    "级别票到 $needed 票、占比到 ${(shareNeeded * 100).toInt()}% 才通过"
+                                    "级别票到 $needed 票、占比到 ${(shareNeeded * 100).toInt()}% 才通过（不知道不算票）"
                                 },
                                 style = FlText.caption2,
                                 color = if (notice != null && notice!!.startsWith("没")) {
@@ -390,7 +410,9 @@ fun LevelFixScreen(
                             // 「依据」是唯一需要自己按一下的东西：选了级别之后，写下来的话
                             // 要重新提交那一票才会存进去（选项本身点一下就已经记上了）。
                             val canSubmit = note.isNotBlank() && !votingBallot &&
-                                ballots?.mineOf(LevelBallotDimensions.LEVEL) != null
+                                ballots?.mineOf(LevelBallotDimensions.LEVEL)?.let {
+                                    it != LevelBallotChoices.UNKNOWN
+                                } == true
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(percent = 50))
@@ -500,24 +522,30 @@ private data class BallotOption(
 /**
  * 级别只有四档：`System` 不在这里——它回答的是第三组「是不是系统应用」，不是什么级别。
  * 徽标沿用列表那套（颜色也是），页面不另造一套。
+ *
+ * 最后一档是「不知道」：没见过这个包的人不该被逼着在四档里挑一个（挑错了还会在历史里挂着）。
+ * 它没有徽标、不算进百分比，后端结算时也排除（见 [LevelBallotChoices.UNKNOWN]）。
  */
 private val LEVEL_OPTIONS: List<BallotOption> = listOf(
     BallotOption("Recommended", "推荐卸载", BallotBadge.Level(AppBadgeInfo.RECOMMENDED)),
     BallotOption("Advanced", "进阶", BallotBadge.Level(AppBadgeInfo.ADVANCED)),
     BallotOption("Expert", "专家", BallotBadge.Level(AppBadgeInfo.EXPERT)),
     BallotOption("Unsafe", "不安全", BallotBadge.Level(AppBadgeInfo.UNSAFE)),
+    BallotOption(LevelBallotChoices.UNKNOWN, "不知道", BallotBadge.None),
 )
 
-/** 后果：删了会不会破坏功能 / 会不会卡在开机。 */
+/** 后果：删了会不会破坏功能 / 会不会卡在开机；没见过就说「不知道」。 */
 private val IMPACT_OPTIONS: List<BallotOption> = listOf(
     BallotOption("breaks", "会破坏功能", BallotBadge.Impact(BadgeImpact.BREAKS_FEATURES)),
     BallotOption("bootloop", "可能卡在开机", BallotBadge.Impact(BadgeImpact.BOOTLOOP)),
+    BallotOption(LevelBallotChoices.UNKNOWN, "不知道", BallotBadge.None),
 )
 
-/** 系统应用：是不是随机器预装的那一类。 */
+/** 系统应用：是不是随机器预装的那一类；不确定就说「不知道」。 */
 private val SYSTEM_OPTIONS: List<BallotOption> = listOf(
     BallotOption("yes", "是", BallotBadge.SystemApp),
     BallotOption("no", "否", BallotBadge.None),
+    BallotOption(LevelBallotChoices.UNKNOWN, "不知道", BallotBadge.None),
 )
 
 /**
@@ -525,6 +553,9 @@ private val SYSTEM_OPTIONS: List<BallotOption> = listOf(
  *
  * 百分比按维度各自归一（级别四项加起来 100%，后果两项加起来 100%），不跨维度相加——
  * 那是三个问题，不是一道多选题。一行两个：每项只要放得下徽标、名字和一个百分比就够了。
+ *
+ * 每组最后一项是「不知道」：它没有徽标、不参与归一（不进分母），右侧显示的是它自己的票数。
+ * 没见过这个包的人不该被逼着在真实选项里挑一个——选错了会作为一条记录留在历史里。
  */
 @Composable
 private fun BallotGroup(
@@ -547,6 +578,8 @@ private fun BallotGroup(
                 pair.forEach { option ->
                     val picked = ballots?.mineOf(dimension) == option.choice
                     val percent = ballots?.percent(dimension, option.choice) ?: 0
+                    val isUnknown = option.choice == LevelBallotChoices.UNKNOWN
+                    val unknownVotes = ballots?.votesOf(dimension, option.choice) ?: 0
                     Row(
                         modifier = Modifier
                             .weight(1f)
@@ -585,9 +618,14 @@ private fun BallotGroup(
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(4.dp))
-                        // 右侧百分比：这一项在本维度里占多少。
+                        // 右侧数字：真实选项是这一项在本维度里的占比；「不知道」不参与这个算法，
+                        // 所以显示它自己的票数（0 票就不显示，别写一个误导人的 "0%"）。
                         Text(
-                            text = "$percent%",
+                            text = if (isUnknown) {
+                                if (unknownVotes > 0) "${unknownVotes}票" else ""
+                            } else {
+                                "$percent%"
+                            },
                             style = FlText.caption2.copy(fontWeight = FlText.emphasized),
                             color = if (picked) scheme.primary else scheme.onSurfaceVariant,
                         )
@@ -604,21 +642,26 @@ private fun BallotGroup(
 @Composable
 private fun BallotHistoryRow(entry: LevelBallotEntry) {
     val scheme = MaterialTheme.colorScheme
-    val badge = when (entry.dimension) {
-        LevelBallotDimensions.LEVEL -> AppBadgeInfo.byNameIgnoreCaseOrNull(entry.choice)
+    // 「不知道」不是任何一档，也就没有徽标：它会落到 else 分支被当成 breaks/否 画错。
+    val undecided = entry.choice == LevelBallotChoices.UNKNOWN
+    val badge = when {
+        undecided -> null
+        entry.dimension == LevelBallotDimensions.LEVEL -> AppBadgeInfo.byNameIgnoreCaseOrNull(entry.choice)
         else -> null
     }
-    val impact = when (entry.dimension) {
-        LevelBallotDimensions.IMPACT -> when (entry.choice) {
+    val impact = when {
+        undecided -> null
+        entry.dimension == LevelBallotDimensions.IMPACT -> when (entry.choice) {
             "bootloop" -> BadgeImpact.BOOTLOOP
             else -> BadgeImpact.BREAKS_FEATURES
         }
         else -> null
     }
-    val label = when (entry.dimension) {
-        LevelBallotDimensions.LEVEL -> badge?.let { stringResource(it.nameRes) } ?: entry.choice
-        LevelBallotDimensions.IMPACT -> impact?.label ?: entry.choice
-        LevelBallotDimensions.SYSTEM -> if (entry.choice == "yes") "是" else "否"
+    val label = when {
+        undecided -> "不知道"
+        entry.dimension == LevelBallotDimensions.LEVEL -> badge?.let { stringResource(it.nameRes) } ?: entry.choice
+        entry.dimension == LevelBallotDimensions.IMPACT -> impact?.label ?: entry.choice
+        entry.dimension == LevelBallotDimensions.SYSTEM -> if (entry.choice == "yes") "是" else "否"
         else -> entry.choice
     }
     Card {
