@@ -5604,6 +5604,18 @@
   "target": "com.milink.service"
  },
  {
+  "author": "Hyeya",
+  "author_id": "15365",
+  "body": "我看有人在Analytics里说删了会导致息屏功耗变高",
+  "created_at": "2026-11-28T03:16:56.478174+00:00",
+  "device_model": "Xiaomi 17 Max",
+  "id": 812,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.5",
+  "target": "11"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
