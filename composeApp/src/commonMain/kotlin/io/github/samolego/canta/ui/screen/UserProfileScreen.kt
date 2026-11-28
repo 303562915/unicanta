@@ -256,7 +256,10 @@ fun UserProfileScreen(
                 // （`PlanCard`），所以同一条方案在三个地方读起来是同一个东西。
                 columns = GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
+                // 水平留白不写在 contentPadding 上：那样封面、头像、页签会跟着一起缩进，整页左右
+                // 各空出一条带子。这一页的头（封面/头像/统计/页签）必须贴边，卡片才缩进——
+                // 所以左右那 12dp 由下面每张 `PlanCard` 自己的 modifier 给。
+                contentPadding = PaddingValues(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(GridGap),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -380,6 +383,8 @@ fun UserProfileScreen(
                                     mine = false,
                                     foreign = false,
                                     saved = plan.id in savedPlanIds,
+                                    // 左右那 12dp 只在卡片这一层：头（封面、头像、页签）贴边。
+                                    modifier = Modifier.padding(horizontal = 12.dp),
                                     onOpen = { onOpenPlan(plan.id) },
                                     onToggleSave = { toggleSaved(plan) },
                                 )
@@ -415,6 +420,7 @@ fun UserProfileScreen(
                                     mine = false,
                                     foreign = false,
                                     saved = true,
+                                    modifier = Modifier.padding(horizontal = 12.dp),
                                     onOpen = { onOpenPlan(plan.id) },
                                     onToggleSave = { toggleSaved(plan) },
                                 )
