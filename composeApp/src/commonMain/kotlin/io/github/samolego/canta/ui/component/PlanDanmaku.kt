@@ -122,19 +122,31 @@ private const val DANMAKU_FALLBACK_LANES = 3
 /** 轨道高度 = 字号 × 这个数：字越大行距越大，不然大字号会上下贴在一起。 */
 private const val DANMAKU_LANE_HEIGHT_FACTOR = 2.1f
 
+/** 表情图片按这个字号当 1 倍画（[rememberEmotionDocument] 的 scale）：调大字号时表情跟着一起大。 */
+private const val DANMAKU_EMOTION_BASE_SP = 12f
+
 /**
  * 弹幕池的上限条数。
  *
- * 八条轨道、一条走九秒、每条轨道之间歇一点二秒，一轮大约八条；池子给到十八，两轮多一点就能把
- * 一级评论和回复都过一遍，又不至于把所有评论堆上来。
+ * 实际放几条还要乘轨道数看（[DANMAKU_LINES_PER_LANE]）：八条轨道、一条走九秒、每条轨道之间歇
+ * 一点四秒，一轮大约八条；池子给到十八，两轮多一点就能把一级评论和回复都过一遍。
  */
 private const val DANMAKU_MAX_LINES = 18
+
+/**
+ * 每条轨道分到几条弹幕。
+ *
+ * 这条是"密度"的真正旋钮：池子大小不再写死，而是「轨道数 × 这个数」，于是不管卡片多高、屏幕
+ * 多宽，一条轨道一轮的时长都一样（约三十秒），不会出现"高一点的卡片一轮要一分钟、矮一点的十五秒
+ * 就转完"。
+ */
+private const val DANMAKU_LINES_PER_LANE = 3
 
 /** 一条弹幕最多几个字：三十多个字在手机上已经横跨一屏，再多就只剩尾巴。 */
 private const val DANMAKU_MAX_CHARS = 34
 
 /** 同一条轨道上，前一条完全离开左边之后，空这么久再放下一条进场：留这一口气，弹幕才不像排队。 */
-private const val DANMAKU_GAP_MS = 1200L
+private const val DANMAKU_GAP_MS = 1400L
 
 /** 一条弹幕里，开头这一段（占全程的比例）从全透明升到不透明。 */
 private const val DANMAKU_FADE_IN = 0.16f
@@ -179,6 +191,9 @@ fun PlanDanmaku(
     val laneHeight = (style.fontSizeSp * DANMAKU_LANE_HEIGHT_FACTOR).dp
     // 点赞最多的那几条后面挂赞数：挂完的字才是要量的那个宽度，否则它们会提前消失。
     val labels = remember(shown) { shown.map { it.label } }
+    // 量宽度用的是"表情换成一个字"的纯文字版：真正的段落里表情是 inline 图片，[Text] 之外的
+    // 量器看不到它，会让带表情的那条行程短一截——走到左边还剩半个表情就从头开始了。
+    val measured = remember(labels) { labels.map { measureTextOf(it) } }
     val textStyle = remember(tint, fontSize) {
         TextStyle(
             fontSize = fontSize,
@@ -192,10 +207,10 @@ fun PlanDanmaku(
     }
     // 每条自己的宽度，量一次就够：向左的行程要按它算，量短了文字会在左边被截一下才消失。
     val measurer = rememberTextMeasurer()
-    val widths = remember(labels, textStyle) {
-        labels.map { label ->
+    val widths = remember(measured, textStyle) {
+        measured.map { text ->
             measurer.measure(
-                text = AnnotatedString(label),
+                text = AnnotatedString(text),
                 style = textStyle,
                 overflow = TextOverflow.Clip,
                 softWrap = false,
@@ -226,13 +241,26 @@ fun PlanDanmaku(
         } else {
             byHeight.coerceIn(1, DANMAKU_MAX_LANES).takeIf { byHeight > 0 } ?: DANMAKU_FALLBACK_LANES
         }
-        val slots = remember(shown, widths, span, lanes, passMs) {
-            scheduleDanmaku(widths, lanes, span, passMs)
+        // 池子按轨道数摊开（见 [DANMAKU_LINES_PER_LANE]）：不管这一层多高，一条轨道一轮都是
+        // 三十秒左右，节奏稳定。
+        val planned = min(shown.size, lanes * DANMAKU_LINES_PER_LANE)
+        val slots = remember(widths, span, lanes, passMs, planned) {
+            scheduleDanmaku(widths.take(planned), lanes, span, passMs)
         }
         shown.forEachIndexed { index, line ->
+            if (index >= planned) return@forEachIndexed
             val slot = slots.getOrNull(index) ?: return@forEachIndexed
+            // 正文里的 `[weixiao]` 这类 token 换回表情图片：和评论区用同一个解析器、同一份图片，
+            // 弹幕里看到的和楼里看到的是同一个表情，而不是一串方括号拼音。
+            val spans = remember(line.text) { parseEmotionBody(line.text) }
+            val document = rememberEmotionDocument(
+                spans = spans,
+                // 表情图片的尺寸按字号比例放大，不然把弹幕调大之后，字变大了、表情还是原来那么小。
+                scale = style.fontSizeSp / DANMAKU_EMOTION_BASE_SP,
+            )
             Text(
-                text = labels[index],
+                text = document.annotated,
+                inlineContent = document.inline,
                 style = textStyle,
                 // 点赞最多的那几条：金色、更粗。没点过赞的（likes = 0）不会进这一支，因为
                 // [DanmakuLine.top] 是调用方按整批评论排出来的，不是"有赞就算"。
@@ -268,6 +296,21 @@ fun PlanDanmaku(
 /** 飘出去的那一行字：点赞最多的那条后面带上赞数，其余的只有正文。 */
 private val DanmakuLine.label: String
     get() = if (top && likes > 0) "$text · $likes 赞" else text
+
+/**
+ * 用来量宽度的那一版文字：表情 token 换成一个全角圈。
+ *
+ * 为什么量这份而不是真段落：真段落里表情是 inline 图片，宽度由 [Text] 在排版时才知道，量器算不到
+ * ——按 token 原文量（`[weixiao]` 九个字符）会宽出一大截，按零算又短一截，两头都会让那条弹幕在
+ * 左边"还没走完就从头开始"。一个圈大约就是一个表情宽，够准。
+ */
+private fun measureTextOf(label: String): String =
+    parseEmotionBody(label).joinToString("") { span ->
+        when (span) {
+            is EmotionSpan.Words -> span.text
+            is EmotionSpan.Sticker -> "○"
+        }
+    }
 
 /**
  * 一条弹幕的排期：哪条轨道、走完要多久、什么时候出发、它那条轨道多久循环一次。
@@ -322,10 +365,40 @@ private fun danmakuLines(raw: List<DanmakuLine>): List<DanmakuLine> {
     raw.forEach { line ->
         val text = line.text.replace('\n', ' ').replace('\r', ' ').trim()
         if (text.isEmpty()) return@forEach
-        val clipped = if (text.length > DANMAKU_MAX_CHARS) text.take(DANMAKU_MAX_CHARS) + "…" else text
+        val clipped = clipDanmakuText(text)
         if (!seen.add(clipped)) return@forEach
         out += line.copy(text = clipped)
         if (out.size >= DANMAKU_MAX_LINES) return out
     }
     return out
+}
+
+/**
+ * 截到 [DANMAKU_MAX_CHARS] 个字，**不在一段表情 token 中间下刀**。
+ *
+ * 直接 `take(n)` 会切出 `[weix`：解析器认不出它是表情，于是屏幕上原样留着半个方括号和几个拼音
+ * ——比不显示表情更难看。所以数的时候把一整段 `[key]` 当一个字，截断点只落在表情外面。
+ */
+private fun clipDanmakuText(text: String): String {
+    if (text.length <= DANMAKU_MAX_CHARS) return text
+    val builder = StringBuilder(DANMAKU_MAX_CHARS + 1)
+    var count = 0
+    for (span in parseEmotionBody(text)) {
+        when (span) {
+            is EmotionSpan.Words -> {
+                for (ch in span.text) {
+                    if (count >= DANMAKU_MAX_CHARS) return builder.append('…').toString()
+                    builder.append(ch)
+                    count++
+                }
+            }
+
+            is EmotionSpan.Sticker -> {
+                if (count >= DANMAKU_MAX_CHARS) return builder.append('…').toString()
+                builder.append('[').append(span.emotion.key).append(']')
+                count++
+            }
+        }
+    }
+    return builder.toString()
 }
