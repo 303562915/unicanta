@@ -17594,5 +17594,39 @@
   "sdk": 36,
   "title": "备用机AA · Xiaomi Civi 4 Pro",
   "votes": 0
+ },
+ {
+  "brand": "Xiaomi",
+  "comments": 0,
+  "created_at": "2026-11-28T18:39:51.340658+00:00",
+  "id": 535,
+  "is_test": false,
+  "market_name": "REDMI K100 Pro Max",
+  "model": "M098FE",
+  "note": "省事",
+  "owner": "16299",
+  "owner_name": "",
+  "packages": [
+   "com.mobiletools.systemhelper",
+   "com.xiaomi.gamecenter.sdk.service",
+   "com.android.quicksearchbox",
+   "com.xiaomi.migameservice",
+   "com.miui.hybrid",
+   "com.miui.carlink",
+   "com.android.privatespace",
+   "com.xiaomi.macro",
+   "com.xiaomi.minigame",
+   "com.android.packageinstaller",
+   "com.sohu.inputmethod.sogou.xiaomi",
+   "com.xiaomi.mis",
+   "com.miui.accessibility"
+  ],
+  "rebooted_at": "2026-11-28T18:39:50.091415+00:00",
+  "rom": "hyperos",
+  "rom_build": "OS4.0.8.0.XGNCNXM",
+  "rom_version": 4,
+  "sdk": 37,
+  "title": "REDMI K100 Pro Max",
+  "votes": 0
  }
 ]

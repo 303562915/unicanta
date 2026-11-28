@@ -14,8 +14,8 @@
   "url": "https://github.com/303562915/tv"
  },
  {
-  "agree": 39,
-  "applied": false,
+  "agree": 40,
+  "applied": true,
   "author": "开发者",
   "author_id": "official",
   "category": "system",
@@ -56,8 +56,8 @@
   "url": "https://github.com/aistra0528/Hail"
  },
  {
-  "agree": 45,
-  "applied": false,
+  "agree": 46,
+  "applied": true,
   "author": "开发者",
   "author_id": "official",
   "category": "system",
@@ -70,8 +70,8 @@
   "url": "https://github.com/iamr0s/Dhizuku"
  },
  {
-  "agree": 45,
-  "applied": false,
+  "agree": 46,
+  "applied": true,
   "author": "开发者",
   "author_id": "official",
   "category": "tools",
