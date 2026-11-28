@@ -145,8 +145,9 @@ fun MiniMarkdown(
  * 生效"的参数都要再改一次公开签名。拆开之后 [MiniMarkdown] 的签名与行为对调用方**完全不变**，
  * 递归只发生在 [QuoteCard] 内部（那里调用的就是本函数），层数出不了这个文件。
  *
- * [quoteDepth] 只在 [MdBlock.Quote] 那一支里被读：其余块级的渲染与它无关，所以递归只沿"引用里套引用"
- * 这一条路径加深，不会因为正文里有一堆段落就把层数加上去。
+ * [quoteDepth] 有两处读法：① [MdBlock.Quote] 那一支用它决定"还画不画引用卡"（超过
+ * [QuoteCardMaxDepth] 就退回普通引用样式）；② 块间距按它缩放（见 [marginScaleFor]）。两处都只沿
+ * "引用里套引用"这一条路径加深，不会因为正文里有一堆段落就把层数加上去。
  */
 @Composable
 private fun MiniMarkdownContent(
@@ -159,73 +160,72 @@ private fun MiniMarkdownContent(
 ) {
     // 正文可能几千字，逐帧重新切行没必要：文本不变就不重算。
     val blocks = remember(text) { parseBlocks(text) }
+    // 渲染单元 = "一块正文"或"一组连续图片"。分组是纯逻辑（见 [groupUnits]），键就是上面那个
+    // `blocks` 对象，所以两者同生同灭，不会出现"块变了、单元没变"。
+    val units = remember(blocks) { groupUnits(blocks) }
     val linkColor = MaterialTheme.colorScheme.primary
     // 正文的一个 em（**相对正文自己的字号**）：参考实现里列表缩进、引用块内边距、分割线外边距
     // 都是按 em 写的 CSS（`export_utils.dart:579`、`:580`、`:624`、`:667`），这里按同一个口径
     // 从 `baseStyle` 现算，不写死 dp —— 正文换了字号，这些间距跟着走。
     // 读法与 [quoteBodyMaxHeight] 一致：`TextUnit.Unspecified` 的 `.value` 是 NaN，落到 14。
     val textEm = (baseStyle.fontSize.value.takeIf { it > 0f } ?: 14f).dp
+    // 引用卡里正文的块间距收 0.6 倍，见 [marginScaleFor]。
+    val marginScale = marginScaleFor(quoteDepth)
     Column(modifier = modifier) {
-        // 用下标 while 而不是 `forEach`：**连续的多张图片要合成一块图片墙**（参考实现里图片
-        // 是按 `[grid]`/相邻图片成组渲染的，见 `builders/image_grid_builder.dart`），
-        // 而分组必须能看到"下一块是什么"，`forEach` 给不了这个视角。
-        var index = 0
-        while (index < blocks.size) {
-            val block = blocks[index]
-            if (block is MdBlock.Image) {
-                // 连续图片成组：中间**只允许**隔一个空行块（`Gap`）——
-                // `![](a.png)` 空一行 `![](b.png)` 在 Markdown 里就是两组图片撞在一起，
-                // 用户的本意几乎总是"这几张是一起的"。
-                val group = mutableListOf(block)
-                var next = index + 1
-                while (next < blocks.size) {
-                    val candidate = blocks[next]
-                    if (candidate is MdBlock.Image) {
-                        group += candidate
-                        next++
-                    } else if (candidate is MdBlock.Gap &&
-                        next + 1 < blocks.size &&
-                        blocks[next + 1] is MdBlock.Image
-                    ) {
-                        // 空行只是分隔，不算一组内容的结束。
-                        next++
-                    } else {
-                        break
-                    }
-                }
-                val urls = group.map { it.url }
-                if (urls.size > 1) {
+        // ## 块间距：声明式边距 + 折叠（取 max），不是"空行间隙 + 各块 padding"的相加
+        //
+        // 参考实现走 CSS，相邻 `margin` 是**折叠**语义：`p { margin: 1em 0 }` 让相邻两段之间
+        // 是 1em 而不是 2em（`export_utils.dart:487-493` 的 `*:first-child { margin-top: 0 }`
+        // 与 `*:last-child { margin-bottom: 0 }` 就是折叠模型在容器首尾的显式写法）。
+        // 改前的模型是"空行块 `Gap` 4dp + 各块自己的 padding"，两档**相加**：段-段只有 4dp
+        // （比参考的 1em≈15px 紧一半），段-图 / 段-代码块却是 4 + 8 = 12dp 还叠在块自身留白上，
+        // 两种组合的相对松紧与参考正好反过来。
+        //
+        // 现在：每块的上下外边距由 [blockMargins] **一处**声明，这里只在**相邻两块之间**插一个
+        // `Spacer(max(prevBottom, curTop))`。三条结构性保证（不靠以后每次改代码时自觉）：
+        //  * 首块之前不插 —— `unitIndex > 0` 才进那一段，复现 CSS 的 `margin-top: 0`；
+        //  * 末块之后不插 —— 循环里没有"收尾 Spacer"，复现 `margin-bottom: 0`；
+        //  * 中间永远只有**一个** Spacer —— `prevBottom` 只记上一块的下边距，不会两边各加一次。
+        var prevBottom = 0.dp
+        for (unitIndex in units.indices) {
+            val unit = units[unitIndex]
+            val margins = marginsOf(unit)
+            // 外边距整体乘 [marginScale]：引用卡里字号小一档、正文区还被裁到 4 行
+            // （[quoteBodyMaxHeight]），按 1:1 留白会把卡撑成"两行字 + 一条空白"。
+            val top = margins.top * marginScale
+            val bottom = margins.bottom * marginScale
+            if (unitIndex > 0) {
+                // 折叠 = 取 max。等于 0 时连 Spacer 都不放。
+                val gap = if (prevBottom > top) prevBottom else top
+                if (gap > 0.dp) Spacer(modifier = Modifier.height(gap))
+            }
+            prevBottom = bottom
+            if (unit is MdUnit.Images) {
+                // 外面这圈 8dp 是块**自身**的 padding（参考给图片网格套的是
+                // `EdgeInsets.symmetric(vertical: 8)`，`builders/image_grid_builder.dart:53-54`），
+                // 与 [blockMargins] 给的 8dp 外边距叠起来是 16dp —— 正好落在参考 1em(15px) 那一档，
+                // 所以不再往上加（"叠加超过 16dp 就把代表值取 0"的规则因此没被触发）。
+                val imagePadding = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                if (unit.blocks.size > 1) {
                     // 两张以上交给图片墙：2 列方图、9 张以内全铺开、再多第 9 格显示 +N。
-                    PostImageGrid(
-                        urls = urls,
-                        // 上下各 8dp：参考实现给图片网格外面套的是 `EdgeInsets.symmetric(vertical: 8)`
-                        // （`builders/image_grid_builder.dart:53-54`）。原来这里是 6dp，比参考紧一档。
-                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-                    )
+                    PostImageGrid(urls = unit.blocks.map { it.url }, modifier = imagePadding)
                 } else {
                     // 单张仍然走单图那套（按真实宽高比铺满内容宽），不要因为多了个 `PostImageGrid`
                     // 就把单图也压成方图 —— 长截图在方格里会被裁掉两头。
                     PostImage(
-                        url = group[0].url,
-                        alt = group[0].alt,
-                        // 单图取同一档 8dp：墙体是 8（`image_grid_builder.dart:54`），单图若留在 6，
-                        // 一楼里"单图段落"和"多图段落"的上下留白就会差 2dp。
-                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                        url = unit.blocks[0].url,
+                        alt = unit.blocks[0].alt,
+                        modifier = imagePadding,
                     )
                 }
-                index = next
-                continue
-            }
-            when (block) {
+            } else when (val block = unit.head) {
                 is MdBlock.Heading -> Text(
                     text = markdownInline(block.text, linkColor, onFloorRef),
                     style = headingStyle(block.level, baseStyle),
                     color = color,
-                    // 参考的标题外边距是 `margin: 1.5rem 0 0.5rem`（`export_utils.dart:496-502`，
-                    // 根字号 16px → 上 24 / 下 8）。原来 6 / 2 只是"留一点气口"，而参考那边标题
-                    // 是靠这两档上间距把自己和上一段分开的；字号既然已经按参考的四个数走（见
-                    // [headingStyle]），间距也一并对齐，否则 24sp 的大标题会紧贴着上一段。
-                    modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
+                    // 上下外边距**不在这里**：四档上边距（24/20/18/16，与字号同档）和统一的下 8
+                    // 都写在 [blockMargins] 里，由渲染层按折叠语义与上下邻块取 max。这里若再套一份
+                    // `padding(top = 24)`，折叠值外面还会多出 24dp —— 段-标题就成了 48dp。
                 )
 
                 // 段落可能夹着行内图片（`看这张 ![截图](url) 效果`），由 [ParagraphContent]
@@ -347,8 +347,9 @@ private fun MiniMarkdownContent(
                     onFloorRef = onFloorRef,
                 )
 
-                // 图片在上面那个分组循环里已经消费掉了（单张走 `PostImage`、连续多张走
-                // `PostImageGrid`）。这里保留分支只为让这个 `when` 对 `MdBlock` 仍然**穷尽**：
+                // 图片在 [groupUnits] 那一步就已经被并成 `MdUnit.Images` 了（单张走 `PostImage`、
+                // 连续多张走 `PostImageGrid`），走不到这个 `when`。这里保留分支只为让它对 [MdBlock]
+                // 仍然**穷尽**：
                 // Kotlin 2.x 对 sealed 类型上的 `when` 语句也要求穷尽，漏一个就是编译错误。
                 is MdBlock.Image -> Unit
 
@@ -360,21 +361,203 @@ private fun MiniMarkdownContent(
                 // 见 [LinkPreviewCard]。视频那一支在它上面，所以 `.mp4` 永远走视频卡。
                 is MdBlock.LinkCard -> LinkPreviewCard(block.url)
 
-                // 分割线上下的留白 1.5em：参考 `hr { margin: 1.5em 0 }`（`export_utils.dart:663-668`）。
-                // 原来 4dp 只是"别贴着字"，分割线看起来像两段之间的一根贴纸。
-                is MdBlock.Rule -> HorizontalDivider(
-                    modifier = Modifier.padding(vertical = textEm * 1.5f),
-                )
+                // 上下 12dp 写在 [blockMargins] 里，这里不再套 `padding(vertical = …)`：外边距由
+                // 渲染层统一折叠，块里再留一份就等于相加。参考的 `hr { margin: 1.5em 0 }`
+                // （`export_utils.dart:663-668`）@15px 是 22.5dp；本仓取 12 是本表里唯一一处不照抄
+                // CSS 的档位 —— 分割线实体只有 1dp，22.5dp 的空带在手机上像"这一楼断成了两页"，
+                // 而折叠后的段间距只有 8，12 是"读得出分章、又不空一屏"的折中。若要与参考严格一致，
+                // 把 [RuleMargin] 改成 textEm * 1.5f（14dp 正文 → 21dp）即可，只动一处。
+                is MdBlock.Rule -> HorizontalDivider()
 
-                // 空行 → 4dp：**刻意不动**。参考那边块与块之间是 CSS 的 `margin: 1em 0`（约 15px），
-                // 而相邻 margin 会**折叠**（取 max，不是相加）；本仓的模型是"空行间隙 + 各块自己的
-                // padding 相加"，若把这一档直接抬到 1em，段-图/段-代码这类组合就会变成 1em + 8dp
-                // ≈ 22dp，比参考（折叠后 1em）更松。统一改折叠语义要动整条渲染路径（见简报"剩余风险"）。
-                is MdBlock.Gap -> Spacer(modifier = Modifier.height(4.dp))
+                // 空行**不再产生可见高度**。它仍然要被解析（[parseBlocks] 用
+                // `blocks.lastOrNull() !== MdBlock.Gap` 给连续空行去重，也靠它断开段落与块），
+                // 但渲染层已经在 [groupUnits] 里把它吃掉了（空行不是渲染单元），所以走到这里
+                // 就是"什么都不画"。
+                //
+                // 这个分支为什么还要留着：① 这个 `when` 必须对 [MdBlock] 穷尽（Kotlin 2.x 对
+                // sealed 类型的 `when` 语句也要求穷尽，漏一个就是编译错误）；② 万一以后有人只改
+                // [groupUnits] 的过滤条件，这里的 [Unit] 也仍然是"不占高"，不会突然冒出一条 4dp。
+                is MdBlock.Gap -> Unit
             }
-            index++
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 块间距：声明式边距 + 折叠
+// ---------------------------------------------------------------------------
+
+/**
+ * 一个渲染单元：**一块正文**，或**一组连续图片**。
+ *
+ * 为什么把"分组"从渲染循环里拆出来：图片墙要求"连续的多张图片合成一块"（参考实现里图片是按
+ * `[grid]`/相邻图片成组渲染的，见 `builders/image_grid_builder.dart`），而块间距要求"按下标看
+ * 相邻两块"。两件事都要看邻居，写在同一个循环里就得靠 `continue` 跳过后半段 —— 一旦跳过后半段，
+ * "上一块的下边距"就漏记了。拆成纯函数 [groupUnits] + 一次按下标遍历之后，分组与间距各看各的
+ * 邻居，互不干扰。
+ *
+ * [MdBlock.Gap] **不会**出现在单元里：空行是块分隔的依据（解析阶段用它断开段落与块），不是内容。
+ */
+private sealed interface MdUnit {
+    /** 这一单元的第一块；图片墙里就是第一张。 */
+    val head: MdBlock
+
+    /** 参与渲染的一个块。 */
+    class One(override val head: MdBlock) : MdUnit
+
+    /** 连续的整行图片：一张走单图、多张走图片墙。 */
+    class Images(val blocks: List<MdBlock.Image>) : MdUnit {
+        override val head: MdBlock get() = blocks.first()
+    }
+}
+
+/**
+ * 把 [parseBlocks] 的输出切成渲染单元：跳过空行、把连续的整行图片并成一组。
+ *
+ * 图片成组时**允许中间隔一个空行**：`![](a.png)` 空一行 `![](b.png)` 在 Markdown 里就是两组
+ * 图片撞在一起，用户的本意几乎总是"这几张是一起的"。其余情况下空行就是分组边界 —— 这正是
+ * "空行不占高、但仍然断开段落"的地方：它不再画 4dp，却仍然决定"这是两块"。
+ */
+private fun groupUnits(blocks: List<MdBlock>): List<MdUnit> {
+    val units = mutableListOf<MdUnit>()
+    var index = 0
+    while (index < blocks.size) {
+        val block = blocks[index]
+        if (block is MdBlock.Gap) {
+            index++
+            continue
+        }
+        if (block is MdBlock.Image) {
+            val group = mutableListOf(block)
+            var next = index + 1
+            while (next < blocks.size) {
+                val candidate = blocks[next]
+                if (candidate is MdBlock.Image) {
+                    group += candidate
+                    next++
+                } else if (candidate is MdBlock.Gap &&
+                    next + 1 < blocks.size &&
+                    blocks[next + 1] is MdBlock.Image
+                ) {
+                    // 空行只是分隔，不算一组内容的结束。
+                    next++
+                } else {
+                    break
+                }
+            }
+            units += MdUnit.Images(group)
+            index = next
+            continue
+        }
+        units += MdUnit.One(block)
+        index++
+    }
+    return units
+}
+
+/** 一个块的上下外边距（dp）。数值全部来自 [blockMargins]，这里只是个载体。 */
+private class BlockMargins(val top: Dp, val bottom: Dp)
+
+/**
+ * 通用上下外边距 8dp：段落、列表、引用、代码块、表格、图片、视频卡、链接卡共用。
+ *
+ * 8 不是从 CSS 里直接读到的数，是**折叠后的等效值**：参考那边这些块的 CSS 都是
+ * `margin: 1em 0`（正文 15px → 15px），而本仓正文 14sp + 行高 21，段落之间本来就带着一次换行，
+ * 按 15dp 铺开比参考看着松；取一半（≈7）又比参考紧，8dp 是这两头之间落在整 dp 上的值。
+ * `fluxdo_render`（`packages/fluxdo_render`）是未检出的空子模块，正文内部**真实的**块间距拿不到，
+ * 所以这一档只能标"未确认，取 CSS 折叠后的等效值"。
+ */
+private val BlockMargin = 8.dp
+
+/**
+ * 分割线上下外边距 12dp。参考 `hr { margin: 1.5em 0 }`（`export_utils.dart:663-668`）@15px 是 22.5dp，
+ * 这里**有意**不照抄：分割线实体只有 1dp，22.5dp 的空带读起来像"这一楼断成了两页"。见
+ * [MiniMarkdownContent] 里 `MdBlock.Rule` 那一支的注释。
+ */
+private val RuleMargin = 12.dp
+
+/** 引用卡里正文（第 2 层及更深）的边距缩放系数，见 [marginScaleFor]。 */
+private const val QuoteDepthMarginScale = 0.6f
+
+/**
+ * 块间距按引用嵌套层数缩放：最外层正文 1.0，引用卡里的正文 0.6，再套一层 0.36。
+ *
+ * 为什么缩放：卡片正文区被 `heightIn` 裁到 4 行（[quoteBodyMaxHeight]）、字号也比正文小一档，
+ * 按 1:1 留 8dp，一张卡里就只剩两行字加一圈空白，"被引用的是哪句话"反而读不出来。0.6 是"还看得出
+ * 这里面分段"与"不把卡撑高"的折中；第 3 层再乘一次落在 0.36，也就是 24sp 的标题边距在卡里只剩
+ * 8.6dp，层级还在、但不抢位置。
+ */
+private fun marginScaleFor(quoteDepth: Int): Float = when {
+    quoteDepth <= 0 -> 1f
+    quoteDepth == 1 -> QuoteDepthMarginScale
+    else -> QuoteDepthMarginScale * QuoteDepthMarginScale
+}
+
+/** 标题的上外边距：与 [headingStyle] 的四个字号**同档**递减，依据见 [blockMargins]。 */
+private fun headingTopMargin(level: Int): Dp = when (level) {
+    1 -> 24.dp
+    2 -> 20.dp
+    3 -> 18.dp
+    else -> 16.dp
+}
+
+/** 渲染单元 → 上下外边距。图片墙按"一张图"那一档算（它本身就是一块）。 */
+private fun marginsOf(unit: MdUnit): BlockMargins = when (unit) {
+    is MdUnit.Images -> BlockMargins(BlockMargin, BlockMargin)
+    is MdUnit.One -> blockMargins(unit.head)
+}
+
+/**
+ * 每个块的上下外边距（dp）—— **全文件唯一的块间距来源**。渲染层（[MiniMarkdownContent]）只按
+ * 这张表读数、再按折叠语义取 `max`，各块的渲染分支里不再写 `padding(top = …)`。改一张表就是改
+ * 全站正文的节奏，不会出现"某个分支忘了改"或"两个分支各留一份、叠起来变两倍"。
+ *
+ * ## 每档数字的换算依据
+ *
+ * 参考侧 CSS 在 `G:\tmp\fluxdo-ref\fluxdo\lib\utils\export_utils.dart`：
+ *
+ *  * **段落 8 / 8**：参考的 `p` 没有单独规则，靠正文默认的 `margin: 1em 0`（`:487-493` 那两条
+ *    `*:first-child`/`*:last-child` 归零说明"块自身 1em、容器首尾抹平"）。正文 15px → 1em = 15px；
+ *    本仓正文 14sp、行高 21，段落之间已有换行，取折叠后的**等效**值 8dp（见 [BlockMargin]）。
+ *    **这一档是等效值，不是 CSS 里直接读到的数。**
+ *  * **标题 上 24 / 20 / 18 / 16，下 8**：参考 `h1..h6 { margin: 1.5rem 0 0.5rem }`（`:496-502`），
+ *    `1.5rem` @16px 根字号 = 24px、`0.5rem` = 8px（这一条**能对上**，直接照抄；下边距四档都是 8）。
+ *    上边距"随级别递减"是**有意偏离** CSS 的一处：参考给 h1..h6 同一个 24px，而本仓上一轮已经把字号
+ *    改成严格递减的 24/20/18/16（[headingStyle]，对应 `:506-511`），间距若四档一样，h1 与 h2
+ *    之间就读不出层级。让上边距与字号同档（24 配 24sp、20 配 20sp…）后，字号与留白一起递减。
+ *  * **列表 / 引用 / 代码块 / 表格 / 视频卡 / 链接卡 8 / 8**：`ul,ol { margin: 1em 0 }`（`:621-625`）、
+ *    `blockquote { margin: 1em 0 }`（`:578-584`）、`pre { margin: 1em 0 }`（`:548-555`）、
+ *    `table { margin: 1em 0 }`（`:639-644`）、`.onebox { margin: 1em 0 }`（`:736-741`）—— 一律 1em，
+ *    按段落那条同一个口径取 [BlockMargin]。
+ *  * **图片 8 / 8**：同上（参考 `img` 由网格 builder 的 `EdgeInsets.symmetric(vertical: 8)` 承担）。
+ *  * **分割线 12 / 12**：见 [RuleMargin]，CSS 是 1.5em，本仓有意收窄。
+ *
+ * ## 代码块 / 图片 / 视频卡 / 链接卡为什么没有把代表值归零
+ *
+ * 这四类的渲染分支里还带着**外壳 padding**（[CodeBlock] 上下各 8dp、[PostImage]/[PostImageGrid]
+ * 各 8dp、[VideoCard] 与 [LinkPreviewCard] 各 8dp），那是"内容排版的内边距"，不在这次改动范围里，
+ * 所以它会与这里的外边距**相加**：8 + 8 = 16dp。参考的 1em（15px）正好落在 16dp 这一档，也就是说
+ * 叠加后**没有超过**参考的上限，因此按"叠加超过 16dp 才把代表值取 0"的规则，这四档保持 8。
+ *
+ * 代价要说清楚：这四类块与相邻块之间的**可见**留白是 16dp，比纯段落之间的 8dp 松一档。这是"外壳
+ * padding 不改"这条范围内的必然结果 —— 要拉到完全一致，得把外壳那 8dp 挪进这里（那是改内容排版，
+ * 不在本次范围）。
+ */
+private fun blockMargins(block: MdBlock): BlockMargins = when (block) {
+    is MdBlock.Heading -> BlockMargins(headingTopMargin(block.level), BlockMargin)
+    is MdBlock.Paragraph -> BlockMargins(BlockMargin, BlockMargin)
+    is MdBlock.BulletList -> BlockMargins(BlockMargin, BlockMargin)
+    is MdBlock.OrderedList -> BlockMargins(BlockMargin, BlockMargin)
+    is MdBlock.Quote -> BlockMargins(BlockMargin, BlockMargin)
+    is MdBlock.CodeBlock -> BlockMargins(BlockMargin, BlockMargin)
+    is MdBlock.Table -> BlockMargins(BlockMargin, BlockMargin)
+    is MdBlock.Video -> BlockMargins(BlockMargin, BlockMargin)
+    is MdBlock.LinkCard -> BlockMargins(BlockMargin, BlockMargin)
+    // 图片总是以 [MdUnit.Images] 的身份进来（单张也是），这一支只为让 when 穷尽。
+    is MdBlock.Image -> BlockMargins(BlockMargin, BlockMargin)
+    MdBlock.Rule -> BlockMargins(RuleMargin, RuleMargin)
+    // 空行在 [groupUnits] 里就被吃掉了，同样只为穷尽。
+    MdBlock.Gap -> BlockMargins(0.dp, 0.dp)
 }
 
 // ---------------------------------------------------------------------------
@@ -1875,7 +2058,9 @@ private fun parseBlocks(text: String): List<MdBlock> {
             continue
         }
         if (trimmed.isEmpty()) {
-            // 连续空行只留一个间隙：两行空行在屏幕上不该变成两个 4dp 的洞。
+            // 连续空行只留一个间隙：块序列里留一个 `Gap` 就够表示"这里是分隔"了（[groupUnits]
+            // 靠它判断图片能否跨过空行继续成组，多留几个只会让它多走几步）。渲染层从这次改动起
+            // 已经不给 `Gap` 画高度，所以这里也不再关心"两个 4dp 的洞"。
             if (blocks.lastOrNull() !== MdBlock.Gap) blocks += MdBlock.Gap
             i++
             continue
