@@ -129,6 +129,22 @@ class AudioWhitelistParseTest {
     }
 
     @Test
+    fun missingRootReportKeepsTheSafeDefaultWithoutInventingDiagnostics() {
+        val state = AudioWhitelist.parse("")
+        assertEquals("no", state.rootAccess)
+        assertFalse(state.canElevate)
+        assertTrue(state.diagnostics.isEmpty())
+    }
+
+    @Test
+    fun repeatedRootReportsUseTheLastValueAndOnlyOneDiagnostic() {
+        val state = AudioWhitelist.parse("##ROOT##yes\n##ROOT##no\n")
+        assertEquals("no", state.rootAccess)
+        assertFalse(state.canElevate)
+        assertEquals(listOf("root: 没有（改 /odm 需要 root）"), state.diagnostics)
+    }
+
+    @Test
     fun theListHeadGoesIntoTheDiagnostics() {
         // 清单头里有可能是 enable 之类的开关字段：能不能免 root 关掉，全靠这一行判断。
         val state = AudioWhitelist.parse(
@@ -149,6 +165,8 @@ class AudioWhitelistParseTest {
                 "##SETTING##debug_audio_cloud=null\n" +
                 "##XMLHEAD##<TrackCustomEfxConfig name=\"trackefx_config\">\n",
         )
+        assertEquals("no", state.rootAccess)
+        assertFalse(state.canElevate)
         assertEquals(3, state.diagnostics.size)
         assertEquals("[persist.sys.scene.partition.level]: [1]", state.diagnostics[0])
         assertEquals("setting debug_audio_cloud=null", state.diagnostics[1])

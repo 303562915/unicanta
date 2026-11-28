@@ -206,6 +206,7 @@ object AudioWhitelist {
         var lowPowerPath = ""
         var lowPowerHead = ""
         var rootAccess = "no"
+        var rootReported = false
         val packages = LinkedHashSet<String>()
         val lowPowerPackages = LinkedHashSet<String>()
         val installed = HashSet<String>()
@@ -229,7 +230,10 @@ object AudioWhitelist {
                     }
                 }
                 line.startsWith(TAG_LOWPOWER_HEAD) -> lowPowerHead = line.removePrefix(TAG_LOWPOWER_HEAD).trim()
-                line.startsWith(TAG_ROOT) -> rootAccess = line.removePrefix(TAG_ROOT).trim().lowercase().ifEmpty { "no" }
+                line.startsWith(TAG_ROOT) -> {
+                    rootReported = true
+                    rootAccess = line.removePrefix(TAG_ROOT).trim().lowercase().ifEmpty { "no" }
+                }
                 line.startsWith(TAG_PACKAGE) -> line.removePrefix(TAG_PACKAGE).trim().let {
                     if (it.isNotEmpty()) packages += it
                 }
@@ -268,10 +272,13 @@ object AudioWhitelist {
         if (lowPowerHead.isNotEmpty()) {
             diagnostics += "lowpower head: " + lowPowerHead.take(400)
         }
-        diagnostics += "root: " + when (rootAccess) {
-            "yes" -> "有（su 可用）"
-            "maybe" -> "可能有（装了 root 管理器，但没授权过 su）"
-            else -> "没有（改 /odm 需要 root）"
+        // 默认拒绝提权是安全策略，不等于脚本实际报告了「没有 root」。
+        if (rootReported) {
+            diagnostics += "root: " + when (rootAccess) {
+                "yes" -> "有（su 可用）"
+                "maybe" -> "可能有（装了 root 管理器，但没授权过 su）"
+                else -> "没有（改 /odm 需要 root）"
+            }
         }
 
         return State(
