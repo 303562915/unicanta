@@ -65,6 +65,22 @@ fun badgeImpacts(level: AppBadgeInfo): List<BadgeImpact> = when (level) {
 }
 
 /**
+ * 一枚后果标记，形状与 [AppBadge] 完全一样（同样的圆角、12dp 图标、8sp 字）。
+ *
+ * 单独导出一份，是因为级别修正页的选项块里也要贴同一枚（「破坏功能」「卡开机」），
+ * 那里不能整排贴、只能贴一项。
+ */
+@Composable
+fun BadgeImpactTag(impact: BadgeImpact) {
+    AppBadgeContent(
+        label = impact.code,
+        icon = impact.icon,
+        color = impact.colour,
+        description = impact.label,
+    )
+}
+
+/**
  * 把这个档位的后果画成一排小标记，和档位徽标同一排、同一套形状。
  *
  * 没有后果的档位（推荐卸载 / 系统应用）什么都不画——空着一块比贴一枚"不会出事"更有信息量。
@@ -81,12 +97,7 @@ fun BadgeImpactTags(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         impacts.forEach { impact ->
-            AppBadgeContent(
-                label = impact.code,
-                icon = impact.icon,
-                color = impact.colour,
-                description = impact.label,
-            )
+            BadgeImpactTag(impact)
         }
     }
 }

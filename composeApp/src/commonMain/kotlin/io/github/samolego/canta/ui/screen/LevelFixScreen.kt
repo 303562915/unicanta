@@ -47,6 +47,8 @@ import io.github.samolego.canta.data.community.LevelFix
 import io.github.samolego.canta.data.community.LevelFixRepository
 import io.github.samolego.canta.data.community.LevelFixResult
 import io.github.samolego.canta.ui.component.AppBadge
+import io.github.samolego.canta.ui.component.BadgeImpact
+import io.github.samolego.canta.ui.component.BadgeImpactTag
 import io.github.samolego.canta.ui.component.BadgeImpactTags
 import io.github.samolego.canta.ui.component.DisabledBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
@@ -450,36 +452,56 @@ fun LevelFixScreen(
  *
  * 级别只有四档：`System` 不在这里——它回答的是第三组「是不是系统应用」，不是什么级别。
  */
-private val LEVEL_OPTIONS: List<Pair<String, String>> = listOf(
-    "Recommended" to "推荐卸载",
-    "Advanced" to "进阶",
-    "Expert" to "专家",
-    "Unsafe" to "不安全",
-)
+/** 选项块里那一枚徽标：级别用档位徽标，后果用后果标记，系统应用用 sys，其余不画。 */
+private sealed interface BallotBadge {
+    data class Level(val level: AppBadgeInfo) : BallotBadge
+    data class Impact(val impact: BadgeImpact) : BallotBadge
+    data object SystemApp : BallotBadge
+    data object None : BallotBadge
+}
 
-/** 后果：删了会不会破坏功能 / 会不会卡在开机。 */
-private val IMPACT_OPTIONS: List<Pair<String, String>> = listOf(
-    "breaks" to "会破坏功能",
-    "bootloop" to "可能卡在开机",
-)
-
-/** 系统应用：是不是随机器预装的那一类。 */
-private val SYSTEM_OPTIONS: List<Pair<String, String>> = listOf(
-    "yes" to "是",
-    "no" to "否",
+/** 一个选项：后端接收的 key、界面上的名字、前面那枚徽标。 */
+private data class BallotOption(
+    val choice: String,
+    val label: String,
+    val badge: BallotBadge,
 )
 
 /**
- * 三个维度共用的选项块：标题 + 一行两个的选项，每项右侧是**本维度内**的百分比。
+ * 级别只有四档：`System` 不在这里——它回答的是第三组「是不是系统应用」，不是什么级别。
+ * 徽标沿用列表那套（颜色也是），页面不另造一套。
+ */
+private val LEVEL_OPTIONS: List<BallotOption> = listOf(
+    BallotOption("Recommended", "推荐卸载", BallotBadge.Level(AppBadgeInfo.RECOMMENDED)),
+    BallotOption("Advanced", "进阶", BallotBadge.Level(AppBadgeInfo.ADVANCED)),
+    BallotOption("Expert", "专家", BallotBadge.Level(AppBadgeInfo.EXPERT)),
+    BallotOption("Unsafe", "不安全", BallotBadge.Level(AppBadgeInfo.UNSAFE)),
+)
+
+/** 后果：删了会不会破坏功能 / 会不会卡在开机。 */
+private val IMPACT_OPTIONS: List<BallotOption> = listOf(
+    BallotOption("breaks", "会破坏功能", BallotBadge.Impact(BadgeImpact.BREAKS_FEATURES)),
+    BallotOption("bootloop", "可能卡在开机", BallotBadge.Impact(BadgeImpact.BOOTLOOP)),
+)
+
+/** 系统应用：是不是随机器预装的那一类。 */
+private val SYSTEM_OPTIONS: List<BallotOption> = listOf(
+    BallotOption("yes", "是", BallotBadge.SystemApp),
+    BallotOption("no", "否", BallotBadge.None),
+)
+
+/**
+ * 三个维度共用的选项块：标题 + 一项一行（徽标 + 名字 + 右侧百分比 + 比例条）。
  *
  * 百分比按维度各自归一（级别四项加起来 100%，后果两项加起来 100%），不跨维度相加——
- * 那是三个问题，不是一道多选题。
+ * 那是三个问题，不是一道多选题。一项一行是因为每行都要放徽标和百分比，挤成两列会把
+ * "可能卡在开机"截成"可能卡在…"。
  */
 @Composable
 private fun BallotGroup(
     title: String,
     dimension: String,
-    options: List<Pair<String, String>>,
+    options: List<BallotOption>,
     ballots: LevelBallots?,
     enabled: Boolean,
     onPick: (String) -> Unit,
@@ -491,69 +513,69 @@ private fun BallotGroup(
             style = FlText.caption2.copy(fontWeight = FlText.emphasized),
             color = scheme.onSurfaceVariant,
         )
-        options.chunked(2).forEach { pair ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                pair.forEach { (choice, label) ->
-                    val picked = ballots?.mineOf(dimension) == choice
-                    val percent = ballots?.percent(dimension, choice) ?: 0
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (picked) scheme.primary.copy(alpha = 0.12f)
-                                else FlSurfaceLevel.Inset.colorOf(scheme),
-                            )
-                            .border(
-                                width = if (picked) 1.5.dp else 1.dp,
-                                color = if (picked) scheme.primary else Color.Transparent,
-                                shape = RoundedCornerShape(10.dp),
-                            )
-                            .clickable(enabled = enabled) { onPick(choice) }
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = label,
-                                style = FlText.caption1.copy(
-                                    fontWeight = if (picked) FlText.emphasized else null,
-                                ),
-                                color = if (picked) scheme.primary else scheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            // 右侧百分比：这一项在本维度里占多少。
-                            Text(
-                                text = "$percent%",
-                                style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                                color = if (picked) scheme.primary else scheme.onSurfaceVariant,
-                            )
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        VoteBar(
-                            fraction = percent / 100f,
-                            colour = if (picked) scheme.primary else scheme.outlineVariant,
-                        )
+        options.forEach { option ->
+            val picked = ballots?.mineOf(dimension) == option.choice
+            val percent = ballots?.percent(dimension, option.choice) ?: 0
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    // 选中用统一的主题色；未选中就是这一页原来的底色，徽标各自保留原本的颜色。
+                    .background(
+                        if (picked) scheme.primary.copy(alpha = 0.12f)
+                        else FlSurfaceLevel.Inset.colorOf(scheme),
+                    )
+                    .border(
+                        width = if (picked) 1.5.dp else 1.dp,
+                        color = if (picked) scheme.primary else Color.Transparent,
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                    .clickable(enabled = enabled) { onPick(option.choice) }
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 徽标保持它本来的颜色（那是它的身份）；选中只把这一块的底色、边框、
+                    // 名字和百分比换成主题色，两者不冲突。
+                    when (val badge = option.badge) {
+                        is BallotBadge.Level -> AppBadge(badge.level)
+                        is BallotBadge.Impact -> BadgeImpactTag(badge.impact)
+                        BallotBadge.SystemApp -> SystemBadge()
+                        BallotBadge.None -> Unit
                     }
+                    if (option.badge !is BallotBadge.None) Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = option.label,
+                        style = FlText.caption1.copy(
+                            fontWeight = if (picked) FlText.emphasized else null,
+                        ),
+                        color = if (picked) scheme.primary else scheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    // 右侧百分比：这一项在本维度里占多少。
+                    Text(
+                        text = "$percent%",
+                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                        color = if (picked) scheme.primary else scheme.onSurfaceVariant,
+                    )
                 }
-                // 单数行：占住右半格，别让最后一项撑满整行。
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(4.dp))
+                VoteBar(
+                    fraction = percent / 100f,
+                    colour = if (picked) scheme.primary else scheme.outlineVariant,
+                )
             }
         }
     }
 }
 
-/** 一条级别提案：谁提的、要改成哪档、依据、票数，以及两个投票按钮。 */
+/** 一条级别提案：谁提的、要改成哪档、依据，以及当时有多少人认同。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LevelFixCard(
     fix: LevelFix,
-    /** 这一条所在档位的认同票合计（同档多条提案相加）。 */
-    levelAgrees: Int,
-    /** 同一档位的不认同票合计。 */
-    levelDisagrees: Int,
     /** 同包已经通过的那一档；用来把「被取代」和「票并进了通过的那一档」分开说。 */
     passedRemoval: String?,
 ) {
