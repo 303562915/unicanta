@@ -167,6 +167,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 // 「上次读到哪一屏」的防抖：`snapshotFlow` 把 `firstVisibleItemIndex` / `ScrollOffset` 变成一条流，
@@ -788,6 +792,8 @@ private fun PostsToolbar(
      * 不必先去下面那条胶囊上对准。
      */
     onSearch: (() -> Unit)? = null,
+    /** 搜索胶囊收进工具栏时，为同一颗胶囊保留落位格。 */
+    searchSlotProgress: Float = 0f,
     /** 顶栏底色：与它所在页面的底一致（见调用点注释）。 */
     background: Color = Color.Unspecified,
 ) {
@@ -795,7 +801,6 @@ private fun PostsToolbar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars)
             .height(48.dp)
             .background(background),
         verticalAlignment = Alignment.CenterVertically,
@@ -887,6 +892,7 @@ private fun PostsToolbar(
         }
         // 搜索：把焦点交给工具栏下面那颗常驻胶囊（[onSearch] 由调用方绑 `searchFocus`）。
         // `Icons.Rounded.Search` 是官方 Material Symbols，不像自绘 glyph 那样有 `fill = 0f` 下不显示的坑。
+        if (searchSlotProgress > 0f) Spacer(Modifier.width(44.dp * searchSlotProgress))
         if (onSearch != null) {
             TopBarIconButton(
                 icon = Icons.Rounded.Search,
@@ -1236,8 +1242,30 @@ internal fun PostsScreen(
     var drawerOpen by remember { mutableStateOf(false) }
     /** 右下角 FAB 的展开状态（草稿 / 写新帖 / 刷新）。 */
     var fabOpen by remember { mutableStateOf(false) }
-    /** 搜索胶囊的焦点。胶囊常驻在列表上方一行，这一页没有「点图标跳进去」的入口。 */
+    /** 搜索胶囊随滚动收进工具栏，编辑时保持展开。 */
     val searchFocus = remember { FocusRequester() }
+    var searchFocused by remember { mutableStateOf(false) }
+    var requestSearchFocus by remember { mutableStateOf(false) }
+    val headerRange = with(LocalDensity.current) { 88.dp.toPx() }
+    var headerOffset by remember { mutableStateOf(0f) }
+    val headerProgress = (headerOffset / headerRange).coerceIn(0f, 1f)
+    val headerScroll = remember(headerRange, searchFocused, query) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (searchFocused || query.isNotBlank()) return Offset.Zero
+                val previous = headerOffset
+                headerOffset = (headerOffset - available.y).coerceIn(0f, headerRange)
+                return Offset(0f, previous - headerOffset)
+            }
+        }
+    }
+    LaunchedEffect(searchFocused, query) {
+        if (searchFocused || query.isNotBlank()) headerOffset = 0f
+    }
+    LaunchedEffect(postListState) {
+        snapshotFlow { postListState.firstVisibleItemIndex == 0 && postListState.firstVisibleItemScrollOffset == 0 }
+            .collect { atTop -> if (atTop) headerOffset = 0f }
+    }
     /** 正在编辑的那篇草稿的本地 id；空串表示没在编辑。 */
     var editorId by remember { mutableStateOf("") }
     /**
@@ -2155,10 +2183,13 @@ internal fun PostsScreen(
                     },
                 )
 
-else -> Column {
-                    // 列表页顶上不是「标题栏」而是 fluxdo 那条 48dp 工具栏：☰ / 最新▾ / 🔍，
-                    // 搜索胶囊是它下面那一行常驻的输入框（🔍 只负责把焦点交给胶囊）。
-                    // 原来这里是 72dp 居中标题 + 「写帖子」文字按钮——两样都不在 fluxdo 的首页上。
+                else -> BoxWithConstraints(
+                    modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars),
+                ) {
+                    val morph = FastOutSlowInEasing.transform(headerProgress)
+                    val capsuleWidth = (maxWidth - 24.dp) * (1f - morph) + 40.dp * morph
+                    val capsuleX = 12.dp * (1f - morph) + (maxWidth - 48.dp) * morph
+                    Column {
                     Box {
                         PostsToolbar(
                             board = board,
@@ -2173,9 +2204,9 @@ else -> Column {
                             onCompose = if (canWrite) ({ startCompose(null) }) else null,
                             // 开源周榜：入口搬到顶栏右上角（列表里那条 40dp 横条删掉了）。
                             onOpenWeeklyRank = if (weeklyRank != null) onOpenWeeklyRank else null,
-                            // 搜索：点的就是下面那条常驻胶囊 —— 只把焦点交过去，不新开页面。
-                            // 胶囊在同一个 Column 里，`requestFocus` 时它一定已经挂上树了。
-                            onSearch = { searchFocus.requestFocus() },
+                            // 搜索由上层同一颗胶囊完成，不再画第二颗搜索按钮。
+                            onSearch = null,
+                            searchSlotProgress = morph,
                             // 顶栏与**页面**同色：Scaffold 的默认底色是 `colorScheme.surface`（主题的页面底色），
 // 而不是 `FlSurfaceLevel.Page`（那是 `surfaceContainer`，浅色主题下比页面亮一档，栏就会
 // 显出一条比正文底色浅的带子）。所以这里传 `surface`，不传 Page。
@@ -2199,6 +2230,53 @@ else -> Column {
                                     },
                                 )
                             }
+                        }
+                    }
+                    Spacer(Modifier.height(48.dp * (1f - headerProgress)))
+                    Box(Modifier.fillMaxWidth().height(40.dp * (1f - headerProgress)).clipToBounds()) {
+                        Row(
+                            modifier = Modifier.height(40.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            (listOf("") + drawerCategories).forEach { item ->
+                                val selected = categoryPick == item && tagPick.isBlank()
+                                Text(
+                                    text = item.ifBlank { "全部话题" },
+                                    fontSize = 13.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                                        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                                        .clickable { categoryPick = item; tagPick = "" }
+                                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                                )
+                            }
+                        }
+                    }
+                    }
+                    Box(
+                        Modifier.offset(x = capsuleX, y = 52.dp - 48.dp * morph)
+                            .width(capsuleWidth).height(40.dp),
+                    ) {
+                        if (headerProgress < 0.98f || searchFocused || query.isNotBlank()) {
+                            SearchCapsule(
+                                value = query,
+                                onValueChange = { query = it },
+                                focusRequester = searchFocus,
+                                modifier = Modifier.fillMaxWidth().onFocusChanged { searchFocused = it.isFocused },
+                            )
+                            LaunchedEffect(requestSearchFocus) {
+                                if (requestSearchFocus) {
+                                    searchFocus.requestFocus()
+                                    requestSearchFocus = false
+                                }
+                            }
+                        } else {
+                            TopBarIconButton(icon = Icons.Rounded.Search, label = "搜索话题", onClick = {
+                                headerOffset = 0f
+                                requestSearchFocus = true
+                            })
                         }
                     }
                 }
@@ -2418,7 +2496,6 @@ else -> Column {
                     }
                 },
                 listState = postListState,
-                searchFocus = searchFocus,
                 onBoardChange = { board = it },
                 onCategoryChange = { categoryPick = it },
                 onQueryChange = { query = it },
@@ -2433,7 +2510,7 @@ else -> Column {
                 onOpenDraft = { startCompose(it) },
                 onDeleteDraft = { discardDraft(it) },
                 onWrite = { startCompose(null) },
-                modifier = Modifier.padding(padding),
+                modifier = Modifier.padding(padding).nestedScroll(headerScroll),
             )
         }
     }
@@ -2611,8 +2688,6 @@ private fun PostListPane(
     /** 长按一张卡片：切收藏。 */
     onLongPress: (CommunityPost) -> Unit,
     listState: LazyListState,
-    /** 搜索胶囊的焦点（胶囊常驻；顶栏那颗 🔍 也把焦点交给它，所以这一页只有一个搜索落点）。 */
-    searchFocus: FocusRequester,
     onBoardChange: (PostBoard) -> Unit,
     onCategoryChange: (String) -> Unit,
     onQueryChange: (String) -> Unit,
@@ -2639,26 +2714,7 @@ private fun PostListPane(
         modifier = modifier.fillMaxSize(),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 搜索胶囊**常驻在列表外面**的那一行：fluxdo 的搜索是工具栏下面整行 48dp 的胶囊
-            // （`_capsuleRowHeight = 48`，展开态 rect 在 `statusBar + 48 + 4`），它不跟着列表滚走。
-            // 放进 LazyColumn 里的话往下滑就看不见了——那不是同一个东西。
-            //
-            // **没有做**胶囊 → 工具栏落位格那条整条 morph（`topics_page.dart:1856-1875` 的
-            // `Rect.lerp` + `Curves.easeInOutCubic`）：那要求把胶囊搬到顶栏的 Stack overlay 层、
-            // 并按折叠进度重排顶栏（落位格宽度 44×t 随 p1 变），等于把这一页的头部整个换掉。
-            // 收益只是滚动时的视觉衔接，风险是列表顶部每次重组都跟着头部走。这里只保留"常驻 + 有字时
-            // 可清空"，其余照 fluxdo 的静态值（底色 0.5、图标 20、左 16、间距 8、x 右 12）。
-            SearchCapsule(
-                value = query,
-                onValueChange = onQueryChange,
-                focusRequester = searchFocus,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
-            )
-
-            // 分类 chips 行**不要**：分类入口只有顶栏那颗 ☰（打开侧栏）。不要再把它摆到搜索下面，
-            // 也不要在列表里插「帖子 · N」那种统计行。
+            // 搜索与分类属于可折叠头部；列表只保留内容，避免出现第二颗搜索框。
 
             // 左右 12dp 从卡片挪到这里（`PostCard` 不再自带 `horizontal = 12`）：fluxdo 的卡片自身
             // 只有 `EdgeInsets.only(bottom: 8)`（`topic_card.dart:329`），左右留白由列表层给
@@ -5127,11 +5183,9 @@ private fun ThreadHeader(
         // 分类 + 标签：`Wrap(spacing: 6, runSpacing: 8)`（`topic_detail_header.dart:163-166`）。
         // 上一版是横滚一行，标签一多就有一半藏在屏幕外；参考实现是**换行**，多出来的落到第二行。
         //
-        // 标题 →(12)→ 分类：参考 `:148` 的 16 是"标题 → `TopicStateSummary`"（状态摘要，
-        // 本仓没有对应物）；本仓这一格改成分类/标签行，它比参考的摘要行轻（胶囊、单行），
-        // 所以取 12，与下面"分类 → 元信息"的 16 拉开一档 —— 读起来"标签是挂在标题上的"。
+        // 与 FluxDO topic_detail_header.dart 一致：显示标题时，后续内容统一留 16dp。
         if (post.category.isNotBlank() || post.tags.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -5146,9 +5200,8 @@ private fun ThreadHeader(
             // 分类 →(16)→ 元信息：参考 `:212` 的 `const SizedBox(height: 16)`。
             Spacer(modifier = Modifier.height(16.dp))
         } else {
-            // 没有分类/标签时不叠两个空档：标题直接接元信息，取 12（标题到任何下一块的最小那一档），
-            // 与有分类时"12 + 分类行 + 16"的节奏同一个起点。
-            Spacer(modifier = Modifier.height(12.dp))
+            // 没有分类/标签时，标题后的间距仍与参考保持 16dp。
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         // 元信息：回复 / 赞 / 时间。每项内部照 `_buildMetadataItem`
@@ -6772,10 +6825,9 @@ private fun PostFloorCard(
         // 已删的那一层整块退到 60%（`post_segment_frame.dart:158-160` 的 `Opacity(opacity: 0.6)`）。
         // 只包内容、不包底色与竖条：源码那个 RepaintBoundary 同样只包「内容」，
         // 把底色一起压会让页面底色跟着变灰，看着像整块挂了。
-        Box(modifier = if (deleted) Modifier.alpha(0.6f) else Modifier) {
-            // 注意这里**没有** `.verticalArrangement = spacedBy(...)`：外层 Column 的间距会匀给
-            // 定长孩子，实测 4dp 只落成 3.4、19→17.6，行高/胶囊高就不准了。层内三段留白靠各段自己的 padding。
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Column(modifier = if (deleted) Modifier.alpha(0.6f) else Modifier) {
+            // 与 FluxDO PostItem 一致：只有作者信息与头像同排，正文和动作栏占满内容宽度。
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 // 头像 **40dp** + 1dp 描边（fluxdo `post_header.dart:72` 的 `radius = 20`，
                 // 以及 `:131-134` 的 `Border.all(outlineVariant, 1)`）。描边画在内部，
                 // 用 `drawBehind` 画圆环而不是 `border()`，这样尺寸不会被撑大。
@@ -6873,6 +6925,9 @@ private fun PostFloorCard(
                             )
                         }
                     }
+                }
+            }
+            // 正文与作者信息是同级节点，不再缩进头像右侧。
                     // 引用指示条已经挪到上面名字行里（见那段注释），这里不再单独占一行：
                     // 一层楼的高度回到「头像/名字行 + 正文 + 动作行」三段，楼层之间的密度才跟得上参考图。
                     // 回复历史（父链）就挂在指示条正下方、正文之前：null 时这一段一个组合项都不建，
@@ -6968,21 +7023,14 @@ private fun PostFloorCard(
                             )
                         }
                     }
-                    // 这一行原来靠父级 `spacedBy(4.dp)` 与正文隔开；父级间距去掉后自己垫。
-                    // **8dp**：参考 `post_item.dart:469` 给 `PostFooterSection` 的是
-                    // `EdgeInsets.only(top: 12)`，这里取 8 的折中理由是 —— 本仓动作行的胶囊高
-                    // 36、参考 `post_action_bar.dart:418-419` 也是 36，正文行高两边同为 21，
-                    // 8 已经足够让胶囊顶边离开字的降部；再拉到 12 会让"正文最后一行的行距 +
-                    // 12"在视觉上读成两个段落，而参考那边正文与 footer 之间本来就夹着引用/尾注。
-                    Spacer(modifier = Modifier.height(8.dp))
+                    // FluxDO PostFooterSection 的顶部间距为 12dp。
+                    Spacer(modifier = Modifier.height(12.dp))
                     footer()
-                    // 展开的直接回复：动作行**下面**，顶 4dp（`post_replies_list.dart:36-37`）。
+                    // 展开的直接回复：动作行下面，顶 4dp。
                     if (replies != null) {
                         Spacer(modifier = Modifier.height(4.dp))
                         replies()
                     }
-                }
-            }
         }
     }
 }
@@ -8578,10 +8626,14 @@ private fun PostEditorPane(
             // 字号照 fluxdo `create_topic_page.dart:1127-1130`（`headlineSmall` 基底 24sp + w600）。
             // 注意本仓的 `headlineSmall` 被 FlTypography 压到 17sp（那是 FlClash 的二级页标题），
             // 所以这里必须显式给 24 —— 直接写 `typography.headlineSmall.copy(w600)` 会是 17sp。
+            val titleCounterHeight = with(LocalDensity.current) {
+                MaterialTheme.typography.labelSmall.lineHeight.toDp()
+            }
+            Box(modifier = Modifier.fillMaxWidth()) {
             OutlinedTextField(
                 value = title,
                 onValueChange = onTitleChange,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = titleCounterHeight),
                 placeholder = {
                     Text(
                         text = "输入标题…",
@@ -8600,7 +8652,7 @@ private fun PostEditorPane(
                     letterSpacing = 0.sp,
                 ),
                 colors = plainField,
-                singleLine = true,
+                singleLine = false,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             )
             // 字数角标：右下角，小字灰，不占一行。
@@ -8608,9 +8660,10 @@ private fun PostEditorPane(
                 text = "${title.length}/$POST_TITLE_LIMIT",
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.outline,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.align(Alignment.BottomEnd),
                 textAlign = TextAlign.End,
             )
+            }
             Spacer(modifier = Modifier.height(16.dp))
 
             if (previewing) {
