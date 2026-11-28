@@ -30,7 +30,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.BasicAlertDialog
@@ -342,7 +342,7 @@ fun PlanScopeBar(
             // 理由同上——它是一条全局规则，用文字胶囊占一行反而比图标更难认。
             IconButton(onClick = onToggleDescriptions) {
                 Icon(
-                    imageVector = Icons.Default.Info,
+                    imageVector = Icons.Default.Description,
                     contentDescription = if (descriptions) "搜索含应用介绍：开" else "搜索含应用介绍：关",
                     modifier = Modifier.size(18.dp),
                     tint = if (descriptions) colors.primary else colors.onSurfaceVariant,
