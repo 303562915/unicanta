@@ -931,7 +931,7 @@
     "pkg": "com.heytap.browser",
     "small_batch": true,
     "uninstalls": 8,
-    "updated_at": "2026-11-28T00:54:15.153498+00:00",
+    "updated_at": "2026-11-28T02:40:11.584329+00:00",
     "verdict": "SAFE"
    },
    {
@@ -994,7 +994,7 @@
     "pkg": "com.heytap.pictorial",
     "small_batch": true,
     "uninstalls": 6,
-    "updated_at": "2026-11-28T01:38:19.941203+00:00",
+    "updated_at": "2026-11-28T02:40:11.584329+00:00",
     "verdict": "SAFE"
    },
    {
@@ -1168,8 +1168,8 @@
    {
     "pkg": "com.oplus.appdetail",
     "small_batch": false,
-    "uninstalls": 18,
-    "updated_at": "2026-11-28T02:07:34.922333+00:00",
+    "uninstalls": 19,
+    "updated_at": "2026-11-28T02:45:05.535709+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -3531,7 +3531,7 @@
     "pkg": "com.heytap.browser",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-28T00:54:15.153498+00:00",
+    "updated_at": "2026-11-28T02:40:11.584329+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -3559,7 +3559,7 @@
     "pkg": "com.heytap.pictorial",
     "small_batch": true,
     "uninstalls": 1,
-    "updated_at": "2026-11-28T01:04:08.432858+00:00",
+    "updated_at": "2026-11-28T02:40:11.584329+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -4747,8 +4747,8 @@
    {
     "pkg": "com.oplus.appdetail",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T06:25:19.99334+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-28T02:45:05.535709+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -18627,8 +18627,8 @@
    {
     "pkg": "com.miui.securityadd",
     "small_batch": false,
-    "uninstalls": 31,
-    "updated_at": "2026-11-28T00:17:10.662008+00:00",
+    "uninstalls": 32,
+    "updated_at": "2026-11-28T02:45:23.03725+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19558,8 +19558,8 @@
    {
     "pkg": "com.xiaomi.trustservice",
     "small_batch": false,
-    "uninstalls": 162,
-    "updated_at": "2026-11-28T00:17:10.662008+00:00",
+    "uninstalls": 163,
+    "updated_at": "2026-11-28T02:42:13.714809+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25882,8 +25882,8 @@
    {
     "pkg": "com.miui.securityadd",
     "small_batch": false,
-    "uninstalls": 25,
-    "updated_at": "2026-11-28T00:17:10.662008+00:00",
+    "uninstalls": 26,
+    "updated_at": "2026-11-28T02:45:23.03725+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26645,8 +26645,8 @@
    {
     "pkg": "com.xiaomi.trustservice",
     "small_batch": false,
-    "uninstalls": 128,
-    "updated_at": "2026-11-28T00:17:10.662008+00:00",
+    "uninstalls": 129,
+    "updated_at": "2026-11-28T02:42:13.714809+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -32848,8 +32848,8 @@
    {
     "pkg": "com.miui.hybrid.accessory",
     "small_batch": true,
-    "uninstalls": 9,
-    "updated_at": "2026-11-27T18:13:30.905756+00:00",
+    "uninstalls": 10,
+    "updated_at": "2026-11-28T02:41:14.865914+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -33723,8 +33723,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 13,
-    "updated_at": "2026-11-27T18:13:30.905756+00:00",
+    "uninstalls": 14,
+    "updated_at": "2026-11-28T02:41:14.865914+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -33765,8 +33765,8 @@
    {
     "pkg": "com.xiaomi.ab",
     "small_batch": true,
-    "uninstalls": 15,
-    "updated_at": "2026-11-28T00:11:35.944358+00:00",
+    "uninstalls": 16,
+    "updated_at": "2026-11-28T02:39:54.32575+00:00",
     "verdict": "UNCLEAR"
    },
    {
@@ -36692,8 +36692,8 @@
    {
     "pkg": "com.miui.hybrid.accessory",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T18:13:30.905756+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-28T02:41:14.865914+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -36965,8 +36965,8 @@
    {
     "pkg": "com.sohu.inputmethod.sogou.xiaomi",
     "small_batch": true,
-    "uninstalls": 2,
-    "updated_at": "2026-11-27T18:13:30.905756+00:00",
+    "uninstalls": 3,
+    "updated_at": "2026-11-28T02:41:14.865914+00:00",
     "verdict": "INSUFFICIENT"
    },
    {
@@ -36992,9 +36992,9 @@
    },
    {
     "pkg": "com.xiaomi.ab",
-    "small_batch": false,
-    "uninstalls": 5,
-    "updated_at": "2026-11-27T21:21:10.355961+00:00",
+    "small_batch": true,
+    "uninstalls": 6,
+    "updated_at": "2026-11-28T02:39:54.32575+00:00",
     "verdict": "UNCLEAR"
    },
    {
