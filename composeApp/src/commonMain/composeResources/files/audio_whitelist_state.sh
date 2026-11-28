@@ -67,19 +67,4 @@ getprop | grep -iE 'scene|trackefx|track_efx|whitelist|lowpower|low_power|power\
 echo "##SETTING##debug_audio_cloud=$(settings get global debug_audio_cloud 2>/dev/null)"
 echo "##SETTING##test_audio_cloud=$(settings get global test_audio_cloud 2>/dev/null)"
 echo "##SETTING##debug_audio=$(settings get global debug_audio 2>/dev/null)"
-
-# ---- 还有没有别的口子 ----
-# 改 /odm 必须 root，所以每次有人问「不 root 能不能弄」都得重新找一遍入口。下面这几组就是把
-# 「除改清单以外还有没有可写的地方」一次问完，省得一轮轮猜：
-#   1) 有没有可写的 overlays 目录（厂商常留 /data/vendor/audio 之类做可写覆盖）；
-#   2) 音效配置里有没有按应用的 effect（能关的话可能免 root）；
-#   3) settings 里所有 audio 项（系统级开关常藏这儿）。
-for d in /data/vendor/audio /data/vendor/audio/audio /mnt/vendor/persist/audio /data/misc/audio /data/system/audio /data/adb/modules; do
-echo "##ALTDIR##$d: $(ls -1 "$d" 2>/dev/null | head -n 30 | tr '\n' ' ')"
-done
-for f in /odm/etc/audio/audio_effects_config.json /vendor/etc/audio/audio_effects_config.json; do
-[ -f "$f" ] && { echo "##FX##$f: $(head -c 600 "$f" 2>/dev/null | tr -d '\000' | tr '\n' ' ')"; break; }
-done
-settings list global 2>/dev/null | grep -iE 'audio|sound|effect|dolby|volume' | head -n 25 | sed 's|^|##SETTING##|'
-getprop | grep -iE 'vendor\.audio|persist\..*audio|audio\.' | head -n 40 | sed 's|^|##PROP##|'
 echo "##END##"
