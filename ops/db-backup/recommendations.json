@@ -42,7 +42,7 @@
   "url": "https://github.com/MuntashirAkon/AppManager"
  },
  {
-  "agree": 23,
+  "agree": 45,
   "applied": false,
   "author": "开发者",
   "author_id": "official",
@@ -56,7 +56,7 @@
   "url": "https://github.com/aistra0528/Hail"
  },
  {
-  "agree": 27,
+  "agree": 45,
   "applied": false,
   "author": "开发者",
   "author_id": "official",
@@ -70,7 +70,7 @@
   "url": "https://github.com/iamr0s/Dhizuku"
  },
  {
-  "agree": 24,
+  "agree": 45,
   "applied": false,
   "author": "开发者",
   "author_id": "official",
@@ -224,7 +224,7 @@
   "url": "https://github.com/PeterCxy/Shelter"
  },
  {
-  "agree": 5,
+  "agree": 45,
   "applied": false,
   "author": "沫沫",
   "author_id": "10840",
@@ -238,7 +238,7 @@
   "url": "https://github.com/1zumiii/AppOpsNext"
  },
  {
-  "agree": 7,
+  "agree": 45,
   "applied": false,
   "author": "magiclex",
   "author_id": "12045",
@@ -280,7 +280,7 @@
   "url": "https://github.com/elhizazi1/ShizuCoreFetch"
  },
  {
-  "agree": 9,
+  "agree": 45,
   "applied": false,
   "author": "#12149",
   "author_id": "12149",
@@ -392,6 +392,76 @@
   "url": "https://github.com/Zer0Qing/Muse"
  },
  {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "store",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 35,
+  "license": "GPL-3.0",
+  "name": "F-Droid",
+  "summary": "只收开源应用的商店，没有广告SDK、没有埋点，可当第二应用源。",
+  "url": "https://gitlab.com/fdroid/fdroidclient"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "tools",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 36,
+  "license": "GPL-3.0",
+  "name": "AdAway",
+  "summary": "hosts级广告拦截，比应用内会员更彻底，需root或VPN模式。",
+  "url": "https://github.com/AdAway/AdAway"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "tools",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 37,
+  "license": "MPL-2.0",
+  "name": "Syncthing",
+  "summary": "点对点同步，手机与电脑传文件不过云，换机搬资料很省事。",
+  "url": "https://github.com/syncthing/syncthing-android"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "media",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 38,
+  "license": "Apache-2.0",
+  "name": "Mihon",
+  "summary": "本地/在线源漫画阅读器，界面干净，无广告无账号。",
+  "url": "https://github.com/mihonapp/mihon"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "privacy",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 39,
+  "license": "GPL-3.0",
+  "name": "TrackerControl",
+  "summary": "一款遥测与追踪拦截应用，在本机按App拦截追踪域名，不靠全局VPN。",
+  "url": "https://github.com/TrackerControl/tracker-control-android"
+ },
+ {
   "agree": 25,
   "applied": false,
   "author": "开发者",
@@ -404,6 +474,62 @@
   "name": "KeePassDX",
   "summary": "本地加密的密码库，KeePass 格式，一个文件走天下，不联网。",
   "url": "https://github.com/Kunzisoft/KeePassDX"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "privacy",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 40,
+  "license": "GPL-3.0",
+  "name": "Bitwarden",
+  "summary": "开源密码管理器，自托管也行，换机只需要记住一个主密码。",
+  "url": "https://github.com/bitwarden/android"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "privacy",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 41,
+  "license": "GPL-3.0",
+  "name": "Aegis",
+  "summary": "本地存储的两步验证器，可导出加密备份，换机不怕丢码。",
+  "url": "https://github.com/beemdevelopment/Aegis"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "files",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 42,
+  "license": "GPL-3.0",
+  "name": "Fossify Gallery",
+  "summary": "轻量相册，替换掉带广告和云推送的系统相册。",
+  "url": "https://github.com/FossifyOrg/Gallery"
+ },
+ {
+  "agree": 45,
+  "applied": false,
+  "author": "开发者",
+  "author_id": "10003",
+  "category": "system",
+  "created_at": "2026-11-28T16:47:31.934949+00:00",
+  "disagree": 0,
+  "id": 43,
+  "license": "",
+  "name": "unicanta",
+  "summary": "免root卸载系统预装：按品牌/机型/ROM判定SAFE/RISKY/CRITICAL三档，删错能看出是哪一批、一键全装回。",
+  "url": "https://github.com/303562915/unicanta"
  },
  {
   "agree": 36,
