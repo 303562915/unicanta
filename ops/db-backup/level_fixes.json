@@ -49,5 +49,22 @@
   "pkg": "com.tencent.soter.soterserver",
   "removal": "Unsafe",
   "superseded_at": null
+ },
+ {
+  "agrees": 0,
+  "applied": false,
+  "applied_at": null,
+  "author": "Nearly",
+  "author_id": "13976",
+  "created_at": "2026-11-28T01:45:39.319557+00:00",
+  "disagrees": 0,
+  "id": 70,
+  "notes": {
+   "en": "",
+   "zh": ""
+  },
+  "pkg": "com.tencent.soter.soterserver",
+  "removal": "Unsafe",
+  "superseded_at": null
  }
 ]
