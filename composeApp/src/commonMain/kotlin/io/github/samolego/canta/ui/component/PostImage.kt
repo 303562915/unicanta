@@ -64,6 +64,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.ktor.client.HttpClient
@@ -79,8 +80,12 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import kotlin.math.roundToInt
 
-/** 方图墙的格子间距。参考 fluxdo 的网格（`image_grid_builder.dart:51` 是 6.0），这里缩小一档。 */
-private val PostImageGridSpacing = 4.dp
+/**
+ * 方图墙的格子间距 6dp：参考 `image_grid_builder.dart:51` 就是 `const double spacing = 6.0`
+ * （注释写着"与 Discourse 一致"），横竖两个方向同值（那边是 `Wrap(spacing:, runSpacing:)`，
+ * 同一个数，`:63-65`）。原来按"缩小一档"取 4dp，格子之间的缝比参考窄，九宫格看着像糊成一片。
+ */
+private val PostImageGridSpacing = 6.dp
 
 /** 方图墙的圆角。Flutter 那边是 4（`image_grid_builder.dart:184`），按本仓库正文图的 8dp 统一。 */
 private val PostImageGridShape = RoundedCornerShape(8.dp)
@@ -646,15 +651,25 @@ private fun PostImageViewer(
                 }
 
                 // 页码只在多图时出现：单图写个「1 / 1」是噪音。底部不放任何按钮。
+                // 形状照参考查看器顶栏那颗页码：黑底 **50%**、圆角 **20**、内边距 12 / 6、
+                // 白字 **14sp**（`lib/pages/image_viewer_page.dart:1457-1481`，那边同样只在
+                // `pageCount > 1` 时出现）。原来是一行 70% 白字裸印在黑底上，压在浅色图片上
+                // （白底截图占多数）时几乎读不出来；胶囊底色是参考给出的解法。
                 if (urls.size > 1) {
                     Text(
                         text = "${pagerState.currentPage + 1} / ${urls.size}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 14.sp,
+                            color = Color.White,
+                        ),
+                        maxLines = 1,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .windowInsetsPadding(WindowInsets.statusBars)
-                            .padding(top = 16.dp),
+                            .padding(top = 16.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
 

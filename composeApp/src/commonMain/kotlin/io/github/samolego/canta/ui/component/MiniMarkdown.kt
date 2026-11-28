@@ -1,6 +1,7 @@
 package io.github.samolego.canta.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -159,6 +160,11 @@ private fun MiniMarkdownContent(
     // 正文可能几千字，逐帧重新切行没必要：文本不变就不重算。
     val blocks = remember(text) { parseBlocks(text) }
     val linkColor = MaterialTheme.colorScheme.primary
+    // 正文的一个 em（**相对正文自己的字号**）：参考实现里列表缩进、引用块内边距、分割线外边距
+    // 都是按 em 写的 CSS（`export_utils.dart:579`、`:580`、`:624`、`:667`），这里按同一个口径
+    // 从 `baseStyle` 现算，不写死 dp —— 正文换了字号，这些间距跟着走。
+    // 读法与 [quoteBodyMaxHeight] 一致：`TextUnit.Unspecified` 的 `.value` 是 NaN，落到 14。
+    val textEm = (baseStyle.fontSize.value.takeIf { it > 0f } ?: 14f).dp
     Column(modifier = modifier) {
         // 用下标 while 而不是 `forEach`：**连续的多张图片要合成一块图片墙**（参考实现里图片
         // 是按 `[grid]`/相邻图片成组渲染的，见 `builders/image_grid_builder.dart`），
@@ -192,7 +198,9 @@ private fun MiniMarkdownContent(
                     // 两张以上交给图片墙：2 列方图、9 张以内全铺开、再多第 9 格显示 +N。
                     PostImageGrid(
                         urls = urls,
-                        modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                        // 上下各 8dp：参考实现给图片网格外面套的是 `EdgeInsets.symmetric(vertical: 8)`
+                        // （`builders/image_grid_builder.dart:53-54`）。原来这里是 6dp，比参考紧一档。
+                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                     )
                 } else {
                     // 单张仍然走单图那套（按真实宽高比铺满内容宽），不要因为多了个 `PostImageGrid`
@@ -200,7 +208,9 @@ private fun MiniMarkdownContent(
                     PostImage(
                         url = group[0].url,
                         alt = group[0].alt,
-                        modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                        // 单图取同一档 8dp：墙体是 8（`image_grid_builder.dart:54`），单图若留在 6，
+                        // 一楼里"单图段落"和"多图段落"的上下留白就会差 2dp。
+                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                     )
                 }
                 index = next
@@ -209,10 +219,13 @@ private fun MiniMarkdownContent(
             when (block) {
                 is MdBlock.Heading -> Text(
                     text = markdownInline(block.text, linkColor, onFloorRef),
-                    style = headingStyle(block.level),
+                    style = headingStyle(block.level, baseStyle),
                     color = color,
-                    // 标题只是加粗变色不够，跟上一段之间要留一点气口。
-                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                    // 参考的标题外边距是 `margin: 1.5rem 0 0.5rem`（`export_utils.dart:496-502`，
+                    // 根字号 16px → 上 24 / 下 8）。原来 6 / 2 只是"留一点气口"，而参考那边标题
+                    // 是靠这两档上间距把自己和上一段分开的；字号既然已经按参考的四个数走（见
+                    // [headingStyle]），间距也一并对齐，否则 24sp 的大标题会紧贴着上一段。
+                    modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
                 )
 
                 // 段落可能夹着行内图片（`看这张 ![截图](url) 效果`），由 [ParagraphContent]
@@ -227,7 +240,10 @@ private fun MiniMarkdownContent(
                 )
 
                 is MdBlock.BulletList -> Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    // 项间距 0.25em：参考 `li { margin: 0.25em 0 }`（`export_utils.dart:627-629`）。
+                    // 相邻两项在 CSS 里是 margin 折叠（取 max，不是相加），所以这里一项只加一个
+                    // 0.25em；原来写死 2dp，比参考紧一半。
+                    verticalArrangement = Arrangement.spacedBy(textEm * 0.25f),
                 ) {
                     block.items.forEach { item ->
                         Row {
@@ -235,7 +251,13 @@ private fun MiniMarkdownContent(
                                 text = "•",
                                 style = baseStyle,
                                 color = color,
-                                modifier = Modifier.padding(end = 6.dp),
+                                // 列表缩进 2em：参考 `ul/ol { padding-left: 2em }`
+                                // （`export_utils.dart:621-625`）。CSS 把项目符号画在那 2em 的内边距带里、
+                                // 右对齐贴着正文左缘，正文从 2em 处开始 —— 这里用一个 2em 宽、右对齐的
+                                // 符号列复现同一件事。原来符号后面只跟 6dp，正文几乎顶在左边缘，
+                                // 一眼看不出"这段是列表"。
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(textEm * 2f),
                             )
                             Text(
                                 text = markdownInline(item, linkColor, onFloorRef),
@@ -248,15 +270,19 @@ private fun MiniMarkdownContent(
                 }
 
                 is MdBlock.OrderedList -> Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    // 与无序列表同一档：参考给 `ul` 和 `ol` 是同一条规则（`export_utils.dart:621-625`）。
+                    verticalArrangement = Arrangement.spacedBy(textEm * 0.25f),
                 ) {
                     block.items.forEach { item ->
                         Row {
                             Text(
+                                // 序号也是**右对齐**在 2em 的符号列里：`9.` 与 `10.` 的正文起点才会
+                                // 对齐（浏览器里有序列表的 marker 同样是右对齐的）。
                                 text = item.marker,
                                 style = baseStyle,
                                 color = color,
-                                modifier = Modifier.padding(end = 6.dp),
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(textEm * 2f),
                             )
                             Text(
                                 text = markdownInline(item.text, linkColor, onFloorRef),
@@ -270,9 +296,9 @@ private fun MiniMarkdownContent(
 
                 // 引用块分两支：首行认得出「楼层号 / 作者 / 冒号」的画成引用卡（[QuoteCard]），
                 // 认不出、或嵌套已经深到 [QuoteCardMaxDepth] 的，**原样走下面这支**。
-                // 那支的代码与改动前逐字一致（6% `onSurfaceVariant` 底 + 8dp 圆角 + 10/6 内边距，
-                // 单行 `Text`），所以"普通引用逐像素不变"是结构性的：只要 [parseFloorQuote] 返回
-                // null 就一个属性都不会经过新的分支。
+                // 那支与引用卡毫无关系（6% `onSurfaceVariant` 底 + 8dp 圆角 + 0.75em/1em 内边距，
+                // 单行 `Text`），所以"普通引用不经过卡片那套布局"是结构性的：只要 [parseFloorQuote]
+                // 返回 null 就一个属性都不会经过新的分支（内边距的 0.75em/1em 见那支里的注释）。
                 is MdBlock.Quote -> {
                     val quoted = parseFloorQuote(block.text)
                     if (quoted != null && quoteDepth < QuoteCardMaxDepth) {
@@ -295,7 +321,15 @@ private fun MiniMarkdownContent(
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.06f),
                                     RoundedCornerShape(8.dp),
                                 )
-                                .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                                // 内边距写成 0.75em / 1em：参考的 `blockquote` 是 `padding: 0.75em 1em`
+                                // （`export_utils.dart:578-584`，正文 15px → 上下 11.25 / 左右 15）。
+                                // 原来 10 / 6 是随手取的，上下比参考紧将近一半，多行引用会显得憋。
+                                .padding(
+                                    start = textEm,
+                                    end = textEm,
+                                    top = textEm * 0.75f,
+                                    bottom = textEm * 0.75f,
+                                ),
                         )
                     }
                 }
@@ -326,8 +360,16 @@ private fun MiniMarkdownContent(
                 // 见 [LinkPreviewCard]。视频那一支在它上面，所以 `.mp4` 永远走视频卡。
                 is MdBlock.LinkCard -> LinkPreviewCard(block.url)
 
-                is MdBlock.Rule -> HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                // 分割线上下的留白 1.5em：参考 `hr { margin: 1.5em 0 }`（`export_utils.dart:663-668`）。
+                // 原来 4dp 只是"别贴着字"，分割线看起来像两段之间的一根贴纸。
+                is MdBlock.Rule -> HorizontalDivider(
+                    modifier = Modifier.padding(vertical = textEm * 1.5f),
+                )
 
+                // 空行 → 4dp：**刻意不动**。参考那边块与块之间是 CSS 的 `margin: 1em 0`（约 15px），
+                // 而相邻 margin 会**折叠**（取 max，不是相加）；本仓的模型是"空行间隙 + 各块自己的
+                // padding 相加"，若把这一档直接抬到 1em，段-图/段-代码这类组合就会变成 1em + 8dp
+                // ≈ 22dp，比参考（折叠后 1em）更松。统一改折叠语义要动整条渲染路径（见简报"剩余风险"）。
                 is MdBlock.Gap -> Spacer(modifier = Modifier.height(4.dp))
             }
             index++
@@ -556,7 +598,11 @@ private fun QuoteCard(
                     size = Size(QuoteCardBarWidth.toPx(), size.height),
                 )
             }
-            .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            // 内边距 8 / 12：参考的 `aside.quote .title` 是 `padding: 8px 12px`
+            // （`export_utils.dart:597-605`，内层 `blockquote` 是 `padding: 12px`，`:613-618`）。
+            // 原来是左 10 / 右 8 —— 左边要避开那条 3dp 竖条，右边没有理由比左边窄，
+            // 两边统一到参考的 12dp，左右才对称。
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -604,16 +650,33 @@ private fun QuoteCard(
     }
 }
 
-/** 标题字号按级别往下压，四级正好落到正文大小，再深的级别按四级处理。 */
-@Composable
-private fun headingStyle(level: Int): TextStyle {
-    val style = when (level) {
-        1 -> MaterialTheme.typography.titleMedium
-        2 -> MaterialTheme.typography.titleSmall
-        3 -> MaterialTheme.typography.bodyLarge
-        else -> MaterialTheme.typography.bodyMedium
+/**
+ * 标题字号：四档，取自参考实现 `export_utils.dart:506-511` 的 rem 映射
+ * （h1 `1.5rem` / h2 `1.25rem` / h3 `1.125rem` / h4 `1rem`，根字号 16px → 24 / 20 / 18 / 16sp），
+ * 行高 `1.3` 同 `:502-503` 的 `line-height: 1.3`。四级都加粗，与参考的 `h1..h6` 一致。
+ *
+ * 为什么不再借 Material 的 title 档位：本仓 `titleMedium` 与 `bodyLarge` 都是 16sp、
+ * `titleSmall` 与 `bodyMedium` 都是 14sp，于是原来 **三级标题（16sp）和一级标题（16sp）一样大、
+ * 二级（14sp）反而比三级小** —— 层级是反的。参考那边 h1 > h2 > h3 > h4 严格递减，改成直接写这
+ * 四个数就恢复了递减关系；h4 = 16sp 也只比正文（14sp）大一档，与参考 h4 `1rem` 对正文 `0.9375rem`
+ * 的关系（略大于正文）同一比例。
+ *
+ * [baseStyle] 仍要传进来：标题继承正文的字体族/字重以外的属性（如字距），只有字号与行高被覆盖。
+ */
+private fun headingStyle(level: Int, baseStyle: TextStyle): TextStyle {
+    val size = when (level) {
+        1 -> 24f
+        2 -> 20f
+        3 -> 18f
+        else -> 16f
     }
-    return style.copy(fontWeight = FontWeight.Bold)
+    // 行高按 1.3 倍字号算成 sp（**不写 `size.sp * 1.3f`**：`TextUnit` 的乘号是 `androidx.compose.ui.unit`
+    // 里的扩展函数，本文件没 import 它，写成浮点再 `.sp` 才不需要多一条 import）。
+    return baseStyle.copy(
+        fontSize = size.sp,
+        lineHeight = (size * 1.3f).sp,
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 /**
@@ -661,12 +724,13 @@ private fun ParagraphContent(
                     color = color,
                     softWrap = true,
                 )
-                // 上下留白与整行图片那条对齐（6dp）：段内的图不会把上下两行字挤在一起。
+                // 上下留白与整行图片那条对齐（8dp，见 `MiniMarkdownContent` 里图片分组那段：
+                // 参考 `image_grid_builder.dart:53-54` 的 `vertical: 8`）：段内的图不会把上下两行字挤在一起。
                 // 同一地址重复出现时由 `PostImageCache`（`PostImage.kt:578`）兜住，只下一次网络。
                 is ParagraphPiece.Picture -> PostImage(
                     url = piece.url,
                     alt = piece.alt,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                 )
             }
         }
@@ -727,7 +791,7 @@ private const val CodeBlockCollapsedLines = 12
  * 再折算成 dp 要过 `LocalDensity` + 字体缩放，限高值会随系统字号漂，折叠区的大小就不可预期了。
  * 布局尺寸用固定 dp；系统字号放大的用户会少看到小半行，这是有意的取舍。
  *
- * 216dp 只是文字区的上限，`10dp` 的左右/上下内边距在它外侧，所以折叠时容器比 216 稍高一点。
+ * 216dp 只是文字区的上限，`8dp` 的左右/下内边距在它外侧，所以折叠时容器比 216 稍高一点。
  */
 private val CodeBlockCollapsedHeight = (18 * CodeBlockCollapsedLines).dp
 
@@ -858,6 +922,11 @@ private fun CodeBlock(code: String, language: String, color: Color) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // 上下各 8dp：参考的代码块外壳自带 `margin: EdgeInsets.symmetric(vertical: 8)`
+            // （`lib/utils/fluxdo_render_callbacks.dart:1909`）。原来这里是 0，代码块与相邻段落
+            // 之间只剩空行那 4dp，一块几十行的代码会像"贴着上一段长出来的"。
+            // 放在 clip 之前：留白在圆角盒子外面，底色不会跟着铺出去。
+            .padding(top = 8.dp, bottom = 8.dp)
             // 先 clip 再铺底色：标题行的底色会被外圈圆角裁掉，不会顶出直角。
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -920,7 +989,10 @@ private fun CodeBlock(code: String, language: String, color: Color) {
             softWrap = false,
             modifier = Modifier
                 .horizontalScroll(scroll)
-                .padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 10.dp)
+                // 代码区左右/下内边距 8dp：参考在窄屏（≤600px）下把 `pre` 的 `padding: 12px` 收到
+                // `padding: 8px`（`export_utils.dart:753-755` 的 media query），手机就是这条分支。
+                // 上边 2dp 不变 —— 紧挨着 28dp 的语言条，再留 8dp 会让条和代码之间空出一条。
+                .padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 8.dp)
                 .then(
                     // 只约束高度，宽度照旧由 horizontalScroll 给（无限宽）；两者是不同轴，不会互相
                     // 抢约束，也就不存在"无限约束传下去把布局量崩"的那条老问题。
@@ -1324,15 +1396,18 @@ private fun rememberHighlightedCode(code: String, language: String): AnnotatedSt
 // ---------------------------------------------------------------------------
 
 /**
- * 单元格左右内边距。需求里的「列与列之间 12dp 内边距」落在每格自己身上：相邻两格的留白相加
- * 就是两列之间的距离，格子左边第一列、右边最后一列也各有这一段，文字不贴着表格边缘。
- * 参考实现的 web 端表格是 `thead th`/`tbody td` 各 `padding: 8px`（`lib/utils/export_utils.dart:648`、
- * `:655`），8dp 在手机上太挤，按需求取 12dp。
+ * 单元格左右内边距 8dp：参考实现的 web 端表格是 `thead th`/`tbody td` 各 `padding: 8px`
+ * （`lib/utils/export_utils.dart:646-657`，表头与数据行同一档，没有左右/上下之分）。
+ *
+ * 每格自己带这段留白：相邻两格的留白相加就是两列之间的距离，最左/最右两列也各有一段，
+ * 文字不贴着表格边缘。之前按早先的需求取的是左右 12dp，比参考松一半；表格整体也因此更宽、
+ * 更容易触发横向滚动 —— 既然列宽是按内容量出来的（见 [MdTable]），内边距就该跟参考一致，
+ * 把宽度留给字。
  */
-private val TableCellPadding = 12.dp
+private val TableCellPadding = 8.dp
 
-/** 单元格上下内边距（需求给的 6dp）。 */
-private val TableCellPaddingVertical = 6.dp
+/** 单元格上下内边距 8dp —— 与左右同一档，同上 `export_utils.dart:646-657` 的 `padding: 8px`。 */
+private val TableCellPaddingVertical = 8.dp
 
 /**
  * 单列内容宽的上限。
@@ -1388,8 +1463,15 @@ private fun MdTable(
     val scroll = rememberScrollState()
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
-    val headerStyle = baseStyle.copy(fontWeight = FontWeight.Bold)
-    val columnWidths: List<Dp> = remember(header, rows, baseStyle, linkColor, density, measurer) {
+    // 表格字号取正文的 14/15：参考 `.post-content` 是 `font-size: 0.9375rem`（15px，
+    // `export_utils.dart:482`），而 `table` 是 `0.875rem`（14px，`:639-644`）—— 表格永远比正文
+    // 小半档，一张表才不至于和段落抢同一层视觉重量。之前表格直接吃正文样式，比参考大一点点。
+    val tableStyle = remember(baseStyle) {
+        val size = baseStyle.fontSize.value.takeIf { it > 0f } ?: 14f
+        baseStyle.copy(fontSize = (size * 14f / 15f).sp)
+    }
+    val headerStyle = tableStyle.copy(fontWeight = FontWeight.Bold)
+    val columnWidths: List<Dp> = remember(header, rows, tableStyle, linkColor, density, measurer) {
         // 表头与数据行一起参与量宽：表头是粗体，只量数据行会让表头那格折行。
         val allRows: List<Pair<List<String>, Boolean>> =
             listOf(header to true) + rows.map { row -> row to false }
@@ -1401,7 +1483,7 @@ private fun MdTable(
                 } else {
                     measurer.measure(
                         text = markdownInline(text, linkColor),
-                        style = if (entry.second) headerStyle else baseStyle,
+                        style = if (entry.second) headerStyle else tableStyle,
                         overflow = TextOverflow.Clip,
                         softWrap = false,
                         maxLines = 1,
@@ -1452,7 +1534,9 @@ private fun MdTable(
                     cells = row,
                     widths = columnWidths,
                     alignments = alignments,
-                    style = baseStyle,
+                    // 数据行与表头同一个表格字号（14/15 × 正文，见上面 tableStyle 那段）：
+                    // 只把表头缩一号会让同一列上下两种字号，读起来像两套内容。
+                    style = tableStyle,
                     color = color,
                     linkColor = linkColor,
                     header = false,
@@ -1555,9 +1639,20 @@ private fun VideoCard(url: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 6.dp)
+            // 上下各 8dp：参考的 onebox 容器统一是 `margin: EdgeInsets.symmetric(vertical: 8)`
+            // （`lib/widgets/content/discourse_html_content/builders/onebox/onebox_base.dart:22`）。
+            // 原来 6dp，与图片段落（8dp）不一致，一楼里卡片和图片的留白会差 2dp。
+            .padding(top = 8.dp, bottom = 8.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            // 底色 `surfaceContainerHighest` 50% + 1dp `outlineVariant` 描边：参考 onebox 容器的
+            // 唯一一套外观（`onebox_base.dart:32-37`）。原来是不带描边的 `surfaceContainerHigh`，
+            // 浅色主题下卡片底色与页面底几乎同色，16:9 的框里没有缩略图时就看不出"这里有一张卡"。
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(8.dp),
+            )
             .clickable { uriHandler.openUri(url) },
     ) {
         Box(
@@ -1568,7 +1663,8 @@ private fun VideoCard(url: String) {
                 Icon(
                     imageVector = Icons.Rounded.PlayCircle,
                     contentDescription = null,
-                    // 播放键用 primary：卡底是 surfaceContainerHigh，浅色主题下白图标等于看不见。
+                    // 播放键用 primary：卡底是 `surfaceContainerHighest` 50%（浅色主题下就是一层很淡的灰），
+                    // 白图标压上去等于看不见。
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(40.dp),
                 )
@@ -1586,7 +1682,10 @@ private fun VideoCard(url: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 8.dp),
+            // 信息区内边距 12dp：参考视频卡把缩略图下那块信息区包在 `Padding(all: 12)` 里
+            // （`.../onebox/video_onebox_builder.dart:149-150`）。原来左 10 / 右 10 / 下 8，
+            // 文件名与卡片左缘的距离比参考近 2dp，看着像贴边。
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
         )
     }
 }
@@ -1635,14 +1734,23 @@ private fun LinkPreviewCard(url: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 6.dp)
+            // 外边距 8dp、底色 `surfaceContainerHighest` 50%、1dp `outlineVariant` 描边：与
+            // [VideoCard] 同一套 onebox 外观（`.../onebox/onebox_base.dart:22`、`:32-37`）。
+            .padding(top = 8.dp, bottom = 8.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(8.dp),
+            )
             .clickable { uriHandler.openUri(url) }
-            // 先限最小高度再进内边距：这样"至少 56dp"说的是整张卡（含 10dp 内边距），
+            // 先限最小高度再进内边距：这样"至少 56dp"说的是整张卡（含 12dp 内边距），
             // 而不是内边距里那块内容区。
             .heightIn(min = 56.dp)
-            .padding(10.dp),
+            // 内边距 12dp：参考 onebox 容器的默认 `padding: EdgeInsets.all(12)`
+            // （`onebox_base.dart:23`）。原来 10dp，比参考紧一档。
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
