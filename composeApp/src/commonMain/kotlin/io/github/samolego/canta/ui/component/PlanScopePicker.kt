@@ -245,6 +245,13 @@ fun PlanScopeBar(
     onSearch: (() -> Unit)? = null,
     searching: Boolean = false,
     /**
+     * 「搜索也认应用介绍」这颗常驻按钮的值与回调：null 不画。放在这一行而不是藏在搜索框里，
+     * 是因为它是一条全局规则（应用页顶栏的搜索同样吃它），藏进搜索框就变成"只有打开了搜索的人
+     * 才找得到"。
+     */
+    descriptions: Boolean = false,
+    onToggleDescriptions: (() -> Unit)? = null,
+    /**
      * Switch to another build of the opened model, right here, without opening the sheet. `null`
      * means "every build". The caller does the reload — this only reports what was tapped.
      */
@@ -328,6 +335,17 @@ fun PlanScopeBar(
                 )
             }
             Spacer(Modifier.weight(1f))
+        }
+        if (onToggleDescriptions != null) {
+            Spacer(Modifier.width(6.dp))
+            // 点亮 = 开着：填充胶囊写「含介绍」，关着是描边胶囊写「介绍」。关着就只说"介绍"，
+            // 因为那时它还不是搜索的一部分，说「含」反而像已经开着。
+            ScopeChip(
+                text = if (descriptions) "含介绍" else "介绍",
+                selected = descriptions,
+                onClick = onToggleDescriptions,
+                outlined = !descriptions,
+            )
         }
         if (onSearch != null) {
             // Its own tap target: the chip switches the phone, this narrows the list, so one never

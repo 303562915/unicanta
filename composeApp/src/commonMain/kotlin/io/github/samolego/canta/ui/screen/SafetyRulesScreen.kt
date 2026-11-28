@@ -815,6 +815,11 @@ fun SafetyRulesScreen(
                             searchPackages = !searchPackages
                             if (!searchPackages) packageQuery = ""
                         },
+                        // 常驻那颗「介绍」：点了搜索结果也认应用介绍里的字，默认关着。
+                        descriptions = searchDescriptions,
+                        onToggleDescriptions = {
+                            scope.launch { settings.setSearchDescriptions(!searchDescriptions) }
+                        },
                     )
                 },
             )
