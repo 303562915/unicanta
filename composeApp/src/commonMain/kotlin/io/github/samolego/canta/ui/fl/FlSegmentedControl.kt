@@ -69,6 +69,11 @@ fun FlSegmentedControl(
     /** Side inset of the groove; 0 when the caller already keeps the control off the edges. */
     insetHorizontal: Dp = 16.dp,
     /**
+     * 上下留白。默认 8dp 适合夹在内容之间；整条控件紧贴顶栏时（商城的两个 tab）收窄到 4dp，
+     * 免得顶栏和控件之间空出一条没人用的缝。
+     */
+    verticalPadding: Dp = 8.dp,
+    /**
      * 哪几格要带一个未读的小点，按序号（与 [segments] 同序）。
      *
      * 用实心小圆点而不是在标签里拼 "●"：拼进文本会跟着字宽走，格子的文字一变整条控件就
@@ -97,7 +102,7 @@ fun FlSegmentedControl(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = insetHorizontal, vertical = 8.dp)
+            .padding(horizontal = insetHorizontal, vertical = verticalPadding)
             .height(SegmentHeight)
             .drawBehind {
                 drawRoundRect(

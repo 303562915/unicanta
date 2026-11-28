@@ -94,8 +94,8 @@ private fun storeCacheKey(who: String): String = "screen:store:$who"
  * 一页分两个 tab：同一个货架的两边，卖家看自己挂的，买家逛别人挂的。以前它是一条长列表，
  * 「我挂的」和「能兑的」混在一起，两边都得从头翻到尾。
  *
- *  1. **我发布的**——钱包、发布入口、我挂的商品（卖出去几份、进账多少）、自己发布的 CDK。
- *  2. **商城商品**——钱包、积分商城（只列别人挂的）、我兑换的、兑换 CDK，末尾一句积分怎么流转。
+ *  1. **商城商品**（左）——钱包、积分商城（只列别人挂的）、我兑换的、兑换 CDK，末尾一句积分怎么流转。
+ *  2. **我发布的**（右）——钱包、发布入口、我挂的商品（卖出去几份、进账多少）、自己发布的 CDK。
  *
  * **钱包两个 tab 都在最上面，状态只有一份**：切 tab 不该把余额和签到重来一遍。
  *
@@ -152,8 +152,8 @@ internal fun StoreScreen(
     var offerError by remember { mutableStateOf<String?>(null) }
     var redeemed by remember { mutableStateOf<PointRedeemResult?>(null) }
     var checkedIn by remember { mutableStateOf(false) }
-    // 顶上一格自己的（卖家视角），一格全站的（买家视角）。默认停在自己的那一格：
-    // 点进来更常是想看「我挂的东西卖出去没有」，逛货架可以再点一下。
+    // 左边一格是逛货架（买家视角），右边一格是自己的（卖家视角）。默认停在左边：进商城第一件事
+    // 是看能换什么；自己挂的那一栏点一下就到。
     var tab by remember { mutableIntStateOf(0) }
     // 两个 tab 共用一条列表状态，所以切过去要回顶部，否则落点还是上一份货架的滚动位置。
     // **首次组合不算切换**：`rememberLazyListState` 是 saveable 的，从别的页退回来时本来就该落在
@@ -268,12 +268,14 @@ internal fun StoreScreen(
         Column(modifier = modifier.fillMaxSize().padding(padding)) {
             FlSegmentedControl(
                 segments = listOf(
-                    FlSegment("mine", "我发布的"),
                     FlSegment("shop", "商城商品"),
+                    FlSegment("mine", "我发布的"),
                 ),
                 selectedIndex = tab,
                 onSelect = { tab = it },
                 insetHorizontal = 16.dp,
+                // 这一条是页面最上面的控件，跟顶栏之间不留 8dp 的空：4dp 就够分开，再多像少画了一块。
+                verticalPadding = 4.dp,
             )
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -292,7 +294,8 @@ internal fun StoreScreen(
                     )
                 }
 
-                if (tab == 0) {
+                // 0 = 商城商品（左）、1 = 我发布的（右）。两份内容互斥，各写一组 item。
+                if (tab == 1) {
                     item(key = "store-new") {
                         EntryRow(
                             title = "发布一件商品赚积分",
