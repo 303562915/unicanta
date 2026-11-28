@@ -5988,6 +5988,18 @@
   "target": "com.qti.qcc"
  },
  {
+  "author": "耄耋大王",
+  "author_id": "12675",
+  "body": "删了剪贴板就没了，不需要的可以删。",
+  "created_at": "2026-11-28T13:34:15.952188+00:00",
+  "device_model": "REDMI K80 Ultra",
+  "id": 845,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.3",
+  "target": "com.miui.phrase"
+ },
+ {
   "author": "听风说你",
   "author_id": "10049",
   "body": "我之前是澎湃3的时候测试的，因为看到酷安有人说这个卸载会导致关联启动增加息屏功耗的问题，你可以自己复测一下看看现在澎湃4还会不会这样，至于关联启动的APP名字我也记不住啊，小米一堆乱七八糟英文字母的软件，而且有的是搜不到的那种",
