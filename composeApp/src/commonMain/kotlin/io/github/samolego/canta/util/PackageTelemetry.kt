@@ -251,8 +251,33 @@ class PackageTelemetry(
         telemetry.sendTweakReport(report)
     }
 
-    /** The phone as the reports describe it: the coarse context plus the model, which is the key the analysis groups by. */
-    private suspend fun failureDevice(): FailureReportDevice {
+    /**
+     * 把上一次闪退的现场报到后端，成功才让调用方删掉那份文件。
+     *
+     * 为什么由这里决定删：闪退现场只落盘一份（`crash_report.txt`），发丢就永远拿不到了；
+     * 而 `sendCrashReport` 在离线时必然失败。所以「发成功 → 删」这一步留在客户端，
+     * 失败就留着下次启动再发一次——一次崩溃最多重发几次，不会刷屏。
+     *
+     * 和 [recordUpdate] 一样不看包数据开关：见 `Telemetry.sendCrashReport`。
+     */
+    suspend fun recordCrash(report: String): Boolean {
+        if (report.isBlank()) return false
+        val parsed = runCatching { CrashReport.parse(report) }.getOrElse { return false }
+        return telemetry.sendCrashReport(
+            CrashReportPayload(
+                v = 1,
+                platform = telemetry.platformName,
+                cantaVersion = parsed.version.ifBlank { BuildInfo.VERSION_NAME },
+                os = parsed.os.take(MAX_CRASH_OS_TEXT),
+                crashedAt = parsed.timestamp,
+                signature = CrashReport.signature(parsed.stack),
+                stack = report.take(MAX_CRASH_TEXT),
+                device = failureDevice(),
+            )
+        )
+    }
+
+    /** The phone as the reports describe it: the coarse context plus the model, which is the key the analysis groups by. */    private suspend fun failureDevice(): FailureReportDevice {
         val context = runCatching { handler.deviceContext() }.getOrNull() ?: DeviceContext.UNKNOWN
         val profile = runCatching { handler.deviceProfile() }.getOrNull()
         return FailureReportDevice(
@@ -271,6 +296,12 @@ class PackageTelemetry(
 
         /** The install path's per-route report is several lines long by design. */
         const val MAX_UPDATE_DETAIL_TEXT = 2_000
+
+        /** 崩溃现场：整份文本（含头部四行）留这么多，够看清是哪一帧开始炸的。 */
+        const val MAX_CRASH_TEXT = 6_000
+
+        /** 系统版本那一行。 */
+        const val MAX_CRASH_OS_TEXT = 120
         const val MAX_UPDATE_VERSION_TEXT = 80
     }
 

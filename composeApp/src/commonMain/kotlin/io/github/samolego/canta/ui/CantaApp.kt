@@ -2267,6 +2267,12 @@ private fun CantaNavigation(
 
         // Read once at launch; shown only after onboarding, never on top of it.
         var crashReport by remember { mutableStateOf(crashReports?.read()) }
+        // 先把现场报到后端，再问人要不要去开 issue：发成功才删那份文件（见 `recordCrash`），
+        // 离线就先留着，下次启动再发。这样「装上就闪退」在后台有数，不用再靠问人。
+        LaunchedEffect(crashReport) {
+            val report = crashReport ?: return@LaunchedEffect
+            if (deps.packageTelemetry.recordCrash(report)) crashReports?.delete()
+        }
         crashReport?.let { report ->
             if (currentRoute != null && currentRoute != Screen.Onboarding.route) {
                 CrashReportDialog(

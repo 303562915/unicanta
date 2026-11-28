@@ -508,14 +508,48 @@ class Telemetry(
         }
     }
 
+    /**
+     * 把上一次闪退的现场发到后端的 `crash_report` RPC。
+     *
+     * 和 [sendUpdateReport] / [sendTweakReport] 同一套规矩：不看 `isEnabled()`（那个开关管的是
+     * 「卸了哪些系统包」，这条里只有这台机器自己的版本、系统、机型和堆栈），不入队、不重试。
+     *
+     * 与那两条不同的是**发送成功才删文件**：由调用方决定删不删（见 `PackageTelemetry.recordCrash`），
+     * 因为闪退现场只落盘那一份，发丢就再也拿不到了。
+     */
+    suspend fun sendCrashReport(report: CrashReportPayload): Boolean {
+        val body = JsonObject(
+            mapOf("payload" to JsonPrimitive(compactJson.encodeToString(report)))
+        ).toString()
+        return try {
+            val response = client.post(TelemetryConfig.BASE_URL + "crash_report") {
+                rpcHeaders()
+                setBody(body)
+            }
+            if (response.status.isSuccess()) {
+                LogUtils.i(TAG, "Sent crash report ${report.signature.take(80)}")
+                true
+            } else {
+                LogUtils.w(
+                    TAG,
+                    "Crash report rejected: ${response.status} ${response.bodyAsText().take(200)}",
+                )
+                false
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogUtils.w(TAG, "Crash report dropped: $e")
+            false
+        }
+    }
+
     private suspend fun sendPending() {
         val events = buildList {
             while (true) add(pending.tryReceive().getOrNull() ?: break)
         }
         send(events)
-    }
-
-    /** One request carries a single device object, so events are split by device before chunking. */
+    }    /** One request carries a single device object, so events are split by device before chunking. */
     private suspend fun send(events: List<TelemetryEvent>): Boolean {
         if (events.isEmpty()) return true
         if (!isEnabled()) return false
