@@ -583,6 +583,9 @@ private fun PostImageViewer(
         // Compose Multiplatform 这份没有，写了必编译不过 —— 见 ChatScreen 里同一处注释）。
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // 这个窗口自己铺到状态栏底下：不铺的话顶上露出底下那一页的颜色，全屏看图时看着像顶栏没适配。
+        // 见 [FullscreenDialogWindow]。
+        FullscreenDialogWindow(backgroundIsDark = true)
         // 状态按 (这组地址, 起始页) 分桶：换一组图或换起始页就是另一份 pager/缩放，
         // 关掉 Dialog 整棵子树离开 composition，连这份分桶一起丢，下次点开是干净的。
         key(urls, start) {

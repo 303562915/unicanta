@@ -7,9 +7,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -65,9 +69,14 @@ fun AvatarViewerDialog(
 ) {
     Dialog(
         onDismissRequest = onDismiss,
-        // 只关掉 Dialog 自己的默认窄边；不写 `decorFitsSystemWindows`（Android 版独有，见 PostImage 同处注释）。
+        // 只关掉 Dialog 自己的默认窄边。窗口"铺到系统栏底下"这件事在 common 里没有参数可设
+        // （`decorFitsSystemWindows` 是 Android 版 DialogProperties 独有），所以由内容里的
+        // [FullscreenDialogWindow] 到平台侧去改。
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // 让这个窗口自己铺到状态栏底下：不然顶上露出一条底下那一页的颜色（个人主页是蓝色封面），
+        // 看起来就是"顶栏没适配"。见 [FullscreenDialogWindow]。
+        FullscreenDialogWindow(backgroundIsDark = true)
         var scale by remember { mutableStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
         val zoomed = scale > 1f
@@ -116,9 +125,11 @@ fun AvatarViewerDialog(
 
             // 右上角的 ×：黑底上唯一常驻的按钮。点击任意处也能关，但那句话没法写在屏幕上；
             // 这里给它一个真正的热区（而不是只画个图标），点上去和点背景是一个结果。
+            // 内容现在铺到了状态栏底下（见 FullscreenDialogWindow），所以按钮要让开那一条。
             Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
+                    .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(12.dp)
                     .clip(CircleShape)
                     .clickable(onClickLabel = "关闭", onClick = onDismiss)
@@ -142,6 +153,7 @@ fun AvatarViewerDialog(
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(horizontal = 24.dp, vertical = 28.dp),
                 )
             }
