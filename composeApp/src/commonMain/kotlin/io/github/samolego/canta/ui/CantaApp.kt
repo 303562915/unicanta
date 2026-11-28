@@ -1887,6 +1887,19 @@ private fun CantaNavigation(
                 )
             }
             composable(route = Screen.Messages.route) {
+                // 通知权限**现在**给没给：这是此刻的事实，不是一次性的判断。
+                //
+                // 以前这里直接把 `platform.canNotify()` 写进参数（`noticesBlocked = ... &&
+                // !platform.canNotify()`）：那是生成这一屏参数时求一次的普通布尔值，不是 Compose
+                // 观察的 state。人点了「打开提醒」、在系统对话框里点允许，权限真的开了，可没有任何
+                // state 变化触发重组，于是页顶那条「当前无法接收朋友的消息提醒」留在原地，非得退出
+                // 这一页再进来才消失——看起来就是"点了没用"。
+                //
+                // 现在结论放在 state 里：申请回来刷新一次，从系统设置里授权回来（ON_RESUME）也刷新。
+                var noticesAllowed by remember { mutableStateOf(platform.canNotify()) }
+                LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                    noticesAllowed = platform.canNotify()
+                }
                 // The messages page is about one identity: the name an outgoing message is signed
                 // with, and the number plus token that prove it to the backend.
                 var messagesName by remember { mutableStateOf("") }
@@ -1945,12 +1958,17 @@ private fun CantaNavigation(
                     // 系统没给通知权限时，页顶摆一条「当前无法接收朋友的消息提醒」，点它申请权限。
                     // 只在真能申请通知的平台上摆（Android）；桌面端 `canRequestNotify` 为 false，
                     // 摆一条点不开的提示等于骗人。
-                    noticesBlocked = platform.canRequestNotify && !platform.canNotify(),
+                    noticesBlocked = platform.canRequestNotify && !noticesAllowed,
                     onEnableNotices = {
                         coroutineScope.launch {
-                            if (!platform.requestNotifyPermission()) {
-                                platform.showMessage("没有通知权限，系统不会显示消息提醒")
-                            }
+                            val granted = platform.requestNotifyPermission()
+                            // 系统对话框一关就把结论换上来：这条提示是"现在收不到提醒"，权限一给
+                            // 就不再成立，该立刻走开，不该等人退出去再进来。
+                            noticesAllowed = platform.canNotify()
+                            // 成功也说一句：说了"打开提醒"，屏幕上得有一句"开了"。
+                            platform.showMessage(
+                                if (granted) "消息提醒已开启" else "没有通知权限，系统不会显示消息提醒",
+                            )
                         }
                     },
                     onMessage = { line -> coroutineScope.launch { platform.showMessage(line) } },
