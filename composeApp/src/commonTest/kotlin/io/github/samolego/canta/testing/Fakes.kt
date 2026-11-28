@@ -10,6 +10,7 @@ import io.github.samolego.canta.core.Occupancy
 import io.github.samolego.canta.data.CantaSettings
 import io.github.samolego.canta.data.app.AppInfo
 import io.github.samolego.canta.data.bloat.BloatRepository
+import io.github.samolego.canta.data.bloat.CACHE_STAMP_PREFIX
 import io.github.samolego.canta.packages.OperationResult
 import io.github.samolego.canta.packages.PackageDetails
 import io.ktor.client.HttpClient
@@ -127,9 +128,9 @@ class FakePlatform : CantaPlatform {
 suspend fun offlineBloatRepository(cachedList: String = "{}"): BloatRepository {
     val settings = CantaSettings(MemoryStorage()).apply { setAutoUpdateBloatList(false) }
     val noNetwork = HttpClient(MockEngine { error("tests must not use the network") })
-    // 缓存现在第一行是随包指纹头（`BloatRepository.CACHE_STAMP_PREFIX`）。这里不传随包名单，
+    // 缓存现在第一行是随包指纹头（`CACHE_STAMP_PREFIX`）。这里不传随包名单，
     // 产品记下的指纹就是空串；不带头的话 `readCache` 会把这份缓存当作老格式作废，返回随包名单——
     // 而测试没给随包名单，等于一张空表（`AppListViewModelTest.badgesFromTheBloatList…` 就是这么红的）。
-    val stamped = (BloatRepository.CACHE_STAMP_PREFIX + "\n" + cachedList).encodeToByteArray()
+    val stamped = (CACHE_STAMP_PREFIX + "\n" + cachedList).encodeToByteArray()
     return BloatRepository(noNetwork, MemoryStorage(stamped), settings)
 }

@@ -90,7 +90,7 @@ class BloatRepositoryTest {
      * 这时产品记录的指纹也是空串，两边照样对得上。
      */
     private fun stampedCache(json: String, bundled: String? = null): ByteArray =
-        (BloatRepository.CACHE_STAMP_PREFIX + (bundled?.hashCode()?.toString().orEmpty()) + "\n" + json)
+        (CACHE_STAMP_PREFIX + (bundled?.hashCode()?.toString().orEmpty()) + "\n" + json)
             .encodeToByteArray()
 
     private suspend fun settings(latestHash: String = "", autoUpdate: Boolean = true) =
