@@ -80,13 +80,11 @@ fun LevelFixScreen(
     /** 名单现在给的级别；null = 这个包不在名单里，页面只能说"没有可改的"。 */
     publishedBadge: AppBadgeInfo?,
     /**
-     * 名单之外、列表上会贴在它身上的那枚标签：系统预装应用。
-     *
-     * 列表里一个包**最多两枚**（名单档位 + 这一枚），这一页照同一套画法，免得"列表上写着系统应用、
-     * 到这里只看见一个级别"。
+     * 是不是系统预装应用。列表上这枚**一定会画**（是不是系统包直接决定"删了会不会动到系统"），
+     * 这一页照同一套画法，不把它并进别的标签里省掉。
      */
     systemApp: Boolean = false,
-    /** 已停用：与 [systemApp] 同时成立时优先画这一枚（「已经停了」比「是系统应用」更影响判断）。 */
+    /** 已停用：与 [systemApp] 同时成立就两枚都画，与 [AppTile] 一致，不二选一。 */
     disabled: Boolean = false,
     repository: LevelFixRepository,
     /** 本机签名用的显示名。 */
@@ -238,11 +236,16 @@ fun LevelFixScreen(
                                 style = FlText.footnote,
                                 color = scheme.onSurface,
                             )
-                            // 列表上这个包最多两枚标签：名单档位 + 这一枚。顺序照 [AppTile]：
-                            // 先系统、后停用；两枚都成立时只画停用那枚，别把一行塞满。
-                            if (disabled || systemApp) {
+                            // 照列表 [AppTile] 原来的画法：系统应用这一枚**必画**（是不是系统包，
+                            // 直接决定"删了会不会动到系统"），已停用再叠一枚——两个都成立就画两枚，
+                            // 不为凑"两枚上限"把系统那枚省掉。
+                            if (systemApp) {
                                 Spacer(Modifier.width(6.dp))
-                                if (disabled) DisabledBadge() else SystemBadge()
+                                SystemBadge()
+                            }
+                            if (disabled) {
+                                Spacer(Modifier.width(6.dp))
+                                DisabledBadge()
                             }
                         }
                         // 名单现在这一档意味着什么，就写在档位名后面：读的人第一件事是
