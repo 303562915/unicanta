@@ -146,7 +146,11 @@ fun MainScreen(
                 // 点应用列表的空白处：收起顶栏搜索框的焦点与输入法。
                 .dismissInputOnTap(),
         ) {
-            AppsTabs(pagerState)
+            AppsTabs(
+                pagerState = pagerState,
+                // 双击已经选中的那一格：把顶栏搜索框里的字清掉，列表回到不筛的样子。
+                onDoubleTap = { appListViewModel.searchQuery = "" },
+            )
             if (appListViewModel.appListRestricted) {
                 AppListPermissionBanner(
                     onOpenSettings = appListViewModel::openPackageListSettings,
@@ -319,7 +323,7 @@ private fun MainFab(
 }
 
 @Composable
-private fun AppsTabs(pagerState: PagerState) {
+private fun AppsTabs(pagerState: PagerState, onDoubleTap: () -> Unit) {
     val coroutineScope = rememberCoroutineScope()
     // A segmented control rather than a tab strip: FlClash switches between two lists
     // this way, and an underline under a filled title reads as Material, not as the app.
@@ -335,6 +339,7 @@ private fun AppsTabs(pagerState: PagerState) {
         // The thumb rides a swipe as it happens, and the page animation carries it on a tap.
         position = pagerState.currentPage + pagerState.currentPageOffsetFraction,
         onSelect = { index -> coroutineScope.launch { pagerState.animateScrollToPage(index) } },
+        onDoubleTap = { onDoubleTap() },
     )
 }
 

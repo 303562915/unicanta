@@ -21,7 +21,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,9 +37,21 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.time.TimeSource
 
 /** One choice of a segmented control. */
 data class FlSegment(val key: String, val label: String, val glyph: FlGlyph? = null)
+
+/** 同一格两下点击之间最长的间隔；再慢就是两次普通的点选。 */
+internal const val RepeatTapWindowMs = 400L
+
+/**
+ * 两下点击算不算「双击这一格」：同一格、而且隔得够近。
+ *
+ * 抽成纯函数只是为了能测：界面那边拿它判断第二下点击该不该当重复点处理。
+ */
+internal fun isRepeatTap(previousIndex: Int, index: Int, gapMs: Long): Boolean =
+    previousIndex == index && gapMs in 0..RepeatTapWindowMs
 
 /** A pill: the track and its thumb both round to half their height. */
 private val Stadium = RoundedCornerShape(percent = 50)
@@ -80,9 +94,19 @@ fun FlSegmentedControl(
      * 轻微抖一下，读屏还会把圆点念成一个孤零零的符号。点画在标签右上角，不占布局。
      */
     dots: Set<Int> = emptySet(),
+    /**
+     * 同一格在 [RepeatTapWindowMs] 之内被点第二下时调它（参数是那一格的序号）。
+     *
+     * 第二下不改选中项——那一格已经选着了——所以调用方可以借这一下做「这一页的重复点」：
+     * 应用列表用它清空顶栏搜索框。
+     */
+    onDoubleTap: ((Int) -> Unit)? = null,
 ) {
     if (segments.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
+    // 上一次点击落在哪一格、什么时候：第二下落在同一格而且够近，就是「双击这一格」。
+    var lastTappedIndex by remember { mutableStateOf(-1) }
+    var lastTapAt by remember { mutableStateOf(TimeSource.Monotonic.markNow()) }
     val dark = scheme.isDark
     // A groove under the page, and a thumb lifted out of it with a shadow.
     val track = when {
@@ -145,7 +169,20 @@ fun FlSegmentedControl(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             role = Role.Tab,
-                            onClick = { onSelect(index) },
+                            onClick = {
+                                val now = TimeSource.Monotonic.markNow()
+                                val gap = (now - lastTapAt).inWholeMilliseconds
+                                // 选页照旧：双击的第一下本来就要切到那一页。
+                                onSelect(index)
+                                if (onDoubleTap != null && isRepeatTap(lastTappedIndex, index, gap)) {
+                                    onDoubleTap.invoke(index)
+                                    // 第三下重新计起，免得连点时被当成第二个双击。
+                                    lastTappedIndex = -1
+                                } else {
+                                    lastTappedIndex = index
+                                }
+                                lastTapAt = now
+                            },
                         ),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
