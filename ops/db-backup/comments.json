@@ -6048,6 +6048,30 @@
   "target": "com.coloros.ocs.opencapabilityservice"
  },
  {
+  "author": "丷皮皮虾灬",
+  "author_id": "13007",
+  "body": "同楼上，还有logd也会疯狂占用CPU",
+  "created_at": "2026-11-28T18:02:29.4564+00:00",
+  "device_model": "一加 15",
+  "id": 850,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "ColorOS 16.0.0",
+  "target": "com.oplus.location"
+ },
+ {
+  "author": "丷皮皮虾灬",
+  "author_id": "13007",
+  "body": "不建议删除，可以进工程模式查看一些信息…",
+  "created_at": "2026-11-28T18:03:27.85808+00:00",
+  "device_model": "一加 15",
+  "id": 851,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "ColorOS 16.0.0",
+  "target": "com.oplus.engineermode"
+ },
+ {
   "author": "听风说你",
   "author_id": "10049",
   "body": "我之前是澎湃3的时候测试的，因为看到酷安有人说这个卸载会导致关联启动增加息屏功耗的问题，你可以自己复测一下看看现在澎湃4还会不会这样，至于关联启动的APP名字我也记不住啊，小米一堆乱七八糟英文字母的软件，而且有的是搜不到的那种",
