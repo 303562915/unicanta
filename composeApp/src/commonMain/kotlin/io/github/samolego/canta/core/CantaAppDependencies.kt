@@ -18,6 +18,7 @@ import io.github.samolego.canta.data.community.ConversationCache
 import io.github.samolego.canta.data.community.ConversationStore
 import io.github.samolego.canta.data.community.PlanCache
 import io.github.samolego.canta.data.community.PostDraftStore
+import io.github.samolego.canta.data.community.PostPositionStore
 import io.github.samolego.canta.data.community.PostReadStore
 import io.github.samolego.canta.data.history.OperationLogStore
 import io.github.samolego.canta.data.preset.CantaPresetStore
@@ -56,6 +57,8 @@ class CantaAppDependencies(
     val postDrafts: PostDraftStore,
     /** 帖子的已读痕迹与收藏：都写在本机，不进后端（见 [PostReadStore]）。 */
     val postReads: PostReadStore,
+    /** 每条帖子详情页上次滚到哪儿（见 [PostPositionStore]）：同样只在本机。 */
+    val postPositions: PostPositionStore,
     /** 上次扫出来的包列表：进应用列表页的第一帧先把这张表画出来（见 [AppListSnapshotStore]）。 */
     val appListSnapshot: AppListSnapshotStore,
     /** 开源周榜：数据现拉 GitHub，周净增靠本机按天快照（见 [WeeklyRankRepository]）。 */
@@ -100,6 +103,9 @@ object StoredData {
 
     /** 帖子的已读痕迹与收藏（见 [PostReadStore]）：本机的东西，换机不跟着走。 */
     const val POST_READS = "post_reads.json"
+
+    /** 每条帖子的详情页滚动位置（见 [PostPositionStore]）：同上，只在本机。 */
+    const val POST_POSITIONS = "post_positions.json"
 
     /** 各页面快照落盘的那一份（见 [ScreenCache]）：冷启动时先画上次那一屏。 */
     const val SCREEN_CACHE = "screen_cache.json"
@@ -174,6 +180,7 @@ fun cantaAppDependencies(
         ),
         postDrafts = PostDraftStore(storage(StoredData.POST_DRAFTS)),
         postReads = PostReadStore(storage(StoredData.POST_READS)),
+    postPositions = PostPositionStore(storage(StoredData.POST_POSITIONS)),
         appListSnapshot = AppListSnapshotStore(storage(StoredData.APP_LIST)),
         weeklyRank = WeeklyRankRepository(client, storage(StoredData.WEEKLY_RANK)),
     )

@@ -160,6 +160,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+// 「上次读到哪一屏」的防抖：`snapshotFlow` 把 `firstVisibleItemIndex` / `ScrollOffset` 变成一条流，
+// 停手 400ms 才写一次盘（见 `PostThreadPane` 里那条保存 effect）。
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -204,6 +207,7 @@ import io.github.samolego.canta.data.community.CommunityPost
 import io.github.samolego.canta.data.community.PostComment
 import io.github.samolego.canta.data.community.PostDraft
 import io.github.samolego.canta.data.community.PostDraftStore
+import io.github.samolego.canta.data.community.PostPositionStore
 import io.github.samolego.canta.data.community.PostReadStore
 import io.github.samolego.canta.data.community.PostStore
 import io.github.samolego.canta.data.community.PostThread
@@ -280,6 +284,19 @@ private const val POST_BODY_LIMIT = 8000
  * `FLOORS_FIRST + i`，与跨天分隔的条数无关。哪天往楼层前面再插一项，改这个数就行。
  */
 private const val FLOORS_FIRST = 3
+
+/**
+ * 「上次读到哪一屏」停手多久才写一次盘（毫秒）。
+ *
+ * 400 是"人停下来了"与"还没反应过来"之间的那个数：手指离开屏幕、惯性滑动停住之后，一屏位置
+ * 不会再变，这时候写才有意义。更短（比如 100ms）等于慢速滑动时也每几百毫秒写一次；更长（比如 1s）
+ * 则"滑到一半直接按返回"这种常见动作会漏记。
+ *
+ * 为什么不每帧写：一次滑动有两秒、几百次 `firstVisibleItemIndex` 变化，而其中只有最后一次是
+ * "读到了哪儿"。逐次写盘是几百次 JSON 编码 + 文件写，除了最后一个值全都没人要
+ * （见 `PostPositionStore` 的 KDoc）。
+ */
+private const val POSITION_SAVE_DEBOUNCE_MS = 400L
 
 // ---------------------------------------------------------------------------- 长正文折叠
 //
@@ -1035,6 +1052,17 @@ internal fun PostsScreen(
     onNavigateBack: (() -> Unit)? = null,
     /** 已读痕迹与收藏；null 时列表不画未读点、详情里也没有收藏按钮。 */
     reads: PostReadStore? = null,
+    /**
+     * 详情页的「上次读到哪一屏」：`(item, offset)`，见 [PostPositionStore]。
+     *
+     * 默认 null —— 不接它的时候这一页的行为与没有这个功能时**逐帧相同**：不恢复、不写盘，
+     * `LazyColumn` 的 item 序列、跳楼、只看此人、续读条一个都没变。接上之后只有两件事发生：
+     * 首次成功加载这条帖子后滚回记录的位置，以及停手 400ms 记一次新位置。
+     *
+     * 为什么不做成必传：构造 store 的那一侧（`CantaAppDependencies`）与这一页是两个改动面，
+     * 参数有默认值就允许两边各自落地、谁先合都不会把对方编译打断。
+     */
+    positions: PostPositionStore? = null,
     loadPlans: (suspend () -> List<CommunityPlan>)? = null,
     /**
      * 周榜的数据层：卡片上那前三名与「抓取于…」都读它盘上那一份，不发请求（见 [WeeklyRankRepository]）。
@@ -2138,6 +2166,9 @@ else -> Column {
                 reply = reply,
                 authorId = authorId,
                 related = related,
+                // 「上次读到哪一屏」（见 [PostPositionStore]）：恢复在 `PostThreadPane` 里做，
+                // 它才拿着 `listState` —— 与目录面板、帖内搜索同一个理由（那一层拿得到状态才动）。
+                positions = positions,
                 saved = reads?.isSaved(openId) == true,
                 // 续读条只在「打开之前确实有新的回帖」时才出现（见 [resumeUnread]）；
                 // `null`（还没问过）与 `false` 都是"不出现"——没有未读时那一格一个组合项都不建。
@@ -3378,6 +3409,15 @@ private fun PostThreadPane(
     /** 这条帖子现在收着没有。 */
     saved: Boolean,
     /**
+     * 「上次读到哪一屏」的记录（见 [PostPositionStore]）；null 时既不恢复也不记录。
+     *
+     * 放在这一层而不是 `PostsScreen`：恢复与记录都要 `listState`，而 `listState` 只在这里
+     * （`rememberLazyListState()`）。往上提一格等于把整个列表的状态也提上去，`PostsScreen`
+     * 里就会多出一份只给详情页用的状态。这与目录面板 / 帖内搜索"开关在上面、用状态的在下面"
+     * 的分工相反，因为那两个是**入口在上**（顶栏菜单），这一个没有任何入口。
+     */
+    positions: PostPositionStore? = null,
+    /**
      * 这一次打开这条帖子时，标记已读**之前**它算不算有新的回帖（见 `PostsScreen` 里的
      * `resumeUnread`）。为 true 才在楼层列表开头画那条 [ThreadResumeBar]；
      * 为 false 时那一格一个组合项都不建，`thread-*` 的 item 序列与改动前完全一样。
@@ -3759,6 +3799,105 @@ private fun PostThreadPane(
             if (absolute >= FLOORS_FIRST) listState.animateScrollToItem(absolute)
             pendingJumpId = 0L
         }
+    }
+
+    // ------------------------------------------------------------------ 回到上次读到的位置
+    //
+    // 这一段与「续读条」（[ThreadResumeBar]）的分工，顺序写死在这里：
+    //  1. 续读条讲的是"有新的回帖"（`resumeUnread` / `resumeMark`），恢复讲的是"这一屏上次停在哪"；
+    //  2. 续读条**不自动滚** —— 它只是 `thread-head` 顶部的一条入口，点了才走 `jumpToFloorId`
+    //     （见它的 KDoc）。所以两者不会互相顶走；把恢复写在它下面（也在上面那条"过滤落位"
+    //     effect 之后）只是为了让"精确位置"先落地，续读条照样画、不去抢。
+    //     哪天有人给续读条加了"自动滚到下一层"，必须让它排在恢复**之后**、并且只在这条帖子
+    //     没有位置记录时才滚；否则"关掉再进来"会先恢复、再被续读条顶到别处去。
+    //  3. 换帖不靠"清"而是靠 `remember(post?.id)`：`positionRestored` 以帖子 id 为键，换一条
+    //     就重新来一次；盘上的记录**关帖不清**（下次进来还要用，见 [PostPositionStore] 的 KDoc）。
+
+    /** 这条帖子这一趟试过恢复了没有。`remember(post?.id)`：换帖重来，同一条刷新不重来。 */
+    var positionRestored by remember(post?.id) { mutableStateOf(false) }
+
+    /**
+     * 这一列现在**最大合法**的 item 下标（全量序列）。
+     *
+     * 组成：`FLOORS_FIRST`(3) + 楼层（没有回复时是那一条 `thread-empty`）+ 相关帖子块
+     * （`related-head` 一条 + 每条相关帖子，`related` 为空时整块不存在）+ 结尾那条 `thread-foot`。
+     * 与下面 `LazyColumn { … }` 里的 `item {…}` / `items(…)` 逐项对应 —— 以后往那儿加一格，
+     * 这里也得跟着改。
+     *
+     * 不用 `listState.layoutInfo.totalItemsCount`：那个数要等列表**量过一次**才有值，而这里正好
+     * 在第一次组合时就要判断（还没量过）。也不用 `floorRows`：恢复发生在首次加载成功那一刻，
+     * 那时 `authorFilter` 还是空的（它是 `remember(post?.id)`），序列里全是楼层。
+     */
+    val lastThreadItemIndex = FLOORS_FIRST +
+        (if (comments.isEmpty()) 1 else comments.size) +
+        (if (related.isNotEmpty()) 1 + related.size else 0)
+
+    LaunchedEffect(post?.id) {
+        val open = post ?: return@LaunchedEffect
+        if (positionRestored) return@LaunchedEffect
+        // 一次成功加载只尝试一次：有记录就滚，没记录 / 越界都当"没有记录"，不再重试。
+        // 重试没有意义 —— `post` 与 `comments` 是同一次请求一起回来的；之后再变是"刷新"，
+        // 那时人已经在读了，再滚一次等于把正在读的位置抢走。
+        val saved = positions?.positionOf(open.id)
+        if (saved != null) {
+            val (item, offset) = saved
+            // 越界就当没有记录：帖子可能变短了（楼层被删）、相关帖子可能不够三条、记录也可能是
+            // 上一次 200 层那一版的。`scrollToItem` 越界不会崩，但会停在列表末尾 —— 那看起来
+            // 就是"进来直接跳到最底下"，比不恢复更糟。
+            if (item >= 0 && item <= lastThreadItemIndex) {
+                listState.scrollToItem(
+                    item.coerceIn(0, lastThreadItemIndex),
+                    offset.coerceAtLeast(0),
+                )
+            }
+        } else if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
+            // 没有记录（或者记录越界）：回到顶部。
+            //
+            // 这一句不是"顺手加的优化"，它是本功能的正确性前提：`listState` 是
+            // `rememberLazyListState()`，从 A 帖点进相关帖子 B 时同一个 `PostThreadPane`
+            // 没有离开组合，`listState` 连同 A 的**索引**一起留在手上（LazyColumn 在加载态
+            // 那一帧退出组合又回来，状态对象不重建）。不归位的话，B 会从上一条帖子的半中腰
+            // 开始，而下面那条保存 effect 会把这个索引当成"B 读到这儿"记下去 ——
+            // 也就是把一次换帖变成一条假记录。
+            listState.scrollToItem(0)
+        }
+        positionRestored = true
+    }
+
+    // 位置记录：**停手 [POSITION_SAVE_DEBOUNCE_MS] 才写一次盘**，不是每帧写。
+    //
+    // 本仓没有 `Flow.debounce` 的先例，已有的节流写法是 `ui/component/ScrollMemory.kt:71-81`
+    // （`snapshotFlow` + `conflate` + `delay` + 一次写入）。这里照它的形状，但把"醒来就写"
+    // 收紧成"醒来再比一次值、没变才写"—— 详情页的 item 高度差得远（长正文、展开的回复历史），
+    // 靠 `conflate` 只能保证"写的是最新的那一刻"，保证不了"那一刻已经停手了"：
+    //  1. `snapshotFlow` 把两个状态合流，值变了才发（它自带去重，不必再 `distinctUntilChanged`）；
+    //  2. 收到之后 `delay(400)`：这 400ms 里人还在滑的话值已经变了，醒来那次比较不通过，这一趟
+    //     什么都不写；而流"收集慢就合并到最新"，所以再快也只会在停下之后写一次；
+    //  3. 醒来后**再读一次** `firstVisibleItemIndex` / `ScrollOffset`，与当初收到的那一对逐项比 ——
+    //     相等才说明"停下来了"，这时才落盘。
+    //
+    // 键里带 `post?.id`：换帖就重开一条流，别把上一帖的位置写进这一帖。`positionRestored` 也
+    // 一起判：恢复还没落地时不记，否则可能把恢复前的 (0,0) 当成"读到这里"写回去（(0,0) 本身
+    // 由 `PostPositionStore.remember` 挡掉，见那边的"顶部不记"）。
+    LaunchedEffect(listState, post?.id) {
+        val open = post ?: return@LaunchedEffect
+        val store = positions ?: return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (item, offset) ->
+                delay(POSITION_SAVE_DEBOUNCE_MS)
+                if (!positionRestored) return@collect
+                if (listState.firstVisibleItemIndex != item ||
+                    listState.firstVisibleItemScrollOffset != offset
+                ) {
+                    return@collect
+                }
+                // 过滤态下 `firstVisibleItemIndex` 是**过滤序列**里的序号（`floorRows` 的下标），
+                // 而恢复时序列一定是全量的（`authorFilter` 是 `remember(post?.id)`，进来就是空）。
+                // 两种坐标混着存，下次进来就会落到不相干的一层上。所以过滤态干脆不记：
+                // 上一次那条全量坐标（如果有）留着不动，比存一个错的好。
+                if (authorFilter.isNotBlank()) return@collect
+                store.remember(open.id, item, offset)
+            }
     }
 
     // 点「回复 #N」要跳的层：null = 不挂 clickable（不做"点了没反应"的东西）。

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -86,7 +87,7 @@ fun markdownInline(
 
 /**
  * 块级渲染：标题、段落、无序/有序列表、引用、围栏代码块（带语言标签与复制）、**GFM 表格**、
- * 分割线、整行图片、整行视频地址、空行。
+ * 分割线、整行图片、整行视频地址、**整行链接卡**、空行。
  *
  * 图文混排的帖子不需要完整的 Markdown，只要"看起来分了段"。所以这里不做嵌套块、不做 HTML，
  * 遇到不认识的行就当段落——宁可原样显示，也不要把用户写的字吞掉（表格的分隔行或列数对不上时
@@ -317,6 +318,10 @@ private fun MiniMarkdownContent(
                 // 整行一个视频地址（`.mp4`/`.webm`/`.mov`）：画成卡片，点开交给系统浏览器，
                 // 见 [videoLinkOf] 与 [VideoCard]。
                 is MdBlock.Video -> VideoCard(block.url)
+
+                // 整行一个普通 http(s) 地址：画成链接卡（左上角域名首字母方块 + 域名 + 路径），
+                // 见 [LinkPreviewCard]。视频那一支在它上面，所以 `.mp4` 永远走视频卡。
+                is MdBlock.LinkCard -> LinkPreviewCard(block.url)
 
                 is MdBlock.Rule -> HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
@@ -1472,6 +1477,112 @@ private fun VideoCard(url: String) {
 }
 
 // ---------------------------------------------------------------------------
+// 链接卡片（整行一个普通地址）
+// ---------------------------------------------------------------------------
+
+/** 卡片上那个方角标里放域名首字母，取不到（空域名）时的兜底字。 */
+private const val LinkCardFallbackMark = "链"
+
+/**
+ * 整行一个 http(s) 地址时画这张卡：左边一个 36dp 的方角标（域名首字母），右边两行
+ * （域名 / 路径 + 查询），最右一颗外链图标，**整卡可点**。
+ *
+ * ## 为什么整卡可点、而不是把地址做成可点文字
+ *
+ * 一行只有一个地址时，"可点"的范围本该是整张卡，而不是那串又长又难看清的 URL 字符。
+ * 但链接注解是挂在**文字**上的，卡片没有文字可点（`Modifier` 区域不在注解的命中范围里），
+ * 所以用 `Modifier.clickable` + `LocalUriHandler.openUri`，与同文件 [VideoCard] 完全同一写法
+ * （参考实现那边整块也是 `await launchContentLink(context, url)`，
+ * 见 `lib/widgets/content/discourse_html_content/builders/onebox/default_onebox_builder.dart:48-49`，
+ * 视频卡对应 `.../onebox/video_onebox_builder.dart:559`）。
+ *
+ * ## 为什么不用 favicon
+ *
+ * 参考实现的 onebox 卡左侧图标是服务端抓下来的 `img.site-icon`
+ * （`default_onebox_builder.dart:35-36`：`element.querySelector('img.site-icon')` 取 `src`），
+ * 那是"发帖时后端已经把站点元数据抓好了"的产物。本仓是纯客户端渲染，正文里只有一个 URL：
+ * 要拿 favicon 就得先 `GET https://域名/favicon.ico` 再解码，等于**看一条帖子就向发帖人指定的任意
+ * 主机发一次请求**（内网地址、埋点地址一样会中），而且离线/被墙时卡片会空一格。所以这里只画
+ * 域名首字母——本地算得出来、不联网、不会因为对方站点挂了而变化。图标位、域名行、说明行这套骨架
+ * 照 `default_onebox_builder.dart:46-77` 的 `OneboxContainer(sourceName, title, description)`。
+ *
+ * ## 尺寸
+ *
+ * 圆角 8dp 与 [VideoCard] 及其它卡片统一（参考实现是 `context.shapes.borderRadius(8)`，
+ * `video_onebox_builder.dart:111`）；`heightIn(min = 56.dp)` 保证两行文字的卡在窄屏上也不会被
+ * 挤成一条，但内容多时**自己撑高**，不写死高度。
+ */
+@Composable
+private fun LinkPreviewCard(url: String) {
+    val uriHandler = LocalUriHandler.current
+    val host = remember(url) { linkCardHost(url) }
+    val path = remember(url) { linkCardPath(url) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp, bottom = 6.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable { uriHandler.openUri(url) }
+            // 先限最小高度再进内边距：这样"至少 56dp"说的是整张卡（含 10dp 内边距），
+            // 而不是内边距里那块内容区。
+            .heightIn(min = 56.dp)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(6.dp))
+                // primaryContainer 再压到 50%：深浅主题下都是"主色的一层薄底"，
+                // 不至于比正文还抢眼；里面那一个字用 primary，对比度够。
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = host.take(1).uppercase().ifEmpty { LinkCardFallbackMark },
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+            )
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 10.dp, end = 8.dp),
+        ) {
+            Text(
+                // 域名按需求**不截断**：它本来就短（28 字符已是很长的子域），
+                // 截断反而看不出是哪个站。真超长时 maxLines=1 + 省略号兜底，不至于撑破卡片。
+                text = host,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                // 路径整条常常很长（`/t/topic/12345/23`），这一行才是靠省略号收的地方。
+                text = path.ifEmpty { "打开链接" },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Icon(
+            // 选 OpenInNew 而不是 ChevronRight：`openUri` 是**交给系统浏览器**打开（出应用），
+            // 而 `>` 在应用里通常表示"进下一层页面"，那是本 App 内的导航语义，会误导。
+            // 这也与 [VideoCard] 上那句「点开用浏览器播放」一致。
+            imageVector = Icons.Rounded.OpenInNew,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 块级解析
 // ---------------------------------------------------------------------------
 
@@ -1498,6 +1609,13 @@ private sealed interface MdBlock {
     class Image(val url: String, val alt: String) : MdBlock
     /** 一行只有一个视频地址（`.mp4`/`.webm`/`.mov`），画成可点的卡片。 */
     class Video(val url: String) : MdBlock
+    /**
+     * 一行只有**一个** http(s) 地址（同一行除了它只剩空白），画成链接卡。
+     *
+     * 与 [Video] 分开而不是塞一个 `kind` 字段：两者的渲染完全不同（视频要 16:9 的框，
+     * 链接卡只有一行文字），而且"哪一种先判"是显示优先级的一部分，见 [linkCardOf]。
+     */
+    class LinkCard(val url: String) : MdBlock
     object Rule : MdBlock
     object Gap : MdBlock
 }
@@ -1568,6 +1686,15 @@ private fun parseBlocks(text: String): List<MdBlock> {
             i++
             continue
         }
+        // 整行一个普通 http(s) 地址：画链接卡，不再走下面「裸地址 → 挡在段落里的可点文字」那条。
+        // **必须放在视频之后**：`https://…/clip.mp4` 同时满足两边的条件，视频优先（见 [linkCardOf]）。
+        // 段落中间的地址（`看这个 https://x.y`）到不了这里——这行里有别的字，[linkCardOf] 直接返回 null。
+        val linkCard = linkCardOf(trimmed)
+        if (linkCard != null) {
+            blocks += MdBlock.LinkCard(linkCard)
+            i++
+            continue
+        }
         val level = headingLevel(trimmed)
         if (level > 0) {
             blocks += MdBlock.Heading(level, trimmed.substring(level).trim())
@@ -1630,7 +1757,10 @@ private fun startsBlock(trimmed: String): Boolean =
         bulletText(trimmed) != null ||
         orderedText(trimmed) != null ||
         imageBlockOf(trimmed) != null ||
-        videoLinkOf(trimmed) != null
+        videoLinkOf(trimmed) != null ||
+        // 整行链接也要能自己起一块，否则它会被上面的段落循环当成"上一段的续行"吞掉，
+        // 于是"整行一个地址"变成段落里的一句可点文字，链接卡永远出不来。
+        linkCardOf(trimmed) != null
 
 /**
  * 带上下标的版本：段落循环用它。
@@ -1856,6 +1986,81 @@ private fun videoLinkOf(trimmed: String): String? {
 private fun videoFileName(url: String): String {
     val path = url.substringBefore('#').substringBefore('?').trimEnd('/')
     return path.substringAfterLast('/').ifBlank { url }
+}
+
+// ---------------------------------------------------------------------------
+// 整行链接
+// ---------------------------------------------------------------------------
+
+/**
+ * 地址长度上限：超过就当普通段落，**不画卡**。
+ *
+ * 防的是"有人把一整篇 base64 / data 塞进一行地址"这种情形：那种行动辄几十 KB，画成卡只会让
+ * 卡片算宽度、算省略号白烧一轮布局，而它本来也不长成一个能被点开的链接。2000 字符足够覆盖
+ * 正常的长链接（带一长串 `?utm_…` 的那种）。
+ */
+private const val LinkCardMaxUrlChars = 2000
+
+/**
+ * 整行**只有一个** http(s) 地址时返回它（原样，含查询串与 `#fragment`），否则 null。
+ *
+ * ## 为什么只有"整行"才算卡
+ *
+ * 卡是块级元素（另一行、另一块底色、整块可点）。正文里顺手提一句「见 https://a/b」时，那句话
+ * 是句子的一部分，把它抽出来变成一张卡会把一句人话拆成两半，而且卡片会占满整行宽度，
+ * 语境直接断开。所以判定就是"这一行除了地址只有空白"：去掉首尾空白之后，地址**中间**只要还有
+ * 一个空白就放行，让那行继续走段落的裸地址链接（[bareUrlEnd]）。`[文字](地址)` 同理——它不以
+ * `http` 开头，落的还是行内链接那一支，一个字都不变。
+ *
+ * ## 视频优先
+ *
+ * `.mp4`/`.webm`/`.mov` 同时也满足"整行一个地址"，但视频该画成 16:9 的播放卡（[VideoCard]），
+ * 不是一行域名加路径。所以这里**主动**把视频地址排除掉，而不是只靠 [parseBlocks] 里"先判视频"的
+ * 顺序：让这个纯函数自己保证"返回非空的都是链接卡"，两处顺序谁先写错都不会退回一个错误的表现，
+ * 自查看函数就够了。
+ *
+ * ## 只认 http(s)
+ *
+ * 别的写法（相对路径、`mailto:`、`data:`、`javascript:`）既不该画成"外链卡"，也不该被
+ * `openUri` 直接丢给浏览器。方案名只认小写的 `http://` / `https://`（`HTTP://` 不认），
+ * 与 [videoLinkOf] 同一口径——正文里贴出来的地址本来就都是小写。
+ *
+ * 把域名单独算一遍（[linkCardHost]）是为了顺带排除 `https://` 后面什么都没有的畸形串。
+ */
+private fun linkCardOf(trimmed: String): String? {
+    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return null
+    // 中间有空白就不是"整行一个地址"（`https://a https://b`、`看这个 https://x.y` 全挡在这里）。
+    if (trimmed.any { it.isWhitespace() }) return null
+    if (trimmed.length > LinkCardMaxUrlChars) return null
+    // 视频优先：见上面「视频优先」那段。
+    if (videoLinkOf(trimmed) != null) return null
+    // 连域名都没有（`https://`、`https:///path`）就不算一个能开的链接。
+    if (linkCardHost(trimmed).isEmpty()) return null
+    return trimmed
+}
+
+/**
+ * 链接卡第一行显示的域名：去掉 `://` 之前的部分与第一个 `/` 之后的部分，再剥掉 `www.`。
+ *
+ * 端口保留（`example.com:8080`）：它属于"这是哪个站"的一部分，去掉反而认不出本地/测试站点。
+ * 去掉 `www.` 只图好看——同一站点在卡上一律显示成同一个名字。
+ */
+private fun linkCardHost(url: String): String =
+    url.substringAfter("://", "").substringBefore('/').removePrefix("www.")
+
+/**
+ * 链接卡第二行显示的路径：去掉协议与域名后剩下的部分，前面补回 `/`；根路径返回空串
+ * （渲染那边空串会写「打开链接」）。
+ *
+ * 查询串（`?…`）与 `#fragment` **留着**：它们常常正是这条链接的重点（`/s?q=关键词`、
+ * `/p/123#post_456`），砍掉就成了一条看不出内容的路径。只有单独一个尾部 `/`
+ * （`https://x.y/`）算"没有路径"，否则卡片第二行会显示成一个孤零零的斜杠。
+ */
+private fun linkCardPath(url: String): String {
+    val rest = url.substringAfter("://", "")
+    if ('/' !in rest) return ""
+    val tail = rest.substringAfter('/')
+    return if (tail.isEmpty()) "" else "/$tail"
 }
 
 // ---------------------------------------------------------------------------

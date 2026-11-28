@@ -1253,6 +1253,9 @@ private fun CantaNavigation(
                     store = postStore,
                     drafts = deps.postDrafts,
                     reads = deps.postReads,
+                    // 详情页"上次读到哪儿"的本机记录（见 [PostPositionStore]）：
+                    // 与已读痕迹同一个注入口径，三处 PostsScreen（列表 / 详情 / 编辑器）都传。
+                    positions = deps.postPositions,
                     author = postsAuthor,
                     authorId = postsIdentity,
                     // 「分享方案」那一格：先列自己传过的方案，一份都没有才把最近的一批端上来，
@@ -1300,6 +1303,9 @@ private fun CantaNavigation(
                     store = postStore,
                     drafts = deps.postDrafts,
                     reads = deps.postReads,
+                    // 详情页"上次读到哪儿"的本机记录（见 [PostPositionStore]）：
+                    // 与已读痕迹同一个注入口径，三处 PostsScreen（列表 / 详情 / 编辑器）都传。
+                    positions = deps.postPositions,
                     author = editorAuthor,
                     authorId = editorIdentity,
                     loadPlans = {
@@ -1345,6 +1351,9 @@ private fun CantaNavigation(
                     store = postStore,
                     drafts = deps.postDrafts,
                     reads = deps.postReads,
+                    // 详情页"上次读到哪儿"的本机记录（见 [PostPositionStore]）：
+                    // 与已读痕迹同一个注入口径，三处 PostsScreen（列表 / 详情 / 编辑器）都传。
+                    positions = deps.postPositions,
                     author = detailAuthor,
                     authorId = detailIdentity,
                     loadPlans = {
@@ -2531,11 +2540,24 @@ private fun PlanDetailRoute(
         token = planIdentity.token,
         onOpenApp = { pkg -> navController.navigate(Screen.AppDetail.routeForApp(pkg)) },
         // "Use this plan": select its packages on the app list and go there, so the uninstall action
-        // is one tap away.
+        // is one tap away. 方案是别人那台手机上录的：本机没有的包直接跳过——对着不存在的包跑一遍，
+        // 唯一的结果是一条「设备上已经找不到这个包了」的失败记录（OPPO 的清单用在这台小米上就是
+        // 这样）。跳过的那几个只报个数，不在记录里留字。
         onUsePlan = { packages ->
+            val onDevice = appListViewModel.apps
+                .filter { !it.isUninstalled }
+                .mapTo(HashSet()) { it.packageName }
+            // 列表还没扫完（或没权限、被系统裁过）时不筛：那时"没读到"不等于"本机没有"。
+            val usable = if (onDevice.isEmpty() || appListViewModel.appListRestricted) {
+                packages
+            } else {
+                packages.filter { it in onDevice }
+            }
+            val skipped = packages.size - usable.size
             appListViewModel.selectedApps.clear()
-            appListViewModel.selectedApps.addAll(packages)
+            appListViewModel.selectedApps.addAll(usable)
             navController.navigate(Screen.Main.route) { launchSingleTop = true }
+            if (skipped > 0) platform.showMessage("已跳过 $skipped 个本机没有的包")
         },
         // Sharing hands the plan to the clipboard as a code; the receiver's app reads it at launch
         // and opens this same page. The device line rides along so the message says which phone the
