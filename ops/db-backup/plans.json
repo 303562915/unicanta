@@ -12002,6 +12002,48 @@
   "title": "干净 · REDMI K90"
  },
  {
+  "brand": "OnePlus",
+  "codename": "OP60F5L1",
+  "created_at": "2026-11-28T06:15:45.07149+00:00",
+  "id": 502,
+  "is_test": false,
+  "market_name": "一加 13T",
+  "model": "PKX110",
+  "note": "运营商组件",
+  "owner": "11286",
+  "packages": [
+   "com.oppo.ctautoregist"
+  ],
+  "reboot_verified": true,
+  "rebooted_at": "2026-11-28T06:15:44.535198+00:00",
+  "rom": "coloros",
+  "rom_build": "V17.0.0",
+  "rom_version": 17,
+  "sdk": 37,
+  "title": "一加 13T"
+ },
+ {
+  "brand": "OnePlus",
+  "codename": "OP60F5L1",
+  "created_at": "2026-11-28T06:17:31.35851+00:00",
+  "id": 503,
+  "is_test": false,
+  "market_name": "一加 13T",
+  "model": "PKX110",
+  "note": "可以删除",
+  "owner": "11286",
+  "packages": [
+   "com.oppo.ctautoregist"
+  ],
+  "reboot_verified": true,
+  "rebooted_at": "2026-11-28T06:17:31.117002+00:00",
+  "rom": "coloros",
+  "rom_build": "V17.0.0",
+  "rom_version": 17,
+  "sdk": 37,
+  "title": "运营商组件 · 一加 13T"
+ },
+ {
   "brand": "Realme",
   "codename": "RE5C33",
   "created_at": "2026-11-21T22:59:11.078313+00:00",
