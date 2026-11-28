@@ -227,8 +227,9 @@ fun AudioWhitelistScreen(
                         busy = busy,
                         // 没有 root 就点不动：/odm 只读，Shizuku 的 shell 身份写不进去。
                         // 让按钮亮着、点完再报错，就是刚才那位 K90pm 用户的「解除不了」。
-                        canDisable = lowPowerDisable != null && snapshot.isRoot,
-                        canRestore = lowPowerRestore != null && snapshot.isRoot,
+                        // `maybe`（装了 root 管理器但没授权）仍然放行——点了会弹授权框，那才是他要的下一步。
+                        canDisable = lowPowerDisable != null && snapshot.canElevate,
+                        canRestore = lowPowerRestore != null && snapshot.canElevate,
                         onDisable = { run("解除清单", lowPowerDisable) },
                         onRestore = { run("恢复清单", lowPowerRestore) },
                     )
@@ -533,14 +534,14 @@ private fun LowPowerCard(
             }
             if (state.lowPowerPackages.isNotEmpty()) {
                 Text(
-                    text = if (state.isRoot) {
-                        "清空这份清单需要 root：脚本会先把原文件备份到 /data/local/tmp，再清掉里面点名的应用，"
+                    text = when (state.rootAccess) {
+                        "yes" -> "清空这份清单需要 root：脚本会先把原文件备份到 /data/local/tmp，再清掉里面点名的应用，"
                             + "然后重启 audioserver。系统升级会把清单覆盖回出厂那份——那时再点一次就行。"
-                    } else {
-                        "这台机器没有 root（现在是用 Shizuku 的 shell 身份在读，写不了 /odm 只读分区），"
-                            + "所以下面两个按钮点不动——不是坏了，是这条路本来就要 root。"
-                            + "免 root 能不能绕，要看上面那栏诊断里的 lowpower 属性有没有开关；"
-                            + "真有 root 之后这两个按钮就能用。"
+                        "maybe" -> "这台机器装了 root 管理器但还没授权过 su（Canta 平时跑在 Shizuku 的 shell 里）。"
+                            + "点「解除清单」会弹授权框，允许之后脚本会先备份、再清空清单、重启 audioserver。"
+                        else -> "这台机器没有 root，而清单在 /odm 只读分区——改它必须要 root，按钮点不动不是坏了。"
+                            + "免 root 唯一的可能是诊断信息里有没有一条 lowpower 属性开关，那条要等新版页面的诊断才能确认；"
+                            + "确定没有的话，这条路就到此为止，只能 root 后（或刷模块）才解得了。"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,

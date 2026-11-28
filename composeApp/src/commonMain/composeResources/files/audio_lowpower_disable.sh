@@ -20,12 +20,26 @@ else echo "备份失败 BACKUP_FAIL：$BAK 写不进去，为了还能恢复，�
 fi
 SIZE=$(wc -c < "$LP" 2>/dev/null)
 echo "原始大小：${SIZE:-?} 字节"
-# 有 root 才能写 /odm。su 不存在就直接说清楚，不要让用户以为是脚本坏了。
+# 有 root 才能写 /odm。**不能只看 command -v su**：Magisk/KernelSU 的 su 在文件系统上常常看不见
+# （AGENTS 12.4.1 记过这个坑），只看它会把这台机器误报成「没有 root」。
 R=
-if [ "$(id -u)" = "0" ]; then R=""; elif command -v su >/dev/null 2>&1; then R="su -c"; else
+if [ "$(id -u)" = "0" ]; then R=""
+elif command -v su >/dev/null 2>&1 || [ -x /system/bin/su ] || [ -x /debug_ramdisk/su ] || [ -x /data/adb/magisk/su ]; then R="su -c"
+elif pm list packages 2>/dev/null | grep -qiE 'magisk|kernelsu|apatch|supersu'; then R="su -c"
+else
 echo "这台机器没有 root：/odm 是只读分区，没有 root 改不了这份清单。"
 echo "免 root 做不到——如果你想改，只能 root 后用模块 overlay 或在 Termux 里跑这段脚本。"
 exit 1
+fi
+# R 非空时先真跑一次，授权没过就别往下走（Magisk 会在这时弹授权框）。
+if [ -n "$R" ]; then
+U=$(timeout 20 su -c 'id -u' </dev/null 2>/dev/null | tr -d '\r')
+if [ "$U" != "0" ]; then
+echo "su 拿不到 root（没授权 / 授权被拒 / 管理器拦了）：这台机器改不了 /odm。"
+echo "先在 Magisk / KernelSU 里给 Canta 授权 root，再点一次。"
+exit 1
+fi
+echo "su 可用（uid=$U）"
 fi
 # 先试 remount：HyperOS 上常被 AVB/dm-verity 挡住，挡不住才有下一步。
 if [ -n "$R" ]; then su -c "mount -o rw,remount /odm" </dev/null >/dev/null 2>&1; fi

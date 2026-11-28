@@ -28,9 +28,25 @@ if [ -z "$LP" ]; then
 LP=$(find /odm/etc /vendor/etc /system_ext/etc /product/etc -maxdepth 4 -iname '*lowpower*app*list*' 2>/dev/null | head -n 1)
 fi
 echo "##LOWPOWER##$LP"
-# 谁在跑这段：0 = root，2000 = Shizuku 的 shell。低功耗清单在 /odm 只读分区，只有 root 能改，
-# 所以页面要先用这个决定「解除清单」能不能点，而不是让人白点一次再看失败。
-echo "##ROOT##$(id -u 2>/dev/null)"
+# 能不能提权。**不能只看 id -u，也不能只看 command -v su**：Canta 平时跑在 Shizuku 的 shell 里（uid 2000），
+# 而 Magisk / KernelSU 的 su 在文件系统上经常看不见（见 AGENTS 12.4.1 记的那个坑）——
+# 只看这两样会把「装了 Magisk 但用 Shizuku 跑」的机器误判成「没有 root」，然后把按钮白白置灰。
+# 所以三段判断：本来就是 root → 找得到 su 或装了 root 管理器 → 真跑一次 su -c id -u（授权过才会返回 0）。
+ROOT=no
+if [ "$(id -u 2>/dev/null)" = "0" ]; then ROOT=yes
+else
+for s in su /system/bin/su /system/xbin/su /sbin/su /debug_ramdisk/su /data/adb/magisk/su; do
+if command -v "$s" >/dev/null 2>&1 || [ -x "$s" ]; then ROOT=maybe; break; fi
+done
+if [ "$ROOT" = "no" ]; then
+if pm list packages 2>/dev/null | grep -qiE 'magisk|kernelsu|apatch|supersu|superuser'; then ROOT=maybe; fi
+fi
+if [ "$ROOT" = "maybe" ]; then
+U=$(timeout 8 su -c 'id -u' </dev/null 2>/dev/null | tr -d '\r')
+[ "$U" = "0" ] && ROOT=yes
+fi
+fi
+echo "##ROOT##$ROOT"
 if [ -n "$LP" ]; then
 # 清单头：里面可能有 enable 之类的开关字段，决定「是不是只能整份删」这件事。
 echo "##LOWPOWERHEAD##$(head -c 600 "$LP" 2>/dev/null | tr -d '\000' | tr '\n' ' ')"

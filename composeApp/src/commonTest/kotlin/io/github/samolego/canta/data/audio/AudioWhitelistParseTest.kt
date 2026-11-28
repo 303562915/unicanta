@@ -114,13 +114,18 @@ class AudioWhitelistParseTest {
 
     @Test
     fun theShellIdentityDecidesWhetherTheListCanBeEdited() {
-        // 低功耗清单在 /odm 只读分区：Shizuku 的 shell（uid 2000）写不了，页面不该给他点亮按钮。
-        val shizuku = AudioWhitelist.parse("##ROOT##2000\n##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n")
-        assertFalse(shizuku.isRoot)
-        assertTrue(shizuku.diagnostics.any { it.contains("非 root") })
+        // 低功耗清单在 /odm 只读分区：确实没有 root（`no`）时不该点亮按钮；
+        // 但「装了 root 管理器、还没授权」（`maybe`）要放行——点了才会弹授权框，那才是他要的下一步。
+        val none = AudioWhitelist.parse("##ROOT##no\n##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n")
+        assertFalse(none.canElevate)
+        assertTrue(none.diagnostics.any { it.contains("没有（改 /odm 需要 root）") })
 
-        val rooted = AudioWhitelist.parse("##ROOT##0\n##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n")
-        assertTrue(rooted.isRoot)
+        val maybe = AudioWhitelist.parse("##ROOT##maybe\n##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n")
+        assertTrue(maybe.canElevate)
+        assertTrue(maybe.diagnostics.any { it.contains("可能有") })
+
+        val rooted = AudioWhitelist.parse("##ROOT##yes\n##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n")
+        assertTrue(rooted.canElevate)
     }
 
     @Test

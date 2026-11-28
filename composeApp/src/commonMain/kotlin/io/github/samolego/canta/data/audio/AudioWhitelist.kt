@@ -83,7 +83,7 @@ object AudioWhitelist {
     /** 清单文件的开头：里面可能有 enable 之类的开关字段。 */
     internal const val TAG_LOWPOWER_HEAD = "##LOWPOWERHEAD##"
 
-    /** 跑脚本的身份：`0` = root，其它（通常是 2000）= Shizuku 的 shell。 */
+    /** 能不能提权：脚本给的三态（`yes` / `maybe` / `no`），见 `audio_whitelist_state.sh` 里那段判断。 */
     internal const val TAG_ROOT = "##ROOT##"
 
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
@@ -134,13 +134,16 @@ object AudioWhitelist {
         val lowPowerPath: String = "",
         val lowPowerPackages: List<Entry> = emptyList(),
         /**
-         * 跑脚本的身份是不是 root。
+         * 能不能提权改 /odm：`yes`（已经是 root 或 su 可用）、`maybe`（装了 root 管理器但没授权过）、
+         * `no`（确实没有 root）。
          *
-         * 低功耗清单在 `/odm` 只读分区，没有 root 改不动——而绝大多数用户只有 Shizuku（uid 2000）。
-         * 页面拿这个决定「解除清单」能不能点，别让人点完才知道不行。
+         * 只用 `id -u == 0` 判是不够的：Canta 平时跑在 Shizuku 的 shell 里，本来就不是 root，
+         * 而 Magisk 的 su 在文件系统上常常看不见——那样会把「有 root」的机器误判成「没有」。
          */
-        val isRoot: Boolean = false,
+        val rootAccess: String = "no",
     ) {
+        /** 有 root（或至少可能是 root，点了会弹授权）。`no` 时改 /odm 这条路走不通。 */
+        val canElevate: Boolean get() = rootAccess == "yes" || rootAccess == "maybe"
         /** The audio engine is skipping the whitelist right now. */
         val bypassed: Boolean get() = level == BYPASS
 
@@ -170,7 +173,7 @@ object AudioWhitelist {
         var config = ""
         var lowPowerPath = ""
         var lowPowerHead = ""
-        var isRoot = false
+        var rootAccess = "no"
         val packages = LinkedHashSet<String>()
         val lowPowerPackages = LinkedHashSet<String>()
         val installed = HashSet<String>()
@@ -194,7 +197,7 @@ object AudioWhitelist {
                     }
                 }
                 line.startsWith(TAG_LOWPOWER_HEAD) -> lowPowerHead = line.removePrefix(TAG_LOWPOWER_HEAD).trim()
-                line.startsWith(TAG_ROOT) -> isRoot = line.removePrefix(TAG_ROOT).trim() == "0"
+                line.startsWith(TAG_ROOT) -> rootAccess = line.removePrefix(TAG_ROOT).trim().lowercase().ifEmpty { "no" }
                 line.startsWith(TAG_PACKAGE) -> line.removePrefix(TAG_PACKAGE).trim().let {
                     if (it.isNotEmpty()) packages += it
                 }
@@ -233,7 +236,11 @@ object AudioWhitelist {
         if (lowPowerHead.isNotEmpty()) {
             diagnostics += "lowpower head: " + lowPowerHead.take(400)
         }
-        diagnostics += "shell uid: " + if (isRoot) "0（root）" else "非 root（改 /odm 需要 root）"
+        diagnostics += "root: " + when (rootAccess) {
+            "yes" -> "有（su 可用）"
+            "maybe" -> "可能有（装了 root 管理器，但没授权过 su）"
+            else -> "没有（改 /odm 需要 root）"
+        }
 
         return State(
             level = level,
@@ -242,7 +249,7 @@ object AudioWhitelist {
             diagnostics = diagnostics,
             lowPowerPath = lowPowerPath,
             lowPowerPackages = lowPowerEntries,
-            isRoot = isRoot,
+            rootAccess = rootAccess,
         )
     }
 

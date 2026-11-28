@@ -12,9 +12,19 @@ exit 1
 fi
 NOW=$(grep -aoE '"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+"' "$LP" 2>/dev/null | wc -l)
 echo "清单文件：$LP（当前 ${NOW:-0} 个应用）"
-if [ "$(id -u)" = "0" ]; then R=""; elif command -v su >/dev/null 2>&1; then R="su -c"; else
+if [ "$(id -u)" = "0" ]; then R=""
+elif command -v su >/dev/null 2>&1 || [ -x /system/bin/su ] || [ -x /debug_ramdisk/su ] || [ -x /data/adb/magisk/su ]; then R="su -c"
+elif pm list packages 2>/dev/null | grep -qiE 'magisk|kernelsu|apatch|supersu'; then R="su -c"
+else
 echo "这台机器没有 root：/odm 只读，还原不了。"
 exit 1
+fi
+if [ -n "$R" ]; then
+U=$(timeout 20 su -c 'id -u' </dev/null 2>/dev/null | tr -d '\r')
+if [ "$U" != "0" ]; then
+echo "su 拿不到 root（没授权 / 授权被拒）：还原不了 /odm。"
+exit 1
+fi
 fi
 if [ -n "$R" ]; then su -c "mount -o rw,remount /odm" </dev/null >/dev/null 2>&1; fi
 if [ -n "$R" ]; then cp "$BAK" /data/local/tmp/lp_restore.tmp 2>/dev/null; su -c "cp /data/local/tmp/lp_restore.tmp '$LP'" </dev/null >/dev/null 2>&1
