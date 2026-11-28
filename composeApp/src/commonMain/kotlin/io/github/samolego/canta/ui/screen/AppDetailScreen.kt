@@ -93,6 +93,7 @@ import io.github.samolego.canta.data.community.updatedComment
 import io.github.samolego.canta.data.recommend.RecommendedApp
 import io.github.samolego.canta.data.recommend.Recommendations
 import io.github.samolego.canta.ui.component.AppBadge
+import io.github.samolego.canta.ui.component.BadgeImpactTags
 import io.github.samolego.canta.ui.component.badgeRiskSummary
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CommentComposer
@@ -1141,7 +1142,11 @@ private fun AppHero(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AppBadge(shown)
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
+                // 「会破坏功能」「可能卡在开机」这两枚直接露在徽标旁边：它们是决定"敢不敢删"的
+                // 两件事，藏在点开的说明里等于没提醒。没有这两件事的档位（推荐卸载）不贴。
+                BadgeImpactTags(shown)
+                Spacer(Modifier.weight(1f))
                 Text(
                     text = "点开看说明",
                     style = FlText.caption2,
@@ -1249,6 +1254,8 @@ private fun AppHero(
                 TextButton(onClick = { badgeSheet = null }) { Text("知道了") }
             },
         ) {
+            BadgeImpactTags(level)
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = badgeRiskSummary(level),
                 style = FlText.footnote.copy(fontWeight = FlText.emphasized),

@@ -47,6 +47,7 @@ import io.github.samolego.canta.data.community.LevelFix
 import io.github.samolego.canta.data.community.LevelFixRepository
 import io.github.samolego.canta.data.community.LevelFixResult
 import io.github.samolego.canta.ui.component.AppBadge
+import io.github.samolego.canta.ui.component.BadgeImpactTags
 import io.github.samolego.canta.ui.component.DisabledBadge
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
@@ -267,7 +268,10 @@ fun LevelFixScreen(
                             }
                         }
                         // 名单现在这一档意味着什么，就写在档位名后面：读的人第一件事是
-                        // 「这个包现在标成推荐卸载，那我删了会不会出事」。
+                        // 「这个包现在标成推荐卸载，那我删了会不会出事」。两枚标记（会破坏功能 /
+                        // 可能卡在开机）单独一行，和徽标同一套颜色语义。
+                        Spacer(Modifier.height(4.dp))
+                        BadgeImpactTags(publishedBadge)
                         Spacer(Modifier.height(3.dp))
                         Text(
                             text = badgeRiskSummary(publishedBadge),
@@ -424,7 +428,11 @@ fun LevelFixScreen(
                                         style = FlText.caption2.copy(fontWeight = FlText.emphasized),
                                         color = scheme.onSurfaceVariant,
                                     )
-                                    Spacer(Modifier.height(2.dp))
+                                    Spacer(Modifier.height(4.dp))
+                                    // 两枚标记就在这一块的顶部：会破坏功能 / 可能卡在开机。
+                                    // 选完档位先看到"代价"，再看到解释。
+                                    BadgeImpactTags(pickedLevel)
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
                                         // 名单那段定义放在它下面当补充。
@@ -683,6 +691,9 @@ private fun LevelFixCard(
         // 光知道档位名叫"专家"没有意义。
         levelBadge?.let { badge ->
             Spacer(Modifier.height(4.dp))
+            // 每一条历史都贴这两枚：这是"投它等于同意什么"，不是只属于页面顶部的东西。
+            BadgeImpactTags(badge)
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = badgeRiskSummary(badge),
                 style = FlText.caption2.copy(fontWeight = FlText.emphasized),
