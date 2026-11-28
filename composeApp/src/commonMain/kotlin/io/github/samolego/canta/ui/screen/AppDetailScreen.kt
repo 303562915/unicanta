@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1019,6 +1020,7 @@ fun AppDetailScreen(
 }
 
 /** The app itself: icon, name, package, version, size, and the two-sided vote about removing it. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun AppHero(
     app: AppInfo?,
@@ -1134,24 +1136,24 @@ private fun AppHero(
         // 两段解释文字占掉，投票和评论被挤到下面去。
         badge?.let { shown ->
             Spacer(Modifier.height(8.dp))
-            Row(
+            // 档位徽标和两枚后果标记（会破坏功能 / 可能卡在开机）同一排、同一种形状：
+            // 它们说的是同一件事，分开摆会像两类信息。FlowRow 负责小屏折行。
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
                     .clickable { badgeSheet = shown },
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 AppBadge(shown)
-                Spacer(Modifier.width(6.dp))
-                // 「会破坏功能」「可能卡在开机」这两枚直接露在徽标旁边：它们是决定"敢不敢删"的
-                // 两件事，藏在点开的说明里等于没提醒。没有这两件事的档位（推荐卸载）不贴。
                 BadgeImpactTags(shown)
-                Spacer(Modifier.weight(1f))
                 Text(
-                    text = "点开看说明",
+                    text = "点开看说明 ›",
                     style = FlText.caption2,
                     color = scheme.onSurfaceVariant,
                     maxLines = 1,
+                    modifier = Modifier.padding(start = 2.dp),
                 )
             }
         }

@@ -247,32 +247,29 @@ fun LevelFixScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     if (publishedBadge != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 档位徽标与两枚后果标记（会破坏功能 / 可能卡在开机）同排、同一种形状：
+                        // 它们说的是同一件事（这一档有多危险），分开摆会像两类信息。
+                        // 用 FlowRow 是因为小屏一行装不下"徽标 + 名称 + 两枚标记 + 系统/停用"。
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
                             AppBadge(publishedBadge)
-                            Spacer(Modifier.width(8.dp))
                             Text(
                                 text = stringResource(publishedBadge.nameRes),
-                                style = FlText.footnote,
+                                style = FlText.caption1,
                                 color = scheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 2.dp),
                             )
+                            BadgeImpactTags(publishedBadge)
                             // 照列表 [AppTile] 原来的画法：系统应用这一枚**必画**（是不是系统包，
-                            // 直接决定"删了会不会动到系统"），已停用再叠一枚——两个都成立就画两枚，
-                            // 不为凑"两枚上限"把系统那枚省掉。
-                            if (systemApp) {
-                                Spacer(Modifier.width(6.dp))
-                                SystemBadge()
-                            }
-                            if (disabled) {
-                                Spacer(Modifier.width(6.dp))
-                                DisabledBadge()
-                            }
+                            // 直接决定"删了会不会动到系统"），已停用再叠一枚。
+                            if (systemApp) SystemBadge()
+                            if (disabled) DisabledBadge()
                         }
                         // 名单现在这一档意味着什么，就写在档位名后面：读的人第一件事是
-                        // 「这个包现在标成推荐卸载，那我删了会不会出事」。两枚标记（会破坏功能 /
-                        // 可能卡在开机）单独一行，和徽标同一套颜色语义。
+                        // 「这个包现在标成推荐卸载，那我删了会不会出事」。
                         Spacer(Modifier.height(4.dp))
-                        BadgeImpactTags(publishedBadge)
-                        Spacer(Modifier.height(3.dp))
                         Text(
                             text = badgeRiskSummary(publishedBadge),
                             style = FlText.caption2.copy(fontWeight = FlText.emphasized),
@@ -423,15 +420,16 @@ fun LevelFixScreen(
                                 )
                                 Spacer(Modifier.width(9.dp))
                                 Column {
-                                    Text(
-                                        text = "选这一档会发生什么",
-                                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                                        color = scheme.onSurfaceVariant,
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    // 两枚标记就在这一块的顶部：会破坏功能 / 可能卡在开机。
-                                    // 选完档位先看到"代价"，再看到解释。
-                                    BadgeImpactTags(pickedLevel)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "选这一档会发生什么",
+                                            style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                                            color = scheme.onSurfaceVariant,
+                                        )
+                                        Spacer(Modifier.weight(1f))
+                                        // 两枚标记就在标题这一行：会破坏功能 / 可能卡在开机。
+                                        BadgeImpactTags(pickedLevel)
+                                    }
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
@@ -606,6 +604,7 @@ private val LEVELS = listOf(
 )
 
 /** 一条级别提案：谁提的、要改成哪档、依据、票数，以及两个投票按钮。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LevelFixCard(
     fix: LevelFix,
@@ -673,17 +672,27 @@ private fun LevelFixCard(
         }
 
         Spacer(Modifier.height(7.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 一行里放齐：建议标成 + 档位徽标 + 名称 + 两枚后果标记。形状与列表 item 的徽标一致，
+        // 换行由 FlowRow 决定（小屏放不下"徽标 + 两枚标记"时折行，而不是把标记藏起来）。
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Text(
                 text = "建议标成",
                 style = FlText.caption2,
                 color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
             )
-            Spacer(Modifier.width(6.dp))
             levelBadge?.let { badge ->
                 AppBadge(badge)
-                Spacer(Modifier.width(6.dp))
-                Text(text = stringResource(badge.nameRes), style = FlText.caption1, color = scheme.onSurface)
+                Text(
+                    text = stringResource(badge.nameRes),
+                    style = FlText.caption1,
+                    color = scheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+                BadgeImpactTags(badge)
             }
         }
         // 这一档意味着什么，这里写两行：第一行是「这台机器会发生什么」（会不会破坏功能、
@@ -691,9 +700,6 @@ private fun LevelFixCard(
         // 光知道档位名叫"专家"没有意义。
         levelBadge?.let { badge ->
             Spacer(Modifier.height(4.dp))
-            // 每一条历史都贴这两枚：这是"投它等于同意什么"，不是只属于页面顶部的东西。
-            BadgeImpactTags(badge)
-            Spacer(Modifier.height(3.dp))
             Text(
                 text = badgeRiskSummary(badge),
                 style = FlText.caption2.copy(fontWeight = FlText.emphasized),
