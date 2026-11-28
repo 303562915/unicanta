@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -53,6 +56,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
  * 行内标记：`**粗**` `*斜*` `_斜_` `` `代码` `` `~~删除~~` `[文字](链接)`、**裸地址**
@@ -99,6 +103,14 @@ fun markdownInline(
  * `:6757`，都不传它）源码一个字不用改；而且默认值会让 `onFloorRef == null` 把楼层识别整条短路
  * （[appendMarked] 里先判空，[floorRefEndAt] 一次都不跑），所以"不传参数 = 输出与改动前逐项一致"
  * 是**结构性**成立，不靠以后每次改代码时自觉。
+ *
+ * 引用块有两种画法：首行认得出「楼层号 / 作者 / 冒号」的（本仓「引用回复」塞进正文的那段，见
+ * `ui/screen/PostsSection.kt:1816-1822` 的 `quoteComment`）画成 [QuoteCard]，其余引用块**一个像素
+ * 都不动**，还是下面那个 6% 底 + 8dp 圆角的普通引用。识别为什么这么保守见 [parseFloorQuote]，
+ * 卡片为什么整卡不吃点击、为什么只露 4 行见 [QuoteCard]。
+ *
+ * 递归渲染（引用卡里的正文）走同文件里那个带 `quoteDepth` 的 [MiniMarkdownContent]：这个公开函数
+ * 的签名一个字都没变，四个现有调用点不用改。
  */
 @Composable
 fun MiniMarkdown(
@@ -108,6 +120,37 @@ fun MiniMarkdown(
     color: Color = MaterialTheme.colorScheme.onSurface,
     /** 正文里的 `#N` 楼层引用被点击时回调；null = 不做成可点的（保持现状）。 */
     onFloorRef: ((Int) -> Unit)? = null,
+) {
+    MiniMarkdownContent(
+        text = text,
+        modifier = modifier,
+        baseStyle = baseStyle,
+        color = color,
+        onFloorRef = onFloorRef,
+        // 正文本身在最外层：它是"第 1 层"，里面出现的引用块是第 2 层，见 [QuoteCardMaxDepth]。
+        quoteDepth = 0,
+    )
+}
+
+/**
+ * [MiniMarkdown] 的实现体，外加一个只在本文件内流转的 [quoteDepth]（**引用嵌套层数**）。
+ *
+ * 为什么拆成两层而不是给公开函数加个 `quoteDepth: Int = 0`：那样嵌套层数就成了对外 API 的一部分，
+ * 调用方传错一个数字（比如传 2）就能让一楼的那段正文全部退回普通引用，而且以后每加一个"只在递归时
+ * 生效"的参数都要再改一次公开签名。拆开之后 [MiniMarkdown] 的签名与行为对调用方**完全不变**，
+ * 递归只发生在 [QuoteCard] 内部（那里调用的就是本函数），层数出不了这个文件。
+ *
+ * [quoteDepth] 只在 [MdBlock.Quote] 那一支里被读：其余块级的渲染与它无关，所以递归只沿"引用里套引用"
+ * 这一条路径加深，不会因为正文里有一堆段落就把层数加上去。
+ */
+@Composable
+private fun MiniMarkdownContent(
+    text: String,
+    modifier: Modifier,
+    baseStyle: TextStyle,
+    color: Color,
+    onFloorRef: ((Int) -> Unit)?,
+    quoteDepth: Int,
 ) {
     // 正文可能几千字，逐帧重新切行没必要：文本不变就不重算。
     val blocks = remember(text) { parseBlocks(text) }
@@ -221,20 +264,37 @@ fun MiniMarkdown(
                     }
                 }
 
-                is MdBlock.Quote -> Text(
-                    text = markdownInline(block.text, linkColor, onFloorRef),
-                    style = baseStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            // 底色从 onSurfaceVariant 取 6%：深浅主题下都只是"比正文暗一层"，
-                            // 不用另配一套引用色。
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.06f),
-                            RoundedCornerShape(8.dp),
+                // 引用块分两支：首行认得出「楼层号 / 作者 / 冒号」的画成引用卡（[QuoteCard]），
+                // 认不出、或嵌套已经深到 [QuoteCardMaxDepth] 的，**原样走下面这支**。
+                // 那支的代码与改动前逐字一致（6% `onSurfaceVariant` 底 + 8dp 圆角 + 10/6 内边距，
+                // 单行 `Text`），所以"普通引用逐像素不变"是结构性的：只要 [parseFloorQuote] 返回
+                // null 就一个属性都不会经过新的分支。
+                is MdBlock.Quote -> {
+                    val quoted = parseFloorQuote(block.text)
+                    if (quoted != null && quoteDepth < QuoteCardMaxDepth) {
+                        QuoteCard(
+                            quote = quoted,
+                            baseStyle = baseStyle,
+                            onFloorRef = onFloorRef,
+                            quoteDepth = quoteDepth,
                         )
-                        .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
-                )
+                    } else {
+                        Text(
+                            text = markdownInline(block.text, linkColor, onFloorRef),
+                            style = baseStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    // 底色从 onSurfaceVariant 取 6%：深浅主题下都只是"比正文暗一层"，
+                                    // 不用另配一套引用色。
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.06f),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                        )
+                    }
+                }
 
                 is MdBlock.CodeBlock -> CodeBlock(block.code, block.language, color)
 
@@ -263,6 +323,275 @@ fun MiniMarkdown(
                 is MdBlock.Gap -> Spacer(modifier = Modifier.height(4.dp))
             }
             index++
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 引用卡（「回复 #N · 作者」）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一条「楼层引用」拆出来的三部分：楼层号、作者、被引用的正文。
+ *
+ * [floor] 可以是 null：两种写法都要认 —— `> #12 张三：…` 与 `> 张三：…`。注意本仓现在的
+ * `quoteComment`（`ui/screen/PostsSection.kt:1816-1822`）写进去的是**后一种**（`"> ${作者}：$snippet\n"`，
+ * head 里没有楼层号），带 `#N` 的那种是历史格式/用户自己编辑过的形态；两者都拆成同样的三件东西，
+ * 后者首行只写「回复 作者」。拆出来的形状与参考实现从 `aside.quote` 上取的属性一一对应
+ * （`lib/widgets/markdown_editor/markdown_renderer.dart:437-491`：`data-post` 是楼层号、
+ * 首个字段是显示名），那边也是"作者、楼层号、正文"三件东西分开存，而不是把首行当一整句留着。
+ */
+private class FloorQuote(val floor: Int?, val author: String, val body: String)
+
+/** 作者名的字数上限，见 [parseFloorQuote] 里"为什么宁可漏认也不误认"那一段。 */
+private const val QuoteHeadMaxAuthorChars = 24
+
+/**
+ * 作者名里一出现就说明"这是一整句话里有个冒号"的标点：正常昵称不会用句读标点。
+ *
+ * 只列句读与省略号，**不列** `-` `·` `_`：这几个在真昵称里很常见（`小明-2k`、`·阿狸·`）。
+ */
+private const val QuoteHeadStopChars = "。，、；！？…"
+
+/**
+ * 把 [MdBlock.Quote] 的首行识别成 [FloorQuote]；认不出返回 null，调用方保持原来的普通引用样式。
+ *
+ * ## 认的两种写法
+ *
+ * 本仓「引用回复」把这样一段塞进正文（`ui/screen/PostsSection.kt:1816-1822` 的 `quoteComment`，
+ * head 是 `"> ${作者}：$snippet\n"`）：
+ *
+ * ```
+ * > #12 张三：被引用的原文第一行
+ * ```
+ *
+ * 所以首行可以是 `#数字 + 空白 + 名字 + 冒号`，也可以只有 `名字 + 冒号`。全角 `：` 与半角 `:`
+ * 都认；名字里带空格也认（一律取到**第一个**冒号之前）。冒号之后是正文，后面几行原样接上
+ * （换行保留）。
+ *
+ * ## 为什么宁可漏认也不误认
+ *
+ * 认错的代价不对称：**漏认**只是这段话还是普通引用块，读起来照样对；**误认**会把
+ * `> 注意：先看第三条` 这种普通引用变成一张带头像的引用卡，作者名显示成「注意」，正文还被裁到
+ * 4 行——信息直接读不到。所以下面每一条都往"更保守"的方向收，宁可少认几条：
+ *
+ *  * **必须有冒号**：`> #12 张三` 这种没冒号的不认。它更像正文里的一句「回复 12 楼的张三」，
+ *    而不是"作者 + 正文"的分界；
+ *  * **冒号前必须非空且不超过 [QuoteHeadMaxAuthorChars] 个字**：超了就是"一整句里只有一个冒号"，
+ *    不是「作者：正文」。这也是需求里那个 24 字上限的用处；
+ *  * **冒号前不能有句读标点**（[QuoteHeadStopChars]）：昵称里不会出现 `。，、；！？…`；
+ *  * **`#` 后面必须有数字、数字后面必须是空白**：`#12张三：` 这种缺空白的直接返回 null ——
+ *    按规则读不出楼层号，硬把 `#12张三` 当作者名又会在卡片上显示一串编号；
+ *    而 `#` 后面没有数字（`# 标题：…`）也返回 null，那更像被人手写成引用的一个 Markdown 标题。
+ *  * **首行开头的 `>` 先剥掉**：引用里套引用时 `parseBlocks` 只剥一层，剩下的 `>` 会浮到下一层
+ *    的首行上；不剥的话「作者」会变成 `> 张三`，卡片上就带个箭头。
+ *
+ * 判定顺序是先切冒号再拆楼层号：冒号在 `#` 前面（`张三：#12 你说的对`）时，首行照样是
+ * 「作者 + 正文」，正文里的 `#12` 会由 [markdownInline] 变成可点的楼层引用，这正是想要的。
+ */
+private fun parseFloorQuote(text: String): FloorQuote? {
+    val lineEnd = text.indexOf('\n')
+    // 引用里再引用：`parseBlocks` 每层只剥掉一个 `>`，剩下的会浮到内层的首行上。这里再剥一次
+    // （连同空白），否则「作者」会变成 `> 张三`，卡片首行就多一个箭头。
+    val firstLine = (if (lineEnd < 0) text else text.substring(0, lineEnd))
+        .trim()
+        .trimStart { it == '>' || it.isWhitespace() }
+    val restLines = if (lineEnd < 0) "" else text.substring(lineEnd + 1)
+
+    // 第一个冒号（全角或半角）就是"作者"和"正文"的分界。下标 0 说明冒号前什么都没有，不是引用。
+    val colon = firstLine.indexOfFirst { it == '：' || it == ':' }
+    if (colon <= 0) return null
+
+    var author = firstLine.substring(0, colon).trim()
+    var floor: Int? = null
+    if (author.startsWith("#")) {
+        var digitsEnd = 1
+        while (digitsEnd < author.length && author[digitsEnd] in '0'..'9') digitsEnd++
+        // `#` 后面一个数字都没有：`# 标题：…`，不是楼层引用。
+        if (digitsEnd == 1) return null
+        // 数字后面紧跟名字（没有空白）：读不出楼层号，也说不清作者叫什么，整块按普通引用处理。
+        if (digitsEnd < author.length && !author[digitsEnd].isWhitespace()) return null
+        floor = author.substring(1, digitsEnd).toIntOrNull()
+        author = author.substring(digitsEnd).trim()
+    }
+    if (author.isEmpty() || author.length > QuoteHeadMaxAuthorChars) return null
+    if (author.any { it in QuoteHeadStopChars }) return null
+
+    // 正文 = 首行冒号之后的那截（去掉首尾空白）+ 其余行原样接上；换行保留，交给
+    // [MiniMarkdownContent] 当普通 Markdown 再解析一遍。
+    val firstBody = firstLine.substring(colon + 1).trim()
+    val body = when {
+        restLines.isEmpty() -> firstBody
+        firstBody.isEmpty() -> restLines
+        else -> firstBody + "\n" + restLines
+    }
+    return FloorQuote(floor = floor, author = author, body = body)
+}
+
+/**
+ * 引用卡外壳的圆角：**左侧直角、右侧 6dp 圆角**。
+ *
+ * 左侧留成直角是因为那条 3dp 的主色竖条要从卡片顶端一直画到底端（[drawBehind] 里那个满高矩形）：
+ * 左上/左下若是 6dp 圆角，竖条在两端会被裁掉一小块，看起来像一根断了两头的虚线，反而不像"引导线"。
+ * 右侧保持 6dp 是为了和本文件里代码块（8dp）、普通引用（8dp）那一档圆角处在同一套语言里。
+ */
+private val QuoteCardShape = RoundedCornerShape(
+    topStart = 0.dp,
+    topEnd = 6.dp,
+    bottomEnd = 6.dp,
+    bottomStart = 0.dp,
+)
+
+/** 引用卡左侧那条主色竖条的宽度。 */
+private val QuoteCardBarWidth = 3.dp
+
+/** 引用卡正文最多露几行，见 [quoteBodyMaxHeight]。 */
+private const val QuoteCardMaxLines = 4
+
+/**
+ * 允许画成引用卡的**最大嵌套层数**：第 3 层起退回普通引用样式。
+ *
+ * 引用里再引用再引用，每张卡都带 4 行裁剪，叠三层之后一屏里只剩三个"作者 + 半句话"，什么都读不出来。
+ * 所以 [MiniMarkdownContent] 在这一支上判 `quoteDepth < QuoteCardMaxDepth`：最外层正文是 0 层
+ * （里面的引用算第 1 层）、卡里的正文是 1 层（里面的引用算第 2 层），到第 3 层就画成普通引用块。
+ * 普通引用块**不再往下递归**（它只是把整段文字丢给 [markdownInline]），所以递归深度到这里有硬上界，
+ * 不存在"引用里套引用"把一屏撑爆或把栈压穿的路径。
+ */
+private const val QuoteCardMaxDepth = 2
+
+/**
+ * 引用卡正文区的限高：4 行。
+ *
+ * 4 行是「看得出被引用的是哪句话、又不把这一楼撑成两屏」的折中。参考实现里被引用那一段的紧凑形态
+ * （`lib/widgets/post/post_item/widgets/embedded_posts.dart:133-145`）正文只有 13sp、`onSurfaceVariant`，
+ * 高度靠 `_FoldableContent` 的 `foldedLines` 折；那边是有"展开"的，因为它是**引用历史里的一条帖子**。
+ * 这里**刻意没有**「展开」：引用卡是给正文当背景信息的，不是入口 —— 想读全文就点首行那个 `#N`
+ * 跳过去，那是这张卡上唯一该有的动作。加个"展开"等于在一条回复里再摊开一条回复，读者会分不清
+ * 哪句是当前楼说的。
+ *
+ * 数值按 [base] 算（调用方传进来的正文样式，不是写死 `bodyMedium`）：`fontSize` / `lineHeight`
+ * 读回来都是 `TextUnit`，本文件统一按 sp 与 dp 1:1 折算 —— 与 [CodeBlockCollapsedHeight] 同一个
+ * 取舍（见那一节：过 `LocalDensity` + 字体缩放会让限高随系统字号漂，折叠区大小就不可预期了）。
+ * `TextUnit.Unspecified` 的 `.value` 是 NaN，`NaN > 0f` 为 false，正好落到兜底值。
+ */
+private fun quoteBodyMaxHeight(base: TextStyle): Dp {
+    val size = base.fontSize.value.takeIf { it > 0f } ?: 14f
+    val line = base.lineHeight.value.takeIf { it > 0f } ?: size * 1.4f
+    return (line * QuoteCardMaxLines).dp
+}
+
+/**
+ * 「回复 #N · 作者」那一行（`quote.floor` 为 null 时只有「回复 作者」）。
+ *
+ * `#N` **必须**用 [markdownInline] 渲染，不能手拼纯文本：楼层号的可点性挂在
+ * `LinkAnnotation.Clickable` 上（见 [appendMarked] 里那段），手拼字符串就只剩死字，
+ * `onFloorRef` 在有这行的时候等于失效。所以这里先 append「回复」，再 append 一段
+ * [markdownInline] 出来的 `#N`，最后接作者名与间隔点 —— `AnnotatedString` 的 span 会被
+ * `Builder.append(AnnotatedString)` 原样搬过来。
+ */
+private fun quoteHeadText(
+    quote: FloorQuote,
+    linkColor: Color,
+    onFloorRef: ((Int) -> Unit)?,
+): AnnotatedString = buildAnnotatedString {
+    append("回复 ")
+    val floor = quote.floor
+    if (floor != null) {
+        append(markdownInline("#$floor", linkColor, onFloorRef))
+        append(" · ")
+    }
+    append(quote.author)
+}
+
+/**
+ * 楼层引用的卡片：`Icons.AutoMirrored.Rounded.Reply` + 20dp 头像 + 「回复 #N · 作者」一行，
+ * 下面是被引用正文（最多 [QuoteCardMaxLines] 行）。
+ *
+ * 结构照参考实现的紧凑引用形态（`lib/widgets/post/post_item/widgets/embedded_posts.dart:100-146`：
+ * 一颗 14dp 的 `reply_rounded`、20dp 头像、名字、`#N`，正文用 `onSurfaceVariant` 铺在下面，
+ * 间距是 6 / 6）。这里的间距按需求收窄成 6dp（图标→头像）与 4dp（头像→文字），
+ * 字号是 `labelSmall` 抬到 11sp：这一行是"这张卡属于谁"的标签，不该和正文抢注意力。
+ *
+ * ## 几处刻意的选择
+ *
+ *  * **整卡不吃点击**：引用是信息，不是入口。点整卡没有地方可去，反倒会和首行的 `#N` 抢手势
+ *    （点偏一点就落进外层），而"点 `#N` 跳到那一楼"才是这张卡唯一该有的交互。所以这里没有
+ *    `clickable`，那颗图标与头像也没有 `contentDescription`。
+ *  * **左侧竖条用 `drawBehind` 而不是 `border`**：`border` 画的是一圈描边（四边都有，或沿 shape
+ *    画整圈），想要"只有左边一条"就得靠 `BorderStroke` 去凑，圆角处还会留毛边；`drawBehind` 只画
+ *    一个 3dp × 满高的矩形，位置写死在 `(0, 0)`，宽度与颜色都是主色，不受圆角影响。它挂在
+ *    `background` **之后**（链上更靠内 = 更晚画），所以竖条压在底色上，不会被 6% 底盖掉。
+ *  * **正文走 [MiniMarkdownContent] 递归**（不是 `markdownInline`）：被引用的原文里可能有段落、
+ *    列表、代码块、表格、图片。递归进来以后它们照常按块渲染，再由 `heightIn` + `clipToBounds`
+ *    统一裁到 4 行 —— 不会因为"引用里有一张图"就整块崩掉。
+ *  * **[quoteDepth] 传 `+ 1`**：这一层是引用卡，卡里再出现的引用就是下一层，上限见
+ *    [QuoteCardMaxDepth]。
+ */
+@Composable
+private fun QuoteCard(
+    quote: FloorQuote,
+    baseStyle: TextStyle,
+    onFloorRef: ((Int) -> Unit)?,
+    quoteDepth: Int,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val bodyColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 顺序是「裁切 → 底色 → 竖条」：`clip` 在最外层，圆角与竖条都咬在同一个轮廓里。
+            .clip(QuoteCardShape)
+            .background(primary.copy(alpha = 0.06f))
+            .drawBehind {
+                drawRect(
+                    color = primary,
+                    size = Size(QuoteCardBarWidth.toPx(), size.height),
+                )
+            }
+            .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.Reply,
+                contentDescription = null,
+                tint = primary,
+                modifier = Modifier.size(14.dp),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            // 与 [PostAvatar] 同包（`io.github.samolego.canta.ui.component`），不需要 import；
+            // seed 用作者名，拿不到照片时就是名字首字，不会画一块灰。
+            PostAvatar(name = quote.author, seed = quote.author, size = 20.dp)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = quoteHeadText(quote, primary, onFloorRef),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        // 首行之外没有正文（`> #12 张三：`）时不留那 4dp 间隙，否则卡里会多出一条空带。
+        if (quote.body.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // `heightIn` 只把量出来的高度夹住，超出的部分要靠 `clipToBounds` 才是真的切掉
+                    // （与 `CodeBlock` 的折叠同一套做法，见 [CodeBlockCollapsedHeight] 附近）。
+                    .heightIn(max = quoteBodyMaxHeight(baseStyle))
+                    .clipToBounds(),
+            ) {
+                MiniMarkdownContent(
+                    text = quote.body,
+                    modifier = Modifier,
+                    // 正文用**调用方传进来的**样式，不另配一套：引用块的字号应当和它所在的那段一致。
+                    baseStyle = baseStyle,
+                    color = bodyColor,
+                    onFloorRef = onFloorRef,
+                    quoteDepth = quoteDepth + 1,
+                )
+            }
         }
     }
 }

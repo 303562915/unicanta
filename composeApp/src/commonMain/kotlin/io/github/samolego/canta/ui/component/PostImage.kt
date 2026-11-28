@@ -61,6 +61,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -263,6 +264,106 @@ fun PostImage(
     // 全屏：已经解码好的那张直接从缓存取（[PostImageCache.get] 命中），不再下一次网络。
     if (zoomed && loaded != null) {
         PostImageViewer(urls = listOf(address), startIndex = 0, onDismiss = { zoomed = false })
+    }
+}
+
+/**
+ * 列表卡片首图缩略的圆角。8dp 与正文图（[PostImage] 里的 `RoundedCornerShape(8.dp)`）和
+ * 方图墙（[PostImageGridShape]）同一档：缩略图将来若被换成大图，圆角不该跟着变一次。
+ */
+private val PostImageThumbShape = RoundedCornerShape(8.dp)
+
+/** 缩略图加载失败时那颗破图图标的边长。16dp：72dp 的方框里再大就变成主角了。 */
+private val PostImageThumbBrokenIcon = 16.dp
+
+/**
+ * 列表卡片里的首图缩略：固定方图、裁切、不响应点击（点击归卡片本身）。
+ *
+ * 为什么有它：列表卡片（`PostsSection.kt` 的 `PostCard`）原来只有标题 + 署名两行字，
+ * 一条贴了截图的帖子在列表里和一条纯文字帖子长得一模一样。fluxdo 那边卡片内本来就会铺缩略
+ * （`topic_expandable_excerpt.dart:233-277` 的 `_buildImages`：`BoxFit.cover` + 圆角 +
+ * `thumbnailMode: true`），本仓补上同一件事。
+ *
+ * **为什么是固定方图、不照原文按内容宽铺**：Flutter 那边缩略块**独占一行**（宽 = 卡片内容宽，
+ * 单图按 16:9 夹 80..144 高，多图 104 高），本仓的卡片把缩略放在内容**右侧**（见 `PostCard` 的
+ * `Row`），右侧只剩一列宽度；铺满内容宽会把标题挤成三行、卡片长一截。方图 + [ContentScale.Crop]
+ * 裁掉两端，是"一格宽换一格高"的最省地方案 —— 与方图墙同一套 Crop 口径（见 `PostImageGridTile`）。
+ *
+ * **为什么不挂任何手势**：卡片自己是 `combinedClickable`（点击进详情、长按收藏）。缩略图再挂
+ * `clickable` / `pointerInput` 就会把这块方图从卡片的手势范围里切走 —— 手指落在图上时进不了
+ * 详情，长按也不弹收藏菜单，同一张卡片上"能点的地方"变成两个不相交的区域。缩略图在这里只承担
+ * "这条帖有图"的信息，动作一律交给卡片，所以这条修饰符链里**没有** `clickable`、
+ * 没有 `pointerInput`、也没有 `semantics { onClick { … } }`。
+ *
+ * **为什么 `contentDescription = null`**：图与卡片上的标题说的是同一件事，读屏念完"图片"再念标题
+ * 等于同一格停两次；而且它不可点，念出来也没法操作。真正要接无障碍描述的是详情页的 [PostImage]，
+ * 那边有 Markdown 的说明文字和「查看大图」这个动作。
+ *
+ * 三态与 [PostImage] 同源，走同一张 [PostImageCache]（同一张图在列表、详情、方图墙里只下一次网络）：
+ *  * 还没到 → `surfaceContainerHigh` 圆角方块（与正文图的占位同一个色，落在卡片底色上不突兀、
+ *    也不会先闪一下白）；
+ *  * 到了   → 铺满方框、`Crop` 裁切；
+ *  * 失败   → 同一块灰底上画一颗 [PostImageThumbBrokenIcon] 的 `Icons.Rounded.BrokenImage`
+ *    （`outline` 色），不是整块红字、也不留一个空的洞 —— 空着会让人以为"这条帖子没图"。
+ *
+ * 与 [PostImage] 的差别只有两处，都是刻意的：**不提供重试**（列表里滚一下就是一次新的组合，
+ * 而"点一下重试"会与卡片自己的点击抢手势）与**不进全屏**（看大图请进详情）。
+ */
+@Composable
+fun PostImageThumb(
+    url: String,
+    size: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val address = url.trim()
+    var bitmap by remember(address) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(address) { mutableStateOf(false) }
+
+    LaunchedEffect(address) {
+        if (address.isEmpty()) {
+            failed = true
+            return@LaunchedEffect
+        }
+        // 同一个地址在详情页 / 别的卡片里已经解过就不再下一次（`PostImageCache`）。
+        val cached = PostImageCache.get(address)
+        if (cached != null) {
+            bitmap = cached
+            failed = false
+            return@LaunchedEffect
+        }
+        bitmap = null
+        failed = false
+        val decoded = PostImageCache.load(address)
+        if (decoded == null) {
+            failed = true
+        } else {
+            bitmap = decoded
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(PostImageThumbShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        val loaded = bitmap
+        if (loaded != null) {
+            Image(
+                bitmap = loaded,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (failed) {
+            Icon(
+                imageVector = Icons.Rounded.BrokenImage,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(PostImageThumbBrokenIcon),
+            )
+        }
     }
 }
 

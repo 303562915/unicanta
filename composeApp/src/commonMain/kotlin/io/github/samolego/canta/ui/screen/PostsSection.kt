@@ -129,6 +129,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenuItem
@@ -212,6 +213,7 @@ import io.github.samolego.canta.ui.component.AnonymousDot
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.MiniMarkdown
 import io.github.samolego.canta.ui.component.PostAvatar
+import io.github.samolego.canta.ui.component.PostImageThumb
 import io.github.samolego.canta.ui.component.ScrollToTopEffect
 import io.github.samolego.canta.ui.component.ScreenTopBar
 import io.github.samolego.canta.ui.component.fallbackBrandColor
@@ -1872,6 +1874,24 @@ internal fun PostsScreen(
     val canDeleteOpen = authorId.isNotBlank() && thread?.post?.authorId == authorId
 
     /**
+     * 详情页「收藏 / 取消收藏」的**唯一**实现：主楼动作行那颗星与顶栏那颗星同时用它。
+     *
+     * 为什么提成 val 而不是各写一遍：收藏状态存在盘上（[PostReadStore]），页面靠 [readsVersion] 这个
+     * 计数器重算。两处入口各写一份 `toggleSaved + readsVersion++`，只要有人改错一处（比如漏掉
+     * `readsVersion++`，或者写成 `setSaved(!saved)`），就会变成"顶栏点了亮、主楼那颗还暗"这种
+     * 同一个状态两种显示的 bug。这里只有一条路径，两个入口传的是同一个 lambda。
+     *
+     * `reads == null`（本机存储还没起来）时什么都不做：那时读不出也写不了，点一颗画出来的钮
+     * 等于骗人 —— 所以顶栏那颗在这种时候干脆不画（见 [TopBarSaveButton] 的调用点）。
+     */
+    val toggleOpenSaved: () -> Unit = {
+        reads?.let { store ->
+            store.toggleSaved(openId)
+            readsVersion++
+        }
+    }
+
+    /**
      * 侧栏「标签」页：从已经拉到手的帖子里汇总，出现多的在上面。
      *
      * 不发请求：后端只给每条帖子自己的 `tags`，没有标签目录；为一次侧栏里的一次点击去拉一遍
@@ -1963,6 +1983,21 @@ internal fun PostsScreen(
                     actions = {
                         val open = thread?.post
                         if (open != null) {
+                            // 收藏快捷钮（在「更多」**左边**）。为什么顶栏也要一颗：收藏原来只藏在
+                            // 主楼动作行右侧那颗星里，读一条长帖时要先滑到第一楼底部才点得到 ——
+                            // 而"收藏一条正在读的帖"是读的过程中随时会冒出来的念头，不是读完才做的事。
+                            // fluxdo 的详情顶栏放的就是收藏这一类"对整帖"的动作（`topic_detail_page.dart`
+                            // 的 AppBar actions）。
+                            //
+                            // **不画的条件**（不是画成灰钮）：认不出身份（`authorId` 为空）或盘上那份
+                            // 收藏表还没起来（`reads == null`）。这两种情况下 `toggleSaved` 点了也不会
+                            // 生效，一颗按不出反应的钮比没有更让人迷惑。
+                            if (reads != null && authorId.isNotBlank()) {
+                                TopBarSaveButton(
+                                    saved = reads?.isSaved(openId) == true,
+                                    onClick = toggleOpenSaved,
+                                )
+                            }
                             // 顶栏右侧照 fluxdo 只留一颗「更多」（`Symbols.more_vert_rounded`）。
                             // **编辑与删除都不在顶栏** —— 上一版把两颗圆图标放在这里，
                             // 与 fluxdo 的位置正好相反（见下面那个菜单）。
@@ -2120,12 +2155,9 @@ else -> Column {
                 onReplyChange = { reply = it.take(POST_BODY_LIMIT) },
                 onSend = sendReply,
                 onToggleLike = { thread?.post?.let(toggleLike) },
-                onToggleSave = {
-                    reads?.let { store ->
-                        store.toggleSaved(openId)
-                        readsVersion++
-                    }
-                },
+                // 主楼动作行那颗星：与顶栏那颗星**同一个** lambda（见 [toggleOpenSaved]），
+                // 谁点都走 `toggleSaved + readsVersion++` 这一条路径。
+                onToggleSave = toggleOpenSaved,
                 onQuote = quoteComment,
                 onCopy = {
                     thread?.post?.let { post ->
@@ -2664,10 +2696,76 @@ private fun PostListPane(
 }
 
 /**
+ * 卡片右侧那颗首图缩略的边长。
+ *
+ * 72dp 是**量出来的**，不是随手挑的：卡片右侧只剩"一行字的宽度"可用，而卡内两行内容
+ * （标题 1~2 行 19.5sp + 间距 8 + 署名行 32dp）在单行标题时约 60dp 高。72 略高于它，
+ * 所以有图的卡片只比无图的高 **十二三 dp**，缩略图自己也不会被压成一条；再大（比如 88）
+ * 每屏就少半条帖子，读者是在扫列表、不是在刷图。参考 fluxdo 卡内缩略的高度（单图 16:9 夹
+ * 80..144、多图 104，见 `topic_expandable_excerpt.dart:239-240`）：那边缩略**独占一行**、
+ * 高度可以给到三位数，本仓是侧栏一格，所以取的是那个范围的下沿再收一档。
+ */
+private val PostCardThumbSize = 72.dp
+
+/**
+ * `![说明](https://…)` 整行时把地址取出来 —— 列表卡片用它找"首图"。
+ *
+ * 语义**逐条对齐** `MiniMarkdown.kt:1321` 的 `ImagePattern`
+ * （`^!\[([^\]]*)\]\((https?://[^\s)]+)\)$`），只是这里要的是地址、不要说明，所以把第一组
+ * 换成不捕获的 `[^\]]*`：
+ *
+ *  1. **整行**（`^…$` + 逐行 `trim()`）：`看这张 ![截图](url) 效果` 这种行内图**不算**——
+ *     `MiniMarkdown` 那边它落进段落（`MiniMarkdown.kt:285-291` 的 `splitInlineImages`），
+ *     不是块级图片，卡片照它的规则走；
+ *  2. **只认 `http(s)`**：相对路径、`data:` 既下不到也没意义（同 `MiniMarkdown.kt:1318`）；
+ *  3. **说明可空**：`![](url)` 与 `![截图](url)` 一视同仁（同 `MiniMarkdown.kt:1319`）；
+ *  4. **地址里不能有空白与 `)`**（`[^\s)]+`）：否则 `![](a b)` 会被吞成一条假地址。
+ *
+ * 为什么不直接调 `MiniMarkdown` 里那个私有函数：它在另一个文件里、是 private，而且那条正则
+ * 返回的是「说明 to 地址」；这里只需要地址。改 `MiniMarkdown.kt` 是别人的范围，不动它。
+ */
+private val PostCardImagePattern = Regex("""^!\[[^\]]*\]\((https?://[^\s)]+)\)$""")
+
+/**
+ * 正文里第一张**整行**图片的地址；没有就 null。
+ *
+ * 跳过围栏代码块里的内容：三反引号之间那些 `![](...)` 是代码，`MiniMarkdown` 也不把它们画成图
+ * （`MiniMarkdown.kt:1191-1206`），卡片跟着一致 —— 否则一个贴 Markdown 教程的帖子，列表缩略
+ * 会变成那段示例代码里的占位地址。
+ *
+ * 纯函数、没有 Compose 依赖：调用点用 `remember(...)` 包住（见 [PostCard]），
+ * 列表滚动时不会每帧重跑正则。
+ */
+private fun firstImageUrl(body: String): String? {
+    if (body.isEmpty()) return null
+    var fence = false
+    for (raw in body.lineSequence()) {
+        val trimmed = raw.trim()
+        // 围栏行自己先吃掉：开闭都算，里面的行一律不看。
+        if (trimmed.startsWith("```")) {
+            fence = !fence
+            continue
+        }
+        if (fence) continue
+        // 便宜的先判：绝大多数正文行不以 `![` 开头，正则连进都不用进。
+        if (!trimmed.startsWith("![")) continue
+        val hit = PostCardImagePattern.matchEntire(trimmed) ?: continue
+        return hit.groupValues[1]
+    }
+    return null
+}
+
+/**
  * 列表上的一张帖子卡片。
  *
- * 左边是作者字母头像（同一个人永远同一个色），右边四行：标题、分类与标签、摘要、元信息。
- * 摘要只放两行：列表是用来扫的，点进去才是读。
+ * 实际画出来的只有两行：**标题**（15sp / 行高 1.3、最多 2 行）→ 间距 8 → **署名块**（头像 32 +
+ * 昵称/时间 + 分类标签/赞回复）。这里**没有摘要行**：列表回答只带 `excerpt`（`PostStore.kt:19`），
+ * 而这张卡片一直没画它（旧注释里那句"四行含摘要"与代码不符，以这一行为准）。
+ *
+ * 有首图时右侧多一颗 [PostCardThumbSize] 的方缩略（[PostImageThumb]），首图由 [firstImageUrl] 认。
+ * **缩略图不用行数**：标题仍是 `maxLines = 2` 那条上限（见本函数里那个 `Text`），只把可用宽度让出
+ * 72 + 10dp，所以有图不会让标题多折一行、卡片只比无图的高出"缩略图 72 与内容高（单行标题约 59.5）"
+ * 那十来 dp。没有首图时 `Row` 里只有内容列本身，连 `Spacer` 都不加 —— 布局与加缩略图之前逐项相同。
  *
  * [unread] 是"没看过 / 有新回复"：**卡片右上角**一颗 8dp 主色圆点（叠层画的，不参与布局），扫列表时先认它。
  */
@@ -2695,15 +2793,20 @@ private fun PostListPane(
  * **故意不跟 fluxdo 的项**：
  *  1. `TopicCardStyle.showExcerpt = false`、`showImages = false`（`topic_card_style.dart:54-55`）。
  *     fluxdo 默认不显示摘要，是因为它的摘要要**额外发请求**取首楼（`allowExcerptFetch`，
- *     `topic_card_style.dart:39-40` 明说"默认关闭以避免增加列表请求量"）。本仓不一样：
- *     `excerpt` 是 `posts_for` 一次查询里就算好一起回来的字段，不显示等于白算一次；
- *     而且本仓社区帖子正文普遍短，一两行摘要就够判断"要不要点进去"，比只有标题的卡片信息量大。
+ *     `topic_card_style.dart:39-40` 明说"默认关闭以避免增加列表请求量"）。
+ *     **现状以代码为准**：本仓这张卡片**没有摘要行** —— `excerpt` 只被搜索过滤用到
+ *     （`PostListPane` 里那句 `post.excerpt.contains(keyword)`）。要加摘要得先定"摘要占几行、
+ *     有图时怎么和缩略图分宽度"，那是另一件事；本轮只补首图缩略，不顺手加摘要
+ *     （见本函数顶部那段 KDoc 与 [firstImageUrl]）。
  *  2. `maxCollapsedLines = 3`（`topic_card_style.dart:57`）：那是"展开查看更多"的折叠行数，
- *     本仓摘要不是可展开块，固定两行就够（列表是用来扫的）。
+ *     本仓没有摘要块，谈不上折叠；标题自己有 `maxLines = 2` 这条上限。
  *  3. 未读点的**摆法**：fluxdo 把 `unreadIndicator` 摆进标题行右端的**固定槽位**
  *     （`topic_card.dart:296` 与 `:428-433` 的 `if (unreadIndicator != null) … Padding(top: …)`，
  *     `:879-886` 那颗 8×8 的蓝点），它参与布局 —— 所以"有未读"的标题比"已读"的少一截可用宽度，
  *     同一列里换行位置会不一样。本仓改成画在卡片背景层上（见下一段），标题永远满宽。
+ *  4. `showImages = false` 这条**只跟了一半**：缩略图确实进卡了，但走的是右侧一颗
+ *     [PostCardThumbSize] 方图（[PostImageThumb]），不是 fluxdo 那条"摘要下面按内容宽铺一行"
+ *     （`topic_expandable_excerpt.dart:233-277` 的 `_buildImages`）。理由见 [PostCardThumbSize] 的 KDoc。
  *
  * 标题为什么独占一行：论坛列表以标题为主信息，照片和署名排在它后面，视线沿左边缘直扫。
  *
@@ -2747,6 +2850,19 @@ private fun PostCard(
 ) {
     val scheme = MaterialTheme.colorScheme
     val stamp = relativeStamp(post.createdAt)
+    // 首图：正文里第一条**整行**的 `![](https://…)`，规则与 `MiniMarkdown` 的 `ImagePattern` 一致
+    // （见 [PostCardImagePattern] 与 [firstImageUrl]）。
+    //
+    // 为什么还要看 `excerpt`：列表回答里 `body` 是**空的**（`PostStore.kt:19` 写明"列表只发
+    // `excerpt`"），只认 `body` 等于这条缩略图在实际列表里永远画不出来。`excerpt` 是后端对正文取的
+    // `left(body, 200)` 原文（`20261124160000_community_posts.sql:152`），Markdown 没被洗掉，
+    // 首图落在前 200 字里时照样能认出来；认不出就当这条帖没图。
+    //
+    // 为什么放进 `remember`：卡片是 `LazyColumn` 的项，滚动时反复重组；`remember(post.body,
+    // post.excerpt)` 让这两条正则**每条帖子只跑一次**（200 条列表 = 200 次，不是每帧 200 次）。
+    val thumbUrl = remember(post.body, post.excerpt) {
+        firstImageUrl(post.body) ?: firstImageUrl(post.excerpt)
+    }
     // 三档颜色，照 `topic_card.dart:288-293`：
     //   未读       标题 onSurface             元信息 onSurfaceVariant ×0.8
     //   读过没读完 标题 onSurfaceVariant×0.75  元信息 onSurfaceVariant ×0.8
@@ -2815,110 +2931,132 @@ private fun PostCard(
                 if (unread) stateDescription = "有未读"
             }
             .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
-    ) {
-        // 行1：标题满宽。这一行必须 fillMaxWidth —— 标题吃 weight(1f)，无界宽度下会被算成 0。
+) {
+        // 内容列（原样）+ 右侧首图缩略：**没有首图时这一层不建**，见 [firstImageUrl] 与
+        // `if (thumbUrl != null)` —— 无图卡片的组合项、测量尺寸与改动前逐项相同。
+        //
+        // 为什么把原来那两行（标题 / 头像+元信息）包进一个 `Column(weight(1f))`：缩略图要占
+        // 右侧那一格，内容必须先有一个「可被挤压」的宽度；`weight(1f)` 让标题与署名行的可用宽度
+        // 自动变成「卡宽 - 缩略 - 间距」，不用在任何地方写一个写死的 dp。没有缩略图时这个 Column
+        // 独吃整行，两行内容的位置、行高、间距（8dp 的 Spacer）与改动前完全一致。
         Row(
             modifier = Modifier.fillMaxWidth(),
+            // 顶对齐：缩略图与标题**首行**齐平，否则单行标题的卡片里缩略会浮在署名行上方。
             verticalAlignment = Alignment.Top,
         ) {
-            if (post.pinned) {
-                Icon(Icons.Rounded.PushPin, null, Modifier.size(13.dp), tint = PostPinned)
-                Spacer(modifier = Modifier.width(4.dp))
-            }
-            if (post.locked) {
-                Icon(Icons.Rounded.Lock, null, Modifier.size(13.dp), tint = titleColor.copy(alpha = 0.6f))
-                Spacer(modifier = Modifier.width(4.dp))
-            }
-            Text(
-                text = post.title.ifBlank { "（无标题）" },
-                // 15sp / 行高 1.3：与 `TopicCardStyle.titleFontSize` 的默认值同一个数，
-                // 行高 19.5 就是 `topic_card.dart:314` 的 `height: 1.3`。
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 19.5.sp),
-                // 读完的帖子退一档：w600 → w500（`topic_card.dart:313` 的 `isFullyRead ? w500 : w600`）
-                fontWeight = if (read) FontWeight.Medium else FontWeight.SemiBold,
-                color = titleColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            // 未读点**不在这里**：它由卡片自己的 `drawBehind` 画在右上角（零布局影响）。
-            // 上一版在这一行末尾塞过 `Spacer(6dp) + Box(8dp)`，那 14dp 会从标题的可用宽度里扣掉，
-            // 同一列里"有未读"和"已读"的标题换行位置就不一样了。
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 行2：头像跨两行（radius 16 = 直径 32），右边上下两行小字。
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PostAvatar(
-                name = post.author.ifBlank { "匿" },
-                seed = post.authorId.ifEmpty { post.author },
-                size = 32.dp,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                // 行A：署名（占满）+ 时间。未读时时间也用主色，和那个点呼应。
+            Column(modifier = Modifier.weight(1f)) {
+                // 行1：标题满宽。这一行必须 fillMaxWidth —— 标题吃 weight(1f)，无界宽度下会被算成 0。
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                 ) {
-                    AuthorLabel(
-                        name = post.author.ifBlank { "匿名" },
-                        style = MaterialTheme.typography.labelLarge,
-                        // 读过就跟着元信息色退灰，未读提亮到 onSurface×0.85（`topic_card.dart:825-827`）
-                        color = if (read) {
-                            metaTint(scheme.onSurfaceVariant, 0.6f)
-                        } else {
-                            metaTint(scheme.onSurface, 0.85f)
-                        },
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (mine) {
-                        Spacer(modifier = Modifier.width(5.dp))
-                        PostBadge(text = "我", color = scheme.primary)
+                    if (post.pinned) {
+                        Icon(Icons.Rounded.PushPin, null, Modifier.size(13.dp), tint = PostPinned)
+                        Spacer(modifier = Modifier.width(4.dp))
                     }
-                    if (saved) {
-                        Spacer(modifier = Modifier.width(5.dp))
-                        PostBadge(
-                            text = "收藏",
-                            color = scheme.secondary,
-                            foreground = scheme.onSecondary,
-                        )
+                    if (post.locked) {
+                        Icon(Icons.Rounded.Lock, null, Modifier.size(13.dp), tint = titleColor.copy(alpha = 0.6f))
+                        Spacer(modifier = Modifier.width(4.dp))
                     }
-                    Spacer(modifier = Modifier.weight(1f))
-                    if (stamp.isNotBlank()) {
-                        Text(
-                            text = stamp,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeColor,
-                            maxLines = 1,
-                        )
-                    }
-                }
-                // 行B：分类 + 标签（占满）+ 赞 / 回复。
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PostMetaChips(
-                        category = post.category,
-                        tags = post.tags,
-                        maxTags = 2,
-                        // 全读完时整行退灰：fluxdo 是 0.55（`topic_card.dart:851`）。
-                        dim = if (read) 0.55f else 1f,
-                        categoryColor = post.categoryColor,
+                    Text(
+                        text = post.title.ifBlank { "（无标题）" },
+                        // 15sp / 行高 1.3：与 `TopicCardStyle.titleFontSize` 的默认值同一个数，
+                        // 行高 19.5 就是 `topic_card.dart:314` 的 `height: 1.3`。
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 19.5.sp),
+                        // 读完的帖子退一档：w600 → w500（`topic_card.dart:313` 的 `isFullyRead ? w500 : w600`）
+                        fontWeight = if (read) FontWeight.Medium else FontWeight.SemiBold,
+                        color = titleColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    PostMetric(glyph = Icons.Rounded.Favorite, count = post.likes, active = post.mineLike)
-                    Spacer(modifier = Modifier.width(10.dp))
-                    // 回复数用主色：一列里它是最想让人点进去的那个数。
-                    PostMetric(glyph = Icons.Rounded.ChatBubble, count = post.comments, active = true)
+                    // 未读点**不在这里**：它由卡片自己的 `drawBehind` 画在右上角（零布局影响）。
+                    // 上一版在这一行末尾塞过 `Spacer(6dp) + Box(8dp)`，那 14dp 会从标题的可用宽度里扣掉，
+                    // 同一列里"有未读"和"已读"的标题换行位置就不一样了。
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 行2：头像跨两行（radius 16 = 直径 32），右边上下两行小字。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PostAvatar(
+                        name = post.author.ifBlank { "匿" },
+                        seed = post.authorId.ifEmpty { post.author },
+                        size = 32.dp,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        // 行A：署名（占满）+ 时间。未读时时间也用主色，和那个点呼应。
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AuthorLabel(
+                                name = post.author.ifBlank { "匿名" },
+                                style = MaterialTheme.typography.labelLarge,
+                                // 读过就跟着元信息色退灰，未读提亮到 onSurface×0.85（`topic_card.dart:825-827`）
+                                color = if (read) {
+                                    metaTint(scheme.onSurfaceVariant, 0.6f)
+                                } else {
+                                    metaTint(scheme.onSurface, 0.85f)
+                                },
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            if (mine) {
+                                Spacer(modifier = Modifier.width(5.dp))
+                                PostBadge(text = "我", color = scheme.primary)
+                            }
+                            if (saved) {
+                                Spacer(modifier = Modifier.width(5.dp))
+                                PostBadge(
+                                    text = "收藏",
+                                    color = scheme.secondary,
+                                    foreground = scheme.onSecondary,
+                                )
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
+                            if (stamp.isNotBlank()) {
+                                Text(
+                                    text = stamp,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = timeColor,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                        // 行B：分类 + 标签（占满）+ 赞 / 回复。
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PostMetaChips(
+                                category = post.category,
+                                tags = post.tags,
+                                maxTags = 2,
+                                // 全读完时整行退灰：fluxdo 是 0.55（`topic_card.dart:851`）。
+                                dim = if (read) 0.55f else 1f,
+                                categoryColor = post.categoryColor,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            PostMetric(glyph = Icons.Rounded.Favorite, count = post.likes, active = post.mineLike)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            // 回复数用主色：一列里它是最想让人点进去的那个数。
+                            PostMetric(glyph = Icons.Rounded.ChatBubble, count = post.comments, active = true)
+                        }
+                    }
+                }
+            }
+            // 有图才多这两个孩子：没图时 Row 里只有上面那个内容列，一个 Spacer 都不留。
+            if (thumbUrl != null) {
+                Spacer(modifier = Modifier.width(10.dp))
+                // 72dp 的来历见 [PostCardThumbSize]；缩略图自己**不挂手势**（见 PostImageThumb），
+                // 点击与长按照旧落在卡片这一层的 `combinedClickable` 上。
+                PostImageThumb(url = thumbUrl, size = PostCardThumbSize)
             }
         }
     }
@@ -4644,6 +4782,51 @@ private fun ParticipantStack(participants: List<Pair<String, String>>) {
             }
         }
         Spacer(modifier = Modifier.width(6.dp))
+    }
+}
+
+/**
+ * 详情页顶栏那颗「收藏」圆钮：未收藏 [Icons.Rounded.StarBorder]、已收藏 [Icons.Rounded.Star] + 主色。
+ *
+ * 为什么顶栏也要一颗：收藏原来只藏在**主楼动作行最右**那颗星里（见 `PostThreadPane` 里那个
+ * `FloorCircleButton`），读一条几十层的长帖时，人要么先滚回第一楼、要么一路滑到底再滑回来才点得到。
+ * 「收藏这条正在读的帖」是读到一半随时会冒出来的念头，不是读完才做的事，所以顶栏给一个随时够得着的入口。
+ * fluxdo 的详情顶栏放的也正是这类"对整帖"的动作（`topic_detail_page.dart` 的 AppBar actions）。
+ *
+ * 为什么两处入口共用一个状态：星的两态都由 `reads?.isSaved(openId)` 算出来，点下去都走
+ * `PostsScreen` 里那一条 [toggleOpenSaved]（`toggleSaved` + `readsVersion++`，列表与详情都靠
+ * `readsVersion` 重算）。这里**不持有任何本地状态** —— 一旦在这里 `remember { mutableStateOf }`，
+ * 就会出现"顶栏是实心星、主楼那颗还是空心"这种同一个事实两种显示。
+ *
+ * 触控 48dp、图标 24dp、正圆底：与旁边那颗「更多」（[DetailMoreMenu]）同一档，两颗钮并排时视觉重量一致。
+ * 未收藏用 `onSurface`（与「更多」同色，不抢注意力），已收藏用 `primary` —— 与主楼那颗星的选中态同一个表达式。
+ */
+@Composable
+private fun TopBarSaveButton(
+    saved: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    // 无障碍名跟着状态走：读屏念的是"收藏"/"取消收藏"，而不是一个光秃秃的"按钮"。
+    val label = if (saved) "取消收藏" else "收藏"
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = if (saved) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+            // 只在这里写一次名字（不额外给 `clickable` 传 `onClickLabel`）：
+            // 两个都写会让读屏把"收藏"念两遍。
+            contentDescription = label,
+            modifier = Modifier.size(24.dp),
+            tint = if (saved) scheme.primary else scheme.onSurface,
+        )
     }
 }
 
