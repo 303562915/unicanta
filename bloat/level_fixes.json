@@ -1,0 +1,16 @@
+{
+  "about": "Removal-level corrections for the package list, published here so a fix reaches every phone within a week without a release. Same shape as the bundled files/bloat_overrides.json: packages -> {removal, notes{lang}, source, issue}. source=maintainer means we wrote it after confirming on real hardware; source=community means it came in through the level-correction issue form and bloat-corrections.yml checked it. The app lays this file over the bundled table, so an entry here wins.",
+  "version": 4,
+  "updated": "2026-11-26",
+  "packages": {
+    "com.qualcomm.location": {
+      "removal": "Expert",
+      "source": "maintainer",
+      "issue": 0,
+      "notes": {
+        "en": "This app lowers it from Recommended to Expert: on some ROMs (Honor, for one) this package is the emergency-call locator, so emergency calls may take longer to get a fix after removing it. Everyday location comes from the system LocationManager and is unaffected.",
+        "zh": "本应用把它从「推荐卸载」下调为「专家」：在部分 ROM（例如荣耀）上这个包就是紧急呼叫定位服务，移除后紧急呼叫的定位会更慢。日常定位由系统 LocationManager 负责，不受影响。"
+      }
+    }
+  }
+}

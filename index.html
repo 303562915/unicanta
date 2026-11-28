@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>unicanta · 下载</title>
+<meta name="description" content="unicanta — 不用 root 卸载任何 Android 应用。直接下载最新版 APK。">
+<meta name="theme-color" content="#0a0a0d">
+<meta property="og:title" content="unicanta · 下载最新版">
+<meta property="og:description" content="不用 root，卸载任何 Android 应用。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff4444'/%3E%3Cpath d='M10 20l6-8 6 8z' fill='%230a0a0d'/%3E%3C/svg%3E">
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  :root{
+    --bg:#0a0a0d;
+    --panel:rgba(255,255,255,.035);
+    --line:rgba(255,255,255,.08);
+    --line-strong:rgba(255,255,255,.14);
+    --fg:#f2f2f4;
+    --muted:#9a9aa6;
+    --dim:#6b6b78;
+    --red:#ff4444;
+    --red-soft:rgba(255,68,68,.12);
+    --radius:18px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--fg);
+    font-family:system-ui,-apple-system,"Segoe UI","Noto Sans SC","PingFang SC",sans-serif;
+    font-size:16px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* 背景光晕 + 网格 */
+  .bg{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+  .bg::before{
+    content:"";position:absolute;inset:-20% -10% auto -10%;height:70vh;
+    background:
+      radial-gradient(50% 60% at 50% 0%,rgba(255,68,68,.20),transparent 70%),
+      radial-gradient(30% 40% at 80% 10%,rgba(255,120,80,.10),transparent 70%);
+    filter:blur(10px);
+  }
+  .bg::after{
+    content:"";position:absolute;inset:0;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:64px 64px;
+    mask-image:radial-gradient(circle at 50% 0%,#000 0%,transparent 65%);
+    -webkit-mask-image:radial-gradient(circle at 50% 0%,#000 0%,transparent 65%);
+    opacity:.5;
+  }
+
+  .wrap{width:min(760px,100% - 2.5rem);margin-inline:auto}
+
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:1.5rem 0 0;
+  }
+  .brand{display:flex;align-items:center;gap:.6rem;font-weight:650;letter-spacing:.01em;text-decoration:none;color:var(--fg)}
+  .brand svg{width:26px;height:26px;border-radius:7px;display:block}
+  .brand span small{display:block;font-weight:450;font-size:.7rem;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;line-height:1.2}
+  header nav{display:flex;gap:1.2rem;font-size:.875rem}
+  header nav a{color:var(--muted);text-decoration:none;transition:color .18s}
+  header nav a:hover{color:var(--fg)}
+  @media (max-width:560px){header nav{display:none}}
+
+  main{padding:clamp(3rem,10vw,5.5rem) 0 5rem}
+
+  .pill{
+    display:inline-flex;align-items:center;gap:.5rem;
+    padding:.35rem .8rem .35rem .6rem;
+    border:1px solid var(--line-strong);border-radius:999px;
+    background:var(--panel);backdrop-filter:blur(8px);
+    font-size:.8125rem;color:var(--muted);
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px var(--red-soft)}
+  .pill b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+
+  h1{
+    margin:1.25rem 0 0;
+    font-size:clamp(3.2rem,13vw,5.4rem);
+    line-height:.95;letter-spacing:-.045em;font-weight:700;
+    background:linear-gradient(170deg,#fff 20%,#ffb3a8 60%,#ff5a4a 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .tagline{margin:.9rem 0 0;font-size:clamp(1rem,3.6vw,1.2rem);color:var(--muted);max-width:34ch}
+  .tagline strong{color:var(--fg);font-weight:600}
+
+  .channels{display:flex;gap:.6rem;margin-top:2.2rem;flex-wrap:wrap}
+  .channels button{padding:.6rem .9rem;border:1px solid var(--line-strong);border-radius:10px;background:var(--panel);color:var(--muted);font:inherit;cursor:pointer}
+  .channels button[aria-pressed="true"]{border-color:rgba(255,68,68,.5);color:var(--fg);background:var(--red-soft)}
+  .channels small{display:block;font-size:.75rem;color:var(--muted)}
+
+  /* 下载按钮 */
+  .dl{
+    display:flex;align-items:center;gap:1rem;
+    margin-top:2.2rem;padding:1.05rem 1.4rem;
+    max-width:440px;
+    border-radius:var(--radius);border:1px solid rgba(255,68,68,.35);
+    background:linear-gradient(180deg,rgba(255,68,68,.16),rgba(255,68,68,.06));
+    color:var(--fg);text-decoration:none;
+    box-shadow:0 16px 44px -18px rgba(255,68,68,.65),inset 0 1px 0 rgba(255,255,255,.09);
+    transition:transform .2s cubic-bezier(.2,.8,.3,1),box-shadow .2s,border-color .2s;
+    position:relative;overflow:hidden;
+  }
+  .dl::after{
+    content:"";position:absolute;inset:0;
+    background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.16) 48%,transparent 58%);
+    transform:translateX(-120%);transition:transform .7s ease;
+  }
+  .dl:hover{transform:translateY(-2px);box-shadow:0 22px 54px -18px rgba(255,68,68,.85),inset 0 1px 0 rgba(255,255,255,.12)}
+  .dl:hover::after{transform:translateX(120%)}
+  .dl[aria-disabled="true"]{opacity:.55;pointer-events:none;filter:saturate(.4)}
+  .dl svg{flex:none;width:30px;height:30px;color:var(--red)}
+  .dl .txt{display:flex;flex-direction:column;min-width:0}
+  .dl .t{font-weight:650;font-size:1.0625rem;letter-spacing:.01em}
+  .dl .s{font-size:.8125rem;color:#ffb0a8;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dl .arrow{margin-left:auto;color:#ffb0a8;flex:none;transition:transform .2s}
+  .dl:hover .arrow{transform:translateX(3px)}
+
+  .alt{display:flex;flex-wrap:wrap;gap:1.1rem;margin-top:1.1rem;font-size:.875rem}
+  .alt a,.alt button{
+    color:var(--muted);text-decoration:none;background:none;border:0;padding:0;
+    font:inherit;cursor:pointer;border-bottom:1px solid transparent;transition:.18s;
+  }
+  .alt a:hover,.alt button:hover{color:var(--fg);border-bottom-color:var(--line-strong)}
+
+  /* 元信息 */
+  .meta{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:1px;margin-top:2.4rem;
+    border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--line);
+  }
+  .meta div{background:#0d0d11;padding:.85rem 1rem}
+  .meta dt{font-size:.6875rem;color:var(--dim);letter-spacing:.09em;text-transform:uppercase;margin:0 0 .2rem}
+  .meta dd{margin:0;font-size:.875rem;color:var(--fg);font-variant-numeric:tabular-nums;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta dd.mono{font-family:var(--mono);font-size:.75rem;letter-spacing:-.01em;color:var(--muted)}
+  .meta dd .ago{display:block;font-size:.72rem;color:var(--dim);letter-spacing:.02em}
+
+  /* 区块 */
+  section.block{margin-top:4.5rem}
+  h2{font-size:.75rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 1.1rem;font-weight:600}
+
+  ol.steps{list-style:none;margin:0;padding:0;display:grid;gap:.6rem;counter-reset:s}
+  ol.steps li{
+    counter-increment:s;
+    display:grid;grid-template-columns:auto 1fr;gap:1rem;align-items:start;
+    padding:1rem 1.15rem;
+    border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);
+    font-size:.9375rem;color:var(--muted);
+  }
+  ol.steps li::before{
+    content:"0" counter(s);
+    font-family:var(--mono);font-size:.75rem;color:var(--red);
+    padding-top:.25rem;
+  }
+  ol.steps b{color:var(--fg);font-weight:600}
+  ol.steps a{color:#ff8f86;text-decoration:none;border-bottom:1px solid rgba(255,143,134,.3)}
+  ol.steps a:hover{border-bottom-color:#ff8f86}
+
+  /* 运行时推荐：Shizuku 打头，Stellar 作为推荐项 */
+  .picks{display:grid;gap:.7rem;margin-bottom:1.1rem}
+  .pick{
+    display:flex;align-items:center;gap:1rem;
+    padding:1rem 1.15rem;
+    border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);color:var(--fg);text-decoration:none;
+    transition:border-color .18s,background .18s,transform .18s,box-shadow .18s;
+  }
+  .pick:hover{transform:translateY(-1px);border-color:var(--line-strong);background:rgba(255,255,255,.05)}
+  .pick.rec{
+    border-color:rgba(255,68,68,.32);
+    background:linear-gradient(180deg,rgba(255,68,68,.11),rgba(255,68,68,.03));
+    box-shadow:0 12px 30px -22px rgba(255,68,68,.9);
+  }
+  .pick.rec:hover{border-color:rgba(255,68,68,.55)}
+  .pick svg.ico{flex:none;width:40px;height:40px;border-radius:11px;display:block}
+  .pick .body{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+  .pick .head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .pick .head b{font-weight:650;font-size:.9688rem;letter-spacing:.01em}
+  .pick .tag{
+    font-family:var(--mono);font-size:.625rem;letter-spacing:.06em;text-transform:uppercase;
+    padding:.14rem .4rem;border-radius:5px;
+    border:1px solid rgba(255,255,255,.14);color:var(--muted);
+  }
+  .pick .tag.hot{border-color:rgba(255,68,68,.38);color:#ff9a92;background:var(--red-soft)}
+  .pick .desc{font-size:.8125rem;color:var(--muted);line-height:1.55}
+  .pick .go{
+    margin-left:auto;flex:none;display:flex;align-items:center;gap:.3rem;
+    font-size:.75rem;color:var(--dim);white-space:nowrap;transition:color .18s;
+  }
+  .pick:hover .go{color:#ff8f86}
+  .picks-note{margin:0 0 1.4rem;font-size:.78rem;color:var(--dim)}
+  .picks-note a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line-strong)}
+  .picks-note a:hover{color:var(--fg)}
+  @media (max-width:520px){.pick .go span{display:none}}
+
+  /* 分发渠道 */
+  .stores{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.7rem;margin-top:1.4rem}
+  .store{
+    display:flex;align-items:center;gap:.85rem;
+    padding:.9rem 1.05rem;
+    border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);color:var(--fg);text-decoration:none;
+    transition:border-color .18s,background .18s,transform .18s;
+  }
+  .store:hover{transform:translateY(-1px);border-color:var(--line-strong);background:rgba(255,255,255,.05)}
+  .store svg.ico{flex:none;width:34px;height:34px;border-radius:9px;display:block}
+  .store .body{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+  .store .head{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+  .store .head b{font-weight:650;font-size:.9375rem}
+  .store .desc{font-size:.75rem;color:var(--muted);line-height:1.5}
+  .store .tag{
+    font-family:var(--mono);font-size:.625rem;letter-spacing:.06em;
+    padding:.14rem .4rem;border-radius:5px;
+    border:1px solid rgba(255,255,255,.14);color:var(--muted);
+  }
+
+  details{
+    border:1px solid var(--line);border-radius:14px;background:var(--panel);
+    padding:.95rem 1.15rem;margin-top:.6rem;
+  }
+  details+details{margin-top:.6rem}
+  summary{cursor:pointer;font-weight:550;font-size:.9375rem;list-style:none;display:flex;justify-content:space-between;gap:1rem}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";color:var(--dim);font-family:var(--mono)}
+  details[open] summary::after{content:"−"}
+  details p{margin:.75rem 0 0;color:var(--muted);font-size:.9rem}
+  details code,code{font-family:var(--mono);font-size:.82em;background:rgba(255,255,255,.06);padding:.12em .4em;border-radius:5px;color:#ffc9c2}
+
+  .warn{
+    display:flex;gap:.85rem;margin-top:2.6rem;padding:1rem 1.15rem;
+    border:1px solid rgba(255,180,60,.22);border-radius:14px;
+    background:rgba(255,180,60,.06);font-size:.875rem;color:#e8cf9f;
+  }
+  .warn svg{flex:none;width:18px;height:18px;margin-top:.18rem;color:#ffb43c}
+
+  footer{
+    margin-top:4rem;padding-top:1.6rem;border-top:1px solid var(--line);
+    display:flex;flex-wrap:wrap;gap:.8rem 1.5rem;align-items:center;justify-content:space-between;
+    font-size:.8125rem;color:var(--dim);
+  }
+  footer a{color:var(--muted);text-decoration:none}
+  footer a:hover{color:var(--fg)}
+
+  .toast{
+    position:fixed;left:50%;bottom:2rem;transform:translate(-50%,1.5rem);
+    padding:.6rem 1.1rem;border-radius:999px;
+    background:#1a1a20;border:1px solid var(--line-strong);
+    font-size:.8125rem;opacity:0;pointer-events:none;transition:.25s;z-index:9;
+    box-shadow:0 12px 30px -12px #000;
+  }
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+
+  #history{display:none;margin-top:.9rem;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  #history.on{display:block}
+  #history details{margin:0;padding:0;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0}
+  #history details+details{margin-top:0}
+  #history details:last-child{border-bottom:0}
+  #history summary{padding:.75rem 1rem;font-size:.875rem;color:var(--muted);font-weight:450;font-variant-numeric:tabular-nums}
+  #history summary:hover{background:rgba(255,255,255,.03);color:var(--fg)}
+  #history .hline{display:flex;align-items:baseline;justify-content:space-between;gap:.8rem;flex:1;padding-right:.5rem;min-width:0}
+  #history .hline>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #history time{color:var(--dim);font-size:.78rem;white-space:nowrap}
+  #history .hbody{padding:.1rem 1rem 1rem;font-size:.85rem;color:var(--muted)}
+  #history .hnotes{margin:0 0 .7rem;white-space:pre-wrap;word-break:break-word;max-height:16rem;overflow:auto}
+  #history .hbody a{color:#ff8f86;text-decoration:none;border-bottom:1px solid rgba(255,143,134,.3)}
+  #history .hbody a:hover{color:#ffb0a8}
+  #history .hbody a+a{margin-left:.8rem}
+
+  /* 更新说明 */
+  #notes{display:none;margin-top:.9rem;padding:1rem 1.15rem;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+  #notes.on{display:block}
+  #notes h3{margin:0 0 .6rem;font-size:.6875rem;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  #notes .body{font-size:.875rem;color:var(--muted);max-height:18rem;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:inherit}
+  #notes .body:empty::before{content:"该版本没有填写更新日志";color:var(--dim)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bg"></div>
+
+<div class="wrap">
+  <header>
+    <a class="brand" href="./">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#ff4444"/><path d="M10 21l6-9 6 9z" fill="#0a0a0d"/></svg>
+      <span>unicanta<small>免 root 卸载</small></span>
+    </a>
+    <nav>
+      <a href="#install">安装</a>
+      <a href="#faq">常见问题</a>
+      <a href="https://github.com/303562915/unicanta" rel="noopener noreferrer">源码仓库</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="pill"><span class="dot"></span><span id="pillText">正在读取最新版本…</span></div>
+
+    <h1>unicanta</h1>
+    <p class="tagline">不用 root，<strong>卸载任何 Android 应用</strong>。基于 Shizuku 协议，直连系统包管理器。</p>
+
+    <div class="channels" role="group" aria-label="选择版本渠道">
+      <button id="developmentBtn" type="button" aria-pressed="true">开发版 <small id="developmentVersion">正在获取…</small></button>
+      <button id="stableBtn" type="button" aria-pressed="false">稳定版 <small id="stableVersion">正在获取…</small></button>
+    </div>
+
+    <a class="dl" id="dl" href="#" aria-disabled="true" download>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/>
+      </svg>
+      <span class="txt">
+        <span class="t">下载 APK</span>
+        <span class="s" id="dlSub">正在获取…</span>
+      </span>
+      <svg class="arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+    </a>
+
+    <div class="alt">
+      <button id="historyBtn" type="button">历史版本与日志</button>
+      <button id="shaBtn" type="button">复制 SHA-256</button>
+      <a id="bedLink" href="#" hidden>图床直链</a>
+      <a id="checksumLink" href="#" hidden>校验文件</a>
+    </div>
+
+    <div class="stores">
+      <a class="store" href="https://github.com/303562915/unicanta/releases" target="_blank" rel="noopener noreferrer">
+        <svg class="ico" viewBox="0 0 34 34" aria-hidden="true">
+          <rect width="34" height="34" rx="9" fill="#1b1b22"/>
+          <path d="M17 6.5a7.6 7.6 0 0 0-2.4 14.8c.4.1.5-.2.5-.4v-1.4c-2.1.5-2.6-.9-2.6-.9-.4-.9-.9-1.1-.9-1.1-.7-.5.1-.5.1-.5.8.1 1.2.8 1.2.8.7 1.2 1.9.9 2.3.7.1-.5.3-.9.5-1.1-1.7-.2-3.4-.8-3.4-3.7 0-.8.3-1.5.8-2-.1-.2-.3-1 .1-2 0 0 .6-.2 2.1.8a7.2 7.2 0 0 1 3.8 0c1.5-1 2.1-.8 2.1-.8.4 1 .2 1.8.1 2 .5.5.8 1.2.8 2 0 2.9-1.7 3.5-3.4 3.7.3.2.5.7.5 1.4v1.9c0 .2.1.5.5.4A7.6 7.6 0 0 0 17 6.5z" fill="#fff"/>
+        </svg>
+        <span class="body">
+          <span class="head"><b>GitHub Releases</b><span class="tag">本页同源</span></span>
+          <span class="desc">稳定版与开发版的原始产物</span>
+        </span>
+      </a>
+
+      <a class="store" href="https://f-droid.org/packages/io.github.a303562915.unicanta/" target="_blank" rel="noopener noreferrer">
+        <svg class="ico" viewBox="0 0 34 34" aria-hidden="true">
+          <rect width="34" height="34" rx="9" fill="#1976d2"/>
+          <path d="M11.2 12.4 9.4 9.3m13.4 3.1 1.8-3.1" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+          <rect x="9" y="12" width="16" height="12" rx="4" fill="#fff"/>
+          <circle cx="13.6" cy="17.6" r="1.5" fill="#1976d2"/>
+          <circle cx="20.4" cy="17.6" r="1.5" fill="#1976d2"/>
+        </svg>
+        <span class="body">
+          <span class="head"><b>F-Droid</b><span class="tag">待提交</span></span>
+          <span class="desc">开源商店渠道，收录后可直接搜索安装</span>
+        </span>
+      </a>
+    </div>
+
+    <div id="history"></div>
+
+    <section id="notes">
+      <h3>更新日志</h3>
+      <div class="body" id="notesBody"></div>
+    </section>
+
+    <dl class="meta">
+      <div><dt>版本</dt><dd id="mVersion">—</dd></div>
+      <div><dt>体积</dt><dd id="mSize">—</dd></div>
+      <div><dt>更新于</dt><dd id="mDate"><span id="mDateAbs">—</span><span class="ago" id="mDateAgo"></span></dd></div>
+      <div><dt>SHA-256</dt><dd class="mono" id="mSha">—</dd></div>
+    </dl>
+
+    <section class="block" id="install">
+      <h2>安装</h2>
+
+      <div class="picks">
+        <a class="pick" href="https://shizuku.rikka.app/download/" target="_blank" rel="noopener noreferrer">
+          <svg class="ico" viewBox="0 0 48 48" aria-hidden="true">
+            <defs>
+              <linearGradient id="icoShizuku" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#4a5bd6"/><stop offset="1" stop-color="#2b3487"/>
+              </linearGradient>
+            </defs>
+            <rect width="48" height="48" rx="12" fill="url(#icoShizuku)"/>
+            <path d="M18.5 15.5H13.5V32.5h5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M29.5 15.5h5V32.5h-5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="24" r="2.6" fill="#fff"/>
+          </svg>
+          <span class="body">
+            <span class="head"><b>Shizuku</b><span class="tag">先装这个</span></span>
+            <span class="desc">官方运行时，最通用。按它的引导启动一次即可。</span>
+          </span>
+          <span class="go">前往下载
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+          </span>
+        </a>
+
+        <a class="pick rec" href="https://github.com/roro2239/Stellar/releases" target="_blank" rel="noopener noreferrer">
+          <svg class="ico" viewBox="0 0 48 48" aria-hidden="true">
+            <defs>
+              <linearGradient id="icoStellar" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#2a2050"/><stop offset="1" stop-color="#150f2b"/>
+              </linearGradient>
+            </defs>
+            <rect width="48" height="48" rx="12" fill="url(#icoStellar)"/>
+            <path d="M24 12.5l3.3 8.7 8.7 3.3-8.7 3.3L24 36.5l-3.3-8.7-8.7-3.3 8.7-3.3z" fill="#fff"/>
+            <circle cx="33.5" cy="14.5" r="2.1" fill="#ffb0a8"/>
+          </svg>
+          <span class="body">
+            <span class="head"><b>Stellar</b><span class="tag hot">推荐</span></span>
+            <span class="desc">Shizuku 的深度定制分支，用法一样，权限更细、可跟随开机启动。</span>
+          </span>
+          <span class="go">前往下载
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+          </span>
+        </a>
+      </div>
+
+      <p class="picks-note">Android 16 及以上若官方版启动不了，可换用 <a href="https://github.com/thedjchi/Shizuku" target="_blank" rel="noopener noreferrer">Shizuku fork 版</a>，界面与用法完全一致。</p>
+
+      <ol class="steps">
+        <li><span>安装上面任一运行时并按其引导启动。</span></li>
+        <li><span>下载上面的 APK 并安装。若被拦截，在系统设置中允许「安装未知应用」。</span></li>
+        <li><span>打开 unicanta，在顶部授权运行时（Shizuku 或 Stellar），之后即可浏览、停用或卸载任意应用。</span></li>
+      </ol>
+    </section>
+
+    <section class="block" id="faq">
+      <h2>常见问题</h2>
+
+      <details>
+        <summary>为什么下载链接不在 GitHub Releases 里？</summary>
+        <p>源码仓库是私有的，私有仓库的 Release 资产对外部访问会返回 404。这里托管的是构建产物的公开镜像，与源码仓库的 CI 自动同步。</p>
+      </details>
+
+      <details>
+        <summary>APK 是怎么构建的？可信吗？</summary>
+        <p>由 GitHub Actions 在云端从私有仓库的 tag 构建、签名并上传，本页面与 APK 由同一次流水线一起发布。你可以用上面的 SHA-256 与自己下载到的文件比对。</p>
+      </details>
+
+      <details>
+        <summary>会分发到应用商店吗？</summary>
+        <p>不会。只从这里和源码仓库发布。请只从本页面下载，第三方转载的包无法保证未被改动。</p>
+      </details>
+
+      <details>
+        <summary>支持哪些 Android 版本？</summary>
+        <p>最低 Android 8.0。核心功能依赖 Shizuku 提供的 shell 权限，无需 root，也无需解锁 Bootloader。</p>
+      </details>
+    </section>
+
+    <div class="warn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v5"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+      <span>卸载关键系统应用会导致 bootloop，只能恢复出厂设置。使用风险自负。</span>
+    </div>
+
+    <footer>
+      <span>© <span id="year">2026</span> unicanta</span>
+      <span>包名 <code>io.github.a303562915.unicanta</code></span>
+    </footer>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var state = { channel: "development", sha: "", channels: {
+    stable: { label: "稳定版", status: "loading", data: null },
+    development: { label: "开发版", status: "loading", data: null }
+  } };
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function fmtSize(bytes) {
+    if (!bytes || bytes < 0) return "—";
+    var mb = bytes / 1048576;
+    return (mb >= 100 ? mb.toFixed(0) : mb.toFixed(1)) + " MB";
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d)) return "—";
+    var p = function (n) { return String(n).padStart(2, "0"); };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  /** "3 小时前" for a release stamp; empty when there is nothing to compute. */
+  function fmtAgo(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d)) return "";
+    var seconds = (Date.now() - d.getTime()) / 1000;
+    if (seconds < 0) seconds = 0;
+    if (seconds < 60) return "刚刚";
+    var minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + " 分钟前";
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + " 小时前";
+    var days = Math.floor(hours / 24);
+    if (days < 30) return days + " 天前";
+    var months = Math.floor(days / 30);
+    if (months < 12) return months + " 个月前";
+    return Math.floor(days / 365) + " 年前";
+  }
+
+  /**
+   * "v4.2.6" for a stable release, "v4.2.6 (dev 20)" for a development build. The two channels
+   * publish the same version name — a development build is that version plus a commit — so the
+   * build number is the only thing on the page that tells them apart.
+   */
+  function versionLabel(data) {
+    if (!data || !data.version_name) return "";
+    return "v" + data.version_name + (data.build_number ? " (dev " + data.build_number + ")" : "");
+  }
+
+  function toast(msg) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.classList.add("on");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.classList.remove("on"); }, 1800);
+  }
+
+  function render() {
+    var channel = state.channels[state.channel];
+    var data = channel.data;
+    state.sha = data && data.sha256 || "";
+    var dl = $("dl");
+    dl.setAttribute("aria-disabled", "true");
+    dl.removeAttribute("href");
+    dl.removeAttribute("download");
+    $("checksumLink").hidden = true;
+    $("checksumLink").removeAttribute("href");
+    $("bedLink").hidden = true;
+    $("bedLink").removeAttribute("href");
+    $("history").innerHTML = "";
+    $("history").classList.remove("on");
+    $("notesBody").textContent = "";
+    $("notes").classList.remove("on");
+    $("mVersion").textContent = "—";
+    $("mSize").textContent = "—";
+    $("mDateAbs").textContent = "—";
+    $("mDateAgo").textContent = "";
+    $("mSha").textContent = "—";
+    $("mSha").title = "";
+
+    if (!data || !data.version_name || !data.file) {
+      $("pillText").textContent = channel.status === "loading" ? "正在读取" + channel.label + "…" : channel.label + "暂无可下载版本";
+      $("dlSub").textContent = channel.status === "loading" ? "正在获取…" : "请稍后再试";
+      return;
+    }
+
+    $("pillText").textContent = channel.label + "最新版 " + versionLabel(data);
+    $("mVersion").textContent = data.build_number
+      ? versionLabel(data)
+      : versionLabel(data) + " (" + data.version_code + ")";
+    $("mSize").textContent = fmtSize(data.size);
+    $("mDateAbs").textContent = fmtDate(data.published_at);
+    $("mDateAgo").textContent = fmtAgo(data.published_at);
+    $("mSha").textContent = state.sha ? state.sha.slice(0, 16) + "…" : "未提供";
+    $("mSha").title = state.sha || "";
+
+    var sub = [data.file_name, fmtSize(data.size)].filter(Boolean).join(" · ");
+    $("dlSub").textContent = sub;
+
+    // 这一页会被整份镜像到图床（那边路径是 /file/<项目>/download/index.html）。在图床上打开时，
+    // 主按钮改走图床上的 APK（`latest.apk`，每次开发版发布覆盖上传，永远是最新那份），
+    // 国内访问比回源 GitHub releases 快；GitHub Pages 那一份仍然用 release 直链。
+    var onImageBed = /(^|\.)pages\.dev$/.test(location.hostname);
+    dl.href = onImageBed && data.file_bed ? data.file_bed : data.file;
+    // 图床上那份文件叫 latest.apk；同域下 download 属性生效，顺手把下载文件名带出版本号。
+    var bedName = "unicanta-" + (data.version_name || "latest") +
+      (data.build_number ? "-dev" + data.build_number : "") + ".apk";
+    dl.setAttribute("download", onImageBed && data.file_bed ? bedName : (data.file_name || ""));
+    dl.removeAttribute("aria-disabled");
+
+    if (data.file_bed) {
+      var bed = $("bedLink");
+      bed.href = data.file_bed;
+      bed.hidden = false;
+    }
+
+    if (data.checksum_file) {
+      var c = $("checksumLink");
+      c.href = data.checksum_file;
+      c.hidden = false;
+    }
+
+    if (data.history && data.history.length) {
+      var box = $("history");
+      box.innerHTML = "";
+      var seen = 0;
+      data.history.forEach(function (h) {
+        // 当前版本已在上面完整显示，历史列表只放旧版本。
+        if (h.tag === data.tag && h.build_number === data.build_number) return;
+        var row = document.createElement("details");
+
+        var sum = document.createElement("summary");
+        var line = document.createElement("span");
+        line.className = "hline";
+        var name = document.createElement("span");
+        name.textContent = versionLabel(h);
+        var tm = document.createElement("time");
+        tm.textContent = fmtDate(h.published_at) + " · " + fmtSize(h.size);
+        line.appendChild(name);
+        line.appendChild(tm);
+        sum.appendChild(line);
+
+        var body = document.createElement("div");
+        body.className = "hbody";
+        var notes = document.createElement("div");
+        notes.className = "hnotes";
+        notes.textContent = (h.notes || "").trim() || "该版本没有填写更新日志";
+        body.appendChild(notes);
+
+        var dl = document.createElement("a");
+        dl.href = h.file;
+        dl.setAttribute("download", "");
+        dl.textContent = "下载该版本 APK";
+        body.appendChild(dl);
+
+        if (h.checksum_file) {
+          var ck = document.createElement("a");
+          ck.href = h.checksum_file;
+          ck.textContent = "校验文件";
+          body.appendChild(ck);
+        }
+
+        row.appendChild(sum);
+        row.appendChild(body);
+        box.appendChild(row);
+        seen++;
+      });
+      if (!seen) box.classList.remove("on");
+    }
+
+    var notes = $("notes");
+    var notesBody = $("notesBody");
+    if (data.notes && data.notes.trim()) {
+      notesBody.textContent = data.notes.trim();
+      notes.classList.add("on");
+    } else {
+      notesBody.textContent = "";
+      notes.classList.remove("on");
+    }
+  }
+
+  /** 开发版是默认渠道；两者顺序变化只影响 aria，不影响数据流。 */
+  function setChannel(name) {
+    state.channel = name;
+    $("stableBtn").setAttribute("aria-pressed", String(name === "stable"));
+    $("developmentBtn").setAttribute("aria-pressed", String(name === "development"));
+    render();
+  }
+
+  /** 开发版暂无产物时退回稳定版，免得默认渠道的按钮点不动。 */
+  function fallbackIfEmpty(name) {
+    if (name !== "development" || state.channel !== "development") return false;
+    var data = state.channels.development.data;
+    if (data && data.version_name && data.file) return false;
+    setChannel("stable");
+    return true;
+  }
+
+  function loadChannel(name, file) {
+    var channel = state.channels[name];
+    // 同一个页面也会被镜像到图床（`unicanta/download/`），而图床的直链带 30 天边缘缓存：
+    // 每次取数据都带一个唯一参数，才不会读到上一次的 latest.json。GitHub Pages 那边也无害。
+    fetch(file + "?v=" + Date.now(), { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        channel.data = data;
+        channel.status = "loaded";
+        $(name + "Version").textContent = data.version_name && data.file ? versionLabel(data) : "暂无版本";
+        if (state.channel === name && !fallbackIfEmpty(name)) render();
+      })
+      .catch(function (err) {
+        channel.status = "error";
+        $(name + "Version").textContent = "暂不可用";
+        if (state.channel === name && !fallbackIfEmpty(name)) render();
+        if (window.console) console.warn("[canta] " + file + ":", err);
+      });
+  }
+
+  ["stable", "development"].forEach(function (name) {
+    $(name + "Btn").addEventListener("click", function () { setChannel(name); });
+  });
+  loadChannel("stable", "latest.json");
+  loadChannel("development", "development.json");
+
+  $("shaBtn").addEventListener("click", function () {
+    if (!state.sha) { toast("该版本未提供校验值"); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(state.sha).then(
+        function () { toast("SHA-256 已复制"); },
+        function () { toast("复制失败，请手动选择"); }
+      );
+    } else {
+      toast("当前浏览器不支持自动复制");
+    }
+  });
+
+  $("historyBtn").addEventListener("click", function () {
+    $("history").classList.toggle("on");
+  });
+
+  $("year").textContent = new Date().getFullYear();
+
+  // The relative stamp would freeze on a page left open; recompute it once a minute.
+  setInterval(function () {
+    var data = state.channels[state.channel].data;
+    $("mDateAgo").textContent = data && data.published_at ? fmtAgo(data.published_at) : "";
+  }, 60000);
+})();
+</script>
+</body>
+</html>

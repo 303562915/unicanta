@@ -1,0 +1,10 @@
+{
+  "_about": "Upstream UAD list, mirrored here so the app watches this repository instead of raw.githubusercontent.com.",
+  "upstream_repo": "Universal-Debloater-Alliance/universal-android-debloater-next-generation",
+  "upstream_path": "resources/assets/uad_lists.json",
+  "upstream_commit": "",
+  "source_url": "https://raw.githubusercontent.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/main/resources/assets/uad_lists.json",
+  "seeded_from": "composeApp/src/commonMain/composeResources/files/bloat_list.json",
+  "synced_at": "2026-11-25T12:24:06Z",
+  "entries": 5399
+}
