@@ -91,12 +91,17 @@ private fun storeCacheKey(who: String): String = "screen:store:$who"
  * 拆成自己的一页，跟 cdk.linux.do 那个站一个思路：上面是余额，下面是能换的东西，兑换完的码
  * 留在自己手里。**机场页只剩投票榜单**。
  *
- * 一页里三块，顺序就是钱的流向：
+ * 一页分两个 tab：同一个货架的两边，卖家看自己挂的，买家逛别人挂的。以前它是一条长列表，
+ * 「我挂的」和「能兑的」混在一起，两边都得从头翻到尾。
  *
- *  1. **钱包**——每天进来领 10 分（后端按天幂等，刷新不会刷分）。
- *  2. **积分商城**——谁都能挂一件（订阅、邀请码、账号），兑换的人扣分、挂的人全额得分。
- *  3. **兑换中心（CDK 码池）**——一次贴一批码，兑换时从池子里取一个没用过的；取到的码在
- *     「我的码」里随时回看、复制。
+ *  1. **我发布的**——钱包、发布入口、我挂的商品（卖出去几份、进账多少）、自己发布的 CDK。
+ *  2. **商城商品**——钱包、积分商城（只列别人挂的）、我兑换的、兑换 CDK，末尾一句积分怎么流转。
+ *
+ * **钱包两个 tab 都在最上面，状态只有一份**：切 tab 不该把余额和签到重来一遍。
+ *
+ * 钱本身的来路没变：每天进来领 10 分（后端按天幂等，刷新不会刷分）；谁都能挂一件（订阅、邀请码、
+ * 账号），兑换的人扣分、挂的人全额得分；CDK 码池一次贴一批码，兑换时取一个没用过的，取到的码在
+ * 「我的码」里随时回看、复制。
  *
  * @param repository 社区后端，商城的商品与订单都走它；null 时页面只说明、不装作有数据。
  * @param cdk 码池那一套（发布一批码 / 兑换 / 我的码）；null 时那一块不画。
@@ -147,6 +152,21 @@ internal fun StoreScreen(
     var offerError by remember { mutableStateOf<String?>(null) }
     var redeemed by remember { mutableStateOf<PointRedeemResult?>(null) }
     var checkedIn by remember { mutableStateOf(false) }
+    // 顶上一格自己的（卖家视角），一格全站的（买家视角）。默认停在自己的那一格：
+    // 点进来更常是想看「我挂的东西卖出去没有」，逛货架可以再点一下。
+    var tab by remember { mutableIntStateOf(0) }
+    // 两个 tab 共用一条列表状态，所以切过去要回顶部，否则落点还是上一份货架的滚动位置。
+    // **首次组合不算切换**：`rememberLazyListState` 是 saveable 的，从别的页退回来时本来就该落在
+    // 上次那一格（见 `ScrollToTop`），无条件回顶部等于把恢复出来的位置又抹掉一次。
+    var shownTab by remember { mutableIntStateOf(tab) }
+    LaunchedEffect(tab) {
+        if (tab == shownTab) return@LaunchedEffect
+        shownTab = tab
+        listState.scrollToItem(0)
+    }
+    // 货架要按「谁挂的」分成两份列表，各画一块：在 LazyColumn 里现 filter 会每次重组都新建一份。
+    val mineOffers = remember(offers) { offers.filter { it.mine } }
+    val shopOffers = remember(offers) { offers.filter { !it.mine } }
 
     // 每天进来领 10 分：后端按天幂等，重复进来只回答 already。
     LaunchedEffect(repository, who) {
@@ -178,6 +198,9 @@ internal fun StoreScreen(
             val merged = stableMerge(offers, shelf.offers) { it.id }
             if (merged !== offers) offers = merged
             error = null
+        } ?: run {
+            // 这一趟挂了要留一句话：空货架照画就成了「还没有人挂东西」，那是假话（与 CDK 那块同一个口径）。
+            error = repo.lastError ?: "货架没拉到，检查一下网络或代理。"
         }
         // 订单那趟挂了给的是空列表：照着画就等于因为一次断网把「我兑换的」清空，
         // 缓存里那份也白留了，所以只在后端真答了的时候替换。
@@ -242,99 +265,161 @@ internal fun StoreScreen(
         // 不再整页画转圈：点进商城那一刻就该看见这一页（顶栏、钱包、货架标题都在），
         // 数据各块自己在位子上填。以前这里 `if (loading) { Box { CircularProgressIndicator() }; return }`
         // 会让"点进来"先空白转一圈、数据回来才出现，读起来像页面加载了两遍。
-        LazyColumn(
-            modifier = modifier.fillMaxSize().padding(padding),
-            state = listState,
-            contentPadding = PaddingValues(bottom = 96.dp),
-        ) {
-            item(key = "wallet") {
-                WalletCard(
-                    account = account,
-                    balance = balance,
-                    checkedIn = checkedIn || account?.checkedInToday == true,
-                    busy = busyKey == "checkin",
-                    onCheckIn = checkIn,
-                    inset = 16.dp,
-                )
-            }
-
-            item(key = "store-new") {
-                EntryRow(
-                    title = "发布一件商品赚积分",
-                    hint = "订阅、邀请码、账号都行；别人用积分换，分数直接到你账上。",
-                    inset = 16.dp,
-                    onClick = {
-                        offerError = null
-                        offerComposer = true
-                    },
-                )
-            }
-
-            item(key = "store-head") {
-                StoreSectionHeader(label = "积分商城", count = offers.size)
-            }
-
-            if (offers.isEmpty()) {
-                item(key = "store-empty") {
-                    Note(
-                        // 第一次进来（没有缓存）货架还在路上：写一句话，而不是让整页空着或转圈。
-                        //
-                        // `error` 是 `remember { mutableStateOf<String?>(null) }` 的委托属性，
-                        // 编译器不对它做智能转换 —— 写成 `error != null -> error` 那一支仍然是
-                        // `String?`，`Note(text: String)` 收不了（`ba438bd` 就是这么红的）。
-                        // 所以这里用 `?:` 给默认句，而不是靠 when 的空值分支去收窄。
-                        text = when {
-                            loading -> "正在读取货架…"
-                            else -> error ?: "还没有人挂东西。你手上多出来的码，可以放上来换积分。"
-                        },
+        Column(modifier = modifier.fillMaxSize().padding(padding)) {
+            FlSegmentedControl(
+                segments = listOf(
+                    FlSegment("mine", "我发布的"),
+                    FlSegment("shop", "商城商品"),
+                ),
+                selectedIndex = tab,
+                onSelect = { tab = it },
+                insetHorizontal = 16.dp,
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 96.dp),
+            ) {
+                // 钱包在两个 tab 里都是第一块，写一份就够：它读的是同一份状态（余额、今天领没领）。
+                item(key = "wallet") {
+                    WalletCard(
+                        account = account,
+                        balance = balance,
+                        checkedIn = checkedIn || account?.checkedInToday == true,
+                        busy = busyKey == "checkin",
+                        onCheckIn = checkIn,
                         inset = 16.dp,
                     )
                 }
-            }
 
-            items(offers, key = { "offer-${it.id}" }) { offer ->
-                OfferCard(
-                    offer = offer,
-                    balance = balance,
-                    busy = busyKey == "offer:${offer.id}",
-                    inset = 16.dp,
-                    onRedeem = { redeem(offer) },
-                )
-            }
+                if (tab == 0) {
+                    item(key = "store-new") {
+                        EntryRow(
+                            title = "发布一件商品赚积分",
+                            hint = "订阅、邀请码、账号都行；别人用积分换，分数直接到你账上。",
+                            inset = 16.dp,
+                            onClick = {
+                                offerError = null
+                                offerComposer = true
+                            },
+                        )
+                    }
 
-            if (orders.isNotEmpty()) {
-                item(key = "orders-head") {
-                    StoreSectionHeader(label = "我兑换的", count = orders.size)
+                    item(key = "mine-head") {
+                        StoreSectionHeader(label = "我挂的商品", count = mineOffers.size)
+                    }
+
+                    if (mineOffers.isEmpty()) {
+                        item(key = "mine-empty") {
+                            Note(
+                                // 与「商城商品」那一格同一个形状：第一次进来货架还在路上时不能直接说
+                                // 「还没挂过东西」，那是把加载中写成了事实。`error` 是委托属性、拿不到
+                                // 智能转换，所以照旧用 `?:` 给默认句（见下面 `store-empty` 的注释）。
+                                text = when {
+                                    loading -> "正在读取你挂的商品…"
+                                    else -> error ?: "还没挂过东西。手上多出来的订阅、邀请码或账号，放上来换积分。"
+                                },
+                                inset = 16.dp,
+                            )
+                        }
+                    }
+
+                    items(mineOffers, key = { "mine-${it.id}" }) { offer ->
+                        SellerOfferCard(offer = offer, inset = 16.dp)
+                    }
+
+                    item(key = "cdk") {
+                        // 发布侧：贴一批码进池子，看自己发的那几批换走了多少。
+                        CdkCenterSection(
+                            store = cdk,
+                            platform = platform,
+                            author = author,
+                            authorId = who,
+                            setupGate = setupGate,
+                            pane = CdkPane.MINE,
+                        )
+                    }
+
+                    // 一件没挂的时候不画这句：上面的空状态和下面 CDK 的空状态已经把「贴上来换积分」
+                    // 说过两遍了，第三遍只会让人以为漏看了什么。
+                    if (mineOffers.isNotEmpty()) {
+                        item(key = "foot") {
+                            Note(
+                                text = "发布不花积分。别人兑换时，买家扣分、全额进你账上；交付内容只有买家看得到。" +
+                                    "你兑换到的东西在「商城商品」那一格。",
+                                inset = 16.dp,
+                            )
+                        }
+                    }
+                } else {
+                    item(key = "store-head") {
+                        StoreSectionHeader(label = "积分商城", count = shopOffers.size)
+                    }
+
+                    if (shopOffers.isEmpty()) {
+                        item(key = "store-empty") {
+                            Note(
+                                // 第一次进来（没有缓存）货架还在路上：写一句话，而不是让整页空着或转圈。
+                                //
+                                // `error` 是 `remember { mutableStateOf<String?>(null) }` 的委托属性，
+                                // 编译器不对它做智能转换 —— 写成 `error != null -> error` 那一支仍然是
+                                // `String?`，`Note(text: String)` 收不了（`ba438bd` 就是这么红的）。
+                                // 所以这里用 `?:` 给默认句，而不是靠 when 的空值分支去收窄。
+                                text = when {
+                                    loading -> "正在读取货架…"
+                                    else -> error ?: "还没有人挂东西。你手上多出来的码，可以放上来换积分。"
+                                },
+                                inset = 16.dp,
+                            )
+                        }
+                    }
+
+                    items(shopOffers, key = { "offer-${it.id}" }) { offer ->
+                        OfferCard(
+                            offer = offer,
+                            balance = balance,
+                            busy = busyKey == "offer:${offer.id}",
+                            inset = 16.dp,
+                            onRedeem = { redeem(offer) },
+                        )
+                    }
+
+                    if (orders.isNotEmpty()) {
+                        item(key = "orders-head") {
+                            StoreSectionHeader(label = "我兑换的", count = orders.size)
+                        }
+                        items(orders, key = { "order-${it.id}" }) { order ->
+                            OrderCard(
+                                order = order,
+                                inset = 16.dp,
+                                onCopy = {
+                                    platform.copyToClipboard(order.deliverable)
+                                    platform.showMessage("已复制")
+                                },
+                            )
+                        }
+                    }
+
+                    item(key = "cdk") {
+                        // 兑换侧：池子里有什么可以换、换到的码在「我的码」里。
+                        CdkCenterSection(
+                            store = cdk,
+                            platform = platform,
+                            author = author,
+                            authorId = who,
+                            setupGate = setupGate,
+                            pane = CdkPane.SHOP,
+                        )
+                    }
+
+                    item(key = "foot") {
+                        Note(
+                            text = "积分只在我们之间转：每天登录 +10，兑换扣买家的分、全额进卖家的账，平台不抽成。" +
+                                "订阅链接由分享者自负，用之前确认来源。",
+                            inset = 16.dp,
+                        )
+                    }
                 }
-                items(orders, key = { "order-${it.id}" }) { order ->
-                    OrderCard(
-                        order = order,
-                        inset = 16.dp,
-                        onCopy = {
-                            platform.copyToClipboard(order.deliverable)
-                            platform.showMessage("已复制")
-                        },
-                    )
-                }
-            }
-
-            item(key = "cdk") {
-                // 兑换中心（码池）：卖家一次贴一批码，买家花积分取走一个。
-                CdkCenterSection(
-                    store = cdk,
-                    platform = platform,
-                    author = author,
-                    authorId = who,
-                    setupGate = setupGate,
-                )
-            }
-
-            item(key = "foot") {
-                Note(
-                    text = "积分只在我们之间转：每天登录 +10，兑换扣买家的分、全额进卖家的账，平台不抽成。" +
-                        "订阅链接由分享者自负，用之前确认来源。",
-                    inset = 16.dp,
-                )
             }
         }
     }
@@ -619,6 +704,73 @@ private fun OfferCard(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 自己挂的一件：卖家视角。
+ *
+ * 排版和 [OfferCard] 一样，但右边没有兑换键——自己挂的自己兑不了（`PointOffer.buyable` 就把它挡掉了），
+ * 换成一行「已进账」：挂上去之后能一眼看出这件东西值不值得补货。
+ */
+@Composable
+private fun SellerOfferCard(offer: PointOffer, inset: Dp) {
+    val scheme = MaterialTheme.colorScheme
+    val earned = offer.price * offer.sold
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = inset, end = inset, top = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.surfaceContainerLow)
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = offer.title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = offer.kindLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSecondaryContainer,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(scheme.secondaryContainer)
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+        Text(
+            text = buildString {
+                append("${offer.price} 积分 · 剩 ${offer.stock} 份")
+                if (offer.sold > 0) append(" · 已兑 ${offer.sold} 份")
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+        // 一件没换出去时不画这一行：0 积分不是"进账"，是还没开张。
+        if (earned > 0) {
+            Text(
+                text = "已进账 $earned 积分",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.primary,
+            )
+        }
+        if (offer.detail.isNotBlank()) {
+            Text(
+                text = offer.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

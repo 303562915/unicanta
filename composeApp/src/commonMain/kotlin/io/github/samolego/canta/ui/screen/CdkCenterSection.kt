@@ -65,6 +65,16 @@ private val CdkKinds = listOf(
 /** 粘贴框最多收多少字符：200 条 × 600 字符的正文，多出来的直接截掉，免得一个手滑粘进一整本书。 */
 private const val CDK_PASTE_LIMIT = 40_000
 
+/** 这一块在商城页被拆到两个 tab 里：发布侧归「我发布的」，兑换侧归「商城商品」。 */
+internal enum class CdkPane {
+    /** 两侧都画（默认）：老布局，一块里从余额到「我的码」全有。 */
+    ALL,
+    /** 只画发布侧：贴一批码上架的入口、我挂的码。 */
+    MINE,
+    /** 只画兑换侧：可兑换的码、我的码。 */
+    SHOP,
+}
+
 /**
  * CDK 兑换中心：把"一批码"当成商品卖的那一块。
  *
@@ -72,12 +82,25 @@ private const val CDK_PASTE_LIMIT = 40_000
  * 的交付内容是一串**互不相同**的码，卖一份就从池子里取走一个，取走的码只属于买家。所以这一块
  * 自己有一份"我的码"，商城那边只有订单。
  *
- * 四段排下来，顺序就是这件事怎么转起来的：
+ * 现在它不再只有「四段排下来」这一种形态：商城页把它拆成两个 tab（「我发布的」/「商城商品」），
+ * 这一块按 [pane] 画其中一侧，或者两侧都画（老布局）。为什么拆——两边关心的事不一样：卖家关心
+ * "我挂的码卖出去几个"，买家关心"现在有什么能换"。原来一整坨塞在列表里，买家要滑过自己的上架
+ * 记录才看得到货架，卖家又要滑过整排别人的码才看得到自己的入口，两边都在为对方的内容付费。
  *
- *  1. **余额**——签到 +10；兑换扣买家的分、全额进卖家账（平台不抽成）。
- *  2. **发布码**——标题、说明、价格、类型，再贴一大段码（一行一个）。
- *  3. **可兑换**——谁挂的、多少分、还剩几个；自己挂的显示「你的」，没码了显示「发完了」。
- *  4. **我的码**——已经换到手的码，点一下复制。
+ * 各段与 [pane] 的对应（每一段都是本文件里的一个私有 composable，不复制粘贴）：
+ *
+ *  1. **余额** [CdkBalanceBar]——**只在 [CdkPane.ALL]**。签到 +10；兑换扣买家的分、全额进卖家账
+ *     （平台不抽成）。商城页两个 tab 顶部已经有 `WalletCard` 画同一个余额（`pointsAccount` /
+ *     `pointShelf`），这里再画一条就是同一页两个余额。
+ *  2. **发布码** [CdkEntryRow] + `publishNote`——`ALL` 与 [CdkPane.MINE]。
+ *  3. **可兑换的码**——`ALL` 与 [CdkPane.SHOP]；`SHOP` 里只列别人挂的（`offers.filter { !it.mine }`），
+ *     自己挂的归「我发布的」那一栏，不在两处重复出现。
+ *  4. **我挂的码**（卖家视角，`CdkOfferCard` 会显示「你的」和「剩 N 个 · 已兑 M」）——只看 [CdkPane.MINE]。
+ *  5. **我的码**——`ALL` 与 `SHOP`（换到手的码是买家侧的东西）；[CdkPane.MINE] 不画。
+ *
+ * 数据拉取**不分侧**：三个接口（余额 / 货架 / 我的码）照旧一次都拉。商城页两个 tab 里的这一块用
+ * 的是同一个 item key（`cdk`），切 tab 时组合被复用、`remember` 与这段 `LaunchedEffect` 都不会重跑；
+ * 真按 pane 做条件拉取，切过去的那一侧就只剩一份没拉过的空表。
  *
  * 这一块**不带滚动容器**：它按设计是放进父级列表里的一个 item（`RecommendationsAirportTab` 的
  * LazyColumn 或任何 `Column(verticalScroll)`），自带 LazyColumn 会在别人的无限高约束下直接崩。
@@ -86,6 +109,9 @@ private const val CDK_PASTE_LIMIT = 40_000
  * @param platform 用来提示和复制。
  * @param author 署名，[authorId] 为空时当身份用（与推荐页那一块同一套规则）。
  * @param authorId 身份码：积分、上架、兑换都挂在它上面。
+ * @param pane 画哪一侧：`ALL` 老布局一块全有（默认，兼容只有一栏的调用点）、`MINE` 发布侧、
+ *   `SHOP` 兑换侧。参数**追加在末尾**（`setupGate` 之后），调用点一律用命名参数，所以位置不影响
+ *   已有的调用。
  */
 @Composable
 internal fun CdkCenterSection(
@@ -96,6 +122,8 @@ internal fun CdkCenterSection(
     modifier: Modifier = Modifier,
     /** 名字与头像设过了没有：没设过能兑换、能看余额，但上架不了新码（见 [IdentitySetup]）。 */
     setupGate: IdentitySetup = IdentitySetup.UNSET,
+    /** 画哪一侧：商城页两个 tab 各传一侧（见 [CdkPane]）。默认 [CdkPane.ALL] 即老布局。 */
+    pane: CdkPane = CdkPane.ALL,
 ) {
     val scope = rememberCoroutineScope()
     val who = remember(authorId, author) { authorId.ifEmpty { author } }
@@ -158,67 +186,105 @@ internal fun CdkCenterSection(
         }
     }
 
+    // 「我发布的」那一栏：自己挂的（卖家视角，卡上显示「你的」「已兑 N」）。
+    // 「商城商品」那一栏：只列别人挂的——自己挂的归发布侧，不在两处重复出现。
+    val mineOffers = offers.filter { it.mine }
+    val shelfOffers = if (pane == CdkPane.SHOP) offers.filter { !it.mine } else offers
+
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = CdkInset),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CdkBalanceBar(balance = balance ?: 0L, loading = loading && balance == null)
+        // 余额只在老布局画：商城页两个 tab 顶部已经有 WalletCard 画同一个余额。
+        if (pane == CdkPane.ALL) {
+            CdkBalanceBar(balance = balance ?: 0L, loading = loading && balance == null)
+        }
 
-        CdkEntryRow(
-            title = "贴一批码上架",
-            hint = "一行一个码或订阅链接；别人用积分换，换走一个就少一个。",
-            onClick = {
-                publishError = null
-                composer = true
-            },
-        )
-
-        publishNote?.let { note ->
-            Text(
-                text = note,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
+        if (pane == CdkPane.ALL || pane == CdkPane.MINE) {
+            CdkEntryRow(
+                title = "贴一批码上架",
+                hint = "一行一个码或订阅链接；别人用积分换，换走一个就少一个。",
+                onClick = {
+                    publishError = null
+                    composer = true
+                },
             )
-        }
 
-        val emptyNote = if (store == null) {
-            "社区后端没连上，这一块只看得到说明。"
-        } else {
-            error ?: "还没有人挂码。你手里有闲着的订阅或邀请码，贴一批上来换点积分。"
-        }
-
-        CdkSectionHeader(label = "可兑换的码", count = offers.size)
-
-        when {
-            loading && offers.isEmpty() -> CdkLoadingRow()
-
-            offers.isEmpty() -> CdkNote(text = emptyNote)
-
-            else -> offers.forEach { offer ->
-                CdkOfferCard(
-                    offer = offer,
-                    balance = balance ?: 0L,
-                    busy = busyKey == "redeem:${offer.id}",
-                    canAct = who.isNotEmpty() && busyKey == null,
-                    onRedeem = { redeem(offer) },
+            publishNote?.let { note ->
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }
 
-        CdkSectionHeader(label = "我的码", count = codes.size)
+        if (pane == CdkPane.ALL || pane == CdkPane.SHOP) {
+            val emptyNote = if (store == null) {
+                "社区后端没连上，这一块只看得到说明。"
+            } else {
+                error ?: "还没有人挂码。你手里有闲着的订阅或邀请码，贴一批上来换点积分。"
+            }
 
-        if (codes.isEmpty()) {
-            CdkNote(text = "还没换到过码。换到一个，它就会留在这里，随时能复制。")
-        } else {
-            codes.forEach { code ->
-                CdkCodeRow(
-                    code = code,
-                    onCopy = {
-                        platform.copyToClipboard(code.code)
-                        platform.showMessage("码已复制")
-                    },
+            CdkSectionHeader(label = "可兑换的码", count = shelfOffers.size)
+
+            when {
+                loading && shelfOffers.isEmpty() -> CdkLoadingRow()
+
+                shelfOffers.isEmpty() -> CdkNote(text = emptyNote)
+
+                else -> shelfOffers.forEach { offer ->
+                    CdkOfferCard(
+                        offer = offer,
+                        balance = balance ?: 0L,
+                        busy = busyKey == "redeem:${offer.id}",
+                        canAct = who.isNotEmpty() && busyKey == null,
+                        onRedeem = { redeem(offer) },
+                    )
+                }
+            }
+
+            // 换到手的码是买家侧的东西，跟着兑换侧一起走。
+            CdkSectionHeader(label = "我的码", count = codes.size)
+
+            if (codes.isEmpty()) {
+                CdkNote(text = "还没换到过码。换到一个，它就会留在这里，随时能复制。")
+            } else {
+                codes.forEach { code ->
+                    CdkCodeRow(
+                        code = code,
+                        onCopy = {
+                            platform.copyToClipboard(code.code)
+                            platform.showMessage("码已复制")
+                        },
+                    )
+                }
+            }
+        }
+
+        // 发布侧的「我挂的码」：卖家视角，同一张 CdkOfferCard 会画出「你的」和「剩 N 个 · 已兑 M」。
+        if (pane == CdkPane.MINE) {
+            CdkSectionHeader(label = "我挂的码", count = mineOffers.size)
+
+            when {
+                mineOffers.isEmpty() && loading -> CdkLoadingRow()
+
+                // 发布侧不接 error：这里没有"货架没拉到"这回事，免得同一句话在两个 tab 各出现一遍。
+                mineOffers.isEmpty() -> CdkNote(
+                    text = "还没挂过码。手里闲着的订阅链接或邀请码，贴一批上来换积分。",
                 )
+
+                else -> mineOffers.forEach { offer ->
+                    CdkOfferCard(
+                        offer = offer,
+                        balance = balance ?: 0L,
+                        // 自己挂的不可能兑换自己：卡上走的是 offer.mine 那一支，按钮根本不出现。
+                        busy = false,
+                        canAct = false,
+                        onRedeem = {},
+                    )
+                }
             }
         }
     }
