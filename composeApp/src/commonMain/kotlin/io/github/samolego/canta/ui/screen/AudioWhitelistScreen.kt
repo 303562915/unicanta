@@ -225,8 +225,10 @@ fun AudioWhitelistScreen(
                     LowPowerCard(
                         state = snapshot,
                         busy = busy,
-                        canDisable = lowPowerDisable != null,
-                        canRestore = lowPowerRestore != null,
+                        // 没有 root 就点不动：/odm 只读，Shizuku 的 shell 身份写不进去。
+                        // 让按钮亮着、点完再报错，就是刚才那位 K90pm 用户的「解除不了」。
+                        canDisable = lowPowerDisable != null && snapshot.isRoot,
+                        canRestore = lowPowerRestore != null && snapshot.isRoot,
                         onDisable = { run("解除清单", lowPowerDisable) },
                         onRestore = { run("恢复清单", lowPowerRestore) },
                     )
@@ -264,13 +266,20 @@ fun AudioWhitelistScreen(
             } else if (current != null && !current.supported) {
                 item(key = "no-config") {
                     Text(
-                        text = "这台机器上没找到名单文件：按名字（trackefx_config.xml）、按目录（odm / vendor / system_ext / product / my_product）、" +
-                            "按内容都翻过一遍，odm 的 audio 目录里到底有什么，下面那栏诊断信息里列着。" +
-                            "这套机制是澎湃OS 4（Android 17）才有的：那代机器上有个 persist.sys.scene.partition.level 属性，" +
-                            "写成 -1 引擎就跳过整份名单（K100 Pro Max 上验证过）。" +
-                            "澎湃OS 3（Android 16）的机器本来就没有这条属性——K90 Pro Max 就是这一类，属性写得进去，但引擎不读，也没有名单文件，" +
-                            "所以「解除」在这台机器上多半只是空转。仍可以点一次试：点完自己听一遍，低频回来了就是生效，没变化就点「恢复」写回原值。" +
-                            "把这段诊断发给开发者，能确认这台机器是「没有这套东西」还是「换了个名字」。",
+                        text = if (current.hasLowPower) {
+                            // 已经有低功耗清单的机器：不要再引导他去点上面那个开关，答案在下面那张卡里。
+                            "这台机器上没有 trackefx 名单，场景开关对它无效——真正压外放的是上面那份「低功耗应用清单」，"
+                                + "要动的是那一份。清单在 /odm 只读分区，改它需要 root；"
+                                + "如果这台机器没有 root，那条路走不通，诊断信息里的 lowpower 属性是找免 root 入口的唯一线索。"
+                        } else {
+                            "这台机器上没找到名单文件：按名字（trackefx_config.xml）、按目录（odm / vendor / system_ext / product / my_product）、" +
+                                "按内容都翻过一遍，odm 的 audio 目录里到底有什么，下面那栏诊断信息里列着。" +
+                                "这套机制是澎湃OS 4（Android 17）才有的：那代机器上有个 persist.sys.scene.partition.level 属性，" +
+                                "写成 -1 引擎就跳过整份名单（K100 Pro Max 上验证过）。" +
+                                "澎湃OS 3（Android 16）的机器本来就没有这条属性——K90 Pro Max 就是这一类，属性写得进去，但引擎不读，也没有名单文件，" +
+                                "所以「解除」在这台机器上多半只是空转。仍可以点一次试：点完自己听一遍，低频回来了就是生效，没变化就点「恢复」写回原值。" +
+                                "把这段诊断发给开发者，能确认这台机器是「没有这套东西」还是「换了个名字」。"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
@@ -524,8 +533,15 @@ private fun LowPowerCard(
             }
             if (state.lowPowerPackages.isNotEmpty()) {
                 Text(
-                    text = "清空这份清单需要 root：脚本会先把原文件备份到 /data/local/tmp，再清掉里面点名的应用，"
-                        + "然后重启 audioserver。系统升级会把清单覆盖回出厂那份——那时再点一次就行。",
+                    text = if (state.isRoot) {
+                        "清空这份清单需要 root：脚本会先把原文件备份到 /data/local/tmp，再清掉里面点名的应用，"
+                            + "然后重启 audioserver。系统升级会把清单覆盖回出厂那份——那时再点一次就行。"
+                    } else {
+                        "这台机器没有 root（现在是用 Shizuku 的 shell 身份在读，写不了 /odm 只读分区），"
+                            + "所以下面两个按钮点不动——不是坏了，是这条路本来就要 root。"
+                            + "免 root 能不能绕，要看上面那栏诊断里的 lowpower 属性有没有开关；"
+                            + "真有 root 之后这两个按钮就能用。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp),

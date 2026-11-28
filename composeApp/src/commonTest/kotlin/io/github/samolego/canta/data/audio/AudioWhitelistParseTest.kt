@@ -113,6 +113,27 @@ class AudioWhitelistParseTest {
     }
 
     @Test
+    fun theShellIdentityDecidesWhetherTheListCanBeEdited() {
+        // 低功耗清单在 /odm 只读分区：Shizuku 的 shell（uid 2000）写不了，页面不该给他点亮按钮。
+        val shizuku = AudioWhitelist.parse("##ROOT##2000\n##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n")
+        assertFalse(shizuku.isRoot)
+        assertTrue(shizuku.diagnostics.any { it.contains("非 root") })
+
+        val rooted = AudioWhitelist.parse("##ROOT##0\n##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n")
+        assertTrue(rooted.isRoot)
+    }
+
+    @Test
+    fun theListHeadGoesIntoTheDiagnostics() {
+        // 清单头里有可能是 enable 之类的开关字段：能不能免 root 关掉，全靠这一行判断。
+        val state = AudioWhitelist.parse(
+            "##LOWPOWER##/odm/etc/audio/audio_lowpower_app_list.xml\n" +
+                "##LOWPOWERHEAD##<lowPowerAppList enable=\"true\">\n",
+        )
+        assertTrue(state.diagnostics.any { it.startsWith("lowpower head: ") && it.contains("enable") })
+    }
+
+    @Test
     fun theDiagnosticLinesAreKeptVerbatim() {
         // These are what a bug report carries: the properties the ROM has and what the two global
         // settings hold. Dropping them silently would leave "no effect" undiagnosable.

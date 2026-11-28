@@ -80,6 +80,12 @@ object AudioWhitelist {
      */
     internal const val TAG_LOWPOWER = "##LOWPOWER##"
 
+    /** 清单文件的开头：里面可能有 enable 之类的开关字段。 */
+    internal const val TAG_LOWPOWER_HEAD = "##LOWPOWERHEAD##"
+
+    /** 跑脚本的身份：`0` = root，其它（通常是 2000）= Shizuku 的 shell。 */
+    internal const val TAG_ROOT = "##ROOT##"
+
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
     suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
 
@@ -127,6 +133,13 @@ object AudioWhitelist {
          */
         val lowPowerPath: String = "",
         val lowPowerPackages: List<Entry> = emptyList(),
+        /**
+         * 跑脚本的身份是不是 root。
+         *
+         * 低功耗清单在 `/odm` 只读分区，没有 root 改不动——而绝大多数用户只有 Shizuku（uid 2000）。
+         * 页面拿这个决定「解除清单」能不能点，别让人点完才知道不行。
+         */
+        val isRoot: Boolean = false,
     ) {
         /** The audio engine is skipping the whitelist right now. */
         val bypassed: Boolean get() = level == BYPASS
@@ -156,6 +169,8 @@ object AudioWhitelist {
         var level = ""
         var config = ""
         var lowPowerPath = ""
+        var lowPowerHead = ""
+        var isRoot = false
         val packages = LinkedHashSet<String>()
         val lowPowerPackages = LinkedHashSet<String>()
         val installed = HashSet<String>()
@@ -178,6 +193,8 @@ object AudioWhitelist {
                         lowPowerPath = rest
                     }
                 }
+                line.startsWith(TAG_LOWPOWER_HEAD) -> lowPowerHead = line.removePrefix(TAG_LOWPOWER_HEAD).trim()
+                line.startsWith(TAG_ROOT) -> isRoot = line.removePrefix(TAG_ROOT).trim() == "0"
                 line.startsWith(TAG_PACKAGE) -> line.removePrefix(TAG_PACKAGE).trim().let {
                     if (it.isNotEmpty()) packages += it
                 }
@@ -212,6 +229,11 @@ object AudioWhitelist {
         if (lowPowerEntries.isNotEmpty()) {
             diagnostics += "lowpower pkg: " + lowPowerEntries.take(30).joinToString(",") { it.packageName }
         }
+        // 清单头决定「有没有开关字段可以走」，是下一步能不能免 root 的唯一依据，所以也进诊断。
+        if (lowPowerHead.isNotEmpty()) {
+            diagnostics += "lowpower head: " + lowPowerHead.take(400)
+        }
+        diagnostics += "shell uid: " + if (isRoot) "0（root）" else "非 root（改 /odm 需要 root）"
 
         return State(
             level = level,
@@ -220,6 +242,7 @@ object AudioWhitelist {
             diagnostics = diagnostics,
             lowPowerPath = lowPowerPath,
             lowPowerPackages = lowPowerEntries,
+            isRoot = isRoot,
         )
     }
 
