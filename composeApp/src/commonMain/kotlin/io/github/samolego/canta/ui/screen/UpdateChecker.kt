@@ -22,6 +22,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import io.github.samolego.canta.BuildInfo
 import io.github.samolego.canta.util.LogUtils
+import kotlin.time.TimeSource
 
 /*
  * Everything the app needs to know about releases: where they are, whether one is newer than
@@ -68,6 +69,9 @@ private const val DOWNLOAD_ROUNDS = 3
 
 /** Between rounds: long enough for a proxy to reconnect, short enough not to look frozen. */
 private const val DOWNLOAD_ROUND_DELAY_MILLIS = 5_000L
+
+/** 测速的取样间隔：400 ms 一次，够稳也够跟手。 */
+private const val SPEED_SAMPLE_MILLIS = 400L
 
 /** A request that takes longer than this is treated as a broken proxy, not as a slow server. */
 private const val CHECK_TIMEOUT_MILLIS = 12_000L
@@ -172,12 +176,14 @@ internal sealed interface UpdateState {
      * announced no size. A percentage against an unknown size is what leaves the page reading
      * "0%" while the transfer is in fact moving, so that case is shown without a number.
      *
-     * [source] 是当前这条线路：图床还是 GitHub，页面上标出来。
+     * [source] 是当前这条线路：图床还是 GitHub，页面上标出来。[bytesPerSecond] 是实测速度，
+     * 0 表示还没量出来（刚起步），页面不显示。
      */
     data class Downloading(
         val version: String,
         val progress: Int,
         val source: DownloadSource = DownloadSource.GITHUB,
+        val bytesPerSecond: Long = 0,
     ) : UpdateState
 
     /** Downloaded and waiting for the user to allow the install. */
@@ -213,6 +219,31 @@ internal sealed interface UpdateState {
 
 /** [UpdateState.Downloading.progress] when the answer carried no `Content-Length`. */
 internal const val DOWNLOAD_PROGRESS_UNKNOWN = -1
+
+/**
+ * 一次下载进度回调：完成到百分之多少，以及当前实测速度。
+ *
+ * 速度是「感觉慢」这件事唯一能对齐的东西：没有它，用户只能说「比浏览器慢」，有了它就能说
+ * 「app 里 0.4 MB/s、浏览器 5 MB/s」，问题立刻有方向（源、代理、还是单流限速）。
+ */
+internal data class DownloadProgress(
+    /** 0-100，或 [DOWNLOAD_PROGRESS_UNKNOWN]（服务器没给长度）。 */
+    val percent: Int,
+    /** 最近一段时间的实测速度，字节每秒；刚起步或量不出来时是 0。 */
+    val bytesPerSecond: Long = 0,
+)
+
+/**
+ * 速度的人话写法：`2.4 MB/s` / `860 KB/s`；[bytesPerSecond] 不大于 0 时是空串（还没量出来，
+ * 不写「0 KB/s」这种一会儿就被打脸的数字）。
+ */
+internal fun formatDownloadSpeed(bytesPerSecond: Long): String {
+    if (bytesPerSecond <= 0) return ""
+    val kb = bytesPerSecond / 1024.0
+    if (kb < 1024) return "${kb.toInt()} KB/s"
+    val tenths = ((kb / 1024) * 10).toInt()
+    return "${tenths / 10}.${tenths % 10} MB/s"
+}
 
 /**
  * The single percentage the update row prints while an install runs.
@@ -606,7 +637,7 @@ internal suspend fun downloadRelease(
     /** Candidate routes in the order they should be tried; empty means only the GitHub URL. */
     routes: List<DownloadRoute> = emptyList(),
     onSource: (DownloadSource) -> Unit = {},
-    onProgress: (Int) -> Unit,
+    onProgress: (DownloadProgress) -> Unit,
 ): UpdateDownload {
     val candidates = routes.filter { it.url.isNotBlank() }.distinctBy { it.url }
         .ifEmpty { listOf(DownloadRoute(apkUrl(tag, buildNumber), DownloadSource.GITHUB)) }
@@ -622,10 +653,29 @@ internal suspend fun downloadRelease(
         }
         onSource(route.source)
         LogUtils.i(LogUtils.UPDATE_TAG, "下载源 ${index + 1}/${candidates.size}（${route.source}）：$url")
+        // 速度按源单独算：换了源，前一条线路的速率没有参考价值。
+        var lastBytes = 0L
+        var lastMark = TimeSource.Monotonic.markNow()
+        var bytesPerSecond = 0L
         result = platform.downloadUpdate(url, name) { received, total ->
+            val now = TimeSource.Monotonic.markNow()
+            val elapsedMs = lastMark.elapsedNow().inWholeMilliseconds
+            // 每 400 ms 量一次：更密只是抖动，更疏就成了一眼看不出在动。
+            if (elapsedMs >= SPEED_SAMPLE_MILLIS) {
+                val delta = received - lastBytes
+                if (delta > 0) bytesPerSecond = (delta * 1_000) / elapsedMs
+                lastBytes = received
+                lastMark = now
+            }
             onProgress(
-                if (total > 0) ((received * 100) / total).toInt().coerceIn(0, 100)
-                else DOWNLOAD_PROGRESS_UNKNOWN,
+                DownloadProgress(
+                    percent = if (total > 0) {
+                        ((received * 100) / total).toInt().coerceIn(0, 100)
+                    } else {
+                        DOWNLOAD_PROGRESS_UNKNOWN
+                    },
+                    bytesPerSecond = bytesPerSecond,
+                ),
             )
         }
         if (result is UpdateDownload.Done) return result
@@ -657,7 +707,7 @@ internal suspend fun downloadReleaseWithRetries(
     routes: List<DownloadRoute> = emptyList(),
     onSource: (DownloadSource) -> Unit = {},
     onRound: (attempt: Int) -> Unit = {},
-    onProgress: (Int) -> Unit,
+    onProgress: (DownloadProgress) -> Unit,
 ): UpdateDownload {
     var result: UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNKNOWN)
     for (attempt in 1..DOWNLOAD_ROUNDS) {

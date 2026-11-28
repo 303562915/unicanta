@@ -373,9 +373,10 @@ internal class UpdateCenter(
                             lastChange = TimeSource.Monotonic.markNow()
                         }
                     },
-                    onProgress = { percent ->
+                    onProgress = { progress ->
+                        val percent = progress.percent
                         reached = percent
-                        state = UpdateState.Downloading(label, percent, source)
+                        state = UpdateState.Downloading(label, percent, source, progress.bytesPerSecond)
                         if (percent != lastPercent) {
                             lastPercent = percent
                             lastChange = TimeSource.Monotonic.markNow()

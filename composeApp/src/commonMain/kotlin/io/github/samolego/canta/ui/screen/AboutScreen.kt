@@ -529,8 +529,10 @@ private fun UpdateCard(
             } else {
                 "${stringResource(Res.string.about_downloading, state.progress)}%"
             }
-            // 前面先标线路：图床那份写「国内镜像」，兜底走 GitHub 就写 GitHub。
-            "${downloadSourceLabel(state.source)} · $progressText" to scheme.primary
+            // 前面先标线路：图床那份写「国内镜像」，兜底走 GitHub 就写 GitHub；后面跟实测速度。
+            val speed = formatDownloadSpeed(state.bytesPerSecond)
+            val speedText = if (speed.isEmpty()) "" else " · $speed"
+            "${downloadSourceLabel(state.source)} · $progressText$speedText" to scheme.primary
         }
         is UpdateState.ReadyToInstall ->
             stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary

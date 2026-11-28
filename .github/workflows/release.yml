@@ -170,6 +170,7 @@ jobs:
         if: inputs.keep_draft != true
         env:
           TAG: ${{ steps.extract_version.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           SRC=composeApp/src/commonMain/kotlin/io/github/samolego/canta/data/imagebed/ImageBed.kt
@@ -203,6 +204,22 @@ jobs:
           else
             echo "::warning::image bed copy does not match $APK (size/sha256 mismatch or unreadable) — clients will download from GitHub"
           fi
+          # 图上只留最近两代稳定版（当前 + 上一代）：每个 ~30 MB，一天一版会一直长。
+          # 上一代留着是为了「客户端手里是旧 latest.json」时那次下载还能命中图床，而不是掉到 GitHub。
+          # 删除是幂等的：老版本本来就没有对象时，图床回 existed=false，不算失败。
+          STABLE_TAGS=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 30 \
+            --json tagName,isPrerelease,publishedAt \
+            --jq '[.[] | select(.isPrerelease==false)] | sort_by(.publishedAt) | reverse | .[].tagName' || true)
+          KEEP_CURRENT=$(printf '%s\n' "$STABLE_TAGS" | sed -n '1p')
+          KEEP_PREV=$(printf '%s\n' "$STABLE_TAGS" | sed -n '2p')
+          printf '%s\n' "$STABLE_TAGS" | head -12 | while read -r t; do
+            [ -z "$t" ] && continue
+            [ "$t" = "$KEEP_CURRENT" ] && { echo "keep stable-${t#v}.apk (current)"; continue; }
+            [ "$t" = "$KEEP_PREV" ] && { echo "keep stable-${t#v}.apk (previous)"; continue; }
+            R=$(curl -sS --max-time 60 -X POST "$BASE_URL/api/delete" \
+              -F "uid=${TOKEN}" -F "id=${FOLDER}/stable-${t#v}.apk" || true)
+            echo "cleanup stable-${t#v}.apk -> $R"
+          done
 
       - name: 🌐 Update download page and announce
         if: inputs.keep_draft != true

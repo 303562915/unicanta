@@ -237,14 +237,23 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # 新包已经在图床上、且核对过了，才删旧的：只留最新一份，图床不会越堆越多。
-          # 旧文件名按构建号推算（latest-<旧构建号>.apk），列表取自 dev release 的资产；
-          # 删除是幂等的，名字不存在时图床回 existed=false，不算失败。
+          # 新包已经在图床上、且核对过了，才删旧的。
+          #
+          # **保留当前这一代 + 上一代**（2026-11-28 改，原来只留最新一份）：
+          # 客户端手里的 development.json 可能是缓存过的那份，里面的 `latest-<旧构建号>.apk`
+          # 一旦在图上被删掉，这次下载就先撞 404 再掉到 GitHub 那条——国内 GitHub 慢得离谱，
+          # 「怎么比浏览器慢多了」有一半是这么来的。两代最多 ~2×30 MB，图床放得下。
           PREV_BUILDS=$(gh release view dev --repo "$GITHUB_REPOSITORY" --json assets \
             --jq '.assets[].name' 2>/dev/null \
             | sed -n 's/^androidApp-release-\([0-9][0-9]*\)\.apk$/\1/p' | sort -rn | head -12 || true)
+          KEPT_PREV=0
           for b in $PREV_BUILDS; do
             [ "$b" = "$RUN_NUMBER" ] && continue
+            KEPT_PREV=$((KEPT_PREV + 1))
+            if [ "$KEPT_PREV" -le 1 ]; then
+              echo "keep latest-${b}.apk (previous generation, for stale clients)"
+              continue
+            fi
             DEL=$(curl -sS --max-time 60 -X POST "$BASE_URL/api/delete" \
               -F "uid=${TOKEN}" -F "id=${FOLDER}/latest-${b}.apk" || true)
             echo "cleanup latest-${b}.apk -> $DEL"

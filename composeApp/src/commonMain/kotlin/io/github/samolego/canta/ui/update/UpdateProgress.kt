@@ -40,6 +40,8 @@ internal object UpdateProgress {
         val fraction: Float?,
         /** 下载时这一份是从哪儿来的；安装阶段为 null（那时已经没有「从哪儿下」可说）。 */
         val source: DownloadSource? = null,
+        /** 实测速度，字节每秒；0 表示还没量出来，不显示。 */
+        val bytesPerSecond: Long = 0,
     )
 
     /** 没有更新在跑时是 null；顶栏据此决定画不画这一条。 */
@@ -59,6 +61,7 @@ internal object UpdateProgress {
                 version = state.version,
                 fraction = if (state.progress < 0) null else state.progress.coerceIn(0, 100) / 100f,
                 source = state.source,
+                bytesPerSecond = state.bytesPerSecond,
             )
 
             is UpdateState.Installing -> Item(

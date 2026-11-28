@@ -29,6 +29,7 @@ import io.github.samolego.canta.generated.resources.update_progress_downloading
 import io.github.samolego.canta.generated.resources.update_progress_installing
 import io.github.samolego.canta.ui.update.UpdateProgress
 import io.github.samolego.canta.ui.update.downloadSourceLabel
+import io.github.samolego.canta.ui.screen.formatDownloadSpeed
 import org.jetbrains.compose.resources.stringResource
 
 /** The height of the bar's content, below the status bar. */
@@ -168,7 +169,10 @@ private fun UpdateProgressStrip(item: UpdateProgress.Item) {
             stringResource(Res.string.update_progress_installing, item.version)
     }
     // 百分号在代码里拼：Compose 的格式化只认 %N$s / %N$d，资源里写 %% 会原样显示两个。
-    val line = item.fraction?.let { "$label · ${(it.coerceIn(0f, 1f) * 100).toInt()}%" } ?: label
+    // 速度也是空手拼：量不出来的时候一个字都不写，别写「0 KB/s」。
+    val speed = formatDownloadSpeed(item.bytesPerSecond)
+    val withSpeed = if (speed.isEmpty()) label else "$label · $speed"
+    val line = item.fraction?.let { "$withSpeed · ${(it.coerceIn(0f, 1f) * 100).toInt()}%" } ?: withSpeed
     Column(
         modifier = Modifier
             .fillMaxWidth()
