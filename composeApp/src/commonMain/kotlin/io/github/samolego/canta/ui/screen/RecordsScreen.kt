@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -53,13 +52,11 @@ import io.github.samolego.canta.generated.resources.records_action_reinstall
 import io.github.samolego.canta.generated.resources.records_action_uninstall
 import io.github.samolego.canta.generated.resources.records_batch
 import io.github.samolego.canta.generated.resources.records_clear_after_boot
-import io.github.samolego.canta.generated.resources.records_clear_after_boot_desc
 import io.github.samolego.canta.generated.resources.records_empty
 import io.github.samolego.canta.generated.resources.records_failed
 import io.github.samolego.canta.generated.resources.records_reset_to_factory
 import io.github.samolego.canta.generated.resources.records_success
 import io.github.samolego.canta.generated.resources.records_tap_opens_detail
-import io.github.samolego.canta.generated.resources.records_tap_opens_detail_desc
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.SettingsSwitch
@@ -208,16 +205,17 @@ fun RecordsScreen(
 }
 
 /**
- * The page's two settings, one card, one row each, the switch always on the right.
+ * The page's two settings as two small switches side by side, left and right, one line high.
  *
- * The first is whether the log is thrown away at the next system start: off is the default, and off
- * means the log is kept for good — a record of what was removed is the only way back to it, so
- * emptying it is something to ask for, not something to start with. Its caption is one short line
- * now: the long explanation said the same thing twice and pushed the log itself down the page.
+ * They used to be two full-width rows with a caption each, which ate a whole card's height above
+ * the log for two things nobody reads twice. Now each is a chip: the words on the left, a small
+ * switch on the right, half the row each — the page opens on the records themselves.
  *
- * The second is what a tap on a row does. Off (the default) is the behaviour the page always had —
- * one tap is the reverse operation — and on opens the package's own page first, for the reader who
- * came back to look at what was removed rather than to undo it.
+ * Left: whether the log is thrown away at the next system start. Off is the default, and off means
+ * the log is kept for good — a record of what was removed is the only way back to it.
+ *
+ * Right: what a tap on a row does. Off (the default) is the behaviour the page always had — one tap
+ * is the reverse operation — and on opens the package's own page first.
  */
 @Composable
 private fun RecordSettingsCard(
@@ -226,66 +224,57 @@ private fun RecordSettingsCard(
     tapOpensDetail: Boolean,
     onTapOpensDetailChange: (Boolean) -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 13.dp, end = 13.dp, top = 6.dp)
-            .clip(RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        color = FlSurfaceLevel.Card.colorOf(scheme),
-    ) {
-        Column {
-            RecordSettingRow(
-                title = stringResource(Res.string.records_clear_after_boot),
-                caption = stringResource(Res.string.records_clear_after_boot_desc),
-                checked = clearAfterBoot,
-                onCheckedChange = onClearAfterBootChange,
-            )
-            HorizontalDivider(
-                color = scheme.outlineVariant.copy(alpha = 0.4f),
-                modifier = Modifier.padding(horizontal = 12.dp),
-            )
-            RecordSettingRow(
-                title = stringResource(Res.string.records_tap_opens_detail),
-                caption = stringResource(Res.string.records_tap_opens_detail_desc),
-                checked = tapOpensDetail,
-                onCheckedChange = onTapOpensDetailChange,
-            )
-        }
-    }
-}
-
-/** One line of [RecordSettingsCard]: title and its one-line caption on the left, the switch on the right. */
-@Composable
-private fun RecordSettingRow(
-    title: String,
-    caption: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(start = 12.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(start = 13.dp, end = 13.dp, top = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        RecordSettingChip(
+            label = stringResource(Res.string.records_clear_after_boot),
+            checked = clearAfterBoot,
+            onCheckedChange = onClearAfterBootChange,
+            modifier = Modifier.weight(1f),
+        )
+        RecordSettingChip(
+            label = stringResource(Res.string.records_tap_opens_detail),
+            checked = tapOpensDetail,
+            onCheckedChange = onTapOpensDetailChange,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** One switch of [RecordSettingsCard]: a one-line label and a small switch, all inside the chip. */
+@Composable
+private fun RecordSettingChip(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(9.dp))
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+        shape = RoundedCornerShape(9.dp),
+        color = FlSurfaceLevel.Card.colorOf(scheme),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                text = title,
-                style = FlText.subheadline,
-                color = scheme.onSurface,
+                text = label,
+                style = FlText.caption1,
+                color = if (checked) scheme.primary else scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                text = caption,
-                style = FlText.caption2,
-                color = scheme.onSurfaceVariant,
-            )
+            SettingsSwitch(checked)
         }
-        Spacer(Modifier.width(8.dp))
-        SettingsSwitch(checked)
     }
 }
 
