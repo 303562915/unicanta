@@ -185,6 +185,93 @@ class LevelFixRepository(private val repository: PlanRepository) {
     }
 
     /**
+     * 这个包现在被盖了什么章（每枚几票、我投了哪一枚、已经盖上去的是哪一枚）。
+     *
+     * 先看 [StampCache]：详情页不该为了一枚章变成五个请求。**级别修正**那一页要拿准的，
+     * 传 [force] = true 直接问后端。null = 没问到——断网，或者后端还没推这张表（那就什么都不画）。
+     */
+    suspend fun stamps(
+        packageName: String,
+        viewer: String = "",
+        force: Boolean = false,
+    ): StampSummary? {
+        if (packageName.isEmpty()) return null
+        if (!force) StampCache.get(packageName)?.let { return it }
+        val body = buildJsonObject {
+            put("p_pkg", packageName)
+            put("p_voter", viewer)
+        }.toString()
+        val text = repository.stampsFor(body) ?: return null
+        return runCatching {
+            val element = JSON.parseToJsonElement(text)
+            if (element is JsonNull) null else parseStamps(element)
+        }.getOrNull()?.also { StampCache.put(packageName, it) }
+    }
+
+    /**
+     * 给这个包盖一枚章（[title] 必须是 [Stamps.TITLES] 里的两字词），返回盖完之后整份计数。
+     *
+     * 一人一包一票：换一枚就是改票，不会两枚同时挂着。
+     */
+    suspend fun voteStamp(
+        packageName: String,
+        title: String,
+        voter: String = "",
+        name: String = "",
+    ): LevelFixResult<StampSummary> {
+        if (packageName.isEmpty()) return LevelFixResult.Failed("没有包名", network = false)
+        if (title.isEmpty()) return LevelFixResult.Failed("还没选印章", network = false)
+        if (voter.isEmpty()) return LevelFixResult.Failed("本机还没有身份", network = false)
+        val proof = repository.callerTokenForLevelFix()
+        val payload = buildJsonObject {
+            put("p_pkg", packageName)
+            put("p_title", title)
+            put("p_voter", voter)
+            put("p_name", name)
+            if (proof.isNotEmpty()) put("p_token", proof)
+        }.toString()
+        val text = repository.voteStamp(payload) ?: return repository.failureReason()
+        val parsed = runCatching {
+            val element = JSON.parseToJsonElement(text)
+            if (element is JsonNull) null else parseStamps(element)
+        }.getOrNull()
+        return if (parsed == null) {
+            LevelFixResult.Failed("后端没接受这一票（印章不在名单里，或被限速）", network = false)
+        } else {
+            // 投完就把这一份塞进缓存：详情页不用再问一趟，点回去当场看到新的票数（和可能的新章）。
+            StampCache.put(packageName, parsed)
+            LevelFixResult.Ok(parsed)
+        }
+    }
+
+    /**
+     * 印章那一路的答复；字段都可缺省，后端还没推新表时页面就当「没人盖过」画。
+     *
+     * `counts` 里后端会把没被投过的章也带上一行 0 票，所以页面直接按 [Stamps.TITLES] 取就行，
+     * 不必自己补空行。
+     */
+    private fun parseStamps(element: kotlinx.serialization.json.JsonElement): StampSummary? = runCatching {
+        val o = element.jsonObject
+        val counts = o["counts"]?.jsonArray?.map { row ->
+            val c = row.jsonObject
+            StampCount(
+                title = c["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                votes = c["votes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                share = c["share"]?.jsonPrimitive?.doubleOrNull?.toFloat() ?: 0f,
+                mine = c["mine"]?.jsonPrimitive?.booleanOrNull == true,
+            )
+        }.orEmpty()
+        StampSummary(
+            counts = counts,
+            applied = o["applied"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            appliedVotes = o["applied_votes"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+            needed = o["needed"]?.jsonPrimitive?.longOrNull?.toInt() ?: Stamps.NEEDED,
+            shareNeeded = o["share_needed"]?.jsonPrimitive?.doubleOrNull?.toFloat()
+                ?: Stamps.SHARE_NEEDED,
+        )
+    }.getOrNull()
+
+    /**
      * 最近的投票记录（谁、在哪个维度、投了什么、写了什么依据），用于「修正历史」。
      *
      * 与 [ballots] 分开一趟：那个给百分比与"我投了什么"，这个给人名、时间和依据。

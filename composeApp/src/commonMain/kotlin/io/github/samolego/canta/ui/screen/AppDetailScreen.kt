@@ -83,6 +83,8 @@ import io.github.samolego.canta.data.community.CommunityPlan
 import io.github.samolego.canta.data.community.DescriptionFix
 import io.github.samolego.canta.data.community.PackageVotes
 import io.github.samolego.canta.data.community.PlanComment
+import io.github.samolego.canta.data.community.LevelFixRepository
+import io.github.samolego.canta.data.community.StampSummary
 import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.community.SocialRepository
 import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
@@ -101,6 +103,7 @@ import io.github.samolego.canta.ui.component.CommentComposer
 import io.github.samolego.canta.ui.component.dismissInputOnTap
 import io.github.samolego.canta.ui.component.PersonAvatar
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.StampMark
 import io.github.samolego.canta.ui.component.commentThreads
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -436,6 +439,13 @@ fun AppDetailScreen(
      * line, the rest are counted for the entry that opens their page.
      */
     var descriptionFixes by remember(packageName) { mutableStateOf(cached?.fixes.orEmpty()) }
+    /**
+     * 社区盖在这个包上的那枚章；null 或 [StampSummary.applied] 为空都表示"没盖"。
+     *
+     * 不并进 [AppDetailSnapshot]：那一份快照是四个查询一次写下来的，章是另一张表。它走进程内
+     * 5 分钟缓存（见 StampCache），所以点开详情页一般不额外发请求。
+     */
+    var stamp by remember(packageName) { mutableStateOf<StampSummary?>(null) }
     // Why the last vote or comment did not go through, when the backend said something.
     var voteError by remember { mutableStateOf<String?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
@@ -562,6 +572,9 @@ fun AppDetailScreen(
             descriptionFixes = emptyList()
             return@LaunchedEffect
         }
+        // 印章先取：命中进程内缓存时一个请求都不发，没命中才问一趟；问不到就保持"没盖"，
+        // 不能因为这一枚章把整页拖成"没拉到"。它在 warm 分支**之前**，因为下面那条路会直接 return。
+        stamp = LevelFixRepository(repo).stamps(packageName, voter) ?: stamp
         // 60 秒内拉过这一页就直接用那一份画，一个请求都不发——这是省掉那几万次调用的地方。
         val warm = AppDetailCache.freshDetail(cacheTag)
         if (warm != null) {
@@ -874,6 +887,8 @@ fun AppDetailScreen(
                     onOpenLevelFixes = { onOpenLevelFixes(packageName) },
                     onUninstall = onUninstall,
                     onReinstall = onReinstall,
+                    // 社区盖在这个包上的章（票够了才有）；没盖这一块整块不画。
+                    stamp = stamp,
                     // 本机没有这个包（方案里带着别的机型的包）时，说明与级别从总库那条取。
                     fallback = fallback,
                 )
@@ -1048,6 +1063,8 @@ private fun AppHero(
     onUninstall: (() -> Unit)? = null,
     /** 把已卸载的包装回去；null 与 [onUninstall] 同理。 */
     onReinstall: (() -> Unit)? = null,
+    /** 社区盖在这个包上的章；[StampSummary.applied] 为空表示没盖，这一块整块不画。 */
+    stamp: StampSummary? = null,
     /** 本机没有这个包时，总库里那一条（说明与级别都从它取）。 */
     fallback: BloatData? = null,
 ) {
@@ -1155,6 +1172,31 @@ private fun AppHero(
                     maxLines = 1,
                     modifier = Modifier.padding(start = 2.dp),
                 )
+            }
+        }
+
+        // 社区盖的章：票够了才有。斜着压在应用信息下面，用印章的形状（双线、旋转、淡墨）而不是
+        // 又一枚圆角标签——它说的是"认定"，不是"属性"。没盖就整块不画：没被盖本身就说明还没有人
+        // 认定它有问题，这里不出现"清白""正常"这种反向章。
+        val appliedStamp = stamp?.applied?.takeIf { it.isNotEmpty() }
+        if (appliedStamp != null) {
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StampMark(text = appliedStamp, size = 84.dp)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "社区盖的章",
+                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "${stamp?.appliedVotes ?: 0} 票认定 · 在「级别修正」里可以改投",
+                        style = FlText.caption1,
+                        color = scheme.onSurface,
+                    )
+                }
             }
         }
 

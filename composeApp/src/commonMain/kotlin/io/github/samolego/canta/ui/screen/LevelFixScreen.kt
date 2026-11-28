@@ -47,12 +47,16 @@ import io.github.samolego.canta.data.community.LevelBallots
 import io.github.samolego.canta.data.community.LevelFix
 import io.github.samolego.canta.data.community.LevelFixRepository
 import io.github.samolego.canta.data.community.LevelFixResult
+import io.github.samolego.canta.data.community.StampSummary
+import io.github.samolego.canta.data.community.Stamps
 import io.github.samolego.canta.ui.component.AppBadge
 import io.github.samolego.canta.ui.component.BadgeImpact
 import io.github.samolego.canta.ui.component.BadgeImpactTag
 import io.github.samolego.canta.ui.component.BadgeImpactTags
 import io.github.samolego.canta.ui.component.DisabledBadge
 import io.github.samolego.canta.ui.component.ScreenTopBar
+import io.github.samolego.canta.ui.component.StampChip
+import io.github.samolego.canta.ui.component.StampInk
 import io.github.samolego.canta.ui.component.SystemBadge
 import io.github.samolego.canta.ui.component.badgeRiskSummary
 import io.github.samolego.canta.ui.component.relativeStamp
@@ -68,6 +72,11 @@ import kotlinx.coroutines.launch
 
 /**
  * 「这个包该被标成什么级别」：现在是哪一档、谁提过什么、票数到哪了、以及自己要投哪一边。
+ *
+ * 四组：级别 / 后果 / 系统应用 / **印章**。前三组回答「该不该删、删了会不会出事」，是一件事的
+ * 三个面；印章回答「它犯了什么罪」（毒瘤 / 病毒 / 远控 / 木马 / 广告 / 弹窗，都是两字），票够了
+ * 会斜盖到应用详情页上。所以印章是独立的一组票、独立一张表（见 `StampSummary`），不并进前三组，
+ * 也不参与它们的百分比，更不参与"删了会不会出事"的结算。
  *
  * 与「描述修正」是同一套做法，但这一页多一句必须说清楚的话：票够了**不等于**马上生效——通过的
  * 那几条要由工作流合并进仓库里的 `level_fixes.json`，手机下一次核对（一周内）才看到新级别。
@@ -101,6 +110,8 @@ fun LevelFixScreen(
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
     var ballots by remember(packageName) { mutableStateOf<LevelBallots?>(null) }
+    // 印章那一路：与三组投票分开一趟（后端也是两张表），失败不影响上面三组正常画。
+    var stamps by remember(packageName) { mutableStateOf<StampSummary?>(null) }
     var history by remember(packageName) { mutableStateOf<List<LevelBallotEntry>>(emptyList()) }
     var loading by remember(packageName) { mutableStateOf(true) }
     var reloads by remember { mutableIntStateOf(0) }
@@ -119,6 +130,8 @@ fun LevelFixScreen(
             loadError = null
         }
         history = repository.history(packageName) ?: history
+        // 印章这一路失败就保持上一次的样子（没投过就是全 0）：它只是标签，不该把整页拖成"没拉到"。
+        stamps = repository.stamps(packageName, authorId) ?: stamps
         loading = false
     }
 
@@ -171,6 +184,39 @@ fun LevelFixScreen(
                     reloads++
                 }
                 // 原因原样显示：网络没通 / 后端拒绝的原话 / 选项不合法，必须是不同的字。
+                is LevelFixResult.Failed -> notice = "没记上：${result.reason}"
+            }
+            votingBallot = false
+        }
+    }
+
+    /**
+     * 盖一枚章。一人一包一枚：点另一枚就是改票，不是两枚一起挂着。
+     *
+     * 与三组投票同一套身份门槛与报错口径（没设名字/头像就投不了、失败原因原样显示）。
+     */
+    fun pickStamp(title: String) {
+        if (votingBallot) return
+        if (!setupGate.ready) {
+            notice = setupGate.refusal
+            return
+        }
+        if (authorId.isEmpty()) {
+            notice = "本机还没有身份，先设置名字和头像"
+            return
+        }
+        votingBallot = true
+        notice = null
+        scope.launch {
+            when (val result = repository.voteStamp(packageName, title, authorId, author)) {
+                is LevelFixResult.Ok -> {
+                    stamps = result.value
+                    notice = if (result.value.applied == title) {
+                        "已盖：$title（这枚已经是这个包的章了）"
+                    } else {
+                        "已记下：$title（票到 ${result.value.needed} 票、占多数就盖上去）"
+                    }
+                }
                 is LevelFixResult.Failed -> notice = "没记上：${result.reason}"
             }
             votingBallot = false
@@ -341,6 +387,14 @@ fun LevelFixScreen(
                             ballots = ballots,
                             enabled = authorId.isNotEmpty() && !votingBallot,
                             onPick = { pick(LevelBallotDimensions.SYSTEM, it) },
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        // 第四组：章。前三组问「该不该删」，这一组问「它犯了什么罪」——所以它不并进
+                        // 上面任何一组，也不参与那三组的百分比。票够了才盖到详情页上。
+                        StampGroup(
+                            stamps = stamps,
+                            enabled = authorId.isNotEmpty() && !votingBallot,
+                            onPick = { pickStamp(it) },
                         )
                         Spacer(Modifier.height(12.dp))
                         // 「选这一档会发生什么」跟着**我投的级别**走；我还没投就用名单现在那一档。
@@ -547,6 +601,86 @@ private val SYSTEM_OPTIONS: List<BallotOption> = listOf(
     BallotOption("no", "否", BallotBadge.None),
     BallotOption(LevelBallotChoices.UNKNOWN, "不知道", BallotBadge.None),
 )
+
+/**
+ * 第四组：印章。选项本身就是一枚小章，让人投票的时候就看到盖在详情页上长什么样。
+ *
+ * 与 [BallotGroup] 有一处不同：右边显示的是**票数**，不是百分比。首发只有六个词，票数普遍是个位数，
+ * 一张 0% / 17% / 33% 的表会把「还没人盖」说得太郑重；占比只在结算门槛上起作用（[Stamps.SHARE_NEEDED]）。
+ */
+@Composable
+private fun StampGroup(
+    stamps: StampSummary?,
+    enabled: Boolean,
+    onPick: (String) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val mine = stamps?.mine
+    val applied = stamps?.applied.orEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "印章",
+                style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            // 已经盖上去的是哪一枚，就写在标题这一行；没盖就问它犯了什么罪。
+            Text(
+                text = if (applied.isNotEmpty()) "已盖：$applied" else "它犯了什么罪",
+                style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                color = if (applied.isNotEmpty()) StampInk.colorOf(applied) else scheme.outline,
+            )
+        }
+        Stamps.TITLES.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                pair.forEach { title ->
+                    val picked = mine == title
+                    val votes = stamps?.votesOf(title) ?: 0
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            // 选中用这一枚章自己的墨色：红章被选是红的，橙章被选是橙的，
+                            // 换成主题色就看不出自己选的是哪一档了。
+                            .background(
+                                if (picked) StampInk.colorOf(title).copy(alpha = 0.10f)
+                                else FlSurfaceLevel.Inset.colorOf(scheme),
+                            )
+                            .border(
+                                width = if (picked) 1.5.dp else 1.dp,
+                                color = if (picked) StampInk.colorOf(title) else Color.Transparent,
+                                shape = RoundedCornerShape(10.dp),
+                            )
+                            .clickable(enabled = enabled) { onPick(title) }
+                            .padding(horizontal = 9.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        StampChip(text = title, selected = picked)
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            text = if (votes > 0) "$votes 票" else "没人盖",
+                            style = FlText.caption2.copy(
+                                fontWeight = if (picked) FlText.emphasized else null,
+                            ),
+                            color = if (picked) scheme.onSurface else scheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                // 单数行：占住右半格，别让最后一枚撑满整行。
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        Text(
+            text = "票到 ${stamps?.needed ?: Stamps.NEEDED} 票、占 " +
+                "${((stamps?.shareNeeded ?: Stamps.SHARE_NEEDED) * 100).toInt()}% 就盖到详情页上；" +
+                "换一枚就是改票",
+            style = FlText.caption2,
+            color = scheme.outline,
+        )
+    }
+}
 
 /**
  * 三个维度共用的选项块：标题 + 一行两个的选项，每项右侧是**本维度内**的百分比。
