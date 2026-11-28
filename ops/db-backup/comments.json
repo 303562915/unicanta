@@ -5700,6 +5700,18 @@
   "target": "com.mobiletools.systemhelper"
  },
  {
+  "author": "young1023x2",
+  "author_id": "15838",
+  "body": "收集的信息：1.对于c17更新系统之后，风驰调速器没有了的。可以看看你们自己有没有冻结或者卸载“日志服务”这个系统应用com.oplus.olc。恢复之后，多重启两次手机就能恢复了。\n2.com.oplus.olc这个必须说清楚:\n uid (android.uid.system / 1000) 实测确认 sharedUser=android.uid.system/ 1000。同uid 的其他系统包都依赖这个共享 身份,卸载或禁用它会破坏整个 system uid 的一致性,极高概率导致开机失败/系统起不来。\n它本身是\"Log Service\"(日志服务),负 责抓 logcat/tombstone 给售后排查问题 用,manifest 里有 StartOrStopLogcat、 LogCoreService、 CustomizedLogStart 些。虽然它有能力抓日志,但这是系统自身 维护的日志管线,不是往厂商服务器偷传数 据的组件(dex里没有任何上传域名,只有 AOSP的报错链接。\n3.其他组件调用OLC，无法调用，反复调用导致功耗爆炸。",
+  "created_at": "2026-11-28T04:27:16.169268+00:00",
+  "device_model": "OnePlus 8T",
+  "id": 820,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "ColorOS 16.0.0",
+  "target": "com.oplus.olc"
+ },
+ {
   "author": "#10829",
   "author_id": "10829",
   "body": "👏👏👏",
