@@ -102,6 +102,10 @@ import androidx.compose.material.icons.rounded.FormatListNumbered
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.FormatStrikethrough
 import androidx.compose.material.icons.rounded.GridView
+// 参与者名单面板（[ParticipantsSheet]）标题那颗头像组图标。**必须显式 import**：
+// `Icons.Rounded.*` 是扩展属性，漏了就只是一句 `Unresolved reference: Group`，
+// 编译器不会提示"你少了一个图标"（本仓在这类事上红过四次）。
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.HorizontalRule
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.TableChart
@@ -151,6 +155,10 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+// 底栏那块「12 / 208」拿到的是 `PostThreadPane` 里那个 `derivedStateOf` 的**状态对象本身**
+// （不是 `.value`）：只有把"读"这件事留在 `FloorCounter` 自己的组合作用域里，滚动时才只有
+// 那一块重组（理由写在 `FloorCounter` 的 KDoc 里）。
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -625,6 +633,36 @@ private val PostPinned = Color(0xFF2FA84F)
  * 改直径时不用回来再算一遍。
  */
 private val PARTICIPANT_STEP = 13.dp
+
+/**
+ * 参与者名单面板（[ParticipantsSheet]）最多列几行：**50 人**。
+ *
+ * 为什么要有上限：`comments` 最多 200 层，极端情况下一屏能进 200 个不同的人。名单本身是
+ * `LazyColumn`（滚得动），真正的问题不是性能而是**可读性** —— 一屏一屏往下翻 200 个名字，
+ * 没人找得到自己想找的那一个；「谁回得最多」这件事前 50 个就已经答完了。超出的人在末尾
+ * 写一行「…还有 N 人」，说清是被截断的，而不是名单就这么点人。
+ *
+ * 参考 `topic_statistics.dart:161-173`：那边的参与者入口本身也是"取前几个 + 一个总数"，
+ * 总数照实写、不缩水（本仓的 `ThreadHeader` 原来写的是叠头像的颗数，封顶 5，见那里的注释）。
+ */
+private const val PARTICIPANT_SHEET_LIMIT = 50
+
+/**
+ * 参与者名单里的一行：一个人 + 他在这条帖子里回了几层。
+ *
+ * [key] 是 [authorKeyOf] 的口径（身份码优先、匿名退回署名），**同一个 key 既给「只看 TA」
+ * 过滤用，也给 `PostAvatar` 的 `seed` 用** —— 两处都是"认人"，用两个值会出现"名单里是这个人、
+ * 过滤出来的却是另一个人"。
+ *
+ * [firstIndex] 只用来排序（同层数按首次出现先后），不参与显示。
+ */
+private data class ParticipantRow(
+    val key: String,
+    val name: String,
+    val floors: Int,
+    val firstFloorId: Long,
+    val firstIndex: Int,
+)
 
 /** 阅读时长只在超过这个分钟数时才报：短帖报"1 分钟阅读"没有信息量。 */
 private const val READ_MINUTES_MIN = 3
@@ -2253,6 +2291,9 @@ else -> Column {
                 // `PostThreadPane` 里（它才拿着 `listState`，算得出"现在在第几层"）。
                 tocOpen = tocOpen,
                 onDismissToc = { tocOpen = false },
+                // 底栏那块楼层计数点下去走的就是这一条：与顶栏「更多 → 目录」同一个 `tocOpen`，
+                // 所以"从计数点开目录"和"从菜单点开目录"是同一件事件，不可能是两个面板。
+                onOpenToc = { tocOpen = true },
                 searchOpen = searchOpen,
                 onDismissSearch = { searchOpen = false },
                 jumpOpen = jumpOpen,
@@ -3719,6 +3760,16 @@ private fun PostThreadPane(
     /** 目录面板开着没有（[PostTocSheet]）：入口在顶栏「更多」里，开关状态由 `PostsScreen` 持有。 */
     tocOpen: Boolean = false,
     onDismissToc: () -> Unit = {},
+    /**
+     * 请上层打开目录面板（[PostTocSheet]）：**底栏那块「12 / 208」楼层计数也走这一个入口**。
+     *
+     * 为什么是回调而不是在这里自己 remember 一份 `tocOpen`：状态在 `PostsScreen`（顶栏「更多」
+     * 里的入口也在改它）。两份状态会立刻出现"底栏点开了计数、顶栏以为目录还关着"这种同一个
+     * 事实两种显示。分工与 `ReplyBar` 的 `onOpenChange` 之于 `composerOpen` 完全一样。
+     *
+     * 默认空实现：编辑器预览、别的宿主里单独摆这个 pane 时不会因为没传它而编译不过。
+     */
+    onOpenToc: () -> Unit = {},
     /** 帖内搜索面板开着没有（[PostSearchSheet]）；理由同 [tocOpen]。 */
     searchOpen: Boolean = false,
     onDismissSearch: () -> Unit = {},
@@ -3903,6 +3954,18 @@ private fun PostThreadPane(
     var reportTarget by remember(post?.id) { mutableStateOf<FloorReportTarget?>(null) }
 
     /**
+     * 参与者名单面板开着没有（[ParticipantsSheet]）。
+     *
+     * 状态在这一层、面板也画在这一层，理由与 [reportTarget] 完全一样：入口是 `ThreadHeader` 里
+     * 那颗「N 参与者」，而 header 是 `LazyColumn` 的**第 0 个 item** —— 滚出屏就被回收，
+     * 开关留在那儿，人往下一滑面板就跟着没了。面板自己还要用 [authorKeyOf] / [jumpToFloorId] /
+     * [applyAuthorFilter] 算"这个人最早那一层"和"只看 TA"，那三样也只有这一层拿着。
+     *
+     * 键是 `post?.id`：换帖时顺手收起，免得把 A 帖的名单"穿"到 B 帖上（与 `composerOpen` 同一处理）。
+     */
+    var participantsOpen by remember(post?.id) { mutableStateOf(false) }
+
+    /**
      * 刚跳过去的那一层（0 = 没有）：左边竖条亮 [HIGHLIGHT_HOLD_MS] 之后清掉。
      *
      * 它是**状态**而不是一次性的动画：同一条指示条连点两次也要能重新亮起来，
@@ -3954,6 +4017,67 @@ private fun PostThreadPane(
         } else {
             comments.withIndex().filter { authorKeyOf(it.value) == authorFilter }
         }
+    }
+
+    /**
+     * **当前视口所在楼层的 id**（`0L` = 在主楼那一屏）。全文件只有这一处算它，两个地方读它：
+     *
+     * 1. 目录面板（[PostTocSheet]）的"你在这一层"高亮；
+     * 2. 底栏那块「12 / 208」楼层计数（[FloorCounter]）—— 通过把**这个状态对象本身**传下去，
+     *    而不是传一个 `Int`：传值的话滚动一次就换一次参数，`ReplyBar` 整条（含胶囊里那段
+     *    `buildAnnotatedString`）每帧重建一次；传 State 则由读它的那一小块去承担重组。
+     *
+     * 值怎么算：`firstVisibleItemIndex` 是**渲染序列**里的位置 —— 过滤态下它同样是 `floorRows`
+     * 的下标（见 `floorRows` 的注释），两种状态通用。前三格（thread-header / op / thread-head）
+     * 都算"在主楼"；`FLOORS_FIRST` 之后按 `floorRows` 取那一层的 id。
+     *
+     * `remember(listState, floorRows)`：`derivedStateOf` 只在**被读**且依赖变了时重算，
+     * 所以滚动时它不会在每一帧里跑一遍 `indexOfFirst`；换帖（`listState` 换实例）/换过滤序列
+     * （`floorRows` 换实例）才重建。
+     */
+    val visibleFloorId: State<Long> = remember(listState, floorRows) {
+        derivedStateOf {
+            val first = listState.firstVisibleItemIndex
+            if (first < FLOORS_FIRST) {
+                0L
+            } else {
+                floorRows.getOrNull(first - FLOORS_FIRST)?.value?.id ?: 0L
+            }
+        }
+    }
+
+    /**
+     * 参与者名单的数据：`comments` 按 [authorKeyOf] 分组，**层数降序、同层数按首次出现先后**。
+     *
+     * 为什么复用 [authorKeyOf] 而不是在这里再写一遍 `authorId.ifBlank { author }`：名单里
+     * 「N 层」数出来的这个人，和点了「只看 TA」之后列表里剩下的楼层，必须是**同一批**。
+     * 两处各写一份口径，哪天一处改成 `ifEmpty`、另一处留着 `ifBlank`，就会出现
+     * "名单上写着 3 层、点进只看 TA 只剩 2 层"这种只在空白署名的人身上出现的偏差。
+     *
+     * 排序：`groupBy` 返回的是 `LinkedHashMap`（保持首次出现序），`sortedWith` 是稳定排序，
+     * 所以"同层数按首次出现先后"不需要再补一个比较器去扫原列表 —— `thenBy { firstIndex }` 只是
+     * 把这个已有的次序写成显式的一条。
+     *
+     * 名字取自这个人的**第一层**（`author` 是后端在回帖那一刻抄下的署名；同一个人改名后，
+     * 后几层的署名会变，取第一层才是"他在这个帖子里最早叫什么"，与 `firstIndex` 同一口径）。
+     *
+     * `remember(comments)`：只在列表换血时重建，O(n)。**不放进 [ParticipantsSheet] 里算**：
+     * 面板关着的时候 `ThreadHeader` 的人数也要用它（见那个 `participantCount` 的注释）。
+     */
+    val participantRoster: List<ParticipantRow> = remember(comments) {
+        comments.withIndex()
+            .groupBy { authorKeyOf(it.value) }
+            .map { (key, floors) ->
+                val first = floors.first()
+                ParticipantRow(
+                    key = key,
+                    name = first.value.author.ifBlank { "匿名" },
+                    floors = floors.size,
+                    firstFloorId = first.value.id,
+                    firstIndex = first.index,
+                )
+            }
+            .sortedWith(compareByDescending<ParticipantRow> { it.floors }.thenBy { it.firstIndex })
     }
 
     /**
@@ -4246,6 +4370,12 @@ private fun PostThreadPane(
                         ThreadHeader(
                             post = shown,
                             comments = comments,
+                            // 人数是**全量去重**后的人数（`participantRoster`），不是叠头像那几颗：
+                            // 头像只取最近 5 个（`take(5)`），60 人参与的长帖上写「5 参与者」是错的。
+                            participantCount = participantRoster.size,
+                            // 点「N 参与者」→ 名单面板。面板画在这一层（见 `participantsOpen`），
+                            // header 只负责说"有人点了"。
+                            onOpenParticipants = { participantsOpen = true },
                         )
                     }
 
@@ -4745,6 +4875,14 @@ private fun PostThreadPane(
                 // 面板开关在 `PostThreadPane` 那一层：动作行左侧那颗回复胶囊也要开它。
                 open = composerOpen,
                 onOpenChange = { composerOpen = it },
+                // 底栏右侧那块「12 / 208」：**传状态对象本身**，不传算好的数字 ——
+                // 传数字等于让 `listState` 的每一次滚动都换一次 `ReplyBar` 的参数，
+                // 整条 56dp 底栏（含胶囊里那段 `buildAnnotatedString`）跟着每帧重建。
+                currentFloorId = visibleFloorId,
+                comments = comments,
+                // 点计数 = 打开目录面板：底栏这个位置就是"我在哪 / 去哪"的入口，与参考一致
+                // （见 [FloorCounter] 的 KDoc）。
+                onOpenToc = onOpenToc,
                 onChange = onReplyChange,
                 onSend = onSend,
             )
@@ -4754,23 +4892,13 @@ private fun PostThreadPane(
             // 放在这一层是因为只有这里拿得到 `listState`：面板要把"你正在看第几层"高亮出来。
             // 开关状态在 `PostsScreen`（顶栏「更多」里的入口在那儿），这边只负责画。
             if (tocOpen) {
-                // 当前视口所在楼层：`firstVisibleItemIndex` 是**渲染序列**里的位置 ——
-                // 过滤态下它同样是 `floorRows` 的下标（见 `floorRows` 的注释），两种状态通用。
-                // 前三格（thread-header / op / thread-head）都算"在主楼"，交给面板画在「主楼」行上。
-                val currentFloorId by remember(floorRows) {
-                    derivedStateOf {
-                        val first = listState.firstVisibleItemIndex
-                        if (first < FLOORS_FIRST) {
-                            0L
-                        } else {
-                            floorRows.getOrNull(first - FLOORS_FIRST)?.value?.id ?: 0L
-                        }
-                    }
-                }
+                // 当前视口所在楼层：算法只剩 [visibleFloorId] 那一处（底栏计数读的是同一个对象）。
+                // 这里读 `.value` 是**面板开着的时候**才发生的事：面板关了，这条读就没有了，
+                // 底栏那块计数照样只在它自己的作用域里重组。
                 PostTocSheet(
                     comments = comments,
                     floorLabelOf = floorLabelOf,
-                    currentFloorId = currentFloorId,
+                    currentFloorId = visibleFloorId.value,
                     onJump = { id ->
                         if (id == 0L) {
                             // 主楼：item 1 是 `op`（item 0 是标题区，滚到那里等于把标题顶上去）。
@@ -4814,6 +4942,34 @@ private fun PostThreadPane(
                 )
             }
 
+            // ---- 参与者名单面板（[ParticipantsSheet]）----
+            //
+            // 与目录 / 搜索 / 举报同一个放法：开关在 `ThreadHeader`（那是 `LazyColumn` 的第 0 个
+            // item，滚出屏就回收），面板本体画在这一层。
+            //
+            // 两个动作在这里分开落地，**互不触发**：
+            //  - 「点行」= 看 → 收起面板 + [jumpToFloorId] 到这个人最早那一层（跟着高亮竖条走）；
+            //  - 「只看 TA」= 过滤 → 收起面板 + [applyAuthorFilter]，只留这个人的楼层。
+            // 先收面板再动手，顺序与举报面板"先关面板再交出去"一致：不然跳转/过滤把列表换了，
+            // 面板还盖在上面，人就分不清"是跳过去了还是点错了"。
+            if (participantsOpen) {
+                ParticipantsSheet(
+                    rows = participantRoster,
+                    onJump = { id ->
+                        participantsOpen = false
+                        jumpToFloorId(id)
+                    },
+                    onOnlyThisAuthor = { key ->
+                        participantsOpen = false
+                        // 走 [applyAuthorFilter] 而不是在这里改 `authorFilter`：那个函数还负责
+                        // "记下过滤前的位置"与"滚到这个人的第一层"，少一步就会在"看全部"时
+                        // 落回一个不相干的楼层。
+                        applyAuthorFilter(key)
+                    },
+                    onDismiss = { participantsOpen = false },
+                )
+            }
+
             // ---- 举报面板（[FloorReportSheet]）----
             //
             // 与目录面板同一种放法：开关在楼层菜单里（菜单只是把 `reportTarget` 置上），
@@ -4846,7 +5002,20 @@ private fun PostThreadPane(
 // 本仓其它用到它的地方（`PlanScopePicker` / `TweaksScreen` / `AppTile`）都是这么写的。
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
+private fun ThreadHeader(
+    post: CommunityPost,
+    comments: List<PostComment>,
+    /**
+     * `comments` 按作者去重后的**全量**人数（= 参与者名单的行数，见 `participantRoster`）。
+     *
+     * 为什么要单独传进来：下面那颗叠头像只取最近 [5] 个（`take(5)`），拿它的 `size` 当人数，
+     * 60 人参与的长帖上会写成「5 参与者」。参考 `topic_statistics.dart:161-173` 里那个数是
+     * `count`（全量参与人数），头像只是它的装饰。默认 0 表示"调用方没算"，这时退回叠头像的颗数。
+     */
+    participantCount: Int = 0,
+    /** 点「N 参与者」→ 打开名单面板（`PostThreadPane` 里的 `participantsOpen`）。 */
+    onOpenParticipants: () -> Unit = {},
+) {
     val scheme = MaterialTheme.colorScheme
     // 参与者：从回帖里按作者去重，取最近出现的 5 个（discourse 那几个小圆就是干这个的）。
     val participants = remember(comments) {
@@ -5004,10 +5173,30 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
             ) {
                 if (participants.isNotEmpty()) {
                     // 头像叠 + 「N 参与者」是**一项**，不能被 FlowRow 拆到两行去。
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    //
+                    // 整项可点 → 参与者名单（[ParticipantsSheet]）。为什么点的是这个名字而不是另加一颗
+                    // 「查看全部」按钮：参考 `topic_statistics.dart:161-173` 里这个 `_StatItem` 本身就是
+                    // `onTap: _showParticipants` —— 统计行上的「N 参与者」在这套设计里就是名单的入口，
+                    // 多给一颗按钮等于把一个已有的入口拆成两个说法。
+                    //
+                    // 点击区就是这一整条（叠头像 + 数字 + 「参与者」，约 150dp 宽）：**不加内边距**，
+                    // 加了会把这行的行高从 21 顶到 33，统计区到分隔线那 6 就得跟着重算（见上面分档表）。
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable(
+                                role = Role.Button,
+                                onClickLabel = "查看参与者名单",
+                                onClick = onOpenParticipants,
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         ParticipantStack(participants = participants)
                         Text(
-                            text = "${participants.size.coerceAtLeast(1)}",
+                            // 人数取**全量**：叠头像只有 5 颗，`participantCount` 才是"这条帖子上
+                            // 一共有多少个人说过话"。两个都拿到时取大的那个（`participantCount` 为 0
+                            // 说明调用方没算）。
+                            text = "${maxOf(participants.size, participantCount).coerceAtLeast(1)}",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                             color = metaTint(scheme.onSurfaceVariant, 0.8f),
@@ -7283,6 +7472,233 @@ private fun ReportReasonRow(
 }
 
 /**
+ * 参与者名单面板：标题「参与者 · N 人」+ 每人一行（头像 32dp / 名字 / 「N 层」/「只看 TA」）。
+ *
+ * 外壳照本文件已有的 [FloorReportSheet] 与 [ComposerPickerSheet]：`BasicAlertDialog`
+ * （`usePlatformDefaultWidth = false`）+ 整屏 `0.32` 黑遮罩 + 贴底 28dp 上圆角面板 + 40×4 抓手
+ * 与右上角关闭。只把"理由单选"换成"人的列表"，别的尺寸一个都没改 —— 两个面板并排看应该像同一套。
+ *
+ * **为什么不新开一个文件**（`ui/screen/ParticipantsSheet.kt` 之类）：这个面板要用的三样东西 ——
+ * [authorKeyOf] 的口径、[jumpToFloorId]、[applyAuthorFilter] —— 全是 `PostThreadPane` 的局部函数
+ * 与局部状态。搬出去只有两条路：把它们改成参数（七八个 lambda 从 `PostsScreen` 穿到面板，
+ * `PostThreadPane` 变成一个转发站，而且"跳到第几层"的实现会离开它赖以成立的 `FLOORS_FIRST` 上下文），
+ * 或者在新文件里再写一份"身份键 / 跳到第几层"（本文件最怕的第二份口径）。留在本文件，它就只是又一个
+ * `private @Composable`，与举报面板、编辑器选择面板排在一起，共用同一套外壳常量。
+ *
+ * 名单数据不在本函数里算：来源是 `PostThreadPane` 的 `participantRoster`（按 [authorKeyOf] 分组、
+ * 层数降序、同层数按首次出现先后）。这里只负责画与截断：[PARTICIPANT_SHEET_LIMIT] 行之后
+ * 补一行「…还有 N 人」。
+ *
+ * **两种动作，互不触发**（各自一块点击区）：
+ *  - **点行 = 看**：收起面板，跳到这个人**最早**那一层（`firstFloorId`）。为什么是最早那一层：
+ *    名单按"回了几层"排序，点进去想知道的是"他在这帖里说了什么"，从第一句开始读才有上下文；
+ *    跳到最新一层只能看到一句脱离上下文的回答。
+ *  - **「只看 TA」= 过滤**：收起面板，只留这个人的楼层。它与"跳到某一层"是两件不同的事 ——
+ *    前者改的是**列表内容**（[applyAuthorFilter]），后者只改**滚动位置**（[jumpToFloorId]）。
+ *    所以「只看 TA」不顺带跳楼，点行也不顺带过滤：过滤之后"这一层"的邻居全变了，
+ *    人只会以为跳错了地方。
+ *
+ * `@OptIn(ExperimentalMaterial3Api::class)` 照 [FloorReportSheet] 一样要写：`BasicAlertDialog`
+ * 在 material3 里仍是实验 API（同 `ComposerPickerSheet` 上面那段注释），漏了这个注解是编译错误，
+ * 不是警告。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ParticipantsSheet(
+    /** 全量名单（已排序）；截断在这里做，见 [PARTICIPANT_SHEET_LIMIT]。 */
+    rows: List<ParticipantRow>,
+    /** 点一行：跳到这个人最早的楼层（调用点负责先收起面板）。 */
+    onJump: (Long) -> Unit,
+    /** 点「只看 TA」：按这个 key 过滤（[authorKeyOf] 的口径；调用点负责先收起面板）。 */
+    onOnlyThisAuthor: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val shown = rows.take(PARTICIPANT_SHEET_LIMIT)
+    val hidden = rows.size - shown.size
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+        // 整宽：面板里每一行都是"整宽一行都可点"，平台默认宽度会让它缩成中间一条。
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 遮罩整屏铺满（理由同 [FloorReportSheet]：按面板高度画会在面板上方留一块点不动的死区）。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            Surface(
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = FlSurfaceLevel.Block.colorOf(scheme),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 导航栏留白垫在面板上：最后一行不垫会被手势条压住。
+                        .navigationBarsPadding(),
+                ) {
+                    // 抓手 + 关闭：与 [FloorReportSheet] 同一个尺寸（40×4、`onSurfaceVariant α0.3`）。
+                    Box(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(width = 40.dp, height = 4.dp)
+                                .background(scheme.onSurfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(50)),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 8.dp)
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(50))
+                                .clickable(role = Role.Button, onClickLabel = "关闭", onClick = onDismiss),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.Close, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant)
+                        }
+                    }
+                    // 标题行：头像组图标 + 「参与者 · N 人」。N 是**全量**人数（不是截断后的 50），
+                    // 与 `ThreadHeader` 那颗「N 参与者」读的是同一个 `participantRoster.size`。
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Group, null, Modifier.size(20.dp), tint = scheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "参与者 · ${rows.size} 人",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = scheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (shown.isEmpty()) {
+                        // 正常进不来：`ThreadHeader` 只在那行参与者**非空**时才可点
+                        // （`participants.isEmpty()` 时整项不画）。留一行兜底，免得"面板开着、里面空白"
+                        // 看起来像坏了 —— `comments` 真的为空时，确实一个人都没有。
+                        Text(
+                            text = "还没有人回复",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = scheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        )
+                    }
+                    LazyColumn(
+                        // 360dp 上限：与 [FloorReportSheet] 那四条理由的 `heightIn(max = 360.dp)` 同值
+                        // （本仓面板的"一屏最多多高"就这一个数），再高就把标题压上去了。
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .padding(horizontal = 8.dp),
+                    ) {
+                        // key 就是身份键（分组时已经保证唯一）：换帖 / 换顺序时行不会错位。
+                        items(shown, key = { it.key }) { row ->
+                            ParticipantRowItem(
+                                row = row,
+                                onJump = onJump,
+                                onOnlyThisAuthor = onOnlyThisAuthor,
+                            )
+                        }
+                        if (hidden > 0) {
+                            item(key = "participant-more") {
+                                Text(
+                                    text = "…还有 $hidden 人",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = scheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 参与者名单里的一行：头像 **32dp** + 名字（`labelMedium`，单行省略）+ 「N 层」+ 「只看 TA」。
+ *
+ * 行高 ≥ **48dp**、圆角 **8dp**：与 [PickerOptionRow] / [ReportReasonRow] 同一套触控档
+ * （从别的面板点过来，手指还是那根手指）。最小高度写在 `padding` **之前**，理由同 [ReportReasonRow]：
+ * 写在后面会变成 48 + 12 = 60，50 行就凭空高出半屏。
+ *
+ * 两个 `clickable` 是**两个节点**：里面那颗「只看 TA」的点击不会冒泡到整行，
+ * 所以"想过滤"不会变成"跳到那一层"。这是这两件事能同时放在一行上的唯一办法。
+ */
+@Composable
+private fun ParticipantRowItem(
+    row: ParticipantRow,
+    onJump: (Long) -> Unit,
+    onOnlyThisAuthor: (String) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "跳到 ${row.name} 的第一层",
+                onClick = { onJump(row.firstFloorId) },
+            )
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // seed 用身份键（不是名字）：与 `ParticipantStack` 里那颗叠头像同一个口径，
+        // 同一个人在名单和 header 上必须是同一张图。
+        PostAvatar(name = row.name, seed = row.key, size = 32.dp)
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = row.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = scheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "${row.floors} 层",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        // 「只看 TA」：名单是**看**，这一颗是**过滤**（见 [ParticipantsSheet] 的 KDoc）。
+        // 文字按钮而不是图标：图标在这个行尾会与「N 层」抢注意力，两个字的成本更低、也说得清。
+        Text(
+            text = "只看 TA",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.primary,
+            maxLines = 1,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = "只看 ${row.name}",
+                    onClick = { onOnlyThisAuthor(row.key) },
+                )
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+/**
  * 一层楼底下那串「直接回复」，照 fluxdo `embedded_posts.dart:156-377` 的
  * `EmbeddedReplyMetrics` + `EmbeddedReplyTile` + `EmbeddedReplyCollapseButton`：
  *
@@ -7475,6 +7891,9 @@ private fun NestedRepliesList(
  * - 胶囊：`surfaceContainerHighest` 底 + 全圆角（`radius(9999)`，`:455`），
  *   **高 40**、水平内边距 `14`（`:354`）、`edit_rounded` 图标 **18dp** + 8dp 间距、文案 `bodyMedium`
  * - 文案随状态变：没登录 / 已关闭 / 正常时的「写下你的回复…」/ 有草稿时的摘要（`:358-385`）
+ * - 胶囊**右侧**再挂一块楼层计数「12 / 208」（[FloorCounter]）：参考在同一条 Row 里就是
+ *   `Expanded(回复入口)` 紧跟计数（`:255-268`），本仓没有收藏/筛选，所以它紧贴胶囊右边；
+ *   点它开目录面板（`:267` 的 `onTap: onOpenTimeline`）。
  *
  * 为什么不再是一行 `OutlinedTextField`：真输入框贴在最底下，只要一出现就整个被键盘顶走、
  * 或者被键盘盖住，而且列表只剩半屏。fluxdo 的做法是"点一下才升起面板"，读帖时不占高度。
@@ -7485,6 +7904,18 @@ private fun ReplyBar(
     busy: Boolean,
     locked: Boolean,
     enabled: Boolean,
+    /**
+     * 当前视口所在楼层的 id（`0L` = 主楼），即 `PostThreadPane` 里那个 `derivedStateOf` 的**状态本身**。
+     *
+     * **这里只转手、不读**：`FloorCounter` 才是唯一读 `.value` 的地方。要是在本函数的 body 里读，
+     * 读的归属就是 `ReplyBar` 这个作用域 —— `listState` 一动，整条底栏（包括胶囊里那段
+     * `buildAnnotatedString` 与 `lineSequence`）每帧重建一次，而它们跟楼层号一点关系都没有。
+     */
+    currentFloorId: State<Long>,
+    /** 楼层列表（只用来把"当前楼层的 id"换成楼层号、以及算总层数 `size + 1`）；不含主楼。 */
+    comments: List<PostComment>,
+    /** 点右侧那块计数 → 打开目录面板（[PostTocSheet]）；见 [FloorCounter] 的 KDoc。 */
+    onOpenToc: () -> Unit = {},
     /**
      * 这一次要挂到哪一楼下面（`楼层号 to 名字`）；null 表示普通回帖。
      *
@@ -7584,6 +8015,16 @@ private fun ReplyBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+
+            // 楼层计数「12 / 208」：假输入框胶囊**右侧**、面板里那颗发送钮**左侧**这一格
+            // （本仓底栏只有胶囊，发送在升起的面板里，所以它落在胶囊右边）。
+            // 位置照参考 `topic_bottom_bar.dart:255-290` 的 `Row { Expanded(回复入口), 计数, 收藏, 筛选 }`：
+            // 参考里计数就在回复入口和右侧动作之间，本仓没有收藏/筛选，它就紧贴胶囊右边。
+            FloorCounter(
+                comments = comments,
+                currentFloorId = currentFloorId,
+                onOpenToc = onOpenToc,
+            )
         }
     }
 
@@ -7600,6 +8041,81 @@ private fun ReplyBar(
             onDismiss = { onOpenChange(false) },
         )
     }
+}
+
+/**
+ * 底栏右侧那块楼层计数：`12 / 208`（当前视口楼层号 / 总层数，**含主楼**）。
+ *
+ * 数值与位置照参考 `topic_bottom_bar.dart:243-313`：那条 56dp 的操作行里，`Expanded(回复入口)`
+ * 之后紧跟计数（`:255-268` 的 `Row { Expanded(_buildReplyEntry), 计数, 收藏, 筛选 }`），
+ * 也就是"回复入口在左、位置读数在右"；`:296-313` 那条贴顶的 2dp 进度线讲的是同一件事
+ * （读到哪儿了），只是形态不同 —— 本仓没有那条线（进度轨是列表右侧那根 3dp 的 [FloorProgressTrack]），
+ * 所以这块文字就是唯一的"位置读数"。
+ *
+ * **为什么计数放在底栏**：读长帖时"我现在第几层 / 这帖一共多少层"是随时会冒出来的问题，
+ * 而底栏是唯一**常驻**不动的一行（列表在滚、顶栏随内容滚走）。更实际的一层理由：它旁边紧挨着的
+ * 就是回复入口，而这块计数点下去打开的是目录面板 —— 同一个位置既回答"我在哪"，
+ * 又给出"我要去哪"的入口。参考把它的 `onTap` 直接挂成 `onOpenTimeline`（`:267`），是同一个想法。
+ *
+ * **为什么用 `derivedStateOf`，且读的位置在这一层**：`ReplyBar` 是常驻的 56dp，若让它在 body 里
+ * 直接读 `listState.firstVisibleItemIndex`，列表每滚一格它就整体重建一次 —— 胶囊里那段
+ * `buildAnnotatedString`、`lineSequence` 取草稿首行、三处 `withStyle` 全部重算一遍，
+ * 而它们跟楼层号毫无关系。把"读"收进本函数有两个效果：
+ *  ① `derivedStateOf` 自带等值判断，只在**算出来的字符串真的变了**（跨过一层楼）时才通知，
+ *     同层内滚动几十像素不算变化；
+ *  ② 通知到的是**本函数**的组合作用域，重建范围就只到这块 `Text`。
+ * 传给 [ReplyBar] 的因此是 `State` 对象本身而不是算好的数字 —— 传数字会让参数变化，
+ * `ReplyBar` 照样整条重组，那这番功夫就白费了。
+ *
+ * 显示口径：
+ *  - 主楼那一屏（`id == 0L`）显示 `1 / N`：前三格 item（header / 主楼 / thread-head）都算"在主楼"；
+ *  - 第 i 条回复显示 `i + 2`（与 `floorLabelOf`、卡片上的 `#N`、[PostJumpDialog] 的 `maxFloor`
+ *    同一个"含主楼"的换算，一个数都不另算）；
+ *  - 总数是 `comments.size + 1`：主楼也算一层，所以只有主楼的帖子就是 `1 / 1`；
+ *  - `comments` 为空时**照样显示**（`1 / 1`），不隐藏：底栏忽然少一块会让人以为计数坏了，
+ *    而 `1 / 1` 本身就是正确信息（这帖只有主楼）。
+ *  - 当前 id 不在 `comments` 里（那一层刚被删）时退回 `1`，不显示 `-1`。
+ */
+@Composable
+private fun FloorCounter(
+    comments: List<PostComment>,
+    currentFloorId: State<Long>,
+    onOpenToc: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    // 全文件唯一读 `currentFloorId.value` 的地方（理由见上面的 KDoc）。
+    // `indexOfFirst` 也放在这里：它只在**楼层号真的变了**时跑一遍（200 层 = 200 次整数比较，
+    // 可忽略），而不是每帧都跑 —— 这正是 `derivedStateOf` 与"直接在 body 里算"的区别。
+    val label by remember(currentFloorId, comments) {
+        derivedStateOf {
+            val id = currentFloorId.value
+            val current = if (id == 0L) {
+                1
+            } else {
+                comments.indexOfFirst { it.id == id }.let { if (it < 0) 1 else it + 2 }
+            }
+            "$current / ${comments.size + 1}"
+        }
+    }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = scheme.onSurfaceVariant,
+        maxLines = 1,
+        modifier = Modifier
+            // 左右各 8dp 的**间距**：这 8dp 在点击区外面（modifier 链从外到内，padding 在前），
+            // 所以它只是把计数与胶囊、与屏幕右边缘隔开，不会让点击区伸进胶囊里。
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(
+                role = Role.Button,
+                // 读屏念"打开目录"而不是"按钮"：这块数字的作用不是"显示"而是"入口"。
+                onClickLabel = "打开目录",
+                onClick = onOpenToc,
+            )
+            // 点击区自己的内衬：整块计数（含上下）都能点中，且不改变文字的视觉位置。
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+    )
 }
 
 /**
