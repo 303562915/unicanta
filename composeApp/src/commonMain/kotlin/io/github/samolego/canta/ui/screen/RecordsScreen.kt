@@ -22,6 +22,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,6 +61,7 @@ import io.github.samolego.canta.generated.resources.records_success
 import io.github.samolego.canta.generated.resources.records_tap_opens_detail
 import io.github.samolego.canta.generated.resources.records_tap_opens_detail_desc
 import io.github.samolego.canta.ui.component.AppIconImage
+import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.SettingsSwitch
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
 import io.github.samolego.canta.ui.fl.FlGlyphs
@@ -106,6 +108,8 @@ fun RecordsScreen(
     onRecordTapOpensDetailChange: (Boolean) -> Unit = {},
     /** Opens the app page of a record's package; only called while [recordTapOpensDetail] is on. */
     onOpenApp: (String) -> Unit = {},
+    /** 清空整份记录：blob 与下载目录里那份 CSV 一起清，页面底部那颗按钮问过之后才调。 */
+    onClearRecords: () -> Unit = {},
 ) {
     val records by history.records.collectAsStateWithLifecycle()
 
@@ -119,6 +123,10 @@ fun RecordsScreen(
 
     // Which cut of the log is on screen: the four pills under the switch.
     var filter by remember { mutableStateOf(RecordFilter.ALL) }
+
+    // Whether the 「清空」 confirmation is up. Clearing is not undoable, and the log is the only
+    // way back to what was removed — so the icon asks once before it throws that away.
+    var confirmClear by remember { mutableStateOf(false) }
 
     // Newest first already, so the first record of a package is the one that describes it now.
     val latest = remember(records) { records.distinctBy { it.packageName } }
@@ -148,7 +156,12 @@ fun RecordsScreen(
             tapOpensDetail = recordTapOpensDetail,
             onTapOpensDetailChange = onRecordTapOpensDetailChange,
         )
-        RecordFilters(selected = filter, onSelect = { filter = it })
+        RecordFilters(
+            selected = filter,
+            onSelect = { filter = it },
+            canClear = latest.isNotEmpty(),
+            onClear = { confirmClear = true },
+        )
         if (shown.isEmpty()) {
             EmptyRecords(modifier = Modifier.weight(1f).fillMaxWidth())
         } else {
@@ -181,6 +194,16 @@ fun RecordsScreen(
                 }
             }
         }
+    }
+
+    if (confirmClear) {
+        ClearRecordsDialog(
+            onDismiss = { confirmClear = false },
+            onConfirm = {
+                confirmClear = false
+                onClearRecords()
+            },
+        )
     }
 }
 
@@ -291,15 +314,25 @@ private enum class RecordFilter(val label: String) {
 /**
  * The pills that cut the log. One tap each, so the row is short and stays put: switching between
  * "what I removed" and "what I froze" must cost no more than a look.
+ *
+ * The bin at the far right belongs to the same row because that is where the reader's eye already
+ * is: the filters pick what to look at, the bin throws all of it away. It greys out when there is
+ * nothing to clear instead of vanishing, so the row does not change width under the finger.
  */
 @Composable
-private fun RecordFilters(selected: RecordFilter, onSelect: (RecordFilter) -> Unit) {
+private fun RecordFilters(
+    selected: RecordFilter,
+    onSelect: (RecordFilter) -> Unit,
+    canClear: Boolean,
+    onClear: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 13.dp, end = 13.dp, top = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         RecordFilter.entries.forEach { cut ->
             val on = cut == selected
@@ -322,6 +355,43 @@ private fun RecordFilters(selected: RecordFilter, onSelect: (RecordFilter) -> Un
                 )
             }
         }
+        Spacer(Modifier.weight(1f))
+        val clearTint = if (canClear) scheme.onSurfaceVariant else scheme.onSurfaceVariant.copy(alpha = 0.35f)
+        Surface(
+            modifier = Modifier
+                .clip(RoundedCornerShape(9.dp))
+                .clickable(enabled = canClear, role = Role.Button, onClick = onClear),
+            shape = RoundedCornerShape(9.dp),
+            color = FlSurfaceLevel.Card.colorOf(scheme),
+        ) {
+            Box(modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)) {
+                FlGlyphIcon(glyph = FlGlyphs.delete, size = 15.dp, tint = clearTint, fill = 0f)
+            }
+        }
+    }
+}
+
+/**
+ * 「清空记录」asks first: emptying the log is the one action on this page that cannot be taken back
+ * — the record of what was removed is the only way back to it.
+ */
+@Composable
+private fun ClearRecordsDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    CantaDialog(
+        onDismissRequest = onDismiss,
+        title = "清空记录？",
+        buttons = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onConfirm) { Text("清空", color = scheme.error) }
+        },
+    ) {
+        Text(
+            text = "这一页的卸载 / 恢复 / 停用记录会全部清掉，下载目录里那份 canta-operations.csv 也一起清空。" +
+                "清掉之后就查不到删过哪些包，也没法再按记录一个个装回来。",
+            style = FlText.footnote,
+            color = scheme.onSurfaceVariant,
+        )
     }
 }
 

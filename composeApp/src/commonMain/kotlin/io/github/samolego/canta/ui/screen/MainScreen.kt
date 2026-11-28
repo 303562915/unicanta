@@ -212,6 +212,14 @@ fun MainScreen(
                         onOpenApp = { packageName ->
                             navigateToPage(Screen.AppDetail.routeForApp(packageName))
                         },
+                        // 那颗垃圾桶：清掉整份记录（blob 与下载目录里的 CSV 一起清），清完说一句，
+                        // 否则点下去看不见任何变化，像没生效。
+                        onClearRecords = {
+                            reverseScope.launch {
+                                history.clear()
+                                platform.showMessage("记录已清空")
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
