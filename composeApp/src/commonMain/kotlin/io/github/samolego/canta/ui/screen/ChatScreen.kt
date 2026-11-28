@@ -2156,6 +2156,12 @@ private fun ChatTopBar(
                 ChatHeaderSection.Chat -> Unit
             }
         }
+        // 顶部这块底部那条 1px 浅灰线：**常驻**。入口行收起时它仍是顶部区域的下边界——
+        // 不然消息列表会直接贴着顶栏，一条分界都没有。
+        HorizontalDivider(
+            thickness = ChatHeaderDividerThickness,
+            color = scheme.outlineVariant,
+        )
     }
 }
 
@@ -2239,57 +2245,50 @@ private fun ChatHeaderEntries(
     /** 第五格「设置」：直接进群设置页，不在顶栏里展开任何东西（用户 2026-11-27 定的）。 */
     onOpenSettings: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(ChatTabBarHeight)
-                // 左右内边距与标题栏同一个值：两排的左右基线才对得齐。
-                .padding(horizontal = ChatHeaderSidePadding),
-            verticalAlignment = Alignment.CenterVertically,
-            // 五格一律 weight(1f) 均分；格子之间给一点点缝，但不靠给某一格加 margin 来挪位置。
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            ChatEntryCell(
-                label = "聊天",
-                selected = section == ChatHeaderSection.Chat,
-                dot = false,
-                modifier = Modifier.weight(1f),
-                onClick = { onPick(ChatHeaderSection.Chat) },
-            )
-            ChatEntryCell(
-                label = "公告",
-                selected = section == ChatHeaderSection.Announcement,
-                dot = hasAnnouncement,
-                modifier = Modifier.weight(1f),
-                onClick = { onPick(ChatHeaderSection.Announcement) },
-            )
-            ChatEntryCell(
-                label = "置顶消息",
-                selected = section == ChatHeaderSection.Pinned,
-                dot = pinnedCount > 0,
-                modifier = Modifier.weight(1f),
-                onClick = { onPick(ChatHeaderSection.Pinned) },
-            )
-            ChatEntryCell(
-                label = "收藏",
-                selected = section == ChatHeaderSection.Saved,
-                dot = savedCount > 0,
-                modifier = Modifier.weight(1f),
-                onClick = { onPick(ChatHeaderSection.Saved) },
-            )
-            ChatEntryCell(
-                label = "设置",
-                selected = false,
-                dot = false,
-                modifier = Modifier.weight(1f),
-                onClick = onOpenSettings,
-            )
-        }
-        // 入口行底部那一条 1px 浅灰线：把顶部这块和下面的消息列表分开，不留一条不用画的空白。
-        HorizontalDivider(
-            thickness = ChatHeaderDividerThickness,
-            color = MaterialTheme.colorScheme.outlineVariant,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ChatTabBarHeight)
+            // 左右内边距与标题栏同一个值：两排的左右基线才对得齐。
+            .padding(horizontal = ChatHeaderSidePadding),
+        verticalAlignment = Alignment.CenterVertically,
+        // 五格一律 weight(1f) 均分；格子之间给一点点缝，但不靠给某一格加 margin 来挪位置。
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ChatEntryCell(
+            label = "聊天",
+            selected = section == ChatHeaderSection.Chat,
+            dot = false,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Chat) },
+        )
+        ChatEntryCell(
+            label = "公告",
+            selected = section == ChatHeaderSection.Announcement,
+            dot = hasAnnouncement,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Announcement) },
+        )
+        ChatEntryCell(
+            label = "置顶消息",
+            selected = section == ChatHeaderSection.Pinned,
+            dot = pinnedCount > 0,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Pinned) },
+        )
+        ChatEntryCell(
+            label = "收藏",
+            selected = section == ChatHeaderSection.Saved,
+            dot = savedCount > 0,
+            modifier = Modifier.weight(1f),
+            onClick = { onPick(ChatHeaderSection.Saved) },
+        )
+        ChatEntryCell(
+            label = "设置",
+            selected = false,
+            dot = false,
+            modifier = Modifier.weight(1f),
+            onClick = onOpenSettings,
         )
     }
 }
