@@ -587,7 +587,16 @@ fun GroupSettingsScreen(
                             glyph = FlGlyphs.edit,
                             title = "群名称与头像",
                             subtitle = current.title.ifBlank { "未命名" },
-                            onClick = { draft = current.title; editing = EditField.Title },
+                            onClick = {
+                                // 群名同样只有群主能改（后端 group_rename 也是这个判据）；
+                                // 别人点了给一句说明，不弹一个存不上的输入框。
+                                if (current.isOwner(owner)) {
+                                    draft = current.title
+                                    editing = EditField.Title
+                                } else {
+                                    onMessage("只有群主能改群名称")
+                                }
+                            },
                         )
                         AppLinkCard(
                             glyph = FlGlyphs.info,
