@@ -6,16 +6,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
 import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.community.LevelFix
@@ -53,7 +56,10 @@ import io.github.samolego.canta.ui.component.badgeRiskSummary
 import io.github.samolego.canta.ui.component.relativeStamp
 import io.github.samolego.canta.ui.fl.FlBarButton
 import io.github.samolego.canta.ui.fl.FlGlyphs
+import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
+import io.github.samolego.canta.ui.fl.FlTopBarCompactHeight
+import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.util.IdentitySetup
 import kotlinx.coroutines.launch
 
@@ -123,7 +129,6 @@ fun LevelFixScreen(
     }
 
     val mine = fixes.firstOrNull { it.authorId.isNotEmpty() && it.authorId == authorId && !it.superseded }
-    val chosenFix = fixes.firstOrNull { !it.superseded && !it.applied }
 
     // 门槛由后端给（同一个包统一），这里只用来把"还差多少"说清楚。
     val needed = fixes.firstOrNull()?.needed ?: LevelFix.VOTES_NEEDED
@@ -202,6 +207,9 @@ fun LevelFixScreen(
             ScreenTopBar(
                 onNavigateBack = onNavigateBack,
                 title = "级别修正",
+                // 这一页第一张卡就是"这包现在什么级别"，顶栏用紧凑高度，卡片紧贴其下：
+                // 原来 72dp 顶栏 + 6dp 留白，看起来像内容飘在半空。
+                height = FlTopBarCompactHeight,
                 actions = {
                     FlBarButton(
                         glyph = FlGlyphs.refresh,
@@ -216,17 +224,27 @@ fun LevelFixScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 28.dp),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
                 Card {
+                    // 应用名当标题，下面一行才是"名单现在标的是"：原来把两句话挤在一行 caption2 里，
+                    // 看完不知道这块在说哪个包。
                     Text(
-                        text = "$appName · 名单现在标的是",
-                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                        text = appName,
+                        style = FlText.footnote.copy(fontWeight = FlText.emphasized),
+                        color = scheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        text = "名单现在标的是",
+                        style = FlText.caption2,
                         color = scheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(5.dp))
+                    Spacer(Modifier.height(6.dp))
                     if (publishedBadge != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AppBadge(publishedBadge)
@@ -258,9 +276,8 @@ fun LevelFixScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "名单是按包名定的，它不知道这台机器往同一个包里塞了什么。" +
-                                "如果你删过这个包、机器出过问题，把你的情况写下来；别人认同到门槛，" +
-                                "级别就会被改掉，所有人看到的新级别都带着你这条依据。",
+                            text = "名单只按包名定级别，不知道这台机器往同一个包里塞了什么。" +
+                                "删过、出过问题就写下来；票数够了级别会被改掉。",
                             style = FlText.caption2,
                             color = scheme.onSurfaceVariant,
                         )
@@ -272,40 +289,49 @@ fun LevelFixScreen(
                         )
                     }
                     if (ballot.isNotEmpty()) {
-                        Spacer(Modifier.height(9.dp))
+                        Spacer(Modifier.height(10.dp))
                         Text(
                             text = "大家投出来的档位",
-                            style = FlText.caption1.copy(fontWeight = FlText.emphasized),
-                            color = scheme.onSurface,
+                            style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                            color = scheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(5.dp))
                         // 最多两档：与列表"一个包最多两枚标签"同一个口径，也免得尾巴那几档
                         // 只有 1、2 票的档位反而看起来像候选。
                         ballot.take(2).forEach { row ->
+                            val rowBadge = AppBadgeInfo.byNameIgnoreCaseOrNull(row.removal)
+                            val rowColour = rowBadge?.badgeColor ?: scheme.primary
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                AppBadgeInfo.byNameIgnoreCaseOrNull(row.removal)?.let { badge ->
-                                    AppBadge(badge)
+                                if (rowBadge != null) {
+                                    AppBadge(rowBadge)
                                     Spacer(Modifier.width(6.dp))
                                     Text(
-                                        text = stringResource(badge.nameRes),
-                                        style = FlText.caption2,
+                                        text = stringResource(rowBadge.nameRes),
+                                        style = FlText.caption2.copy(
+                                            fontWeight = if (row == leader) FlText.emphasized else null,
+                                        ),
                                         color = scheme.onSurface,
                                     )
-                                    Spacer(Modifier.width(6.dp))
                                 }
+                                Spacer(Modifier.weight(1f))
                                 Text(
                                     text = buildString {
                                         append("认同 ${row.agrees} · 不认同 ${row.disagrees}")
-                                        if (row == leader) {
-                                            append(" · 票最多")
-                                            if (row.agrees < needed) append("，还差 ${needed - row.agrees} 票")
-                                        }
+                                        if (row.agrees < needed) append(" · 差 ${needed - row.agrees}")
+                                        if (row == leader) append(" · 最多")
                                     },
                                     style = FlText.caption2,
-                                    color = if (row == leader) scheme.primary else scheme.onSurfaceVariant,
+                                    color = if (row == leader) scheme.onSurface else scheme.onSurfaceVariant,
                                 )
                             }
                             Spacer(Modifier.height(3.dp))
+                            // 一根条就能回答"还差多少"：填充比例 = 认同票 / 门槛，
+                            // 颜色就是这一档自己的徽标色，和上面那枚标签对得上。
+                            VoteBar(
+                                fraction = row.agrees.toFloat() / needed.coerceAtLeast(1),
+                                colour = rowColour,
+                            )
+                            Spacer(Modifier.height(7.dp))
                         }
                     }
                     Spacer(Modifier.height(5.dp))
@@ -327,7 +353,14 @@ fun LevelFixScreen(
                             style = FlText.caption1.copy(fontWeight = FlText.emphasized),
                             color = scheme.onSurface,
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            // 单选不是没做多选：一个包只有一个级别，点另一档是"改选"，不是叠加。
+                            text = "档位只能选一档",
+                            style = FlText.caption2,
+                            color = scheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(7.dp))
                         // 档位用和「已安装」列表同一个徽标：同一枚图标、同一个缩写、同一种颜色。
                         // 别在这一页另造一套视觉——用户在列表里看到绿色 `rec`，到这里选的必须是同一枚
                         // 绿色 `rec`，否则两处说的是两个世界。
@@ -341,7 +374,8 @@ fun LevelFixScreen(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(percent = 50))
                                         .background(
-                                            if (picked) scheme.surfaceContainerLow else scheme.surfaceContainerHighest,
+                                            if (picked) level.badgeColor.copy(alpha = 0.16f)
+                                            else FlSurfaceLevel.Inset.colorOf(scheme),
                                         )
                                         // 选中时用这一档自己的徽标色描边：黄色 adv、红色 exp、品红 no，
                                         // 和列表上"这包有多危险"是同一个色号。
@@ -372,38 +406,39 @@ fun LevelFixScreen(
                             chosen.ifEmpty { mine?.removal.orEmpty() },
                         ) ?: publishedBadge
                         if (pickedLevel != null) {
-                            Spacer(Modifier.height(7.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+                                // 左边一条 3dp 的档位色：这段说的是"选这一档的后果"，
+                                // 用色条把它和上面的选择器连起来，比再写一行小标题更省地方。
                                 Box(
                                     modifier = Modifier
-                                        .size(7.dp)
+                                        .width(3.dp)
+                                        .fillMaxHeight()
                                         .clip(RoundedCornerShape(percent = 50))
                                         .background(pickedLevel.badgeColor),
                                 )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "选这一档会发生什么",
-                                    style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                                    color = scheme.onSurfaceVariant,
-                                )
-                            }
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
-                                // 名单那段定义放在它下面当补充。
-                                text = badgeRiskSummary(pickedLevel),
-                                style = FlText.caption1.copy(fontWeight = FlText.emphasized),
-                                color = scheme.onSurface,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.Top) {
-                                AppBadge(pickedLevel)
-                                Spacer(Modifier.width(7.dp))
-                                Text(
-                                    text = stringResource(pickedLevel.description),
-                                    style = FlText.caption2,
-                                    color = scheme.onSurfaceVariant,
-                                )
+                                Spacer(Modifier.width(9.dp))
+                                Column {
+                                    Text(
+                                        text = "选这一档会发生什么",
+                                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                                        color = scheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
+                                        // 名单那段定义放在它下面当补充。
+                                        text = badgeRiskSummary(pickedLevel),
+                                        style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+                                        color = scheme.onSurface,
+                                    )
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(
+                                        text = stringResource(pickedLevel.description),
+                                        style = FlText.caption2,
+                                        color = scheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.height(6.dp))
@@ -460,12 +495,28 @@ fun LevelFixScreen(
             }
 
             item {
-                Text(
-                    text = "修正历史 · ${fixes.size}",
-                    style = FlText.headline,
-                    color = scheme.onSurface,
-                    modifier = Modifier.padding(start = 4.dp, top = 6.dp),
-                )
+                // 原来是 headline：比顶栏标题还大，一进页面像被一块"修正历史"砸了一下。
+                // 现在是小标题 + 计数胶囊，和上面两块卡片的层级一致。
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 2.dp, top = 4.dp),
+                ) {
+                    Text(
+                        text = "修正历史",
+                        style = FlText.caption1.copy(fontWeight = FlText.emphasized),
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "${fixes.size}",
+                        style = FlText.caption2,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(FlSurfaceLevel.Inset.colorOf(scheme))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
             }
 
             when {
@@ -561,6 +612,8 @@ private fun LevelFixCard(
     onVote: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val levelBadge = AppBadgeInfo.byNameIgnoreCaseOrNull(fix.removal)
+    val levelColour = levelBadge?.badgeColor ?: scheme.primary
     Card {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PersonAvatar(
@@ -619,7 +672,7 @@ private fun LevelFixCard(
                 color = scheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(6.dp))
-            AppBadgeInfo.byNameIgnoreCaseOrNull(fix.removal)?.let { badge ->
+            levelBadge?.let { badge ->
                 AppBadge(badge)
                 Spacer(Modifier.width(6.dp))
                 Text(text = stringResource(badge.nameRes), style = FlText.caption1, color = scheme.onSurface)
@@ -628,7 +681,7 @@ private fun LevelFixCard(
         // 这一档意味着什么，这里写两行：第一行是「这台机器会发生什么」（会不会破坏功能、
         // 会不会卡在开机），第二行才是名单自己的定义。看历史的人要判断的是「这个包到底能不能删」，
         // 光知道档位名叫"专家"没有意义。
-        AppBadgeInfo.byNameIgnoreCaseOrNull(fix.removal)?.let { badge ->
+        levelBadge?.let { badge ->
             Spacer(Modifier.height(4.dp))
             Text(
                 text = badgeRiskSummary(badge),
@@ -657,68 +710,122 @@ private fun LevelFixCard(
             )
         }
 
-        Spacer(Modifier.height(7.dp))
-        Text(
-            // 两条数字都写：「本条」是这条提案自己的票，「这一档」是同档所有提案合起来的票——
-            // 后端按后者结算，所以"还差几票"只能拿后者算。
-            text = buildString {
-                append("本条 认同 ${fix.agrees} · 不认同 ${fix.disagrees}")
-                if (!fix.applied && !fix.superseded) {
-                    append(" ｜ 这一档 认同 $levelAgrees · 不认同 $levelDisagrees")
-                    val missing = (fix.needed - levelAgrees).coerceAtLeast(0)
-                    if (missing > 0) append(" · 还差 $missing 票")
-                    val levelVotes = levelAgrees + levelDisagrees
-                    if (levelVotes > 0) {
-                        append(" · 认同率 ${(levelAgrees * 100 / levelVotes)}%")
-                    }
-                }
-            },
-            style = FlText.caption2,
-            color = scheme.onSurfaceVariant,
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                // 「这一档」才是后端结算的口径：同档几条提案的票相加。本条自己的数字只在
+                // 提案还没通过、还有一条同档提案时才有意义，所以只在后面小字里提一句。
+                text = "这一档 认同 $levelAgrees · 不认同 $levelDisagrees",
+                style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                color = scheme.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            if (!fix.applied && !fix.superseded) {
+                val missing = (fix.needed - levelAgrees).coerceAtLeast(0)
+                Text(
+                    text = if (missing > 0) "还差 $missing 票" else "票数够了",
+                    style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                    color = if (missing > 0) scheme.onSurfaceVariant else LEVEL_AGREE,
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        VoteBar(
+            fraction = levelAgrees.toFloat() / fix.needed.coerceAtLeast(1),
+            colour = levelColour,
         )
 
         if (!fix.applied && !fix.superseded) {
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(9.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (agree in listOf(true, false)) {
                     val picked = fix.mine == agree
-                    val colour = if (agree) LEVEL_AGREE else LEVEL_DISAGREE
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(if (picked) colour else scheme.surfaceContainerHighest)
-                            .clickable(enabled = canVote && !voting) { onVote(agree) }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        Text(
-                            text = when {
-                                voting && picked -> "…"
-                                agree -> "确实该这么改"
-                                else -> "不该这么改"
-                            },
-                            style = FlText.caption1.copy(
-                                fontWeight = if (picked) FlText.emphasized else null,
-                            ),
-                            color = if (picked) Color.White else scheme.onSurfaceVariant,
-                        )
-                    }
+                    VotePill(
+                        label = when {
+                            voting && picked -> "…"
+                            agree -> "确实该这么改"
+                            else -> "不该这么改"
+                        },
+                        count = if (agree) fix.agrees else fix.disagrees,
+                        selected = picked,
+                        color = if (agree) LEVEL_AGREE else LEVEL_DISAGREE,
+                        enabled = canVote && !voting,
+                        onClick = { onVote(agree) },
+                    )
                 }
             }
         }
     }
 }
 
-/** 这一页里统一的卡片底：与「描述修正」那一页同一套内边距。 */
+/** 一侧投票按钮：选中后填成这一侧的颜色并打勾，与「描述修正」那一页同一套。 */
 @Composable
-private fun Card(content: @Composable () -> Unit) {
+private fun VotePill(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    color: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(if (selected) color else FlSurfaceLevel.Inset.colorOf(scheme))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selected) {
+            Text(text = "✓", fontSize = 11.sp, color = Color.White)
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            text = if (count > 0) "$label $count" else label,
+            style = FlText.caption2.copy(fontWeight = if (selected) FlText.emphasized else null),
+            color = if (selected) Color.White else scheme.onSurface,
+        )
+    }
+}
+
+/**
+ * 一根 4dp 的票数条：填充比例 = 认同票 / 门槛，颜色是这一档自己的徽标色。
+ *
+ * 比再写一串"还差 23 票"更好读：差得多长一眼就看得出来，差得少条纹就快贴到头。
+ */
+@Composable
+private fun VoteBar(fraction: Float, colour: Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(colour.copy(alpha = 0.16f)),
+    ) {
+        val filled = fraction.coerceIn(0f, 1f)
+        if (filled > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(filled)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(colour),
+            )
+        }
+    }
+}
+
+/** 这一页里统一的卡片底：与「描述修正」那一页同一套（14dp 圆角、Block 层、12/10 内边距）。 */
+@Composable
+private fun Card(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .clip(RoundedCornerShape(14.dp))
+            .background(FlSurfaceLevel.Block.colorOf(MaterialTheme.colorScheme))
             .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        content()
-    }
+        content = content,
+    )
 }
 
