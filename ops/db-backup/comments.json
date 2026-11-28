@@ -5904,6 +5904,18 @@
   "target": "android.ext.services"
  },
  {
+  "author": "K100PM",
+  "author_id": "11255",
+  "body": "有人用过此方案吗？",
+  "created_at": "2026-11-28T08:56:01.236635+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 839,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.301",
+  "target": "74"
+ },
+ {
   "author": "#10829",
   "author_id": "10829",
   "body": "👏👏👏",
@@ -5914,6 +5926,18 @@
   "parent_id": null,
   "system_name": "Funtouch OS 17",
   "target": "com.mobiletools.systemhelper"
+ },
+ {
+  "author": "K100PM",
+  "author_id": "11255",
+  "body": "是那个组件引起充电异常？",
+  "created_at": "2026-11-28T08:59:26.704093+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 840,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.301",
+  "target": "140"
  },
  {
   "author": "听风说你",
