@@ -15,12 +15,14 @@ import io.github.samolego.canta.generated.resources.community_bootloop_warning
 import io.github.samolego.canta.generated.resources.ok
 import io.github.samolego.canta.generated.resources.records_action_disable
 import io.github.samolego.canta.generated.resources.reset_to_factory_version
+import io.github.samolego.canta.generated.resources.uninstall_expert_level_warning
 import io.github.samolego.canta.generated.resources.uninstall_huge_batch_warning
 import io.github.samolego.canta.generated.resources.uninstall_large_batch_warning
 import io.github.samolego.canta.generated.resources.uninstall_new_packages
 import io.github.samolego.canta.generated.resources.uninstall_new_packages_more
 import io.github.samolego.canta.generated.resources.uninstall_or_freeze_hint
 import io.github.samolego.canta.generated.resources.uninstall_recovery_hint
+import io.github.samolego.canta.generated.resources.uninstall_unsafe_level_warning
 import io.github.samolego.canta.ui.component.CantaDialog
 import io.github.samolego.canta.ui.component.CheckboxRow
 import io.github.samolego.canta.util.isLargeBatch
@@ -40,6 +42,10 @@ fun UninstallAppsDialog(
     appCount: Int,
     canResetToFactory: Boolean = false,
     bootloopRisk: Boolean = false,
+    /** 名单把这批里的几个包标成了「不安全」（可能破坏系统关键部分、有卡在开机的风险）。 */
+    unsafeLevelCount: Int = 0,
+    /** 名单把这批里的几个包标成了「专家」（会破坏常用功能，但一般不会卡在开机）。 */
+    expertLevelCount: Int = 0,
     newPackages: List<String> = emptyList(),
     /** Whether this device can freeze apps; the reversible way out is hidden when it cannot. */
     canFreeze: Boolean = false,
@@ -77,6 +83,20 @@ fun UninstallAppsDialog(
         if (bootloopRisk) {
             Text(
                 text = stringResource(Res.string.community_bootloop_warning),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        // 名单自己的判定，和上面那条社区报告分开说：社区那条是"有人删了开不了机"，
+        // 这两条是"名单在删之前就标着不安全/专家"。一个包可能两者都中，也可能只有其一。
+        if (unsafeLevelCount > 0) {
+            Text(
+                text = stringResource(Res.string.uninstall_unsafe_level_warning, unsafeLevelCount),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (expertLevelCount > 0) {
+            Text(
+                text = stringResource(Res.string.uninstall_expert_level_warning, expertLevelCount),
                 color = MaterialTheme.colorScheme.error,
             )
         }

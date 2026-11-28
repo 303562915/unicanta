@@ -12,6 +12,7 @@ import io.github.samolego.canta.core.CantaPlatform
 import io.github.samolego.canta.core.DeviceDiscovery
 import io.github.samolego.canta.core.Occupancy
 import io.github.samolego.canta.data.CantaSettings
+import io.github.samolego.canta.data.app.AppBadgeInfo
 import io.github.samolego.canta.data.history.OperationKind
 import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.auth_required
@@ -41,6 +42,14 @@ sealed interface MainDialog {
         val canResetToFactory: Boolean,
         /** The community reports that at least one of the apps can cause a bootloop. */
         val bootloopRisk: Boolean = false,
+        /**
+         * 名单自己把这些包标成了「不安全」/「专家」。
+         *
+         * 与 [bootloopRisk] 是两个来源：那个是社区投票（有人踩过坑才出现），这个是名单的判定
+         * （删之前就写着）。两者都要说——名单标着"不安全"的包，不该等出过事故才提醒。
+         */
+        val unsafeLevelCount: Int = 0,
+        val expertLevelCount: Int = 0,
         /** Selected packages that were not in the last confirmed batch: a list pasted from elsewhere. */
         val newPackages: List<String> = emptyList(),
         /** Whether freezing is on the table here; a device without it only has removal. */
@@ -318,10 +327,16 @@ class MainViewModel(
             return
         }
         val known = settings.lastConfirmedPackagesFlow.first().toSet()
+        // 名单档位：`Unsafe` 是"可能破坏系统关键部分、有卡在开机的风险"，`Expert` 是"会破坏
+        // 常用功能、一般不会卡在开机"。社区投票只知道有人踩过的坑，档位是删之前就写着的判断，
+        // 所以两句话分开说，不把某个包的票数当成它的档位。
+        val badges = appList.apps.associate { it.packageName to it.badgeInfo }
         dialog = MainDialog.ConfirmUninstall(
             appCount = selected.size,
             canResetToFactory = selected.any { handler.canResetToFactory(it) },
             bootloopRisk = selected.any { appList.scores.value[it]?.verdict == Verdict.BOOTLOOP },
+            unsafeLevelCount = selected.count { badges[it] == AppBadgeInfo.UNSAFE },
+            expertLevelCount = selected.count { badges[it] == AppBadgeInfo.EXPERT },
             // With no batch confirmed yet everything is new, which would flag every first run.
             newPackages = if (known.isEmpty()) emptyList() else selected.filterNot { it in known },
             canFreeze = handler.supportsDisabling,

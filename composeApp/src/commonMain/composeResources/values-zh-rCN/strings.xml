@@ -325,6 +325,8 @@
     <string name="community_verdict_breaks">会破坏功能</string>
     <string name="community_verdict_unclear">不确定</string>
     <string name="community_bootloop_warning">社区报告显示，这些应用里至少有一个可能导致开机卡死。</string>
+    <string name="uninstall_unsafe_level_warning">其中 %1$d 个被名单标为「不安全」：删了可能破坏系统关键部分，有卡在开机（无限重启）的风险。</string>
+    <string name="uninstall_expert_level_warning">其中 %1$d 个被名单标为「专家」：删了会破坏常用功能（通知、定位、某个系统服务等），但一般不会卡在开机。</string>
     <string name="safety_tab_apps">卸载排行</string>
     <string name="safety_tab_plans">推荐方案</string>
     <string name="rules_title">机型安全</string>

@@ -363,6 +363,8 @@ internal fun MainDialogs(
             appCount = dialog.appCount,
             canResetToFactory = dialog.canResetToFactory,
             bootloopRisk = dialog.bootloopRisk,
+            unsafeLevelCount = dialog.unsafeLevelCount,
+            expertLevelCount = dialog.expertLevelCount,
             newPackages = dialog.newPackages,
             canFreeze = dialog.canFreeze,
             onDismiss = mainViewModel::dismissDialog,
