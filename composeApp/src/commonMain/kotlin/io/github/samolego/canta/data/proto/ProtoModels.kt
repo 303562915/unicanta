@@ -352,6 +352,14 @@ data class AppSettingsProto(
      * 等于每次都要再关一次；换一条新公告指纹就变，横幅才重新出现。
      */
     @ProtoNumber(56) val noticeSeen: String = "",
+    /**
+     * 记录页里点一行是打开那个包的详情页（`true`），还是直接做反向操作（`false`，出厂）。
+     *
+     * 出厂的 `false` 就是这一页原本的行为：点一条卸载记录就把它装回来。开了之后点一下先进详情页，
+     * 那里能看这个包现在什么状态、再决定要不要动它——批量删完回头看记录的人要的是这个。
+     * 为什么没有反过来命名：proto3 省略零值，默认值只能是 `false`，而这里的出厂状态正是"直接操作"。
+     */
+    @ProtoNumber(57) val recordTapOpensDetail: Boolean = false,
 )
 
 /**

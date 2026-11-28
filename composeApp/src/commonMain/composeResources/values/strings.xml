@@ -38,8 +38,10 @@
     <string name="records_empty">No records yet</string>
     <string name="records_save">Save log</string>
     <string name="records_saved">Log saved to the download folder</string>
-    <string name="records_clear_after_boot">Delete records at system start</string>
-    <string name="records_clear_after_boot_desc">When on, the log is gone the first time the app opens after the phone restarts. When off, it is kept for good.</string>
+    <string name="records_clear_after_boot">Clear log on reboot</string>
+    <string name="records_clear_after_boot_desc">Wiped the first time the app opens after a restart. Off keeps it for good.</string>
+    <string name="records_tap_opens_detail">Tapping a record opens the app page</string>
+    <string name="records_tap_opens_detail_desc">Off: one tap restores or removes the app right away.</string>
     <string name="records_cleared_after_reboot">The system restarted, so the records were cleared</string>
     <string name="cannot_uninstall_canta">Can'ta ouch this!</string>
     <string name="device_unreachable">Failed to reach the device. Check that it is connected and authorized.</string>

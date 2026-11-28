@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +57,8 @@ import io.github.samolego.canta.generated.resources.records_empty
 import io.github.samolego.canta.generated.resources.records_failed
 import io.github.samolego.canta.generated.resources.records_reset_to_factory
 import io.github.samolego.canta.generated.resources.records_success
+import io.github.samolego.canta.generated.resources.records_tap_opens_detail
+import io.github.samolego.canta.generated.resources.records_tap_opens_detail_desc
 import io.github.samolego.canta.ui.component.AppIconImage
 import io.github.samolego.canta.ui.component.SettingsSwitch
 import io.github.samolego.canta.ui.fl.FlGlyphIcon
@@ -80,7 +83,9 @@ private val ROW_ICON = 34.dp
  *
  * One row per app: only where an app stands *now* is worth a glance, so the newest operation on
  * a package hides the ones before it. Tapping a row does the opposite of what it shows — an
- * uninstall is a one-tap restore, a restore is a one-tap uninstall.
+ * uninstall is a one-tap restore, a restore is a one-tap uninstall — unless the second switch at
+ * the top of the page is on, in which case the tap opens the app's own page and the decision is
+ * made there.
  */
 @Composable
 fun RecordsScreen(
@@ -90,9 +95,17 @@ fun RecordsScreen(
     modifier: Modifier = Modifier,
     /** Undoes a whole batch in one tap: the newest removal or freeze that is still in effect. */
     onRollbackBatch: (BatchRollback) -> Unit = {},
-    /** Whether the log is dropped at the next system start; the switch at the top of the page. */
+    /** Whether the log is dropped at the next system start; the first switch at the top of the page. */
     clearRecordsAfterBoot: Boolean = false,
     onClearRecordsAfterBootChange: (Boolean) -> Unit = {},
+    /**
+     * 点一行时先开那个包的详情页（`true`），还是照旧直接做反向操作（`false`，出厂）。
+     * 第二个开关读的就是它；两个方向都要留，因为"批量删完回头看"和"看一眼就装回来"是两种用法。
+     */
+    recordTapOpensDetail: Boolean = false,
+    onRecordTapOpensDetailChange: (Boolean) -> Unit = {},
+    /** Opens the app page of a record's package; only called while [recordTapOpensDetail] is on. */
+    onOpenApp: (String) -> Unit = {},
 ) {
     val records by history.records.collectAsStateWithLifecycle()
 
@@ -127,11 +140,13 @@ fun RecordsScreen(
     val entries = remember(shown) { flattenByDay(shown) }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // Above the log and outside the empty check on purpose: with the switch inside the list it
-        // would disappear the moment it emptied the page, leaving no way to turn it off again.
-        ClearAfterBootSwitch(
-            checked = clearRecordsAfterBoot,
-            onCheckedChange = onClearRecordsAfterBootChange,
+        // Above the log and outside the empty check on purpose: with the switches inside the list they
+        // would disappear the moment the log emptied the page, leaving no way to turn them off again.
+        RecordSettingsCard(
+            clearAfterBoot = clearRecordsAfterBoot,
+            onClearAfterBootChange = onClearRecordsAfterBootChange,
+            tapOpensDetail = recordTapOpensDetail,
+            onTapOpensDetailChange = onRecordTapOpensDetailChange,
         )
         RecordFilters(selected = filter, onSelect = { filter = it })
         if (shown.isEmpty()) {
@@ -159,6 +174,8 @@ fun RecordsScreen(
                             record = entry.record,
                             app = byPackage[entry.record.packageName],
                             onReverse = { onReverse(entry.record) },
+                            onOpen = { onOpenApp(entry.record.packageName) },
+                            openDetailOnTap = recordTapOpensDetail,
                         )
                     }
                 }
@@ -168,42 +185,84 @@ fun RecordsScreen(
 }
 
 /**
- * The page's one setting: whether the log is thrown away at the next system start.
+ * The page's two settings, one card, one row each, the switch always on the right.
  *
- * Off is the default, and off means the log is kept for good — a record of what was removed is the
- * only way back to it, so emptying it is something to ask for, not something to start with.
+ * The first is whether the log is thrown away at the next system start: off is the default, and off
+ * means the log is kept for good — a record of what was removed is the only way back to it, so
+ * emptying it is something to ask for, not something to start with. Its caption is one short line
+ * now: the long explanation said the same thing twice and pushed the log itself down the page.
+ *
+ * The second is what a tap on a row does. Off (the default) is the behaviour the page always had —
+ * one tap is the reverse operation — and on opens the package's own page first, for the reader who
+ * came back to look at what was removed rather than to undo it.
  */
 @Composable
-private fun ClearAfterBootSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun RecordSettingsCard(
+    clearAfterBoot: Boolean,
+    onClearAfterBootChange: (Boolean) -> Unit,
+    tapOpensDetail: Boolean,
+    onTapOpensDetailChange: (Boolean) -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 13.dp, end = 13.dp, top = 6.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+            .clip(RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
         color = FlSurfaceLevel.Card.colorOf(scheme),
     ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(Res.string.records_clear_after_boot),
-                    style = FlText.subheadline,
-                    color = scheme.onSurface,
-                )
-                Text(
-                    text = stringResource(Res.string.records_clear_after_boot_desc),
-                    style = FlText.caption2,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            SettingsSwitch(checked)
+        Column {
+            RecordSettingRow(
+                title = stringResource(Res.string.records_clear_after_boot),
+                caption = stringResource(Res.string.records_clear_after_boot_desc),
+                checked = clearAfterBoot,
+                onCheckedChange = onClearAfterBootChange,
+            )
+            HorizontalDivider(
+                color = scheme.outlineVariant.copy(alpha = 0.4f),
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            RecordSettingRow(
+                title = stringResource(Res.string.records_tap_opens_detail),
+                caption = stringResource(Res.string.records_tap_opens_detail_desc),
+                checked = tapOpensDetail,
+                onCheckedChange = onTapOpensDetailChange,
+            )
         }
+    }
+}
+
+/** One line of [RecordSettingsCard]: title and its one-line caption on the left, the switch on the right. */
+@Composable
+private fun RecordSettingRow(
+    title: String,
+    caption: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(start = 12.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = FlText.subheadline,
+                color = scheme.onSurface,
+            )
+            Text(
+                text = caption,
+                style = FlText.caption2,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        SettingsSwitch(checked)
     }
 }
 
@@ -363,7 +422,13 @@ private fun DayHeader(day: String) {
  * what was put back can be removed again the same way.
  */
 @Composable
-private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> Unit) {
+private fun RecordRow(
+    record: OperationRecord,
+    app: AppInfo?,
+    onReverse: () -> Unit,
+    onOpen: () -> Unit,
+    openDetailOnTap: Boolean,
+) {
     val scheme = MaterialTheme.colorScheme
     // What happened and how it went, in one word: "停用成功", "启用失败". The row no longer spells
     // out what a tap will do underneath — the tap is the action and the toast is the answer, so a
@@ -382,8 +447,18 @@ private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> U
     // Green when it took, red when the device refused: the colour is the outcome, not the verb.
     val outcomeColor = if (record.success) successColor() else scheme.error
 
+    // The name the row leads with. Some records carry no label at all — written for a package the
+    // list could not name, or for one whose own label is an empty string — and a row whose first
+    // line is blank is a row that says nothing. So the package name takes its place, and the line
+    // under it is only drawn when it still adds something.
+    val title = record.label.ifBlank { app?.name.orEmpty() }.ifBlank { record.packageName }
+    val subtitle = record.packageName.takeIf { it != title }.orEmpty()
+
     Surface(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onReverse),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = if (openDetailOnTap) onOpen else onReverse),
         shape = RoundedCornerShape(12.dp),
         color = FlSurfaceLevel.Card.colorOf(scheme),
     ) {
@@ -393,19 +468,21 @@ private fun RecordRow(record: OperationRecord, app: AppInfo?, onReverse: () -> U
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = record.label,
+                        text = title,
                         style = FlText.subheadline,
                         color = scheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        text = record.packageName,
-                        style = FlText.caption2.copy(fontFamily = FontFamily.Monospace),
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (subtitle.isNotEmpty()) {
+                        Text(
+                            text = subtitle,
+                            style = FlText.caption2.copy(fontFamily = FontFamily.Monospace),
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {

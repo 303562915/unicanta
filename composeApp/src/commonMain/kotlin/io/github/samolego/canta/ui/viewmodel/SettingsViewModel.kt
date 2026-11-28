@@ -146,6 +146,12 @@ class SettingsViewModel(
     val clearRecordsAfterBoot = settingsStore.clearRecordsAfterBootFlow.state(false)
 
     /**
+     * 记录页里点一行是进详情页（`true`）还是直接反向操作（`false`，出厂）；
+     * 见 `AppSettingsProto.recordTapOpensDetail`。
+     */
+    val recordTapOpensDetail = settingsStore.recordTapOpensDetailFlow.state(false)
+
+    /**
      * 列表里点一个包是弹小窗（`true`）还是直接进详情页（`false`，出厂）。
      * 存的是"弹窗"，所以界面上那个「点击应用打开详情页」的开关读的是它的反；
      * 见 `AppSettingsProto.appTapOpensDialog`。
@@ -349,6 +355,8 @@ class SettingsViewModel(
     fun saveRecommendationsListMode(list: Boolean) = save { setRecommendationsListMode(list) }
     fun saveShowDevicePhoto(show: Boolean) = save { setShowDevicePhoto(show) }
     fun saveClearRecordsAfterBoot(clear: Boolean) = save { setClearRecordsAfterBoot(clear) }
+    /** 记录页里点一行：进详情页（`true`）或直接恢复 / 卸载（`false`，出厂）。 */
+    fun saveRecordTapOpensDetail(detail: Boolean) = save { setRecordTapOpensDetail(detail) }
     /** 列表里点一个包：弹小窗（`true`）或直接进详情页（`false`，出厂）。 */
     fun saveAppTapOpensDialog(showsDialog: Boolean) = save { setAppTapOpensDialog(showsDialog) }
     fun saveAutoInstallUpdates(auto: Boolean) = save { setAutoInstallUpdates(auto) }

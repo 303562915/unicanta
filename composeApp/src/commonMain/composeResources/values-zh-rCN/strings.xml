@@ -34,8 +34,10 @@
     <string name="records_empty">还没有记录</string>
     <string name="records_save">保存日志</string>
     <string name="records_saved">日志已保存到下载目录</string>
-    <string name="records_clear_after_boot">系统启动后删除记录</string>
-    <string name="records_clear_after_boot_desc">打开后，手机重启再进入应用，记录就清空；关闭则一直保留。</string>
+    <string name="records_clear_after_boot">重启清空日志</string>
+    <string name="records_clear_after_boot_desc">重启手机后自动清空，关闭则一直保留。</string>
+    <string name="records_tap_opens_detail">点记录先开详情页</string>
+    <string name="records_tap_opens_detail_desc">关闭时点一下就直接恢复 / 卸载。</string>
     <string name="records_cleared_after_reboot">系统已重启，记录已清空</string>
     <string name="cannot_uninstall_canta">这个可卸不得！</string>
     <string name="device_unreachable">连不上设备。请确认它已连接并已授权。</string>

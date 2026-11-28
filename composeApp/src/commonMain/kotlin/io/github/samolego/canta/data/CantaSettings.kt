@@ -295,6 +295,11 @@ class CantaSettings(storage: AppBlobStorage) {
     /** Whether the records tab empties itself at the next system start; off by default. */
     val clearRecordsAfterBootFlow = field { it.clearRecordsAfterBoot }
     /**
+     * 记录页里点一行是进详情页（`true`）还是直接反向操作（`false`，出厂）；
+     * 见 [AppSettingsProto.recordTapOpensDetail]。
+     */
+    val recordTapOpensDetailFlow: Flow<Boolean> = field { it.recordTapOpensDetail }
+    /**
      * 列表里点一个包是弹小窗（`true`）还是直接进详情页（`false`，出厂）；
      * 为什么反过来命名见 [AppSettingsProto.appTapOpensDialog]。
      */
@@ -501,6 +506,8 @@ class CantaSettings(storage: AppBlobStorage) {
         it.copy(sponsorsExpanded = expanded)
     }
     suspend fun setClearRecordsAfterBoot(clear: Boolean) = update { it.copy(clearRecordsAfterBoot = clear) }
+    /** 记录页里点一行：进详情页（`true`）或直接反向操作（`false`，出厂）。 */
+    suspend fun setRecordTapOpensDetail(detail: Boolean) = update { it.copy(recordTapOpensDetail = detail) }
     /** 列表里点一个包：弹小窗（`true`）或直接进详情页（`false`，出厂）。 */
     suspend fun setAppTapOpensDialog(showsDialog: Boolean) = update { it.copy(appTapOpensDialog = showsDialog) }
     suspend fun setRecordsBootId(bootId: String) = update { it.copy(recordsBootId = bootId) }

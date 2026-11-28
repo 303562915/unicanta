@@ -95,8 +95,10 @@ fun MainScreen(
     // Reversing a record runs on the page's own scope: the dialog is already closed by then.
     val reverseScope = rememberCoroutineScope()
 
-    // The records tab's switch: whether the log is dropped the next time the app opens after a reboot.
+    // The records tab's switches: whether the log is dropped the next time the app opens after a
+    // reboot, and whether a tap on a row opens the app page instead of reversing it.
     val clearRecordsAfterBoot by settingsViewModel.clearRecordsAfterBoot.collectAsStateWithLifecycle()
+    val recordTapOpensDetail by settingsViewModel.recordTapOpensDetail.collectAsStateWithLifecycle()
 
     // Pager state is hoisted to CantaNavigation so a page opened elsewhere knows the tab.
     val currentTab = AppsTab.entries[pagerState.currentPage]
@@ -203,6 +205,13 @@ fun MainScreen(
                         // Off by default: unasked-for, the log stays until it is cleared by hand.
                         clearRecordsAfterBoot = clearRecordsAfterBoot,
                         onClearRecordsAfterBootChange = settingsViewModel::saveClearRecordsAfterBoot,
+                        // Bound to the page's second switch: on, a tap looks first and acts from
+                        // there; off, a tap is the reverse operation, which is how it always was.
+                        recordTapOpensDetail = recordTapOpensDetail,
+                        onRecordTapOpensDetailChange = settingsViewModel::saveRecordTapOpensDetail,
+                        onOpenApp = { packageName ->
+                            navigateToPage(Screen.AppDetail.routeForApp(packageName))
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

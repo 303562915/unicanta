@@ -442,17 +442,30 @@ class AppListViewModel(
     ): Int {
         if (packageNames.isEmpty()) return 0
         _lastFailures.value = emptyList()
+        // 本机根本没有的包直接跳过：别人的方案是别的机型上录的（OPPO 的清单拿到小米上），对着
+        // 不存在的包跑一遍，唯一的结果是一条「设备上已经找不到这个包了」的失败记录——那不是用户的
+        // 错，也不是他需要知道的事。列表为空（没权限、还没扫完）或者这份列表本身就不全时不筛，
+        // 交给设备自己回答。
+        val known = if (_apps.isEmpty() || appListRestricted) null else _apps.mapTo(HashSet()) { it.packageName }
+        val targets = if (known == null) packageNames else packageNames.filter { it in known }
+        if (targets.size != packageNames.size) {
+            val dropped = packageNames.filterNot { it in targets }
+            LogUtils.i(TAG, "Skipped ${dropped.size} package(s) this device does not have")
+            // 被跳过的不留在勾选里：留着的话下一次「卸载选中」又白跑一遍，而它本来就不在列表上。
+            dropped.forEach(selectedApps::remove)
+        }
+        if (targets.isEmpty()) return 0
         // Written before the first app is touched: if the app dies on the second one, this is
         // what tells the next start which apps the batch never reached, and which operation to
         // repeat on them.
         val batchId = currentTimeMillis()
-        if (kind.resumable) rememberBatch(packageNames, batchId, kind)
+        if (kind.resumable) rememberBatch(targets, batchId, kind)
         val before = _apps.associateBy { it.packageName }
         val results = when (kind) {
-            OperationKind.UNINSTALL -> cantaHandler.uninstallApps(packageNames, resetToFactory)
-            OperationKind.REINSTALL -> cantaHandler.reinstallApps(packageNames)
-            OperationKind.DISABLE -> cantaHandler.setDisabledApps(packageNames, disabled = true)
-            OperationKind.ENABLE -> cantaHandler.setDisabledApps(packageNames, disabled = false)
+            OperationKind.UNINSTALL -> cantaHandler.uninstallApps(targets, resetToFactory)
+            OperationKind.REINSTALL -> cantaHandler.reinstallApps(targets)
+            OperationKind.DISABLE -> cantaHandler.setDisabledApps(targets, disabled = true)
+            OperationKind.ENABLE -> cantaHandler.setDisabledApps(targets, disabled = false)
         }
         val succeededApps = mutableListOf<AppInfo>()
         val failed = mutableListOf<OperationRecord>()
@@ -469,7 +482,7 @@ class AppListViewModel(
                 label = app?.name ?: result.packageName,
                 batchId = batchId,
                 batchIndex = log.size + 1,
-                batchSize = packageNames.size,
+                batchSize = targets.size,
                 resetToFactory = resetToFactory,
                 // Taken before the outcome is applied: an app that is gone can no longer be read,
                 // and the snapshot is of the thing that was there.
@@ -524,7 +537,7 @@ class AppListViewModel(
         if (succeededApps.isNotEmpty()) {
             when (kind) {
                 OperationKind.UNINSTALL ->
-                    telemetry?.recordUninstalls(succeededApps, batchSize = packageNames.size)
+                    telemetry?.recordUninstalls(succeededApps, batchSize = targets.size)
                 OperationKind.REINSTALL -> telemetry?.recordReinstalls(succeededApps)
                 // Freezing is not reported: the app is still installed, so none of the survival
                 // evidence the telemetry collects applies to it.
