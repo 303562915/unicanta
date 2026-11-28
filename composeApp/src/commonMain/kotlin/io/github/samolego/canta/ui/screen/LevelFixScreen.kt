@@ -172,6 +172,47 @@ fun LevelFixScreen(
         }
     }
 
+    /**
+     * 只把「依据」写进已经投过的那一票。
+     *
+     * 选项点是即投，但依据是一段文字：写完了要重新提交同一票，后端才会更新 note
+     * （`level_fix_ballot_vote` 对同一身份同一维度是 upsert）。还没选级别就没有可挂的地方。
+     */
+    fun submitNote() {
+        if (votingBallot) return
+        val level = ballots?.mineOf(LevelBallotDimensions.LEVEL)
+        if (level == null) {
+            notice = "先在上面选一个级别，依据跟着那一票一起存"
+            return
+        }
+        if (note.isBlank()) {
+            notice = "依据还是空的"
+            return
+        }
+        if (!setupGate.ready) {
+            notice = setupGate.refusal
+            return
+        }
+        votingBallot = true
+        notice = null
+        scope.launch {
+            when (val result = repository.voteBallot(
+                packageName = packageName,
+                dimension = LevelBallotDimensions.LEVEL,
+                choice = level,
+                note = note.trim(),
+                voter = authorId,
+            )) {
+                is LevelFixResult.Ok -> {
+                    ballots = result.value
+                    notice = "依据已提交"
+                }
+                is LevelFixResult.Failed -> notice = "没提交上：${result.reason}"
+            }
+            votingBallot = false
+        }
+    }
+
     Scaffold(
         topBar = {
             ScreenTopBar(
@@ -244,13 +285,6 @@ fun LevelFixScreen(
                             style = FlText.caption2.copy(fontWeight = FlText.emphasized),
                             color = scheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "名单只按包名定级别，不知道这台机器往同一个包里塞了什么。" +
-                                "删过、出过问题就写下来；票数够了级别会被改掉。",
-                            style = FlText.caption2,
-                            color = scheme.onSurfaceVariant,
-                        )
                     } else {
                         Text(
                             text = "这个包不在这份名单里（不是系统包，或者名单还没收录它），没有可改的级别。",
@@ -258,14 +292,6 @@ fun LevelFixScreen(
                             color = scheme.onSurfaceVariant,
                         )
                     }
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        text = "级别那一组的票到 $needed 票、占比到 ${(shareNeeded * 100).toInt()}% 才通过；" +
-                            "通过后由工作流合并进 level_fixes.json，手机下一次核对（一周内）" +
-                            "才看到新级别——不是立刻生效。",
-                        style = FlText.caption2,
-                        color = scheme.onSurfaceVariant,
-                    )
                 }
             }
 
@@ -277,14 +303,7 @@ fun LevelFixScreen(
                             style = FlText.caption1.copy(fontWeight = FlText.emphasized),
                             color = scheme.onSurface,
                         )
-                        Spacer(Modifier.height(1.dp))
-                        Text(
-                            // 三组各一票；点一下就是投，点同组别的选项就是改票——所以没有"提交"按钮。
-                            text = "三组各选一个：级别、后果、系统应用。点一下就是投票，随时可以改。",
-                            style = FlText.caption2,
-                            color = scheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(8.dp))
                         BallotGroup(
                             title = "级别 · 四选一",
                             dimension = LevelBallotDimensions.LEVEL,
@@ -320,7 +339,7 @@ fun LevelFixScreen(
                             Spacer(Modifier.height(9.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "选这一档会发生什么",
+                                    text = "我选的这一档",
                                     style = FlText.caption2.copy(fontWeight = FlText.emphasized),
                                     color = scheme.onSurfaceVariant,
                                 )
@@ -330,20 +349,12 @@ fun LevelFixScreen(
                             }
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                // 最要紧的那件事（会不会破坏功能、会不会卡在开机）先说，
-                                // 名单那段定义放在它下面当补充。
                                 text = badgeRiskSummary(pickedLevel),
                                 style = FlText.caption1.copy(fontWeight = FlText.emphasized),
                                 color = scheme.onSurface,
                             )
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                text = stringResource(pickedLevel.description),
-                                style = FlText.caption2,
-                                color = scheme.onSurfaceVariant,
-                            )
                         }
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = note,
                             onValueChange = { note = it.take(300) },
@@ -351,33 +362,56 @@ fun LevelFixScreen(
                             textStyle = FlText.caption1,
                             minLines = 2,
                             maxLines = 4,
-                            // 这个框是**选填**：不填也能提交，填了别人投票时多一条依据。
+                            // 这个框是**选填**：不填也能投，填了就跟着级别那一票存下来。
                             label = {
                                 Text(text = "依据（选填）", style = FlText.caption2)
                             },
                             placeholder = {
                                 Text(
-                                    text = "可以不填。想写就写删了会怎样，例如「这台机器删掉它，深色模式自动切换失效」",
+                                    text = "可以不填",
                                     style = FlText.caption1,
                                     color = scheme.outline,
                                 )
                             },
                         )
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            // 没有"提交"按钮：点选项本身就是投票。这里只报结果与门槛。
-                            text = notice ?: if (votingBallot) {
-                                "正在记录…"
-                            } else {
-                                "级别票到 $needed 票、占比到 ${(shareNeeded * 100).toInt()}% 才通过"
-                            },
-                            style = FlText.caption2,
-                            color = if (notice != null && notice!!.startsWith("没")) {
-                                scheme.error
-                            } else {
-                                scheme.onSurfaceVariant
-                            },
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = notice ?: if (votingBallot) {
+                                    "正在记录…"
+                                } else {
+                                    "级别票到 $needed 票、占比到 ${(shareNeeded * 100).toInt()}% 才通过"
+                                },
+                                style = FlText.caption2,
+                                color = if (notice != null && notice!!.startsWith("没")) {
+                                    scheme.error
+                                } else {
+                                    scheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            // 「依据」是唯一需要自己按一下的东西：选了级别之后，写下来的话
+                            // 要重新提交那一票才会存进去（选项本身点一下就已经记上了）。
+                            val canSubmit = note.isNotBlank() && !votingBallot &&
+                                ballots?.mineOf(LevelBallotDimensions.LEVEL) != null
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(percent = 50))
+                                    .background(
+                                        if (canSubmit) scheme.primary
+                                        else FlSurfaceLevel.Inset.colorOf(scheme),
+                                    )
+                                    .clickable(enabled = canSubmit) { submitNote() }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                            ) {
+                                Text(
+                                    text = "提交依据",
+                                    style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                                    color = if (canSubmit) scheme.onPrimary else scheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
