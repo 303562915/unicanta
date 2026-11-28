@@ -534,14 +534,27 @@ private fun LowPowerCard(
             }
             if (state.lowPowerPackages.isNotEmpty()) {
                 Text(
-                    text = when (state.rootAccess) {
-                        "yes" -> "清空这份清单需要 root：脚本会先把原文件备份到 /data/local/tmp，再清掉里面点名的应用，"
-                            + "然后重启 audioserver。系统升级会把清单覆盖回出厂那份——那时再点一次就行。"
-                        "maybe" -> "这台机器装了 root 管理器但还没授权过 su（Canta 平时跑在 Shizuku 的 shell 里）。"
-                            + "点「解除清单」会弹授权框，允许之后脚本会先备份、再清空清单、重启 audioserver。"
-                        else -> "这台机器没有 root，而清单在 /odm 只读分区——改它必须要 root，按钮点不动不是坏了。"
-                            + "免 root 唯一的可能是诊断信息里有没有一条 lowpower 属性开关，那条要等新版页面的诊断才能确认；"
-                            + "确定没有的话，这条路就到此为止，只能 root 后（或刷模块）才解得了。"
+                    text = "这台机型的压制表（数值来自 ROM 里那份清单的 template）：",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = scheme.onSurface,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                AudioWhitelist.LOWPOWER_TEMPLATES.forEach { (_, text) ->
+                    Text(
+                        text = "· $text",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Text(
+                    text = if (state.rootAccess == "no") {
+                        "所以外放小不是「坏了」，是系统把这几组的音量乘了上面那个系数。要改这份清单："
+                            + "它在 /odm 只读分区，只能用 KernelSU / Magisk 模块做 bind mount 覆盖，而且必须在开机阶段"
+                            + "（audioserver 起来之前）挂上去——运行中改文件它也不读。这台机器没有 root，所以按钮点不动。"
+                    } else {
+                        "要改这份清单：它在 /odm 只读分区。脚本会先备份，再尝试清掉里面点名的应用并重启 audioserver；"
+                            + "/odm 被 AVB 保护写不进去时会明确报 ODM_WRITE_BLOCKED——那种情况只能靠模块在开机阶段 bind mount。"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,

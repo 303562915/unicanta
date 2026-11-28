@@ -103,6 +103,23 @@ object AudioWhitelist {
     suspend fun lowPowerRestoreScript(): String = Res.readBytes(LOWPOWER_RESTORE_PATH).decodeToString()
 
     /**
+     * 这台机型（K90 Pro Max / myron 这一类）清单里的四个分组，以及每组的音量倍数。
+     *
+     * **这些是 ROM 里那份 `audio_lowpower_app_list.xml` 的事实数值**，不是我们编的：短视频类被压到
+     * 44.7%，游戏 63.1%，导航 53.1%，长视频不压（100%）。有了它，即使没有权限读 `/odm`，
+     * 页面也能直接告诉用户「你的抖音只有 44.7% 的音量」——这比让他猜「为什么声音小」有用得多。
+     *
+     * 值取自清单里的 `<template type="…" volume="…"/>`；系统升级后若改了数值，页面读到 /odm 时
+     * 会以实际文件为准（见 [State.lowPowerPath]）。
+     */
+    val LOWPOWER_TEMPLATES: List<Pair<String, String>> = listOf(
+        "lowPowerShortVideo" to "短视频（抖音 / B站 / 淘宝 / 拼多多 / 小红书…）0.447",
+        "lowPowerGame" to "游戏（王者荣耀 / QQ飞车）0.631",
+        "lowPowerSva" to "导航（高德 / 百度 / 腾讯 / Google 地图）0.531",
+        "lowPowerLongVideo" to "长视频（YouTube / YouTube Kids）1.0（不压）",
+    )
+
+    /**
      * One app the phone's config names, with the words a user recognises it by.
      *
      * @param label the Chinese name when this build knows the package, the package name otherwise.
