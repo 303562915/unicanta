@@ -163,6 +163,47 @@ jobs:
           gh release upload "$TAG" androidApp/build/outputs/apk/release/SHA256SUMS.txt
           gh release upload "$TAG" "${{ steps.attest.outputs.bundle-path }}"
 
+      - name: 🖼️ Mirror stable APK to the image bed
+        # 国内下载走图床：传一份到 `unicanta/apk/stable-<版本>.apk`。`pages.yml` 会先探测这个对象，
+        # 读得到才把它的地址写进 `latest.json` 的 `file_bed`，客户端因此优先从图床取包、取不到再回 GitHub。
+        # 失败不阻断发布：图床只是镜像，GitHub releases 上的直链才是权威产物。
+        if: inputs.keep_draft != true
+        env:
+          TAG: ${{ steps.extract_version.outputs.tag }}
+        run: |
+          set -uo pipefail
+          SRC=composeApp/src/commonMain/kotlin/io/github/samolego/canta/data/imagebed/ImageBed.kt
+          BASE_URL=$(sed -n 's/.*const val BASE_URL = "\([^"]*\)".*/\1/p' "$SRC")
+          TOKEN=$(sed -n 's/.*const val TOKEN = "\([^"]*\)".*/\1/p' "$SRC")
+          ROOT_DIR=$(sed -n 's/.*const val ROOT = "\([^"]*\)".*/\1/p' "$SRC")
+          if [ -z "$BASE_URL" ] || [ -z "$TOKEN" ] || [ -z "$ROOT_DIR" ]; then
+            echo "::warning::image bed mirror skipped: BASE_URL / TOKEN / ROOT not found"
+            exit 0
+          fi
+          APK=$(ls androidApp/build/outputs/apk/release/*.apk | head -n1)
+          FOLDER="${ROOT_DIR}/apk"
+          # 版本号取自 tag（`v4.3.0` → `stable-4.3.0.apk`），和 pages.yml 探测的那个名字必须一致。
+          NAME="stable-${TAG#v}.apk"
+          RESP=$(curl -sS --fail-with-body --max-time 600 -X POST "$BASE_URL/api/upload" \
+            -F "file=@${APK};type=application/vnd.android.package-archive;filename=${NAME}" \
+            -F "uid=${TOKEN}" \
+            -F "fileName=${NAME}" \
+            -F "folder=${FOLDER}" \
+            -F "overwrite=1" || true)
+          echo "$RESP"
+          URL=$(printf '%s' "$RESP" | jq -r '.url // empty' 2>/dev/null)
+          if [ -z "$URL" ]; then
+            echo "::warning::image bed mirror failed for $APK — clients will download from GitHub"
+            exit 0
+          fi
+          EXPECT=$(sha256sum "$APK" | cut -d' ' -f1)
+          if curl -sS -o /tmp/mirror.apk --fail --max-time 300 "$URL" \
+             && [ "$(sha256sum /tmp/mirror.apk | cut -d' ' -f1)" = "$EXPECT" ]; then
+            echo "mirrored: $URL"
+          else
+            echo "::warning::image bed copy does not match $APK (size/sha256 mismatch or unreadable) — clients will download from GitHub"
+          fi
+
       - name: 🌐 Update download page and announce
         if: inputs.keep_draft != true
         env:

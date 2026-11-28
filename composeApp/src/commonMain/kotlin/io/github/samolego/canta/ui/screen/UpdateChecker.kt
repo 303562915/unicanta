@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import io.github.samolego.canta.BuildInfo
+import io.github.samolego.canta.util.LogUtils
 
 /*
  * Everything the app needs to know about releases: where they are, whether one is newer than
@@ -82,6 +83,13 @@ internal data class UpdateRelease(
      * 从 GitHub 兜底读到的），下载时按 tag 拼出来。
      */
     val fileUrl: String = "",
+    /**
+     * 图床（国内线路）上同一份 APK 的直链，来自下载页 JSON 的 `file_bed`。
+     *
+     * 空表示这一版没有镜像（稳定版以前一直是空的），下载直接走 GitHub。有值时**排在最前面**：
+     * 图床在国内直连，比 GitHub 的 releases 快一个量级，而 GitHub 那条继续当兜底。
+     */
+    val mirrorUrl: String = "",
 )
 
 /**
@@ -281,11 +289,15 @@ private suspend fun fetchFromSite(client: HttpClient, channel: UpdateChannel): U
         ?: throw UpdateCheckException(UpdateFailure.NO_RELEASE)
     val version = payload["version_name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: tag
     val file = payload["file"]?.jsonPrimitive?.contentOrNull.orEmpty()
-    if (channel == UpdateChannel.STABLE) return UpdateRelease(tag, version, fileUrl = file)
+    // 图床镜像（`file_bed`）：`pages.yml` 只在图床那份真的可读时才写它，所以非空就是可以直连的。
+    val mirror = payload["file_bed"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    if (channel == UpdateChannel.STABLE) {
+        return UpdateRelease(tag, version, fileUrl = file, mirrorUrl = mirror)
+    }
     // 开发版必须带 build 号：没有它，同一个版本名的两个滚动构建就分不出新旧。
     val build = payload["build_number"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()?.takeIf { it > 0 }
         ?: throw UpdateCheckException(UpdateFailure.MALFORMED)
-    return UpdateRelease(DEVELOPMENT_TAG, version, build, fileUrl = file)
+    return UpdateRelease(DEVELOPMENT_TAG, version, build, fileUrl = file, mirrorUrl = mirror)
 }
 
 private suspend fun fetchFromApi(client: HttpClient, channel: UpdateChannel): UpdateRelease {
@@ -546,7 +558,23 @@ internal fun isNewerVersion(remote: String, local: String): Boolean {
 }
 
 /**
+ * 下载源，按「快 → 兜底」排好：图床镜像（国内直连）→ 下载页给的直链 → 按 [tag] 拼的 GitHub 地址。
+ *
+ * 「图床没有就走 GitHub」不是一句约定，而是这个列表本身：`file_bed` 为空（或者对象已经被图床清掉、
+ * 回了 404）时，后面的源接着试，而 GitHub 那条永远在末尾。
+ */
+internal fun UpdateRelease.downloadSources(): List<String> = buildList {
+    mirrorUrl.takeIf { it.isNotBlank() }?.let { add(it) }
+    fileUrl.takeIf { it.isNotBlank() }?.let { add(it) }
+    add(apkUrl(tag, buildNumber))
+}.distinct()
+
+/**
  * Downloads the release [tag] and answers with the file's path, or the reason it did not arrive.
+ *
+ * [sources] is tried in order: the image-bed mirror first (fast, reachable from mainland China), the
+ * release link next, the URL built from [tag] last. A source that answers 404 or dies is simply
+ * skipped — which is why the mirror going away is not an outage, only one more round.
  *
  * [onProgress] receives 0-100, or [DOWNLOAD_PROGRESS_UNKNOWN] while the server has announced no
  * size — the caller shows a spinner then, because a percentage of an unknown total is a lie.
@@ -555,17 +583,39 @@ internal suspend fun downloadRelease(
     platform: CantaPlatform,
     tag: String,
     buildNumber: Int = 0,
-    /** 下载页给的直链；空表示没有，按 [tag] 拼出 GitHub 的资产地址。 */
-    fileUrl: String = "",
+    /** Candidate URLs in the order they should be tried; empty means only the GitHub URL. */
+    sources: List<String> = emptyList(),
     onProgress: (Int) -> Unit,
-): UpdateDownload = platform.downloadUpdate(
-    fileUrl.ifBlank { apkUrl(tag, buildNumber) },
-    "canta-$tag-$buildNumber.apk",
-) { received, total ->
-    onProgress(
-        if (total > 0) ((received * 100) / total).toInt().coerceIn(0, 100)
-        else DOWNLOAD_PROGRESS_UNKNOWN,
-    )
+): UpdateDownload {
+    val candidates = sources.filter { it.isNotBlank() }.distinct()
+        .ifEmpty { listOf(apkUrl(tag, buildNumber)) }
+    var result: UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNKNOWN)
+    for ((index, url) in candidates.withIndex()) {
+        // 一个源一个 partial 名：跨源续传会把别的源那段字节（图床 404 的 HTML、另一份 revision）
+        // 接到已有字节后面，拼出来的既不是 APK，也不是能续传的前缀。
+        val name = if (index == 0) {
+            "canta-$tag-$buildNumber.apk"
+        } else {
+            "canta-$tag-$buildNumber-s$index.apk"
+        }
+        LogUtils.i(LogUtils.UPDATE_TAG, "下载源 ${index + 1}/${candidates.size}：$url")
+        result = platform.downloadUpdate(url, name) { received, total ->
+            onProgress(
+                if (total > 0) ((received * 100) / total).toInt().coerceIn(0, 100)
+                else DOWNLOAD_PROGRESS_UNKNOWN,
+            )
+        }
+        if (result is UpdateDownload.Done) return result
+        val failure = (result as? UpdateDownload.Failed)?.failure
+        // 磁盘满、没有下载器：换源也一样。
+        if (failure == UpdateDownloadFailure.STORAGE || failure == UpdateDownloadFailure.UNSUPPORTED) {
+            return result
+        }
+        if (index < candidates.lastIndex) {
+            LogUtils.w(LogUtils.UPDATE_TAG, "源 ${index + 1} 没下成（$failure），换下一个：$url")
+        }
+    }
+    return result
 }
 
 /**
@@ -581,14 +631,14 @@ internal suspend fun downloadReleaseWithRetries(
     platform: CantaPlatform,
     tag: String,
     buildNumber: Int = 0,
-    fileUrl: String = "",
+    sources: List<String> = emptyList(),
     onRound: (attempt: Int) -> Unit = {},
     onProgress: (Int) -> Unit,
 ): UpdateDownload {
     var result: UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNKNOWN)
     for (attempt in 1..DOWNLOAD_ROUNDS) {
         onRound(attempt)
-        result = downloadRelease(platform, tag, buildNumber, fileUrl, onProgress)
+        result = downloadRelease(platform, tag, buildNumber, sources, onProgress)
         if (result is UpdateDownload.Done) return result
         val failure = (result as? UpdateDownload.Failed)?.failure
         // Waiting will not free up disk space, and it will not give a build a downloader.

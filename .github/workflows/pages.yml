@@ -156,6 +156,7 @@ jobs:
           import json, os, pathlib
 
           import re
+          import urllib.request
 
           BOILER = ('- 下载页：', '- 包名：', '下载页：', '包名：', '校验和')
 
@@ -191,6 +192,24 @@ jobs:
                       break
 
           base = f"https://github.com/{repo}/releases/download/{tag}"
+          # 稳定版也镜像到图床（见 release.yml 的「Mirror stable APK to the image bed」）。
+          # 镜像可能没传成功，所以这里真去读一次：拿到 `PK` 头才算数，否则留空让客户端走 GitHub 那条。
+          BED_APK_STABLE = f"https://cloudflare-imgbed-erh.pages.dev/file/unicanta/apk/stable-{version}.apk"
+
+          def bed_apk(url):
+              try:
+                  req = urllib.request.Request(url, headers={"User-Agent": "Canta-CI", "Range": "bytes=0-1"})
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      head = resp.read(2)
+                      ok = resp.status in (200, 206) and head == b"PK"
+                      print(f"image bed probe {url} -> status={resp.status} head={head!r} ok={ok}")
+                      return ok
+              except Exception as e:
+                  print(f"image bed probe failed: {url} -> {e}")
+                  return False
+
+          bed_apk_file = BED_APK_STABLE if bed_apk(BED_APK_STABLE) else None
+
           entry = {
               "version_name": version,
               "version_code": int(os.environ.get("VERSION_CODE") or 0),
@@ -201,8 +220,8 @@ jobs:
               "size": apk.get("size", 0),
               "sha256": digest,
               "checksum_file": f"{base}/{sums['name']}" if sums else None,
-              # 稳定版不上图床（只镜像开发版），页面里这一项固定为空。
-              "file_bed": None,
+              # 国内线路：图床镜像（探测过才写），客户端下载时排在最前面。
+              "file_bed": bed_apk_file,
               "notes": clean_notes(rel.get("body")),
           }
 
@@ -260,11 +279,25 @@ jobs:
 
           python3 - <<'PY'
           import json, os, pathlib, re, subprocess
+          import urllib.request
 
           rel = json.loads(pathlib.Path('development-release.json').read_text(encoding='utf-8'))
           # 图床上那份开发版 APK：development-release 每次以 `latest-<构建号>.apk` 上传新对象
           # （每版一个新 URL，不会被旧对象/缓存顶掉），页面被镜像到图床后下载按钮走这一条。
           BED_APK_TEMPLATE = 'https://cloudflare-imgbed-erh.pages.dev/file/unicanta/apk/latest-{build}.apk'
+
+          def bed_apk(url):
+              """图床上那份对象真的读得到才算数：拿不到 `PK` 头就当没镜像，客户端走 GitHub。"""
+              try:
+                  req = urllib.request.Request(url, headers={'User-Agent': 'Canta-CI', 'Range': 'bytes=0-1'})
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      head = resp.read(2)
+                      ok = resp.status in (200, 206) and head == b'PK'
+                      print(f'image bed probe {url} -> status={resp.status} head={head!r} ok={ok}')
+                      return ok
+              except Exception as e:
+                  print(f'image bed probe failed: {url} -> {e}')
+                  return False
           if rel is None or (rel.get('body') or '').strip() == 'Preparing the first development build.':
               data = {'version_name': None, 'version_code': 0, 'build_number': None, 'tag': None,
                       'published_at': None, 'file': None, 'file_name': None, 'size': 0,
@@ -305,12 +338,14 @@ jobs:
               dev_notes = '\n'.join(ln for ln in body.splitlines()
                                     if ln.strip() and not ln.strip().startswith('Signed with'))
               dev_notes += f"\n提交：https://github.com/{os.environ['REPO']}/commit/{commit}"
+              # 国内线路：图床镜像（探测过才写），客户端下载时排在最前面。
+              dev_bed = BED_APK_TEMPLATE.format(build=build)
               entry = {'version_name': version, 'version_code': int(codes[0]), 'build_number': build,
                        'tag': 'dev',
                        'published_at': apk.get('created_at') or apk.get('updated_at') or rel.get('published_at'),
                        'file': apk['browser_download_url'], 'file_name': name, 'size': apk.get('size', 0),
                        'sha256': digests[0], 'checksum_file': checksum['browser_download_url'],
-                       'file_bed': BED_APK_TEMPLATE.format(build=build),
+                       'file_bed': dev_bed if bed_apk(dev_bed) else None,
                        'notes': dev_notes}
               # 滚动 release 里每个 build 都是一个资产，历史列表取最近 8 个。
               hist = []

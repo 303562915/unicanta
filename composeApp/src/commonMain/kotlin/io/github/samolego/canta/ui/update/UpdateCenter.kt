@@ -33,6 +33,7 @@ import io.github.samolego.canta.ui.screen.UpdateHistoryEntry
 import io.github.samolego.canta.ui.screen.UpdateRelease
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
+import io.github.samolego.canta.ui.screen.downloadSources
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestRelease
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
@@ -313,7 +314,9 @@ internal class UpdateCenter(
         }
         downloadJob?.cancel()
         lastRelease = release
-        LogUtils.i(LogUtils.UPDATE_TAG, "开始下载 $label（自动=$auto，直链 ${release.fileUrl}）")
+        // 源顺序：图床（国内直连）→ 下载页直链 → GitHub。自动更新与手点走的是同一条 startDownload。
+        val sources = release.downloadSources()
+        LogUtils.i(LogUtils.UPDATE_TAG, "开始下载 $label（自动=$auto，源 ${sources.size} 个：${sources.joinToString(" | ")}）")
         state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
         // 下载在后台跑，唯一能说一句的就是 toast。
         scope.launch { platform.showMessage(getString(Res.string.about_update_download_toast, label)) }
@@ -334,8 +337,8 @@ internal class UpdateCenter(
                     platform = platform,
                     tag = release.tag,
                     buildNumber = release.buildNumber,
-                    // 站点给的直链优先：它是下载页上那个按钮指向的同一个文件。
-                    fileUrl = release.fileUrl,
+                    // 图床镜像优先，GitHub 兜底（见 UpdateRelease.downloadSources）。
+                    sources = sources,
                     onRound = { attempt ->
                         // Every round but the first follows a failed one: back to a spinner instead of
                         // leaving an error sentence on screen while the next attempt is already running.
