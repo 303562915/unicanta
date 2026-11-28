@@ -286,14 +286,33 @@ fun GroupSettingsScreen(
                     if (url == null) {
                         onMessage(repository.lastError?.takeIf { it.isNotBlank() } ?: "群头像没上传成，检查代理后再试")
                     } else if (!repository.setGroupAvatar(owner, conversationId, url)) {
-                        // 传上去了但存不进库：后端按 created_by 裁决，不是群主就是这里。
-                        // 不把新地址摆在屏幕上——别人看不到那张图，摆出来等于骗自己。
-                        onMessage("只有群主能换群头像")
+                        // 传上去了但存不进库。两种原因：不是群主（后端按 created_by 裁决），
+                        // 或者根本没问到（断网/超时，[setGroupAvatar] 也是 false）。后者别冤枉人。
+                        onMessage(
+                            if (repository.lastFailureWasNetwork) {
+                                "没存上，检查代理后再试"
+                            } else {
+                                "只有群主能换群头像"
+                            },
+                        )
                     } else {
                         // 每次换都是新对象名：把新字节按新地址盖进缓存，再把组件重建一次。
                         runCatching { ready.decodeToImageBitmap() }.getOrNull()
                             ?.let { bitmap -> cacheAvatar(url, bitmap) }
-                        detail = detail?.copy(avatar = url)
+                        // 详情可能是 null（首次进来那次详情还没回来就点了）：那就现拼一份，
+                        // 否则这一页的 GroupAvatarView 读不到新地址，屏幕上一直是首字。
+                        val next = (detail ?: ConversationDetail(
+                            id = conversationId,
+                            kind = "group",
+                            title = "",
+                            members = emptyList(),
+                        )).copy(avatar = url)
+                        detail = next
+                        // 缓存也要跟着换：同页其它改动都调 commitCache()，但那个 val 定义在下面
+                        // （局部变量不能前向引用），所以这里直接写同样的一句。
+                        if (cacheKey.isNotEmpty()) {
+                            ScreenCache.put(cacheKey, settingsSnapshotOf(next, muted, folded, pinned))
+                        }
                         avatarVersion += 1
                         onMessage("群头像已更新")
                     }
