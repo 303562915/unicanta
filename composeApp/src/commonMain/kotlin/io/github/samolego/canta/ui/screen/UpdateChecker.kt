@@ -74,6 +74,17 @@ private const val CHECK_TIMEOUT_MILLIS = 12_000L
 
 internal enum class UpdateChannel { STABLE, DEVELOPMENT }
 
+/**
+ * 这一份 APK 从哪条线路来。
+ *
+ * [MIRROR] 是图床（国内直连，快）；[GITHUB] 是 GitHub releases 的直链。下载途中前一条挂了会换到
+ * 下一条，界面上的标记跟着换 —— 用户投诉过「不知道它到底在从哪儿下」。
+ */
+internal enum class DownloadSource { MIRROR, GITHUB }
+
+/** 一条候选下载线路：[url] 与它属于哪条源。 */
+internal data class DownloadRoute(val url: String, val source: DownloadSource)
+
 internal data class UpdateRelease(
     val tag: String,
     val version: String,
@@ -160,8 +171,14 @@ internal sealed interface UpdateState {
      * The APK is being fetched; [progress] is 0-100, or [DOWNLOAD_PROGRESS_UNKNOWN] when the server
      * announced no size. A percentage against an unknown size is what leaves the page reading
      * "0%" while the transfer is in fact moving, so that case is shown without a number.
+     *
+     * [source] 是当前这条线路：图床还是 GitHub，页面上标出来。
      */
-    data class Downloading(val version: String, val progress: Int) : UpdateState
+    data class Downloading(
+        val version: String,
+        val progress: Int,
+        val source: DownloadSource = DownloadSource.GITHUB,
+    ) : UpdateState
 
     /** Downloaded and waiting for the user to allow the install. */
     data class ReadyToInstall(val version: String, val path: String) : UpdateState
@@ -563,18 +580,21 @@ internal fun isNewerVersion(remote: String, local: String): Boolean {
  * 「图床没有就走 GitHub」不是一句约定，而是这个列表本身：`file_bed` 为空（或者对象已经被图床清掉、
  * 回了 404）时，后面的源接着试，而 GitHub 那条永远在末尾。
  */
-internal fun UpdateRelease.downloadSources(): List<String> = buildList {
-    mirrorUrl.takeIf { it.isNotBlank() }?.let { add(it) }
-    fileUrl.takeIf { it.isNotBlank() }?.let { add(it) }
-    add(apkUrl(tag, buildNumber))
-}.distinct()
+internal fun UpdateRelease.downloadRoutes(): List<DownloadRoute> = buildList {
+    mirrorUrl.takeIf { it.isNotBlank() }?.let { add(DownloadRoute(it, DownloadSource.MIRROR)) }
+    fileUrl.takeIf { it.isNotBlank() }?.let { add(DownloadRoute(it, DownloadSource.GITHUB)) }
+    add(DownloadRoute(apkUrl(tag, buildNumber), DownloadSource.GITHUB))
+}.distinctBy { it.url }
 
 /**
  * Downloads the release [tag] and answers with the file's path, or the reason it did not arrive.
  *
- * [sources] is tried in order: the image-bed mirror first (fast, reachable from mainland China), the
+ * [routes] is tried in order: the image-bed mirror first (fast, reachable from mainland China), the
  * release link next, the URL built from [tag] last. A source that answers 404 or dies is simply
  * skipped — which is why the mirror going away is not an outage, only one more round.
+ *
+ * [onSource] fires before each source is tried, so the row can say whether the bytes are coming
+ * from the domestic mirror or from GitHub.
  *
  * [onProgress] receives 0-100, or [DOWNLOAD_PROGRESS_UNKNOWN] while the server has announced no
  * size — the caller shows a spinner then, because a percentage of an unknown total is a lie.
@@ -583,14 +603,16 @@ internal suspend fun downloadRelease(
     platform: CantaPlatform,
     tag: String,
     buildNumber: Int = 0,
-    /** Candidate URLs in the order they should be tried; empty means only the GitHub URL. */
-    sources: List<String> = emptyList(),
+    /** Candidate routes in the order they should be tried; empty means only the GitHub URL. */
+    routes: List<DownloadRoute> = emptyList(),
+    onSource: (DownloadSource) -> Unit = {},
     onProgress: (Int) -> Unit,
 ): UpdateDownload {
-    val candidates = sources.filter { it.isNotBlank() }.distinct()
-        .ifEmpty { listOf(apkUrl(tag, buildNumber)) }
+    val candidates = routes.filter { it.url.isNotBlank() }.distinctBy { it.url }
+        .ifEmpty { listOf(DownloadRoute(apkUrl(tag, buildNumber), DownloadSource.GITHUB)) }
     var result: UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNKNOWN)
-    for ((index, url) in candidates.withIndex()) {
+    for ((index, route) in candidates.withIndex()) {
+        val url = route.url
         // 一个源一个 partial 名：跨源续传会把别的源那段字节（图床 404 的 HTML、另一份 revision）
         // 接到已有字节后面，拼出来的既不是 APK，也不是能续传的前缀。
         val name = if (index == 0) {
@@ -598,7 +620,8 @@ internal suspend fun downloadRelease(
         } else {
             "canta-$tag-$buildNumber-s$index.apk"
         }
-        LogUtils.i(LogUtils.UPDATE_TAG, "下载源 ${index + 1}/${candidates.size}：$url")
+        onSource(route.source)
+        LogUtils.i(LogUtils.UPDATE_TAG, "下载源 ${index + 1}/${candidates.size}（${route.source}）：$url")
         result = platform.downloadUpdate(url, name) { received, total ->
             onProgress(
                 if (total > 0) ((received * 100) / total).toInt().coerceIn(0, 100)
@@ -631,14 +654,15 @@ internal suspend fun downloadReleaseWithRetries(
     platform: CantaPlatform,
     tag: String,
     buildNumber: Int = 0,
-    sources: List<String> = emptyList(),
+    routes: List<DownloadRoute> = emptyList(),
+    onSource: (DownloadSource) -> Unit = {},
     onRound: (attempt: Int) -> Unit = {},
     onProgress: (Int) -> Unit,
 ): UpdateDownload {
     var result: UpdateDownload = UpdateDownload.Failed(UpdateDownloadFailure.UNKNOWN)
     for (attempt in 1..DOWNLOAD_ROUNDS) {
         onRound(attempt)
-        result = downloadRelease(platform, tag, buildNumber, sources, onProgress)
+        result = downloadRelease(platform, tag, buildNumber, routes, onSource, onProgress)
         if (result is UpdateDownload.Done) return result
         val failure = (result as? UpdateDownload.Failed)?.failure
         // Waiting will not free up disk space, and it will not give a build a downloader.

@@ -438,6 +438,9 @@
     <string name="about_installing_version">Installing %1$s… the app will close when it is done</string>
     <string name="update_progress_downloading">Downloading %1$s</string>
     <string name="update_progress_installing">Installing %1$s</string>
+    <!-- Where the APK is actually coming from, prefixed to the download line. -->
+    <string name="update_source_mirror">Domestic mirror</string>
+    <string name="update_source_github">GitHub</string>
     <!-- The row's install line with a number: %2$d is the stage-folded percentage, the sign is appended in code. -->
     <string name="about_installing_progress">Installing %1$s… %2$d</string>
     <!-- One sentence when every route refused; the per-route pm output stays in update_reports. -->

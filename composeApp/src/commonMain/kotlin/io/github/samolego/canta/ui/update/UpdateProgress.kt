@@ -1,10 +1,16 @@
 package io.github.samolego.canta.ui.update
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.update_source_github
+import io.github.samolego.canta.generated.resources.update_source_mirror
+import io.github.samolego.canta.ui.screen.DownloadSource
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.shownPercent
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * 更新进行到哪一步 —— 给**顶栏**看的那一份。
@@ -32,6 +38,8 @@ internal object UpdateProgress {
         val phase: Phase,
         val version: String,
         val fraction: Float?,
+        /** 下载时这一份是从哪儿来的；安装阶段为 null（那时已经没有「从哪儿下」可说）。 */
+        val source: DownloadSource? = null,
     )
 
     /** 没有更新在跑时是 null；顶栏据此决定画不画这一条。 */
@@ -50,6 +58,7 @@ internal object UpdateProgress {
                 phase = Phase.DOWNLOADING,
                 version = state.version,
                 fraction = if (state.progress < 0) null else state.progress.coerceIn(0, 100) / 100f,
+                source = state.source,
             )
 
             is UpdateState.Installing -> Item(
@@ -61,4 +70,16 @@ internal object UpdateProgress {
             else -> null
         }
     }
+}
+
+/**
+ * 线路的人话标签：图床写成「国内镜像」，GitHub 就写 GitHub。
+ *
+ * 为的是回答「它到底在从哪儿下」——国内用户看到「国内镜像」就知道没绕出去，看到 GitHub 就知道
+ * 这一版图床上没有、正在走兜底那条。
+ */
+@Composable
+internal fun downloadSourceLabel(source: DownloadSource): String = when (source) {
+    DownloadSource.MIRROR -> stringResource(Res.string.update_source_mirror)
+    DownloadSource.GITHUB -> stringResource(Res.string.update_source_github)
 }

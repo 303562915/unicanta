@@ -123,6 +123,7 @@ import io.github.samolego.canta.ui.fl.FlSurfaceLevel
 import io.github.samolego.canta.ui.fl.FlText
 import io.github.samolego.canta.ui.fl.colorOf
 import io.github.samolego.canta.ui.update.UpdateCenter
+import io.github.samolego.canta.ui.update.downloadSourceLabel
 import io.github.samolego.canta.ui.viewmodel.SettingsViewModel
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
@@ -518,16 +519,19 @@ private fun UpdateCard(
             stringResource(Res.string.about_update_available, state.version) to scheme.primary
         is UpdateState.Failed -> state.failure.reason() to scheme.error
         UpdateState.StoreManaged -> stringResource(Res.string.about_update_store_managed) to scheme.onSurfaceVariant
-        is UpdateState.Downloading ->
+        is UpdateState.Downloading -> {
             // No announced size: show that bytes are moving instead of a number that would sit at
             // 0% for the whole transfer. The percent sign is appended here rather than written in
             // the resource: Compose's formatter knows only `%N$s` / `%N$d` and prints `%%` as two
             // literal signs, which is exactly the "42%%" this row used to show.
-            (if (state.progress == DOWNLOAD_PROGRESS_UNKNOWN) {
+            val progressText = if (state.progress == DOWNLOAD_PROGRESS_UNKNOWN) {
                 stringResource(Res.string.about_downloading_unknown)
             } else {
                 "${stringResource(Res.string.about_downloading, state.progress)}%"
-            }) to scheme.primary
+            }
+            // 前面先标线路：图床那份写「国内镜像」，兜底走 GitHub 就写 GitHub。
+            "${downloadSourceLabel(state.source)} · $progressText" to scheme.primary
+        }
         is UpdateState.ReadyToInstall ->
             stringResource(Res.string.about_ready_to_install, state.version) to scheme.primary
         is UpdateState.Installing -> {

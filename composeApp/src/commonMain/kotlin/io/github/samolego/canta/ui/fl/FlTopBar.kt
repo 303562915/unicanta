@@ -28,6 +28,7 @@ import io.github.samolego.canta.generated.resources.Res
 import io.github.samolego.canta.generated.resources.update_progress_downloading
 import io.github.samolego.canta.generated.resources.update_progress_installing
 import io.github.samolego.canta.ui.update.UpdateProgress
+import io.github.samolego.canta.ui.update.downloadSourceLabel
 import org.jetbrains.compose.resources.stringResource
 
 /** The height of the bar's content, below the status bar. */
@@ -158,8 +159,11 @@ fun FlTopBar(
 private fun UpdateProgressStrip(item: UpdateProgress.Item) {
     val scheme = MaterialTheme.colorScheme
     val label = when (item.phase) {
-        UpdateProgress.Phase.DOWNLOADING ->
-            stringResource(Res.string.update_progress_downloading, item.version)
+        UpdateProgress.Phase.DOWNLOADING -> {
+            val text = stringResource(Res.string.update_progress_downloading, item.version)
+            // 线路写在最前面：「国内镜像 · 正在下载 4.3.6」/「GitHub · …」。
+            item.source?.let { "${downloadSourceLabel(it)} · $text" } ?: text
+        }
         UpdateProgress.Phase.INSTALLING ->
             stringResource(Res.string.update_progress_installing, item.version)
     }

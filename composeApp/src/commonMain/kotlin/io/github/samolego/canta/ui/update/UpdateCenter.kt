@@ -23,8 +23,11 @@ import io.github.samolego.canta.generated.resources.about_install_kept_local
 import io.github.samolego.canta.generated.resources.about_install_refused
 import io.github.samolego.canta.generated.resources.about_installing_version
 import io.github.samolego.canta.generated.resources.about_update_download_toast
+import io.github.samolego.canta.generated.resources.update_source_github
+import io.github.samolego.canta.generated.resources.update_source_mirror
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PAGE_URL
 import io.github.samolego.canta.ui.screen.DOWNLOAD_PROGRESS_UNKNOWN
+import io.github.samolego.canta.ui.screen.DownloadSource
 import io.github.samolego.canta.ui.screen.INSTALL_DONE_LINGER_MILLIS
 import io.github.samolego.canta.ui.screen.UpdateChannel
 import io.github.samolego.canta.ui.screen.UpdateCheckException
@@ -33,7 +36,7 @@ import io.github.samolego.canta.ui.screen.UpdateHistoryEntry
 import io.github.samolego.canta.ui.screen.UpdateRelease
 import io.github.samolego.canta.ui.screen.UpdateState
 import io.github.samolego.canta.ui.screen.downloadReleaseWithRetries
-import io.github.samolego.canta.ui.screen.downloadSources
+import io.github.samolego.canta.ui.screen.downloadRoutes
 import io.github.samolego.canta.ui.screen.isNewerThanInstalled
 import io.github.samolego.canta.ui.screen.latestRelease
 import io.github.samolego.canta.ui.screen.latestReleaseFromPage
@@ -315,14 +318,28 @@ internal class UpdateCenter(
         downloadJob?.cancel()
         lastRelease = release
         // 源顺序：图床（国内直连）→ 下载页直链 → GitHub。自动更新与手点走的是同一条 startDownload。
-        val sources = release.downloadSources()
-        LogUtils.i(LogUtils.UPDATE_TAG, "开始下载 $label（自动=$auto，源 ${sources.size} 个：${sources.joinToString(" | ")}）")
-        state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
-        // 下载在后台跑，唯一能说一句的就是 toast。
-        scope.launch { platform.showMessage(getString(Res.string.about_update_download_toast, label)) }
+        val routes = release.downloadRoutes()
+        LogUtils.i(
+            LogUtils.UPDATE_TAG,
+            "开始下载 $label（自动=$auto，源 ${routes.size} 个：" +
+                routes.joinToString(" | ") { "${it.source}=${it.url}" } + "）",
+        )
+        state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN, routes.first().source)
+        // 下载在后台跑，唯一能说一句的就是 toast；开头先标线路，用户一眼知道它是不是在走国内那条。
+        val sourceRes = when (routes.first().source) {
+            DownloadSource.MIRROR -> Res.string.update_source_mirror
+            DownloadSource.GITHUB -> Res.string.update_source_github
+        }
+        scope.launch {
+            platform.showMessage(
+                getString(sourceRes) + " · " + getString(Res.string.about_update_download_toast, label),
+            )
+        }
         downloadJob = scope.launch {
             val channelName = channelName(channel())
             val startedAt = TimeSource.Monotonic.markNow()
+            // 当前这条线路：换源时跟着变，卡片/顶栏据此标「国内镜像」还是 GitHub。
+            var source = routes.first().source
             // The percentage the transfer reached, so a failed download reports where it stopped
             // instead of only that it stopped.
             var reached = DOWNLOAD_PROGRESS_UNKNOWN
@@ -337,20 +354,28 @@ internal class UpdateCenter(
                     platform = platform,
                     tag = release.tag,
                     buildNumber = release.buildNumber,
-                    // 图床镜像优先，GitHub 兜底（见 UpdateRelease.downloadSources）。
-                    sources = sources,
+                    // 图床镜像优先，GitHub 兜底（见 UpdateRelease.downloadRoutes）。
+                    routes = routes,
+                    onSource = { next ->
+                        if (next != source) {
+                            source = next
+                            LogUtils.i(LogUtils.UPDATE_TAG, "换源：$label → $next")
+                        }
+                        state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN, source)
+                        lastChange = TimeSource.Monotonic.markNow()
+                    },
                     onRound = { attempt ->
                         // Every round but the first follows a failed one: back to a spinner instead of
                         // leaving an error sentence on screen while the next attempt is already running.
                         // The stall clock restarts too: a new round has not had time to be slow yet.
                         if (attempt > 1) {
-                            state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN)
+                            state = UpdateState.Downloading(label, DOWNLOAD_PROGRESS_UNKNOWN, source)
                             lastChange = TimeSource.Monotonic.markNow()
                         }
                     },
                     onProgress = { percent ->
                         reached = percent
-                        state = UpdateState.Downloading(label, percent)
+                        state = UpdateState.Downloading(label, percent, source)
                         if (percent != lastPercent) {
                             lastPercent = percent
                             lastChange = TimeSource.Monotonic.markNow()
