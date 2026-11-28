@@ -142,6 +142,14 @@ class BloatRepository(
          * 一起核对，所以手机真正联网的次数**没有增加**。
          */
         const val CORRECTIONS_INTERVAL_DAYS = 7L
+
+        /**
+         * 缓存文件的第一行：写它那一刻「随包名单」的指纹（`bloat_list.json` 的 hashCode）。
+         *
+         * 为什么要这个头：说明改在随包里、缓存还压着上一次从 GitHub 拉下来的旧文案时，用户装的
+         * 明明是新的，点一个包看到的还是老话。头对不上就说明这份 APK 换了名单，缓存作废。
+         */
+        const val CACHE_STAMP_PREFIX = "#bloat-stamp:"
     }
 
     /** Resolved once: the table is a bundled file, it does not change while the app runs. */
@@ -329,7 +337,9 @@ class BloatRepository(
             .onFailure { LogUtils.e(TAG, "Downloaded bloat list is invalid", it) }
             .getOrNull() ?: return null
 
-        runCatching { cache.write(raw.encodeToByteArray()) }
+        runCatching {
+            cache.write((CACHE_STAMP_PREFIX + bundledStamp() + "\n" + raw).encodeToByteArray())
+        }
             .onFailure { LogUtils.e(TAG, "Failed to cache the bloat list", it) }
         settings.setLatestCommitHash(remoteHash)
         settings.setBloatListCheckedDay(today)
@@ -355,11 +365,52 @@ class BloatRepository(
     private fun todayKey(): String =
         Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
 
-    /** The cached list, or null if there is none or it can't be parsed. */
-    private fun readCache(l10n: BloatDescriptions): Map<String, BloatData>? =
-        runCatching { cache.read()?.decodeToString()?.let(::parseBloatList)?.localisedWith(l10n) }
+    /**
+     * The cached list, or null when there is none, it can't be parsed, **or it was written against a
+     * different shipped list**.
+     *
+     * 最后那一条是这次加的：随包名单和应用一起发版，缓存却是上一次从 GitHub 拉下来的。说明改在
+     * 随包里、缓存还压着旧文案时，用户装的是新版、点开一个包看到的仍是老话。缓存头上记着写它那
+     * 一刻的随包指纹，对不上就当作废：这一轮用随包那份（它不会旧于这个 APK），并把「本周已核对」
+     * 清掉，好让紧接着的 [refresh] 立刻去问远端，而不是等满七天。
+     *
+     * 老格式的缓存没有头，同样作废：它一定来自更早的随包名单。
+     */
+    private suspend fun readCache(l10n: BloatDescriptions): Map<String, BloatData>? {
+        val bytes = runCatching { cache.read() }.getOrNull() ?: return null
+        val text = runCatching { bytes.decodeToString() }.getOrNull() ?: return null
+        if (!text.startsWith(CACHE_STAMP_PREFIX)) {
+            LogUtils.i(TAG, "Cached bloat list has no stamp (written by an older build); using the shipped list")
+            forgetCheckDay()
+            return null
+        }
+        val newline = text.indexOf('\n')
+        if (newline < 0) return null
+        val cachedStamp = text.substring(CACHE_STAMP_PREFIX.length, newline).trim()
+        if (cachedStamp != bundledStamp()) {
+            LogUtils.i(TAG, "Cached bloat list belongs to another shipped list; using the shipped one")
+            forgetCheckDay()
+            return null
+        }
+        return runCatching { parseBloatList(text.substring(newline + 1)).localisedWith(l10n) }
             .onFailure { LogUtils.w(TAG, "Ignoring unreadable bloat list cache: $it") }
             .getOrNull()
+    }
+
+    /** 随包名单的指纹，读一次记住：它在一次运行里不会变。 */
+    private var resolvedBundledStamp: String? = null
+
+    private suspend fun bundledStamp(): String {
+        resolvedBundledStamp?.let { return it }
+        val stamp = bundled()?.hashCode()?.toString().orEmpty()
+        resolvedBundledStamp = stamp
+        return stamp
+    }
+
+    /** 随包名单换了就该马上问一次远端：把「本周已核对」这笔账清掉。 */
+    private suspend fun forgetCheckDay() {
+        runCatching { settings.setBloatListCheckedDay("") }
+    }
 
     private suspend fun fetchLatestHash(): String =
         runCatching { parseLatestHash(client.get(settings.commitsUrlFlow.first()).bodyAsText()) }
