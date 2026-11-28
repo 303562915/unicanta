@@ -14554,8 +14554,8 @@
  {
   "brand": "HONOR",
   "comments": 0,
-  "created_at": "2026-11-28T01:15:04.010363+00:00",
-  "id": 482,
+  "created_at": "2026-11-28T01:16:41.657772+00:00",
+  "id": 483,
   "is_test": false,
   "market_name": "荣耀Magic8 Pro",
   "model": "BKQ-AN90",
@@ -14580,7 +14580,7 @@
    "com.android.ondevicepersonalization.services",
    "com.google.android.gms.location.history"
   ],
-  "rebooted_at": "2026-11-28T01:15:03.362871+00:00",
+  "rebooted_at": "2026-11-28T01:16:41.384634+00:00",
   "rom": "magicos",
   "rom_build": "MagicOS_11.0.0",
   "rom_version": 11,
