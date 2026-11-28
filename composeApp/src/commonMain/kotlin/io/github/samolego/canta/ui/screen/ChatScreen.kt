@@ -153,19 +153,19 @@ private val ChatStickerSize = 112.dp
 // 两排的左右基线才对得上；某一格想往哪边挪，只能改这里的共同值，不能单独加 margin。
 
 /** 标题栏高度：比 `FlTopBarHeight` 矮一截，去掉顶部那块多余的留白。 */
-private val ChatHeaderBarHeight = 60.dp
+private val ChatHeaderBarHeight = 50.dp
 
 /** 标题栏/入口行左右内边距：两排共用，左右基线才对得齐。 */
-private val ChatHeaderSidePadding = 16.dp
+private val ChatHeaderSidePadding = 12.dp
 
 /** 标题栏里各元素之间的统一间距（返回 / 头像 / 群名 / 折叠按钮）。 */
 private val ChatHeaderGap = 10.dp
 
 /** 顶栏那个圆头像的直径：比正文里的行内头像大一圈，和抖音群聊顶栏一个量级。 */
-private val ChatHeaderAvatarSize = 52.dp
+private val ChatHeaderAvatarSize = 36.dp
 
 /** 入口行高度：选中那一格的底色居中放在这一行里，上下都留一点，不贴着顶栏与分割线。 */
-private val ChatTabBarHeight = 52.dp
+private val ChatTabBarHeight = 40.dp
 
 /** 标题栏与入口行底部那条 1px 浅灰分割线。 */
 private val ChatHeaderDividerThickness = 0.5.dp
@@ -2088,11 +2088,10 @@ private fun ChatTopBar(
 ) {
     val scheme = MaterialTheme.colorScheme
     // 入口行开没开：那颗三角按钮是它的唯一开关。
-    var entriesOpen by remember { mutableStateOf(false) }
+    var entriesOpen by rememberSaveable(conversationId) { mutableStateOf(false) }
     // 入口行开着时，下面展开的是哪一块。默认 [ChatHeaderSection.Chat]＝什么都不展开。
-    var section by remember { mutableStateOf(ChatHeaderSection.Chat) }
-    // 标题就是群名，**不挂人数**：内测群人少，人数不该出现在顶栏（见 ChatScreen 里 members 的注释）。
-    val heading = title
+    var section by rememberSaveable(conversationId) { mutableStateOf(ChatHeaderSection.Chat) }
+    val heading = if (isGroup && memberCount > 0) "$title ($memberCount)" else title
     // 私聊的入口需要一个具体的人：拿不到身份（空串）就返回 null，整块不响应。
     val openPeer: (() -> Unit)? = if (!isGroup && peerOwner.isNotEmpty()) {
         { onOpenProfile(peerOwner) }
@@ -2113,6 +2112,7 @@ private fun ChatTopBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .background(if (scheme.isDark) scheme.surface else Color(0xFFEFEFEF))
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Row(
@@ -2145,19 +2145,17 @@ private fun ChatTopBar(
             Column(modifier = Modifier.weight(1f).then(headerClick)) {
                 Text(
                     text = heading,
-                    style = FlText.headline,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
                     color = scheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (typingLine.isNotEmpty() || isGroup) {
+                if (typingLine.isNotEmpty()) {
                     Text(
-                        // 有人打字时这一行让给它：正在输入比"这是个群聊"有用得多，而且能立刻看见。
-                        // 没人打字就退回原来那句「群聊」，不写人数（内测群人少，人数是主办方的事；
-                        // memberCount 仍然收着，进资料页时用它决定画不画成员名单）。
-                        text = typingLine.ifEmpty { "群聊" },
+                        text = typingLine,
                         style = FlText.caption2,
-                        color = if (typingLine.isNotEmpty()) scheme.primary else scheme.onSurfaceVariant,
+                        color = scheme.primary,
                         maxLines = 1,
                     )
                 }
@@ -2182,14 +2180,13 @@ private fun ChatTopBar(
                 savedCount = savedMessages.size,
                 onPick = { picked ->
                     when (picked) {
-                        // 「聊天」= 收起入口行并回到最新一条：顶上这排是开关，不是第二个页面。
+                        // 保留标签栏，让聊天选中态可见；只有右上角箭头折叠。
                         ChatHeaderSection.Chat -> {
-                            entriesOpen = false
                             section = ChatHeaderSection.Chat
                             onJumpToLatest?.invoke()
                         }
                         // 其余三格都在原位展开/收起：再点同一个格子就是收回去。
-                        else -> section = if (section == picked) ChatHeaderSection.Chat else picked
+                        else -> section = picked
                     }
                 },
                 // 「设置」不进展开区：收起这排，直接进群设置页（群名、群头像、公告、进群码都在那儿）。
@@ -2279,7 +2276,7 @@ private fun ChatFoldButton(
             triangle.close()
             drawPath(triangle, scheme.onSurfaceVariant)
         }
-        if (dot) {
+        if (dot && !expanded) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -2332,7 +2329,7 @@ private fun ChatHeaderEntries(
             onClick = { onPick(ChatHeaderSection.Announcement) },
         )
         ChatEntryCell(
-            label = "置顶消息",
+            label = "置顶",
             selected = section == ChatHeaderSection.Pinned,
             dot = pinnedCount > 0,
             modifier = Modifier.weight(1f),
@@ -2378,23 +2375,22 @@ private fun ChatEntryCell(
     ) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(if (selected) scheme.surfaceVariant else Color.Transparent)
-                // 左右各 6dp：五格均分后每格约 62dp（360dp 宽的机器），"置顶消息"四个字 12sp 刚好放得下；
-                // 再宽就会在窄屏上被省略号截掉。
-                .padding(horizontal = 6.dp, vertical = 9.dp),
+                .fillMaxWidth(0.84f)
+                .height(27.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (!selected) Color.Transparent else if (scheme.isDark) scheme.surfaceContainerHigh else Color(0xFFE4E4E4)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = label,
-                fontSize = 12.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                 // 选中深色、未选中灰色：五格里哪一格开着，一眼看得出来。
-                color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
+                color = if (selected) scheme.onSurface else if (scheme.isDark) scheme.onSurfaceVariant else Color(0xFF737373),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (dot) {
+            if (dot && !selected) {
                 Box(
                     modifier = Modifier
                         // 红点贴在文字右上角：绝对定位在文字这一格里，不占布局，别的格子不会被推走。
@@ -2615,7 +2611,7 @@ private fun ChatHeaderAvatar(
             conversationId = conversationId,
             members = groupMembers,
             size = size,
-            modifier = clickModifier,
+            modifier = Modifier.clip(CircleShape).then(clickModifier),
         )
         return
     }
