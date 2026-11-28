@@ -131,7 +131,6 @@ class AppListViewModel(
             _apps.addAll(cached.map { AppInfo(it) })
             LogUtils.i(TAG, "Seeded ${cached.size} apps from the local snapshot")
         }
-        settings?.let { followSearchDescriptions(it) }
         telemetry?.let { telemetry ->
             // Fetched when analytics is on at start (or gets turned on), cleared when it is turned off.
             viewModelScope.launch {
@@ -157,24 +156,6 @@ class AppListViewModel(
     val selectedApps = mutableStateSetOf<String>()
 
     var searchQuery by mutableStateOf("")
-
-    /**
-     * 搜索是否也匹配应用介绍（UAD 名单里那段描述），由设置里的
-     * [io.github.samolego.canta.data.CantaSettings.searchDescriptionsFlow] 驱动。
-     *
-     * 开关画在安全规则页的搜索框里（那边排行页的搜索读的是同一个值），这里只负责跟着它变。
-     * 出厂关着：描述是整段长文本，随手一个字母就会命中几乎全部应用。
-     */
-    var searchInDescriptions by mutableStateOf(false)
-        private set
-
-    /** 开关就在设置里；页面自己不改它，见 [searchInDescriptions]。 */
-    private fun followSearchDescriptions(settings: CantaSettings) {
-        viewModelScope.launch {
-            settings.searchDescriptionsFlow.collect { searchInDescriptions = it }
-        }
-    }
-
     var onlySystem by mutableStateOf(true)
     var isLoading by mutableStateOf(false)
         private set
@@ -244,9 +225,7 @@ class AppListViewModel(
         sortedList
             .filter {
                 it.name.contains(searchQuery, true) ||
-                    it.packageName.contains(searchQuery, true) ||
-                    // 打开「搜索也匹配应用介绍」之后，描述里的词也能搜到这个应用（见 searchInDescriptions）。
-                    (searchInDescriptions && it.description.orEmpty().contains(searchQuery, true))
+                    it.packageName.contains(searchQuery, true)
             }
             .filter { it.isSystemApp || !onlySystem }
     }

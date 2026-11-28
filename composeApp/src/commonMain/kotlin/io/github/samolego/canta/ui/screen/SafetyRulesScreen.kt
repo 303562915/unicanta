@@ -363,11 +363,6 @@ fun SafetyRulesScreen(
     // back — and the picture is on by default, which is what a fresh install should start with.
     val showDevicePhoto by settings.showDevicePhotoFlow.collectAsStateWithLifecycle(initialValue = false)
 
-    // 「搜索也匹配应用介绍」这颗按钮：出厂关着，点了才让两个搜索框（这里的排行、应用页顶栏）
-    // 连描述里的字一起认。值存在设置里（见 AppSettingsProto.searchDescriptions），所以点一次
-    // 之后每台页面、每次启动都还是他选的那样。
-    val searchDescriptions by settings.searchDescriptionsFlow.collectAsStateWithLifecycle(initialValue = false)
-
     // 顶部机型胶囊点过一次就不再呼吸：提示是为了让人知道那里能换手机，知道了就不该一直闪。
     // 存的是"点过"，见 AppSettingsProto.scopeHintSeen。
     val scopeHintSeen by settings.scopeHintSeenFlow.collectAsStateWithLifecycle(initialValue = false)
@@ -891,11 +886,6 @@ fun SafetyRulesScreen(
                 PackageSearchField(
                     query = packageQuery,
                     onQueryChange = { packageQuery = it },
-                    // 搜索范围那颗按钮：关着只认名字/包名，开着连应用介绍里的字一起认。
-                    includeDescriptions = searchDescriptions,
-                    onToggleDescriptions = {
-                        scope.launch { settings.setSearchDescriptions(!searchDescriptions) }
-                    },
                     // The list is filtered as the reader types, so leaving is one tap on the ×.
                     onClose = {
                         searchPackages = false
@@ -919,8 +909,6 @@ fun SafetyRulesScreen(
                         otherDevice = opened != null,
                         offline = offline,
                         query = packageQuery,
-                        // 和应用页顶栏同一个开关：开了就按描述里的字也算命中。
-                        includeDescriptions = searchDescriptions,
                         // 位置记忆按「哪个范围」分开存：本机、全部机型、某一台他机，三者的列表不是同一份，
                         // 共用一个键会让从应用详情返回时落到另一份列表的第 N 行。
                         page = "ranking:" + resolvedScope.memoryKey(),
@@ -1123,10 +1111,6 @@ private fun romLine(profile: DeviceProfile): String {
 private fun PackageSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
-    /** 搜索是否也匹配应用介绍（设置里那颗按钮的值）。 */
-    includeDescriptions: Boolean = false,
-    /** 点那颗按钮：把上面的值反过来存进设置。 */
-    onToggleDescriptions: () -> Unit = {},
     onClose: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -1164,31 +1148,13 @@ private fun PackageSearchField(
                     Text(
                         // The rows print the package under the app's name, so this is the string
                         // people already have in front of them.
-                        text = if (includeDescriptions) {
-                            "搜索包名 / 名称 / 应用介绍"
-                        } else {
-                            "搜索包名，如 com.miui.daemon"
-                        },
+                        text = "搜索包名，如 com.miui.daemon",
                         fontSize = 12.sp,
                         color = scheme.onSurfaceVariant,
                     )
                 }
                 inner()
             },
-        )
-        // 这颗按钮就是「搜索也认应用介绍」：关着（默认）只按名字和包名，开着连描述里的词一起算命中。
-        // 状态存在设置里，所以应用页顶栏那个搜索是同一条规则——两处搜同一个东西，不该有两种答案。
-        Text(
-            text = "介绍",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (includeDescriptions) scheme.onPrimary else scheme.onSurfaceVariant,
-            modifier = Modifier
-                .padding(horizontal = 2.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(if (includeDescriptions) scheme.primary else scheme.surface)
-                .clickable { onToggleDescriptions() }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
         )
         IconButton(onClick = onClose) {
             Icon(
@@ -1218,8 +1184,6 @@ private fun RankingTab(
     offline: Boolean,
     /** Package filter from the switch bar: matched against the package name and the app's label. */
     query: String = "",
-    /** 过滤是否也认应用介绍那段文字（设置里那颗「介绍」按钮）；出厂关着。 */
-    includeDescriptions: Boolean = false,
     /** 位置记忆的键：这一份列表是哪个范围的（见 [rememberRememberedListState]）。 */
     page: String = "ranking",
     onOpenApp: (String) -> Unit,
@@ -1239,10 +1203,7 @@ private fun RankingTab(
         // list, it does not re-rank it.
         ranking.filter { row ->
             row.pkg.contains(needle, ignoreCase = true) ||
-                byPackage[row.pkg]?.name.orEmpty().contains(needle, ignoreCase = true) ||
-                // 「介绍」按钮开着时，描述里提到这个词的应用也算命中——搜"广告""定位"这类
-                // 只在描述里出现的说法才有用。
-                (includeDescriptions && byPackage[row.pkg]?.description.orEmpty().contains(needle, ignoreCase = true))
+                byPackage[row.pkg]?.name.orEmpty().contains(needle, ignoreCase = true)
         }
     }
 
@@ -1269,13 +1230,7 @@ private fun RankingTab(
             retryHint = offline,
         )
         rows.isEmpty() -> Text(
-            // 「介绍」开着时，一个字都没命中也可能是描述里没有它——那句话得说清搜的是哪些字段，
-            // 否则读者会以为列表坏了。
-            text = if (includeDescriptions) {
-                "这个机型下没有名称 / 包名 / 介绍包含「$needle」的方案。"
-            } else {
-                "这个机型下没有包名包含「$needle」的方案。"
-            },
+            text = "这个机型下没有包名包含「$needle」的方案。",
             fontSize = 11.sp,
             lineHeight = 15.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
