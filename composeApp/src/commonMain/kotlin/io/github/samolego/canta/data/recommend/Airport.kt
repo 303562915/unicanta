@@ -36,6 +36,13 @@ data class CommunityAirport(
     /** 这条有没有订阅链接可取（链接本身不在列表里，要先投票或打分）。 */
     val hasSubscription: Boolean = false,
     /**
+     * 过没过投票：true = 已进「机场推荐」，false = 还在「机场投票」的候选池里。
+     *
+     * 由后端判（`airport_entries.approved`），门槛与「应用推荐」同一套（见 [AirportBallot]）：
+     * 票数够、认同率够，`airport_vote` 会当场把它标上。客户端只照着这个字段分两格摆，不自己算。
+     */
+    val approved: Boolean = false,
+    /**
      * 详情：价格、流量、速度、协议、备注里的一段。列表只显示一行小字，点开卡片才连这份一起画。
      *
      * 它是列表回答里带的，不额外跑一趟网络——所以是一个字段而不是一次查询。
@@ -69,12 +76,13 @@ data class CommunityAirport(
     /**
      * 这一轮投票结束了没有。
      *
-     * 门槛和「应用投票」同一套（[AirportBallot]）：票数够、认同率也够就结束——再投只会把已经定下来
-     * 的结果推来推去，所以两边的按钮都收起来，换成「投票结束」。
+     * 两种来源算结束：后端已经标成 `approved`（见 [approved]，那才是准的），或者这一轮现场就够线
+     * （票数够、认同率也够，与「应用推荐」同一套数字）。结束后再投只会把定下来的结果推来推去，
+     * 所以两边的按钮都收起来，换成「投票结束」。
      */
     val ballotSettled: Boolean
-        get() = votes >= AirportBallot.VOTES_NEEDED &&
-            (agreeShare ?: 0f) >= AirportBallot.SHARE_NEEDED
+        get() = approved || (votes >= AirportBallot.VOTES_NEEDED &&
+            (agreeShare ?: 0f) >= AirportBallot.SHARE_NEEDED)
 
     /** 「★4.2 · 12 人评分」里的前半段，没人评分时是空串。 */
     val starsText: String
@@ -140,11 +148,13 @@ data class AirportDetail(
             devices.isBlank() && protocols.isBlank() && note.isBlank()
 }
 
-/** 一次投票之后服务器回答的三个数。 */
+/** 一次投票之后服务器回答的三个数（外加这一票有没有把这条推过线）。 */
 data class AirportVoteResult(
     val agrees: Int = 0,
     val disagrees: Int = 0,
     val mine: Boolean? = null,
+    /** 结算之后的 `approved`：true 就是这一票把它送进了「机场推荐」。 */
+    val approved: Boolean = false,
 )
 
 /** 一次打分之后服务器回答的平均分与人数。 */

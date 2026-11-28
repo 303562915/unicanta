@@ -651,7 +651,8 @@
     <string name="recommend_tab_vote">App votes</string>
     <string name="recommend_tab_airport">Airport picks</string>
     <string name="recommend_tab_airport_vote">Ranking</string>
-    <string name="recommend_airport_vote_empty">Nobody has shared an airport yet. Post the one you use under Airport picks and the first row shows up here.</string>
+    <string name="recommend_airport_vote_empty">No airports are waiting for votes. Post one under airport votes; once it clears the bar it moves to airport picks.</string>
+    <string name="recommend_airport_passed_empty">No airport has cleared the vote yet. Post one under airport votes: 45 votes with 80% agreeing and it shows up here.</string>
     <string name="recommend_airport_vote_foot">Ranked by agree votes; ties go to the entry with more ratings, then to the older one. Agree or disagree right on the row; open one for ratings, the subscription link and comments.</string>
     <string name="recommend_comment_empty">No comments yet. One sentence from someone who used it saves everyone else the trial.</string>
     <string name="recommend_comment_placeholder">Used it? Say a word</string>

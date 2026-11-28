@@ -857,9 +857,12 @@ internal fun voteStateOf(app: SuggestedApp): String = when {
  * The end of a proposal's run: it cleared the bar, so the ballot is closed and the two vote pills
  * give way to one state chip. There is nothing left to press — the counts are the record of how it
  * got here, not something a later tap is supposed to move.
+ *
+ * [label] is for the case where "closed" is not the whole story: an airport that passed the vote
+ * has also **moved to another tab**, and saying where it went is more useful than "投票结束".
  */
 @Composable
-internal fun SettledVote() {
+internal fun SettledVote(label: String = "投票结束") {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -869,7 +872,7 @@ internal fun SettledVote() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "投票结束",
+            text = label,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             color = scheme.onSecondaryContainer,

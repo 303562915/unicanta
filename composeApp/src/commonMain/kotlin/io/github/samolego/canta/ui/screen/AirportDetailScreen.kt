@@ -600,7 +600,10 @@ fun AirportDetailScreen(
                                     // 票数够、认同率也够：这一轮已经结束，两个按钮换成「投票结束」，
                                     // 与榜单那一行同一个判断（见 CommunityAirport.ballotSettled）。
                                     if (loaded.ballotSettled) {
-                                        SettledVote()
+                                        // 过线的说清去哪了：它已经不在候选池里，回列表要切到「机场推荐」找。
+                                    SettledVote(
+                                        label = if (loaded.approved) "已进「机场推荐」" else "投票结束",
+                                    )
                                     } else {
                                         AirportVotePill(
                                             label = "认同",

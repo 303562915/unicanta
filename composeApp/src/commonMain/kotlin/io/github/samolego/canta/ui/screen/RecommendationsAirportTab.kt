@@ -52,6 +52,7 @@ import io.github.samolego.canta.data.community.PlanRepository
 import io.github.samolego.canta.data.recommend.AirportBallot
 import io.github.samolego.canta.data.recommend.CommunityAirport
 import io.github.samolego.canta.generated.resources.Res
+import io.github.samolego.canta.generated.resources.recommend_airport_passed_empty
 import io.github.samolego.canta.generated.resources.recommend_airport_vote_empty
 import io.github.samolego.canta.generated.resources.recommend_airport_vote_foot
 import io.github.samolego.canta.generated.resources.recommend_tab_airport
@@ -283,8 +284,14 @@ internal fun RecommendationsAirportTab(
                     agrees = fresh.agrees,
                     disagrees = fresh.disagrees,
                     mine = fresh.mine,
+                    approved = fresh.approved,
                 )
                 airports = airports.map { if (it.id == updated.id) updated else it }
+                // 这一票把它送过线了：它已经从候选池搬到「机场推荐」，说一句，
+                // 否则人只会看到那一行凭空消失。
+                if (fresh.approved && !entry.approved) {
+                    platform.showMessage("「${entry.name}」票数够了，已进「机场推荐」")
+                }
             }
         }
     }
@@ -295,20 +302,25 @@ internal fun RecommendationsAirportTab(
         }
 
         else -> Column(modifier = modifier.fillMaxSize()) {
-            // 榜单的顺序：认同票多的排前面；票一样多时看评分人数（评的人多说明更被用过），
-            // 再一样就按创建时间——先上来的排前面，免得同票的两家每次刷新都换位置。
-            // 后端给的是 ISO 时间串，升序即「早的在先」；缺时间的排到最后，不抢位置。
-            val ranked = remember(airports) {
-                airports.sortedWith(
+            // 两格现在是**同一套逻辑的两端**，跟「应用推荐 / 应用投票」一样：
+            //
+            //   * 「机场投票」= 候选池：还没过线的机场 + 「分享一个机场」的入口。投票、看差几票；
+            //   * 「机场推荐」= 已经过线的机场：只摆出来，点进去看详情。
+            //
+            // 界线是后端的 `approved`，不是客户端自己算的票数——门槛的判定只在服务端做一次
+            // （`private.airport_settle`），两台设备看到的"过没过"因此不会各算各的。
+            val pending = remember(airports) { airports.filter { !it.approved } }
+            val passed = remember(airports) { airports.filter { it.approved } }
+            // 候选池按票排（离过线最近的在前，要投就看最接近的那几条）；推荐那一格按后端的顺序。
+            val ranked = remember(pending) {
+                pending.sortedWith(
                     compareByDescending<CommunityAirport> { it.agrees }
                         .thenByDescending { it.ratingCount }
                         .thenBy { it.createdAt.ifEmpty { "9999" } },
                 )
             }
             val boardTitle = stringResource(Res.string.recommend_tab_airport_vote)
-            // 两个 tab 用的是同一份机场，但画的东西不一样：投票榜按票排，推荐列表按后端的顺序
-            // （新的在前）。所以「一共几条」也得跟着各自那一份算，否则页脚会报错数。
-            val ordered: List<CommunityAirport> = if (board) ranked else airports
+            val ordered: List<CommunityAirport> = if (board) ranked else passed
             val shownCount = (visiblePages * AirportPageSize).coerceAtMost(ordered.size)
             val hasMore = shownCount < ordered.size
 
@@ -318,8 +330,19 @@ internal fun RecommendationsAirportTab(
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
                 if (board) {
-                    // 投票榜：名次、名字、一行小字。点一条进整页详情——投票、打分、取订阅、
-                    // 评论都在那里，这一层只负责排名。
+                    // 候选池：分享入口 + 一行一个候选，行里直接投。
+                    item(key = "airport-new") {
+                        EntryRow(
+                            title = "分享一个机场",
+                            hint = "贴官网和订阅就行；票数够了才会进「机场推荐」。",
+                            inset = 16.dp,
+                            onClick = {
+                                airportError = null
+                                airportComposer = true
+                            },
+                        )
+                    }
+
                     item(key = "airport-vote-head") {
                         AirportSectionHeader(label = boardTitle, count = ranked.size)
                     }
@@ -358,52 +381,28 @@ internal fun RecommendationsAirportTab(
                         )
                     }
                 } else {
-                    item(key = "airport-new") {
-                        EntryRow(
-                            title = "分享一个机场",
-                            hint = "贴官网和订阅就行；订阅只给投过票、打过分的人。",
-                            inset = 16.dp,
-                            onClick = {
-                                airportError = null
-                                airportComposer = true
-                            },
-                        )
-                    }
-
                     item(key = "airport-head") {
                         AirportSectionHeader(
                             label = stringResource(Res.string.recommend_tab_airport),
-                            count = airports.size,
+                            count = passed.size,
                         )
                     }
 
-                    if (airports.isEmpty()) {
+                    if (passed.isEmpty()) {
                         item(key = "airport-empty") {
                             Note(
-                                text = error ?: "还没有人分享机场。你在用的那个，贴上来让大家评一评。",
+                                text = error ?: stringResource(Res.string.recommend_airport_passed_empty),
                                 inset = 16.dp,
                             )
                         }
                     }
 
-                    // 推荐这一格只做一件事：把别人贴过的机场列出来，点一下直接去它的网站。
-                    // 投票、打分、订阅、评论都在「机场投票」点进去的那一页，这里不重复一遍——
-                    // 一条能点的行里再塞四五个小按钮，点哪儿算点哪儿就说不清了。
-                    items(airports.take(shownCount), key = { "airport-${it.id}" }) { entry ->
+                    // 推荐这一格只摆"已经过线"的：一行一个名字，点进去是详情（官网在详情页里）。
+                    items(passed.take(shownCount), key = { "airport-${it.id}" }) { entry ->
                         AirportRecommendRow(
                             entry = entry,
                             inset = 16.dp,
-                            onOpenUrl = {
-                                if (entry.url.isNotBlank()) {
-                                    platform.openUrl(entry.url)
-                                } else {
-                                    // 详情页是只读的，那里补不了官网；能补的是上面那张「分享一个机场」
-                                    // 表单——后端按「同一身份 + 同一个名字」认成修改，不会多出一条。
-                                    platform.showMessage(
-                                        "这一条还没填官网；用同一个名字在「分享一个机场」里重发一次就能补上。",
-                                    )
-                                }
-                            },
+                            onClick = { onOpenAirport(entry) },
                         )
                     }
 
@@ -411,9 +410,9 @@ internal fun RecommendationsAirportTab(
                         AirportFoot(
                             hasMore = hasMore,
                             shown = shownCount,
-                            total = airports.size,
-                            doneLabel = "想让哪家排前面，就去「机场投票」投一票。",
-                            moreLabel = "已经拉出 $shownCount / ${airports.size} 家",
+                            total = passed.size,
+                            doneLabel = "这些都是投票过线的。想推新的，去「机场投票」贴一个、投几票。",
+                            moreLabel = "已经拉出 $shownCount / ${passed.size} 家",
                             onLoadMore = { visiblePages++ },
                         )
                     }
@@ -684,6 +683,8 @@ private fun AirportVoteRow(
 internal fun airportVoteStateOf(entry: CommunityAirport): String {
     val share = entry.agreeShare
     val ballot = when {
+        // 已经过线：它在另一格（「机场推荐」），这一行说的应该是"去哪了"，不是"还差几票"。
+        entry.approved -> "已进「机场推荐」 · 认同率 ${((share ?: 0f) * 100).toInt()}%"
         entry.ballotSettled -> "投票结束 · 认同率 ${((share ?: 0f) * 100).toInt()}%"
         entry.missingVotes > 0 ->
             "还差 ${entry.missingVotes} 票" + (share?.let { " · 认同 ${(it * 100).toInt()}%" } ?: "")
@@ -740,12 +741,12 @@ private fun AirportFoot(
     }
 }
 
-/** 推荐那一格的一行：只有名字、类型和一行小字，整行点开是它的网站。 */
+/** 推荐那一格的一行：只有名字、类型和一行小字，整行点开是它的详情（官网在详情页里）。 */
 @Composable
 private fun AirportRecommendRow(
     entry: CommunityAirport,
     inset: Dp,
-    onOpenUrl: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -754,7 +755,7 @@ private fun AirportRecommendRow(
             .padding(start = inset, end = inset, top = 4.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(scheme.surfaceContainerLow)
-            .clickable(role = Role.Button, onClick = onOpenUrl)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -809,7 +810,7 @@ private fun AirportRecommendRow(
             )
         }
         Spacer(modifier = Modifier.width(6.dp))
-        // 一个「›」而不是「官网」两个字：这一行整条都是入口，再写一个按钮像是有两件事。
+        // 整行可点，右边只画一个「›」：再写「详情」两个字，等于在一件事上放两个入口。
         Text(
             text = "›",
             fontSize = 18.sp,
