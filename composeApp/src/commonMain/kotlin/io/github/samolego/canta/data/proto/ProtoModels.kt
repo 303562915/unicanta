@@ -360,6 +360,15 @@ data class AppSettingsProto(
      * 为什么没有反过来命名：proto3 省略零值，默认值只能是 `false`，而这里的出厂状态正是"直接操作"。
      */
     @ProtoNumber(57) val recordTapOpensDetail: Boolean = false,
+    /**
+     * 搜索时也匹配应用介绍（`plans`/UAD 名单里那段描述），出厂关着。
+     *
+     * 关着时搜索只认名字与包名——那是眼睛在屏幕上能看到的东西；打开后「广告」「定位」这类词
+     * 也能搜出描述里提到它的应用。开关在安全规则页的搜索框里（见 `PackageSearchField`）。
+     * 之所以不做成默认打开：描述是整段英文/长文本，随手一个 `a` 就会命中几乎全部应用，
+     * 搜索看起来像失效了。
+     */
+    @ProtoNumber(58) val searchDescriptions: Boolean = false,
 )
 
 /**

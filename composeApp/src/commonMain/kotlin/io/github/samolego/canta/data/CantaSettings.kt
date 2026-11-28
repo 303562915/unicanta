@@ -304,6 +304,11 @@ class CantaSettings(storage: AppBlobStorage) {
      * 为什么反过来命名见 [AppSettingsProto.appTapOpensDialog]。
      */
     val appTapOpensDialogFlow: Flow<Boolean> = field { it.appTapOpensDialog }
+    /**
+     * 搜索是否也匹配应用介绍那段文字（`true`）；出厂 `false`，只有列表页与排行页搜索框读到它。
+     * 见 [AppSettingsProto.searchDescriptions]。
+     */
+    val searchDescriptionsFlow: Flow<Boolean> = field { it.searchDescriptions }
     /** The boot the records check last ran on; see [AppSettingsProto.recordsBootId]. */
     val recordsBootIdFlow = field { it.recordsBootId }
     /** The vote queue as this install last saw it; see [AppSettingsProto.votesSeen]. */
@@ -510,6 +515,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setRecordTapOpensDetail(detail: Boolean) = update { it.copy(recordTapOpensDetail = detail) }
     /** 列表里点一个包：弹小窗（`true`）或直接进详情页（`false`，出厂）。 */
     suspend fun setAppTapOpensDialog(showsDialog: Boolean) = update { it.copy(appTapOpensDialog = showsDialog) }
+    /** 搜索时是否也匹配应用介绍那段文字；出厂 `false`。 */
+    suspend fun setSearchDescriptions(enabled: Boolean) = update { it.copy(searchDescriptions = enabled) }
     suspend fun setRecordsBootId(bootId: String) = update { it.copy(recordsBootId = bootId) }
 
     suspend fun setVotesSeen(fingerprint: String) = update { it.copy(votesSeen = fingerprint) }
