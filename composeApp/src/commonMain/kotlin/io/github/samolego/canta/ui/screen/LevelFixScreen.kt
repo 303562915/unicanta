@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -305,7 +304,7 @@ fun LevelFixScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                         BallotGroup(
-                            title = "级别 · 四选一",
+                            title = "级别",
                             dimension = LevelBallotDimensions.LEVEL,
                             options = LEVEL_OPTIONS,
                             ballots = ballots,
@@ -314,7 +313,7 @@ fun LevelFixScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         BallotGroup(
-                            title = "后果 · 二选一",
+                            title = "后果",
                             dimension = LevelBallotDimensions.IMPACT,
                             options = IMPACT_OPTIONS,
                             ballots = ballots,
@@ -323,7 +322,7 @@ fun LevelFixScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         BallotGroup(
-                            title = "系统应用 · 是 / 否",
+                            title = "系统应用",
                             dimension = LevelBallotDimensions.SYSTEM,
                             options = SYSTEM_OPTIONS,
                             ballots = ballots,
@@ -525,11 +524,10 @@ private val SYSTEM_OPTIONS: List<BallotOption> = listOf(
 )
 
 /**
- * 三个维度共用的选项块：标题 + 一项一行（徽标 + 名字 + 右侧百分比 + 比例条）。
+ * 三个维度共用的选项块：标题 + 一行两个的选项，每项右侧是**本维度内**的百分比。
  *
  * 百分比按维度各自归一（级别四项加起来 100%，后果两项加起来 100%），不跨维度相加——
- * 那是三个问题，不是一道多选题。一项一行是因为每行都要放徽标和百分比，挤成两列会把
- * "可能卡在开机"截成"可能卡在…"。
+ * 那是三个问题，不是一道多选题。一行两个：每项只要放得下徽标、名字和一个百分比就够了。
  */
 @Composable
 private fun BallotGroup(
@@ -547,59 +545,59 @@ private fun BallotGroup(
             style = FlText.caption2.copy(fontWeight = FlText.emphasized),
             color = scheme.onSurfaceVariant,
         )
-        options.forEach { option ->
-            val picked = ballots?.mineOf(dimension) == option.choice
-            val percent = ballots?.percent(dimension, option.choice) ?: 0
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    // 选中用统一的主题色；未选中就是这一页原来的底色，徽标各自保留原本的颜色。
-                    .background(
-                        if (picked) scheme.primary.copy(alpha = 0.12f)
-                        else FlSurfaceLevel.Inset.colorOf(scheme),
-                    )
-                    .border(
-                        width = if (picked) 1.5.dp else 1.dp,
-                        color = if (picked) scheme.primary else Color.Transparent,
-                        shape = RoundedCornerShape(10.dp),
-                    )
-                    .clickable(enabled = enabled) { onPick(option.choice) }
-                    .padding(horizontal = 10.dp, vertical = 7.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 徽标保持它本来的颜色（那是它的身份）；选中只把这一块的底色、边框、
-                    // 名字和百分比换成主题色，两者不冲突。
-                    when (val badge = option.badge) {
-                        is BallotBadge.Level -> AppBadge(badge.level)
-                        is BallotBadge.Impact -> BadgeImpactTag(badge.impact)
-                        BallotBadge.SystemApp -> SystemBadge()
-                        BallotBadge.None -> Unit
+        options.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                pair.forEach { option ->
+                    val picked = ballots?.mineOf(dimension) == option.choice
+                    val percent = ballots?.percent(dimension, option.choice) ?: 0
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            // 选中用统一的主题色；未选中就是这一页原来的底色，徽标各自保留原本的颜色。
+                            .background(
+                                if (picked) scheme.primary.copy(alpha = 0.12f)
+                                else FlSurfaceLevel.Inset.colorOf(scheme),
+                            )
+                            .border(
+                                width = if (picked) 1.5.dp else 1.dp,
+                                color = if (picked) scheme.primary else Color.Transparent,
+                                shape = RoundedCornerShape(10.dp),
+                            )
+                            .clickable(enabled = enabled) { onPick(option.choice) }
+                            .padding(horizontal = 9.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 徽标保持它本来的颜色（那是它的身份）；选中只把这一块的底色、边框、
+                        // 名字和百分比换成主题色，两者不冲突。
+                        when (val badge = option.badge) {
+                            is BallotBadge.Level -> AppBadge(badge.level)
+                            is BallotBadge.Impact -> BadgeImpactTag(badge.impact)
+                            BallotBadge.SystemApp -> SystemBadge()
+                            BallotBadge.None -> Unit
+                        }
+                        if (option.badge !is BallotBadge.None) Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = option.label,
+                            style = FlText.caption2.copy(
+                                fontWeight = if (picked) FlText.emphasized else null,
+                            ),
+                            color = if (picked) scheme.primary else scheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        // 右侧百分比：这一项在本维度里占多少。
+                        Text(
+                            text = "$percent%",
+                            style = FlText.caption2.copy(fontWeight = FlText.emphasized),
+                            color = if (picked) scheme.primary else scheme.onSurfaceVariant,
+                        )
                     }
-                    if (option.badge !is BallotBadge.None) Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = option.label,
-                        style = FlText.caption1.copy(
-                            fontWeight = if (picked) FlText.emphasized else null,
-                        ),
-                        color = if (picked) scheme.primary else scheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    // 右侧百分比：这一项在本维度里占多少。
-                    Text(
-                        text = "$percent%",
-                        style = FlText.caption2.copy(fontWeight = FlText.emphasized),
-                        color = if (picked) scheme.primary else scheme.onSurfaceVariant,
-                    )
                 }
-                Spacer(Modifier.height(4.dp))
-                VoteBar(
-                    fraction = percent / 100f,
-                    colour = if (picked) scheme.primary else scheme.outlineVariant,
-                )
+                // 单数行：占住右半格，别让最后一项撑满整行。
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -729,33 +727,6 @@ private fun LevelFixCard(
             style = FlText.caption2,
             color = scheme.onSurfaceVariant,
         )
-    }
-}
-
-/**
- * 一根 4dp 的比例条：填充比例由调用方给（这一组选项在本维度里的占比），颜色也跟着选中状态走。
- *
- * 比再写一串"还差 23 票"更好读：差得多长一眼就看得出来，差得少条纹就快贴到头。
- */
-@Composable
-private fun VoteBar(fraction: Float, colour: Color) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(4.dp)
-            .clip(RoundedCornerShape(percent = 50))
-            .background(colour.copy(alpha = 0.16f)),
-    ) {
-        val filled = fraction.coerceIn(0f, 1f)
-        if (filled > 0f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(filled)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(percent = 50))
-                    .background(colour),
-            )
-        }
     }
 }
 
