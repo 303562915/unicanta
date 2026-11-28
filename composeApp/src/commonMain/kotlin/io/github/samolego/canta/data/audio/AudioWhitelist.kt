@@ -86,6 +86,12 @@ object AudioWhitelist {
     /** 能不能提权：脚本给的三态（`yes` / `maybe` / `no`），见 `audio_whitelist_state.sh` 里那段判断。 */
     internal const val TAG_ROOT = "##ROOT##"
 
+    /** 除 `/odm` 以外可能可写的音频目录（厂商常留一个做覆盖层）。 */
+    internal const val TAG_ALT_DIR = "##ALTDIR##"
+
+    /** 音效配置的头：里面有没有按应用的 effect，决定「能不能免 root 关掉」。 */
+    internal const val TAG_FX = "##FX##"
+
     /** Reads the script out of the bundled resources; the shell text never lands in Kotlin. */
     suspend fun script(): String = Res.readBytes(RESOURCE_PATH).decodeToString()
 
@@ -231,6 +237,8 @@ object AudioWhitelist {
                 line.startsWith(TAG_XML) -> diagnostics += "xml: " + line.removePrefix(TAG_XML).trim()
                 line.startsWith(TAG_DIRECTORY) -> diagnostics += "dir " + line.removePrefix(TAG_DIRECTORY).trim()
                 line.startsWith(TAG_FILE) -> diagnostics += "file " + line.removePrefix(TAG_FILE).trim()
+                line.startsWith(TAG_ALT_DIR) -> diagnostics += "altdir " + line.removePrefix(TAG_ALT_DIR).trim()
+                line.startsWith(TAG_FX) -> diagnostics += "fx " + line.removePrefix(TAG_FX).trim().take(300)
                 else -> Unit
             }
         }
