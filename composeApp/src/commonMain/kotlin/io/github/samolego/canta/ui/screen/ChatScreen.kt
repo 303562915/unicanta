@@ -45,6 +45,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -499,8 +500,31 @@ fun ChatScreen(
     }
     var loadError by remember { mutableStateOf<String?>(null) }
     var draft by rememberSaveable(conversationId) { mutableStateOf("") }
+    /**
+     * 「有一条请求正在飞」。
+     *
+     * **现在恒为 false**：改成先画后发（见 `sendOptimistically`）之后，输入框不该再被上一条
+     * 的请求挡住——人可以直接接着打下一条，每一条自己带圈。保留这个变量是因为发送按钮、
+     * 输入栏还在按它算 enabled，将来要按"离屏重试"收紧时也是挂在这里。
+     */
     var sending by remember { mutableStateOf(false) }
     var sendFailed by remember { mutableStateOf(false) }
+    /**
+     * 已经画在屏幕上、但还没拿到服务端 id 的那几条（乐观发送）。
+     *
+     * 为什么要它：以前是「等 `sendMessage` 回来才把消息放进列表」，于是国内这条链路慢的时候，
+     * 人已经按了发送、输入框清空、屏幕却一个字都没多出来，看起来像没发出去——只能干等。
+     * 现在按下去就先画一条本机气泡（id 是负数，只在这一页里存在），带个转圈；服务端回来了
+     * 用真消息替换掉它，失败就把它标成「发送失败，点这条重发」。
+     *
+     * id 用负数是为了不和真消息撞 key：`key = message.id` 一旦重复，LazyColumn 会直接抛
+     * `Key ... was already used` 把整页带走（2026-11-28 就是这么崩的）。
+     */
+    var pendingSends by remember(conversationId) { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    /** 上面那几条里，服务端已经明确拒了的那些（id 为负）。点了重发就从这里拿掉。 */
+    var pendingFailed by remember(conversationId) { mutableStateOf<Set<Long>>(emptySet()) }
+    /** 本机临时 id 的发号器：只增不减，换会话也接着用，不会因为重进页面就重号。 */
+    var pendingSeq by remember { mutableStateOf(0L) }
     var loadingEarlier by remember { mutableStateOf(false) }
     // 顶栏「更多」菜单里的两个开关。状态来自会话列表那一行——会话详情里没有置顶/免打扰这两列，
     // 而菜单要按真实状态说话（已经置顶就该写「取消置顶」，写反了等于每次点都在猜）。
@@ -958,7 +982,10 @@ fun ChatScreen(
      *
      * 首屏不算「新消息」：那时列表还没量出高度，`scrollToItem` 落不到位，交给下面那段「首屏落底」。
      */
-    LaunchedEffect(messages.lastOrNull()?.id) {
+    LaunchedEffect(messages.lastOrNull()?.id, pendingSends.size) {
+        // 乐观发送的那一条也算"来了新消息"：它在列表最底部（自己那一格），人不滚下去就看不见，
+        // 那正是这条改动要解决的"按了发送像没反应"。所以本机泡泡一出现就落一次底。
+        if (pendingSends.isNotEmpty() && atBottom) listState.scrollToItem(0)
         val last = messages.lastOrNull() ?: return@LaunchedEffect
         if (last.id != tailId) {
             tailId = last.id
@@ -1083,44 +1110,82 @@ fun ChatScreen(
         if (atBottom && messages.isNotEmpty()) settleSeen()
     }
 
-    /** 发一条：写成功才清空输入框，写失败把输入留着，别让人重打一遍。 */
+    /**
+     * 乐观发送：先把这条画在屏幕上（带转圈），再去请求后端。
+     *
+     * 顺序是刻意的——以前反过来（等回了才画），国内链路慢的时候人按了发送、输入框清了、
+     * 屏幕一动不动，看着像没发出去。现在点下去立刻有反馈，慢只慢在那个圈转多久。
+     *
+     * 拿到真消息之后：把本机这条（负 id）**移除**，再用 [chatAppend] 把真消息并进去。
+     * 不能直接 `+`：同一条也可能被轮询/Realtime 先一步拉进来，重复 id 会让 LazyColumn
+     * 抛 `Key ... was already used` 把整页带走。
+     */
+    val deliver: (ChatMessage) -> Unit = { local ->
+        scope.launch {
+            val sent = repository.sendMessage(
+                owner = owner,
+                conversation = conversationId,
+                body = local.body,
+                mentions = local.mentions,
+                // 回的是哪一条。null 就是普通发言，后端那边 `p_reply_to` 走默认值。
+                replyTo = local.replyTo,
+            )
+            if (sent != null) {
+                pendingSends = pendingSends.filterNot { it.id == local.id }
+                pendingFailed = pendingFailed - local.id
+                messages = chatAppend(messages, if (local.kind == StickerKind) sent.copy(kind = StickerKind) else sent)
+                // 这条点到了 @群聊AI：自己催几次，别等 cron 那一分钟。
+                if (isGroup && ChatAiTrigger.containsMatchIn(local.body)) {
+                    scope.launch { waitForAiReply() }
+                }
+            } else {
+                // 没发出去就留着那一条：标成失败，点它可以重发，正文不会丢。
+                pendingFailed = pendingFailed + local.id
+                sendFailed = true
+            }
+        }
+    }
+
+    /** 把一条本机气泡放上去并发出去；[replyToId] / [replySummary] 是引用块要写的东西。 */
+    val sendOptimistically: (String, List<String>, Long?, String, String, String) -> Unit =
+        { body, mentions, replyToId, replySummary, replyName, kind ->
+            pendingSeq = pendingSeq + 1
+            val local = ChatMessage(
+                id = -pendingSeq,
+                sender = owner,
+                senderName = userName,
+                body = body,
+                // 时间留空：这一条还没被后端落库，编一个时间只会在时间分隔线上画错位置。
+                createdAt = "",
+                kind = kind,
+                mentions = mentions,
+                replyTo = replyToId,
+                replyBody = replySummary,
+                replySenderName = replyName,
+            )
+            pendingSends = pendingSends + local
+            pendingFailed = pendingFailed - local.id
+            deliver(local)
+        }
+
+    /** 发一条：**先画后发**——输入框立刻清空，气泡立刻带圈，后端慢只体现在圈多久。 */
     val send: () -> Unit = {
         val body = draft.trim()
         // 名字/头像没设完：输入栏已经被 [GateComposerBar] 换掉了，这里挡住的是回车与粘贴那条路。
         if (!setupGate.ready) {
             imageHint = setupGate.refusal
-        } else if (body.isNotEmpty() && !sending) {
-            scope.launch {
-                sending = true
-                sendFailed = false
-                val sent = repository.sendMessage(
-                    owner = owner,
-                    conversation = conversationId,
-                    body = body,
-                    mentions = pendingMentions,
-                    // 回的是哪一条。null 就是普通发言，后端那边 `p_reply_to` 走默认值。
-                    replyTo = replyTarget?.id,
-                )
-                if (sent != null) {
-                    // **不能直接 `+`**：这条消息可能已经被轮询/Realtime 先一步拉进来了（后端先
-                    // 落库、再把 id 返回，两件事不同步），直接追加就会让同一个 id 在列表里出现两次。
-                    // LazyColumn 的 key 是 `message.id`，重复 key 会让 Compose 当场抛
-                    // `Key "1105" was already used` 把整个页面带走（2026-11-28 群里发消息闪退）。
-                    messages = chatAppend(messages, sent)
-                    draft = ""
-                    // 名单跟着草稿一起清：下一条要 @ 谁得重新点。
-                    pendingMentions = emptyList()
-                    // 引用也跟着清：这条已经发出去了，下一条默认不带引用。
-                    replyTarget = null
-                    // 这条点到了 @群聊AI：自己催几次，别等 cron 那一分钟。
-                    if (isGroup && ChatAiTrigger.containsMatchIn(body)) {
-                        scope.launch { waitForAiReply() }
-                    }
-                } else {
-                    sendFailed = true
-                }
-                sending = false
-            }
+        } else if (body.isNotEmpty()) {
+            val mentions = pendingMentions
+            // 引用块要的那两样在清掉 replyTarget 之前取好。
+            val summary = replyTarget?.body?.take(60).orEmpty()
+            val name = replyTarget?.label.orEmpty()
+            sendOptimistically(body, mentions, replyTarget?.id, summary, name, "text")
+            draft = ""
+            // 名单跟着草稿一起清：下一条要 @ 谁得重新点。
+            pendingMentions = emptyList()
+            // 引用也跟着清：这条已经发出去了，下一条默认不带引用。
+            replyTarget = null
+            sendFailed = false
         }
     }
 
@@ -1134,29 +1199,24 @@ fun ChatScreen(
         // 快捷表情也只是一句话：闸门没开就同样发不出去，还要说清差哪一步。
         if (!setupGate.ready) {
             imageHint = setupGate.refusal
-        } else if (!sending && conversationId > 0L) {
-            scope.launch {
-                sending = true
-                sendFailed = false
-                val sent = repository.sendMessage(
-                    owner = owner,
-                    conversation = conversationId,
-                    body = emotion.token,
-                    mentions = emptyList(),
-                    replyTo = replyTarget?.id,
-                )
-                if (sent != null) {
-                    // 打上本机标记：这一条画成大贴纸。后端不认这个 kind，刷新合并时由
-                    // [mergeMessages] 保住它。同样走 [chatAppend] 去重——理由见上面那条发送。
-                    messages = chatAppend(messages, sent.copy(kind = StickerKind))
-                    // 发过的进「最近使用」，和面板里点过一颗是同一种记法。
-                    rememberEmotionPick(emotion.name)
-                    replyTarget = null
-                } else {
-                    sendFailed = true
-                }
-                sending = false
-            }
+        } else if (conversationId > 0L) {
+            // 和图、文字一样先画后发：那一颗立刻出现在气泡里，圈转完就落定。
+            // 打上的 kind 是**本机标记**：这一条画成大贴纸，后端不认，刷新合并时由
+            // [mergeMessages] 保住它。
+            val summary = replyTarget?.body?.take(60).orEmpty()
+            val name = replyTarget?.label.orEmpty()
+            sendOptimistically(
+                emotion.token,
+                emptyList(),
+                replyTarget?.id,
+                summary,
+                name,
+                StickerKind,
+            )
+            // 发过的进「最近使用」，和面板里点过一颗是同一种记法。
+            rememberEmotionPick(emotion.name)
+            replyTarget = null
+            sendFailed = false
         }
     }
 
@@ -1569,6 +1629,32 @@ fun ChatScreen(
                         // 往上长，不会吊在屏幕顶上。
                         reverseLayout = true,
                     ) {
+                        // 还没拿到服务端 id 的那几条：先画出来，带转圈；失败就标红、点一下重发。
+                        // reverseLayout 下先声明的 item 在**底部**，所以它正好贴在输入框上方，
+                        // 也不会和真消息的 key 撞（这里用的是负 id）。
+                        items(pendingSends.asReversed(), key = { local -> local.id }) { local ->
+                            val failed = local.id in pendingFailed
+                            ChatBubble(
+                                repository = repository,
+                                imageCache = decodedImages,
+                                message = local,
+                                mine = true,
+                                myLabel = userName.ifBlank { "我" },
+                                myAvatarUrl = personAvatarUrl(owner),
+                                myAvatarBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                myAvatarLetterColor = Color.White,
+                                showSender = false,
+                                status = if (failed) ChatSendStatus.FAILED else ChatSendStatus.SENDING,
+                                onRetry = if (failed) {
+                                    {
+                                        pendingFailed = pendingFailed - local.id
+                                        deliver(local)
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
                         // 日期分隔画在每条消息自己的 item 里，不额外占一个索引：
                         // 这样 layoutInfo 里的索引仍然与 ordered 一一对应，下面的"在不在底"才算得准。
                         itemsIndexed(ordered, key = { _, message -> message.id }) { index, message ->
@@ -2781,6 +2867,13 @@ private fun ChatBubble(
     onMyAvatarClick: (() -> Unit)? = null,
     /** 这条消息的 @ 名单里有我：名字后面挂一个「@你」。 */
     mentionsMe: Boolean = false,
+    /**
+     * 这一条在发送链路上的状态：正常消息是 [ChatSendStatus.SENT]；
+     * 乐观发送的那几条分别是 [ChatSendStatus.SENDING]（圈还在转）和 [ChatSendStatus.FAILED]。
+     */
+    status: ChatSendStatus = ChatSendStatus.SENT,
+    /** 失败时点这一条重发；[status] 不是 FAILED 时不用给。 */
+    onRetry: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val menuable = onLongPress != null || onReply != null || onForward != null ||
@@ -3067,6 +3160,37 @@ private fun ChatBubble(
                     color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(top = 3.dp),
                 )
+            }
+            // 发送状态挂在自己这条下面：转圈 = 正在发（后端还没落库），红字 = 没发出去、点一下重发。
+            // 它和回执不同时出现——回执要说的是"对方看到了"，这一条还没到对方那儿。
+            if (status != ChatSendStatus.SENT) {
+                val failed = status == ChatSendStatus.FAILED
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(top = 3.dp)
+                        .then(
+                            if (failed && onRetry != null) {
+                                Modifier.clickable(role = Role.Button, onClick = onRetry)
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    if (!failed) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(10.dp),
+                            strokeWidth = 1.5.dp,
+                            color = colors.primary,
+                        )
+                    }
+                    Text(
+                        text = if (failed) "发送失败，点这条重发" else "发送中…",
+                        fontSize = 10.sp,
+                        color = if (failed) colors.error else colors.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
             }
         }
         // 自己那一侧的头像：群聊里别人的名字靠 showSender 那行小字说清，私聊本来只有两个人，
@@ -4203,6 +4327,14 @@ private fun chatErrorOf(reason: String?, network: Boolean): String? = when {
     !reason.isNullOrBlank() -> "后端没有返回消息：$reason"
     else -> null
 }
+
+/**
+ * 一条消息在**本机**发送链路上的状态。
+ *
+ * 只有乐观发送的那几条会离开 [SENT]：它们先在屏幕上占好位置（带转圈），拿到服务端 id 之后
+ * 由真消息替换掉；后端明确拒了才变 [FAILED]，点那一条就重发。
+ */
+private enum class ChatSendStatus { SENT, SENDING, FAILED }
 
 /**
  * 服务端允许撤回多久。这条线在 `message_delete` 里，客户端改不动也不该去改。
