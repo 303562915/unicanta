@@ -5712,6 +5712,18 @@
   "target": "com.oplus.olc"
  },
  {
+  "author": "蔡徐坤",
+  "author_id": "11578",
+  "body": "这个跟启用MIUI优化有关，关闭了 MIUI优化之后就是这个软件替代小米的安装管理程序",
+  "created_at": "2026-11-28T04:50:02.102614+00:00",
+  "device_model": "REDMI K80 Pro",
+  "id": 821,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.3",
+  "target": "com.android.packageinstaller"
+ },
+ {
   "author": "#10829",
   "author_id": "10829",
   "body": "👏👏👏",
