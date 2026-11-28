@@ -1445,7 +1445,19 @@ class AndroidCantaPlatform(
             toast("$channel 装上了（前面 ${attempts.size} 条通道没成）")
         }
 
-        suspend fun tryChannel(channel: String, install: suspend () -> String?): Boolean {
+        /**
+         * 试一条通道；[quiet] 的通道失败时只写日志、不弹 toast。
+         *
+         * 为什么要 quiet：Android 10 起 `pm install` 由 system_server 执行，SELinux 不允许它读
+         * FUSE，`/storage/emulated/…` 上的通道**注定**被拒（`avc: denied … fuse`）。这种"预期内
+         * 的拒绝"以前每条都弹一句红字，用户看到的是"又报错了"，其实安装下一步就成了。报告里
+         * 留着原文，屏幕上不再喊。
+         */
+        suspend fun tryChannel(
+            channel: String,
+            quiet: Boolean = false,
+            install: suspend () -> String?,
+        ): Boolean {
             // A channel that throws is a channel that failed: an out-of-memory base64 push or a
             // runtime that dies mid-call must become one report line, not an aborted batch.
             LogUtils.i(LogUtils.UPDATE_TAG, "试通道：$channel")
@@ -1463,7 +1475,7 @@ class AndroidCantaPlatform(
             // 这一条通道没成，用户要看得见：以前只写 LogUtils（"print"），屏幕上什么也没有，
             // 于是整个安装过程像卡住。一句话说完一条通道，下一条通道接着试。
             LogUtils.w(LogUtils.UPDATE_TAG, "$channel 装不上：$failure")
-            toast("$channel 装不上：${summarized(failure).take(60)}")
+            if (!quiet) toast("$channel 装不上：${summarized(failure).take(60)}")
             return false
         }
 
@@ -1478,37 +1490,103 @@ class AndroidCantaPlatform(
             LogUtils.w(LogUtils.UPDATE_TAG, "Shizuku 没在运行：三条 Shizuku 通道都不试，交给系统安装器")
             attempts["Shizuku"] = "没在运行：已改用系统安装器"
         } else {
-            if (tryChannel("Shizuku·应用目录") {
-                    onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
-                    runInstall(file.absolutePath)
-                }) {
-                announceSuccess("Shizuku·应用目录")
-                file.delete()
-                return@withContext InstallAttempt.Success
-            }
+            // Android 10（Q）起 `pm install` 的执行者是 **system_server**，SELinux 明确不许可它
+            // 读 FUSE：
+            //   avc: denied { read } for scontext=u:r:system_server:s0 tcontext=u:object_r:fuse:s0
+            // 于是 `/storage/emulated/…` 上的两条通道在 Q+ 上**注定**失败（直接装、下载目录都一样），
+            // 它们只会在日志里堆一段 avc，用户屏幕上看到两行红字，最后靠临时目录装上。
+            // 所以现在按"能不能成"排序：Q+ 先走 `pm` 读得到的地方，FUSE 那两条只在最后静默试一次，
+            // 照顾放开 fuse 的定制 ROM。
+            val pmCannotReadFuse = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+            if (pmCannotReadFuse) {
+                onStage(InstallStage.STAGING, INSTALL_PROGRESS_UNKNOWN)
+                val staged = stageInDownloads(file)
+                val stagedPath = staged?.first
+                try {
+                    // 1) 公共下载目录 ──一次 `cp`──> /data/local/tmp ──pm install──> 成功。
+                    //    shell 读得到公共目录（FUSE 对 shell 开放），system_server 读得到 tmp，
+                    //    30 MB 的包几秒搬完，比下面的 base64 分块推送快一个数量级。
+                    val copied = stagedPath != null && tryChannel("Shizuku·临时目录") {
+                        installViaTmpCopy(
+                            source = stagedPath,
+                            expectedBytes = file.length(),
+                            onStage = onStage,
+                        )
+                    }
+                    if (copied) {
+                        announceSuccess("Shizuku·临时目录")
+                        file.delete()
+                        return@withContext InstallAttempt.Success
+                    }
 
-            // The public Downloads folder is one MediaStore write away and readable by the shell.
-            onStage(InstallStage.STAGING, INSTALL_PROGRESS_UNKNOWN)
-            val staged = stageInDownloads(file)
-            if (staged != null) {
-                val (stagedPath, stagedUri) = staged
-                val installed = tryChannel("Shizuku·下载目录") {
-                    onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
-                    runInstall(stagedPath)
+                    // 2) MediaStore 写不进去（没有 Download 权限 / 存储不可写）、或 shell 读不到
+                    //    公共目录时退回 base64 分块推送：慢，但只要有 Shizuku 就能成。
+                    if (tryChannel("Shizuku·临时目录（推送）") { installViaTmp(file, onStage) }) {
+                        announceSuccess("Shizuku·临时目录（推送）")
+                        file.delete()
+                        return@withContext InstallAttempt.Success
+                    }
+
+                    // 3) 只有放开 fuse 权限的 ROM 才会成的两条：照试，但**不弹 toast**（`quiet`）——
+                    //    这一轮的失败都在那个 `avc: denied` 上，用户既改不了也不关心，日志与上报里
+                    //    留原文即可。
+                    if (tryChannel("Shizuku·应用目录", quiet = true) {
+                            onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                            runInstall(file.absolutePath)
+                        }) {
+                        announceSuccess("Shizuku·应用目录")
+                        file.delete()
+                        return@withContext InstallAttempt.Success
+                    }
+                    if (stagedPath != null && tryChannel("Shizuku·下载目录", quiet = true) {
+                            onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                            runInstall(stagedPath)
+                        }) {
+                        announceSuccess("Shizuku·下载目录")
+                        file.delete()
+                        return@withContext InstallAttempt.Success
+                    }
+                } finally {
+                    // 那一行 MediaStore 记录（以及它指向的文件）只在本次安装里有用：成功、失败都清掉，
+                    // 免得 `Download/Canta/` 一天攒一个 30 MB 的死包。
+                    runCatching { staged?.second?.let { context.contentResolver.delete(it, null, null) } }
                 }
-                runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
-                if (installed) {
-                    announceSuccess("Shizuku·下载目录")
+            } else {
+                // Q 之前没有 scoped storage，`pm` 直接读得到应用目录：那条最快的路先走。
+                if (tryChannel("Shizuku·应用目录") {
+                        onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                        runInstall(file.absolutePath)
+                    }) {
+                    announceSuccess("Shizuku·应用目录")
                     file.delete()
                     return@withContext InstallAttempt.Success
                 }
-            }
 
-            // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
-            if (tryChannel("Shizuku·临时目录") { installViaTmp(file, onStage) }) {
-                announceSuccess("Shizuku·临时目录")
-                file.delete()
-                return@withContext InstallAttempt.Success
+                // The public Downloads folder is one MediaStore write away and readable by the shell.
+                // (Before Q `stageInDownloads` answers null, so this channel only exists on Q+, where
+                // it is handled above; keeping the call makes the pre-Q path read the same.)
+                onStage(InstallStage.STAGING, INSTALL_PROGRESS_UNKNOWN)
+                val staged = stageInDownloads(file)
+                if (staged != null) {
+                    val (stagedPath, stagedUri) = staged
+                    val installed = tryChannel("Shizuku·下载目录") {
+                        onStage(InstallStage.INSTALLING, INSTALL_PROGRESS_UNKNOWN)
+                        runInstall(stagedPath)
+                    }
+                    runCatching { stagedUri?.let { context.contentResolver.delete(it, null, null) } }
+                    if (installed) {
+                        announceSuccess("Shizuku·下载目录")
+                        file.delete()
+                        return@withContext InstallAttempt.Success
+                    }
+                }
+
+                // The chunked push to /data/local/tmp is the path that works wherever Shizuku does.
+                if (tryChannel("Shizuku·临时目录") { installViaTmp(file, onStage) }) {
+                    announceSuccess("Shizuku·临时目录")
+                    file.delete()
+                    return@withContext InstallAttempt.Success
+                }
             }
         }
 
@@ -1738,6 +1816,42 @@ class AndroidCantaPlatform(
                 ?: return null
             where to uri
         }.getOrNull()
+    }
+
+    /**
+     * 把 [source] 用**一次 `cp`** 搬到 `/data/local/tmp` 再 `pm install`。
+     *
+     * 存在的理由只有一个：`pm install` 由 system_server 执行，Q+ 上 SELinux 不许它读 FUSE，
+     * 所以字节必须先落在它读得到的地方。而 `/data/local/tmp` 是 shell 自己的家：一份 30 MB 的包
+     * 一次 cp 几秒搬完，比 [installViaTmp] 的 base64 分块推送（几百次 binder 往返）快一个数量级，
+     * 也不占内存。
+     *
+     * [source] 必须是 **shell 读得到**的路径（公共下载目录那一份），`Android/data` 下的私有目录
+     * 对 shell 是隐藏的。复制后按 [expectedBytes] 校验大小：截断的 APK 装上去比复制失败更糟。
+     *
+     * null 表示 `pm install` 接了这个包；否则是一句说明。
+     */
+    private suspend fun installViaTmpCopy(
+        source: String,
+        expectedBytes: Long,
+        onStage: (InstallStage, Int) -> Unit,
+    ): String? {
+        val target = "/data/local/tmp/.canta-update.apk"
+        val prepared = shell.run("rm -f '$target'")
+        if (!prepared.ok) return refusalText(prepared, "Shizuku 没有响应")
+        onStage(InstallStage.STAGING, INSTALL_PROGRESS_UNKNOWN)
+        val copy = shell.run(
+            "cp ${shellQuote(source)} '$target' && " +
+                "test \"\$(stat -c %s '$target')\" -eq $expectedBytes && echo ok",
+            timeoutMs = PM_INSTALL_TIMEOUT_MILLIS,
+        )
+        if (!copy.ok || !copy.output.contains("ok")) {
+            shell.run("rm -f '$target'")
+            return "复制到 /data/local/tmp 失败：${refusalText(copy, "没有输出").take(200)}"
+        }
+        val failure = runInstall(target)
+        shell.run("rm -f '$target'")
+        return failure
     }
 
     /**

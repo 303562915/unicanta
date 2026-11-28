@@ -565,6 +565,30 @@ code 取值：检查 `UpdateFailure`（`RATE_LIMITED`/`TIMEOUT`/`NETWORK`/`SERVE
 - 想在手机上定位一句报错的出处：日志页 → 更新 → 展开那一行（点击）+ 长按复制，整段原文就是
   `update_reports.detail` 里的同一份。
 
+### 12.7 通道顺序按「能不能成」排：Q+ 上 `pm` 读不了 FUSE（2026-11-28 改）
+
+`pm install` 的执行者是 **system_server**，Android 10 起 SELinux 不允许它读 FUSE：
+
+```
+avc: denied { read } for scontext=u:r:system_server:s0 tcontext=u:object_r:fuse:s0 tclass=file permissive=0
+Error: Can't open file: /storage/emulated/0/Download/Canta/canta-dev-726.apk
+Consider using a file under /data/local/tmp/
+```
+
+所以 `/storage/emulated/…` 上的两条通道（`应用目录` / `下载目录`）在 Q+ 上**注定失败**——以前它们排在
+前面，每次更新就是「两条红字 toast + 最后靠临时目录装上」。现在按能不能成排：
+
+1. Q+ 先 `stageInDownloads` 拿到公共路径，`installViaTmpCopy`：**一次 `cp`** 到 `/data/local/tmp`
+   再 `pm install`（30 MB 几秒；以前是 base64 分块推送，几百次 binder 往返）；
+2. `cp` 不行（MediaStore 不可写 / shell 读不到公共目录）→ `installViaTmp`（base64 分块推送，慢但通）；
+3. 都不成，才用 `tryChannel(quiet = true)` 试 FUSE 那两条（放开 fuse 的定制 ROM），
+   **日志里留原文、屏幕上不弹 toast**；
+4. 全不成 → root（有 su 且失败像权限问题）→ 系统安装器。
+
+Q 之前没有 scoped storage，保持原顺序（直接装最快）。`tryChannel(channel, quiet = true, …)` 是这轮
+新加的开关：「预期内会被拒」的通道只写日志。一次成功时 `attempts` 为空，所以 `announceSuccess` 一个字
+都不说——正常更新全程零红字。
+
 ---
 
 ## 13. Bug 反馈群：用户贴问题，AI 自己读、自己修
