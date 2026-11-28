@@ -251,6 +251,13 @@ class CantaSettings(storage: AppBlobStorage) {
     /** 安全页顶部机型胶囊是不是点过了；点过就不再呼吸，见 [AppSettingsProto.scopeHintSeen]。 */
     val scopeHintSeenFlow: Flow<Boolean> = field { it.scopeHintSeen }
     /**
+     * 安全页的包搜索要不要也认应用介绍里的字；出厂不认，见 [AppSettingsProto.searchDescriptions]。
+     *
+     * 这是一个跨次打开的记忆：搜索栏那颗「介绍」按钮本身不持久（它跟着搜索框走），
+     * 但"我平时要不要连介绍一起搜"是习惯，不该每次进页面都重新点一遍。
+     */
+    val searchDescriptionsFlow: Flow<Boolean> = field { it.searchDescriptions }
+    /**
      * 上次「选择机型」里挑的那台机器，空串 = 全部机型。
      *
      * 界面一侧自己解析成 `型号|版本`（见 `PlanScope`），这一层只管原样存取：它不需要知道
@@ -448,6 +455,8 @@ class CantaSettings(storage: AppBlobStorage) {
     suspend fun setQqGroupSeen(seen: Boolean) = update { it.copy(qqGroupSeen = seen) }
     /** 记下顶部机型胶囊点过了，呼吸提示停掉。 */
     suspend fun setScopeHintSeen(seen: Boolean) = update { it.copy(scopeHintSeen = seen) }
+    /** 记下安全页搜索要不要连应用介绍一起搜。 */
+    suspend fun setSearchDescriptions(enabled: Boolean) = update { it.copy(searchDescriptions = enabled) }
     /** 记下「选择机型」挑的是哪一台；空串 = 全部机型。 */
     suspend fun setPlanScope(scope: String) = update { it.copy(planScope = scope.trim()) }
 

@@ -360,6 +360,14 @@ data class AppSettingsProto(
      * 为什么没有反过来命名：proto3 省略零值，默认值只能是 `false`，而这里的出厂状态正是"直接操作"。
      */
     @ProtoNumber(57) val recordTapOpensDetail: Boolean = false,
+    /**
+     * 安全页的包搜索要不要也认应用介绍里的字（`true`），还是只搜包名（`false`，出厂）。
+     *
+     * 出厂 `false` 是搜索栏原本的行为：按包名/标签过滤。开了之后介绍正文里的词也算命中——
+     * "找那些介绍里提到广告的包"是这一页最常见的用法，但把整段介绍塞进每一次搜索是纯浪费，
+     * 所以做成开关，默认不搜。
+     */
+    @ProtoNumber(58) val searchDescriptions: Boolean = false,
 )
 
 /**

@@ -356,6 +356,9 @@ fun SafetyRulesScreen(
     // list, not like a search that is still on.
     var searchPackages by remember { mutableStateOf(false) }
     var packageQuery by remember { mutableStateOf("") }
+    // 搜索要不要连应用介绍一起认：存的是习惯（见 AppSettingsProto.searchDescriptions），
+    // 跨次打开保留——搜索框本身不持久，但"我平时怎么搜"不该每次重设。
+    val searchDescriptions by settings.searchDescriptionsFlow.collectAsStateWithLifecycle(initialValue = false)
 
     // The photo at the top is decoration: the About page can turn it off, and the page then keeps
     // the band with the phone's name and the switch but not the picture under it. A plain `Flow`,
@@ -914,6 +917,7 @@ fun SafetyRulesScreen(
                         otherDevice = opened != null,
                         offline = offline,
                         query = packageQuery,
+                        descriptions = searchDescriptions,
                         // 位置记忆按「哪个范围」分开存：本机、全部机型、某一台他机，三者的列表不是同一份，
                         // 共用一个键会让从应用详情返回时落到另一份列表的第 N 行。
                         page = "ranking:" + resolvedScope.memoryKey(),
@@ -1189,6 +1193,11 @@ private fun RankingTab(
     offline: Boolean,
     /** Package filter from the switch bar: matched against the package name and the app's label. */
     query: String = "",
+    /**
+     * 过滤时要不要也认应用介绍（规则里那段 `why`）。开关在搜索栏那颗「介绍」上，默认关：
+     * 把整段介绍塞进每一次按键的匹配里是纯浪费，而且按名字找包的人不想被"介绍里提过这个词"干扰。
+     */
+    descriptions: Boolean = false,
     /** 位置记忆的键：这一份列表是哪个范围的（见 [rememberRememberedListState]）。 */
     page: String = "ranking",
     onOpenApp: (String) -> Unit,
@@ -1208,7 +1217,10 @@ private fun RankingTab(
         // list, it does not re-rank it.
         ranking.filter { row ->
             row.pkg.contains(needle, ignoreCase = true) ||
-                byPackage[row.pkg]?.name.orEmpty().contains(needle, ignoreCase = true)
+                byPackage[row.pkg]?.name.orEmpty().contains(needle, ignoreCase = true) ||
+                // 「介绍」开着的时候才去查规则里那段 why：这一支是唯一一次全局字符串搜索，
+                // 关着时它整条不执行（短路在前两项后面，命中的包也不会走到这里）。
+                (descriptions && rules?.ruleFor(row.pkg, profile)?.why.orEmpty().contains(needle, ignoreCase = true))
         }
     }
 
