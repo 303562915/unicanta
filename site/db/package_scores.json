@@ -17528,7 +17528,7 @@
     "pkg": "com.android.devicediagnostics",
     "small_batch": false,
     "uninstalls": 117,
-    "updated_at": "2026-11-28T12:00:10.919409+00:00",
+    "updated_at": "2026-11-28T14:02:28.174879+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -18998,7 +18998,7 @@
     "pkg": "com.miui.guardprovider",
     "small_batch": false,
     "uninstalls": 194,
-    "updated_at": "2026-11-28T13:48:42.823571+00:00",
+    "updated_at": "2026-11-28T14:02:28.174879+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19011,8 +19011,8 @@
    {
     "pkg": "com.miui.hybrid",
     "small_batch": true,
-    "uninstalls": 655,
-    "updated_at": "2026-11-28T13:55:56.934571+00:00",
+    "uninstalls": 657,
+    "updated_at": "2026-11-28T14:08:59.692045+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19858,8 +19858,8 @@
    {
     "pkg": "com.xiaomi.aireco",
     "small_batch": false,
-    "uninstalls": 455,
-    "updated_at": "2026-11-28T13:40:10.606567+00:00",
+    "uninstalls": 456,
+    "updated_at": "2026-11-28T14:05:33.32022+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -19991,8 +19991,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 558,
-    "updated_at": "2026-11-28T13:40:10.606567+00:00",
+    "uninstalls": 559,
+    "updated_at": "2026-11-28T14:04:09.097378+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20061,8 +20061,8 @@
    {
     "pkg": "com.xiaomi.mis",
     "small_batch": false,
-    "uninstalls": 417,
-    "updated_at": "2026-11-28T13:44:23.828554+00:00",
+    "uninstalls": 418,
+    "updated_at": "2026-11-28T14:03:17.081026+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -20083,7 +20083,7 @@
     "pkg": "com.xiaomi.otrpbroker",
     "small_batch": false,
     "uninstalls": 67,
-    "updated_at": "2026-11-28T12:00:10.919409+00:00",
+    "updated_at": "2026-11-28T14:02:28.174879+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -24286,8 +24286,8 @@
    {
     "pkg": "com.miui.hybrid",
     "small_batch": false,
-    "uninstalls": 172,
-    "updated_at": "2026-11-28T13:44:49.270276+00:00",
+    "uninstalls": 173,
+    "updated_at": "2026-11-28T14:08:59.692045+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -25441,7 +25441,7 @@
     "pkg": "com.android.devicediagnostics",
     "small_batch": false,
     "uninstalls": 92,
-    "updated_at": "2026-11-28T11:55:03.931829+00:00",
+    "updated_at": "2026-11-28T14:02:28.174879+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -26463,14 +26463,14 @@
     "pkg": "com.miui.guardprovider",
     "small_batch": false,
     "uninstalls": 158,
-    "updated_at": "2026-11-28T13:48:42.823571+00:00",
+    "updated_at": "2026-11-28T14:02:28.174879+00:00",
     "verdict": "BREAKS"
    },
    {
     "pkg": "com.miui.hybrid",
     "small_batch": true,
-    "uninstalls": 437,
-    "updated_at": "2026-11-28T13:55:56.934571+00:00",
+    "uninstalls": 438,
+    "updated_at": "2026-11-28T14:03:17.081026+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -27092,8 +27092,8 @@
    {
     "pkg": "com.xiaomi.aireco",
     "small_batch": false,
-    "uninstalls": 357,
-    "updated_at": "2026-11-28T13:24:25.676691+00:00",
+    "uninstalls": 358,
+    "updated_at": "2026-11-28T14:05:33.32022+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -27218,8 +27218,8 @@
    {
     "pkg": "com.xiaomi.macro",
     "small_batch": false,
-    "uninstalls": 384,
-    "updated_at": "2026-11-28T13:23:41.662335+00:00",
+    "uninstalls": 385,
+    "updated_at": "2026-11-28T14:04:09.097378+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -27281,8 +27281,8 @@
    {
     "pkg": "com.xiaomi.mis",
     "small_batch": false,
-    "uninstalls": 321,
-    "updated_at": "2026-11-28T13:44:23.828554+00:00",
+    "uninstalls": 322,
+    "updated_at": "2026-11-28T14:03:17.081026+00:00",
     "verdict": "BREAKS"
    },
    {
@@ -27303,7 +27303,7 @@
     "pkg": "com.xiaomi.otrpbroker",
     "small_batch": false,
     "uninstalls": 40,
-    "updated_at": "2026-11-28T04:24:25.480215+00:00",
+    "updated_at": "2026-11-28T14:02:28.174879+00:00",
     "verdict": "BREAKS"
    },
    {
