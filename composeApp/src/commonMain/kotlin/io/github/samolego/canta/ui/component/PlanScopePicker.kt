@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.BasicAlertDialog
@@ -337,15 +338,16 @@ fun PlanScopeBar(
             Spacer(Modifier.weight(1f))
         }
         if (onToggleDescriptions != null) {
-            Spacer(Modifier.width(6.dp))
-            // 点亮 = 开着：填充胶囊写「含介绍」，关着是描边胶囊写「介绍」。关着就只说"介绍"，
-            // 因为那时它还不是搜索的一部分，说「含」反而像已经开着。
-            ScopeChip(
-                text = if (descriptions) "含介绍" else "介绍",
-                selected = descriptions,
-                onClick = onToggleDescriptions,
-                outlined = !descriptions,
-            )
+            // 一个图标切换就够：点亮（主题色）= 搜索也认应用介绍，暗色 = 只认名字与包名。
+            // 理由同上——它是一条全局规则，用文字胶囊占一行反而比图标更难认。
+            IconButton(onClick = onToggleDescriptions) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = if (descriptions) "搜索含应用介绍：开" else "搜索含应用介绍：关",
+                    modifier = Modifier.size(18.dp),
+                    tint = if (descriptions) colors.primary else colors.onSurfaceVariant,
+                )
+            }
         }
         if (onSearch != null) {
             // Its own tap target: the chip switches the phone, this narrows the list, so one never
