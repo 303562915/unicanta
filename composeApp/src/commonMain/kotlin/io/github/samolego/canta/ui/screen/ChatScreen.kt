@@ -742,6 +742,9 @@ fun ChatScreen(
         val paintedTail = messages.maxOfOrNull { it.id } ?: 0L
         val storedCursor = ChatMessageStore.latest?.cursor(conversationId) ?: 0L
         val localCursor = if (storedCursor > 0L) minOf(paintedTail, storedCursor) else paintedTail
+        // 先进来就先落底：缓存里那一屏立刻贴在最新一条，用户不用等网络回来才「跳到新消息」。
+        // 首屏之后还会补几轮（见下面「首屏落底」），这里先给一个初值，避免中间那几帧停在历史位置。
+        if (messages.isNotEmpty()) listState.scrollToItem(0)
         if (messages.isNotEmpty() && localCursor > 0L) {
             // 冷启动 / 从消息页切回来：本地那一屏已经在屏幕上了，只问它之后的部分，正常就是一个 `[]`。
             //
@@ -920,15 +923,29 @@ fun ChatScreen(
         }
     }
 
-    // 新消息（自己发的也算）落到最下面才看得见；列表是正序的，所以滚到最后一行。
-    // 键是最后一条的 id：往上翻历史时尾巴没变，这个 effect 不会重跑，视图停在原处。
+    /**
+     * 新消息落到最下面才看得见；列表正序 + `reverseLayout`，所以`scrollToItem(0)` 就是落到最新那条。
+     *
+     * 两条规则必须分开，混在一起就会出现「一直往上滑，新消息越来越多」：
+     * - **来新消息**（键是尾巴 id）：只要人贴在底部，就跟着滚到底；人在翻历史，就**不动视图**，
+     *   只把这条记成未读，靠右下角那个胶囊提示。
+     * - **往上翻历史**（并进来一页旧的）：只改 [messages]，绝不落底、也绝不碰未读数。
+     *
+     * 首屏不算「新消息」：那时列表还没量出高度，`scrollToItem` 落不到位，交给下面那段「首屏落底」。
+     */
     LaunchedEffect(messages.lastOrNull()?.id) {
         val last = messages.lastOrNull() ?: return@LaunchedEffect
         if (last.id != tailId) {
             tailId = last.id
-            // 首屏不算「新消息」：那时列表可能还没量出高度，`scrollToItem` 落不到位，停在半屏
-            // 中间看着像"只读到一半"。首屏交给下面的「首屏落底」那一段，按最终尺寸再落一次。
-            if (firstPaintDone) listState.scrollToItem(0)
+            if (firstPaintDone) {
+                val bottomNow = atBottom
+                if (bottomNow) {
+                    listState.scrollToItem(0)
+                } else if (seenTailId != null && last.id > (seenTailId ?: 0L)) {
+                    unseenNew = unseenNew + last.id
+                }
+                seenTailId = last.id
+            }
         } else if (!firstPaintDone) {
             // 首屏（消息数量没变）：还是落一次底，只是这里先给一个初值。
             listState.scrollToItem(0)
@@ -956,6 +973,9 @@ fun ChatScreen(
             }
         }
         firstPaintDone = true
+        // 首屏即底：那时屏幕上的所有消息都已经看过了，未读基线从这里开始算。
+        seenTailId = messages.lastOrNull()?.id
+        unseenNew = emptySet()
     }
 
     // 视口会变矮：键盘弹起、输入框从 40dp 长到 120dp、表情/更多面板拉开、快捷表情条出现。
@@ -981,6 +1001,8 @@ fun ChatScreen(
     /** 滚到最新一条：胶囊和向下箭头共用这一个动作。 */
     val scrollToBottom: () -> Unit = {
         if (messages.isNotEmpty()) {
+            // 点了就是「这些都算看过」：先清数字再滚，动画那一帧不会先亮一个旧计数。
+            settleSeen()
             scope.launch { listState.animateScrollToItem(0) }
         }
     }
@@ -1020,11 +1042,44 @@ fun ChatScreen(
             listState.layoutInfo.totalItemsCount > 0 && listState.firstVisibleItemIndex == 0
         }
     }
-    // 还有几条没滚到：起点以下的那些索引就是没看见的新消息，估一个数就够，胶囊上的数字不是账目。
-    val unseen by remember {
-        derivedStateOf {
-            if (listState.layoutInfo.totalItemsCount == 0) 0 else listState.firstVisibleItemIndex
-        }
+    /**
+     * 基线：这一条及更早的都已经看过了。首屏落底时钉住，之后只前进不后退。
+     *
+     * 胶囊上的数字**不**看滚动位置。以前那个数是直接取 `firstVisibleItemIndex` 的，于是往上翻
+     * 历史时索引越涨数字越大（滑得越多，「新消息」越多）——那是把「翻到了第几条历史」当成了未读。
+     */
+    var seenTailId by remember(conversationId) { mutableStateOf<Long?>(null) }
+    /** 不在底部时新到的消息 id：去重后的大小就是胶囊上的数字，滚到底清空。 */
+    var unseenNew by remember(conversationId) { mutableStateOf<Set<Long>>(emptySet()) }
+    // 首屏落到底就把基线钉在这里：进来时已经在屏幕上的那些不叫「新消息」。
+    // 依赖 messages 的尾巴：首屏那段 effect 跑完之前消息可能还没到，晚一步也要补上。
+    LaunchedEffect(conversationId, firstPaintDone, messages.lastOrNull()?.id) {
+        if (firstPaintDone && seenTailId == null) seenTailId = messages.lastOrNull()?.id
+    }
+    /**
+     * 「这些都已经看过了」：滚到底或者点了胶囊之后调用一次。
+     *
+     * 先在动画之前清：胶囊在滚动动画期间还会画一帧，不清就会先亮一个旧计数。
+     */
+    val settleSeen: () -> Unit = {
+        seenTailId = messages.lastOrNull()?.id
+        unseenNew = emptySet()
+    }
+
+    /** 基线与未读集合只管「页面里的新消息」，换一个会话就从头算。 */
+    LaunchedEffect(conversationId) {
+        seenTailId = null
+        unseenNew = emptySet()
+    }
+
+    /**
+     * 人在底部 → 这些都算看过：清掉未读集合，基线推到尾巴。
+     *
+     * 只认「是否贴底」，**不**认「第几条」：往上翻历史时 `firstVisibleItemIndex` 会一路涨，
+     * 拿它当未读数就是「越翻越多」那个 bug。这里只在真的沉到底时才动这两个状态。
+     */
+    LaunchedEffect(atBottom, messages.lastOrNull()?.id) {
+        if (atBottom && messages.isNotEmpty()) settleSeen()
     }
 
     /** 发一条：写成功才清空输入框，写失败把输入留着，别让人重打一遍。 */
@@ -1419,7 +1474,7 @@ fun ChatScreen(
                 // 收藏：本机那一份（上层按会话号筛好传进来）。
                 savedMessages = savedMessages,
                 // 「聊天」那一下：入口行收起 + 回到最新一条（reverseLayout 里 0 就是尾巴）。
-                onJumpToLatest = { scope.launch { listState.animateScrollToItem(0) } },
+                onJumpToLatest = scrollToBottom,
                 // 公告卡片不挂「编辑」：写公告统一在群设置页（点头像或点「设置」进去）。
             )
         },
@@ -1681,7 +1736,11 @@ fun ChatScreen(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        ChatNewMessagesPill(count = unseen, onClick = scrollToBottom)
+                        // 数字为 0 只画箭头：那颗向下箭头是「不在最底」的唯一提示，以前它和胶囊绑在一起，
+                        // 没新消息时整组都不画，人翻了半天历史却找不到回到底部的按钮。
+                        if (unseenNew.isNotEmpty()) {
+                            ChatNewMessagesPill(count = unseenNew.size, onClick = scrollToBottom)
+                        }
                         FlBarButton(
                             glyph = FlGlyphs.chevronDown,
                             contentDescription = "滚到最新消息",
@@ -1693,7 +1752,10 @@ fun ChatScreen(
                 }
             }
             // 快捷表情只在「默认态」出现：面板一拉开，这一排就挤在面板和输入栏中间了。
-            if (!panelOpen && draft.isEmpty()) ChatStickerStrip(onPick = sendSticker)
+            // 背景完全透明：不铺底色、不套底板，就是五颗图浮在消息区和输入栏之间。
+            if (!panelOpen && draft.isEmpty()) {
+                ChatStickerStrip(onPick = sendSticker, background = Color.Transparent)
+            }
             if (showMore) {
                 // 四个钮里「图片」真能用，其余三个点一下给一句话，不当哑巴按钮。
                 // 群里开关关着时，「图片」也走那句话那条路——按下去不会掉进一个被后端拒掉的流程。
@@ -3496,7 +3558,7 @@ private fun ChatImageViewer(
     }
 }
 
-/** 右下角那个「⌃ 新消息(N)」胶囊：不在最底的时候才出现，点了滚到最新一条。 */
+/** 右下角那个「⌃ 新消息(N)」胶囊：不在最底、并且真有新消息的时候才出现，点了滚到最新一条。 */
 @Composable
 private fun ChatNewMessagesPill(count: Int, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
@@ -3513,11 +3575,22 @@ private fun ChatNewMessagesPill(count: Int, onClick: () -> Unit) {
     )
 }
 
-/** 输入框上面那排「点一下就发」的表情：一排小图，点了立刻发一条，不进输入框。 */
+/**
+ * 输入框上面那排「点一下就发」的表情：一排小图，点了立刻发一条，不进输入框。
+ *
+ * **整条透明**：外面那个 `Column` 已经有 `surface` 底色，这里再铺一层（哪怕只是带 alpha 的
+ * `composerBarColor`）就会看着像一条浅色横带。现在这一层不画任何底色，也不画底板，
+ * 只留五颗图 + 点击区域；[background] 留着给以后真要铺底的地方显式传。
+ */
 @Composable
-private fun ChatStickerStrip(onPick: (Emotion) -> Unit) {
+private fun ChatStickerStrip(
+    onPick: (Emotion) -> Unit,
+    background: Color = Color.Transparent,
+) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (background == Color.Transparent) Modifier else Modifier.background(background)),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
