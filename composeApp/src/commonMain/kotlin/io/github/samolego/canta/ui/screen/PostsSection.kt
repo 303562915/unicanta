@@ -120,6 +120,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Numbers
 import androidx.compose.material.icons.rounded.Person
@@ -194,6 +195,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+// 回复胶囊的草稿文案要两种颜色（「草稿」强调色 + 摘要 onSurface），
+// 一个 `Text` 里分段上色只能走 `buildAnnotatedString`。
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -2005,9 +2011,16 @@ internal fun PostsScreen(
                     // 那是 FlClash 的二级页规范 —— 帖子详情这一页要照 fluxdo，所以单独传。
                     height = 56.dp,
                     centered = false,
-                    // 标题照 fluxdo 的 `textTheme.titleMedium`：≈16sp、**常规字重**
-                    // （不是本仓二级页那套 17sp 加粗，也不是首页 24sp 大标题）。
-                    titleStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp),
+                    // 标题照 fluxdo 的 `textTheme.titleMedium`（`topic_detail_page.dart:1487`
+                    // 的 `_buildAppBarTitle` 用的正是 `titleMedium`）：**16sp / 行高 24 / w500 /
+                    // letterSpacing 0.15**，不是本仓二级页那套 17sp 加粗，也不是首页 24sp 大标题。
+                    // 上一版只抄了字号、字重还是 400，标题比旁边那颗图标轻一档，看着像"副标题"。
+                    titleStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 16.sp,
+                        lineHeight = 24.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.15.sp,
+                    ),
                     actions = {
                         val open = thread?.post
                         if (open != null) {
@@ -2024,6 +2037,33 @@ internal fun PostsScreen(
                                 TopBarSaveButton(
                                     saved = reads?.isSaved(openId) == true,
                                     onClick = toggleOpenSaved,
+                                )
+                            }
+                            // 「帖内搜索」图标钮：照 fluxdo 的 AppBar actions
+                            // （`_buildAppBarActions`，`topic_detail_page.dart:1706` 的
+                            // `_buildSearchAction` —— 那边顶栏是 **搜索 + 更多** 两颗，
+                            // 搜索是顶栏的一等动作，不是菜单里的一项）。
+                            // 为什么本仓也要一颗：帖内搜索以前只藏在「更多」里，读一条 200 层的
+                            // 长帖时想找一句话得先点开菜单再找那一项；而"在这条帖子里找一句话"
+                            // 是读的过程中随时会冒出来的动作，跟收藏同一个性质。
+                            // 形状与右边那颗「更多」同一档（触控 48dp / 图标 24dp / 正圆底），
+                            // 两颗钮并排时视觉重量一致；菜单里那一项**保留**，两条路通同一个面板。
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .clickable(
+                                        role = Role.Button,
+                                        onClickLabel = "帖内搜索",
+                                        onClick = { searchOpen = true },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                             // 顶栏右侧照 fluxdo 只留一颗「更多」（`Symbols.more_vert_rounded`）。
@@ -2787,24 +2827,36 @@ private fun firstImageUrl(body: String): String? {
 }
 
 /**
- * 摘要最多画几行：**无缩略 3 行**。
+ * 摘要最多画几行：**无缩略 2 行**（上一版 3）。
  *
- * 3 这个数直接来自参考侧 —— fluxdo 卡片收起状态的行数上限就是 3
- * （`topic_expandable_excerpt.dart:32` 的 `this.maxCollapsedLines = 3`，`topic_card_style.dart:57`
- * 是同一个默认值），摘要摆的位置也一样：标题下、署名上，标题到摘要 4dp、摘要到署名 8dp
- * （`topic_card.dart:489-493`）。
+ * 行数上限本身照参考（`topic_expandable_excerpt.dart:32` 的 `this.maxCollapsedLines = 3`，
+ * `topic_card_style.dart:57` 是同一个默认值），摘要摆的位置也一样：标题下、署名上，
+ * 标题到摘要 4dp、摘要到署名 8dp（`topic_card.dart:489-493`）。
+ *
+ * **为什么本仓取 2 而不是 3**：参考的卡片默认**根本不画摘要**
+ * （`topic_card_style.dart:54` 的 `showExcerpt = false`），它那个 3 是"用户手动打开摘要之后"
+ * 的收起行数；本仓是**默认就画**摘要，于是 3 行变成了每张卡都要付的固定高度。
+ * 从 3 收到 2，每张没缩略的卡少 16.9dp（一行），一屏（按 720dp 可视高度、卡均 ~120dp 计）
+ * 大约多回 0.5~1 条。
+ * 上一版把"参考的 3"当成"参考的默认值"抄了过来 —— 那个 3 是开关打开后的上界，不是默认形态。
+ *
+ * **没有做的两件事**（用户没要求，别顺手加）：
+ *  1. 不改成"默认不画摘要"：参考能关是因为它有整卡样式配置，本仓没有那个开关，
+ *     列表里"这帖讲什么"就全靠这一行摘要，关掉只剩标题；
+ *  2. 不加"展开更多"按钮：卡片是列表里的一格，展开会改高度、把下面整屏重排，
+ *     参考那边也只在**详情页**做展开，卡片这边只做截断。
  *
  * **这里搬的是"行数"，不是"行高"**：参考侧摘要 13sp / 行高 1.45
  * （`topic_expandable_excerpt.dart:132-133`），一行 18.85dp；本仓卡内摘要用 `bodySmall`
  * （FlTypography 里是 `FlText.footnote`，13sp），行高按卡内正文同一个比例 1.3 重算 → 16.9dp
- * （三行 50.7dp，参考那边三行 56.6dp，差的那 6dp 就是"同样三行、这边字更紧"）。
+ * （两行 33.8dp，参考那边三行 56.6dp）。
  * 不照抄 18.85 的原因：`bodySmall` 自带 18sp 行高（ratio 1.38），照抄的话同一张卡里标题 1.3、
  * 摘要 1.38 两种行距，有缩略图时摘要那一段会明显比左边松。
  */
-private const val POST_CARD_EXCERPT_LINES_PLAIN = 3
+private const val POST_CARD_EXCERPT_LINES_PLAIN = 2
 
 /**
- * 摘要最多画几行：**有缩略 2 行**。
+ * 摘要最多画几行：**有缩略 2 行**（本项未变）。
  *
  * 缩略 [PostCardThumbSize] 72dp 是从内容列的**宽度**里拿走的（72 + 间距 10 = 82dp），内容列窄了
  * 约两成；宽度少两成，同样 3 行装下的字数也少两成 —— 结果就是"三行被切碎的短句 + 一颗图"，
@@ -2814,6 +2866,11 @@ private const val POST_CARD_EXCERPT_LINES_PLAIN = 3
  * 加三行摘要（4 + 50.7）到 115dp 左右还匀称；有缩略时第 3 行那 16.9dp 是**纯增高**，卡片会被拉到
  * 缩略图的 1.6 倍高，右侧那颗方图就从"陪着一行字"变成"一大块空白旁边的小图标"。
  * 砍到 2 行（4 + 33.8）与 72 的图仍在同一量级，"图陪着一行字"的观感才成立。
+ *
+ * **和 [POST_CARD_EXCERPT_LINES_PLAIN] 现在是同值（都 2）**，但这个常量仍然单独留着：
+ * 两个数是两条独立的判断依据（上面是"宽度被图拿走两成"，PLAIN 是"默认画摘要的整卡高度"），
+ * 将来任一边再调（比如缩略改回 64、或摘要字号变）只改自己那一个，不必回头拆常量。
+ * 合并成一个数会让下次调整时看不出"有图为什么是这个范围"。
  */
 private const val POST_CARD_EXCERPT_LINES_WITH_THUMB = 2
 
@@ -3205,7 +3262,22 @@ private fun PostCard(
                         ) {
                             AuthorLabel(
                                 name = post.author.ifBlank { "匿名" },
-                                style = MaterialTheme.typography.labelLarge,
+                                // 署名行 **12sp / 行高 16**（`labelMedium` → FlTypography 的
+                                // `FlText.caption1`，见 `FlTypography.kt:50`）。
+                                //
+                                // 参考 `topic_card.dart:822-832` 这一行是 `labelSmall`（11sp）；
+                                // 本仓上一版写 `labelLarge`（`FlText.callout`，16sp/21）——
+                                // 比同一张卡里的摘要（`bodySmall` 13sp）**还大**，
+                                // 「谁说的」压过「说了什么」，卡片的层级是颠倒的。
+                                //
+                                // 为什么不直接取参考的 11：本仓这张卡的标题 15sp、缩略 72dp
+                                // 都比参考大一号（参考 `TopicCardStyle.titleFontSize = 15` 但整卡
+                                // 更紧凑），整体大一档时把署名一个人压到 11 会显得字"抖"、
+                                // 与旁边 13sp 的摘要差两档；取 12 只差一档，层级清楚又不塌。
+                                //
+                                // 这一行里**只有主文案**动：右边的时间戳仍是 `labelSmall`，
+                                // 徽章 / 图标 / 颜色都不碰。
+                                style = MaterialTheme.typography.labelMedium,
                                 // 读过就跟着元信息色退灰，未读提亮到 onSurface×0.85（`topic_card.dart:825-827`）
                                 color = if (read) {
                                     metaTint(scheme.onSurfaceVariant, 0.6f)
@@ -4160,8 +4232,12 @@ private fun PostThreadPane(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
                     contentPadding = PaddingValues(bottom = 16.dp),
-                    // 间距 4 而不是 8：楼层本身已经是一条通栏（自己带 12/12 的上下留白 + 底部 0.5dp 分隔线），
+                    // 间距 4 而不是 8：楼层本身已经是一条通栏（自己带 14/14 的上下留白 + 底部 0.5dp 分隔线），
                     // 8dp 的层间缝会把那条线推到两层中间悬着。4dp 刚好留一口气，又让分隔线读作"下边界"。
+                    //
+                    // **这个 4 不要再改**：楼层块上下是 14，14 + 4 + 14 = 32，正好等于参考
+                    // `post_segment_frame.dart:63-67` 的 16 + 16 = 32 的层间节奏 ——
+                    // 移动 4 就必须连 14 一起重算，否则层间空白会偏。
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     // 顶上那块「标题 + 标签 + 元信息 + 参与者」：discourse 的话题页第一屏就是它，
@@ -4229,7 +4305,11 @@ private fun PostThreadPane(
                                             Icon(
                                                 imageVector = Icons.Rounded.Favorite,
                                                 contentDescription = null,
-                                                modifier = Modifier.size(15.dp),
+                                                // 心形 **20dp**（`post_action_bar.dart:538-541` 的
+                                                // `Icon(Symbols.favorite_rounded, size: 20)`）：
+                                                // 参考里回复胶囊的聊天图标是 15、赞这颗是 20 —— 心形本来
+                                                // 就比气泡饱满，同一个尺寸会显得小一圈。上一版两颗都写 15。
+                                                modifier = Modifier.size(20.dp),
                                                 tint = if (shown.mineLike) {
                                                     scheme.primary
                                                 } else {
@@ -4793,9 +4873,28 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
             .padding(horizontal = 16.dp)
             // 顶 20：参考实现的 header 是 `EdgeInsets.fromLTRB(16, 20, 16, 16)`
             // （`topic_detail_header.dart:84`），标题上方那口气就是 20 —— 原来写 14，标题贴着顶栏。
-            .padding(top = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(top = 20.dp)
+            // **底 12**：上一版底边是 0（分隔线紧贴列底，下面的楼层立刻顶上来）。
+            // 参考 `:84` 的 bottom 是 16，这里取 12 的理由是两边这条线**画在哪儿**不一样：
+            // 参考的线是容器自己的 `Border(bottom)`（`:90-94`，画在最下沿，线下就是 0），
+            // 它的 16 在线**上方**；本仓这条 `HorizontalDivider` 是列里的**最后一个子项**，
+            // 线下方还要接 `LazyColumn` 的 `spacedBy(4.dp)` —— 12 + 4 = 16，
+            // 正好等于参考"标题区下沿到下一块 16"；取满 16 会变成 20 的缝（16 + 4），松一档。
+            // 线上方那 6 不在这里：见分隔线自己的 `padding(top = 6.dp)`（只留一处，别重复）。
+            .padding(bottom = 12.dp),
     ) {
+        // 分档间距（上一版是 `verticalArrangement = spacedBy(10.dp)` 一把梭，四段间隔全是 10）：
+        //   标题 →[12]→ 分类/标签 →[16]→ 元信息 →[6]→ 统计 →[6]→ 分隔线
+        // 参考依据：`:148` 的 `SizedBox(height: showTitle ? 16 : 8)`（标题与下一块之间）、
+        // `:212` 的 `const SizedBox(height: 16)`（分类/标签之后）、
+        // 统计行上方的 6 在 `topic_statistics.dart:200-201` 的 `Padding(only(top: 6))`。
+        // 押成一个数就把"标题-分类 12"与"分类-元信息 16"的差别抹平了，还把元信息与统计行之间的
+        // 6 撑成 10（一行 12dp 的小字，四周却各留 10，读着像独立段落）。
+        //
+        // 用列内**显式 `Spacer`** 而不是改小 `spacedBy`：分类行与统计行都是条件块，
+        // `spacedBy` 是"有几块给几条"，某一块缺席时剩下的间距会整体上移一格（标题直接贴着元信息
+        // 就会是 16 而不是 12）；显式 Spacer 各归各位，也方便逐处单独回滚。
+
         // 标题 + 锁图标：锁住的帖子在标题**前面**画一颗锁（`topic_detail_header.dart:109-120`
             // 的 20dp / `outline` 色），而不是另起一条"这条帖已经锁了"的横带 —— 那条横带
             // 每屏白占一行，而锁本来就是标题的属性。
@@ -4826,7 +4925,12 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
 
         // 分类 + 标签：`Wrap(spacing: 6, runSpacing: 8)`（`topic_detail_header.dart:163-166`）。
         // 上一版是横滚一行，标签一多就有一半藏在屏幕外；参考实现是**换行**，多出来的落到第二行。
+        //
+        // 标题 →(12)→ 分类：参考 `:148` 的 16 是"标题 → `TopicStateSummary`"（状态摘要，
+        // 本仓没有对应物）；本仓这一格改成分类/标签行，它比参考的摘要行轻（胶囊、单行），
+        // 所以取 12，与下面"分类 → 元信息"的 16 拉开一档 —— 读起来"标签是挂在标题上的"。
         if (post.category.isNotBlank() || post.tags.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -4838,19 +4942,34 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
                 }
                 post.tags.forEach { tag -> TagPill(tag = tag) }
             }
+            // 分类 →(16)→ 元信息：参考 `:212` 的 `const SizedBox(height: 16)`。
+            Spacer(modifier = Modifier.height(16.dp))
+        } else {
+            // 没有分类/标签时不叠两个空档：标题直接接元信息，取 12（标题到任何下一块的最小那一档），
+            // 与有分类时"12 + 分类行 + 16"的节奏同一个起点。
+            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // 元信息：回复 / 赞 / 时间。三件事挤一行，用中点分开——比三行小字省地方。
-        // 每项内部照 `_buildMetadataItem`（`topic_detail_header.dart:346-381`）：图标 14dp、
-        // 与数字之间 4dp、数字 α0.8 + w500、后面的标签 α0.5 —— 一眼能分出"数"和"名"。
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 元信息：回复 / 赞 / 时间。每项内部照 `_buildMetadataItem`
+        // （`topic_detail_header.dart:346-381`）：图标 14dp、与数字之间 4dp、
+        // 数字 α0.8 + w500、后面的标签 α0.5 —— 一眼能分出"数"和"名"。
+        //
+        // 外层照参考 `:262-302` 的 `Row { Expanded(Wrap(spacing: 12, runSpacing: 4)) }`：
+        // 三项之间只有 **12dp 间距**，不再放中点。上一版用 "·" 把三项串起来（中点前后各 6dp），
+        // 而参考里每一项都自带图标，分隔符是多余的墨；窄屏放不下时这里会按 `runSpacing: 4`
+        // 让第三项落到第二行，而不是把时间挤成"3 天…"。
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
             ThreadMeta(
                 glyph = Icons.Rounded.ChatBubble,
                 value = "${post.comments}",
                 label = "回复",
                 tint = scheme.onSurfaceVariant,
             )
-            ThreadMetaDivider()
             ThreadMeta(
                 glyph = Icons.Rounded.Favorite,
                 value = "${post.likes}",
@@ -4859,7 +4978,6 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
             )
             val stamp = relativeStamp(post.createdAt)
             if (stamp.isNotBlank()) {
-                ThreadMetaDivider()
                 ThreadMeta(
                     glyph = Icons.Rounded.Schedule,
                     value = stamp,
@@ -4873,6 +4991,11 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
         // 两段文字，阅读时长是**下一项**而不是被推到行右端。
         if (participants.isNotEmpty() || readMinutes > READ_MINUTES_MIN) {
             // Compose 里对应的不是 Dart 的 `Wrap` 而是 `FlowRow`（换行 + 水平间距）。
+            //
+            // `padding(top = 6.dp)` 就是分档表里"元信息 →(6)→ 统计"那一档，与参考
+            // `topic_statistics.dart:200-201` 的 `Padding(only(top: 6))` 同值。
+            // **这一档不换成 Spacer**：留白挂在统计行自己身上，统计行缺席时它就跟着一起消失，
+            // 元信息与分隔线之间只剩下面那 6 —— 不会出现"统计行没有了、它的上方还空着 6"。
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -4927,7 +5050,24 @@ private fun ThreadHeader(post: CommunityPost, comments: List<PostComment>) {
 
         // 0.5dp，和楼层底部那条同一个口径（`post_segment_frame.dart:47` 的 `width: 0.5`）：
         // 默认 1dp 在这里比楼层线粗一倍，两条线摆在同一页里一眼能看出不一样。
-        HorizontalDivider(thickness = 0.5.dp, color = scheme.outlineVariant.copy(alpha = 0.5f))
+        //
+        // 颜色 `outlineVariant α0.3`：数值照 `topic_detail_header.dart:90-94`（header 自己的
+        // `Border(bottom: outlineVariant α0.3, width: 0.5)`）。上一版写 0.5，比参考重一档 ——
+        // header 这条线是"标题区的下沿"，不是楼层之间那条分隔，它该更淡。
+        //
+        // `padding(top = 6.dp)`：分档表里"统计 →(6)→ 分隔线"（统计行缺席时它就是
+        // "元信息 →(6)→ 分隔线"，两种情形都是 6，所以不必按条件给两个值）。
+        //
+        // **这一档只有这一处**：上面已经去掉了 `Column(verticalArrangement = spacedBy(10.dp))`，
+        // 所以这里**不要**再补一颗 `Spacer(6.dp)` —— 两个 6 叠起来会变成 12，line 上下各多一截。
+        // 上一版写"本列已经有 10dp 的 spacedBy，这里补 6 正好是 16"：那句随 `spacedBy` 一起作废了，
+        // 现在线上方就是纯 6，与参考 `topic_statistics.dart:201` 的取法一致
+        // （参考 header 的 bottom 16 在线**下方**，那一段由本列 `padding(bottom = 12.dp)` 承担）。
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = scheme.outlineVariant.copy(alpha = 0.3f),
+            modifier = Modifier.padding(top = 6.dp),
+        )
     }
 }
 
@@ -4974,17 +5114,6 @@ private fun ThreadMeta(
             )
         }
     }
-}
-
-/** 元信息之间的那个中点分隔。 */
-@Composable
-private fun ThreadMetaDivider() {
-    Text(
-        text = "·",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.outline,
-        modifier = Modifier.padding(horizontal = 6.dp),
-    )
 }
 
 /**
@@ -5345,7 +5474,8 @@ private fun MenuRow(
  * 摆在同一行里比源码那排胶囊高一头、粗一圈，而且 `TextButton` 的文字按钮在楼层底下
  * 看起来像一条链接，不像"这一楼能做什么"。
  *
- * 选中态（已赞）换成 `primaryContainer α0.3` 底 + `primary` 前景，照 `:563-573`。
+ * 选中态（已赞）换成 `primaryContainer α0.3` 底 + `primary` 前景 + **1dp `primary α0.2` 描边**，
+ * 照 `:563-573`（`side: BorderSide(primary α0.2)`）。
  * 楼层 footer 里「N 条回复」这种**只读数**的胶囊把 [onClick] 传 null：这样它既不挂
  * `clickable`（不会给出"按得下去"的涟漪和无障碍按钮角色），也不再被禁用色压到 0.38 透明度——
  * 读数照旧清楚，人也不会去点它。
@@ -5374,6 +5504,18 @@ private fun FloorPill(
             .background(
                 if (active) scheme.primaryContainer.copy(alpha = 0.3f)
                 else scheme.surfaceContainerHighest.copy(alpha = 0.3f),
+            )
+            // 选中态那圈 **1dp `primary α0.2`** 描边照 `post_action_bar.dart:569-573`
+            // （赞胶囊的 `side: BorderSide(color: primary α0.2)`）。参考在**未选中**时给的是
+            // `Colors.transparent`，所以这里只在 `active` 时画：常态一个像素都不加。
+            // 用 `border` 而不是 `drawBehind`：胶囊的圆角是 50%（= 高度的一半），
+            // 和 `border` 的形状参数走同一套 `RoundedCornerShape(50)`，不用另算半径。
+            .then(
+                if (active) {
+                    Modifier.border(1.dp, scheme.primary.copy(alpha = 0.2f), RoundedCornerShape(50))
+                } else {
+                    Modifier
+                },
             )
             // 点击层压在背景之上（顺序 clip → background → clickable → padding）：
             // 反过来背景会盖住涟漪，和抽屉、全仓其它胶囊是反着的。
@@ -5410,10 +5552,14 @@ private fun FloorPill(
  * 照 fluxdo `post_action_bar.dart:409-437` 的 `_iconCircle`（高 36 / 宽 36 / 正圆 /
  * 图标 18 / `onSurfaceVariant`）。
  *
- * 为什么触控区还要**另外**撑到 40dp：36 是视觉尺寸，源码在手机上靠 Flutter 的
- * `HitTestBehavior` 兜住，Compose 这里显式给 `minimumInteractiveComponentSize` 会让
- * 相邻两颗圆之间多出 4dp 空档、看着散；所以用一层 40dp 的透明 Box 把 36dp 的圆包住——
- * 视觉是 36，手指按得中的是 40。
+ * 触控盒**也收到 36**（上一版是"视觉 36 / 触控 40"）：参考 `post_action_bar.dart:418-419`
+ * 的 `height: 36 / width: 36` 本身就是手势区，源码外面没有那圈 4dp。
+ * 这里仍保留"透明 Box 包着视觉圆"这层结构（不要 `minimumInteractiveComponentSize`
+ * 给相邻两颗之间塞 4dp 空档、看着散），只是把外层从 40 收成 36：
+ * 一层楼的动作行是「赞 / 回复 / 更多 / 引用」几颗并排，每颗各多 4dp 合起来就是十几 dp，
+ * 200 层楼累积下来约一屏的可读高度（200 × 4dp = 800dp）；而 36 仍满足可用的触控下限
+ * （M3 的 48 是推荐值，这一行挤在 16dp 内容区里、旁边还并着高 36 的胶囊，
+ * 撑到 48 会把动作行顶成两行、层高反超参考）。
  */
 @Composable
 private fun FloorCircleButton(
@@ -5426,7 +5572,9 @@ private fun FloorCircleButton(
     val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
-            .size(40.dp)
+            // 触控盒 36 = 视觉圆 36（`post_action_bar.dart:418-419` 的 `height/width: 36`），
+            // 上一版这里写 40，多出来的 4dp 是透明的、看不见但会把动作行撑高。见上面 KDoc。
+            .size(36.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -5458,10 +5606,11 @@ private fun FloorCircleButton(
 }
 
 /**
- * 一层楼右端那颗「更多」（`MoreVert`）圆钮 + 落下的小菜单。
+ * 一层楼右端那颗「更多」（**横**三点 `MoreHoriz`）圆钮 + 落下的小菜单。
  *
  * 形状照同文件的 [DetailMoreMenu]：外层一个 `Box`，触发件复用 [FloorCircleButton]
- * （36dp 正圆 / 图标 18dp，照 fluxdo `post_action_bar.dart:409-437` 的 `_iconCircle`），
+ * （36dp 正圆 / 图标 18dp，照 fluxdo `post_action_bar.dart:409-437` 的 `_iconCircle`；
+ * 图标横三点而不是竖三点，同 `:402` 的 `Symbols.more_horiz_rounded`），
  * 菜单里每行都走 [MenuRow]（图标 20dp + 12dp 间距 + 最小 48dp 高 + 圆角 4dp）。
  * 同一个文件里已经有一套菜单皮肤了，这里只复用、不另起一套。
  *
@@ -5510,8 +5659,11 @@ private fun FloorMoreMenu(
             tint = scheme.onSurfaceVariant,
             onClick = { menuOpen = true },
         ) {
-            // 图标 18dp：与「引用回复」那颗同一档（`FloorCircleButton` 自己会再包一层 18dp 的 Box）。
-            Icon(Icons.Rounded.MoreVert, null, Modifier.size(18.dp))
+            // 图标 18dp，**横三点**而不是竖三点：楼层这一颗照 `post_action_bar.dart:402`
+            // 的 `_iconCircle(icon: Symbols.more_horiz_rounded)`。顶栏那颗「更多」才是竖三点
+            // （`topic_detail_page.dart:1785` 的 `more_vert_rounded`）——源码里本来就是两种摆法，
+            // 一个在两行高的动作行里、一个在 56dp 的标题栏里。
+            Icon(Icons.Rounded.MoreHoriz, null, Modifier.size(18.dp))
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             // 抬头：这一层是谁、是第几楼。不挂 `clickable`，只是给人对一眼。
@@ -6366,9 +6518,12 @@ private fun PostFloorCard(
             // 见 `post_segment_frame.dart:48-51`），换成透明的话画不到目标上。
             // 值见上面的 `floorBackground`（折叠态渐变要跟它对齐）。
             .background(floorBackground)
-            // 上下 12 而不是 16：LazyColumn 已经有 4dp 的同层间距，16+16+4 = 36dp 的层间空白
-            // 会把"楼"切断成一屏一屏；12+12+4 = 28，和 fluxdo 一个 16dp 边距再加它自己那点间距的观感一致。
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            // 上下 **14**（参考 `post_segment_frame.dart:63-67` 是 `all(16)`）：本仓这一层带着
+            // 一条 0.5dp 的底分隔线（线画在自己的 padding 之内），16+16+4（层间距）= 36dp 的
+            // 层间空白会把"楼"切断成一屏一屏；14 是折中值 ——
+            // 算式：14（本层底）+ 4（LazyColumn 层间距）+ 14（下一层顶）= **32**，
+            // 与参考的 16 + 16 = 32 完全一致，所以层间距保持 4 不动、不必再动 `spacedBy`。
+            .padding(horizontal = 16.dp, vertical = 14.dp)
             // 0.5dp 分隔线，颜色 `outlineVariant α0.5`（`post_segment_frame.dart:47`）。
             // `.drawBehind` 排在 `.padding(…)` **之后**，所以它的 `size` 是内容区尺寸：线等于
             // "满宽 − 32"，与 fluxdo 的 `Border(bottom)`（画在内容边界上）同一个宽度，
@@ -6433,7 +6588,15 @@ private fun PostFloorCard(
                         ) {
                             AuthorLabel(
                                 name = author.ifBlank { "匿名" },
-                                style = MaterialTheme.typography.titleSmall,
+                                // **14sp / w600**：`post_header.dart:240-249` 的名字行是
+                                // `titleSmall?.copyWith(fontWeight: w600, fontSize: 14)`。
+                                // 本仓 `titleSmall` 被 FlTypography 映射到 `subheadline`（15sp、W400），
+                                // 不显式压回来名字就跟旁边的正文一样粗、还大一号 —— 头像旁边那行
+                                // 认不出"这是谁说的"。
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
                                 color = scheme.onSurface,
                                 maxLines = 1,
                                 modifier = Modifier.weight(1f, fill = false),
@@ -6461,7 +6624,10 @@ private fun PostFloorCard(
                             replyIndicator()
                         }
                         Column(
-                            modifier = Modifier.padding(start = 8.dp),
+                            // 指示条与「时间 / #N」之间 **12dp**：`post_header.dart:389`
+                            // 的 `const SizedBox(width: 12)`（`_buildRightSection` 里
+                            // 「指示条 → 12 → 时间/楼层号」）。上一版写 8，指示条贴得比参考近。
+                            modifier = Modifier.padding(start = 12.dp),
                             horizontalAlignment = Alignment.End,
                         ) {
                             if (stamp.isNotBlank()) {
@@ -6489,16 +6655,21 @@ private fun PostFloorCard(
                     // 引用指示条已经挪到上面名字行里（见那段注释），这里不再单独占一行：
                     // 一层楼的高度回到「头像/名字行 + 正文 + 动作行」三段，楼层之间的密度才跟得上参考图。
                     // 回复历史（父链）就挂在指示条正下方、正文之前：null 时这一段一个组合项都不建，
-                    // 楼层高度与没有这个功能时逐项一致。顶 8dp 跟"头部 → 正文"同一个数（下一段
-                    // Spacer），块与块的节奏才一致 —— 参考实现那边是 12（`post_reply_history.dart:48`），
-                    // 但那边头部的行距本身就比这里松，直接抄数值会让父链离名字更远。
+                    // 楼层高度与没有这个功能时逐项一致。
+                    // 顶 **8dp**（参考 `post_reply_history.dart:48` 是 12）：父链是一张**内嵌小卡**
+                    // （自己带圆角与底色），它上面的 8 就是在卡与名字行之间"留一口气"，
+                    // 不必跟下面"头部 → 正文"的 12 对齐 —— 正文是裸文字，需要更大的呼吸；
+                    // 上一版这里写的是"跟下一段 Spacer 同一个数"，那条前提随正文间距改成 12 已不成立。
                     if (replyHistory != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         replyHistory()
                     }
-                    // 正文与头部之间 12dp（`post_item.dart:284` 的 `SizedBox(height: 12)`）。
+                    // 正文与头部之间 **12dp**（`post_item.dart:284` 的 `SizedBox(height: 12)`）。
+                    // 上一版这行注释写的就是 12、代码却是 8（注释与代码不一致本身就是隐患），
+                    // 这次把代码补齐到 12：头部那行名字的基线到正文首行，只留 8 会让"谁说的"
+                    // 和"说了什么"黏在一起，尤其名字后面还跟着徽章时。
                     // 不挂 `Arrangement.spacedBy`：见上面那段注释。
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     if (body.isBlank()) {
                         Text(
                             text = "（没有正文）",
@@ -6577,7 +6748,12 @@ private fun PostFloorCard(
                         }
                     }
                     // 这一行原来靠父级 `spacedBy(4.dp)` 与正文隔开；父级间距去掉后自己垫。
-                    Spacer(modifier = Modifier.height(4.dp))
+                    // **8dp**：参考 `post_item.dart:469` 给 `PostFooterSection` 的是
+                    // `EdgeInsets.only(top: 12)`，这里取 8 的折中理由是 —— 本仓动作行的胶囊高
+                    // 36、参考 `post_action_bar.dart:418-419` 也是 36，正文行高两边同为 21，
+                    // 8 已经足够让胶囊顶边离开字的降部；再拉到 12 会让"正文最后一行的行距 +
+                    // 12"在视觉上读成两个段落，而参考那边正文与 footer 之间本来就夹着引用/尾注。
+                    Spacer(modifier = Modifier.height(8.dp))
                     footer()
                     // 展开的直接回复：动作行**下面**，顶 4dp（`post_replies_list.dart:36-37`）。
                     if (replies != null) {
@@ -7358,26 +7534,46 @@ private fun ReplyBar(
             ) {
                 Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp), tint = if (enabled && !locked) scheme.onSurfaceVariant else scheme.onSurfaceVariant.copy(alpha = 0.6f))
                 Spacer(modifier = Modifier.width(8.dp))
+                // 有草稿时的文案分两段上色，照 `topic_bottom_bar.dart:396-413`：
+                // 「草稿」两个字吃强调色 + w600，正文摘要吃 `onSurface`（比胶囊常态的
+                // `onSurfaceVariant` 亮一档，一眼能看出这行是**我写过的内容**而不是提示语）。
+                // 上一版是同一色同一字重的「草稿：xxx」，摘要读起来和提示语一样，分不出真假。
+                val draftHead = if (!locked && enabled && replyTo == null && reply.isNotBlank()) {
+                    // 摘要取**第一个非空行**：只取 `firstOrNull()` 时，正文以一个空行开头就会
+                    // 显示成"草稿"后面什么都没有，看着像把草稿弄丢了。
+                    reply.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: reply.trim()
+                } else {
+                    null
+                }
+                val message = if (draftHead != null) {
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = scheme.primary, fontWeight = FontWeight.SemiBold)) {
+                            // 参考里是两个空格（`'${l10n.drafts_draft}  '`），不是冒号。
+                            append("草稿  ")
+                        }
+                        withStyle(SpanStyle(color = scheme.onSurface)) { append(draftHead.take(30)) }
+                    }
+                } else {
+                    buildAnnotatedString {
+                        append(
+                            when {
+                                locked -> "话题已关闭"
+                                !enabled -> "登录后参与讨论"
+                                // 引用回复优先于草稿摘要：这一句说明"这条要挂到哪一楼下面"，
+                                // 比摘要更该先说。引用状态和草稿是分开的两件事（人格化一点说：
+                                // 引用了哪一楼，跟正文写了几个字无关；正文可以一个字没写就
+                                // 已经选好了要回的那一楼）。
+                                replyTo != null -> {
+                                    val (floor, name) = replyTo
+                                    if (floor.isEmpty()) "回复 $name" else "回复 #$floor · $name"
+                                }
+                                else -> "写下你的回复…"
+                            },
+                        )
+                    }
+                }
                 Text(
-                    text = when {
-                        locked -> "话题已关闭"
-                        !enabled -> "登录后参与讨论"
-                        // 引用回复优先于草稿摘要：这一句说明"这条要挂到哪一楼下面"，比摘要更该先说。
-                        // 引用状态和草稿是分开的两件事（人格化一点说：引用了哪一楼，跟正文写了几个字
-                        // 无关；正文可以一个字没写就已经选好了要回的那一楼）。
-                        replyTo != null -> {
-                            val (floor, name) = replyTo
-                            if (floor.isEmpty()) "回复 $name" else "回复 #$floor · $name"
-                        }
-                        // 草稿摘要取**第一个非空行**：只取 `firstOrNull()` 时，正文以一个空行开头就会
-                        // 显示成"草稿："后面什么都没有，看着像把草稿弄丢了。
-                        reply.isNotBlank() -> {
-                            val head = reply.lineSequence().firstOrNull { it.isNotBlank() }?.trim()
-                                ?: reply.trim()
-                            "草稿：${head.take(30)}"
-                        }
-                        else -> "写下你的回复…"
-                    },
+                    text = message,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (enabled && !locked) {
                         scheme.onSurfaceVariant
@@ -7411,9 +7607,14 @@ private fun ReplyBar(
  *
  * - 圆角 **24**（`_panelRadius = 24`，`:84`），贴底时**上圆下平**（`:426-427`）
  * - 遮罩 **0.32** 黑（`:341` 的 `0.32 * raw`）
- * - 展开 **340ms** / 收起 **260ms**，曲线 `easeInOutCubicEmphasized`（`:85-91`）
- * - 输入框：`surfaceContainerHighest` 底、圆角 **16**、`minLines 3 / maxLines 8`、
+ * - 面板底 **`surfaceContainerLow`**、输入框 **`surfaceContainerHighest`**（`:432-436` / `:520-526`）
+ * - 展开 **340ms** / 收起 **260ms**，曲线 `easeInOutCubicEmphasized`（`:85-91`）——
+ *   本仓走的是 `Dialog` 的默认进出动画，**没有**做参考那套"从回复胶囊长出面板"的形变
+ *   （`_MorphClipper` + 截图接替，`:382-460`）：那要自绘一层覆盖在整页上的动画容器，
+ *   与本文件里"面板是 Dialog"这条实现绑在一起，不在这一处改。
+ * - 输入框：圆角 **16**、`minLines 3 / maxLines 8`、
  *   内边距 **14**、`bodyLarge`（`:524-546`）
+ * - 面板内边距 LTRB(16, 16, 12, 8)（`:473-483`）
  * - 发送：`FilledButton(minimumSize = Size(72, 38))`，文案「发送」，忙碌时 16dp 转圈（`:602-618`）
  */
 @Composable
@@ -7454,9 +7655,14 @@ private fun ReplyComposerPanel(
                     .fillMaxWidth()
                     // 上圆下平：`RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart)`。
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(scheme.surfaceContainerHighest),
+                    // 面板底色是 `surfaceContainerLow`，**不是** `surfaceContainerHighest`：
+                    // 参考的面板 Material 底色是 `Color.lerp(surfaceContainerHighest,
+                    // surfaceContainerLow, t)` 的终点（`topic_quick_reply.dart:432-436`）。
+                    // 上一版把面板和输入框的两档底色写反了（面板 Highest、输入框 Low），
+                    // 结果输入区是"亮面板里挖一个暗坑"，而参考是"暗面板上浮一个亮输入框"。
+                    .background(scheme.surfaceContainerLow),
             ) {
-                // 输入框：圆角 16、底色低一档、内边距 14、3~8 行。
+                // 输入框：圆角 16、底色**比面板高一档**、内边距 14、3~8 行。
                 OutlinedTextField(
                     value = reply,
                     onValueChange = onChange,
@@ -7464,7 +7670,11 @@ private fun ReplyComposerPanel(
                         .fillMaxWidth()
                         .padding(start = 16.dp, end = 12.dp, top = 16.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(scheme.surfaceContainerLow),
+                        // 输入框 **`surfaceContainerHighest`**（`topic_quick_reply.dart:520-526`
+                        // 的 `ShapeDecoration(color: surfaceContainerHighest, radius 16)`）：
+                        // 比面板那一档亮，输入区因此"浮"在面板上 —— 与上面的面板底色是**一对**，
+                        // 改其中任何一个都要同时看另一个。
+                        .background(scheme.surfaceContainerHighest),
                     minLines = 3,
                     maxLines = 8,
                     placeholder = { Text("写下你的回复…") },
@@ -8858,16 +9068,26 @@ private fun DraftRow(
  * 一个区块的标题：名字，带条数时再跟一个数字。
  *
  * 样式照 fluxdo `topic_more_topics.dart:86-130`：`titleSmall / w600` + 前一颗 16dp 的
- * 强调色小图标 + 6dp 间距，区块内边距 `LTRB(16, 16, 16, 8)`。
+ * 强调色小图标 + 6dp 间距，区块内边距 `LTRB(16, 8, 16, 6)`（上一版 16/8 ≈ 44dp 高，现在约 34dp）。
  * 上一版是 `labelMedium + primary` 的"彩色小标签"，那是 FlClash 的区块头写法，
  * 在帖子详情里看着像一条可点的链接。
+ *
+ * **收内距的两个理由**：
+ *  1. 参考 `topic_detail_header.dart` 里**没有这一行** —— 它把回复数并进了页头元信息
+ *     （`_buildMetadataItem` 的「N 回复」）。本仓保留这一行是有代价的：它是一条不承载内容的横带。
+ *  2. 但**不能删这个 item**：`FLOORS_FIRST = 3` 与 `floorIndexOf`（以及 `jumpToFloorId` /
+ *     目录面板）都按 **item 序号**定位楼层，「回复 · N」占了第 3 格。删掉它，楼层索引、
+ *     跳楼、帖内搜索的落点、目录定位会**全部错一格**。所以只能压它自己的内距：
+ *     顶 16 → 8、底 8 → 6，高度约 44 → 34dp，省下 10dp 而不动任何索引。
+ *     这里压内距换密度，是"保留 item"与"对齐参考密度"之间唯一不破索引的做法。
  */
 @Composable
 private fun PostSectionHeader(label: String, count: Int? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+            // 顶 8 / 底 6（上一版 16 / 8，约 44dp → 约 34dp）：只压留白，不动 item 序列，见 KDoc。
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.Star, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
