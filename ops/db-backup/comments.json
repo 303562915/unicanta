@@ -5604,6 +5604,18 @@
   "target": "com.oplus.aiunit"
  },
  {
+  "author": "bopomo",
+  "author_id": "15744",
+  "body": "删除无法使用投屏，控制中心的融合设备中心也不能用，用米家的建议不删",
+  "created_at": "2026-11-28T02:26:25.583928+00:00",
+  "device_model": "REDMI K100 Pro Max",
+  "id": 811,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.8",
+  "target": "com.milink.service"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
