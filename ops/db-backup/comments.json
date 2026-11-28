@@ -5616,6 +5616,42 @@
   "target": "11"
  },
  {
+  "author": "elias",
+  "author_id": "10003",
+  "body": "来自遥测组件的各大厂商的方案 卸载还需要看自身情况",
+  "created_at": "2026-11-28T03:36:54.120924+00:00",
+  "device_model": "Redmi K70",
+  "id": 814,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 3.0.308",
+  "target": "428"
+ },
+ {
+  "author": "Hyeya",
+  "author_id": "15365",
+  "body": "为啥你这个序号29直接跳68",
+  "created_at": "2026-11-28T03:41:03.056093+00:00",
+  "device_model": "Xiaomi 17 Max",
+  "id": 815,
+  "kind": "plan",
+  "parent_id": null,
+  "system_name": "HyperOS 4.0.5",
+  "target": "113"
+ },
+ {
+  "author": "Starking^",
+  "author_id": "12063",
+  "body": "卸载后会影响壁纸个性化设置…",
+  "created_at": "2026-11-28T03:41:43.786494+00:00",
+  "device_model": "真我Neo8",
+  "id": 816,
+  "kind": "app",
+  "parent_id": null,
+  "system_name": "ColorOS 17.0.0",
+  "target": "com.oplus.uiengine"
+ },
+ {
   "author": "开发者",
   "author_id": "10003",
   "body": "好吧，那我得加一下，本意是让你们改一下名字哦[大笑]",
