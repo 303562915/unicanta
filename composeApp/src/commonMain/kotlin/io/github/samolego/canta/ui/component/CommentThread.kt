@@ -73,8 +73,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -93,6 +95,7 @@ import io.github.samolego.canta.data.community.CommentThread
 import io.github.samolego.canta.data.community.FIRST_REPLY_BATCH
 import io.github.samolego.canta.data.community.PlanComment
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.delay
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.painterResource
@@ -677,6 +680,17 @@ fun CommentRow(
         (comment.author == me || comment.author == "#$me" || comment.authorId == me)
     var sheet by remember(comment.id, comment.author, comment.body) { mutableStateOf(false) }
     val openSheet = { sheet = true }
+    // 长按菜单里的「复制」：剪贴板在组件里直接写，页面那边没有 platform 也能用。
+    // 复完在那行时间旁边亮一句「已复制」当作回执（这里拿不到 toast，见 CantaPlatform.showMessage），
+    // 一秒多之后自己灭掉，不留痕迹。
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(comment.id, comment.body) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1400)
+            copied = false
+        }
+    }
     val highlightColor = colors.primary.copy(alpha = highlight.coerceIn(0f, 1f) * 0.22f)
 
     Row(
@@ -805,6 +819,16 @@ fun CommentRow(
                             lineHeight = META_LINE,
                             color = colors.outline,
                         )
+                        if (copied) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "已复制",
+                                fontSize = META_SIZE,
+                                lineHeight = META_LINE,
+                                fontWeight = FontWeight.Medium,
+                                color = colors.primary,
+                            )
+                        }
                         Spacer(Modifier.width(10.dp))
                         Text(
                             text = "回复",
@@ -911,6 +935,12 @@ fun CommentRow(
                 sheet = false
                 onReply(comment)
             },
+            onCopy = {
+                sheet = false
+                // 复的是这条评论的正文本身（贴纸仍是 [偷笑] 这种记号，与发出去、存进库里的那份一致）。
+                clipboard.setText(AnnotatedString(comment.body))
+                copied = true
+            },
             onDelete = {
                 sheet = false
                 onDelete(comment)
@@ -919,13 +949,14 @@ fun CommentRow(
     }
 }
 
-/** The long-press sheet: what a comment can be answered with, and whether it can be taken back. */
+/** The long-press sheet: what a comment can be answered with, copied out, and whether it can be taken back. */
 @Composable
 private fun CommentActions(
     mine: Boolean,
     canReply: Boolean,
     onDismiss: () -> Unit,
     onReply: () -> Unit,
+    onCopy: () -> Unit,
     onDelete: () -> Unit,
 ) {
     CantaDialog(onDismissRequest = onDismiss, title = null) {
@@ -941,6 +972,16 @@ private fun CommentActions(
                         .padding(horizontal = 10.dp, vertical = 12.dp),
                 )
             }
+            // 复制排在回复下面：长按一条别人写的话，最常见的两件事就是回它、以及把它拿走。
+            Text(
+                text = "复制这条评论",
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onCopy)
+                    .padding(horizontal = 10.dp, vertical = 12.dp),
+            )
             if (mine) {
                 Text(
                     text = "删除这条评论",
