@@ -298,7 +298,9 @@ private fun commentThreadsCacheKey(target: String): String? =
  *
  * A thread's answers never show on their own: the first-level comment stands alone until the
  * reader opens it with "展开 N 条回复", and closes it again with "收起", which sits after the last
- * answer, at the very end of the thread. [expanded] holds the [threadKey]s that are open,
+ * answer shown. While the thread still has answers left, "收起" shares that last line with
+ * "展开更多 N 条" — on its right, not on a line of its own below it: two stacked lines read as two
+ * unrelated actions at the bottom of the thread. [expanded] holds the [threadKey]s that are open,
  * [onToggleThread] flips one.
  *
  * [me] is how this install is signed (its display name, or its code before it picked one): only the
@@ -415,17 +417,33 @@ fun LazyListScope.commentThreads(
                         onClick = { onToggleThread(key) },
                     )
                 }
-                // Open, with more behind it: the same line, counting only what is still hidden.
+                // Open, with more behind it: both toggles share one line — "展开更多" on the left,
+                // "收起" right after it. Stacked below instead, "收起" reads as a second, unrelated
+                // action under the answers rather than the other half of "this thread is open".
                 remaining > 0 -> item(key = "thread-more-$key") {
-                    ThreadToggle(
-                        label = "展开更多 $remaining 条",
-                        up = false,
-                        onClick = { onShowMoreReplies(key) },
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = THREAD_TEXT_INSET, end = 12.dp, top = 1.dp, bottom = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ThreadToggle(
+                            label = "展开更多 $remaining 条",
+                            up = false,
+                            onClick = { onShowMoreReplies(key) },
+                            modifier = Modifier,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        ThreadToggle(
+                            label = "收起",
+                            up = true,
+                            onClick = { onToggleThread(key) },
+                            modifier = Modifier,
+                        )
+                    }
                 }
-            }
-            if (open) {
-                item(key = "thread-less-$key") {
+                // Open and at the end: nothing left to unfold, so "收起" stands alone.
+                else -> item(key = "thread-less-$key") {
                     ThreadToggle(label = "收起", up = true, onClick = { onToggleThread(key) })
                 }
             }
@@ -433,17 +451,26 @@ fun LazyListScope.commentThreads(
     }
 }
 
-/** "展开 5 条回复" / "展开更多 10 条" / "收起": the one line that moves a thread along. */
+/**
+ * "展开 5 条回复" / "展开更多 10 条" / "收起": the one line that moves a thread along.
+ *
+ * [modifier] is the whole outer padding in the default case — full width, lined up with the thread's
+ * text. Callers that put two toggles side by side pass [Modifier] and give the row the insets
+ * themselves, so the second one does not start where the first one's text does.
+ */
 @Composable
-private fun ThreadToggle(label: String, up: Boolean, onClick: () -> Unit) {
+private fun ThreadToggle(
+    label: String,
+    up: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+        .fillMaxWidth()
+        // Lined up with the comment above it, not with that comment's own answers: the line is
+        // about the thread, so it starts where the thread's text does.
+        .padding(start = THREAD_TEXT_INSET, end = 12.dp, top = 1.dp, bottom = 5.dp),
+) {
     val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            // Lined up with the comment above it, not with that comment's own answers: the line is
-            // about the thread, so it starts where the thread's text does.
-            .padding(start = THREAD_TEXT_INSET, end = 12.dp, top = 1.dp, bottom = 5.dp),
-    ) {
+    Row(modifier = modifier) {
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
