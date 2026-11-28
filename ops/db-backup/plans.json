@@ -12523,6 +12523,32 @@
   "title": "极简 · REDMI K80 Pro"
  },
  {
+  "brand": "Xiaomi",
+  "codename": "peridot",
+  "created_at": "2026-11-28T08:10:22.271236+00:00",
+  "id": 509,
+  "is_test": false,
+  "market_name": "Redmi Turbo 3",
+  "model": "24069RA21C",
+  "note": "",
+  "owner": "15932",
+  "packages": [
+   "com.miui.dmregservice",
+   "com.mobiletools.systemhelper",
+   "com.xiaomi.registration",
+   "com.android.packageinstaller",
+   "com.miui.misightservice",
+   "com.xiaomi.security.onetrack"
+  ],
+  "reboot_verified": true,
+  "rebooted_at": "2026-11-28T08:10:21.984235+00:00",
+  "rom": "hyperos",
+  "rom_build": "OS3.0.305.0.WNPCNXM",
+  "rom_version": 3,
+  "sdk": 36,
+  "title": "遥测诊断 · Redmi Turbo 3"
+ },
+ {
   "brand": "Realme",
   "codename": "RE5C33",
   "created_at": "2026-11-21T22:59:11.078313+00:00",
