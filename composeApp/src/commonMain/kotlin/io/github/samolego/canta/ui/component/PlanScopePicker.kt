@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -340,15 +341,26 @@ fun PlanScopeBar(
             // 常驻在这儿而不是藏在搜索框里：它是一条全局规则（应用页顶栏的搜索同样吃它），
             // 藏进搜索框就变成"只有打开了搜索的人才找得到"。
             IconButton(onClick = onToggleDescriptions) {
-                // 一个汉字当图标：「全」= 连应用介绍一起搜（点亮，主题色），暗色 = 只搜名字与包名。
-                // 用字不用图形：这一行旁边就是「切换」「版本号」这些文字胶囊，一个汉字在那里比
-                // 任何含义暧昧的小图标都更容易读。
-                Text(
-                    text = "全",
-                    fontSize = 15.sp,
-                    fontWeight = if (descriptions) FontWeight.Bold else FontWeight.Normal,
-                    color = if (descriptions) colors.primary else colors.onSurfaceVariant,
-                )
+                // 汉字加一圈描边：关着是空心圆环，点亮变成实心圆——和这一行其它胶囊同一套语言。
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(if (descriptions) colors.primary else colors.surface)
+                        .border(
+                            width = 1.dp,
+                            color = if (descriptions) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.55f),
+                            shape = CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "全",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (descriptions) colors.onPrimary else colors.onSurfaceVariant,
+                    )
+                }
             }
         }
         if (onSearch != null) {
