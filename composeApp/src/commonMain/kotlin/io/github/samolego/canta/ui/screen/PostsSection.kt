@@ -112,11 +112,16 @@ import androidx.compose.material.icons.rounded.Favorite
 // 这仓库漏过一次 import 直接 `Unresolved reference`）。
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Info
+// 「回到最新」浮钮那颗下箭头。**必须显式 import**：`Icons.Rounded.*` 是扩展属性，
+// 漏了就只是 `Unresolved reference: KeyboardArrowDown`（本仓在这类事上红过三次）。
+// 只用 Rounded 集：本文件的图标口径见文件头那段注释。
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Numbers
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
@@ -1202,6 +1207,13 @@ internal fun PostsScreen(
      * （只有 `PostThreadPane` 拿得到），所以开关提到这一层，面板本体画在 pane 里。
      */
     var searchOpen by remember { mutableStateOf(false) }
+    /**
+     * 「跳到第几楼」对话框开着没有（[PostJumpDialog]）。
+     *
+     * 与 [tocOpen] / [searchOpen] 同一套理由：入口在顶栏「更多」，而面板要知道"总共有几层"
+     * （`comments.size + 1`）与怎么滚（`listState`），两者都只有 `PostThreadPane` 拿得到。
+     */
+    var jumpOpen by remember { mutableStateOf(false) }
     var posting by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
     /**
@@ -1758,6 +1770,8 @@ internal fun PostsScreen(
         tocOpen = false
         // 帖内搜索同理。
         searchOpen = false
+        // 「跳到楼层」也一样：它属于这一帖，关帖之后留着只会盖在列表上。
+        jumpOpen = false
         // 独立详情那一页（`Screen.PostDetail`）：没有"列表"可以退回页内，所以直接把自己弹回去。
         // 页内切换时这里是 null，什么都不做。
         onThreadClosed?.invoke()
@@ -1964,6 +1978,7 @@ internal fun PostsScreen(
                                 },
                                 onOpenToc = { tocOpen = true },
                                 onOpenSearch = { searchOpen = true },
+                                onOpenJump = { jumpOpen = true },
                             )
                         }
                     },
@@ -2137,6 +2152,14 @@ else -> Column {
                 onDismissToc = { tocOpen = false },
                 searchOpen = searchOpen,
                 onDismissSearch = { searchOpen = false },
+                jumpOpen = jumpOpen,
+                onDismissJump = { jumpOpen = false },
+                // 详情页下拉刷新：**就是 `reloadKey++` 那条重载路径**（与发帖/回帖/点赞之后
+                // 刷新的那条完全同一个入口，见 `LaunchedEffect(store, openId, reloadKey)`）。
+                // 不另写一条"拉一次详情"：那会把 `stableMerge` / `markRead` / `resumeUnread`
+                // 那套逻辑抄第二遍。指示器的 `isRefreshing` 读的是同一条 effect 收尾时清掉的
+                // `threadLoading`，所以不需要额外记一个布尔量。
+                onRefresh = { reloadKey++ },
                 modifier = Modifier.padding(padding),
             )
 
@@ -3271,10 +3294,28 @@ private fun PostThreadPane(
     /** 帖内搜索面板开着没有（[PostSearchSheet]）；理由同 [tocOpen]。 */
     searchOpen: Boolean = false,
     onDismissSearch: () -> Unit = {},
+    /** 「跳到第几楼」对话框开着没有（[PostJumpDialog]）；理由同 [tocOpen]。 */
+    jumpOpen: Boolean = false,
+    onDismissJump: () -> Unit = {},
+    /**
+     * 下拉刷新：**接的就是 `PostsScreen` 里 `reloadKey++` 那条重载路径**。
+     *
+     * 为什么是回调而不是在这里自己拉：这一层是纯 UI，手里没有 `PostStore`（拉取、缓存换血、
+     * 未读/收藏的重算全在 `PostsScreen` 那条 `LaunchedEffect(store, openId, reloadKey)` 里）。
+     * 在这里再写一条"拉一次详情"的实现，等于把 `stableMerge` / `markRead` / `resumeUnread`
+     * 那套逻辑抄第二遍 —— 抄漏一处就是"下拉之后楼层号变了、未读点不灭"这种只在某一条路上出现的 bug。
+     *
+     * 默认空实现：编辑器预览、别的宿主里单独摆这个 pane 时不会因为没传它而编译不过，
+     * 也不会出现"拽下去没反应"以外的东西（默认**不画**刷新指示器，见下面 `isRefreshing`）。
+     */
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val listState = rememberLazyListState()
+    // 下拉刷新控件自己的状态（阈值、回弹动画）。与列表状态分开：`listState` 还管着跳楼、
+    // 目录/搜索的"现在第几层"、「回到最新」浮钮，掺进刷新状态会让那几处跟着指示器一起重组。
+    val pullState = rememberPullToRefreshState()
     // 回复面板开着没有。放在这一层是为了让**动作行左侧那颗「N 条回复」胶囊**也能打开它
     // （fluxdo `post_action_bar.dart:270` 的 `leftButton` 就是那颗回复胶囊）：
     // 两处各自 remember 一份，就会出现"点了胶囊、底下的面板没反应"。
@@ -3639,11 +3680,27 @@ private fun PostThreadPane(
                 }
             }
         } else {
-            // 楼层列表外面多这一层 `Box`，只为了给右侧那条**阅读进度轨**（[FloorProgressTrack]）
-            // 一个坐标系：它是 `Alignment.CenterEnd` 盖在列表上的，不参与列表的测量，
-            // 也就不会让楼层的高度/宽度跟着它变（把它塞进 LazyColumn 的 contentPadding 里
-            // 会让每一层楼都窄 2dp，而且贴不到"整条列表"的那个高度上）。
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // 楼层列表外面这一层容器，两件事一起干：
+            //  1. 给右侧那条**阅读进度轨**（[FloorProgressTrack]）和右下角那颗「回到最新」浮钮
+            //     一个坐标系：两者都是 `align` 盖在列表上的，不参与列表的测量，也就不会让楼层的
+            //     高度/宽度跟着它们变（塞进 LazyColumn 的 contentPadding 里会让每一层楼都窄 2dp，
+            //     而且贴不到"整条列表"的那个高度上）。
+            //  2. **下拉刷新**：`PullToRefreshBox` 自己就是一个 `Box`（content 的 receiver 是
+            //     `BoxScope`），所以它**顶替**了原来那个裸 `Box`，里面的子项、`align`、间距
+            //     一个都没动 —— 只是多了一个包在外面、管纵向拖拽与顶部指示器的容器。
+            //     只包住列表这一块：`ReplyBar` 是这个 `Column` 的另一个子项（在它下面），
+            //     不能被一起拽下来，也不该挡住指示器。
+            //
+            // `isRefreshing = loading`：重载走的就是 `PostsScreen` 里 `reloadKey++` 那条路，
+            // 那条 `LaunchedEffect(store, openId, reloadKey)` 在整趟拉取里把 `threadLoading`
+            // 置真、结束置假 —— 正好就是指示器要的两个时刻。不为下拉单独记一个布尔量：
+            // 那样"回帖后刷新"和"下拉刷新"各有一份状态，早晚有一份忘了收（指示器一直转）。
+            PullToRefreshBox(
+                isRefreshing = loading,
+                onRefresh = onRefresh,
+                state = pullState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
@@ -3977,6 +4034,10 @@ private fun PostThreadPane(
                                             expandedReplyHistoryOf = 0L
                                             jumpToFloorId(id)
                                         },
+                                        // 父卡**正文里**的 `#N`：与楼层正文同一个换算、同一个落位函数
+                                        // （[onFloorRef]）。不传的话父卡里的 `#N` 就是死文字 ——
+                                        // 而这层楼之所以展开父链，恰恰是因为有人在正文里引用了楼号。
+                                        onFloorRef = onFloorRef,
                                     )
                                 }
                                 block
@@ -4078,6 +4139,9 @@ private fun PostThreadPane(
                                         floorLabelOf = floorLabelOf,
                                         onJump = onJumpToFloor,
                                         onCollapse = { expandedRepliesFloor = 0L },
+                                        // 嵌套楼正文里的 `#N`：同一条换算、同一个落位函数。
+                                        // 点整行仍然跳它自己那一层，点号跳号指到的那一层。
+                                        onFloorRef = onFloorRef,
                                     )
                                 }
                             } else {
@@ -4108,6 +4172,17 @@ private fun PostThreadPane(
                 FloorProgressTrack(
                     listState = listState,
                     modifier = Modifier.align(Alignment.CenterEnd),
+                )
+
+                // 右下角「回到最新」浮钮（显隐算式与坐标见 [ScrollToLatestButton]）：
+                // 距右 16dp、距底 16dp —— 右边那 16dp 正好是进度轨的热区，两者**边界相接、零重叠**；
+                // 底下那 16dp 是相对这个 `Box`（= 列表区）的，而 `ReplyBar` 在 `Box` **外面**，
+                // 所以浮钮永远浮在回复栏上方，不会被它盖住。
+                ScrollToLatestButton(
+                    listState = listState,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = 16.dp),
                 )
             }
 
@@ -4187,6 +4262,20 @@ private fun PostThreadPane(
                     floorLabelOf = floorLabelOf,
                     onJump = { id -> jumpToFloorId(id) },
                     onDismiss = onDismissSearch,
+                )
+            }
+
+            // ---- 「跳到第几楼」对话框（[PostJumpDialog]）----
+            //
+            // 输入 1 基楼层号。`onJump` 直接复用 [onFloorRef]：正文里点 `#N` 与在这里输入 N
+            // 走的是**同一个换算**（`#1` → 主楼、`#2+` → `comments[n-2]`、越界什么都不做），
+            // 少一份"楼层号 → 楼层 id"的实现就少一处会跳偏的地方。
+            if (jumpOpen) {
+                PostJumpDialog(
+                    // 层数含主楼：`comments` 只有回帖，主楼是 #1。
+                    maxFloor = comments.size + 1,
+                    onJump = onFloorRef,
+                    onDismiss = onDismissJump,
                 )
             }
 
@@ -4587,6 +4676,8 @@ private fun DetailMoreMenu(
     onOpenToc: () -> Unit,
     /** 打开帖内搜索（[PostSearchSheet]）：在**当前这条帖子**的楼层里找关键词。 */
     onOpenSearch: () -> Unit,
+    /** 打开「跳到第几楼」对话框（[PostJumpDialog]）：知道楼层号时最快的一条路。 */
+    onOpenJump: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     var menuOpen by remember { mutableStateOf(false) }
@@ -4631,6 +4722,18 @@ private fun DetailMoreMenu(
                 onClick = {
                     menuOpen = false
                     onOpenSearch()
+                },
+            )
+            // 「跳到楼层」：已知楼层号时的捷径（"你看 87 楼"）。与上面两项同属"在长帖里定位"，
+            // 一个按列表找、一个按关键词找、一个按号直达。
+            MenuRow(
+                icon = Icons.Rounded.Numbers,
+                label = "跳到楼层",
+                tint = scheme.onSurface,
+                enabled = true,
+                onClick = {
+                    menuOpen = false
+                    onOpenJump()
                 },
             )
             HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
@@ -5332,6 +5435,136 @@ private fun FloorProgressTrack(
 }
 
 /**
+ * 详情页右下角的「回到最新」浮钮：往下滚了一段之后才出现，点一下落到列表**最后一项**（`thread-foot`，
+ * 也就是最新回复之后那一格）。
+ *
+ * ## 为什么没有复用 `ui/component/ScrollToTop.kt`
+ *
+ * 那个文件先读过了：里面只有**信号源**（`ScrollToTop` 那个计数单例）与**监听器**
+ * （`ScrollToTopEffect(state)`，`ScrollToTop.kt:41-54`：听底栏双击，然后 `animateScrollToItem(0)`），
+ * **它一个可视元素都不产生**，既没有浮钮的外观，也没有"滚了多少才显示"的判定 —— 没有可复用的东西。
+ * 所以照它的风格另写一个，并把它那两条可取的做法搬过来：
+ *  1. `ScrollToTop.kt:33` 的 `shouldScroll`：**只在真的偏离目的地时才动作**（在顶部就不滚）。
+ *     本浮钮同理，到底之后自己收起来（见下面显隐算式的第 2 条），不做"点了没反应"的按钮；
+ *  2. `ScrollToTop.kt:47-53` 的"先记 baseline 再听变化"：判定**只读**列表状态、不写回任何状态。
+ *     这里用 `derivedStateOf` 读，滚动时只有浮钮自己重组（与 [FloorProgressTrack] 同一条理由，
+ *     见它那边 `derivedStateOf` 的注释）—— 不能让 200 层楼跟着每帧重组。
+ *
+ * 动画时长也照它：起落不另配 `AnimatedVisibility`（那颗是整块滑入/滑出，会在列表右下角撕出
+ * 一条滚动热区被临时占据的空档），直接 `if` 替换 —— 与 `ScrollToTopEffect` 一样"不做多余的动效"。
+ *
+ * ## 显隐算式（两个条件**同时**成立才画）
+ *
+ *  1. **已滚过的行程 ≥ 30%**，也就是"还没看到的部分（可见比例）< 70%"：
+ *     `progress = (firstVisible.index + inside) / (totalItemsCount - 1)`，
+ *     `inside = (-firstVisible.offset) / firstVisible.size` 夹在 0..1 —— 与 [FloorProgressTrack]
+ *     （`PostsSection.kt:5291-5310`）用的是**同一个** progress 表达式。两边各写一份的话，早晚会
+ *     出现"轨道显示已读了七成、浮钮却还不出来"。
+ *
+ *     为什么是 70%（即行程 30%）：这条列表的前三格是 `thread-header` / `op` / `thread-head`
+ *     （标题 + 主楼 + 续读条），本身就要占掉一屏多；`progress` 到 0.3 时人已经读完主楼、正落在
+ *     回复中段 —— 这时"回到最新"才有意义。阈值再低（比如 10%）会在刚进详情、只想看主楼的时候
+ *     就盖住正文右下角；再高（比如 90%）则要快到底了才出现，而那时它已经快没用了。
+ *  2. **还没到底**：`atBottom` 为真时一律不画 —— 按钮指向的 `thread-foot` 已经在屏幕上，
+ *     再挂一颗就是"点了没反应"（与 `ScrollToTop.kt:33` 同一个原则：已经在目的地就别给入口）。
+ *     "到底"不用 `canScrollForward`（那是 `ScrollableState` 上的成员，本仓当前 Compose 版本里
+ *     能不能直接读没验证过），只用有十年历史的老 API：最后一项可见、且它的下边界已经进到视口里
+ *     `1px` 以内 —— 列表的 `contentPadding.bottom` 是 16dp，所以真到底时它比视口下沿高 16dp，
+ *     这条判断稳定成立；而"还有内容在下面"时最后一项是**半截**的、下边界正好等于视口下沿，不成立。
+ *  `totalItemsCount <= 1`（还没量出来 / 只有标题 / 空帖）时两条都不成立 → 不画。
+ *
+ * ## 坐标（与另外两块 UI 的关系）
+ *
+ *  - 视觉 40dp 正圆，外面套 **48dp 透明触控区**（Material 的最小可点尺寸）。调用点给的
+ *    `padding(end = 16.dp, bottom = 16.dp)` 加在 48dp 盒子**之外**，所以**触控区**的右边/下边
+ *    离屏幕右缘、离列表底边各是 16dp；那颗 40dp 的圆在触控区里居中，看起来因此再收进去 4dp
+ *    （视觉上离边 20dp）。这是 M3 浮钮的常规取舍：**16dp 的贴边量给触控区**，视觉圆不会贴到边上
+ *    挤着进度轨，也不至于让 48dp 的透明方块吃掉轨道那一条的手势。
+ *  - 右侧：48dp 触控区的右边界因此落在 `width - 16dp`。阅读进度轨 [FloorProgressTrack] 的热区是
+ *    贴右边的 16dp（`PostsSection.kt:5336` 那句 `.width(16.dp)`），占 `width - 16dp .. width` ——
+ *    两者**边界相接、零重叠**（相差正好 0dp，不是负值），40dp 的圆和 16dp 的条谁也抢不到谁的手势。
+ *  - 底部：这颗钮是这个列表 `Box` 的子项，而 `ReplyBar` 是 `PostThreadPane` 那个 `Column` 的
+ *    **另一个子项**（在 `Box` 下面）。所以 `bottom = 16.dp` 是"回复栏上沿往上 16dp"，
+ *    浮钮永远浮在回复栏上方，不会被它盖住。
+ *
+ * 参考：fluxdo 详情页把一小块 UI `Positioned` 叠在列表右边缘的做法见
+ * `lib/pages/topic_detail_page/widgets/topic_scrub_indicator.dart:98`；底色取
+ * `surfaceContainerHighest`，与详情页底栏那颗回复胶囊同一档
+ * （`lib/pages/topic_detail_page/widgets/topic_bottom_bar.dart:453`）。
+ */
+@Composable
+private fun ScrollToLatestButton(
+    listState: LazyListState,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    // 显隐只在这里读：`derivedStateOf` 把每帧都在变的 `layoutInfo` 折成一个布尔量，
+    // 滚动时只有这个 composable 跟着重组。`remember(listState)` 的键只认列表，
+    // 换帖/换过滤都不会让它拿着旧状态（`layoutInfo` 本来就是从 `listState` 现读的）。
+    val show by remember(listState) {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val total = info.totalItemsCount
+            val first = info.visibleItemsInfo.firstOrNull()
+            if (total <= 1 || first == null) {
+                false
+            } else {
+                // 第一项自己滚出去了多少（0..1）。`size <= 0`（还没量出来）按 0 算：
+                // 除出 NaN 会让下面的比较恒为 false，浮钮永远不出现 —— 而且 NaN 会顺着
+                // `derivedStateOf` 的依赖往下传（与 [FloorProgressTrack] 里那句同一个理由）。
+                val inside = if (first.size <= 0) 0f else (-first.offset).toFloat() / first.size
+                val progress = ((first.index + inside.coerceIn(0f, 1f)) / (total - 1))
+                    .coerceIn(0f, 1f)
+                val last = info.visibleItemsInfo.lastOrNull()
+                // 到底：最后一项在屏上，且它的下边界已经进了视口（留 1px 容差，见 KDoc 第 2 条）。
+                val atBottom = last != null &&
+                    last.index >= total - 1 &&
+                    last.offset + last.size <= info.viewportEndOffset - 1
+                // 「可见比例 < 70%」= `1 - progress < 0.7`，等价于 `progress > 0.3`。
+                (1f - progress) < 0.7f && !atBottom
+            }
+        }
+    }
+    if (!show) return
+    Box(
+        modifier = modifier
+            // 48dp 是**触控区**（那颗 40dp 的圆在它里面居中）；透明的，所以视觉上仍是一颗 40dp 的钮。
+            .size(48.dp)
+            .clip(CircleShape)
+            // 不写 `onClickLabel`：读屏要念的那句话在图标上（`contentDescription = "回到最新"`），
+            // 两处都给会把同一句话念两遍。
+            .clickable(role = Role.Button) {
+                scope.launch {
+                    // 滚到最后一项 = `thread-foot`：最新回复之后那句说明，也就是"最新"那一端。
+                    // 每一帧现读 `totalItemsCount`，不用记住的常量：列表会被刷新换血。
+                    val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                    if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(scheme.surfaceContainerHighest)
+                // 1dp 描边排在 `background` 之后：线画在圆的内侧，外径仍是 40dp
+                //（与 [NestedRepliesList] 末尾那颗 28dp 收起钮同一个口径）。
+                .border(1.dp, scheme.outlineVariant, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = "回到最新",
+                modifier = Modifier.size(18.dp),
+                tint = scheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
  * 楼层之间的**日期分隔线**：一条 0.5dp 横线，正中间一块页面底色的小标签，写着「今天 / 昨天 / M月d日」。
  *
  * 照 fluxdo `post_segment_frame.dart:97-148`（日期标签骑在楼层底边框上：
@@ -5908,6 +6141,19 @@ private fun ReplyHistoryList(
     unfoldedKeys: Set<String>,
     onToggleUnfold: (String) -> Unit,
     onJump: ((Long) -> Unit)?,
+    /**
+     * 父链卡片**正文里** `#N` 楼层引用被点时的回调，直接交给 [ReplyHistoryCard] 再交给
+     * `MiniMarkdown(onFloorRef = …)`。
+     *
+     * 与 [onJump] 是两条**不同的**手势，语义必须分清：
+     *  - 点**卡片本身**（`onJump`）= 跳到**这一张卡**对应的那一层；
+     *  - 点正文里的 `#N`（本参数）= 跳到**那句正文指到的那一层** —— 它可能根本不是链上的任何一层
+     *    （父帖正文里随手引用了一个别的楼层），所以两条路不能合成一条。
+     *
+     * 默认 null：`MiniMarkdown` 内部对 null 是短路的（见 `MiniMarkdown.kt` 里 `onFloorRef` 那段），
+     * 于是 `#N` 仍是普通文字 —— 与加这个参数之前**逐项一致**。
+     */
+    onFloorRef: ((Int) -> Unit)? = null,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         chain.forEachIndexed { depth, parent ->
@@ -5921,6 +6167,12 @@ private fun ReplyHistoryList(
                 unfolded = key in unfoldedKeys,
                 onToggleUnfold = { onToggleUnfold(key) },
                 onJump = onJump,
+                // 父卡正文里的 `#N` 也能点。与卡片的"点整卡跳自己"不冲突：`#N` 走的是
+                // `MiniMarkdown` 生成的 `LinkAnnotation.Clickable`（文字自己的点击处理器会吃掉
+                // 那一下），而"点整卡"是这个 `Column` 上的 `clickable`；子节点先收到事件并消费，
+                // 祖先的 `clickable` 在 up 已被消费时不会触发 —— 与楼层卡片里 URL 链接
+                // 早就同屏共存的那套机制是同一条（见 [ReplyHistoryCard] 的 KDoc）。
+                onFloorRef = onFloorRef,
             )
         }
     }
@@ -5948,6 +6200,22 @@ private fun ReplyHistoryCard(
     unfolded: Boolean,
     onToggleUnfold: () -> Unit,
     onJump: ((Long) -> Unit)?,
+    /**
+     * 正文里 `#N` 楼层引用被点时的回调（[MiniMarkdown] 的 `onFloorRef`）。
+     *
+     * **两个手势、两个目标，别混**：
+     *  - 点**这张卡**（[onJump]）= 跳到 `parent` 自己那一层（`floor`）；
+     *  - 点正文里的 `#N`（本参数）= 跳到**那句话指到的那一层**，可能是链上别的楼、也可能压根
+     *    不在链上（父帖正文里随手引用的第 7 楼）。
+     *
+     * 两者不冲突的原因：`#N` 是正文文字上的 `LinkAnnotation.Clickable`（`MiniMarkdown.kt` 里
+     * `appendMarked` 造出来的），点击由文本自己的链接处理器消费；卡片的 `clickable` 挂在**祖先**
+     * `Column` 上，Compose 的 `clickable` 在 up 事件已被消费时不会触发。同一张卡里 URL 链接与
+     * "点整卡"早就这么共存着，这里只是把 `#N` 也做成同一类链接。
+     *
+     * 默认 null：`MiniMarkdown` 对 null 短路，`#N` 还是普通文字 —— 与改动前逐项一致。
+     */
+    onFloorRef: ((Int) -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val name = parent.author.ifBlank { "匿名" }
@@ -6029,6 +6297,8 @@ private fun ReplyHistoryCard(
                         lineHeight = REPLY_HISTORY_CARD_LINE_HEIGHT,
                     ),
                     color = scheme.onSurfaceVariant,
+                    // 父卡正文里的 `#N`：点号跳那一层，点卡跳这一层（语义差别见本函数参数表）。
+                    onFloorRef = onFloorRef,
                 )
             }
             // 与楼层正文同一条原则：折叠作用在**容器**上，正文本身始终是完整的一份（截半截
@@ -6365,6 +6635,17 @@ private fun NestedRepliesList(
     floorLabelOf: (Long) -> Int,
     onJump: ((Long) -> Unit)?,
     onCollapse: () -> Unit,
+    /**
+     * 楼内嵌套回复**正文里** `#N` 楼层引用被点时的回调（[MiniMarkdown] 的 `onFloorRef`）。
+     *
+     * 与 [onJump] 的分工，和 [ReplyHistoryList] 那边完全一致：点**整行**（[onJump]）= 跳到这
+     * 一条回复自己的楼层；点正文里的 `#N`（本参数）= 跳到那句正文指到的那一层。
+     * 两条手势互不冲突：`#N` 是文字节点上的 `LinkAnnotation.Clickable`，它先消费掉那一下，
+     * 外层 `Row` 的 `clickable` 就不会再触发。
+     *
+     * 默认 null：`MiniMarkdown` 对 null 短路，`#N` 保持普通文字（输出与改动前逐项一致）。
+     */
+    onFloorRef: ((Int) -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -6471,6 +6752,9 @@ private fun NestedRepliesList(
                             ),
                             // 次级内容压一档：与源码里嵌入帖渲染用 `onSurfaceVariant` 同一个意思。
                             color = scheme.onSurfaceVariant,
+                            // 嵌套楼正文里的 `#N`：点号跳那一层，点整行跳这一层
+                            //（两个手势为什么不会互相打架，见本函数参数表）。
+                            onFloorRef = onFloorRef,
                         )
                     }
                 }
