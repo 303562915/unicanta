@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Reply
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -27,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 /**
  * 行内标记：`**粗**` `*斜*` `_斜_` `` `代码` `` `~~删除~~` `[文字](链接)`、**裸地址**
@@ -729,6 +732,64 @@ private const val CodeBlockCollapsedLines = 12
 private val CodeBlockCollapsedHeight = (18 * CodeBlockCollapsedLines).dp
 
 /**
+ * 复制成功之后「已复制」那个状态挂多久：900ms。
+ *
+ * 为什么是 900ms，而不是参考实现那种 Toast 的 ~2s（`lib/utils/fluxdo_render_callbacks.dart:1995-2001`
+ * 复制完直接 `ToastService.showSuccess`）：Toast 是压在屏幕底部的一层浮层，读者知道"它自己会走"，
+ * 所以可以挂得久；而这里的反馈**复用了标题行自己的两个现成位置**（左端语言名、右端图标），
+ * 本质是"同一条标题行有 900ms 在说另一件事"。这种替换式提示挂过一秒，人就会开始把
+ * 「已复制」读成这块代码的语言名——也就是一个错误的常态；短于 700ms，手指刚抬起它就没了，
+ * 连点两下都看不见（连点在 `LaunchedEffect(copied)` 下本就不重启计时，见 [CodeBlock]）。
+ * 900ms 在"眼皮底下的动作能看见"和"别被当成常态"之间。
+ *
+ * 为什么不用 Toast / Snackbar：本文件是 commonMain——`android.widget.Toast` 在 androidMain 才有，
+ * 为一个"已复制"拉一对 expect/actual 进来不划算；`Snackbar` 要走 `SnackbarHostState` + `Scaffold`，
+ * 而 [CodeBlock] 是楼层正文里的一个 composable，头上没有 Scaffold，硬塞只能自己搭浮层。
+ * 同仓先例是 `PostImage.kt:929-965` 的 `PostImageHint`：那边同样是 commonMain 用不了 Toast，
+ * 自绘了一个 1.2 秒的黑底白字胶囊（时长常量 `PostImageHintMillis`，`PostImage.kt:109`）。
+ *
+ * 没照抄那个胶囊，原因在**位置**：胶囊是浮层，要盖在内容上就得套 `Box` + 一层不透明底色；
+ * 代码块正文本身是满宽文字，压上去不是盖住两行代码就是再叠一层色。而标题行两端本来就
+ * 各有一个槽位（左语言名、右复制图标），换图标 + 换词用的是现成的位置，**一像素布局都不动**：
+ * 行高写死 28dp，语言名在 `weight(1f)` 里，字多字少都不影响右侧图标的位置，滚动时也不会
+ * 有"多出一条横条把楼层高度顶起来"的跳动。
+ */
+private const val CodeCopyHintMillis = 900L
+
+/**
+ * 标题行左端语言名的字符上限：12。
+ *
+ * info string 是作者手打的，` ```text-something-very-long ` 这种（IDE 抠出来的语言标签、
+ * `language-xyz` 之类）经常比整条标题行还长；不截的话它会被 `weight(1f)` 挤成一串满屏省略号，
+ * 读不出是什么语言，还白占地方。12 个字符在 `labelSmall`（11sp）下约 80dp，
+ * 连「已复制」三个字一起放进 360dp 宽的楼层里还剩大半行；[CodeBlockLabelMaxChars] 之后
+ * 再加 `TextOverflow.Ellipsis` 兜窄容器，两层都不改 `language` 原文。
+ */
+private const val CodeBlockLabelMaxChars = 12
+
+/**
+ * 标题行左端显示的那一行字。
+ *
+ * - **空 info string 显示「代码」**：只有一个 ```` ``` ```` 没有语言的围栏，标题行左边原本是一段空白，
+ *   看上去像"这块少画了一块标题"。这一行的职责就是回答"这块是什么"，没有语言就直说它是代码；
+ *   顺带把「已复制」的替换关系说清——同一格先答"是什么"，复制那 900ms 里改答"成没成"。
+ *   参考实现的同一条标题行里也有一个不依赖作者所写语言的词
+ *   （`codeBlock_code` / `codeBlock_chart`，`lib/utils/fluxdo_render_callbacks.dart:1943-1952`），
+ *   只是那边是「代码⇄图表」的切换控件，这里只借"标题行总得有个词"这一条。
+ * - **超过 [CodeBlockLabelMaxChars] 个字符截断加省略号**：截的是**展示用的这一行**，
+ *   不碰 `language` 原文——[rememberHighlightedCode] 拿的仍是完整 info string，
+ *   着色规则不因为标题被截短而变。
+ */
+private fun codeBlockLabel(language: String): String {
+    val name = language.trim()
+    if (name.isEmpty()) return "代码"
+    if (name.length <= CodeBlockLabelMaxChars) return name
+    // `take` 按 UTF-16 计，表情/罕见字可能被切成半个代理对；语言标签全是 ASCII，
+    // 不为这种情形多套一层 codePoint 处理。
+    return name.take(CodeBlockLabelMaxChars) + "…"
+}
+
+/**
  * 围栏代码块：一条 28dp 的标题行（左语言名、右复制）+ 代码本体。
  *
  * 单独一个 composable 是为了让 `rememberScrollState()` 有个固定的调用点：
@@ -755,6 +816,17 @@ private val CodeBlockCollapsedHeight = (18 * CodeBlockCollapsedLines).dp
  * 其余仍是调用方给的正文色；认不出语言、或超过 [CodeHighlightMaxChars] 就退回单色。
  * 换掉的只有 `Text` 的 `text`（`code` → `highlighted`），标题行、复制、横向滚动、折叠按钮
  * 和行数统计一个都没动，所以复制出来的仍是纯代码。
+ *
+ * 复制成功之后**不弹 Toast、也不在代码块下面加一条横条**，反馈就发生在标题行自己身上：
+ * 右侧图标换成 `Icons.Rounded.Check`（`primary`）、左端语言名换成「已复制」，[CodeCopyHintMillis]
+ * （900ms）之后双双复位。时长/为什么不用 Toast/为什么不做浮层胶囊，理由写在
+ * [CodeCopyHintMillis] 的注释里；自绘胶囊的同仓先例是 `PostImage.kt:929-965` 的 `PostImageHint`。
+ * 之所以把它压在标题行而不是块底部，还多一条：块底部 32dp 那一行是折叠开关
+ * （「展开全部（共 N 行）」/「收起」），两个"状态文案"上下贴在一起会让人以为
+ * 「展开＝复制」——见 [CodeBlock] 里折叠行那段的注释。
+ *
+ * 这个状态只活在 [CodeBlock] 内部（`remember(code)`）：展开/折叠、横向滚动、楼层重组都不会
+ * 把它带到别的块上；换了一段代码则回到常态。
  */
 @Composable
 private fun CodeBlock(code: String, language: String, color: Color) {
@@ -768,6 +840,20 @@ private fun CodeBlock(code: String, language: String, color: Color) {
     val collapsible = lineCount > CodeBlockCollapsedLines
     // 键是 `code`：同一条帖子里换了代码内容就回到收起态，不把上一段代码"展开过"的状态带过来。
     var expanded by remember(code) { mutableStateOf(false) }
+    // 复制成功后的瞬时状态，到点自己复位（时长与理由见 [CodeCopyHintMillis]）。
+    // 键同样是 `code`：换一段代码就不该还挂着上一段留下的「已复制」。
+    var copied by remember(code) { mutableStateOf(false) }
+    // 计时挂在 `copied` 上：只有 false → true 这一跳会启动倒计时。900ms 窗口内再点一次，是给
+    // 已经为 true 的状态再赋一次 true —— 值没变，Compose 不会重启这个 effect，于是
+    // **不会提前复位、也不会卡住**：到第一次点击算起的 900ms 照常回到常态。代价是第二次点击
+    // 自己的窗口不足 900ms，而那时候屏幕上本来就还写着「已复制」，看不出差别。
+    // （要"每点一次都重新计时"得再加一个 tick 计数当键，为这条 900ms 的提示不值当。）
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(CodeCopyHintMillis)
+            copied = false
+        }
+    }
     val collapsed = collapsible && !expanded
     Column(
         modifier = Modifier
@@ -784,11 +870,15 @@ private fun CodeBlock(code: String, language: String, color: Color) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                // 没写 info string 的围栏就写「代码」：顶栏空着左侧会像少画了一块。
-                text = language.ifBlank { "代码" },
+                // 空 info string 写「代码」、超长 info string 截断，都在 [codeBlockLabel] 里；
+                // 复制那 900ms 换成「已复制」—— 同一个槽位先答"这块是什么"、再答"刚才成没成"。
+                // 换词不改行高、不改右侧图标的位置（这一行是 `weight(1f)`），所以不会造成跳动。
+                text = if (copied) "已复制" else codeBlockLabel(language),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                // 语言名已经按 [CodeBlockLabelMaxChars] 截过，这一层兜的是"楼层被放在更窄的容器里"。
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             // 28dp 的方框 + 18dp 的图标：与顶栏同高，点按区域不越出这条标题行。
@@ -796,13 +886,26 @@ private fun CodeBlock(code: String, language: String, color: Color) {
                 modifier = Modifier
                     .size(28.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .clickable { clipboard.setText(AnnotatedString(code)) },
+                    .clickable {
+                        clipboard.setText(AnnotatedString(code))
+                        // 剪贴板写入是同步的 commonMain API（没有回调可等），写成"写完就置位"；
+                        // 写失败这条路不存在，所以这里的「已复制」不会被读成谎报。
+                        copied = true
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.ContentCopy,
-                    contentDescription = "复制代码",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // 图标是这条反馈里**唯一上色**的部分：`primary` 读作"这一步成功了"。
+                    // 左端那行字刻意留在 `onSurfaceVariant` —— 底部「展开全部（共 N 行）」用的
+                    // 就是 `primary`，两处都上色会让顶部提示看起来像"第二个可点的开关"。
+                    imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                    // 无障碍：读屏把"成没成"也当状态说出来，而不是永远念"复制代码"。
+                    contentDescription = if (copied) "已复制" else "复制代码",
+                    tint = if (copied) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -837,6 +940,18 @@ private fun CodeBlock(code: String, language: String, color: Color) {
             // 要么得垫一层不透明底色/渐变压在代码上，而代码字是正文色，一压就读不清。
             // 居中对齐而不是右对齐：这一行是整块代码的分界线，居中读作"这块内容的开关"；
             // 右对齐会与顶栏那颗复制图标连成一条竖线，像是第二个复制按钮。
+            //
+            // 与复制反馈（[CodeCopyHintMillis] 的「已复制」）的关系，逐条对过：
+            // 1) 位置：复制反馈在**标题行**（左上语言名 + 右上图标），这一行在**块底居中**；
+            //    折叠态下两者隔着 216dp 的代码区，不是同一个视觉块，不会被读成一个控件。
+            //    （真正会撞的是"把提示做成代码块下面一条横条"——那样它就贴在这一行上面，
+            //    两条状态文案叠在一起，所以本文件一开始就没走横条/浮层那条路。）
+            // 2) 文案：一个是**结果**「已复制」（名词化、过去时，没有动词可点），一个是**开关**
+            //    「展开全部（共 N 行）」/「收起」（动词 + 行数参数）。人不会把「展开」当成「复制」。
+            // 3) 颜色：只有顶部那颗图标在 900ms 里上 `primary`，左端「已复制」保持
+            //    `onSurfaceVariant`；这一行是 `primary`。所以"主色的字"在整块里只有一个来源
+            //    = 可点的那一行，顶部那行"淡色的字"只会被读成标签，不会读成第二个开关。
+            // 因此这一行的位置与文案都不动。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

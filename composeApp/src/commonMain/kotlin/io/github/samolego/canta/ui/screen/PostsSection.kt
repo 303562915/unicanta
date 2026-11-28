@@ -2787,16 +2787,136 @@ private fun firstImageUrl(body: String): String? {
 }
 
 /**
+ * 摘要最多画几行：**无缩略 3 行**。
+ *
+ * 3 这个数直接来自参考侧 —— fluxdo 卡片收起状态的行数上限就是 3
+ * （`topic_expandable_excerpt.dart:32` 的 `this.maxCollapsedLines = 3`，`topic_card_style.dart:57`
+ * 是同一个默认值），摘要摆的位置也一样：标题下、署名上，标题到摘要 4dp、摘要到署名 8dp
+ * （`topic_card.dart:489-493`）。
+ *
+ * **这里搬的是"行数"，不是"行高"**：参考侧摘要 13sp / 行高 1.45
+ * （`topic_expandable_excerpt.dart:132-133`），一行 18.85dp；本仓卡内摘要用 `bodySmall`
+ * （FlTypography 里是 `FlText.footnote`，13sp），行高按卡内正文同一个比例 1.3 重算 → 16.9dp
+ * （三行 50.7dp，参考那边三行 56.6dp，差的那 6dp 就是"同样三行、这边字更紧"）。
+ * 不照抄 18.85 的原因：`bodySmall` 自带 18sp 行高（ratio 1.38），照抄的话同一张卡里标题 1.3、
+ * 摘要 1.38 两种行距，有缩略图时摘要那一段会明显比左边松。
+ */
+private const val POST_CARD_EXCERPT_LINES_PLAIN = 3
+
+/**
+ * 摘要最多画几行：**有缩略 2 行**。
+ *
+ * 缩略 [PostCardThumbSize] 72dp 是从内容列的**宽度**里拿走的（72 + 间距 10 = 82dp），内容列窄了
+ * 约两成；宽度少两成，同样 3 行装下的字数也少两成 —— 结果就是"三行被切碎的短句 + 一颗图"，
+ * 摘要退化成几个关键词。
+ *
+ * 高度那边更直接：卡片高是 `max(内容列, 72)`。无缩略时内容列本来就约 60dp（标题 19.5 + 8 + 署名 40），
+ * 加三行摘要（4 + 50.7）到 115dp 左右还匀称；有缩略时第 3 行那 16.9dp 是**纯增高**，卡片会被拉到
+ * 缩略图的 1.6 倍高，右侧那颗方图就从"陪着一行字"变成"一大块空白旁边的小图标"。
+ * 砍到 2 行（4 + 33.8）与 72 的图仍在同一量级，"图陪着一行字"的观感才成立。
+ */
+private const val POST_CARD_EXCERPT_LINES_WITH_THUMB = 2
+
+/**
+ * 块级行首标记：`#` 标题、`>` 引用、`-` / `*` / `+` 列表、`1.` / `1)` 有序列表。
+ *
+ * 只吃掉**行首一个标记 + 它后面的空白**：行中间的 `#`（`C#`）、行中间的 `-`（`2024-11-28`）不动。
+ */
+private val PostExcerptLineMarker = Regex("""^(?:#{1,6}\s*|>+\s*|[-+*]\s+|\d{1,9}[.)]\s+)""")
+
+/** `![说明](https://…)` 整条丢，见 [plainExcerpt] 第 3 步。 */
+private val PostExcerptImage = Regex("""!\[[^\]]*\]\([^)]*\)""")
+
+/** `[文字](url)` 只留文字，见 [plainExcerpt] 第 4 步。 */
+private val PostExcerptLink = Regex("""\[([^\]]*)\]\([^)]*\)""")
+
+/** 行内码（两侧各一颗反引号）只留代码本身，见 [plainExcerpt] 第 5 步。 */
+private val PostExcerptInlineCode = Regex("""`([^`]*)`""")
+
+/** `**粗**`、`*斜*`、`~~删除~~` 的标记符号本身，见 [plainExcerpt] 第 6 步。 */
+private val PostExcerptEmphasis = Regex("""\*+|~~""")
+
+/**
+ * 连续空白：收到一颗空格，见 [plainExcerpt] 最后一步。
+ *
+ * 只压行与行之间的空白还不够 —— 第 3 步把行内图片换成一颗空格之后，`还有 ![](a.png) 行内图`
+ * 会留下三颗空格。参考侧收起状态也是整段压平（`topic_expandable_excerpt.dart:139` 的
+ * `text.replaceAll(RegExp(r'\s+'), ' ').trim()`），这里跟上。
+ */
+private val PostExcerptSpaces = Regex("""\s+""")
+
+/**
+ * 把 `excerpt` 剥成纯文字，供列表卡片直接画。
+ *
+ * ## 为什么不渲染 Markdown
+ *
+ * `MiniMarkdown` 是一条完整解析器（`parseBlocks` 做块级切分 → 每个块再切行内 → 每种块一个组合项）：
+ * 一条消息十几到几十个组合项。列表一屏十几张卡、`LazyColumn` 一次装 200 条，
+ * 每张卡再挂一套解析器，滚动的时间预算就全花在摘要上了 —— 而摘要在这里只是"这帖大概讲什么"的
+ * 一行灰字：不需要加粗、不需要代码底色、也不需要把 `![](…)` 画成图（图已经进了右侧那颗缩略）。
+ * 详情页照旧用 `MiniMarkdown` 渲染全文，那边一次只有一条，值得这个成本。
+ *
+ * ## 剥的顺序（逐行，先块级、再行内，最后把行收成一段）
+ *
+ *  1. **围栏行整行丢**（三个反引号，或三个反引号 + 语言名），围栏**里面**的代码文本留着 ——
+ *     读者要的是"这帖在讲什么"，把整段代码删掉反而是丢信息；
+ *  2. 行首块级标记 [PostExcerptLineMarker]：井号标题、大于号引用、列表短横/星号/加号、有序列表；
+ *  3. 图片 `![说明](url)` 整条丢 [PostExcerptImage]：说明多半是"截图""图片"，留着是一句废话；
+ *  4. 链接 `[文字](url)` 只留文字 [PostExcerptLink]；
+ *  5. 行内码只留代码 [PostExcerptInlineCode]，落单的反引号（没配成对的）直接去掉；
+ *  6. 强调标记 `*` 与 `~~` 去掉 [PostExcerptEmphasis]；**下划线不剥** —— `snake_case`、`__init__`
+ *     这类标识符里的下划线比强调用法常见得多，剥掉就把代码改错了；
+ *  7. 空行、以及只剩标记符号的行（`-`、`***`、`>`、`###`）压掉，**不补空格**；"连续空行压成
+ *     一个空格"落在行与行之间那一颗空格上（下面 `joined` 的拼接），所以整段仍是单行一段字；
+ *  8. 最后整段再压一次空白 [PostExcerptSpaces]：第 3 步换出来的那颗空格、原文里的连续空格与
+ *     制表符都收成一颗，和参考侧收起状态的口径一致（`topic_expandable_excerpt.dart:139`）。
+ *
+ * 只有标记的摘要（比如整段就是一颗 `**`）会一路剥成空串，调用点据此**一行都不画**。
+ * 纯函数、没有 Compose 依赖；调用点用 `remember(post.excerpt)` 包住（见 [PostCard]），
+ * 200 条列表每条只剥一遍，不是每帧。
+ */
+private fun plainExcerpt(text: String): String {
+    if (text.isEmpty()) return ""
+    val joined = StringBuilder(text.length)
+    for (raw in text.lineSequence()) {
+        val trimmed = raw.trim()
+        // 1. 围栏行自己吃掉：开闭都算，围栏里的代码行照常往下走。
+        if (trimmed.startsWith("```")) continue
+        // 2. 行首块级标记。
+        var line = PostExcerptLineMarker.replace(trimmed, "")
+        // 3. 行内图片整条丢。换成空格而不是空串：`文字![](a.png)文字` 才不会粘成一个词。
+        line = PostExcerptImage.replace(line, " ")
+        // 4. 链接只留文字（`\$1` 转义，Kotlin 字符串里的 `$` 是模板起始符）。
+        line = PostExcerptLink.replace(line, "\$1")
+        // 5. 行内码只留代码，再扫掉落单的反引号。
+        line = PostExcerptInlineCode.replace(line, "\$1")
+        line = line.replace("`", "")
+        // 6. 强调标记。
+        line = PostExcerptEmphasis.replace(line, "")
+        line = line.trim()
+        // 7. 空行 / 纯标记行压掉；行与行之间补**一颗**空格，等价于"连续空行压成一个空格"。
+        if (line.isEmpty() || line.all { c -> c in "#>-+*_~`" }) continue
+        if (joined.isNotEmpty()) joined.append(' ')
+        joined.append(line)
+    }
+    // 最后一步：整段压平（行内图片换出来的那颗空格、原文里的连续空格、制表符都收成一颗）。
+    return PostExcerptSpaces.replace(joined.toString(), " ").trim()
+}
+
+/**
  * 列表上的一张帖子卡片。
  *
- * 实际画出来的只有两行：**标题**（15sp / 行高 1.3、最多 2 行）→ 间距 8 → **署名块**（头像 32 +
- * 昵称/时间 + 分类标签/赞回复）。这里**没有摘要行**：列表回答只带 `excerpt`（`PostStore.kt:19`），
- * 而这张卡片一直没画它（旧注释里那句"四行含摘要"与代码不符，以这一行为准）。
+ * 画出来三块：**标题**（15sp / 行高 1.3、最多 2 行）→ 间距 4 → **摘要**（`bodySmall` / 行高 1.3、
+ * 最多 [POST_CARD_EXCERPT_LINES_PLAIN] 行、**空则不画**）→ 间距 8 → **署名块**（头像 32 +
+ * 昵称/时间 + 分类标签/赞回复）。摘要取自列表回答里的 `excerpt`（`PostStore.kt:19`：列表只发
+ * `excerpt`，`body` 是空的），先经 [plainExcerpt] 剥成纯文字再画。
  *
  * 有首图时右侧多一颗 [PostCardThumbSize] 的方缩略（[PostImageThumb]），首图由 [firstImageUrl] 认。
  * **缩略图不用行数**：标题仍是 `maxLines = 2` 那条上限（见本函数里那个 `Text`），只把可用宽度让出
- * 72 + 10dp，所以有图不会让标题多折一行、卡片只比无图的高出"缩略图 72 与内容高（单行标题约 59.5）"
- * 那十来 dp。没有首图时 `Row` 里只有内容列本身，连 `Spacer` 都不加 —— 布局与加缩略图之前逐项相同。
+ * 72 + 10dp，所以有图不会让标题多折一行。缩略图唯一改行数的地方是摘要：有缩略时
+ * [POST_CARD_EXCERPT_LINES_WITH_THUMB] 行，没缩略时 [POST_CARD_EXCERPT_LINES_PLAIN] 行
+ * （理由见两个常量的 KDoc）。没有首图时 `Row` 里只有内容列本身，连 `Spacer` 都不加 ——
+ * 布局与加缩略图之前逐项相同。
  *
  * [unread] 是"没看过 / 有新回复"：**卡片右上角**一颗 8dp 主色圆点（叠层画的，不参与布局），扫列表时先认它。
  */
@@ -2807,6 +2927,8 @@ private fun firstImageUrl(body: String): String? {
  * ```
  * Column(
  * 行1: 标题（满宽，最多两行，15sp/1.3）
+ *   间距 4
+ *   行1.5: 摘要（满宽，最多 3 行 / 有缩略时 2 行，bodySmall/1.3，空则不画）
  *   间距 8
  *   行2: 头像 32 跨两行 + 右侧 Column(
  *         行A: 作者名（Expanded）+ 8 + 时间
@@ -2821,16 +2943,20 @@ private fun firstImageUrl(body: String): String? {
  * `EdgeInsets.fromLTRB(12, 10, 12, 10)`），不是估的。**左右外留白不在卡上**，在列表的
  * `contentPadding` 上（见 [PostListPane]）。
  *
+ * **摘要为什么是这个位置、这两个数**：位置与间距照 `topic_card.dart:486-496`（标题 → 4 → 摘要 →
+ * 8 → 署名，官方注释写的是"Gmail snippet 的位置"）；**不要展开** —— 参考侧收起时靠 `TextPainter`
+ * 测行、再挂渐隐 + `TextButton`（`topic_expandable_excerpt.dart:141-190`），列表里一张卡两种高度
+ * 会让滚动中的位置一直跳，这里只做 `maxLines` 截断。**空摘要一个组合项都不建**（连那颗 4dp 的
+ * Spacer 也不建），所以"没摘要 + 没缩略"的卡片与加摘要之前**逐项相同**。
+ *
  * **故意不跟 fluxdo 的项**：
  *  1. `TopicCardStyle.showExcerpt = false`、`showImages = false`（`topic_card_style.dart:54-55`）。
  *     fluxdo 默认不显示摘要，是因为它的摘要要**额外发请求**取首楼（`allowExcerptFetch`，
- *     `topic_card_style.dart:39-40` 明说"默认关闭以避免增加列表请求量"）。
- *     **现状以代码为准**：本仓这张卡片**没有摘要行** —— `excerpt` 只被搜索过滤用到
- *     （`PostListPane` 里那句 `post.excerpt.contains(keyword)`）。要加摘要得先定"摘要占几行、
- *     有图时怎么和缩略图分宽度"，那是另一件事；本轮只补首图缩略，不顺手加摘要
- *     （见本函数顶部那段 KDoc 与 [firstImageUrl]）。
- *  2. `maxCollapsedLines = 3`（`topic_card_style.dart:57`）：那是"展开查看更多"的折叠行数，
- *     本仓没有摘要块，谈不上折叠；标题自己有 `maxLines = 2` 这条上限。
+ *     `topic_card_style.dart:39-40` 明说"默认关闭以避免增加列表请求量"）。本仓的 `excerpt` 已经在
+ *     `posts_for` 的列表回答里（后端 `left(body, 200)`），不发第二次请求，所以摘要**默认画**。
+ *  2. `maxCollapsedLines = 3`（`topic_card_style.dart:57`）：这里只搬了"3"这个**行数**，没搬
+ *     "点一下展开"那一套。而且有缩略时改成 2 行（[POST_CARD_EXCERPT_LINES_WITH_THUMB]）——
+ *     缩略占了内容列 82dp 的宽度，三行会被切得只剩关键词。
  *  3. 未读点的**摆法**：fluxdo 把 `unreadIndicator` 摆进标题行右端的**固定槽位**
  *     （`topic_card.dart:296` 与 `:428-433` 的 `if (unreadIndicator != null) … Padding(top: …)`，
  *     `:879-886` 那颗 8×8 的蓝点），它参与布局 —— 所以"有未读"的标题比"已读"的少一截可用宽度，
@@ -2894,6 +3020,10 @@ private fun PostCard(
     val thumbUrl = remember(post.body, post.excerpt) {
         firstImageUrl(post.body) ?: firstImageUrl(post.excerpt)
     }
+    // 摘要纯文字：`excerpt` 是后端 `left(body, 200)` 的**原文**（Markdown 没洗过），先经
+    // [plainExcerpt] 剥掉标记再画（为什么不渲染 `MiniMarkdown`、剥哪些标记，见那个函数的 KDoc）。
+    // 同样放进 `remember(post.excerpt)`：200 条列表每条只剥一遍，滚动时不重跑那串正则。
+    val excerpt = remember(post.excerpt) { plainExcerpt(post.excerpt) }
     // 三档颜色，照 `topic_card.dart:288-293`：
     //   未读       标题 onSurface             元信息 onSurfaceVariant ×0.8
     //   读过没读完 标题 onSurfaceVariant×0.75  元信息 onSurfaceVariant ×0.8
@@ -2908,6 +3038,21 @@ private fun PostCard(
         scheme.primary
     } else {
         metaTint(scheme.onSurfaceVariant, if (read) 0.6f else 0.8f)
+    }
+    // 摘要的字：`bodySmall`（卡内**不再放大** —— 它已经是本仓最小的一档正文，摘要不该和标题抢），
+    // 行高按卡内正文同一个比例 1.3 重算：`bodySmall` 自带 18sp（ratio 1.38），跟标题的
+    // 19.5/15 = 1.3 不是同一个行距，同一张卡里两种行距、有缩略时右边那段会显松。
+    // 13sp × 1.3 = 16.9sp；万一把这套排版换成非 sp 单位，退回同一个数。
+    val excerptBase = MaterialTheme.typography.bodySmall
+    val excerptStyle = excerptBase.copy(
+        lineHeight = if (excerptBase.fontSize.isSp) excerptBase.fontSize * 1.3f else 16.9.sp,
+    )
+    // 摘要色：`onSurfaceVariant`；读过的帖再褪一档 0.7（照 `topic_expandable_excerpt.dart:134-136`
+    // 的 `isFullyRead ? 0.7 : 1`）—— 否则一张"已读完"的卡里摘要比标题还亮，视线先落在摘要上。
+    val excerptColor = if (read) {
+        metaTint(scheme.onSurfaceVariant, 0.7f)
+    } else {
+        scheme.onSurfaceVariant
     }
     Column(
         modifier = Modifier
@@ -3004,6 +3149,39 @@ private fun PostCard(
                     // 未读点**不在这里**：它由卡片自己的 `drawBehind` 画在右上角（零布局影响）。
                     // 上一版在这一行末尾塞过 `Spacer(6dp) + Box(8dp)`，那 14dp 会从标题的可用宽度里扣掉，
                     // 同一列里"有未读"和"已读"的标题换行位置就不一样了。
+                }
+
+                // 行1.5：摘要。位置与间距照参考 `topic_card.dart:486-496`（标题 → 4 → 摘要 → 8 → 署名，
+                // 那边注释写的是"Gmail snippet 的位置"）：所以下面那颗 8dp 的 Spacer 原封不动留着，
+                // 这里只补一颗 4dp 的。顺序是 标题 →[4]→ 摘要 →[8]→ 署名。
+                //
+                // **空摘要一个组合项都不建**，连这颗 4dp 的 Spacer 也不建 —— 于是"没摘要 + 没缩略"的
+                // 卡片与加摘要之前**逐项相同**（标题 → 8 → 署名还是原来那颗 Spacer），不会多出一层空
+                // Column、一个空 Text 或一截间距。
+                //
+                // 行数：无缩略 [POST_CARD_EXCERPT_LINES_PLAIN]、有缩略 [POST_CARD_EXCERPT_LINES_WITH_THUMB]
+                // （为什么两个数见两个常量的 KDoc）。高度**不写死**，靠 `maxLines` 自撑，卡片跟着长高。
+                //
+                // 读屏：这里**不加** `contentDescription` —— `Text` 自带 `text` 语义，再写一遍等于同一段
+                // 念两遍。也**没有**给整段 `invisibleToUser()`：卡片是 `combinedClickable` 合并出来的
+                // 一个节点，朗读顺序就是标题 → 摘要 → 署名（与视觉顺序一致）；而列表里不少帖子的标题
+                // 本身就是"求助""问一下"这种不自描述的短句，摘要是"这帖讲什么"的唯一信息源，藏掉之后
+                // 读屏用户只能靠点进去判断。代价是每条多念一两句（`excerpt` 最长 200 字），换的是
+                // 进不进得去由听的人自己判断。
+                if (excerpt.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = excerpt,
+                        style = excerptStyle,
+                        color = excerptColor,
+                        maxLines = if (thumbUrl != null) {
+                            POST_CARD_EXCERPT_LINES_WITH_THUMB
+                        } else {
+                            POST_CARD_EXCERPT_LINES_PLAIN
+                        },
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = true,
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
